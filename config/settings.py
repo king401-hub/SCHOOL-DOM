@@ -11,43 +11,49 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
-INSTALLED_APPS = [
-    'django_tenants',  # Must come first
-    'django.contrib.admin',
-    'django.contrib.auth',
+# apps that exist in every tenant (shared across all schools)
+SHARED_APPS = [
+    'django_tenants', 
+    'schools',  # must be here because it contains the tenant model
     'django.contrib.contenttypes',
+    'django.contrib.auth',
+    'django.contrib.admin',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
-    # Third party
-    'rest_framework',
-    'rest_framework_simplejwt',
-    'corsheaders',
-    'django_filters',
-    
-    # Local apps
-    'core',
+]
+
+TENANT_APPS = [
     'users',
-    'schools',
+    'core',
     'exams',
     'academic',
     'finance',
     'analytics',
+    'rest_framework',
+    'corsheaders',
+    'django_filters',
 ]
 
+INSTALLED_APPS = SHARED_APPS + TENANT_APPS
+
+
+# tenant model
+TENANT_MODEL = "schools.School"  # app_name.ModelName
+
+# middleware
 MIDDLEWARE = [
-    'django_tenants.middleware.TenantMiddleware',  # Must be first
+    'django_tenants.middleware.main.TenantMainMiddleware',  # must be first
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'core.middleware.AuditMiddleware',
 ]
+
 
 ROOT_URLCONF = 'config.urls'
 PUBLIC_SCHEMA_URLCONF = 'config.public_urls'
