@@ -1,3 +1,11 @@
-# backend/core/__init__.py
-# This file can be empty or contain app configuration
-default_app_config = 'core.apps.CoreConfig'
+from .tenant import SchoolTenant, Domain
+from .base import TimeStampedModel, TenantAwareModel
+from .audit import AuditLog
+
+__all__ = [
+    'SchoolTenant',
+    'Domain',
+    'TimeStampedModel', 
+    'TenantAwareModel',
+    'AuditLog'
+]
