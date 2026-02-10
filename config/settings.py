@@ -35,10 +35,25 @@ TENANT_APPS = [
     'django_filters',
 ]
 
-INSTALLED_APPS = SHARED_APPS + TENANT_APPS
-
-
-
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    
+    # Third-party apps
+    'rest_framework',
+    'corsheaders',
+    
+    # Local apps
+    'core',
+    'tenants',
+    'users',
+    'academic',
+    'exams',
+]
 
 # middleware
 MIDDLEWARE = [
