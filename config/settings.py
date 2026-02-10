@@ -14,7 +14,7 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 # apps that exist in every tenant (shared across all schools)
 SHARED_APPS = [
     'django_tenants', 
-    'schools',  # must be here because it contains the tenant model
+    'core',  # must be here because it contains the tenant model
     'django.contrib.contenttypes',
     'django.contrib.auth',
     'django.contrib.admin',
@@ -25,7 +25,7 @@ SHARED_APPS = [
 
 TENANT_APPS = [
     'users',
-    'core',
+    'schools',
     'exams',
     'academic',
     'finance',
@@ -38,8 +38,7 @@ TENANT_APPS = [
 INSTALLED_APPS = SHARED_APPS + TENANT_APPS
 
 
-# tenant model
-TENANT_MODEL = "schools.School"  # app_name.ModelName
+
 
 # middleware
 MIDDLEWARE = [
@@ -56,7 +55,6 @@ MIDDLEWARE = [
 
 
 ROOT_URLCONF = 'config.urls'
-PUBLIC_SCHEMA_URLCONF = 'config.public_urls'
 
 TEMPLATES = [
     {
@@ -85,6 +83,7 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD', 'password'),
         'HOST': os.getenv('DB_HOST', 'localhost'),
         'PORT': os.getenv('DB_PORT', '5432'),
+        'ATOMIC_REQUESTS': True,
     }
 }
 
@@ -95,6 +94,7 @@ TENANT_MODEL = "core.SchoolTenant"
 TENANT_DOMAIN_MODEL = "core.Domain"
 TENANT_SUBFOLDER_PREFIX = "schools"
 SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication
 AUTH_PASSWORD_VALIDATORS = [
@@ -154,8 +154,6 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom settings
 MAX_UPLOAD_SIZE = 52428800  # 50MB

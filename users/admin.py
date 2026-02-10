@@ -1,7 +1,7 @@
 # backend/users/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, TeacherProfile, StudentProfile
+from .models import User
 
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active')
@@ -23,5 +23,3 @@ class UserAdmin(BaseUserAdmin):
     filter_horizontal = ('groups', 'user_permissions',)
 
 admin.site.register(User, UserAdmin)
-admin.site.register(TeacherProfile)
-admin.site.register(StudentProfile)

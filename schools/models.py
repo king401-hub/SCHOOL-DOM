@@ -1,10 +1,5 @@
-from django_tenants.models import TenantMixin, DomainMixin
-from django.db import models
+# Tenant models are defined in core.tenant module
+# Import them here for backwards compatibility if needed
+from core.tenant import SchoolTenant as School, Domain
 
-class School(TenantMixin):
-    name = models.CharField(max_length=100)
-    created_on = models.DateField(auto_now_add=True)
-    auto_create_schema = True  # optional, auto-create schema
-
-class Domain(DomainMixin):
-    pass
+__all__ = ['School', 'Domain']
