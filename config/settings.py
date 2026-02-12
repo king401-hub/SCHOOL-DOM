@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'communications',
     'notifications',
     'settings_app',
+    'app_settings',
 ]
 
 # middleware
