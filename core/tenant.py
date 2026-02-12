@@ -1,6 +1,7 @@
 # backend/core/models/tenant.py
 from django.db import models
 
+
 class SchoolTenant(models.Model):
     name = models.CharField(max_length=255)
     schema_name = models.CharField(max_length=63, unique=True)
@@ -35,19 +36,48 @@ class SchoolTenant(models.Model):
         default='free'
     )
     
+    # Relationships to new configurations (will be created by related apps)
+    # These are auto-created OneToOneFields from the related apps:
+    # - email_config (from notifications.EmailConfiguration)
+    # - sms_config (from notifications.SMSConfiguration)
+    # - payment_config (from notifications.PaymentGatewayConfiguration)
+    # - theme (from settings_app.ThemeConfiguration)
+    
+    # Feature flags
+    enabled_features = models.ManyToManyField(
+        'settings_app.FeatureFlag',
+        blank=True,
+        related_name='schools'
+    )
+    
     class Meta:
         verbose_name = "School"
         verbose_name_plural = "Schools"
     
     def __str__(self):
         return self.name
+    
+    def is_feature_enabled(self, feature_code):
+        """Check if a feature is enabled for this school"""
+        from settings_app.models import FeatureFlag
+        
+        # Check school-specific feature flag
+        if self.enabled_features.filter(code=feature_code, is_enabled=True).exists():
+            return True
+        
+        # Check global feature flag
+        return FeatureFlag.objects.filter(
+            school_tenant=None,
+            code=feature_code,
+            is_enabled=True
+        ).exists()
 
 class Domain(models.Model):
     """Simple domain model without django-tenants dependency"""
     tenant = models.ForeignKey(SchoolTenant, on_delete=models.CASCADE, related_name='domains')
     domain = models.CharField(max_length=255, unique=True)
     is_primary = models.BooleanField(default=False)
-    created_on = models.DateField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
     
     class Meta:
         verbose_name = "Domain"

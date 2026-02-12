@@ -35,6 +35,9 @@ INSTALLED_APPS = [
     'finance',
     'analytics',
     'schools',
+    'communications',
+    'notifications',
+    'settings_app',
 ]
 
 # middleware
