@@ -2,14 +2,16 @@
 from django.db import models
 from core.models import TimeStampedModel, TenantAwareModel
 
-class ExamType(models.Model):
+class ExamType(TenantAwareModel, TimeStampedModel):
     name = models.CharField(max_length=100)  # MCQ, Essay, Mixed
-    tenant = models.ForeignKey('core.SchoolTenant', on_delete=models.CASCADE)
+    
+    def __str__(self):
+        return self.name
 
 class QuestionBank(TenantAwareModel, TimeStampedModel):
     name = models.CharField(max_length=200)
     subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE)
-    teacher = models.ForeignKey('users.Teacher', on_delete=models.CASCADE)
+    teacher = models.ForeignKey('users.User', on_delete=models.CASCADE)
     questions = models.ManyToManyField('Question', related_name='question_banks')
     is_shared = models.BooleanField(default=False)
 
@@ -31,10 +33,10 @@ class Question(TenantAwareModel, TimeStampedModel):
 
 class Exam(TenantAwareModel, TimeStampedModel):
     title = models.CharField(max_length=200)
-    subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE)
-    class_group = models.ForeignKey('academic.Class', on_delete=models.CASCADE)
-    teacher = models.ForeignKey('users.Teacher', on_delete=models.CASCADE)
-    exam_type = models.ForeignKey(ExamType, on_delete=models.CASCADE)
+    subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE, null=True, blank=True)
+    class_group = models.ForeignKey('academic.Class', on_delete=models.CASCADE, null=True, blank=True)
+    teacher = models.ForeignKey('users.User', on_delete=models.CASCADE, null=True, blank=True)
+    exam_type = models.ForeignKey(ExamType, on_delete=models.CASCADE, null=True, blank=True)
     
     # Scheduling
     start_date = models.DateTimeField()
@@ -54,7 +56,7 @@ class Exam(TenantAwareModel, TimeStampedModel):
 
 class ExamAttempt(TenantAwareModel, TimeStampedModel):
     exam = models.ForeignKey(Exam, on_delete=models.CASCADE)
-    student = models.ForeignKey('users.Student', on_delete=models.CASCADE)
+    student = models.ForeignKey('users.User', on_delete=models.CASCADE)
     start_time = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)
     is_completed = models.BooleanField(default=False)

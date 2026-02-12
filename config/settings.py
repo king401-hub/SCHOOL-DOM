@@ -11,29 +11,8 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
-# apps that exist in every tenant (shared across all schools)
-SHARED_APPS = [
-    'django_tenants', 
-    'core',  # must be here because it contains the tenant model
-    'django.contrib.contenttypes',
-    'django.contrib.auth',
-    'django.contrib.admin',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-]
-
-TENANT_APPS = [
-    'users',
-    'schools',
-    'exams',
-    'academic',
-    'finance',
-    'analytics',
-    'rest_framework',
-    'corsheaders',
-    'django_filters',
-]
+# Note: django-tenants removed for SQLite development
+# These would be needed for PostgreSQL multi-tenancy
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -53,11 +32,13 @@ INSTALLED_APPS = [
     'users',
     'academic',
     'exams',
+    'finance',
+    'analytics',
+    'schools',
 ]
 
 # middleware
 MIDDLEWARE = [
-    'django_tenants.middleware.main.TenantMainMiddleware',  # must be first
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -89,26 +70,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database Configuration for Multi-tenancy
+# Database Configuration - SQLite for Development
 DATABASES = {
     'default': {
-        'ENGINE': 'django_tenants.postgresql_backend',
-        'NAME': os.getenv('DB_NAME', 'virtual_school'),
-        'USER': os.getenv('DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'password'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-        'ATOMIC_REQUESTS': True,
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
 }
 
-DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
-
-# Tenant Configuration
-TENANT_MODEL = "core.SchoolTenant"
-TENANT_DOMAIN_MODEL = "core.Domain"
-TENANT_SUBFOLDER_PREFIX = "schools"
-SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
+# Tenant Configuration (disabled for SQLite development)
+# TENANT_MODEL = "core.SchoolTenant"
+# TENANT_DOMAIN_MODEL = "core.Domain"
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication

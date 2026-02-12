@@ -11,7 +11,7 @@ class TimeStampedModel(models.Model):
 
 class TenantAwareModel(models.Model):
     """Abstract base model for tenant-specific models"""
-    tenant = models.ForeignKey('core.SchoolTenant', on_delete=models.CASCADE)
+    tenant = models.ForeignKey('core.SchoolTenant', on_delete=models.CASCADE, null=True, blank=True)
     
     class Meta:
         abstract = True

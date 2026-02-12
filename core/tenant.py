@@ -1,8 +1,7 @@
 # backend/core/models/tenant.py
 from django.db import models
-from django_tenants.models import TenantMixin, DomainMixin
 
-class SchoolTenant(TenantMixin):
+class SchoolTenant(models.Model):
     name = models.CharField(max_length=255)
     schema_name = models.CharField(max_length=63, unique=True)
     created_on = models.DateField(auto_now_add=True)
@@ -36,9 +35,6 @@ class SchoolTenant(TenantMixin):
         default='free'
     )
     
-    # Auto-create schema
-    auto_create_schema = True
-    
     class Meta:
         verbose_name = "School"
         verbose_name_plural = "Schools"
@@ -46,5 +42,16 @@ class SchoolTenant(TenantMixin):
     def __str__(self):
         return self.name
 
-class Domain(DomainMixin):
-    pass
+class Domain(models.Model):
+    """Simple domain model without django-tenants dependency"""
+    tenant = models.ForeignKey(SchoolTenant, on_delete=models.CASCADE, related_name='domains')
+    domain = models.CharField(max_length=255, unique=True)
+    is_primary = models.BooleanField(default=False)
+    created_on = models.DateField(auto_now_add=True)
+    
+    class Meta:
+        verbose_name = "Domain"
+        verbose_name_plural = "Domains"
+    
+    def __str__(self):
+        return self.domain
