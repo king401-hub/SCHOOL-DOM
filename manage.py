@@ -2,21 +2,16 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
-<<<<<<< HEAD
 from pathlib import Path
-=======
->>>>>>> 187db86b3b4d2a7259b2d3a466c215339f7d8036
 
 
 def main():
     """Run administrative tasks."""
-<<<<<<< HEAD
     # Ensure backend apps/config are importable when manage.py lives at repo root.
     backend_dir = Path(__file__).resolve().parent / "backend"
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
-=======
->>>>>>> 187db86b3b4d2a7259b2d3a466c215339f7d8036
+
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     try:
         from django.core.management import execute_from_command_line
