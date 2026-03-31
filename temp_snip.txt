@@ -1,0 +1,120 @@
+      setNotifyFeedback("Students notified.");
+      setNotifyForm((previous) => ({ ...previous, subject: "", message: "" }));
+    } catch (actionError) {
+      setNotifyFeedback(actionError.message || "Could not send notification.");
+    }
+  };
+
+  return (
+    <>
+      <div className="teacher-header">
+        <div>
+          <p className="topbar-kicker">Welcome back</p>
+          <h2>{teacherName}</h2>
+        </div>
+        <div className="student-avatar">
+          {teacherAvatar ? <img src={teacherAvatar} alt={`${teacherName} avatar`} /> : <span>{teacherInitials}</span>}
+        </div>
+      </div>
+
+      <section className="panel-grid dashboard-grid">
+        <article className="app-panel">
+          <h3>Metrics</h3>
+        <ul className="panel-list">
+          <li>Total assessments: {metrics.total_assessments ?? 0}</li>
+          <li>Published: {metrics.published_assessments ?? 0}</li>
+          <li>Pending submissions: {metrics.pending_submissions ?? 0}</li>
+          <li>Unread inbox: {metrics.unread_inbox ?? 0}</li>
+        </ul>
+        {isRefreshing ? <p className="field-note">Auto-refreshing…</p> : null}
+      </article>
+
+      <article className="app-panel prompt-panel">
+        <h3>Create prompt</h3>
+        <form className="panel-form" onSubmit={handlePromptSubmit}>
+          <div className="panel-form-grid">
+<label className="panel-field full">
+              Title
+              <input
+                value={promptForm.title}
+                onChange={(event) => setPromptForm((prev) => ({ ...prev, title: event.target.value }))}
+              />
+            </label>
+            <label className="panel-field full">
+              Body
+              <textarea
+                value={promptForm.body}
+                onChange={(event) => setPromptForm((prev) => ({ ...prev, body: event.target.value }))}
+              />
+            </label>
+            <label className="panel-field">
+              Class
+              <select
+value={promptForm.classId}
+onChange={(event) => setPromptForm((prev) => ({ ...prev, classId: event.target.value }))}
+>
+                <option value="">All classes</option>
+                {options.classes?.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Due date
+              <input
+type="date"
+                value={promptForm.dueDate}
+onChange={(event) => setPromptForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+/>
+            </label>
+</div>
+          {promptFeedback ? <p className="form-feedback success">{promptFeedback}</p> : null}
+            <div className="panel-form-actions">
+              <button                 type="submit">Create prompt              </button>
+            </div>
+</form>
+      </article>
+
+      <article className="app-panel">
+        <h3>Prompt insights</h3>
+        {prompts.length === 0 ? (
+          <p className="panel-empty">No prompts created yet.</p>
+        ) : (
+          prompts.map((prompt) => (
+            <div key={prompt.id} className="prompt-item">
+              <div className="prompt-head">
+                <p>{prompt.title}</p>
+                <small>
+                  {prompt.class_name} • Responses {prompt.response_count}
+                </small>
+          </div>
+<p className="message-body">
+                Last activity {formatDate(prompt.latest_responses?.[0]?.updated_at)}
+              </p>
+            </div>
+          ))
+        )}
+        </article>
+
+        <article className="app-panel">
+          <h3>Upcoming exams</h3>
+        {exams.length === 0 ? (
+          <p className="panel-empty">No upcoming assessments.</p>
+        ) : (
+          <ul className="panel-list">
+            {exams.map((exam) => (
+              <li key={exam.id}>
+                {exam.title} • {exam.class_name} • {formatDate(exam.start_date)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
+
+      <article className="app-panel">
+        <h3>Notify students</h3>
+          <form className="panel-form" onSubmit={handleNotifySubmit}>
+            <label className="panel-field">
+              Exam

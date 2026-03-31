@@ -1,0 +1,34 @@
+# ngrok.yml
+version: "2"
+authtoken: 383sn8gZb7gX6rDjOfeZNwmChyp_54mPiGRrYHCg3cMY17Cue
+
+tunnels:
+  fullstack:
+    domain: eliana-cecal-unpitiably.ngrok-free.dev
+    proto: http
+    addr: 5173
+    inspect: true
+    request_header:
+      remove: ["X-Forwarded-For"]
+    
+    traffic_policy:
+      on_http_request:
+        - actions:
+            # Forward API requests to Django
+            - type: forward
+              config:
+                url: "http://localhost:8000"
+                headers:
+                  set:
+                    X-Forwarded-Host: "eliana-cecal-unpitiably.ngrok-free.dev"
+                    Host: "localhost:8000"
+              if: "req.url.path.startsWith('/api') || req.url.path.startsWith('/admin') || req.url.path.startsWith('/media') || req.url.path.startsWith('/static')"
+            
+            # Forward everything else to React
+            - type: forward
+              config:
+                url: "http://localhost:5173"
+                headers:
+                  set:
+                    X-Forwarded-Host: "eliana-cecal-unpitiably.ngrok-free.dev"
+              if: "!req.url.path.startsWith('/api') && !req.url.path.startsWith('/admin') && !req.url.path.startsWith('/media') && !req.url.path.startsWith('/static')"
