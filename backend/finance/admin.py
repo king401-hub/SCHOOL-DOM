@@ -1,0 +1,82 @@
+from django.contrib import admin
+
+from finance.models import (
+    ActivationCreditPool,
+    ActivationCreditTransaction,
+    AdminWallet,
+    ClassFee,
+    ExpenseRecord,
+    SchoolFee,
+    StudentActivationCredit,
+    Transaction,
+    Wallet,
+)
+
+
+@admin.register(Wallet)
+class WalletAdmin(admin.ModelAdmin):
+    list_display = ("user", "balance", "currency", "updated_at")
+    readonly_fields = ("user", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        # Wallets are created only when students register.
+        return False
+
+
+@admin.register(Transaction)
+class TransactionAdmin(admin.ModelAdmin):
+    list_display = ("reference", "tx_type", "status", "amount", "currency", "created_at")
+    list_filter = ("tx_type", "status", "currency")
+    search_fields = ("reference", "narration")
+    readonly_fields = ("wallet", "admin_wallet", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(SchoolFee)
+class SchoolFeeAdmin(admin.ModelAdmin):
+    list_display = ("title", "student", "amount", "status", "due_date", "class_fee")
+    list_filter = ("status", "class_fee")
+    search_fields = ("title", "student__user__email")
+
+
+@admin.register(ClassFee)
+class ClassFeeAdmin(admin.ModelAdmin):
+    list_display = ("title", "school_class", "amount", "currency", "due_date", "is_active")
+    list_filter = ("is_active", "currency")
+    search_fields = ("title", "school_class__name", "school_class__section")
+
+
+@admin.register(ExpenseRecord)
+class ExpenseRecordAdmin(admin.ModelAdmin):
+    list_display = ("title", "tenant", "record_type", "amount", "status", "record_date", "created_by")
+    list_filter = ("record_type", "status", "tenant", "record_date")
+    search_fields = ("title", "vendor", "category", "receipt_number", "note")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(AdminWallet)
+class AdminWalletAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "balance", "currency", "updated_at")
+
+
+@admin.register(ActivationCreditPool)
+class ActivationCreditPoolAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "balance", "price_per_credit", "auto_assign_enabled", "auto_assign_scope", "updated_at")
+    list_filter = ("auto_assign_enabled", "auto_assign_scope")
+
+
+@admin.register(StudentActivationCredit)
+class StudentActivationCreditAdmin(admin.ModelAdmin):
+    list_display = ("student", "credits_assigned", "active_until", "inactive_since", "is_excluded_from_auto_deductions")
+    list_filter = ("is_excluded_from_auto_deductions", "active_until")
+    search_fields = ("student__user__email", "student__student_id", "student__admission_number")
+
+
+@admin.register(ActivationCreditTransaction)
+class ActivationCreditTransactionAdmin(admin.ModelAdmin):
+    list_display = ("reference", "pool", "student_credit", "tx_type", "credits", "amount", "created_at")
+    list_filter = ("tx_type", "created_at")
+    search_fields = ("reference", "narration", "student_credit__student__user__email")
+    readonly_fields = ("created_at",)

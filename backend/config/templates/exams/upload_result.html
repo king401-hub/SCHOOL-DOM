@@ -1,0 +1,234 @@
+<!-- templates/exams/upload_results.html -->
+{% extends 'base.html' %}
+
+{% block title %}Upload Exam Results{% endblock %}
+
+{% block content %}
+<div x-data="examUploadManager()" 
+     x-init="init()"
+     class="container-fluid">
+    
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>
+            <i class="fas fa-upload text-primary-school"></i>
+            Upload Exam Results
+        </h1>
+        
+        <!-- Offline Queue Status -->
+        <div x-show="offlineQueue.length > 0" 
+             class="badge bg-warning text-dark p-3"
+             x-transition>
+            <i class="fas fa-sync fa-spin me-2"></i>
+            <span x-text="offlineQueue.length"></span> items pending sync
+            <button class="btn btn-sm btn-primary ms-2" 
+                    @click="syncOfflineData()"
+                    x-show="navigator.onLine">
+                Sync Now
+            </button>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Left Column - Upload Form -->
+        <div class="col-md-5">
+            <div class="card shadow mb-4">
+                <div class="card-header bg-primary-school text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-file-upload me-2"></i>
+                        Upload New Results
+                    </h5>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- Exam Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Select Exam</label>
+                        <input type="text" 
+                               class="form-control mb-2" 
+                               placeholder="Search exams..."
+                               x-model="searchTerm"
+                               @input.debounce.500ms="
+                                    htmx.ajax('GET', `/exams/search/?q=${searchTerm}`, {
+                                        target: '#exam-list',
+                                        swap: 'innerHTML'
+                                    })
+                               ">
+                        
+                        <!-- Exam List (HTMX) -->
+                        <div id="exam-list" 
+                             class="list-group mt-2"
+                             style="max-height: 300px; overflow-y: auto;"
+                             hx-get="/exams/list-for-upload/"
+                             hx-trigger="load">
+                            <!-- Loaded via HTMX -->
+                            <div class="text-center p-3">
+                                <div class="spinner-border text-primary-school" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- File Upload -->
+                    <div class="mb-3" x-show="selectedExam" x-transition>
+                        <label class="form-label fw-bold">Upload File</label>
+                        <input type="file" 
+                               id="file-upload"
+                               class="form-control"
+                               @change="handleFileSelect"
+                               accept=".csv,.xlsx,.xls">
+                        
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Supported formats: CSV, Excel (.xlsx, .xls)
+                            </small>
+                        </div>
+                        
+                        <!-- Template Download -->
+                        <div class="mt-2">
+                            <a href="/exams/download-template/" class="text-primary-school">
+                                <i class="fas fa-download me-1"></i>
+                                Download Template
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Preview Table -->
+                    <div x-show="previewData.length > 0" 
+                         class="mb-3"
+                         x-transition>
+                        <label class="form-label fw-bold">Preview (First 5 rows)</label>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr x-show="previewData[0]">
+                                        <template x-for="(value, key) in previewData[0]">
+                                            <th x-text="key" class="small"></th>
+                                        </template>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="row in previewData">
+                                        <tr>
+                                            <template x-for="(value, key) in row">
+                                                <td x-text="value" class="small"></td>
+                                            </template>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Upload Button -->
+                    <div class="d-grid">
+                        <button class="btn btn-primary-school btn-lg"
+                                @click="uploadResults()"
+                                :disabled="!selectedExam || !uploadFile || isUploading">
+                            <span x-show="!isUploading">
+                                <i class="fas fa-cloud-upload-alt me-2"></i>
+                                Upload Results
+                            </span>
+                            <span x-show="isUploading">
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                Uploading... <span x-text="uploadProgress + '%'"></span>
+                            </span>
+                        </button>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div x-show="isUploading" class="progress mt-3" style="height: 5px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary-school" 
+                             :style="'width: ' + uploadProgress + '%'"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Tips Card -->
+            <div class="card shadow">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-lightbulb me-2"></i>
+                        Quick Tips
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            Use the template for correct format
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            Max file size: 10MB
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            Required columns: student_id, score
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            Optional columns: comments, grade
+                        </li>
+                        <li>
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            Offline uploads auto-sync
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Column - Recent Uploads -->
+        <div class="col-md-7">
+            <div class="card shadow">
+                <div class="card-header bg-primary-school text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-history me-2"></i>
+                        Recent Uploads
+                    </h5>
+                    <button class="btn btn-sm btn-light" 
+                            hx-get="/exams/recent-uploads/" 
+                            hx-target="#recent-uploads-body"
+                            hx-swap="innerHTML">
+                        <i class="fas fa-sync"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Search -->
+                    <div class="mb-3">
+                        <input type="text" 
+                               class="form-control" 
+                               placeholder="Search uploads..."
+                               hx-get="/exams/recent-uploads/"
+                               hx-target="#recent-uploads-body"
+                               hx-trigger="keyup changed delay:500ms"
+                               hx-include="[name='search']"
+                               name="search">
+                    </div>
+                    
+                    <!-- Uploads Table -->
+                    <div id="recent-uploads-body"
+                         hx-get="/exams/recent-uploads/"
+                         hx-trigger="load, every 30s, refresh from:body"
+                         class="table-responsive">
+                        <!-- HTMX will load content here -->
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary-school" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- SheetJS for Excel preview -->
+<script src="https://cdn.sheetjs.com/xlsx-0.19.2/package/dist/xlsx.full.min.js"></script>
+{% endblock %}

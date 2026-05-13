@@ -49,6 +49,7 @@ Thumbs.db
 
 # Node.js (if any)
 node_modules/
+.npm-cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

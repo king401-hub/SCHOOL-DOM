@@ -1,0 +1,1446 @@
+{% extends 'base.html' %}
+
+{% block title %}School Settings{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Custom animations and styles */
+    .color-preview {
+        transition: all 0.3s ease;
+    }
+    
+    .setting-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+    
+    .setting-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1) !important;
+    }
+    
+    .input-group-hover {
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+    
+    .input-group-hover:focus,
+    .input-group-hover:hover {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+    }
+    
+    .color-swatch {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+    
+    .color-swatch:hover {
+        transform: scale(1.2);
+        border-color: white;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    
+    .color-swatch.selected {
+        border-color: white;
+        box-shadow: 0 0 0 3px var(--primary-color);
+    }
+    
+    .preview-card {
+        transition: all 0.3s ease;
+        animation: slideIn 0.5s ease-out;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .animated-check {
+        animation: checkAnimation 0.5s ease-in-out;
+    }
+    
+    @keyframes checkAnimation {
+        0% {
+            transform: scale(0);
+            opacity: 0;
+        }
+        50% {
+            transform: scale(1.2);
+        }
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    .pulse-animation {
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.05);
+        }
+    }
+    
+    .floating-label {
+        position: relative;
+    }
+    
+    .floating-label input:focus + label,
+    .floating-label input:not(:placeholder-shown) + label {
+        transform: translateY(-25px) scale(0.8);
+        color: var(--primary-color);
+    }
+    
+    .tab-transition {
+        transition: all 0.3s ease;
+    }
+    
+    .tab-transition:hover {
+        background-color: rgba(var(--primary-rgb), 0.1);
+    }
+    
+    .progress-bar-striped {
+        background-image: linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent);
+        background-size: 1rem 1rem;
+        animation: progress-bar-stripes 1s linear infinite;
+    }
+    
+    @keyframes progress-bar-stripes {
+        0% { background-position: 1rem 0; }
+        100% { background-position: 0 0; }
+    }
+    
+    .ripple {
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .ripple:after {
+        content: "";
+        display: block;
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        background-image: radial-gradient(circle, #fff 10%, transparent 10.01%);
+        background-repeat: no-repeat;
+        background-position: 50%;
+        transform: scale(10, 10);
+        opacity: 0;
+        transition: transform .5s, opacity 1s;
+    }
+    
+    .ripple:active:after {
+        transform: scale(0, 0);
+        opacity: .3;
+        transition: 0s;
+    }
+    
+    .gradient-border {
+        position: relative;
+        background: white;
+        border-radius: 10px;
+    }
+    
+    .gradient-border::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+        border-radius: 12px;
+        z-index: -1;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .gradient-border:hover::before {
+        opacity: 1;
+    }
+    
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        .setting-card {
+            background: #1f2937 !important;
+            border-color: #374151;
+        }
+        
+        .gradient-border {
+            background: #1f2937;
+        }
+        
+        .input-group-hover {
+            background: #374151 !important;
+            color: white !important;
+            border-color: #4b5563;
+        }
+        
+        .input-group-hover::placeholder {
+            color: #9ca3af;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="schoolSettings()" 
+     x-init="init()"
+     class="container-fluid py-4">
+    
+    <!-- Header with gradient background -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 bg-gradient-primary text-white" 
+                 :style="'background: linear-gradient(135deg, ' + settings.primary_color + ' 0%, ' + settings.secondary_color + ' 100%);'">
+                <div class="card-body py-4">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="bg-white bg-opacity-25 rounded-circle p-3">
+                                <i class="fas fa-cog fa-3x text-white"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-4">
+                            <h1 class="display-6 fw-bold mb-2">School Settings</h1>
+                            <p class="mb-0 opacity-75">Configure your school's appearance, regional settings, and preferences</p>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="badge bg-white text-dark py-2 px-3 rounded-pill">
+                                <i class="fas fa-shield-alt me-2"></i>Admin Access
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Navigation Tabs -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <ul class="nav nav-pills nav-fill gap-2 p-1 small bg-light rounded-5 shadow-sm" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active rounded-5 tab-transition" 
+                            @click="activeTab = 'general'"
+                            :class="{ 'active': activeTab === 'general' }">
+                        <i class="fas fa-school me-2"></i>General
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link rounded-5 tab-transition" 
+                            @click="activeTab = 'branding'"
+                            :class="{ 'active': activeTab === 'branding' }">
+                        <i class="fas fa-palette me-2"></i>Branding
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link rounded-5 tab-transition" 
+                            @click="activeTab = 'regional'"
+                            :class="{ 'active': activeTab === 'regional' }">
+                        <i class="fas fa-globe me-2"></i>Regional
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link rounded-5 tab-transition" 
+                            @click="activeTab = 'advanced'"
+                            :class="{ 'active': activeTab === 'advanced' }">
+                        <i class="fas fa-code-branch me-2"></i>Advanced
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8">
+            <!-- General Settings Tab -->
+            <div x-show="activeTab === 'general'" x-transition:enter="fade-in" class="preview-card">
+                <div class="card shadow setting-card">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="fas fa-info-circle me-2" :style="'color: ' + settings.primary_color"></i>
+                            General Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form @submit.prevent="saveSettings">
+                            <!-- School Information with floating labels -->
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6">
+                                    <div class="floating-label">
+                                        <input type="text" 
+                                               class="form-control input-group-hover rounded-3" 
+                                               id="schoolName"
+                                               x-model="settings.name" 
+                                               placeholder=" "
+                                               required>
+                                        <label for="schoolName" class="text-muted">
+                                            <i class="fas fa-school me-2"></i>School Name
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="floating-label">
+                                        <input type="text" 
+                                               class="form-control input-group-hover rounded-3" 
+                                               id="schoolCode"
+                                               x-model="settings.code" 
+                                               placeholder=" "
+                                               required>
+                                        <label for="schoolCode" class="text-muted">
+                                            <i class="fas fa-barcode me-2"></i>School Code
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6">
+                                    <div class="floating-label">
+                                        <input type="email" 
+                                               class="form-control input-group-hover rounded-3" 
+                                               id="schoolEmail"
+                                               x-model="settings.email" 
+                                               placeholder=" ">
+                                        <label for="schoolEmail" class="text-muted">
+                                            <i class="fas fa-envelope me-2"></i>Email Address
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="floating-label">
+                                        <input type="tel" 
+                                               class="form-control input-group-hover rounded-3" 
+                                               id="schoolPhone"
+                                               x-model="settings.phone" 
+                                               placeholder=" ">
+                                        <label for="schoolPhone" class="text-muted">
+                                            <i class="fas fa-phone me-2"></i>Phone Number
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <div class="floating-label">
+                                    <textarea class="form-control input-group-hover rounded-3" 
+                                              id="schoolAddress"
+                                              rows="3" 
+                                              x-model="settings.address" 
+                                              placeholder=" "></textarea>
+                                    <label for="schoolAddress" class="text-muted">
+                                        <i class="fas fa-map-marker-alt me-2"></i>Address
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Social Media Links -->
+                            <h6 class="fw-bold mb-3">
+                                <i class="fas fa-share-alt me-2" :style="'color: ' + settings.primary_color"></i>
+                                Social Media Links
+                            </h6>
+                            
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6">
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light border-0">
+                                            <i class="fab fa-facebook-f text-primary"></i>
+                                        </span>
+                                        <input type="url" 
+                                               class="form-control input-group-hover" 
+                                               x-model="settings.facebook" 
+                                               placeholder="Facebook URL">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light border-0">
+                                            <i class="fab fa-twitter text-info"></i>
+                                        </span>
+                                        <input type="url" 
+                                               class="form-control input-group-hover" 
+                                               x-model="settings.twitter" 
+                                               placeholder="Twitter URL">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light border-0">
+                                            <i class="fab fa-instagram text-danger"></i>
+                                        </span>
+                                        <input type="url" 
+                                               class="form-control input-group-hover" 
+                                               x-model="settings.instagram" 
+                                               placeholder="Instagram URL">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light border-0">
+                                            <i class="fab fa-linkedin text-primary"></i>
+                                        </span>
+                                        <input type="url" 
+                                               class="form-control input-group-hover" 
+                                               x-model="settings.linkedin" 
+                                               placeholder="LinkedIn URL">
+                                    </div>
+                                </div>
+                            </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Branding Tab -->
+            <div x-show="activeTab === 'branding'" x-cloak x-transition:enter="fade-in" class="preview-card">
+                <div class="card shadow setting-card">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="fas fa-palette me-2" :style="'color: ' + settings.primary_color"></i>
+                            Branding & Appearance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Color Theme -->
+                        <h6 class="fw-bold mb-3">Color Theme</h6>
+                        
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Primary Color</label>
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="color-swatch" 
+                                         :style="'background-color: ' + settings.primary_color"
+                                         @click="showColorPicker('primary')"></div>
+                                    <input type="color" 
+                                           class="form-control form-control-color d-none" 
+                                           id="primaryColorPicker"
+                                           x-model="settings.primary_color">
+                                    <input type="text" 
+                                           class="form-control input-group-hover" 
+                                           x-model="settings.primary_color"
+                                           @focus="showColorPicker('primary')"
+                                           placeholder="#3B82F6">
+                                    <button class="btn btn-outline-secondary" 
+                                            @click="resetColor('primary')"
+                                            type="button">
+                                        <i class="fas fa-undo"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">Main brand color for buttons and headers</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Secondary Color</label>
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="color-swatch" 
+                                         :style="'background-color: ' + settings.secondary_color"
+                                         @click="showColorPicker('secondary')"></div>
+                                    <input type="color" 
+                                           class="form-control form-control-color d-none" 
+                                           id="secondaryColorPicker"
+                                           x-model="settings.secondary_color">
+                                    <input type="text" 
+                                           class="form-control input-group-hover" 
+                                           x-model="settings.secondary_color"
+                                           @focus="showColorPicker('secondary')"
+                                           placeholder="#1E40AF">
+                                    <button class="btn btn-outline-secondary" 
+                                            @click="resetColor('secondary')"
+                                            type="button">
+                                        <i class="fas fa-undo"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">Accent color for highlights and gradients</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Predefined Color Schemes -->
+                        <h6 class="fw-bold mb-3">Quick Color Schemes</h6>
+                        <div class="d-flex gap-2 mb-4 flex-wrap">
+                            <div class="color-swatch" 
+                                 style="background: linear-gradient(135deg, #3B82F6, #1E40AF)"
+                                 @click="applyColorScheme('#3B82F6', '#1E40AF')"
+                                 title="Blue Scheme"></div>
+                            <div class="color-swatch" 
+                                 style="background: linear-gradient(135deg, #10B981, #047857)"
+                                 @click="applyColorScheme('#10B981', '#047857')"
+                                 title="Green Scheme"></div>
+                            <div class="color-swatch" 
+                                 style="background: linear-gradient(135deg, #F59E0B, #B45309)"
+                                 @click="applyColorScheme('#F59E0B', '#B45309')"
+                                 title="Orange Scheme"></div>
+                            <div class="color-swatch" 
+                                 style="background: linear-gradient(135deg, #EF4444, #B91C1C)"
+                                 @click="applyColorScheme('#EF4444', '#B91C1C')"
+                                 title="Red Scheme"></div>
+                            <div class="color-swatch" 
+                                 style="background: linear-gradient(135deg, #8B5CF6, #6D28D9)"
+                                 @click="applyColorScheme('#8B5CF6', '#6D28D9')"
+                                 title="Purple Scheme"></div>
+                            <div class="color-swatch" 
+                                 style="background: linear-gradient(135deg, #EC4899, #BE185D)"
+                                 @click="applyColorScheme('#EC4899', '#BE185D')"
+                                 title="Pink Scheme"></div>
+                        </div>
+                        
+                        <!-- Logo Upload -->
+                        <h6 class="fw-bold mb-3">School Logo</h6>
+                        
+                        <div class="mb-4">
+                            <div class="border-2 border-dashed rounded-3 p-4 text-center bg-light"
+                                 @dragover.prevent="dragOver = true"
+                                 @dragleave.prevent="dragOver = false"
+                                 @drop.prevent="handleDrop($event)"
+                                 :class="{ 'border-primary': dragOver }">
+                                
+                                <div x-show="!logoPreview" class="py-4">
+                                    <i class="fas fa-cloud-upload-alt fa-3x mb-3" 
+                                       :style="'color: ' + settings.primary_color"></i>
+                                    <h6>Drag and drop your logo here</h6>
+                                    <p class="text-muted small">or</p>
+                                    <label class="btn btn-primary ripple" 
+                                           :style="'background-color: ' + settings.primary_color"
+                                           for="logoUpload">
+                                        <i class="fas fa-folder-open me-2"></i>Browse Files
+                                    </label>
+                                    <input type="file" 
+                                           id="logoUpload"
+                                           class="d-none" 
+                                           @change="handleLogoUpload"
+                                           accept="image/*">
+                                    <p class="text-muted small mt-3">
+                                        Supported formats: PNG, JPG, SVG (max 2MB)
+                                    </p>
+                                </div>
+                                
+                                <div x-show="logoPreview" class="position-relative">
+                                    <img :src="logoPreview" 
+                                         class="img-fluid rounded-3" 
+                                         style="max-height: 150px;">
+                                    <button class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2"
+                                            @click="removeLogo"
+                                            type="button">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Favicon Upload -->
+                        <h6 class="fw-bold mb-3">Favicon</h6>
+                        <div class="mb-4">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="border rounded-3 p-3 bg-light">
+                                    <i class="fas fa-globe fa-2x" :style="'color: ' + settings.primary_color"></i>
+                                </div>
+                                <input type="file" 
+                                       class="form-control input-group-hover" 
+                                       accept="image/x-icon,image/png"
+                                       @change="handleFaviconUpload">
+                                <button class="btn btn-outline-secondary" 
+                                        @click="removeFavicon"
+                                        type="button">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Regional Settings Tab -->
+            <div x-show="activeTab === 'regional'" x-cloak x-transition:enter="fade-in" class="preview-card">
+                <div class="card shadow setting-card">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="fas fa-globe me-2" :style="'color: ' + settings.primary_color"></i>
+                            Regional & Localization
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Timezone</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.timezone">
+                                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                                    <option value="America/New_York">Eastern Time (US & Canada)</option>
+                                    <option value="America/Chicago">Central Time (US & Canada)</option>
+                                    <option value="America/Denver">Mountain Time (US & Canada)</option>
+                                    <option value="America/Los_Angeles">Pacific Time (US & Canada)</option>
+                                    <option value="America/Phoenix">Arizona (MST)</option>
+                                    <option value="America/Anchorage">Alaska</option>
+                                    <option value="Pacific/Honolulu">Hawaii</option>
+                                    <option value="Europe/London">London (GMT)</option>
+                                    <option value="Europe/Paris">Paris (CET)</option>
+                                    <option value="Europe/Athens">Athens (EET)</option>
+                                    <option value="Asia/Dubai">Dubai (GST)</option>
+                                    <option value="Asia/Karachi">Pakistan (PKT)</option>
+                                    <option value="Asia/Kolkata">India (IST)</option>
+                                    <option value="Asia/Dhaka">Bangladesh (BST)</option>
+                                    <option value="Asia/Bangkok">Bangkok (ICT)</option>
+                                    <option value="Asia/Singapore">Singapore (SGT)</option>
+                                    <option value="Asia/Shanghai">China (CST)</option>
+                                    <option value="Asia/Tokyo">Japan (JST)</option>
+                                    <option value="Australia/Sydney">Sydney (AEDT)</option>
+                                    <option value="Pacific/Auckland">New Zealand (NZDT)</option>
+                                </select>
+                                <small class="text-muted">
+                                    Current time: <span x-text="getCurrentTime()"></span>
+                                </small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Currency</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.currency">
+                                    <option value="USD">USD - US Dollar ($)</option>
+                                    <option value="EUR">EUR - Euro (€)</option>
+                                    <option value="GBP">GBP - British Pound (£)</option>
+                                    <option value="JPY">JPY - Japanese Yen (¥)</option>
+                                    <option value="CNY">CNY - Chinese Yuan (¥)</option>
+                                    <option value="INR">INR - Indian Rupee (₹)</option>
+                                    <option value="CAD">CAD - Canadian Dollar ($)</option>
+                                    <option value="AUD">AUD - Australian Dollar ($)</option>
+                                    <option value="SGD">SGD - Singapore Dollar ($)</option>
+                                    <option value="CHF">CHF - Swiss Franc (Fr)</option>
+                                    <option value="AED">AED - UAE Dirham (د.إ)</option>
+                                    <option value="SAR">SAR - Saudi Riyal (﷼)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Date Format</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.date_format">
+                                    <option value="MM/DD/YYYY">MM/DD/YYYY (12/31/2024)</option>
+                                    <option value="DD/MM/YYYY">DD/MM/YYYY (31/12/2024)</option>
+                                    <option value="YYYY-MM-DD">YYYY-MM-DD (2024-12-31)</option>
+                                    <option value="MMMM D, YYYY">Month D, YYYY (December 31, 2024)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Time Format</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.time_format">
+                                    <option value="12h">12-hour (12:59 PM)</option>
+                                    <option value="24h">24-hour (13:59)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">First Day of Week</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.week_start">
+                                    <option value="monday">Monday</option>
+                                    <option value="sunday">Sunday</option>
+                                    <option value="saturday">Saturday</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Language</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.language">
+                                    <option value="en">English</option>
+                                    <option value="es">Español</option>
+                                    <option value="fr">Français</option>
+                                    <option value="de">Deutsch</option>
+                                    <option value="zh">中文</option>
+                                    <option value="ar">العربية</option>
+                                    <option value="hi">हिन्दी</option>
+                                    <option value="ur">اردو</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Academic Calendar Settings -->
+                        <h6 class="fw-bold mb-3">Academic Calendar</h6>
+                        
+                        <div class="row g-4">
+                            <div class="col-md-4">
+                                <label class="form-label">Academic Year Start</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.academic_start">
+                                    <option value="january">January</option>
+                                    <option value="february">February</option>
+                                    <option value="march">March</option>
+                                    <option value="april">April</option>
+                                    <option value="may">May</option>
+                                    <option value="june">June</option>
+                                    <option value="july">July</option>
+                                    <option value="august">August</option>
+                                    <option value="september">September</option>
+                                    <option value="october">October</option>
+                                    <option value="november">November</option>
+                                    <option value="december">December</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Term System</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.term_system">
+                                    <option value="semester">Semester (2 terms)</option>
+                                    <option value="trimester">Trimester (3 terms)</option>
+                                    <option value="quarter">Quarter (4 terms)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Grading Scale</label>
+                                <select class="form-select input-group-hover rounded-3" 
+                                        x-model="settings.grading_scale">
+                                    <option value="a-f">A-F (A, B, C, D, F)</option>
+                                    <option value="percentage">Percentage (0-100%)</option>
+                                    <option value="gpa-4.0">GPA 4.0 Scale</option>
+                                    <option value="gpa-5.0">GPA 5.0 Scale</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Advanced Settings Tab -->
+            <div x-show="activeTab === 'advanced'" x-cloak x-transition:enter="fade-in" class="preview-card">
+                <div class="card shadow setting-card">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="fas fa-code-branch me-2" :style="'color: ' + settings.primary_color"></i>
+                            Advanced Configuration
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- API Settings -->
+                        <h6 class="fw-bold mb-3">API Configuration</h6>
+                        
+                        <div class="mb-4">
+                            <label class="form-label">API Endpoint</label>
+                            <input type="url" 
+                                   class="form-control input-group-hover rounded-3 mb-2" 
+                                   x-model="settings.api_endpoint"
+                                   placeholder="https://api.yourschool.com/v1">
+                            <small class="text-muted">Base URL for API requests</small>
+                        </div>
+                        
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">API Key</label>
+                                <div class="input-group">
+                                    <input :type="showApiKey ? 'text' : 'password'" 
+                                           class="form-control input-group-hover" 
+                                           x-model="settings.api_key"
+                                           placeholder="Enter API key">
+                                    <button class="btn btn-outline-secondary" 
+                                            @click="showApiKey = !showApiKey"
+                                            type="button">
+                                        <i class="fas" :class="showApiKey ? 'fa-eye-slash' : 'fa-eye'"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">API Secret</label>
+                                <div class="input-group">
+                                    <input :type="showApiSecret ? 'text' : 'password'" 
+                                           class="form-control input-group-hover" 
+                                           x-model="settings.api_secret"
+                                           placeholder="Enter API secret">
+                                    <button class="btn btn-outline-secondary" 
+                                            @click="showApiSecret = !showApiSecret"
+                                            type="button">
+                                        <i class="fas" :class="showApiSecret ? 'fa-eye-slash' : 'fa-eye'"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Security Settings -->
+                        <h6 class="fw-bold mb-3">Security Settings</h6>
+                        
+                        <div class="mb-4">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       id="twoFactorAuth"
+                                       x-model="settings.two_factor_auth">
+                                <label class="form-check-label" for="twoFactorAuth">
+                                    Enable Two-Factor Authentication
+                                </label>
+                                <small class="text-muted d-block">
+                                    Require 2FA for admin accounts
+                                </small>
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       id="ipWhitelisting"
+                                       x-model="settings.ip_whitelisting">
+                                <label class="form-check-label" for="ipWhitelisting">
+                                    Enable IP Whitelisting
+                                </label>
+                                <small class="text-muted d-block">
+                                    Restrict access to specific IP addresses
+                                </small>
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       id="sessionTimeout"
+                                       x-model="settings.session_timeout">
+                                <label class="form-check-label" for="sessionTimeout">
+                                    Auto Session Timeout
+                                </label>
+                                <small class="text-muted d-block">
+                                    Automatically log out inactive users
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Data Management -->
+                        <h6 class="fw-bold mb-3">Data Management</h6>
+                        
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <button class="btn btn-outline-primary w-100 py-3"
+                                        @click="exportData"
+                                        :style="'border-color: ' + settings.primary_color + '; color: ' + settings.primary_color">
+                                    <i class="fas fa-download me-2"></i>
+                                    Export All Data
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-outline-danger w-100 py-3"
+                                        @click="confirmDataReset">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Reset School Data
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Danger Zone -->
+                        <div class="mt-4 p-3 border border-danger rounded-3">
+                            <h6 class="text-danger fw-bold mb-3">
+                                <i class="fas fa-exclamation-circle me-2"></i>
+                                Danger Zone
+                            </h6>
+                            <button class="btn btn-outline-danger"
+                                    @click="deleteSchool"
+                                    :disabled="!deleteConfirmation">
+                                <i class="fas fa-trash me-2"></i>
+                                Delete School
+                            </button>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       id="deleteConfirm"
+                                       x-model="deleteConfirmation">
+                                <label class="form-check-label text-danger" for="deleteConfirm">
+                                    I understand this action cannot be undone
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Save Button -->
+            <div class="mt-4 d-flex justify-content-end gap-2">
+                <button class="btn btn-secondary btn-lg px-5 rounded-pill"
+                        @click="discardChanges">
+                    <i class="fas fa-times me-2"></i>
+                    Cancel
+                </button>
+                <button class="btn btn-primary btn-lg px-5 rounded-pill ripple"
+                        :style="'background-color: ' + settings.primary_color + '; border-color: ' + settings.primary_color"
+                        @click="saveSettings"
+                        :disabled="isLoading || !hasChanges">
+                    <span x-show="!isLoading">
+                        <i class="fas fa-save me-2"></i>
+                        Save Changes
+                    </span>
+                    <span x-show="isLoading">
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        Saving...
+                    </span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Enhanced Preview Card -->
+        <div class="col-md-4">
+            <div class="card shadow-lg border-0 sticky-top preview-card" style="top: 20px;">
+                <div class="card-header bg-white py-3 border-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-eye me-2" :style="'color: ' + settings.primary_color"></i>
+                        Live Preview
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <!-- School Profile Card -->
+                    <div class="text-center mb-4">
+                        <div class="position-relative d-inline-block">
+                            <div class="rounded-circle overflow-hidden shadow-lg mb-3" 
+                                 style="width: 100px; height: 100px;"
+                                 :style="'border: 3px solid ' + settings.primary_color">
+                                <div x-show="!logoPreview" 
+                                     class="w-100 h-100 d-flex align-items-center justify-content-center bg-light">
+                                    <i class="fas fa-school fa-3x" 
+                                       :style="'color: ' + settings.primary_color"></i>
+                                </div>
+                                <img x-show="logoPreview" 
+                                     :src="logoPreview" 
+                                     class="w-100 h-100 object-fit-cover">
+                            </div>
+                            <div class="position-absolute bottom-0 end-0"
+                                 :style="'background-color: ' + settings.secondary_color"
+                                 style="width: 25px; height: 25px; border-radius: 50%; border: 2px solid white;">
+                            </div>
+                        </div>
+                        
+                        <h3 class="fw-bold mb-1" 
+                            :style="'color: ' + settings.primary_color"
+                            x-text="settings.name || 'Your School Name'"></h3>
+                        <p class="text-muted small" x-text="settings.code || 'SCHOOL001'"></p>
+                        
+                        <div class="d-flex justify-content-center gap-2 mt-3">
+                            <span class="badge bg-light text-dark px-3 py-2 rounded-pill">
+                                <i class="fas fa-users me-1" :style="'color: ' + settings.primary_color"></i>
+                                1,234 Students
+                            </span>
+                            <span class="badge bg-light text-dark px-3 py-2 rounded-pill">
+                                <i class="fas fa-chalkboard-teacher me-1" :style="'color: ' + settings.primary_color"></i>
+                                87 Teachers
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- UI Elements Preview -->
+                    <div class="border-top pt-4">
+                        <h6 class="fw-bold mb-3">UI Elements Preview</h6>
+                        
+                        <!-- Buttons -->
+                        <div class="d-flex gap-2 mb-3 flex-wrap">
+                            <button class="btn" 
+                                    :style="'background-color: ' + settings.primary_color + '; color: white; border: none'">
+                                Primary
+                            </button>
+                            <button class="btn" 
+                                    :style="'background-color: ' + settings.secondary_color + '; color: white; border: none'">
+                                Secondary
+                            </button>
+                            <button class="btn btn-outline-secondary">Outline</button>
+                        </div>
+                        
+                        <!-- Badges -->
+                        <div class="mb-3">
+                            <span class="badge me-2 px-3 py-2" 
+                                  :style="'background-color: ' + settings.primary_color">
+                                New
+                            </span>
+                            <span class="badge me-2 px-3 py-2" 
+                                  :style="'background-color: ' + settings.secondary_color">
+                                Featured
+                            </span>
+                            <span class="badge bg-success px-3 py-2">Success</span>
+                        </div>
+                        
+                        <!-- Progress Bar -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>Completion</span>
+                                <span>75%</span>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" 
+                                     role="progressbar" 
+                                     style="width: 75%;"
+                                     :style="'background-color: ' + settings.primary_color">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Card Preview -->
+                        <div class="card border-0 shadow-sm mb-4">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center mb-3">
+                                    <div class="flex-shrink-0">
+                                        <div class="rounded-circle p-3" 
+                                             :style="'background-color: ' + settings.primary_color + '20'">
+                                            <i class="fas fa-graduation-cap" 
+                                               :style="'color: ' + settings.primary_color"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1 ms-3">
+                                        <h6 class="mb-0">Academic Year 2024</h6>
+                                        <p class="text-muted small mb-0">Spring Semester</p>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted small">Progress</span>
+                                    <span class="fw-bold" :style="'color: ' + settings.primary_color">65%</span>
+                                </div>
+                                <div class="progress mt-2" style="height: 4px;">
+                                    <div class="progress-bar" 
+                                         style="width: 65%;"
+                                         :style="'background-color: ' + settings.primary_color">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Alert Preview -->
+                        <div class="alert d-flex align-items-center" 
+                             :style="'background-color: ' + settings.primary_color + '10; border-left: 4px solid ' + settings.primary_color">
+                            <i class="fas fa-info-circle me-2" 
+                               :style="'color: ' + settings.primary_color"></i>
+                            <div>
+                                <strong>Preview Mode:</strong> This is how alerts will look
+                            </div>
+                        </div>
+                        
+                        <!-- Time Preview -->
+                        <div class="mt-4 p-3 bg-light rounded-3">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <small class="text-muted d-block">Current Time ({{ settings.timezone }})</small>
+                                    <strong x-text="getCurrentTime()"></strong>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-muted d-block">Date Format</small>
+                                    <strong x-text="getFormattedDate()"></strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Reset to Defaults -->
+                    <div class="mt-4 pt-3 border-top">
+                        <button class="btn btn-link text-muted p-0" 
+                                @click="resetToDefaults">
+                            <i class="fas fa-undo-alt me-1"></i>
+                            Reset all settings to defaults
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Success Toast -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div id="successToast" class="toast align-items-center text-white border-0"
+             :style="'background-color: ' + settings.primary_color"
+             role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <span x-text="toastMessage"></span>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function schoolSettings() {
+        return {
+            // Tab management
+            activeTab: 'general',
+            
+            // Settings object
+            settings: {
+                name: '{{ school.name|default:"" }}',
+                code: '{{ school.code|default:"" }}',
+                email: '{{ school.email|default:"" }}',
+                phone: '{{ school.phone|default:"" }}',
+                address: '{{ school.address|default:"" }}',
+                primary_color: '{{ school.primary_color|default:"#3B82F6" }}',
+                secondary_color: '{{ school.secondary_color|default:"#1E40AF" }}',
+                timezone: '{{ school.timezone|default:"UTC" }}',
+                currency: '{{ school.currency|default:"NGN" }}',
+                date_format: '{{ school.date_format|default:"MM/DD/YYYY" }}',
+                time_format: '{{ school.time_format|default:"12h" }}',
+                week_start: '{{ school.week_start|default:"monday" }}',
+                language: '{{ school.language|default:"en" }}',
+                academic_start: '{{ school.academic_start|default:"september" }}',
+                term_system: '{{ school.term_system|default:"semester" }}',
+                grading_scale: '{{ school.grading_scale|default:"a-f" }}',
+                facebook: '{{ school.facebook|default:"" }}',
+                twitter: '{{ school.twitter|default:"" }}',
+                instagram: '{{ school.instagram|default:"" }}',
+                linkedin: '{{ school.linkedin|default:"" }}',
+                api_endpoint: '{{ school.api_endpoint|default:"" }}',
+                api_key: '{{ school.api_key|default:"" }}',
+                api_secret: '{{ school.api_secret|default:"" }}',
+                two_factor_auth: {{ school.two_factor_auth|default:"false"|lower }},
+                ip_whitelisting: {{ school.ip_whitelisting|default:"false"|lower }},
+                session_timeout: {{ school.session_timeout|default:"false"|lower }}
+            },
+            
+            // UI state
+            isLoading: false,
+            logoPreview: '{{ school.logo.url|default:"" }}',
+            dragOver: false,
+            showApiKey: false,
+            showApiSecret: false,
+            deleteConfirmation: false,
+            hasChanges: false,
+            toastMessage: 'Settings saved successfully!',
+            
+            // Original settings for change detection
+            originalSettings: {},
+            
+            init() {
+                // Store original settings
+                this.originalSettings = JSON.parse(JSON.stringify(this.settings));
+                
+                // Watch for changes
+                this.$watch('settings', () => {
+                    this.hasChanges = JSON.stringify(this.settings) !== JSON.stringify(this.originalSettings);
+                }, { deep: true });
+                
+                // Initialize tooltips
+                if (typeof bootstrap !== 'undefined') {
+                    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                    tooltipTriggerList.map(function (tooltipTriggerEl) {
+                        return new bootstrap.Tooltip(tooltipTriggerEl);
+                    });
+                }
+            },
+            
+            // Color management
+            showColorPicker(type) {
+                document.getElementById(type + 'ColorPicker').click();
+            },
+            
+            resetColor(type) {
+                if (type === 'primary') {
+                    this.settings.primary_color = '#3B82F6';
+                } else {
+                    this.settings.secondary_color = '#1E40AF';
+                }
+            },
+            
+            applyColorScheme(primary, secondary) {
+                this.settings.primary_color = primary;
+                this.settings.secondary_color = secondary;
+            },
+            
+            // Logo handling
+            handleLogoUpload(event) {
+                const file = event.target.files[0];
+                if (file && file.size <= 2 * 1024 * 1024) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.logoPreview = e.target.result;
+                        this.hasChanges = true;
+                        this.showToast('Logo uploaded successfully!');
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    alert('File size must be less than 2MB');
+                }
+            },
+            
+            handleDrop(event) {
+                this.dragOver = false;
+                const file = event.dataTransfer.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    const fakeEvent = { target: { files: [file] } };
+                    this.handleLogoUpload(fakeEvent);
+                }
+            },
+            
+            removeLogo() {
+                this.logoPreview = '';
+                this.hasChanges = true;
+            },
+            
+            handleFaviconUpload(event) {
+                // Handle favicon upload
+                this.showToast('Favicon uploaded successfully!');
+            },
+            
+            removeFavicon() {
+                // Remove favicon
+                this.showToast('Favicon removed');
+            },
+            
+            // Time and date utilities
+            getCurrentTime() {
+                const now = new Date();
+                return now.toLocaleTimeString('en-US', {
+                    timeZone: this.settings.timezone,
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            },
+            
+            getFormattedDate() {
+                const now = new Date();
+                const options = {
+                    timeZone: this.settings.timezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                };
+                
+                switch(this.settings.date_format) {
+                    case 'MM/DD/YYYY':
+                        return now.toLocaleDateString('en-US', options);
+                    case 'DD/MM/YYYY':
+                        return now.toLocaleDateString('en-GB', options);
+                    case 'YYYY-MM-DD':
+                        return now.toISOString().split('T')[0];
+                    case 'MMMM D, YYYY':
+                        return now.toLocaleDateString('en-US', {
+                            timeZone: this.settings.timezone,
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        });
+                    default:
+                        return now.toLocaleDateString('en-US', options);
+                }
+            },
+            
+            // Save settings
+            async saveSettings() {
+                this.isLoading = true;
+                
+                // Simulate API call
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                this.isLoading = false;
+                this.originalSettings = JSON.parse(JSON.stringify(this.settings));
+                this.hasChanges = false;
+                
+                this.showToast('Settings saved successfully!');
+                
+                // Update theme color meta tag
+                document.querySelector('meta[name="theme-color"][media="(prefers-color-scheme: light)"]')
+                    ?.setAttribute('content', this.settings.primary_color);
+                document.querySelector('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]')
+                    ?.setAttribute('content', this.settings.secondary_color);
+            },
+            
+            discardChanges() {
+                this.settings = JSON.parse(JSON.stringify(this.originalSettings));
+                this.hasChanges = false;
+                this.showToast('Changes discarded');
+            },
+            
+            resetToDefaults() {
+                if (confirm('Reset all settings to default values?')) {
+                    this.settings = {
+                        name: '',
+                        code: '',
+                        email: '',
+                        phone: '',
+                        address: '',
+                        primary_color: '#3B82F6',
+                        secondary_color: '#1E40AF',
+                        timezone: 'UTC',
+                        currency: 'USD',
+                        date_format: 'MM/DD/YYYY',
+                        time_format: '12h',
+                        week_start: 'monday',
+                        language: 'en',
+                        academic_start: 'september',
+                        term_system: 'semester',
+                        grading_scale: 'a-f',
+                        facebook: '',
+                        twitter: '',
+                        instagram: '',
+                        linkedin: '',
+                        api_endpoint: '',
+                        api_key: '',
+                        api_secret: '',
+                        two_factor_auth: false,
+                        ip_whitelisting: false,
+                        session_timeout: false
+                    };
+                    this.logoPreview = '';
+                    this.hasChanges = true;
+                    this.showToast('Settings reset to defaults');
+                }
+            },
+            
+            exportData() {
+                const dataStr = JSON.stringify(this.settings, null, 2);
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const exportFileDefaultName = `school-settings-${new Date().toISOString().split('T')[0]}.json`;
+                
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+                
+                this.showToast('Settings exported successfully!');
+            },
+            
+            confirmDataReset() {
+                if (confirm('Are you sure you want to reset all school data? This action cannot be undone.')) {
+                    this.showToast('Data reset initiated', 'warning');
+                }
+            },
+            
+            deleteSchool() {
+                if (this.deleteConfirmation) {
+                    if (confirm('This will permanently delete the school. Are you absolutely sure?')) {
+                        this.showToast('School deletion initiated', 'danger');
+                    }
+                } else {
+                    alert('Please confirm that you understand this action');
+                }
+            },
+            
+            showToast(message, type = 'success') {
+                this.toastMessage = message;
+                
+                if (typeof bootstrap !== 'undefined') {
+                    const toastEl = document.getElementById('successToast');
+                    const toast = new bootstrap.Toast(toastEl);
+                    toast.show();
+                } else {
+                    alert(message);
+                }
+            }
+        }
+    }
+</script>
+
+<!-- Additional CSS for animations -->
+<style>
+    [x-cloak] { display: none !important; }
+    
+    .fade-in {
+        animation: fadeIn 0.3s ease-in;
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .border-dashed {
+        border: 2px dashed #dee2e6;
+    }
+    
+    .border-primary {
+        border-color: var(--primary-color) !important;
+    }
+    
+    .object-fit-cover {
+        object-fit: cover;
+    }
+    
+    .sticky-top {
+        position: sticky;
+        top: 20px;
+        z-index: 1020;
+    }
+    
+    /* Floating labels */
+    .floating-label {
+        position: relative;
+    }
+    
+    .floating-label input,
+    .floating-label textarea {
+        height: 58px;
+        padding-top: 1.5rem;
+    }
+    
+    .floating-label textarea {
+        height: auto;
+        min-height: 100px;
+    }
+    
+    .floating-label label {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        padding: 1rem 1rem 1rem 2.8rem;
+        pointer-events: none;
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        color: #6c757d;
+        font-size: 1rem;
+    }
+    
+    .floating-label input:focus ~ label,
+    .floating-label input:not(:placeholder-shown) ~ label,
+    .floating-label textarea:focus ~ label,
+    .floating-label textarea:not(:placeholder-shown) ~ label {
+        transform: translateY(-12px) scale(0.8);
+        padding-left: 1.5rem;
+        color: var(--primary-color);
+    }
+    
+    .floating-label input:focus ~ label i,
+    .floating-label input:not(:placeholder-shown) ~ label i,
+    .floating-label textarea:focus ~ label i,
+    .floating-label textarea:not(:placeholder-shown) ~ label i {
+        opacity: 0;
+    }
+    
+    /* Gradient backgrounds */
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    }
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: var(--primary-color);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--secondary-color);
+    }
+</style>
+{% endblock %}

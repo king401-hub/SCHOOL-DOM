@@ -1,0 +1,394 @@
+<!-- templates/auth/base_auth.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    
+    <title>{% block auth_title %}SchoolDom{% endblock %}</title>
+    <link rel="icon" type="image/jpeg" href="{% static 'img/schooldom-favicon.jpeg' %}">
+    <link rel="shortcut icon" href="{% static 'img/schooldom-favicon.jpeg' %}">
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Secure login to SchoolDom - Access exams, results, and school resources">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Theme Color -->
+    <meta name="theme-color" content="{{ school.primary_color|default:'#3B82F6' }}" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="{{ school.secondary_color|default:'#1E40AF' }}" media="(prefers-color-scheme: dark)">
+    
+    <!-- Viewport for responsive design -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    
+    <!-- PWA Support -->
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SchoolDom">
+    <link rel="apple-touch-icon" href="{% static 'img/schooldom-favicon.jpeg' %}">
+    
+    <!-- Preconnect to external resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, {{ school.primary_color|default:'#667eea' }} 0%, {{ school.secondary_color|default:'#764ba2' }} 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        /* Animated background shapes */
+        .bg-shape {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        
+        .shape-1 {
+            width: 300px;
+            height: 300px;
+            top: -150px;
+            left: -150px;
+        }
+        
+        .shape-2 {
+            width: 200px;
+            height: 200px;
+            bottom: -100px;
+            right: -100px;
+        }
+        
+        .shape-3 {
+            width: 150px;
+            height: 150px;
+            bottom: 50%;
+            left: 10%;
+        }
+        
+        @keyframes float {
+            0% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(5deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+        
+        .floating {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Form transitions */
+        .form-container {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            transition: all 0.3s ease;
+        }
+        
+        .form-container:hover {
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Input focus effects */
+        .input-group {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+            background: white;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: {{ school.primary_color|default:'#3B82F6' }};
+            box-shadow: 0 0 0 3px {{ school.primary_color|default:'#3B82F6' }}20;
+        }
+        
+        .input-group i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            transition: color 0.2s;
+        }
+        
+        .input-group input:focus + i {
+            color: {{ school.primary_color|default:'#3B82F6' }};
+        }
+        
+        /* Button styles */
+        .btn-primary {
+            background: {{ school.primary_color|default:'#3B82F6' }};
+            color: white;
+            padding: 0.875rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-primary:hover {
+            background: {{ school.secondary_color|default:'#1E40AF' }};
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            color: {{ school.primary_color|default:'#3B82F6' }};
+            padding: 0.875rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border: 2px solid {{ school.primary_color|default:'#3B82F6' }};
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        
+        .btn-outline:hover {
+            background: {{ school.primary_color|default:'#3B82F6' }}10;
+        }
+        
+        /* App download banner */
+        .app-banner {
+            background: linear-gradient(135deg, {{ school.primary_color|default:'#3B82F6' }} 0%, {{ school.secondary_color|default:'#1E40AF' }} 100%);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .app-banner::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: rotate 20s linear infinite;
+        }
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                padding: 0.5rem;
+                align-items: flex-start;
+            }
+            
+            .form-container {
+                margin-top: 1rem;
+            }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            .form-container {
+                background: rgba(17, 24, 39, 0.95);
+                color: white;
+            }
+            
+            .input-group input {
+                background: #1f2937;
+                border-color: #374151;
+                color: white;
+            }
+            
+            .input-group input::placeholder {
+                color: #6b7280;
+            }
+            
+            .text-gray-600 {
+                color: #9ca3af;
+            }
+            
+            .text-gray-900 {
+                color: white;
+            }
+        }
+    </style>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Animated Background Shapes -->
+    <div class="bg-shape shape-1 floating"></div>
+    <div class="bg-shape shape-2 floating" style="animation-delay: -2s;"></div>
+    <div class="bg-shape shape-3 floating" style="animation-delay: -4s;"></div>
+    
+    <!-- Main Container -->
+    <div class="w-full max-w-6xl mx-auto relative z-10">
+        <div class="grid lg:grid-cols-2 gap-8 items-center">
+            <!-- Left Column - Branding & App Download -->
+            <div class="text-white hidden lg:block">
+                <div class="mb-8 floating">
+                    {% if school.logo %}
+                        <img src="{{ school.logo.url }}" alt="{{ school.name }}" class="h-20 w-auto mb-6">
+                    {% else %}
+                        <div class="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mb-6">
+                            <i class="fas fa-school text-4xl" style="color: {{ school.primary_color|default:'#3B82F6' }}"></i>
+                        </div>
+                    {% endif %}
+                    
+                    <h1 class="text-4xl font-bold mb-4">{{ school.name|default:'SchoolDom' }}</h1>
+                    <p class="text-xl opacity-90 mb-8">Access your education anywhere, anytime with our mobile app</p>
+                    
+                    <!-- App Download Section -->
+                    <div class="bg-white/10 backdrop-blur rounded-2xl p-6">
+                        <h2 class="text-2xl font-semibold mb-4">Download Our App</h2>
+                        <p class="mb-6 opacity-90">Get the best experience with our native mobile app</p>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- iOS App -->
+                            <a href="#" class="bg-black/30 hover:bg-black/40 backdrop-blur rounded-xl p-4 text-center transition-all transform hover:scale-105">
+                                <i class="fab fa-apple text-3xl mb-2"></i>
+                                <div class="text-sm font-medium">App Store</div>
+                                <div class="text-xs opacity-75">iPhone • iPad</div>
+                            </a>
+                            
+                            <!-- Android App -->
+                            <a href="#" class="bg-black/30 hover:bg-black/40 backdrop-blur rounded-xl p-4 text-center transition-all transform hover:scale-105">
+                                <i class="fab fa-android text-3xl mb-2"></i>
+                                <div class="text-sm font-medium">Google Play</div>
+                                <div class="text-xs opacity-75">Android</div>
+                            </a>
+                            
+                            <!-- APK Download -->
+                            <a href="#" class="bg-black/30 hover:bg-black/40 backdrop-blur rounded-xl p-4 text-center transition-all transform hover:scale-105 col-span-2">
+                                <i class="fas fa-download text-2xl mb-1"></i>
+                                <div class="text-sm font-medium">Download APK</div>
+                                <div class="text-xs opacity-75">Direct Install • v2.1.0</div>
+                            </a>
+                        </div>
+                        
+                        <!-- QR Code for mobile download -->
+                        <div class="mt-6 text-center">
+                            <p class="text-sm mb-2">Scan to download</p>
+                            <div class="inline-block bg-white p-2 rounded-lg">
+                                <img src="{% static 'img/qr-download.png' %}" alt="Download QR Code" class="w-24 h-24">
+                            </div>
+                        </div>
+                        
+                        <!-- App Features -->
+                        <div class="grid grid-cols-3 gap-2 mt-6 text-center">
+                            <div>
+                                <i class="fas fa-wifi-slash text-xl mb-1"></i>
+                                <div class="text-xs">Offline Exams</div>
+                            </div>
+                            <div>
+                                <i class="fas fa-bell text-xl mb-1"></i>
+                                <div class="text-xs">Push Notifications</div>
+                            </div>
+                            <div>
+                                <i class="fas fa-cloud-upload-alt text-xl mb-1"></i>
+                                <div class="text-xs">Auto-sync</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column - Auth Form -->
+            <div class="w-full">
+                {% block auth_content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- CSRF Token for HTMX -->
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    
+    <script>
+        // Global configuration
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('auth', {
+                schoolName: '{{ school.name|default:'SchoolDom' }}',
+                primaryColor: '{{ school.primary_color|default:'#3B82F6' }}',
+                secondaryColor: '{{ school.secondary_color|default:'#1E40AF' }}'
+            });
+        });
+        
+        // HTMX CSRF configuration
+        document.body.addEventListener('htmx:configRequest', (event) => {
+            event.detail.headers['X-CSRFToken'] = document.querySelector('meta[name="csrf-token"]')?.content;
+        });
+        
+        // Check if app is installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            document.body.classList.add('app-mode');
+        }
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

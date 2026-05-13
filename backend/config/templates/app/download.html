@@ -1,0 +1,136 @@
+<!-- templates/app/download.html -->
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Download App - SchoolDom{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-primary to-primary-dark py-12"
+     x-data="appDownload()"
+     x-init="init()">
+    
+    <div class="container mx-auto px-4">
+        <!-- Header -->
+        <div class="text-center text-white mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold mb-4">Take Learning Anywhere</h1>
+            <p class="text-xl opacity-90 max-w-2xl mx-auto">
+                Download our mobile app and access exams, results, and learning materials offline
+            </p>
+        </div>
+        
+        <!-- Main Download Cards -->
+        <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-12">
+            <!-- iOS App -->
+            <div class="bg-white rounded-2xl shadow-2xl p-8 text-center transform hover:scale-105 transition-transform">
+                <div class="w-24 h-24 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <i class="fab fa-apple text-5xl text-white"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">iOS App</h2>
+                <p class="text-gray-600 mb-6">For iPhone and iPad</p>
+                <div class="space-y-3">
+                    <a href="#" class="block bg-gray-900 text-white py-3 px-6 rounded-lg hover:bg-gray-800 transition-colors">
+                        <i class="fab fa-apple mr-2"></i>
+                        Download from App Store
+                    </a>
+                    <p class="text-sm text-gray-500">Version 2.1.0 • iOS 14.0+</p>
+                </div>
+            </div>
+            
+            <!-- Android App -->
+            <div class="bg-white rounded-2xl shadow-2xl p-8 text-center transform hover:scale-105 transition-transform">
+                <div class="w-24 h-24 bg-gradient-to-br from-green-600 to-green-700 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                    <i class="fab fa-android text-5xl text-white"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">Android App</h2>
+                <p class="text-gray-600 mb-6">For phones and tablets</p>
+                <div class="space-y-3">
+                    <a href="#" class="block bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition-colors">
+                        <i class="fab fa-google-play mr-2"></i>
+                        Download from Google Play
+                    </a>
+                    <a href="#" class="block border-2 border-green-600 text-green-600 py-3 px-6 rounded-lg hover:bg-green-50 transition-colors">
+                        <i class="fas fa-download mr-2"></i>
+                        Download APK (Direct)
+                    </a>
+                    <p class="text-sm text-gray-500">Version 2.1.0 • Android 8.0+</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Features Grid -->
+        <div class="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto text-white">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-wifi-slash text-2xl"></i>
+                </div>
+                <h3 class="font-semibold mb-2">Offline Exams</h3>
+                <p class="text-sm opacity-80">Download exams and take them without internet</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-cloud-upload-alt text-2xl"></i>
+                </div>
+                <h3 class="font-semibold mb-2">Auto-Sync</h3>
+                <p class="text-sm opacity-80">Results sync automatically when online</p>
+            </div>
+            
+            <div class="text-center">
+                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-bell text-2xl"></i>
+                </div>
+                <h3 class="font-semibold mb-2">Push Notifications</h3>
+                <p class="text-sm opacity-80">Get instant alerts for exams and results</p>
+            </div>
+        </div>
+        
+        <!-- QR Code Section -->
+        <div class="mt-12 text-center">
+            <div class="inline-block bg-white p-4 rounded-2xl">
+                <img src="{% static 'img/qr-download.png' %}" alt="Download QR" class="w-48 h-48">
+            </div>
+            <p class="text-white mt-4">Scan with your phone to download</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    function appDownload() {
+        return {
+            init() {
+                // Detect device and suggest appropriate download
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const isAndroid = /Android/.test(navigator.userAgent);
+                
+                if (isIOS) {
+                    this.showIOSPrompt();
+                } else if (isAndroid) {
+                    this.showAndroidPrompt();
+                }
+            },
+            
+            showIOSPrompt() {
+                // Show iOS-specific prompt
+                if (!window.matchMedia('(display-mode: standalone)').matches) {
+                    setTimeout(() => {
+                        if (confirm('Open in App Store to download the iOS app?')) {
+                            window.location.href = 'https://apps.apple.com/app/id123456789';
+                        }
+                    }, 2000);
+                }
+            },
+            
+            showAndroidPrompt() {
+                // Show Android-specific prompt
+                if (!window.matchMedia('(display-mode: standalone)').matches) {
+                    setTimeout(() => {
+                        if (confirm('Download the Android app from Google Play?')) {
+                            window.location.href = 'https://play.google.com/store/apps/details?id=com.virtualschool';
+                        }
+                    }, 2000);
+                }
+            }
+        };
+    }
+</script>
+{% endblock %}

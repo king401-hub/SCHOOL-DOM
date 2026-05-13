@@ -1,0 +1,684 @@
+from django.shortcuts import get_object_or_404
+from django.conf import settings
+from django.core.mail import send_mail
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.db import transaction
+from django.db.models import Q
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from datetime import datetime, timedelta
+
+from notifications.models import Notification
+from users.models import StudentEnrollment, User, resolve_legacy_tenant_for_school
+from .models import Exam, ExamAttempt, Question, StudentAnswer
+from .serializers import (
+    ExamSerializer,
+    ExamAttemptSerializer,
+    ExamAttemptDetailSerializer,
+    QuestionSerializer,
+    StudentAnswerSerializer,
+    ExamResultSerializer,
+)
+
+
+def _question_queryset_for_exam(exam):
+    direct = exam.questions.all()
+    if direct.exists():
+        return direct.distinct()
+    try:
+        return Question.objects.filter(question_banks__exam=exam).distinct()
+    except Exception:
+        return Question.objects.none()
+
+
+def _normalize_selected_answer(value):
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
+def _grade_attempt(attempt):
+    questions = list(_question_queryset_for_exam(attempt.exam))
+    question_map = {question.id: question for question in questions}
+    answers = {answer.question_id: answer for answer in StudentAnswer.objects.filter(attempt=attempt, question_id__in=question_map)}
+    total_points = sum(question.points for question in questions)
+    score = 0
+
+    for question in questions:
+        answer = answers.get(question.id)
+        selected = _normalize_selected_answer(answer.selected_options if answer else None)
+        correct_index = None
+        options = question.options or []
+        if question.correct_answer in options:
+            correct_index = options.index(question.correct_answer)
+        try:
+            is_correct = int(selected) == int(correct_index)
+        except (TypeError, ValueError):
+            is_correct = False
+        if answer:
+            answer.is_correct = is_correct
+            answer.score = question.points if is_correct else 0
+            answer.save(update_fields=["is_correct", "score", "updated_at"])
+        if is_correct:
+            score += question.points
+
+    attempt.score = score
+    attempt.total_points = total_points
+    attempt.percentage = (score / total_points * 100) if total_points else 0
+    attempt.graded_at = timezone.now()
+    attempt.save(update_fields=["score", "total_points", "percentage", "graded_at", "updated_at"])
+    return score, total_points
+
+
+def _format_question_options(options):
+    if not options:
+        return "No options provided."
+    labels = ["A", "B", "C", "D", "E"]
+    lines = []
+    for index, option in enumerate(options):
+        label = labels[index] if index < len(labels) else str(index + 1)
+        lines.append(f"{label}. {option}")
+    return "\n".join(lines)
+
+
+def _admin_users_for_school(school):
+    queryset = User.objects.filter(
+        role__in=["school_admin", "principal", "super_admin"],
+        email__isnull=False,
+    ).exclude(email="")
+    if school:
+        queryset = queryset.filter(tenant=school)
+    return queryset
+
+
+def _resolve_flag_report_recipients(school):
+    configured_email = str(getattr(settings, "INAPPROPRIATE_QUESTION_REPORT_EMAIL", "") or "").strip()
+    recipients = [configured_email] if configured_email else []
+    recipients.extend(_admin_users_for_school(school).values_list("email", flat=True)[:10])
+    return list(dict.fromkeys(recipients))
+
+
+def _create_flag_notifications(*, school, admin_users, teacher, title, message):
+    if not school:
+        return
+    recipients = list(admin_users)
+    if teacher:
+        recipients.append(teacher)
+    seen = set()
+    notifications = []
+    for user in recipients:
+        if not user or user.id in seen:
+            continue
+        seen.add(user.id)
+        notifications.append(
+            Notification(
+                tenant=school,
+                user=user,
+                title=title,
+                message=message,
+                notification_type="alert",
+                priority=4,
+                channel="in_app",
+                event_type="inappropriate_question",
+                reference_model="exams.Question",
+                is_delivered=True,
+                delivered_at=timezone.now(),
+            )
+        )
+    if notifications:
+        Notification.objects.bulk_create(notifications)
+
+
+def _student_flag_count(*, school, student, exam_title):
+    student_name = student.get_full_name() or student.email
+    queryset = Notification.objects.filter(
+        event_type="inappropriate_question",
+        reference_model="exams.Question",
+        title="Inappropriate question flagged",
+        message__icontains=student_name,
+    ).filter(message__icontains=exam_title)
+    if school:
+        queryset = queryset.filter(tenant=school)
+    return queryset.count()
+
+
+class ExamListView(APIView):
+    """List available exams for students"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        now = timezone.now()
+        
+        exams = Exam.objects.filter(
+            is_published=True,
+            end_date__gte=now,
+        )
+        
+        if legacy_tenant:
+            exams = exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant))
+
+        student_profile = getattr(request.user, "student_profile", None)
+        enrolled_exam_ids = []
+        if student_profile:
+            enrolled_exam_ids = list(
+                StudentEnrollment.objects.filter(student=student_profile)
+                .values_list("exams__id", flat=True)
+            )
+            enrolled_exam_ids = [exam_id for exam_id in enrolled_exam_ids if exam_id]
+
+        if student_profile and student_profile.current_class_id:
+            exams = exams.filter(
+                Q(class_group_id=student_profile.current_class_id)
+                | Q(class_group__isnull=True)
+                | Q(id__in=enrolled_exam_ids)
+            )
+        elif enrolled_exam_ids:
+            exams = exams.filter(Q(class_group__isnull=True) | Q(id__in=enrolled_exam_ids))
+        
+        serializer = ExamSerializer(exams.distinct().order_by("start_date"), many=True)
+        return Response(serializer.data)
+
+
+class StartExamView(APIView):
+    """Start a new exam attempt"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, exam_id):
+        exam = get_object_or_404(Exam, id=exam_id, is_published=True)
+        
+        # Check if exam is available
+        now = timezone.now()
+        if exam.start_date > now or exam.end_date < now:
+            return Response(
+                {'error': 'Exam is not available at this time'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check attempt limit
+        existing_attempts = ExamAttempt.objects.filter(
+            exam=exam,
+            student=request.user,
+            is_submitted=True
+        ).count()
+        
+        if existing_attempts >= exam.max_attempts:
+            return Response(
+                {'error': f'Maximum {exam.max_attempts} attempt(s) allowed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        active_attempt = ExamAttempt.objects.filter(
+            exam=exam,
+            student=request.user,
+            is_submitted=False
+        ).first()
+        if active_attempt:
+            return Response({
+                'attempt_id': active_attempt.id,
+                'exam_id': exam.id,
+                'start_time': active_attempt.start_time,
+                'duration_minutes': exam.duration_minutes,
+                'question_count': _question_queryset_for_exam(exam).count()
+            })
+        
+        # Create exam attempt
+        attempt = ExamAttempt.objects.create(
+            exam=exam,
+            student=request.user,
+            tenant=exam.tenant,
+            is_offline=request.data.get('is_offline', False),
+            device_id=request.data.get('device_id', None)
+        )
+        
+        # Fetch questions
+        questions = _question_queryset_for_exam(exam)
+        
+        if exam.shuffle_questions:
+            questions = questions.order_by('?')
+        
+        # Prepare response
+        return Response({
+            'attempt_id': attempt.id,
+            'exam_id': exam.id,
+            'start_time': attempt.start_time,
+            'duration_minutes': exam.duration_minutes,
+            'question_count': questions.count()
+        }, status=status.HTTP_201_CREATED)
+
+
+class ExamAttemptDetailView(APIView):
+    """Get exam attempt details with questions and answers"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, attempt_id):
+        attempt = get_object_or_404(ExamAttempt, id=attempt_id, student=request.user)
+        
+        if attempt.is_submitted:
+            return Response(
+                {'error': 'Exam has already been submitted'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        exam = attempt.exam
+        elapsed = (timezone.now() - attempt.start_time).total_seconds()
+        if elapsed >= exam.duration_minutes * 60:
+            attempt.end_time = timezone.now()
+            attempt.is_completed = True
+            attempt.is_submitted = True
+            attempt.save(update_fields=["end_time", "is_completed", "is_submitted", "updated_at"])
+            _grade_attempt(attempt)
+            return Response({'error': 'Exam time has expired and the attempt was submitted.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Fetch questions for this exam
+        questions = _question_queryset_for_exam(exam).values('id', 'text', 'image', 'options', 'question_type', 'points')
+        
+        # Fetch student answers
+        student_answers = StudentAnswer.objects.filter(attempt=attempt)
+        answers_dict = {
+            str(ans.question_id): ans.selected_options
+            for ans in student_answers
+        }
+        
+        # Calculate time remaining
+        total_seconds = exam.duration_minutes * 60
+        time_remaining = max(0, int(total_seconds - elapsed))
+        
+        return Response({
+            'attempt': {
+                'id': attempt.id,
+                'start_time': attempt.start_time,
+                'is_completed': attempt.is_completed
+            },
+            'exam': {
+                'id': exam.id,
+                'title': exam.title,
+                'duration_minutes': exam.duration_minutes,
+                'instructions': getattr(exam, 'instructions', '')
+            },
+            'questions': list(questions),
+            'student': {
+                'id': str(request.user.id),
+                'name': f"{request.user.first_name} {request.user.last_name}",
+                'avatar': getattr(request.user, 'profile_image', None)
+            },
+            'answers': answers_dict,
+            'time_remaining_seconds': time_remaining
+        })
+
+
+class SaveExamAnswerView(APIView):
+    """Save an exam answer"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, attempt_id):
+        attempt = get_object_or_404(ExamAttempt, id=attempt_id, student=request.user)
+        
+        if attempt.is_submitted:
+            return Response(
+                {'error': 'Exam has already been submitted'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        question_id = request.data.get('question_id')
+        selected_options = request.data.get('selected_options')
+        answer_text = request.data.get('answer_text')
+        
+        question = get_object_or_404(_question_queryset_for_exam(attempt.exam), id=question_id)
+        
+        if (timezone.now() - attempt.start_time).total_seconds() > attempt.exam.duration_minutes * 60 + 10:
+            return Response({'error': 'Exam time has expired'}, status=status.HTTP_400_BAD_REQUEST)
+
+        options = question.options or []
+        try:
+            selected_index = int(selected_options)
+        except (TypeError, ValueError):
+            selected_index = None
+        if selected_index is not None and (selected_index < 0 or selected_index >= len(options)):
+            return Response({'error': 'Selected answer is not valid for this question'}, status=status.HTTP_400_BAD_REQUEST)
+
+        answer, created = StudentAnswer.objects.update_or_create(
+            attempt=attempt,
+            question=question,
+            defaults={
+                'tenant': attempt.tenant or attempt.exam.tenant,
+                'selected_options': selected_options,
+                'answer_text': answer_text
+            }
+        )
+        
+        return Response({
+            'success': True,
+            'answer_id': answer.id
+        })
+
+
+class FlagExamQuestionView(APIView):
+    """Email a teacher/admin report for an inappropriate question."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, attempt_id):
+        attempt = get_object_or_404(
+            ExamAttempt.objects.select_related("exam", "exam__teacher", "exam__tenant"),
+            id=attempt_id,
+            student=request.user,
+        )
+
+        if attempt.is_submitted:
+            return Response(
+                {"error": "Exam has already been submitted"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        question_id = request.data.get("question_id")
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            return Response(
+                {"error": "Please describe why this question is inappropriate."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(reason) > 2000:
+            return Response(
+                {"error": "Report text must be 2000 characters or fewer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        school = getattr(request.user, "tenant", None)
+        if _student_flag_count(school=school, student=request.user, exam_title=attempt.exam.title) >= 2:
+            return Response(
+                {"error": "You can only flag 2 questions in this quiz."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        question = get_object_or_404(_question_queryset_for_exam(attempt.exam), id=question_id)
+        admin_users = list(_admin_users_for_school(school)[:10])
+        recipients = _resolve_flag_report_recipients(school)
+        if not recipients:
+            return Response(
+                {"error": "No report recipient email is configured."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        selected_answer = StudentAnswer.objects.filter(attempt=attempt, question=question).first()
+        options = question.options or []
+        subject_name = getattr(attempt.exam.subject, "name", "") or "No subject recorded"
+        school_name = (
+            getattr(getattr(request.user, "tenant", None), "name", "")
+            or getattr(attempt.exam.tenant, "name", "")
+            or "No school recorded"
+        )
+        selected_value = _normalize_selected_answer(selected_answer.selected_options if selected_answer else None)
+        selected_text = "Not answered"
+        try:
+            selected_index = int(selected_value)
+            if 0 <= selected_index < len(options):
+                selected_text = f"{chr(65 + selected_index)}. {options[selected_index]}"
+        except (TypeError, ValueError):
+            if selected_answer and selected_answer.answer_text:
+                selected_text = selected_answer.answer_text
+
+        correct_answer = question.correct_answer or "No correct answer recorded"
+        subject = f"Inappropriate question report: {attempt.exam.title}"
+        student_name = request.user.get_full_name() or request.user.email
+        message = "\n".join(
+            [
+                "A student flagged a quiz question as inappropriate.",
+                "",
+                f"Exam: {attempt.exam.title}",
+                f"School: {school_name}",
+                f"Subject: {subject_name}",
+                f"Attempt ID: {attempt.id}",
+                f"Student: {student_name} ({request.user.email})",
+                f"Question ID: {question.id}",
+                "",
+                "Question:",
+                question.text,
+                "",
+                "Options:",
+                _format_question_options(options),
+                "",
+                f"Correct answer: {correct_answer}",
+                f"Student selected answer: {selected_text}",
+                "",
+                "Student report:",
+                reason,
+            ]
+        )
+
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            recipients,
+            fail_silently=False,
+        )
+        _create_flag_notifications(
+            school=school,
+            admin_users=admin_users,
+            teacher=attempt.exam.teacher,
+            title="Inappropriate question flagged",
+            message=f"{student_name} flagged a question in {attempt.exam.title} ({subject_name}).",
+        )
+
+        return Response({"success": True, "message": "Question report sent."})
+
+
+class SubmitExamView(APIView):
+    """Submit exam and calculate results"""
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, attempt_id):
+        attempt = get_object_or_404(ExamAttempt.objects.select_for_update(), id=attempt_id, student=request.user)
+        
+        if attempt.is_submitted:
+            return Response(
+                {'error': 'Exam has already been submitted'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Mark as submitted
+        attempt.end_time = timezone.now()
+        attempt.is_completed = True
+        attempt.is_submitted = True
+        attempt.save()
+        
+        score, total_points = _grade_attempt(attempt)
+        
+        return Response({
+            'success': True,
+            'attempt_id': attempt.id,
+            'message': 'Exam Completed'
+        })
+
+
+class ExamResultView(APIView):
+    """Get exam results"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, attempt_id):
+        attempt_qs = ExamAttempt.objects.select_related("exam", "exam__teacher")
+        if getattr(request.user, "role", "") == "teacher":
+            attempt = get_object_or_404(attempt_qs, id=attempt_id, exam__teacher=request.user)
+        else:
+            attempt = get_object_or_404(attempt_qs, id=attempt_id, student=request.user)
+            return Response({
+                'success': True,
+                'attempt_id': attempt.id,
+                'exam_title': attempt.exam.title,
+                'message': 'Exam Completed'
+            })
+        
+        if not attempt.is_submitted:
+            return Response(
+                {'error': 'Exam has not been submitted yet'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        answers = StudentAnswer.objects.filter(attempt=attempt).select_related("question")
+        total_points = attempt.total_points or sum(ans.question.points for ans in answers)
+        earned_points = attempt.score
+        
+        percentage = (earned_points / total_points * 100) if total_points > 0 else 0
+        grade = self._calculate_grade(percentage)
+        is_passed = percentage >= 40  # Assuming 40% is passing
+        
+        return Response({
+            'attempt_id': attempt.id,
+            'exam_title': attempt.exam.title,
+            'score': earned_points,
+            'total_points': total_points,
+            'percentage': round(percentage, 2),
+            'grade': grade,
+            'is_passed': is_passed,
+            'submitted_at': attempt.end_time,
+            'answers_review': [{
+                'question_number': i + 1,
+                'question_text': ans.question.text,
+                'user_answer': ans.selected_options,
+                'correct_answer': ans.question.correct_answer,
+                'is_correct': ans.is_correct,
+                'points_earned': ans.question.points if ans.is_correct else 0,
+                'total_points': ans.question.points,
+                'explanation': ans.question.explanation
+            } for i, ans in enumerate(answers)]
+        })
+    
+    def _calculate_grade(self, percentage):
+        """Calculate letter grade based on percentage"""
+        if percentage >= 90:
+            return 'A'
+        elif percentage >= 80:
+            return 'B'
+        elif percentage >= 70:
+            return 'C'
+        elif percentage >= 60:
+            return 'D'
+        else:
+            return 'F'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def exam_timer_sync(request, attempt_id):
+    """Sync exam timer with server"""
+    attempt = get_object_or_404(ExamAttempt, id=attempt_id, student=request.user)
+    
+    if attempt.is_submitted:
+        return Response({'expired': True})
+    
+    elapsed = (timezone.now() - attempt.start_time).total_seconds()
+    total_seconds = attempt.exam.duration_minutes * 60
+    time_remaining = max(0, int(total_seconds - elapsed))
+    
+    if time_remaining <= 0:
+        # Auto-submit
+        attempt.end_time = timezone.now()
+        attempt.is_completed = True
+        attempt.is_submitted = True
+        attempt.save()
+        _grade_attempt(attempt)
+        return Response({'expired': True, 'auto_submitted': True})
+    
+    return Response({
+        'expired': False,
+        'time_remaining_seconds': time_remaining
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def sync_offline_exam_attempt(request):
+    """Sync and grade a CBT submission that was completed while offline."""
+    exam_id = request.data.get("exam_id")
+    attempt_id = request.data.get("attempt_id")
+    answers = request.data.get("answers") or {}
+    offline_attempt_id = str(request.data.get("offline_attempt_id") or "").strip()
+    started_at = parse_datetime(str(request.data.get("started_at") or "")) or timezone.now()
+    submitted_at = parse_datetime(str(request.data.get("submitted_at") or "")) or timezone.now()
+
+    if not exam_id:
+        return Response({"success": False, "message": "exam_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(answers, dict):
+        return Response({"success": False, "message": "answers must be an object keyed by question id."}, status=status.HTTP_400_BAD_REQUEST)
+
+    exam = get_object_or_404(Exam, id=exam_id, is_published=True)
+    question_ids = set(_question_queryset_for_exam(exam).values_list("id", flat=True))
+    if not question_ids:
+        return Response({"success": False, "message": "This exam has no questions to sync."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if offline_attempt_id:
+        existing = ExamAttempt.objects.filter(device_id=offline_attempt_id, student=request.user, exam=exam, is_submitted=True).first()
+        if existing:
+            return Response({"success": True, "attempt_id": existing.id, "message": "Offline submission already synced."})
+
+    attempt = None
+    if attempt_id:
+        attempt = ExamAttempt.objects.select_for_update().filter(id=attempt_id, student=request.user, exam=exam).first()
+
+    if attempt and attempt.is_submitted:
+        return Response({"success": True, "attempt_id": attempt.id, "message": "Offline submission already synced."})
+
+    if not attempt:
+        attempt = ExamAttempt.objects.create(
+            exam=exam,
+            student=request.user,
+            tenant=exam.tenant,
+            start_time=started_at,
+            is_offline=True,
+            sync_status="pending",
+            device_id=offline_attempt_id or None,
+        )
+
+    for raw_question_id, selected_options in answers.items():
+        try:
+            question_id = int(raw_question_id)
+        except (TypeError, ValueError):
+            continue
+        if question_id not in question_ids:
+            continue
+        StudentAnswer.objects.update_or_create(
+            attempt=attempt,
+            question_id=question_id,
+            defaults={
+                "tenant": attempt.tenant or exam.tenant,
+                "selected_options": selected_options,
+            },
+        )
+
+    attempt.end_time = submitted_at
+    attempt.is_completed = True
+    attempt.is_submitted = True
+    attempt.is_offline = True
+    attempt.sync_status = "synced"
+    if offline_attempt_id and not attempt.device_id:
+        attempt.device_id = offline_attempt_id
+    attempt.save(
+        update_fields=[
+            "end_time",
+            "is_completed",
+            "is_submitted",
+            "is_offline",
+            "sync_status",
+            "device_id",
+            "updated_at",
+        ]
+    )
+
+    score, total_points = _grade_attempt(attempt)
+    return Response(
+        {
+            "success": True,
+            "attempt_id": attempt.id,
+            "score": score,
+            "total_points": total_points,
+            "percentage": attempt.percentage,
+            "message": "Offline exam synced and graded.",
+        },
+        status=status.HTTP_201_CREATED,
+    )

@@ -1,0 +1,876 @@
+<!-- templates/auth/base_auth.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    
+    <title>SchoolDom</title>
+    <link rel="icon" type="image/jpeg" href="{% static 'img/schooldom-favicon.jpeg' %}">
+    <link rel="shortcut icon" href="{% static 'img/schooldom-favicon.jpeg' %}">
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Secure login to SchoolDom - Access exams, results, and school resources">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Theme Color -->
+    <meta name="theme-color" content="{{ school.primary_color|default:'#3B82F6' }}" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="{{ school.secondary_color|default:'#1E40AF' }}" media="(prefers-color-scheme: dark)">
+    
+    <!-- Viewport for responsive design -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    
+    <!-- PWA Support -->
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SchoolDom">
+    <link rel="apple-touch-icon" href="{% static 'img/schooldom-favicon.jpeg' %}">
+    
+    <!-- Preconnect to external resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Typed.js for typing animations -->
+    <script src="https://cdn.jsdelivr.net/npm/typed.js@2.0.12"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, {{ school.primary_color|default:'#667eea' }} 0%, {{ school.secondary_color|default:'#764ba2' }} 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        /* Animated background with particles */
+        .particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: float-particle 20s infinite linear;
+        }
+        
+        @keyframes float-particle {
+            0% {
+                transform: translateY(0) translateX(0) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 0.5;
+            }
+            90% {
+                opacity: 0.5;
+            }
+            100% {
+                transform: translateY(-100vh) translateX(100vw) rotate(720deg);
+                opacity: 0;
+            }
+        }
+        
+        /* Animated background shapes */
+        .bg-shape {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 50%;
+            pointer-events: none;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .shape-1 {
+            width: 400px;
+            height: 400px;
+            top: -200px;
+            left: -200px;
+            animation: rotate-slow 30s linear infinite;
+        }
+        
+        .shape-2 {
+            width: 300px;
+            height: 300px;
+            bottom: -150px;
+            right: -150px;
+            animation: rotate-slow 25s linear infinite reverse;
+        }
+        
+        .shape-3 {
+            width: 200px;
+            height: 200px;
+            bottom: 40%;
+            left: 5%;
+            animation: pulse-glow 4s ease-in-out infinite;
+        }
+        
+        @keyframes rotate-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse-glow {
+            0%, 100% { 
+                transform: scale(1);
+                opacity: 0.3;
+                box-shadow: 0 0 20px rgba(255,255,255,0.2);
+            }
+            50% { 
+                transform: scale(1.2);
+                opacity: 0.6;
+                box-shadow: 0 0 40px rgba(255,255,255,0.4);
+            }
+        }
+        
+        @keyframes float {
+            0% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-30px) rotate(5deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+        
+        .floating {
+            animation: float 8s ease-in-out infinite;
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Form transitions */
+        .form-container {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.95);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideInUp 0.6s ease-out;
+        }
+        
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .form-container:hover {
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.2);
+            transform: translateY(-5px) scale(1.01);
+        }
+        
+        /* Typing animation container */
+        .typing-container {
+            min-height: 80px;
+            margin-bottom: 2rem;
+        }
+        
+        .typing-text {
+            font-family: 'Space Grotesk', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, {{ school.primary_color|default:'#3B82F6' }}, {{ school.secondary_color|default:'#9333EA' }});
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            position: relative;
+            display: inline-block;
+        }
+        
+        .typing-text::after {
+            content: '|';
+            animation: blink 1s infinite;
+            font-weight: 300;
+            -webkit-text-fill-color: {{ school.primary_color|default:'#3B82F6' }};
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        
+        /* Input focus effects */
+        .input-group {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 0.875rem 1rem 0.875rem 3rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 1rem;
+            font-size: 1rem;
+            transition: all 0.3s;
+            background: white;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: {{ school.primary_color|default:'#3B82F6' }};
+            box-shadow: 0 0 0 4px {{ school.primary_color|default:'#3B82F6' }}20;
+            transform: scale(1.02);
+        }
+        
+        .input-group i {
+            position: absolute;
+            left: 1.2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            transition: all 0.3s;
+            font-size: 1.2rem;
+        }
+        
+        .input-group input:focus + i {
+            color: {{ school.primary_color|default:'#3B82F6' }};
+            transform: translateY(-50%) scale(1.1);
+        }
+        
+        .input-group .input-highlight {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 2px;
+            background: {{ school.primary_color|default:'#3B82F6' }};
+            transition: all 0.3s;
+            transform: translateX(-50%);
+        }
+        
+        .input-group input:focus ~ .input-highlight {
+            width: 100%;
+        }
+        
+        /* Button styles */
+        .btn-primary {
+            background: linear-gradient(135deg, {{ school.primary_color|default:'#3B82F6' }}, {{ school.secondary_color|default:'#9333EA' }});
+            color: white;
+            padding: 1rem;
+            border-radius: 1rem;
+            font-weight: 700;
+            font-size: 1.125rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn-primary:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0) scale(0.98);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            color: {{ school.primary_color|default:'#3B82F6' }};
+            padding: 0.875rem;
+            border-radius: 1rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border: 2px solid {{ school.primary_color|default:'#3B82F6' }};
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-outline::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, {{ school.primary_color|default:'#3B82F6' }}20, transparent);
+            transition: left 0.5s;
+        }
+        
+        .btn-outline:hover::before {
+            left: 100%;
+        }
+        
+        .btn-outline:hover {
+            background: {{ school.primary_color|default:'#3B82F6' }}10;
+            transform: scale(1.05);
+        }
+        
+        /* App download banner */
+        .app-banner {
+            background: linear-gradient(135deg, {{ school.primary_color|default:'#3B82F6' }} 0%, {{ school.secondary_color|default:'#9333EA' }} 100%);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            margin-top: 2rem;
+            color: white;
+            position: relative;
+            overflow: hidden;
+            animation: glowPulse 3s infinite;
+        }
+        
+        @keyframes glowPulse {
+            0%, 100% { box-shadow: 0 0 30px {{ school.primary_color|default:'#3B82F6' }}80; }
+            50% { box-shadow: 0 0 50px {{ school.secondary_color|default:'#9333EA' }}80; }
+        }
+        
+        .app-banner::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
+            animation: rotate 30s linear infinite;
+        }
+        
+        .app-banner::after {
+            content: '';
+            position: absolute;
+            bottom: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: rotate 40s linear infinite reverse;
+        }
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* App download cards */
+        .download-card {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .download-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .download-card:hover::before {
+            left: 100%;
+        }
+        
+        .download-card:hover {
+            transform: translateY(-10px) scale(1.05);
+            box-shadow: 0 20px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* QR Code pulse animation */
+        .qr-code {
+            animation: qrPulse 2s infinite;
+            transition: all 0.3s;
+        }
+        
+        .qr-code:hover {
+            animation: none;
+            transform: scale(1.1) rotate(5deg);
+        }
+        
+        @keyframes qrPulse {
+            0%, 100% { box-shadow: 0 0 0 0 {{ school.primary_color|default:'#3B82F6' }}80; }
+            50% { box-shadow: 0 0 20px 10px {{ school.secondary_color|default:'#9333EA' }}80; }
+        }
+        
+        /* Feature icons animation */
+        .feature-icon {
+            animation: featureBounce 2s infinite;
+            display: inline-block;
+        }
+        
+        @keyframes featureBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        
+        .feature-item:nth-child(2) .feature-icon {
+            animation-delay: 0.3s;
+        }
+        
+        .feature-item:nth-child(3) .feature-icon {
+            animation-delay: 0.6s;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                padding: 0.5rem;
+                align-items: flex-start;
+            }
+            
+            .form-container {
+                margin-top: 1rem;
+                animation: slideInUp 0.4s ease-out;
+            }
+            
+            .typing-text {
+                font-size: 1.2rem;
+            }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            .form-container {
+                background: rgba(17, 24, 39, 0.95);
+                color: white;
+            }
+            
+            .input-group input {
+                background: #1f2937;
+                border-color: #374151;
+                color: white;
+            }
+            
+            .input-group input::placeholder {
+                color: #6b7280;
+            }
+            
+            .text-gray-600 {
+                color: #9ca3af;
+            }
+            
+            .text-gray-900 {
+                color: white;
+            }
+        }
+    </style>
+    
+</head>
+<body>
+    <!-- Particle System -->
+    <div class="particles" id="particles"></div>
+    
+    <!-- Animated Background Shapes -->
+    <div class="bg-shape shape-1"></div>
+    <div class="bg-shape shape-2"></div>
+    <div class="bg-shape shape-3"></div>
+    
+    <!-- Main Container -->
+    <div class="w-full max-w-6xl mx-auto relative z-10">
+        <div class="grid lg:grid-cols-2 gap-8 items-center">
+            <!-- Left Column - Branding & App Download -->
+            <div class="text-white hidden lg:block">
+                <div class="mb-8 floating">
+                    {% if school.logo %}
+                        <img src="{{ school.logo.url }}" alt="{{ school.name }}" class="h-20 w-auto mb-6 animate-pulse">
+                    {% else %}
+                        <div class="w-20 h-20 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center mb-6 animate-bounce">
+                            <i class="fas fa-school text-4xl"></i>
+                        </div>
+                    {% endif %}
+                    
+                    <h1 class="text-5xl font-black mb-4 font-space">{{ school.name|default:'SchoolDom' }}</h1>
+                    
+                    <!-- Typing Animation Container -->
+                    <div class="typing-container">
+                        <span class="typing-text" id="typing-animation"></span>
+                    </div>
+                    
+                    <p class="text-xl opacity-90 mb-8 leading-relaxed">Access your education anywhere, anytime with our mobile app</p>
+                    
+                    <!-- App Download Section -->
+                    <div class="bg-white/10 backdrop-blur rounded-2xl p-6 animate-slideIn">
+                        <h2 class="text-2xl font-semibold mb-4 flex items-center">
+                            <i class="fas fa-rocket mr-2 animate-bounce"></i>
+                            Download Our App
+                        </h2>
+                        <p class="mb-6 opacity-90">Get the best experience with our native mobile app</p>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- iOS App -->
+                            <a href="#" class="download-card rounded-xl p-4 text-center transition-all">
+                                <i class="fab fa-apple text-4xl mb-2 feature-icon"></i>
+                                <div class="text-sm font-medium">App Store</div>
+                                <div class="text-xs opacity-75">iPhone • iPad</div>
+                            </a>
+                            
+                            <!-- Android App -->
+                            <a href="#" class="download-card rounded-xl p-4 text-center transition-all">
+                                <i class="fab fa-android text-4xl mb-2 feature-icon" style="animation-delay: 0.2s"></i>
+                                <div class="text-sm font-medium">Google Play</div>
+                                <div class="text-xs opacity-75">Android</div>
+                            </a>
+                            
+                            <!-- APK Download -->
+                            <a href="#" class="download-card rounded-xl p-4 text-center transition-all col-span-2">
+                                <i class="fas fa-download text-3xl mb-1 feature-icon" style="animation-delay: 0.4s"></i>
+                                <div class="text-sm font-medium">Download APK</div>
+                                <div class="text-xs opacity-75">Direct Install • v2.1.0</div>
+                            </a>
+                        </div>
+                        
+                        <!-- QR Code for mobile download -->
+                        <div class="mt-6 text-center">
+                            <p class="text-sm mb-2">Scan to download</p>
+                            <div class="inline-block bg-white p-2 rounded-lg qr-code">
+                                <img src="{% static 'img/qr-download.png' %}" alt="Download QR Code" class="w-24 h-24">
+                            </div>
+                        </div>
+                        
+                        <!-- App Features -->
+                        <div class="grid grid-cols-3 gap-2 mt-6 text-center">
+                            <div class="feature-item">
+                                <i class="fas fa-wifi-slash text-2xl mb-1 feature-icon"></i>
+                                <div class="text-xs">Offline Exams</div>
+                            </div>
+                            <div class="feature-item">
+                                <i class="fas fa-bell text-2xl mb-1 feature-icon" style="animation-delay: 0.2s"></i>
+                                <div class="text-xs">Push Notifications</div>
+                            </div>
+                            <div class="feature-item">
+                                <i class="fas fa-cloud-upload-alt text-2xl mb-1 feature-icon" style="animation-delay: 0.4s"></i>
+                                <div class="text-xs">Auto-sync</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column - Auth Form -->
+            <div class="w-full">
+                <!-- This is where you would put your login/register form content -->
+                <div class="form-container rounded-3xl shadow-2xl p-8 md:p-10">
+                    <h2 class="text-3xl font-bold text-center mb-8">Welcome Back</h2>
+                    
+                    <!-- Example Login Form -->
+                    <form method="post" action="{% url 'login' %}">
+                        {% csrf_token %}
+                        
+                        <div class="input-group">
+                            <input type="text" name="username" placeholder="Username or Email" required>
+                            <i class="fas fa-user"></i>
+                            <span class="input-highlight"></span>
+                        </div>
+                        
+                        <div class="input-group">
+                            <input type="password" name="password" placeholder="Password" required>
+                            <i class="fas fa-lock"></i>
+                            <span class="input-highlight"></span>
+                        </div>
+                        
+                        <div class="flex items-center justify-between mb-6">
+                            <label class="flex items-center">
+                                <input type="checkbox" name="remember" class="w-4 h-4 text-blue-600">
+                                <span class="ml-2 text-sm">Remember me</span>
+                            </label>
+                            <a href="{% url 'password_reset' %}" class="text-sm hover:underline">Forgot Password?</a>
+                        </div>
+                        
+                        <button type="submit" class="btn-primary">
+                            <span class="relative z-10">Sign In</span>
+                        </button>
+                        
+                        <div class="text-center mt-6">
+                            <p class="text-sm">
+                                Don't have an account? 
+                                <a href="{% url 'register' %}" class="font-semibold hover:underline">Sign up</a>
+                            </p>
+                        </div>
+                    </form>
+                    
+                    <!-- Social Login Options -->
+                    <div class="relative my-8">
+                        <div class="absolute inset-0 flex items-center">
+                            <div class="w-full border-t border-gray-300"></div>
+                        </div>
+                        <div class="relative flex justify-center text-sm">
+                            <span class="px-4 bg-white text-gray-500">Or continue with</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <button class="btn-outline flex items-center justify-center gap-2">
+                            <i class="fab fa-google"></i>
+                            <span>Google</span>
+                        </button>
+                        <button class="btn-outline flex items-center justify-center gap-2">
+                            <i class="fab fa-microsoft"></i>
+                            <span>Microsoft</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- CSRF Token for HTMX -->
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    
+    <script>
+        // Global configuration
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('auth', {
+                schoolName: '{{ school.name|default:'SchoolDom' }}',
+                primaryColor: '{{ school.primary_color|default:'#3B82F6' }}',
+                secondaryColor: '{{ school.secondary_color|default:'#1E40AF' }}'
+            });
+        });
+        
+        // Initialize typing animation
+        document.addEventListener('DOMContentLoaded', function() {
+            // Typing animation for multiple phrases
+            if (document.getElementById('typing-animation')) {
+                new Typed('#typing-animation', {
+                    strings: [
+                        'Learn anywhere, anytime! ^1000',
+                        'Take exams offline! ^1000',
+                        'Track your progress! ^1000',
+                        'Join live classes! ^1000',
+                        'Access study materials! ^1000',
+                        'Connect with teachers! ^1000'
+                    ],
+                    typeSpeed: 50,
+                    backSpeed: 30,
+                    backDelay: 2000,
+                    startDelay: 500,
+                    loop: true,
+                    showCursor: false,
+                    smartBackspace: true
+                });
+            }
+            
+            // Create floating particles
+            const particlesContainer = document.getElementById('particles');
+            if (particlesContainer) {
+                for (let i = 0; i < 30; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    
+                    // Random size between 2px and 6px
+                    const size = Math.random() * 4 + 2;
+                    particle.style.width = size + 'px';
+                    particle.style.height = size + 'px';
+                    
+                    // Random starting position
+                    particle.style.left = Math.random() * 100 + '%';
+                    particle.style.top = Math.random() * 100 + '%';
+                    
+                    // Random animation delay
+                    particle.style.animationDelay = Math.random() * 10 + 's';
+                    
+                    // Random animation duration between 10s and 30s
+                    particle.style.animationDuration = (Math.random() * 20 + 10) + 's';
+                    
+                    particlesContainer.appendChild(particle);
+                }
+            }
+            
+            // Add ripple effect to buttons
+            document.querySelectorAll('.btn-primary, .btn-outline').forEach(button => {
+                button.addEventListener('click', function(e) {
+                    const ripple = document.createElement('span');
+                    ripple.style.position = 'absolute';
+                    ripple.style.borderRadius = '50%';
+                    ripple.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+                    ripple.style.width = '10px';
+                    ripple.style.height = '10px';
+                    ripple.style.transform = 'scale(0)';
+                    ripple.style.animation = 'ripple 0.6s ease-out';
+                    ripple.style.left = e.offsetX + 'px';
+                    ripple.style.top = e.offsetY + 'px';
+                    
+                    this.style.position = 'relative';
+                    this.appendChild(ripple);
+                    
+                    setTimeout(() => {
+                        ripple.remove();
+                    }, 600);
+                });
+            });
+            
+            // Add typing effect to form inputs
+            document.querySelectorAll('.input-group input').forEach((input, index) => {
+                input.addEventListener('focus', () => {
+                    input.style.transition = 'all 0.3s';
+                });
+                
+                // Add random placeholder animation
+                if (!input.value) {
+                    const placeholders = [
+                        'Enter your ' + input.placeholder,
+                        'Type here...',
+                        'We\'re waiting...',
+                        'Your turn!'
+                    ];
+                    
+                    let currentIndex = 0;
+                    setInterval(() => {
+                        if (!input.matches(':focus') && !input.value) {
+                            input.placeholder = placeholders[currentIndex];
+                            currentIndex = (currentIndex + 1) % placeholders.length;
+                        }
+                    }, 2000);
+                }
+            });
+            
+            // Add shake animation for failed login attempts
+            const form = document.querySelector('form');
+            if (form) {
+                form.addEventListener('htmx:beforeRequest', () => {
+                    form.classList.add('animate-pulse');
+                });
+                
+                form.addEventListener('htmx:afterRequest', (evt) => {
+                    form.classList.remove('animate-pulse');
+                    
+                    // Check if response has error
+                    if (evt.detail.failed) {
+                        form.classList.add('animate-shake');
+                        setTimeout(() => {
+                            form.classList.remove('animate-shake');
+                        }, 500);
+                    }
+                });
+            }
+        });
+        
+        // HTMX CSRF configuration
+        document.body.addEventListener('htmx:configRequest', (event) => {
+            event.detail.headers['X-CSRFToken'] = document.querySelector('meta[name="csrf-token"]')?.content;
+        });
+        
+        // Check if app is installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            document.body.classList.add('app-mode');
+            
+            // Add custom app mode animations
+            const style = document.createElement('style');
+            style.textContent = `
+                .app-mode .form-container {
+                    border-radius: 0;
+                    animation: none;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        // Add custom keyframe animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+                20%, 40%, 60%, 80% { transform: translateX(5px); }
+            }
+            
+            .animate-shake {
+                animation: shake 0.5s ease-in-out;
+            }
+            
+            @keyframes slideIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            .animate-slideIn {
+                animation: slideIn 0.5s ease-out;
+            }
+            
+            @keyframes ripple {
+                to {
+                    transform: scale(40);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+    
+</body>
+</html>

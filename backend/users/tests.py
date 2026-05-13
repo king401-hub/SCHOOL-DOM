@@ -1,0 +1,2168 @@
+from datetime import timedelta
+
+from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from academic.models import (
+    AttendanceRecord,
+    Class,
+    GradeScale,
+    QuestionPrompt,
+    QuestionResponse,
+    ResultBatch,
+    StudentSubjectScore,
+    Subject,
+)
+from core.models import Domain, SchoolTenant
+from exams.models import Exam, ExamAttempt, Question
+from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
+from hr.models import StaffProfile
+from notifications.models import Announcement, InAppMessage
+from tenants.models import Tenant
+from users.models import StudentEnrollment, StudentProfile, TeacherProfile, User
+
+
+class SchoolRegistrationCreditTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_create_school_receives_fifty_free_activation_credits(self):
+        response = self.client.post(
+            "/api/auth/create-school/",
+            data={
+                "school_name": "Credit Gift Academy",
+                "school_code": "credit_gift_academy",
+                "email": "admin@creditgift.test",
+                "phone": "08012345678",
+                "address": "12 School Road",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["school"]["free_credits"], 50)
+
+        school = SchoolTenant.objects.get(schema_name=response.data["school"]["school_code"])
+        pool = ActivationCreditPool.objects.get(tenant=school)
+        self.assertEqual(pool.balance, 50)
+        self.assertTrue(
+            ActivationCreditTransaction.objects.filter(
+                pool=pool,
+                tx_type=ActivationCreditTransaction.ADJUSTMENT,
+                credits=50,
+                amount=0,
+                metadata__bonus="school_registration",
+            ).exists()
+        )
+
+
+class StudentEnrollmentTests(TestCase):
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Blue Ridge Academy",
+            schema_name="blue_ridge",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="Blue Ridge Academy Legacy",
+            slug="blue_ridge",
+        )
+
+        self.admin_user = User.objects.create_user(
+            email="admin@blueridge.edu",
+            password="AdminPass123",
+            first_name="Alice",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+        )
+
+        self.student_user = User.objects.create_user(
+            email="student@blueridge.edu",
+            password="StudentPass123",
+            first_name="Sam",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+        )
+
+        self.student_profile = StudentProfile.objects.create(
+            user=self.student_user,
+            student_id="STU-BR-001",
+            admission_number="ADM-BR-001",
+            admission_date=timezone.now().date(),
+            guardian_name="Jordan Student",
+            guardian_phone="+15550001111",
+            guardian_relation="Parent",
+        )
+
+        self.classroom = Class.objects.create(
+            name="Grade 9",
+            section="A",
+            tenant=self.legacy_tenant,
+        )
+
+        start_date = timezone.now() + timedelta(days=1)
+        self.exam = Exam.objects.create(
+            title="Mathematics Midterm",
+            class_group=self.classroom,
+            teacher=self.admin_user,
+            start_date=start_date,
+            end_date=start_date + timedelta(hours=2),
+            duration_minutes=120,
+            tenant=self.legacy_tenant,
+            is_published=True,
+        )
+
+    def test_apply_links_assigns_class_creates_exam_attempt_and_message(self):
+        enrollment = StudentEnrollment.objects.create(
+            school=self.school,
+            student=self.student_profile,
+            assigned_class=self.classroom,
+            created_by=self.admin_user,
+            welcome_subject="Welcome to Grade 9",
+            welcome_message="You are now enrolled. Please check your timetable.",
+        )
+        enrollment.exams.add(self.exam)
+
+        enrollment.apply_links()
+        enrollment.refresh_from_db()
+        self.student_profile.refresh_from_db()
+
+        self.assertEqual(self.student_profile.current_class, self.classroom)
+
+        attempt = ExamAttempt.objects.filter(exam=self.exam, student=self.student_user).first()
+        self.assertIsNotNone(attempt)
+        self.assertEqual(attempt.tenant, self.legacy_tenant)
+
+        self.assertIsNotNone(enrollment.enrollment_message)
+        message = enrollment.enrollment_message
+        self.assertEqual(message.sender, self.admin_user)
+        self.assertEqual(message.recipient, self.student_user)
+        self.assertEqual(message.tenant, self.school)
+        self.assertIn("enrolled", message.body.lower())
+
+        # Running the linker twice should not duplicate exam attempts or messages.
+        enrollment.apply_links()
+        self.assertEqual(ExamAttempt.objects.filter(exam=self.exam, student=self.student_user).count(), 1)
+        self.assertEqual(InAppMessage.objects.filter(recipient=self.student_user, subject="Welcome to Grade 9").count(), 1)
+
+    def test_enrollment_rejects_class_from_different_school(self):
+        SchoolTenant.objects.create(
+            name="Red River High",
+            schema_name="red_river",
+            is_active=True,
+        )
+        other_legacy_tenant = Tenant.objects.create(
+            name="Red River Legacy",
+            slug="red_river",
+        )
+        foreign_class = Class.objects.create(
+            name="Grade 10",
+            section="B",
+            tenant=other_legacy_tenant,
+        )
+
+        enrollment = StudentEnrollment(
+            school=self.school,
+            student=self.student_profile,
+            assigned_class=foreign_class,
+            created_by=self.admin_user,
+        )
+
+        with self.assertRaises(ValidationError):
+            enrollment.full_clean()
+
+
+class EnrollmentsAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Smoke School",
+            schema_name="smoke_20260306072129",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="Smoke School Legacy",
+            slug="smoke_20260306072129",
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@smoke.edu",
+            password="AdminPass123",
+            first_name="Casey",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        self.classroom = Class.objects.create(
+            name="Grade 9",
+            section="A",
+            tenant=self.legacy_tenant,
+        )
+        now = timezone.now() + timedelta(days=1)
+        self.exam = Exam.objects.create(
+            title="Biology Test",
+            class_group=self.classroom,
+            teacher=self.admin_user,
+            start_date=now,
+            end_date=now + timedelta(hours=1),
+            duration_minutes=60,
+            tenant=self.legacy_tenant,
+            is_published=True,
+        )
+
+    def test_create_enrollment_api_creates_student_and_links(self):
+        response = self.client.post(
+            "/api/app/enrollments/create/",
+            data={
+                "student_email": "newstudent@smoke.edu",
+                "first_name": "Nia",
+                "last_name": "Student",
+                "guardian_name": "Dana Guardian",
+                "guardian_phone": "+15550002222",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+                "class_id": self.classroom.id,
+                "exam_ids": [self.exam.id],
+                "welcome_subject": "Welcome aboard",
+                "welcome_message": "You have been enrolled.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+
+        student_profile = StudentProfile.objects.get(user__email="newstudent@smoke.edu")
+        self.assertEqual(student_profile.current_class, self.classroom)
+        self.assertTrue(student_profile.user.check_password("StudentPass123"))
+        self.assertTrue(
+            ExamAttempt.objects.filter(
+                exam=self.exam,
+                student=student_profile.user,
+                tenant=self.legacy_tenant,
+            ).exists()
+        )
+        self.assertTrue(
+            InAppMessage.objects.filter(
+                recipient=student_profile.user,
+                sender=self.admin_user,
+                tenant=self.school,
+            ).exists()
+        )
+
+    def test_create_enrollment_api_accepts_student_profile_picture(self):
+        photo = SimpleUploadedFile("student.jpg", b"student-photo-bytes", content_type="image/jpeg")
+        response = self.client.post(
+            "/api/app/enrollments/create/",
+            data={
+                "student_email": "photo.student@smoke.edu",
+                "first_name": "Photo",
+                "last_name": "Student",
+                "guardian_name": "Photo Guardian",
+                "guardian_phone": "+15550006666",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+                "profile_picture": photo,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        student_profile = StudentProfile.objects.get(user__email="photo.student@smoke.edu")
+        self.assertTrue(bool(student_profile.user.profile_picture))
+        self.assertIn("profiles/", student_profile.user.profile_picture.name)
+        self.assertTrue(student_profile.user.check_password("StudentPass123"))
+
+    def test_create_enrollment_api_requires_password_for_new_student(self):
+        response = self.client.post(
+            "/api/app/enrollments/create/",
+            data={
+                "student_email": "nopassword@smoke.edu",
+                "first_name": "No",
+                "last_name": "Password",
+                "guardian_name": "Guardian",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("student_password is required", response.data["message"])
+        self.assertFalse(User.objects.filter(email="nopassword@smoke.edu").exists())
+
+    def test_enrollments_snapshot_returns_summary_and_options(self):
+        student_user = User.objects.create_user(
+            email="existing@smoke.edu",
+            password="StudentPass123",
+            first_name="Existing",
+            last_name="Learner",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student_profile = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-SMOKE-1",
+            admission_number="ADM-SMOKE-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian One",
+            guardian_phone="+15550003333",
+            guardian_relation="Parent",
+        )
+        enrollment = StudentEnrollment.objects.create(
+            school=self.school,
+            student=student_profile,
+            assigned_class=self.classroom,
+            created_by=self.admin_user,
+            welcome_message="Welcome",
+        )
+        enrollment.exams.add(self.exam)
+        enrollment.apply_links()
+
+        response = self.client.get("/api/app/enrollments/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertGreaterEqual(response.data["summary"]["total_enrollments"], 1)
+        self.assertGreaterEqual(len(response.data["options"]["classes"]), 1)
+        self.assertGreaterEqual(len(response.data["options"]["exams"]), 1)
+
+    def test_enrollment_full_clean_without_student_returns_field_error(self):
+        enrollment = StudentEnrollment(
+            school=self.school,
+            created_by=self.admin_user,
+        )
+
+        with self.assertRaises(ValidationError) as exc:
+            enrollment.full_clean()
+
+        self.assertIn("student", exc.exception.message_dict)
+
+    def test_dashboard_snapshot_includes_recent_registered_students(self):
+        student_user = User.objects.create_user(
+            email="recent@smoke.edu",
+            password="StudentPass123",
+            first_name="Recent",
+            last_name="Learner",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-SMOKE-RECENT",
+            admission_number="ADM-SMOKE-RECENT",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Recent",
+            guardian_phone="+15550005555",
+            guardian_relation="Parent",
+        )
+
+        response = self.client.get("/api/app/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertGreaterEqual(len(response.data["recent_students"]), 1)
+        self.assertIn("profile_picture", response.data["recent_students"][0])
+
+    def test_messages_snapshot_includes_recipient_directory(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.msg@smoke.edu",
+            password="TeacherPass123",
+            first_name="Mia",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        InAppMessage.objects.create(
+            tenant=self.school,
+            sender=teacher_user,
+            recipient=self.admin_user,
+            subject="Attendance follow-up",
+            body="Could we confirm the updated attendance list?",
+        )
+
+        response = self.client.get("/api/app/messages/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertIn("recipients", response.data)
+        self.assertTrue(any(item["email"] == "teacher.msg@smoke.edu" for item in response.data["recipients"]))
+        self.assertGreaterEqual(len(response.data["inbox"]), 1)
+        first_message = response.data["inbox"][0]
+        self.assertIn("from_email", first_message)
+        self.assertIn("body", first_message)
+
+    def test_admin_can_publish_announcement_for_students_and_teachers(self):
+        student_user = User.objects.create_user(
+            email="student.msg@smoke.edu",
+            password="StudentPass123",
+            first_name="Stu",
+            last_name="Dent",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        teacher_user = User.objects.create_user(
+            email="teacher.broadcast@smoke.edu",
+            password="TeacherPass123",
+            first_name="Teach",
+            last_name="Er",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "students_teachers_announcement",
+                "subject": "Schedule update",
+                "body": "Classes start at 9 AM tomorrow.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertIn("Announcement published", response.data["message"])
+        self.assertEqual(InAppMessage.objects.count(), 0)
+
+        announcement = Announcement.objects.filter(tenant=self.school, title="Schedule update").first()
+        self.assertIsNotNone(announcement)
+        self.assertEqual(announcement.audience_type, "role")
+        self.assertCountEqual(announcement.target_roles, ["student", "teacher"])
+        self.assertEqual(announcement.author, self.admin_user)
+
+        self.client.force_authenticate(user=student_user)
+        student_feed = self.client.get("/api/app/messages/")
+        self.assertEqual(student_feed.status_code, 200)
+        self.assertTrue(any(item["title"] == "Schedule update" for item in student_feed.data["announcements"]))
+
+        self.client.force_authenticate(user=teacher_user)
+        teacher_feed = self.client.get("/api/app/messages/")
+        self.assertEqual(teacher_feed.status_code, 200)
+        self.assertTrue(any(item["title"] == "Schedule update" for item in teacher_feed.data["announcements"]))
+
+    def test_non_admin_cannot_publish_students_teachers_announcement(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.only@smoke.edu",
+            password="TeacherPass123",
+            first_name="Nina",
+            last_name="Teach",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=teacher_user)
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "students_teachers_announcement",
+                "subject": "Unauthorized",
+                "body": "This should be blocked.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.data["success"])
+        self.assertEqual(Announcement.objects.filter(tenant=self.school, title="Unauthorized").count(), 0)
+
+
+class StudentDashboardAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Student Dashboard School",
+            schema_name="student_dashboard_20260306",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="Student Dashboard Legacy",
+            slug="student_dashboard_20260306",
+        )
+        self.classroom = Class.objects.create(
+            name="Grade 10",
+            section="C",
+            tenant=self.legacy_tenant,
+        )
+        self.subject = Subject.objects.create(
+            name="Mathematics",
+            code="MATH",
+            tenant=self.legacy_tenant,
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@student-dashboard.edu",
+            password="AdminPass123",
+            first_name="Dashboard",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@student-dashboard.edu",
+            password="StudentPass123",
+            first_name="Dash",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=self.student_user,
+            student_id="STU-DASH-1",
+            admission_number="ADM-DASH-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Dash",
+            guardian_phone="+15550001234",
+            guardian_relation="Parent",
+            current_class=self.classroom,
+        )
+        start = timezone.now() + timedelta(days=1)
+        self.exam = Exam.objects.create(
+            title="Student Dashboard Exam",
+            subject=self.subject,
+            class_group=self.classroom,
+            teacher=self.admin_user,
+            start_date=start,
+            end_date=start + timedelta(hours=1),
+            duration_minutes=60,
+            tenant=self.legacy_tenant,
+            is_published=True,
+        )
+        ExamAttempt.objects.create(
+            exam=self.exam,
+            student=self.student_user,
+            tenant=self.legacy_tenant,
+            is_submitted=False,
+            is_completed=False,
+        )
+        past_start = timezone.now() - timedelta(days=5)
+        self.completed_exam = Exam.objects.create(
+            title="Completed Dashboard Exam",
+            subject=self.subject,
+            class_group=self.classroom,
+            teacher=self.admin_user,
+            start_date=past_start,
+            end_date=past_start + timedelta(hours=1),
+            duration_minutes=60,
+            tenant=self.legacy_tenant,
+            is_published=True,
+        )
+        ExamAttempt.objects.create(
+            exam=self.completed_exam,
+            student=self.student_user,
+            tenant=self.legacy_tenant,
+            is_submitted=True,
+            is_completed=True,
+            end_time=timezone.now() - timedelta(days=4),
+        )
+        InAppMessage.objects.create(
+            tenant=self.school,
+            sender=self.admin_user,
+            recipient=self.student_user,
+            subject="Welcome",
+            body="Dashboard message",
+        )
+
+    def test_student_dashboard_returns_student_payload(self):
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.get("/api/app/student/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["student"]["email"], "student@student-dashboard.edu")
+        self.assertGreaterEqual(response.data["metrics"]["upcoming_exams"], 1)
+        self.assertGreaterEqual(len(response.data["upcoming_exams"]), 1)
+        self.assertGreaterEqual(len(response.data["inbox"]), 1)
+        self.assertGreaterEqual(len(response.data["recent_results"]), 1)
+        self.assertGreaterEqual(response.data["metrics"]["available_results"], 1)
+        self.assertEqual(response.data["metrics"]["subjects_offered"], 1)
+        self.assertEqual(response.data["subjects"][0]["name"], "Mathematics")
+        self.assertTrue(any(item["email"] == "admin@student-dashboard.edu" for item in response.data["admin_contacts"]))
+        self.assertIn("from_email", response.data["inbox"][0])
+        self.assertIn("body", response.data["inbox"][0])
+
+    def test_non_student_cannot_access_student_dashboard(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/student/dashboard/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.data["success"])
+
+    def test_student_can_reply_to_school_admin(self):
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "recipient_email": "admin@student-dashboard.edu",
+                "subject": "Re: Welcome",
+                "body": "Thanks admin, I have a follow up question.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(
+            InAppMessage.objects.filter(
+                sender=self.student_user,
+                recipient=self.admin_user,
+                subject__iexact="Re: Welcome",
+            ).exists()
+        )
+
+    def test_student_can_message_teacher(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.student-message@student-dashboard.edu",
+            password="TeacherPass123",
+            first_name="Message",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "recipient_email": teacher_user.email,
+                "subject": "Question",
+                "body": "Please I need help with the assignment.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(
+            InAppMessage.objects.filter(
+                sender=self.student_user,
+                recipient=teacher_user,
+                subject="Question",
+            ).exists()
+        )
+
+
+class TeacherDashboardAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Teacher Dashboard School",
+            schema_name="teacher_dashboard_20260307",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="Teacher Dashboard Legacy",
+            slug="teacher_dashboard_20260307",
+        )
+        self.classroom = Class.objects.create(
+            name="Grade 8",
+            section="B",
+            tenant=self.legacy_tenant,
+        )
+        self.subject = Subject.objects.create(
+            tenant=self.legacy_tenant,
+            name="Mathematics",
+            code="MATH-8",
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@teacher-dashboard.edu",
+            password="TeacherPass123",
+            first_name="Taylor",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@teacher-dashboard.edu",
+            password="AdminPass123",
+            first_name="Alex",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        teacher_profile = TeacherProfile.objects.create(
+            user=self.teacher_user,
+            employee_id="TCH-DASH-1",
+            qualification="B.Ed",
+            specialization="Mathematics",
+            years_of_experience=6,
+            hire_date=timezone.now().date(),
+            employment_type="full_time",
+            emergency_contact_name="Guardian Contact",
+            emergency_contact_phone="+15554443333",
+            emergency_contact_relation="Sibling",
+        )
+        teacher_profile.assigned_classes.add(self.classroom)
+        teacher_profile.subjects.add(self.subject)
+        start = timezone.now() + timedelta(days=2)
+        Exam.objects.create(
+            title="Teacher Dashboard Midterm",
+            subject=self.subject,
+            class_group=self.classroom,
+            teacher=self.teacher_user,
+            start_date=start,
+            end_date=start + timedelta(hours=2),
+            duration_minutes=120,
+            tenant=self.legacy_tenant,
+            is_published=True,
+        )
+
+    def test_teacher_dashboard_returns_profile_subjects_and_options(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get("/api/app/teacher/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["profile"]["email"], "teacher@teacher-dashboard.edu")
+        self.assertIn("Mathematics", response.data["profile"]["subjects_taught"])
+        self.assertGreaterEqual(response.data["metrics"]["total_assessments"], 1)
+        self.assertGreaterEqual(len(response.data["upcoming_assessments"]), 1)
+        self.assertTrue(any(item["id"] == self.classroom.id for item in response.data["options"]["classes"]))
+        self.assertTrue(any(item["id"] == self.subject.id for item in response.data["options"]["subjects"]))
+
+    def test_non_teacher_cannot_access_teacher_dashboard(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/teacher/dashboard/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.data["success"])
+
+    def test_teacher_can_message_students_in_assigned_class(self):
+        student_user = User.objects.create_user(
+            email="student.class-message@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Class",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=student_user,
+            student_id="STD-MSG-1",
+            admission_number="ADM-MSG-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Parent",
+            guardian_phone="+15550001111",
+            guardian_relation="Parent",
+        )
+
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "class",
+                "class_id": self.classroom.id,
+                "subject": "Class update",
+                "body": "Bring your workbook tomorrow.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["message_data"]["recipient_count"], 1)
+        self.assertTrue(
+            InAppMessage.objects.filter(
+                sender=self.teacher_user,
+                recipient=student_user,
+                subject="Class update",
+                body="Bring your workbook tomorrow.",
+            ).exists()
+        )
+
+    def test_teacher_can_message_admin_and_assigned_student_directly(self):
+        student_user = User.objects.create_user(
+            email="direct.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Direct",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=student_user,
+            student_id="STD-DIRECT-1",
+            admission_number="ADM-DIRECT-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Parent",
+            guardian_phone="+15550002222",
+            guardian_relation="Parent",
+        )
+
+        self.client.force_authenticate(user=self.teacher_user)
+        admin_response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "recipient_email": self.admin_user.email,
+                "subject": "Admin note",
+                "body": "Please review this request.",
+            },
+            format="json",
+        )
+        student_response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "recipient_email": student_user.email,
+                "subject": "Student note",
+                "body": "Please submit your classwork.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(admin_response.status_code, 201)
+        self.assertEqual(student_response.status_code, 201)
+        self.assertTrue(InAppMessage.objects.filter(sender=self.teacher_user, recipient=self.admin_user).exists())
+        self.assertTrue(InAppMessage.objects.filter(sender=self.teacher_user, recipient=student_user).exists())
+
+    def test_teacher_can_create_test_for_all_classes(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        start = timezone.now() + timedelta(days=4)
+        end = start + timedelta(minutes=45)
+
+        response = self.client.post(
+            "/api/app/exams/create/",
+            data={
+                "title": "Weekly Quiz",
+                "assessment_type": "test",
+                "subject_id": self.subject.id,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "duration_minutes": 45,
+                "is_published": True,
+                "questions": [
+                    {
+                        "text": "What is 2 + 2?",
+                        "options": ["3", "4", "5", "6"],
+                        "correct_answer": "4",
+                        "points": 1,
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["exam"]["assessment_type"], "test")
+        self.assertEqual(response.data["exam"]["class_name"], "All classes")
+
+        created = Exam.objects.get(id=response.data["exam"]["id"])
+        self.assertIsNone(created.class_group)
+        self.assertIsNotNone(created.exam_type)
+        self.assertEqual(created.exam_type.name.lower(), "test")
+
+        exams_response = self.client.get("/api/app/exams/")
+        self.assertEqual(exams_response.status_code, 200)
+        self.assertTrue(exams_response.data["success"])
+        self.assertGreaterEqual(exams_response.data["summary"]["tests_count"], 1)
+        self.assertIn("assessment_type", exams_response.data["exams"][0])
+
+    def test_teacher_can_view_and_edit_own_exam_questions(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        start = timezone.now() - timedelta(days=3)
+        exam = Exam.objects.create(
+            title="Past Algebra Exam",
+            subject=self.subject,
+            class_group=self.classroom,
+            teacher=self.teacher_user,
+            start_date=start,
+            end_date=start + timedelta(hours=1),
+            duration_minutes=60,
+            tenant=self.legacy_tenant,
+            is_published=False,
+        )
+        question = Question.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="Original question?",
+            options=["A", "B"],
+            correct_answer="A",
+            points=1,
+        )
+        exam.questions.add(question)
+
+        detail_response = self.client.get(f"/api/app/exams/{exam.id}/")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertTrue(detail_response.data["success"])
+        self.assertEqual(detail_response.data["exam"]["id"], exam.id)
+        self.assertEqual(len(detail_response.data["exam"]["questions"]), 1)
+
+        patch_response = self.client.patch(
+            f"/api/app/exams/{exam.id}/",
+            data={
+                "title": "Edited Algebra Exam",
+                "duration_minutes": 75,
+                "is_published": True,
+                "questions": [
+                    {
+                        "text": "Edited question?",
+                        "options": ["True", "False"],
+                        "correct_answer": "True",
+                        "points": 2,
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertTrue(patch_response.data["success"])
+        exam.refresh_from_db()
+        self.assertEqual(exam.title, "Edited Algebra Exam")
+        self.assertEqual(exam.duration_minutes, 75)
+        self.assertTrue(exam.is_published)
+        self.assertEqual(exam.questions.count(), 1)
+        self.assertEqual(exam.questions.first().text, "Edited question?")
+
+    def test_teacher_can_set_grade_scale_and_push_regraded_results(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        student_user = User.objects.create_user(
+            email="grade.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Grade",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-GRADE-1",
+            admission_number="ADM-GRADE-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Guardian",
+            guardian_phone="+15550001111",
+            guardian_relation="Parent",
+        )
+        TeacherProfile.objects.filter(user=self.teacher_user).first().subjects.add(self.subject)
+
+        grade_response = self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "A", "min_percentage": "80", "max_percentage": "100", "remark": "Distinction"},
+            format="json",
+        )
+        self.assertEqual(grade_response.status_code, 200)
+        self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "B", "min_percentage": "70", "max_percentage": "79.99", "remark": "Very good"},
+            format="json",
+        )
+        self.assertTrue(GradeScale.objects.filter(tenant=self.legacy_tenant, letter="A", min_percentage=80).exists())
+
+        score_response = self.client.post(
+            "/api/app/results/submit/",
+            data={
+                "student_id": student.student_id,
+                "subject_id": self.subject.id,
+                "class_id": self.classroom.id,
+                "score": 75,
+                "max_score": 100,
+            },
+            format="json",
+        )
+        self.assertEqual(score_response.status_code, 201)
+        score = StudentSubjectScore.objects.get(student=student, subject=self.subject)
+        self.assertEqual(score.grade, "B")
+
+        self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "A", "min_percentage": "70", "max_percentage": "100", "remark": "Excellent"},
+            format="json",
+        )
+        push_response = self.client.post(
+            "/api/app/results/push/",
+            data={"class_id": self.classroom.id, "title": "Teacher compiled results"},
+            format="json",
+        )
+        self.assertEqual(push_response.status_code, 200)
+        score.refresh_from_db()
+        self.assertEqual(score.grade, "A")
+        self.assertEqual(score.approval_status, ResultBatch.PENDING)
+
+    def test_teacher_can_submit_score_for_subject_student_outside_assigned_class(self):
+        other_class = Class.objects.create(
+            name="Grade 9",
+            section="A",
+            tenant=self.legacy_tenant,
+        )
+        student_user = User.objects.create_user(
+            email="subject.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Subject",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-SUBJECT-1",
+            admission_number="ADM-SUBJECT-1",
+            admission_date=timezone.now().date(),
+            current_class=other_class,
+            guardian_name="Guardian",
+            guardian_phone="+15550001111",
+            guardian_relation="Parent",
+        )
+
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/results/submit/",
+            data={
+                "student_id": student.student_id,
+                "subject_id": self.subject.id,
+                "class_id": other_class.id,
+                "score": 68,
+                "max_score": 100,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        score = StudentSubjectScore.objects.get(student=student, subject=self.subject)
+        self.assertEqual(score.class_group, other_class)
+        self.assertEqual(score.teacher, self.teacher_user)
+
+    def test_admin_can_delete_result_batch_and_scores(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        student_user = User.objects.create_user(
+            email="delete.batch.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Delete",
+            last_name="Batch",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-DEL-1",
+            admission_number="ADM-DEL-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Guardian",
+            guardian_phone="+15550001111",
+            guardian_relation="Parent",
+        )
+        score_response = self.client.post(
+            "/api/app/results/submit/",
+            data={
+                "student_id": student.student_id,
+                "subject_id": self.subject.id,
+                "class_id": self.classroom.id,
+                "score": 82,
+                "max_score": 100,
+            },
+            format="json",
+        )
+        self.assertEqual(score_response.status_code, 201)
+        push_response = self.client.post(
+            "/api/app/results/push/",
+            data={"class_id": self.classroom.id, "title": "Delete me"},
+            format="json",
+        )
+        self.assertEqual(push_response.status_code, 200)
+        batch_id = push_response.data["batch_id"]
+
+        self.client.force_authenticate(user=self.admin_user)
+        delete_response = self.client.delete(f"/api/app/results/batches/{batch_id}/")
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(ResultBatch.objects.filter(id=batch_id).exists())
+        self.assertFalse(StudentSubjectScore.objects.filter(student=student, subject=self.subject).exists())
+
+
+class SchoolSettingsAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Settings School",
+            schema_name="settings_school_20260306",
+            is_active=True,
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@settings.edu",
+            password="AdminPass123",
+            first_name="Admin",
+            last_name="User",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@settings.edu",
+            password="StudentPass123",
+            first_name="Student",
+            last_name="User",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+    def test_get_school_settings_returns_current_tenant_profile(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/school/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["school"]["name"], "Settings School")
+        self.assertEqual(response.data["school"]["school_code"], "settings_school_20260306")
+        self.assertTrue(response.data["can_edit"])
+
+    def test_school_admin_can_update_school_name(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={"name": "Updated Settings School"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.school.refresh_from_db()
+        self.assertEqual(self.school.name, "Updated Settings School")
+
+    def test_school_rename_updates_code_domain_and_linked_ids(self):
+        Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        Domain.objects.create(tenant=self.school, domain="settings_school_20260306.school.local", is_primary=True)
+        student = StudentProfile.objects.create(
+            user=self.student_user,
+            student_id="STOLD001",
+            admission_number="ADM-OLD-001",
+            admission_date=timezone.localdate(),
+            guardian_name="Guardian",
+            guardian_relation="Parent",
+        )
+        StudentPaymentReference.objects.create(student=student, tenant=self.school, code="STOLD001")
+        teacher_user = User.objects.create_user(
+            email="teacher@settings.edu",
+            password="TeacherPass123",
+            first_name="Teacher",
+            last_name="User",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        teacher = TeacherProfile.objects.create(
+            user=teacher_user,
+            employee_id="TCOLD001",
+            qualification="B.Ed",
+            specialization="Science",
+            years_of_experience=2,
+            hire_date=timezone.localdate(),
+            emergency_contact_name="Guardian",
+            emergency_contact_phone="+100000000",
+            emergency_contact_relation="Parent",
+        )
+        teacher_staff = StaffProfile.objects.create(
+            tenant=self.school,
+            user=teacher_user,
+            staff_code="TCOLD001",
+            first_name="Teacher",
+            last_name="User",
+            staff_type=StaffProfile.TEACHING,
+            role="Teacher",
+        )
+        non_teaching = StaffProfile.objects.create(
+            tenant=self.school,
+            staff_code="NSOLD001",
+            first_name="Admin",
+            last_name="Staff",
+            staff_type=StaffProfile.NON_TEACHING,
+            role="Accountant",
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={"name": "Icon Tutor"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["renamed"])
+        self.school.refresh_from_db()
+        student.refresh_from_db()
+        teacher.refresh_from_db()
+        teacher_staff.refresh_from_db()
+        non_teaching.refresh_from_db()
+        self.assertEqual(self.school.name, "Icon Tutor")
+        self.assertEqual(self.school.schema_name, "icon_tutor")
+        self.assertTrue(Tenant.objects.filter(slug="icon_tutor", name="Icon Tutor").exists())
+        self.assertTrue(Domain.objects.filter(tenant=self.school, domain="icon_tutor.school.local", is_primary=True).exists())
+        self.assertRegex(student.student_id, r"^STIT\d{3}$")
+        self.assertRegex(teacher.employee_id, r"^TCIT\d{3}$")
+        self.assertEqual(teacher_staff.staff_code, teacher.employee_id)
+        self.assertRegex(non_teaching.staff_code, r"^NSIT\d{3}$")
+        self.assertEqual(student.payment_reference.code, student.student_id)
+
+    def test_school_admin_can_upload_school_logo(self):
+        self.client.force_authenticate(user=self.admin_user)
+        logo = SimpleUploadedFile(
+            "logo.gif",
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/gif",
+        )
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={
+                "name": "Settings School",
+                "logo": logo,
+                "currency": "NGN",
+                "timezone": "Africa/Lagos",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertIn("logo", response.data["school"])
+        self.assertTrue(response.data["school"]["logo"])
+        self.school.refresh_from_db()
+        self.assertTrue(self.school.logo.name)
+        self.assertEqual(self.school.currency, "NGN")
+
+    def test_non_admin_cannot_update_school_name(self):
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={"name": "Student Should Not Update"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.school.refresh_from_db()
+        self.assertEqual(self.school.name, "Settings School")
+
+
+class StudentsAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Student Upload School",
+            schema_name="student_upload_school_20260306",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="Student Upload School Legacy",
+            slug="student_upload_school_20260306",
+        )
+        self.classroom = Class.objects.create(
+            name="Grade 7",
+            section="B",
+            tenant=self.legacy_tenant,
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@student-upload.edu",
+            password="AdminPass123",
+            first_name="Admin",
+            last_name="Uploader",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_create_student_accepts_profile_picture_and_returns_visible_media_url(self):
+        image_content = (
+            b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+            b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00"
+            b"\x00\x02\x02D\x01\x00;"
+        )
+        image = SimpleUploadedFile("student.gif", image_content, content_type="image/gif")
+
+        response = self.client.post(
+            "/api/app/students/create/",
+            data={
+                "student_email": "photo.student@student-upload.edu",
+                "first_name": "Photo",
+                "last_name": "Student",
+                "guardian_name": "Guardian Photo",
+                "guardian_phone": "+15550006666",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+                "class_id": self.classroom.id,
+                "profile_picture": image,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertIn("/media/profiles/", response.data["student"]["profile_picture"])
+
+        profile = StudentProfile.objects.get(user__email="photo.student@student-upload.edu")
+        self.assertEqual(profile.current_class, self.classroom)
+        self.assertTrue(bool(profile.user.profile_picture))
+        self.assertTrue(profile.user.profile_picture.storage.exists(profile.user.profile_picture.name))
+        self.assertTrue(profile.user.check_password("StudentPass123"))
+
+    def test_update_student_profile_api_updates_user_and_profile(self):
+        student_user = User.objects.create_user(
+            email="update.student@student-upload.edu",
+            password="StudentPass123",
+            first_name="Old",
+            last_name="Name",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-UPD-1",
+            admission_number="ADM-UPD-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Old Guardian",
+            guardian_phone="+15550001111",
+            guardian_relation="Parent",
+        )
+
+        response = self.client.patch(
+            f"/api/app/students/{profile.id}/",
+            data={
+                "first_name": "Updated",
+                "last_name": "Student",
+                "phone": "+15551112222",
+                "guardian_name": "Updated Guardian",
+                "guardian_phone": "+15553334444",
+                "class_id": self.classroom.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        profile.refresh_from_db()
+        student_user.refresh_from_db()
+        self.assertEqual(student_user.first_name, "Updated")
+        self.assertEqual(student_user.last_name, "Student")
+        self.assertEqual(student_user.phone, "+15551112222")
+        self.assertEqual(profile.guardian_name, "Updated Guardian")
+        self.assertEqual(profile.guardian_phone, "+15553334444")
+        self.assertEqual(profile.current_class, self.classroom)
+
+    def test_delete_student_api_removes_profile_and_user(self):
+        student_user = User.objects.create_user(
+            email="delete.student@student-upload.edu",
+            password="StudentPass123",
+            first_name="Delete",
+            last_name="Me",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-DEL-1",
+            admission_number="ADM-DEL-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Delete Guardian",
+            guardian_phone="+15556667777",
+            guardian_relation="Parent",
+        )
+
+        response = self.client.delete(f"/api/app/students/{profile.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertFalse(StudentProfile.objects.filter(id=profile.id).exists())
+        self.assertFalse(User.objects.filter(id=student_user.id).exists())
+
+    def test_create_student_requires_password_for_new_student(self):
+        response = self.client.post(
+            "/api/app/students/create/",
+            data={
+                "student_email": "nopassword@student-upload.edu",
+                "first_name": "No",
+                "last_name": "Password",
+                "guardian_name": "Guardian",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("student_password is required", response.data["message"])
+        self.assertFalse(User.objects.filter(email="nopassword@student-upload.edu").exists())
+
+
+class AttendanceAndPromptTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Attendance School",
+            schema_name="attendance_school_20260307",
+            is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(
+            name="Attendance School Legacy",
+            slug="attendance_school_20260307",
+        )
+        self.classroom = Class.objects.create(
+            name="Grade 8",
+            section="C",
+            tenant=self.legacy_tenant,
+        )
+        self.student_user = User.objects.create_user(
+            email="attendance@student.edu",
+            password="StudentPass123",
+            first_name="Learner",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=self.student_user,
+            student_id="STU-ATT-1",
+            admission_number="ADM-ATT-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Lead",
+            guardian_phone="+15550009999",
+            guardian_relation="Parent",
+            current_class=self.classroom,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@attendance.edu",
+            password="TeacherPass123",
+            first_name="Casey",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.teacher_profile = TeacherProfile.objects.create(
+            user=self.teacher_user,
+            employee_id="TCH-ATT-1",
+            qualification="M.Ed",
+            specialization="General Studies",
+            years_of_experience=5,
+            hire_date=timezone.now().date(),
+            employment_type="full_time",
+            emergency_contact_name="Assistant Lead",
+            emergency_contact_phone="+15550008888",
+            emergency_contact_relation="Sibling",
+        )
+        self.teacher_profile.assigned_classes.add(self.classroom)
+        self.subject = Subject.objects.create(
+            name="Science",
+            code="SCI",
+            tenant=self.legacy_tenant,
+        )
+        start = timezone.now() + timedelta(days=2)
+        self.exam = Exam.objects.create(
+            title="Attendance Lesson Quiz",
+            subject=self.subject,
+            class_group=self.classroom,
+            teacher=self.teacher_user,
+            start_date=start,
+            end_date=start + timedelta(hours=1),
+            duration_minutes=45,
+            tenant=self.legacy_tenant,
+            is_published=True,
+        )
+
+    def test_teacher_class_students_only_returns_assigned_class_students(self):
+        other_class = Class.objects.create(name="Grade 9", section="A", tenant=self.legacy_tenant)
+        other_student_user = User.objects.create_user(
+            email="other.attendance@student.edu",
+            password="StudentPass123",
+            first_name="Other",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=other_student_user,
+            student_id="STU-ATT-2",
+            admission_number="ADM-ATT-2",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Two",
+            guardian_phone="+15550007777",
+            guardian_relation="Parent",
+            current_class=other_class,
+        )
+
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get("/api/app/attendance/class-students/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["student_id"] for item in response.data["students"]], ["STU-ATT-1"])
+        self.assertEqual([item["id"] for item in response.data["classes"]], [self.classroom.id])
+
+    def test_teacher_cannot_mark_unassigned_class_attendance(self):
+        other_class = Class.objects.create(name="Grade 9", section="B", tenant=self.legacy_tenant)
+        other_student_user = User.objects.create_user(
+            email="blocked.attendance@student.edu",
+            password="StudentPass123",
+            first_name="Blocked",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=other_student_user,
+            student_id="STU-ATT-3",
+            admission_number="ADM-ATT-3",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Three",
+            guardian_phone="+15550006666",
+            guardian_relation="Parent",
+            current_class=other_class,
+        )
+
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-3", "class_id": other_class.id, "status": "present"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(AttendanceRecord.objects.filter(student=other_student_user).exists())
+
+    def test_teacher_can_mark_assigned_class_attendance(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-1", "class_id": self.classroom.id, "status": "present"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertEqual(record.status, "present")
+        self.assertEqual(record.class_group, self.classroom)
+        self.assertEqual(record.noted_by, self.teacher_user)
+
+    def test_student_cannot_mark_own_attendance(self):
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.post(
+            "/api/app/attendance/mark/",
+            data={"status": "present"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.data["success"])
+        self.assertEqual(
+            AttendanceRecord.objects.filter(student=self.student_user, date=timezone.localdate()).count(),
+            0,
+        )
+
+    def test_student_can_answer_prompt(self):
+        prompt = QuestionPrompt.objects.create(
+            title="Daily Reflection",
+            body="Share one highlight from today's lesson.",
+            class_group=self.classroom,
+            created_by=self.teacher_user,
+            tenant=self.legacy_tenant,
+        )
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.post(
+            "/api/app/questions/answer/",
+            data={"prompt_id": str(prompt.id), "response_text": "Learned about ecosystems."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(
+            QuestionResponse.objects.filter(prompt=prompt, student=self.student_user).exists()
+        )
+
+    def test_teacher_can_create_prompt_and_notify(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        create_response = self.client.post(
+            "/api/app/questions/create/",
+            data={
+                "title": "Weekly Poll",
+                "body": "What topic should we revisit?",
+                "class_id": self.classroom.id,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        self.assertTrue(create_response.data["success"])
+        self.assertEqual(create_response.data["prompt"]["class_name"], "Grade 8 - C")
+
+        notify_response = self.client.post(
+            f"/api/app/exams/{self.exam.id}/notify/",
+            data={"message": "Don't forget the quiz tomorrow.", "subject": "Quiz reminder"},
+            format="json",
+        )
+        self.assertEqual(notify_response.status_code, 200)
+        self.assertTrue(notify_response.data["success"])
+        self.assertEqual(notify_response.data["sent"], 1)
+        self.assertTrue(
+            InAppMessage.objects.filter(sender=self.teacher_user, recipient=self.student_user).exists()
+        )
+
+
+class TeachersAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Teacher Smoke School",
+            schema_name="teacher_smoke_202603060812",
+            is_active=True,
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@teacher-smoke.edu",
+            password="AdminPass123",
+            first_name="Taylor",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_create_teacher_api_creates_user_and_profile(self):
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "new.teacher@teacher-smoke.edu",
+                "first_name": "Nora",
+                "last_name": "Teacher",
+                "employee_id": "TCH-SMOKE-001",
+                "specialization": "Mathematics",
+                "qualification": "B.Ed",
+                "employment_type": "full_time",
+                "years_of_experience": 4,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+
+        profile = TeacherProfile.objects.get(user__email="new.teacher@teacher-smoke.edu")
+        self.assertEqual(profile.employee_id, "TCH-SMOKE-001")
+        self.assertEqual(profile.specialization, "Mathematics")
+        self.assertEqual(profile.qualification, "B.Ed")
+        self.assertEqual(profile.years_of_experience, 4)
+        self.assertEqual(profile.user.tenant, self.school)
+
+    def test_create_teacher_api_auto_generates_employee_id(self):
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "autogen.teacher@teacher-smoke.edu",
+                "first_name": "Auto",
+                "last_name": "Generate",
+                "specialization": "English",
+                "qualification": "B.A",
+                "employment_type": "full_time",
+                "years_of_experience": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+
+        profile = TeacherProfile.objects.get(user__email="autogen.teacher@teacher-smoke.edu")
+        self.assertTrue(profile.employee_id)
+        self.assertRegex(profile.employee_id, r"^TC[A-Z]{2}\d{3}$")
+        self.assertEqual(profile.user.tenant, self.school)
+
+    def test_teachers_snapshot_returns_summary_and_options(self):
+        teacher_user = User.objects.create_user(
+            email="existing.teacher@teacher-smoke.edu",
+            password="TeacherPass123",
+            first_name="Existing",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        TeacherProfile.objects.create(
+            user=teacher_user,
+            employee_id="TCH-SMOKE-EXISTING",
+            qualification="M.Ed",
+            specialization="Science",
+            years_of_experience=7,
+            hire_date=timezone.now().date(),
+            emergency_contact_name="Emergency Contact",
+            emergency_contact_phone="+15550004444",
+            emergency_contact_relation="Sibling",
+        )
+
+        response = self.client.get("/api/app/teachers/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertGreaterEqual(response.data["summary"]["total_teachers"], 1)
+        self.assertGreaterEqual(len(response.data["teachers"]), 1)
+        employment_values = [item["value"] for item in response.data["options"]["employment_types"]]
+        self.assertIn("full_time", employment_values)
+
+    def test_create_teacher_api_accepts_profile_picture(self):
+        photo = SimpleUploadedFile("teacher.jpg", b"teacher-photo-bytes", content_type="image/jpeg")
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "photo.teacher@teacher-smoke.edu",
+                "first_name": "Photo",
+                "last_name": "Teacher",
+                "profile_picture": photo,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        profile = TeacherProfile.objects.get(user__email="photo.teacher@teacher-smoke.edu")
+        self.assertTrue(bool(profile.user.profile_picture))
+        self.assertIn("profiles/", profile.user.profile_picture.name)
+
+    def test_update_teacher_profile_api_updates_user_and_profile(self):
+        teacher_user = User.objects.create_user(
+            email="update.teacher@teacher-smoke.edu",
+            password="TeacherPass123",
+            first_name="Old",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = TeacherProfile.objects.create(
+            user=teacher_user,
+            employee_id="TCH-UPD-1",
+            qualification="Old Qual",
+            specialization="Old Spec",
+            years_of_experience=1,
+            hire_date=timezone.now().date(),
+            employment_type="full_time",
+            emergency_contact_name="Old Contact",
+            emergency_contact_phone="+15550009999",
+            emergency_contact_relation="Sibling",
+        )
+
+        response = self.client.patch(
+            f"/api/app/teachers/{profile.id}/",
+            data={
+                "first_name": "Updated",
+                "last_name": "Teacher",
+                "phone": "+15558889999",
+                "employee_id": "TCH-UPD-2",
+                "specialization": "Mathematics",
+                "qualification": "B.Ed",
+                "employment_type": "part_time",
+                "years_of_experience": 6,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        profile.refresh_from_db()
+        teacher_user.refresh_from_db()
+        self.assertEqual(teacher_user.first_name, "Updated")
+        self.assertEqual(teacher_user.last_name, "Teacher")
+        self.assertEqual(teacher_user.phone, "+15558889999")
+        self.assertEqual(profile.employee_id, "TCH-UPD-2")
+        self.assertEqual(profile.specialization, "Mathematics")
+        self.assertEqual(profile.qualification, "B.Ed")
+        self.assertEqual(profile.employment_type, "part_time")
+        self.assertEqual(profile.years_of_experience, 6)
+
+    def test_delete_teacher_api_removes_profile_and_user(self):
+        teacher_user = User.objects.create_user(
+            email="delete.teacher@teacher-smoke.edu",
+            password="TeacherPass123",
+            first_name="Delete",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = TeacherProfile.objects.create(
+            user=teacher_user,
+            employee_id="TCH-DEL-1",
+            qualification="M.Ed",
+            specialization="Science",
+            years_of_experience=3,
+            hire_date=timezone.now().date(),
+            employment_type="full_time",
+            emergency_contact_name="Delete Contact",
+            emergency_contact_phone="+15557776666",
+            emergency_contact_relation="Sibling",
+        )
+
+        response = self.client.delete(f"/api/app/teachers/{profile.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertFalse(TeacherProfile.objects.filter(id=profile.id).exists())
+        self.assertFalse(User.objects.filter(id=teacher_user.id).exists())
+
+
+class AuthSchoolScopeTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Scope School",
+            schema_name="scope_school_20260306",
+            is_active=True,
+        )
+        self.other_school = SchoolTenant.objects.create(
+            name="Other Scope School",
+            schema_name="other_scope_20260306",
+            is_active=True,
+        )
+
+    def test_register_student_requires_school_code(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Scope",
+                "last_name": "Student",
+                "email": "scope.student@school.edu",
+                "password": "StudentPass123",
+                "confirm_password": "StudentPass123",
+                "role": "student",
+                "guardian_name": "Guardian One",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+
+    def test_register_teacher_requires_school_code(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Scope",
+                "last_name": "Teacher",
+                "email": "scope.teacher@school.edu",
+                "password": "TeacherPass123",
+                "confirm_password": "TeacherPass123",
+                "role": "teacher",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+
+    def test_register_school_admin_requires_school_code(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Scope",
+                "last_name": "Admin",
+                "email": "scope.admin@school.edu",
+                "password": "AdminPass123",
+                "confirm_password": "AdminPass123",
+                "role": "school_admin",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+
+    def test_register_student_with_school_code_is_allowed(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Scoped",
+                "last_name": "Learner",
+                "email": "scoped.learner@school.edu",
+                "password": "StudentPass123",
+                "confirm_password": "StudentPass123",
+                "role": "student",
+                "guardian_name": "Guardian Scoped",
+                "school_code": self.school.schema_name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        user = User.objects.get(email="scoped.learner@school.edu")
+        self.assertEqual(user.tenant_id, self.school.id)
+
+    def test_student_login_requires_school_code(self):
+        student = User.objects.create_user(
+            email="login.student@school.edu",
+            password="StudentPass123",
+            first_name="Login",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=student,
+            student_id="STU-LOGIN-1",
+            admission_number="ADM-LOGIN-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Login",
+            guardian_phone="+15550007777",
+            guardian_relation="Parent",
+        )
+
+        response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": "login.student@school.edu",
+                "password": "StudentPass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school code is required", str(response.data["errors"]).lower())
+
+    def test_teacher_login_requires_matching_school_code(self):
+        teacher = User.objects.create_user(
+            email="login.teacher@school.edu",
+            password="TeacherPass123",
+            first_name="Login",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        TeacherProfile.objects.create(
+            user=teacher,
+            employee_id="TCH-LOGIN-1",
+            qualification="M.Ed",
+            specialization="Science",
+            years_of_experience=5,
+            hire_date=timezone.now().date(),
+            emergency_contact_name="Emergency",
+            emergency_contact_phone="+15550008888",
+            emergency_contact_relation="Sibling",
+        )
+
+        wrong_response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": "login.teacher@school.edu",
+                "password": "TeacherPass123",
+                "school_code": self.other_school.schema_name,
+            },
+            format="json",
+        )
+        self.assertEqual(wrong_response.status_code, 400)
+        self.assertFalse(wrong_response.data["success"])
+
+        ok_response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": "login.teacher@school.edu",
+                "password": "TeacherPass123",
+                "school_code": self.school.schema_name,
+            },
+            format="json",
+        )
+        self.assertEqual(ok_response.status_code, 200)
+        self.assertTrue(ok_response.data["success"])
+
+    def test_school_admin_without_tenant_must_provide_school_code(self):
+        User.objects.create_user(
+            email="orphan.admin@school.edu",
+            password="AdminPass123",
+            first_name="Orphan",
+            last_name="Admin",
+            role="school_admin",
+            tenant=None,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": "orphan.admin@school.edu",
+                "password": "AdminPass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school code is required", str(response.data["errors"]).lower())
+
+    def test_school_admin_login_with_school_code_backfills_tenant(self):
+        user = User.objects.create_user(
+            email="backfill.admin@school.edu",
+            password="AdminPass123",
+            first_name="Backfill",
+            last_name="Admin",
+            role="school_admin",
+            tenant=None,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": "backfill.admin@school.edu",
+                "password": "AdminPass123",
+                "school_code": self.school.schema_name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        user.refresh_from_db()
+        self.assertEqual(user.tenant_id, self.school.id)
+
+    def test_create_class_accepts_school_code_when_user_tenant_missing(self):
+        user = User.objects.create_user(
+            email="class.admin@school.edu",
+            password="AdminPass123",
+            first_name="Class",
+            last_name="Admin",
+            role="school_admin",
+            tenant=None,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.post(
+            "/api/app/classes/create/",
+            data={
+                "name": "Grade 11",
+                "section": "A",
+                "school_code": self.school.schema_name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        user.refresh_from_db()
+        self.assertEqual(user.tenant_id, self.school.id)
+        self.assertTrue(Tenant.objects.filter(slug=self.school.schema_name).exists())
+
+    def test_create_class_assigns_selected_subjects(self):
+        user = User.objects.create_user(
+            email="subject.class.admin@school.edu",
+            password="AdminPass123",
+            first_name="Subject",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        legacy_tenant = Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        math = Subject.objects.create(name="Mathematics", code="MATH", tenant=legacy_tenant)
+        physics = Subject.objects.create(name="Physics", code="PHY", tenant=legacy_tenant)
+        self.client.force_authenticate(user=user)
+
+        response = self.client.post(
+            "/api/app/classes/create/",
+            data={
+                "name": "Science Department",
+                "section": "Senior",
+                "subject_ids": [math.id, physics.id],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertEqual({item["id"] for item in response.data["class"]["subjects"]}, {math.id, physics.id})
+        class_obj = Class.objects.get(name="Science Department")
+        self.assertEqual(set(class_obj.subjects.values_list("id", flat=True)), {math.id, physics.id})
+
+    def test_refresh_token_endpoint_allows_refresh_without_access_token(self):
+        user = User.objects.create_user(
+            email="refresh.admin@school.edu",
+            password="AdminPass123",
+            first_name="Refresh",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        login_response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": user.email,
+                "password": "AdminPass123",
+            },
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, 200)
+        self.assertTrue(login_response.data["success"])
+        self.assertIn("refresh", login_response.data)
+
+        # Simulate browser state after access token expiry by omitting Authorization header.
+        self.client.credentials()
+        refresh_response = self.client.post(
+            "/api/auth/refresh/",
+            data={"refresh": login_response.data["refresh"]},
+            format="json",
+        )
+
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertIn("access", refresh_response.data)
