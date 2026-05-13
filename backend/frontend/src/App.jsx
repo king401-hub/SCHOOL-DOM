@@ -95,6 +95,7 @@ const AdminStudentsScreen = lazyAdminScreen("AdminStudentsScreen");
 const AdminTeachersScreen = lazyAdminScreen("AdminTeachersScreen");
 const AdminEnrollmentsScreen = lazyAdminScreen("AdminEnrollmentsScreen");
 const AdminMessagesScreen = lazyAdminScreen("AdminMessagesScreen");
+const AdminDatabaseImportScreen = lazyAdminScreen("AdminDatabaseImportScreen");
 
 const NAIRA_SYMBOL = "\u20A6";
 const DAILY_PERSONAL_QUESTION_LIMIT = 20;
@@ -5301,6 +5302,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleDatabaseImportUpload = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/database-imports/", payload);
+      addAdminNotification({
+        category: "System",
+        module: "Database Import",
+        action: `Uploaded ${payload?.file?.name || "migration file"} for validation.`,
+        status: result?.success ? "Validated" : "Needs Review",
+        priority: "High",
+        tone: result?.success ? "success" : "warning",
+      });
+      await loadScreen("/database-import", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAdminCreateExam = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/exams/create/", payload);
@@ -5604,6 +5622,16 @@ const unreadNotificationsCount =
         onSearch={handleSearchReport}
         onReviewBatch={handleReviewResultBatch}
         onDeleteBatch={handleDeleteResultBatch}
+      />
+    );
+  } else if (activePath === "/database-import") {
+    content = (
+      <AdminDatabaseImportScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onUpload={handleDatabaseImportUpload}
       />
     );
   } else {

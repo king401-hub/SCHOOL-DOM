@@ -42,6 +42,7 @@ export const ADMIN_ROUTES = [
   { path: "/classes", label: "Classes" },
   { path: "/exams", label: "Exams" },
   { path: "/results", label: "Results" },
+  { path: "/database-import", label: "Database Import" },
   { path: "/messages", label: "Messages" },
   { path: "/settings", label: "Settings" },
 ];
@@ -66,6 +67,7 @@ export const ADMIN_ENDPOINTS = {
   "/subjects": "/api/app/classes/", // subjects included in classes snapshot
   "/exams": "/api/app/exams/",
   "/results": "/api/app/results/",
+  "/database-import": "/api/app/database-imports/",
   "/messages": "/api/app/messages/",
   "/settings": "/api/app/school/settings/",
 };

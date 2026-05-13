@@ -5612,6 +5612,188 @@ function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessag
   );
 
 }
+
+function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUpload }) {
+  const summary = data?.summary || {};
+  const history = data?.history || [];
+  const importTypes = data?.options?.import_types || [
+    { value: "full_school", label: "Full school database" },
+    { value: "students", label: "Student records" },
+    { value: "teachers", label: "Teacher profiles" },
+    { value: "classes_subjects", label: "Classes and subjects" },
+    { value: "cbt_results", label: "CBT results" },
+    { value: "attendance", label: "Attendance records" },
+    { value: "payments", label: "Payment history" },
+    { value: "documents", label: "Uploaded documents" },
+    { value: "academic_records", label: "Academic records" },
+  ];
+  const linkKeys = data?.options?.link_keys || [
+    { value: "admission_number", label: "Admission number" },
+    { value: "student_id", label: "Student ID" },
+    { value: "employee_id", label: "Employee ID" },
+    { value: "email", label: "Email address" },
+    { value: "filename", label: "Filename convention" },
+  ];
+  const [form, setForm] = useState({ import_type: "full_school", source_platform: "", link_key: "admission_number", notes: "" });
+  const [file, setFile] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [uploadError, setUploadError] = useState("");
+
+  const submitImport = async (event) => {
+    event.preventDefault();
+    if (!file) {
+      setUploadError("Choose a database export, spreadsheet, ZIP, image, or document file.");
+      return;
+    }
+    setBusy(true);
+    setFeedback("");
+    setUploadError("");
+    try {
+      const result = await onUpload?.({ ...form, file });
+      setFeedback(result?.message || "Import uploaded for validation.");
+      setFile(null);
+      setForm((current) => ({ ...current, notes: "" }));
+    } catch (actionError) {
+      setUploadError(actionError.message || "Could not upload import.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const acceptDrop = (event) => {
+    event.preventDefault();
+    setDragging(false);
+    const dropped = event.dataTransfer.files?.[0];
+    if (dropped) {
+      setFile(dropped);
+      setUploadError("");
+    }
+  };
+
+  return (
+    <section className="screen-grid database-import-screen">
+      <div className="screen-hero database-import-hero">
+        <h2>School Database Import System</h2>
+        <p>Securely migrate school data, academic records, media, and historical activity into SchoolDom.</p>
+      </div>
+
+      <ScreenState loading={loading && !history.length} error={error} onRetry={onRetry} />
+
+      <div className="metric-grid">
+        <MetricCard label="Imports" value={summary.total_imports ?? history.length} trend="Migration jobs" />
+        <MetricCard label="Validated" value={summary.validated ?? 0} trend="Ready for review" />
+        <MetricCard label="Needs Review" value={summary.needs_review ?? 0} trend="Mapping or format checks" />
+        <MetricCard label="Latest" value={summary.latest_import_at ? formatDate(summary.latest_import_at) : "-"} trend="Most recent upload" />
+      </div>
+
+      <div className="database-import-layout">
+        <article className="app-panel database-import-uploader">
+          <div className="panel-head">
+            <h3>Upload migration file</h3>
+            <small>CSV, Excel, JSON, SQL backup, ZIP, images, and documents are accepted for admin review.</small>
+          </div>
+          <form className="panel-form" onSubmit={submitImport}>
+            <div
+              className={`migration-dropzone ${dragging ? "dragging" : ""}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={acceptDrop}
+            >
+              <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              <strong>{file ? file.name : "Drop a school export file here"}</strong>
+              <span>{file ? `${Math.ceil(file.size / 1024).toLocaleString()} KB selected` : "or click to browse from your device"}</span>
+            </div>
+
+            <div className="panel-form-grid">
+              <label className="panel-field">
+                Import category
+                <select value={form.import_type} onChange={(event) => setForm((current) => ({ ...current, import_type: event.target.value }))}>
+                  {importTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="panel-field">
+                Source platform
+                <input value={form.source_platform} onChange={(event) => setForm((current) => ({ ...current, source_platform: event.target.value }))} placeholder="e.g. Legacy SIS, Moodle, Excel archive" />
+              </label>
+              <label className="panel-field">
+                Link images/documents by
+                <select value={form.link_key} onChange={(event) => setForm((current) => ({ ...current, link_key: event.target.value }))}>
+                  {linkKeys.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="panel-field full">
+                Migration notes
+                <textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Mention column names, image naming patterns, or special mapping instructions." />
+              </label>
+            </div>
+            {uploadError ? <p className="form-feedback error">{uploadError}</p> : null}
+            {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+            <div className="panel-form-actions">
+              <button type="submit" disabled={busy}>{busy ? "Validating..." : "Upload and validate"}</button>
+            </div>
+          </form>
+        </article>
+
+        <article className="app-panel migration-safety-panel">
+          <h3>Secure migration workflow</h3>
+          <div className="migration-status-list">
+            <div><strong>Admin only</strong><span>Teacher, student, staff, and parent accounts are blocked.</span></div>
+            <div><strong>Safe SQL handling</strong><span>SQL backups are inspected and stored, never executed from upload.</span></div>
+            <div><strong>Media linking</strong><span>Passports, logos, certificates, and documents can be matched by ID, email, or filename.</span></div>
+            <div><strong>Review before apply</strong><span>Every import has validation status, summary, and errors.</span></div>
+          </div>
+        </article>
+      </div>
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Recent import history</h3>
+          <small>Validation summaries from recent migration uploads.</small>
+        </div>
+        {history.length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Category</th>
+                  <th>Status</th>
+                  <th>Source</th>
+                  <th>Detected</th>
+                  <th>Uploaded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((job) => (
+                  <tr key={job.id}>
+                    <td>{job.original_filename}<br /><small>{Number(job.file_size || 0).toLocaleString()} bytes</small></td>
+                    <td>{job.import_type_label || job.import_type}</td>
+                    <td><span className={`student-status-pill status-${job.status === "validated" ? "present" : "unmarked"}`}>{job.status}</span></td>
+                    <td>{job.source_platform || "-"}</td>
+                    <td>
+                      {(job.summary?.format || "file").toUpperCase()}
+                      {job.summary?.file_count ? <small>{job.summary.file_count} files in ZIP</small> : null}
+                      {job.errors?.length ? <small>{job.errors[0]}</small> : null}
+                    </td>
+                    <td>{formatDate(job.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel-empty">No database imports have been uploaded yet.</p>
+        )}
+      </article>
+    </section>
+  );
+}
+
 export {
   AdminDashboardScreen,
   AdminFinanceScreen,
@@ -5629,4 +5811,5 @@ export {
   AdminTeachersScreen,
   AdminEnrollmentsScreen,
   AdminMessagesScreen,
+  AdminDatabaseImportScreen,
 };

@@ -8948,16 +8948,16 @@ body[data-theme="dark"] .segmented-control button.active {
 
   .global-notification-shell {
     top: max(0.75rem, env(safe-area-inset-top));
-    left: 0;
-    right: 0;
-    justify-items: center;
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: auto;
+    justify-items: start;
   }
 
   body[data-dashboard-role="student"] .global-notification-shell {
     top: max(0.75rem, env(safe-area-inset-top));
-    left: auto;
-    right: max(0.75rem, env(safe-area-inset-right));
-    justify-items: end;
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: auto;
+    justify-items: start;
   }
 
   .global-home-button {
@@ -8979,7 +8979,7 @@ body[data-theme="dark"] .segmented-control button.active {
     padding: 0;
     border-radius: 999px;
     justify-content: center;
-    transform: translateX(31px);
+    transform: none;
   }
 
   body[data-dashboard-role="student"] .global-notification-button {
@@ -8987,7 +8987,7 @@ body[data-theme="dark"] .segmented-control button.active {
   }
 
   .global-notification-button:hover {
-    transform: translateX(31px) translateY(-1px);
+    transform: translateY(-1px);
   }
 
   body[data-dashboard-role="student"] .global-notification-button:hover {
@@ -10723,6 +10723,10 @@ body[data-theme="dark"] .scheme-plan-meta {
     grid-template-columns: 1fr;
   }
 
+  .database-import-layout {
+    grid-template-columns: 1fr;
+  }
+
   .academic-page {
     padding: 12px;
   }
@@ -11071,6 +11075,96 @@ body[data-theme="dark"] .scheme-plan-meta {
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
   gap: 0.75rem;
+}
+
+.database-import-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.25fr) minmax(260px, 0.75fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.migration-dropzone {
+  position: relative;
+  min-height: 190px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.5rem;
+  border: 2px dashed #9bb7e5;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fbff, #eef6ff);
+  color: #12325f;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.migration-dropzone.dragging {
+  border-color: #2563eb;
+  background: #eaf2ff;
+  transform: translateY(-1px);
+}
+
+.migration-dropzone input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.migration-dropzone strong {
+  max-width: 90%;
+  color: #0f172a;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.migration-dropzone span {
+  color: #64748b;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.migration-status-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.migration-status-list div {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 0.85rem;
+}
+
+.migration-status-list strong {
+  color: #0f172a;
+}
+
+.migration-status-list span {
+  color: #475569;
+  line-height: 1.45;
+}
+
+body[data-theme="dark"] .migration-dropzone,
+body[data-theme="dark"] .migration-status-list div {
+  background: #0b1f44;
+  border-color: rgba(147, 197, 253, 0.24);
+}
+
+body[data-theme="dark"] .migration-dropzone strong,
+body[data-theme="dark"] .migration-status-list strong {
+  color: #ffffff;
+}
+
+body[data-theme="dark"] .migration-dropzone span,
+body[data-theme="dark"] .migration-status-list span {
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .finance-chart-panel {

@@ -3888,6 +3888,88 @@ def school_settings(request):
     )
 
 
+def _database_imports_summary(school):
+    jobs = DatabaseImportJob.objects.filter(tenant=school)
+    return {
+        "total_imports": jobs.count(),
+        "validated": jobs.filter(status="validated").count(),
+        "needs_review": jobs.filter(status="needs_review").count(),
+        "failed": jobs.filter(status="failed").count(),
+        "latest_import_at": jobs.order_by("-created_at").values_list("created_at", flat=True).first(),
+    }
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def database_imports(request):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school admins can access database imports."}, status=status.HTTP_403_FORBIDDEN)
+
+    school = _resolve_school_tenant_for_user(user, school_code=request.data.get("school_code") if request.method == "POST" else "")
+    if not school:
+        return Response({"success": False, "message": "Could not resolve your school for this import."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == "POST":
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            return Response(
+                {"success": False, "message": "Attach a CSV, Excel, JSON, SQL, ZIP, image, or document file."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        import_type = str(request.data.get("import_type") or "full_school").strip()
+        allowed_types = {value for value, _label in DatabaseImportJob.IMPORT_TYPES}
+        if import_type not in allowed_types:
+            return Response({"success": False, "message": "Select a valid import category."}, status=status.HTTP_400_BAD_REQUEST)
+
+        summary, errors = _summarize_database_import_upload(uploaded_file)
+        job = DatabaseImportJob.objects.create(
+            tenant=school,
+            uploaded_by=user,
+            import_type=import_type,
+            source_platform=str(request.data.get("source_platform") or "").strip(),
+            link_key=str(request.data.get("link_key") or "admission_number").strip(),
+            notes=str(request.data.get("notes") or "").strip(),
+            upload=uploaded_file,
+            original_filename=(uploaded_file.name or "migration-upload")[:255],
+            file_size=uploaded_file.size,
+            status="needs_review" if errors else "validated",
+            summary=summary,
+            errors=errors,
+        )
+        history = DatabaseImportJob.objects.filter(tenant=school).select_related("uploaded_by")
+        return Response(
+            {
+                "success": not errors,
+                "message": "Import uploaded and validated." if not errors else "Import uploaded but needs review.",
+                "job": _database_import_job_payload(job, request),
+                "summary": _database_imports_summary(school),
+                "history": [_database_import_job_payload(item, request) for item in history[:20]],
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    jobs = DatabaseImportJob.objects.filter(tenant=school).select_related("uploaded_by")
+    return Response(
+        {
+            "success": True,
+            "summary": _database_imports_summary(school),
+            "history": [_database_import_job_payload(item, request) for item in jobs[:20]],
+            "options": {
+                "import_types": [{"value": value, "label": label} for value, label in DatabaseImportJob.IMPORT_TYPES],
+                "link_keys": [
+                    {"value": "admission_number", "label": "Admission number"},
+                    {"value": "student_id", "label": "Student ID"},
+                    {"value": "employee_id", "label": "Employee ID"},
+                    {"value": "email", "label": "Email address"},
+                    {"value": "filename", "label": "Filename convention"},
+                ],
+                "formats": ["CSV", "Excel", "JSON", "SQL backup", "ZIP", "Images", "Documents"],
+            },
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def classes_snapshot(request):
