@@ -1046,14 +1046,23 @@ def debit_wallet(wallet: Wallet, amount: Decimal, tx_type: str, reference: str, 
 def deduct_document_generation_credit(
     tenant, document_type: str, student_profile=None, action: str = "generate", actor=None, credits: int = 1
 ):
-    """Deduct 1 credit from admin pool for document generation (transcript/testimonial/ID card)."""
+    """Deduct credits for a student document once per document type."""
     if credits <= 0:
         raise ValueError("credits must be a positive number.")
     
     pool = get_or_create_activation_credit_pool(tenant)
+    charged = False
     
     with transaction.atomic():
         locked_pool = ActivationCreditPool.objects.select_for_update().get(pk=pool.pk)
+        if student_profile is not None and DocumentGenerationCreditTransaction.objects.filter(
+            pool=locked_pool,
+            student=student_profile,
+            document_type=document_type,
+        ).exists():
+            locked_pool.document_credit_charged = False
+            return locked_pool
+
         if locked_pool.balance < credits:
             raise ValueError(f"Insufficient document generation credits. Required: {credits}, Available: {locked_pool.balance}")
         
@@ -1068,8 +1077,10 @@ def deduct_document_generation_credit(
             action=action,
             created_by=actor,
         )
+        charged = True
     
     pool.refresh_from_db()
+    pool.document_credit_charged = charged
     return pool
 
 

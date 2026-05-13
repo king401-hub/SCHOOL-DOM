@@ -219,6 +219,13 @@ class DocumentGenerationCreditTransaction(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pool", "student", "document_type"],
+                condition=models.Q(student__isnull=False),
+                name="unique_student_document_generation_charge",
+            ),
+        ]
         indexes = [
             models.Index(fields=["pool", "document_type"]),
             models.Index(fields=["created_at"]),

@@ -17,7 +17,7 @@ from academic.models import (
     Subject,
 )
 from core.models import Domain, SchoolTenant
-from exams.models import Exam, ExamAttempt, Question
+from exams.models import Exam, ExamAttempt, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage
@@ -890,6 +890,83 @@ class TeacherDashboardAPITests(TestCase):
         self.assertTrue(exams_response.data["success"])
         self.assertGreaterEqual(exams_response.data["summary"]["tests_count"], 1)
         self.assertIn("assessment_type", exams_response.data["exams"][0])
+
+    def test_teacher_cbt_bank_only_includes_assigned_subjects(self):
+        chemistry = Subject.objects.create(
+            tenant=self.legacy_tenant,
+            name="Chemistry",
+            code="CHEM",
+        )
+        math_question = Question.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="Mathematics bank question?",
+            options=["A", "B"],
+            correct_answer="A",
+            points=1,
+        )
+        chemistry_question = Question.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="Chemistry quiz bank question?",
+            options=["Atom", "Cell"],
+            correct_answer="Atom",
+            points=1,
+        )
+        math_bank = QuestionBank.objects.create(
+            tenant=self.legacy_tenant,
+            name="Shared Mathematics Bank",
+            subject=self.subject,
+            teacher=self.admin_user,
+            is_shared=True,
+        )
+        chemistry_bank = QuestionBank.objects.create(
+            tenant=self.legacy_tenant,
+            name="Shared Chemistry Quiz Bank",
+            subject=chemistry,
+            teacher=self.admin_user,
+            is_shared=True,
+        )
+        math_bank.questions.add(math_question)
+        chemistry_bank.questions.add(chemistry_question)
+
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get("/api/app/exams/question-bank/")
+
+        self.assertEqual(response.status_code, 200)
+        question_texts = [item["text"] for item in response.data["questions"]]
+        self.assertIn("Mathematics bank question?", question_texts)
+        self.assertNotIn("Chemistry quiz bank question?", question_texts)
+
+    def test_admin_cbt_bank_hides_chemistry_subject_pool(self):
+        chemistry = Subject.objects.create(
+            tenant=self.legacy_tenant,
+            name="Chemistry",
+            code="CHEM",
+        )
+        chemistry_question = Question.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="Chemistry personal quiz pool question?",
+            options=["Atom", "Cell"],
+            correct_answer="Atom",
+            points=1,
+        )
+        chemistry_bank = QuestionBank.objects.create(
+            tenant=self.legacy_tenant,
+            name="Chemistry Quiz Question Bank",
+            subject=chemistry,
+            teacher=self.teacher_user,
+            is_shared=True,
+        )
+        chemistry_bank.questions.add(chemistry_question)
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/exams/question-bank/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["questions"], [])
+        self.assertEqual(response.data["banks"], [])
 
     def test_teacher_can_view_and_edit_own_exam_questions(self):
         self.client.force_authenticate(user=self.teacher_user)

@@ -1,6 +1,9 @@
 import csv
 import io
+import json
+import os
 import re
+import zipfile
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
@@ -41,7 +44,7 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamType, Question, QuestionBank, StudentAnswer
 from tenants.models import Tenant
-from users.models import StudentEnrollment, StudentProfile, StudentTestimonial, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from users.models import DatabaseImportJob, StudentEnrollment, StudentProfile, StudentTestimonial, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 
 try:
     from hr.models import StaffProfile
@@ -162,6 +165,191 @@ def _admin_exam_subject_options(queryset, user):
         | Q(name__iexact="Physics")
         | Q(name__iexact="Chemistry")
     )
+
+
+DATABASE_IMPORT_EXTENSIONS = {
+    ".csv",
+    ".tsv",
+    ".xlsx",
+    ".xls",
+    ".json",
+    ".sql",
+    ".zip",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".pdf",
+    ".doc",
+    ".docx",
+}
+DATABASE_IMPORT_MAX_BYTES = 100 * 1024 * 1024
+
+
+def _database_import_job_payload(job, request=None):
+    upload_url = ""
+    try:
+        upload_url = job.upload.url if job.upload else ""
+        if upload_url and request:
+            upload_url = request.build_absolute_uri(upload_url)
+    except Exception:
+        upload_url = ""
+    return {
+        "id": str(job.id),
+        "import_type": job.import_type,
+        "import_type_label": job.get_import_type_display(),
+        "source_platform": job.source_platform,
+        "link_key": job.link_key,
+        "notes": job.notes,
+        "original_filename": job.original_filename,
+        "file_size": job.file_size,
+        "status": job.status,
+        "summary": job.summary or {},
+        "errors": job.errors or [],
+        "uploaded_by": job.uploaded_by.get_full_name() if job.uploaded_by else "",
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "upload_url": upload_url,
+    }
+
+
+def _decode_upload_sample(uploaded_file, max_bytes=2 * 1024 * 1024):
+    uploaded_file.seek(0)
+    raw = uploaded_file.read(max_bytes)
+    uploaded_file.seek(0)
+    return raw.decode("utf-8-sig", errors="replace")
+
+
+def _summarize_delimited_upload(uploaded_file, delimiter=","):
+    text = _decode_upload_sample(uploaded_file)
+    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    headers = rows[0] if rows else []
+    data_rows = rows[1:] if len(rows) > 1 else []
+    return {
+        "format": "tsv" if delimiter == "\t" else "csv",
+        "headers": headers[:80],
+        "sample_rows": data_rows[:5],
+        "estimated_rows_in_sample": len(data_rows),
+    }
+
+
+def _summarize_json_upload(uploaded_file):
+    text = _decode_upload_sample(uploaded_file)
+    parsed = json.loads(text)
+    if isinstance(parsed, list):
+        sample = parsed[:3]
+        keys = sorted({key for item in sample if isinstance(item, dict) for key in item.keys()})
+        count = len(parsed)
+    elif isinstance(parsed, dict):
+        sample = parsed
+        keys = sorted(parsed.keys())
+        count = len(parsed)
+    else:
+        sample = parsed
+        keys = []
+        count = 1
+    return {"format": "json", "top_level_count": count, "keys": keys[:80], "sample": sample}
+
+
+def _safe_zip_members(uploaded_file):
+    uploaded_file.seek(0)
+    with zipfile.ZipFile(uploaded_file) as archive:
+        members = []
+        unsafe = []
+        for item in archive.infolist()[:500]:
+            normalized = os.path.normpath(item.filename).replace("\\", "/")
+            if normalized.startswith("../") or normalized.startswith("/") or item.file_size > DATABASE_IMPORT_MAX_BYTES:
+                unsafe.append(item.filename)
+                continue
+            members.append(
+                {
+                    "name": item.filename,
+                    "size": item.file_size,
+                    "extension": os.path.splitext(item.filename)[1].lower(),
+                }
+            )
+    uploaded_file.seek(0)
+    return members, unsafe
+
+
+def _summarize_zip_upload(uploaded_file):
+    members, unsafe = _safe_zip_members(uploaded_file)
+    media_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".doc", ".docx"}
+    data_extensions = {".csv", ".tsv", ".xlsx", ".xls", ".json", ".sql"}
+    return {
+        "format": "zip",
+        "file_count": len(members),
+        "data_files": [item for item in members if item["extension"] in data_extensions][:80],
+        "media_files": [item for item in members if item["extension"] in media_extensions][:80],
+        "unsafe_entries": unsafe,
+    }
+
+
+def _summarize_sql_upload(uploaded_file):
+    text = _decode_upload_sample(uploaded_file)
+    statements = [item.strip() for item in text.split(";") if item.strip()]
+    return {
+        "format": "sql",
+        "statement_count_in_sample": len(statements),
+        "tables_referenced": sorted(set(re.findall(r"(?:into|table|from)\s+[`\"]?([A-Za-z0-9_\.]+)", text, flags=re.IGNORECASE)))[:80],
+        "execution_policy": "SQL backups are validated and stored for admin review; they are never executed directly from upload.",
+    }
+
+
+def _summarize_database_import_upload(uploaded_file):
+    filename = uploaded_file.name or ""
+    extension = os.path.splitext(filename)[1].lower()
+    if extension not in DATABASE_IMPORT_EXTENSIONS:
+        return {}, [f"{extension or 'This file type'} is not supported for school database import."]
+    if uploaded_file.size > DATABASE_IMPORT_MAX_BYTES:
+        return {}, ["Upload is larger than the 100 MB safety limit."]
+    try:
+        if extension == ".csv":
+            summary = _summarize_delimited_upload(uploaded_file, ",")
+        elif extension == ".tsv":
+            summary = _summarize_delimited_upload(uploaded_file, "\t")
+        elif extension == ".json":
+            summary = _summarize_json_upload(uploaded_file)
+        elif extension == ".zip":
+            summary = _summarize_zip_upload(uploaded_file)
+        elif extension == ".sql":
+            summary = _summarize_sql_upload(uploaded_file)
+        elif extension in {".xlsx", ".xls"}:
+            summary = {
+                "format": extension.lstrip("."),
+                "review_note": "Spreadsheet accepted. Column mapping is completed during migration review.",
+            }
+        else:
+            summary = {
+                "format": extension.lstrip("."),
+                "asset_import": True,
+                "review_note": "Asset accepted. It can be linked to matching student, teacher, school, or document records by the selected key.",
+            }
+    except Exception as exc:
+        return {}, [f"Could not inspect file safely: {exc}"]
+    summary.update(
+        {
+            "filename": filename,
+            "extension": extension,
+            "size": uploaded_file.size,
+            "supported_records": [
+                "students",
+                "teachers",
+                "classes",
+                "subjects",
+                "cbt_results",
+                "attendance",
+                "payments",
+                "timetables",
+                "assignments",
+                "documents",
+                "academic_records",
+            ],
+            "asset_linking": "Images and documents can be matched by admission number, student ID, employee ID, email, class code, or filename convention.",
+        }
+    )
+    return summary, list(summary.get("unsafe_entries") or [])
 
 
 def _class_label(class_obj):
@@ -2290,9 +2478,10 @@ def transcript_detail(request, student_id):
     
     should_generate = request.method == "GET" and request.query_params.get("generate") == "true"
 
+    token_charged = False
     if should_generate:
         try:
-            deduct_document_generation_credit(
+            credit_pool = deduct_document_generation_credit(
                 tenant=user.tenant,
                 document_type="transcript",
                 student_profile=student_profile,
@@ -2300,6 +2489,7 @@ def transcript_detail(request, student_id):
                 actor=user,
                 credits=1,
             )
+            token_charged = bool(getattr(credit_pool, "document_credit_charged", True))
         except ValueError as exc:
             return Response(
                 {"success": False, "message": str(exc)},
@@ -2365,9 +2555,9 @@ def transcript_detail(request, student_id):
         )
     return Response({
         "success": True,
-        "message": "1 token used to generate transcript." if should_generate else "Transcript preview loaded.",
-        "token_used": should_generate,
-        "tokens_used": 1 if should_generate else 0,
+        "message": ("1 token used to generate transcript." if token_charged else "Transcript generated. No token used because this student's transcript was already generated.") if should_generate else "Transcript preview loaded.",
+        "token_used": token_charged,
+        "tokens_used": 1 if token_charged else 0,
         "document_type": "transcript",
         "transcript": _transcript_payload(student_profile, request=request),
     })
@@ -2397,9 +2587,10 @@ def testimonial_detail(request, student_id):
 
     should_generate = request.method == "GET" and request.query_params.get("generate") == "true"
 
+    token_charged = False
     if should_generate:
         try:
-            deduct_document_generation_credit(
+            credit_pool = deduct_document_generation_credit(
                 tenant=user.tenant,
                 document_type="testimonial",
                 student_profile=student_profile,
@@ -2407,6 +2598,7 @@ def testimonial_detail(request, student_id):
                 actor=user,
                 credits=1,
             )
+            token_charged = bool(getattr(credit_pool, "document_credit_charged", True))
         except ValueError as exc:
             return Response(
                 {"success": False, "message": str(exc)},
@@ -2449,9 +2641,9 @@ def testimonial_detail(request, student_id):
     }
     return Response({
         "success": True,
-        "message": "1 token used to generate testimonial." if should_generate else ("Testimonial preview loaded." if request.method == "GET" else "Testimonial details saved."),
-        "token_used": should_generate,
-        "tokens_used": 1 if should_generate else 0,
+        "message": ("1 token used to generate testimonial." if token_charged else "Testimonial generated. No token used because this student's testimonial was already generated.") if should_generate else ("Testimonial preview loaded." if request.method == "GET" else "Testimonial details saved."),
+        "token_used": token_charged,
+        "tokens_used": 1 if token_charged else 0,
         "document_type": "testimonial",
         **payload,
     })
@@ -3143,6 +3335,7 @@ def id_card_qr_code(request):
 
     # Only deduct credit if this is for download, not preview
     is_download = request.query_params.get("download") == "true"
+    token_charged = False
     if is_download:
         try:
             # Find the student/teacher profile if available
@@ -3150,7 +3343,7 @@ def id_card_qr_code(request):
             if person["person_type"] == "student":
                 student_profile = StudentProfile.objects.filter(id=person["id"], user__tenant=user.tenant).first()
             
-            deduct_document_generation_credit(
+            credit_pool = deduct_document_generation_credit(
                 tenant=user.tenant,
                 document_type="id_card",
                 student_profile=student_profile,
@@ -3158,6 +3351,7 @@ def id_card_qr_code(request):
                 actor=user,
                 credits=1,
             )
+            token_charged = bool(getattr(credit_pool, "document_credit_charged", True))
         except ValueError as exc:
             return Response(
                 {"success": False, "message": str(exc)},
@@ -3183,8 +3377,8 @@ def id_card_qr_code(request):
     response = FileResponse(image_io, content_type="image/png")
     response["Content-Disposition"] = f'inline; filename="{person["unique_id"]}_id_card_qr.png"'
     if is_download:
-        response["X-Token-Used"] = "1"
-        response["X-Token-Message"] = "1 token used to generate ID card."
+        response["X-Token-Used"] = "1" if token_charged else "0"
+        response["X-Token-Message"] = "1 token used to generate ID card." if token_charged else "ID card generated. No token used because this student's ID card was already generated."
     return response
 
 
@@ -4109,6 +4303,21 @@ def cbt_question_bank(request):
     )
     if getattr(user, "role", None) == "teacher":
         banks_qs = banks_qs.filter(Q(teacher=user) | Q(is_shared=True))
+        teacher_profile = TeacherProfile.objects.filter(user=user).prefetch_related("subjects").first()
+        assigned_subject_ids = []
+        if teacher_profile:
+            assigned_subject_ids = list(teacher_profile.subjects.values_list("id", flat=True))
+        if assigned_subject_ids:
+            banks_qs = banks_qs.filter(Q(teacher=user) | Q(subject_id__in=assigned_subject_ids))
+        else:
+            banks_qs = banks_qs.filter(teacher=user)
+    elif getattr(user, "role", None) in ADMIN_ROLES:
+        banks_qs = banks_qs.exclude(
+            Q(subject__code__iexact="PHY")
+            | Q(subject__code__iexact="CHEM")
+            | Q(subject__name__iexact="Physics")
+            | Q(subject__name__iexact="Chemistry")
+        )
 
     subject_id = request.query_params.get("subject_id")
     if subject_id:

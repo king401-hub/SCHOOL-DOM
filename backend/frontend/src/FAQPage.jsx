@@ -89,7 +89,7 @@ function FAQPage({ onNavigate }) {
       id: 13,
       category: "Student Features",
       question: "Can students see their results immediately?",
-      answer: "Yes! Students can view their results right after submitting an exam. For multiple-choice questions, they get instant feedback. For manually graded questions, they'll see feedback once the teacher completes grading."
+      answer: "Students can view their results after the teacher submits the result and the admin publishes it. Until then, the result stays hidden from the student portal."
     },
     {
       id: 14,
@@ -143,13 +143,13 @@ function FAQPage({ onNavigate }) {
       id: 22,
       category: "Fees & Billing",
       question: "What's the pricing model?",
-      answer: "SchoolDom offers flexible pricing based on your school size and feature needs. We have freemium options for small institutions and scalable enterprise plans. Contact our sales team for custom pricing."
+      answer: "SchoolDom uses one simple token-based pricing model. Each student activation token costs ₦200, and transcript, testimonial, and ID card generation each cost 1 token."
     },
     {
       id: 23,
       category: "Fees & Billing",
       question: "Is there a free trial?",
-      answer: "Yes! We offer a 30-day free trial with full access to all features. No credit card required. After the trial, you can choose a plan that suits your needs or continue with our free tier."
+      answer: "We offer a new-user bonus, and schools receive 10 free tokens for every 100 tokens purchased."
     },
     {
       id: 24,

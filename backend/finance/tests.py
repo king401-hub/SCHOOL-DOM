@@ -5,10 +5,11 @@ from django.test import TestCase
 from django.utils import timezone
 
 from core.models import SchoolTenant
-from finance.models import ActivationCreditTransaction, StudentPaymentReference
+from finance.models import ActivationCreditTransaction, DocumentGenerationCreditTransaction, StudentPaymentReference
 from finance.services import (
     ACTIVATION_CREDIT_PRICE,
     activation_credit_bonus_for_purchase,
+    deduct_document_generation_credit,
     get_or_create_activation_credit_pool,
     get_or_create_student_payment_reference,
     verify_activation_credit_purchase,
@@ -106,3 +107,83 @@ class ActivationCreditBonusTests(TestCase):
         self.assertEqual(tx.metadata["purchased_credits"], 100)
         self.assertEqual(tx.metadata["bonus_credits"], 10)
         self.assertEqual(tx.metadata["total_credits"], 110)
+
+
+class DocumentGenerationCreditTests(TestCase):
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Document School", schema_name="document_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@documents.test",
+            password="AdminPass123",
+            first_name="Document",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@documents.test",
+            password="StudentPass123",
+            first_name="Document",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user,
+            student_id="STDOC01",
+            admission_number="ADM-DOC-001",
+            admission_date=timezone.localdate(),
+            guardian_name="Guardian",
+            guardian_relation="Parent",
+        )
+        self.pool = get_or_create_activation_credit_pool(self.school)
+        self.pool.balance = 3
+        self.pool.save(update_fields=["balance", "updated_at"])
+
+    def test_student_document_generation_charges_only_once_per_document_type(self):
+        first_pool = deduct_document_generation_credit(
+            self.school,
+            document_type=DocumentGenerationCreditTransaction.TRANSCRIPT,
+            student_profile=self.student,
+            actor=self.admin,
+        )
+        second_pool = deduct_document_generation_credit(
+            self.school,
+            document_type=DocumentGenerationCreditTransaction.TRANSCRIPT,
+            student_profile=self.student,
+            actor=self.admin,
+        )
+
+        self.pool.refresh_from_db()
+        self.assertTrue(first_pool.document_credit_charged)
+        self.assertFalse(second_pool.document_credit_charged)
+        self.assertEqual(self.pool.balance, 2)
+        self.assertEqual(
+            DocumentGenerationCreditTransaction.objects.filter(
+                student=self.student,
+                document_type=DocumentGenerationCreditTransaction.TRANSCRIPT,
+            ).count(),
+            1,
+        )
+
+    def test_different_student_document_type_still_charges_once(self):
+        deduct_document_generation_credit(
+            self.school,
+            document_type=DocumentGenerationCreditTransaction.TRANSCRIPT,
+            student_profile=self.student,
+            actor=self.admin,
+        )
+        testimonial_pool = deduct_document_generation_credit(
+            self.school,
+            document_type=DocumentGenerationCreditTransaction.TESTIMONIAL,
+            student_profile=self.student,
+            actor=self.admin,
+        )
+
+        self.pool.refresh_from_db()
+        self.assertTrue(testimonial_pool.document_credit_charged)
+        self.assertEqual(self.pool.balance, 1)

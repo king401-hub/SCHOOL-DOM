@@ -17,10 +17,6 @@ function LandingPage({ onGetStarted }) {
     }
   };
 
-  const handleJoinNow = () => {
-    handleGetStarted();
-  };
-
   return (
     <div className={`landing-page ${theme === "light" ? "theme-light" : ""}`}>
       {/* Header */}
@@ -33,6 +29,7 @@ function LandingPage({ onGetStarted }) {
 
           <nav className="header-nav">
             <a href="/resource" className="nav-link">Resource Center</a>
+            <a href="/pricing" className="nav-link">Pricing</a>
             <a href="#about" className="nav-link">About</a>
           </nav>
 
@@ -153,6 +150,7 @@ function LandingPage({ onGetStarted }) {
             <h4>Quick Links</h4>
             <ul>
               <li><a href="#resource">Resources</a></li>
+              <li><a href="/pricing">Pricing</a></li>
               <li><a href="#about">About</a></li>
               <li><a href="#">Features</a></li>
             </ul>

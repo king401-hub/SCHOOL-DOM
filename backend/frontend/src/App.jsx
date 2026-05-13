@@ -4,6 +4,7 @@ import LandingPage from "./LandingPage";
 import ResourceCenter from "./ResourceCenter";
 import FAQPage from "./FAQPage";
 import PrivacyPolicyPage from "./PrivacyPolicyPage";
+import PricingPage from "./PricingPage";
 import { AttendanceModule, TeacherQRCodeAttendancePage } from "./components/Attendance";
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
@@ -6358,6 +6359,9 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
     }
     if (currentPath === "/resource") {
       return withGlobalHome(<ResourceCenter onNavigate={navigate} />);
+    }
+    if (currentPath === "/pricing") {
+      return withGlobalHome(<PricingPage onNavigate={navigate} />);
     }
     if (currentPath === "/faq") {
       return withGlobalHome(<FAQPage onNavigate={navigate} />);

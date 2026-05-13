@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 
-console.log("API_BASE_URL value:", import.meta.env.VITE_API_BASE_URL);
-console.log("Full login URL being called:", `${import.meta.env.VITE_API_BASE_URL}/login/`);
-
 const SESSION_KEY = "schooldom.session";
 const LEGACY_SESSION_KEY = "educonnect.session";
 const DEFAULT_SIGNUP_ROLE = "school_admin";
@@ -276,8 +273,6 @@ function Signin({ onAuthenticated, onBack }) {
       school_code: credentials.school_code?.trim() || "",
     };
 
-    console.log("Sending login request with email:", payload.email);
-
     let response;
     try {
       response = await fetch(`${API_BASE_URL}/api/auth/login/`, {
@@ -286,11 +281,8 @@ function Signin({ onAuthenticated, onBack }) {
         body: JSON.stringify(payload),
       });
     } catch (networkError) {
-      console.error("Network error:", networkError);
       throw new Error("Unable to reach the server.");
     }
-
-    console.log("Response status:", response.status);
 
     let data = null;
     try {
@@ -298,8 +290,6 @@ function Signin({ onAuthenticated, onBack }) {
     } catch {
       data = null;
     }
-    console.log("Response data:", data);
-
     if (!response.ok || !data?.success) {
       const reason =
         data?.error ||
@@ -326,6 +316,7 @@ function Signin({ onAuthenticated, onBack }) {
       user: data.user,
       access: data.access,
       refresh: data.refresh,
+      school_code: data.school_code || payload.school_code || "",
       redirectUrl: data.redirect_url || "/dashboard/",
       requiresVerification: Boolean(data.requires_verification),
       signedInAt: new Date().toISOString(),
@@ -438,6 +429,7 @@ function Signin({ onAuthenticated, onBack }) {
       user: data.user,
       access: data.access,
       refresh: data.refresh,
+      school_code: data.school_code || schoolCode.trim() || "",
       redirectUrl: data.redirect_url || "/dashboard/",
       requiresVerification: false,
       signedInAt: new Date().toISOString(),

@@ -621,3 +621,53 @@ class LoginHistory(models.Model):
     
     def __str__(self):
         return f"{self.user.email} - {self.login_time}"
+
+
+class DatabaseImportJob(models.Model):
+    """Admin-only school migration upload and validation record."""
+
+    IMPORT_TYPES = [
+        ("students", "Student records"),
+        ("teachers", "Teacher profiles"),
+        ("classes_subjects", "Classes and subjects"),
+        ("cbt_results", "CBT results"),
+        ("attendance", "Attendance records"),
+        ("payments", "Payment history"),
+        ("timetables", "Timetables"),
+        ("assignments", "Assignments"),
+        ("documents", "Uploaded documents"),
+        ("academic_records", "Academic records"),
+        ("full_school", "Full school database"),
+    ]
+    STATUS_CHOICES = [
+        ("uploaded", "Uploaded"),
+        ("validated", "Validated"),
+        ("needs_review", "Needs review"),
+        ("failed", "Failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey("core.SchoolTenant", on_delete=models.CASCADE, related_name="database_import_jobs")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="database_import_jobs")
+    import_type = models.CharField(max_length=40, choices=IMPORT_TYPES)
+    source_platform = models.CharField(max_length=120, blank=True)
+    link_key = models.CharField(max_length=80, blank=True)
+    notes = models.TextField(blank=True)
+    upload = models.FileField(upload_to="database_imports/%Y/%m/")
+    original_filename = models.CharField(max_length=255)
+    file_size = models.PositiveBigIntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="uploaded")
+    summary = models.JSONField(default=dict, blank=True)
+    errors = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "import_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_import_type_display()} - {self.original_filename}"

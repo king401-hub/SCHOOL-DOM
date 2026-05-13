@@ -13,7 +13,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from core.models import SchoolTenant
 from attendance.models import AttendanceQRCode
 from users.models import User, generate_short_teacher_id, random_code_digits, school_code_letters
 from users.models import TeacherProfile
@@ -35,8 +34,6 @@ def _tenant_for_user(user):
     tenant = getattr(user, "tenant", None)
     if tenant:
         return tenant
-    if getattr(user, "role", "") == "super_admin":
-        return SchoolTenant.objects.filter(is_active=True).order_by("id").first()
     return None
 
 

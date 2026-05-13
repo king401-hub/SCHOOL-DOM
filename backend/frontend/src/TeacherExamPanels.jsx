@@ -1,5 +1,406 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDate, MetricCard, requestJson } from "./AppShared";
+
+const IMPORT_SAMPLE = `1. What is the capital of France?
+A. Paris
+B. Lagos
+C. Rome
+D. Madrid
+Answer: A`;
+
+const TEXT_IMPORT_EXTENSIONS = new Set(["csv", "tsv", "txt", "tdx", "json", "qti", "xml"]);
+const WORD_IMPORT_EXTENSIONS = new Set(["docx"]);
+
+const bytesStartWithZipHeader = (bytes) => bytes?.[0] === 0x50 && bytes?.[1] === 0x4b;
+
+const decodeTextBytes = (bytes) => new TextDecoder("utf-8").decode(bytes);
+
+const looksReadableText = (text) => {
+  const value = String(text || "").replace(/\s/g, "");
+  if (!value) return false;
+  const sample = value.slice(0, 4000);
+  const replacementCount = (sample.match(/\uFFFD/g) || []).length;
+  const controlCount = (sample.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g) || []).length;
+  return (replacementCount + controlCount) / sample.length < 0.08;
+};
+
+const decodeReadableText = (bytes) => {
+  const text = decodeTextBytes(bytes).replace(/\u0000/g, "");
+  return looksReadableText(text) ? text : "";
+};
+
+const inflateBytes = async (bytes, format) => {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("Compressed TDX files are not supported in this browser.");
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+};
+
+const tryDecompressText = async (bytes) => {
+  const candidates = [bytes];
+  if (bytes.length > 2) {
+    candidates.push(bytes.slice(2));
+  }
+  for (const candidate of candidates) {
+    for (const format of ["gzip", "deflate", "deflate-raw"]) {
+      try {
+        const inflated = await inflateBytes(candidate, format);
+        const text = decodeReadableText(inflated);
+        if (text) return text;
+      } catch {
+        // Try the next container/compression shape.
+      }
+    }
+  }
+  return "";
+};
+
+const getFileExtension = (fileName = "") => {
+  const match = String(fileName).toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : "";
+};
+
+const readZipEntryBytes = async (arrayBuffer, targetName) => {
+  const view = new DataView(arrayBuffer);
+  const bytes = new Uint8Array(arrayBuffer);
+  let eocdOffset = -1;
+  for (let offset = bytes.length - 22; offset >= 0; offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      eocdOffset = offset;
+      break;
+    }
+  }
+  if (eocdOffset < 0) {
+    throw new Error("This DOCX file could not be read.");
+  }
+
+  const entryCount = view.getUint16(eocdOffset + 10, true);
+  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
+  let offset = centralDirectoryOffset;
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) {
+      break;
+    }
+    const compressionMethod = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const fileName = decodeTextBytes(bytes.slice(offset + 46, offset + 46 + fileNameLength));
+
+    if (fileName === targetName) {
+      if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
+        throw new Error("This DOCX file has an invalid document entry.");
+      }
+      const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const compressedBytes = bytes.slice(dataStart, dataStart + compressedSize);
+      if (compressionMethod === 0) {
+        return compressedBytes;
+      }
+      if (compressionMethod !== 8 || typeof DecompressionStream === "undefined") {
+        throw new Error("This DOCX compression format is not supported in this browser.");
+      }
+      const stream = new Blob([compressedBytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  throw new Error("This DOCX file does not contain a readable Word document.");
+};
+
+const docxXmlToText = (xmlText) => {
+  const documentXml = new DOMParser().parseFromString(xmlText, "application/xml");
+  if (documentXml.getElementsByTagName("parsererror").length) {
+    throw new Error("The DOCX document XML could not be parsed.");
+  }
+  const paragraphs = Array.from(documentXml.getElementsByTagNameNS("*", "p"));
+  return paragraphs
+    .map((paragraph) => {
+      const chunks = [];
+      Array.from(paragraph.getElementsByTagNameNS("*", "r")).forEach((run) => {
+        const verticalAlign = run.getElementsByTagNameNS("*", "vertAlign")[0]?.getAttribute("w:val")
+          || run.getElementsByTagNameNS("*", "vertAlign")[0]?.getAttribute("val")
+          || "";
+        const text = Array.from(run.getElementsByTagNameNS("*", "t")).map((node) => node.textContent || "").join("");
+        if (text) {
+          if (verticalAlign === "superscript") {
+            chunks.push(`<sup>${text}</sup>`);
+          } else if (verticalAlign === "subscript") {
+            chunks.push(`<sub>${text}</sub>`);
+          } else {
+            chunks.push(text);
+          }
+        }
+        if (run.getElementsByTagNameNS("*", "tab").length) {
+          chunks.push(" ");
+        }
+        if (run.getElementsByTagNameNS("*", "br").length) {
+          chunks.push("\n");
+        }
+      });
+      return chunks.join("").replace(/[ \t]{2,}/g, " ").trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+};
+
+const extractDocxText = async (arrayBuffer) => {
+  const bytes = new Uint8Array(arrayBuffer);
+  if (!bytesStartWithZipHeader(bytes)) {
+    throw new Error("This does not look like a valid DOCX file.");
+  }
+  const documentBytes = await readZipEntryBytes(arrayBuffer, "word/document.xml");
+  return docxXmlToText(decodeTextBytes(documentBytes));
+};
+
+const readImportFileText = async (file) => {
+  const extension = getFileExtension(file.name);
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  if (WORD_IMPORT_EXTENSIONS.has(extension) || bytesStartWithZipHeader(bytes)) {
+    return extractDocxText(arrayBuffer);
+  }
+  if (extension === "tdx") {
+    const text = decodeReadableText(bytes);
+    if (text) return text;
+    const decompressedText = await tryDecompressText(bytes);
+    if (decompressedText) return decompressedText;
+    throw new Error("This TDX file is compressed or proprietary and could not be converted to text in the browser.");
+  }
+  if (TEXT_IMPORT_EXTENSIONS.has(extension) || file.type.startsWith("text/") || !extension) {
+    const text = decodeReadableText(bytes);
+    if (text) return text;
+    const decompressedText = await tryDecompressText(bytes);
+    if (decompressedText) return decompressedText;
+    throw new Error("This file is not readable as text. Convert it to TXT, CSV, or DOCX and try again.");
+  }
+  const text = decodeReadableText(bytes);
+  if (text) return text;
+  const decompressedText = await tryDecompressText(bytes);
+  if (decompressedText) return decompressedText;
+  throw new Error("This file is not readable as text. Convert it to TXT, CSV, or DOCX and try again.");
+};
+
+const splitCsvLine = (line, delimiter = ",") => {
+  const cells = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+};
+
+const normalizeAnswerIndex = (answer, options) => {
+  const cleaned = String(answer || "").trim();
+  if (!cleaned) return 0;
+  const upper = cleaned.toUpperCase();
+  if (/^[A-Z]$/.test(upper)) {
+    const index = upper.charCodeAt(0) - 65;
+    return index >= 0 && index < options.length ? index : 0;
+  }
+  const numeric = Number(cleaned);
+  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= options.length) {
+    return numeric - 1;
+  }
+  const exact = options.findIndex((option) => option.trim().toLowerCase() === cleaned.toLowerCase());
+  return exact >= 0 ? exact : 0;
+};
+
+const buildImportedQuestion = (item, index) => {
+  const options = (item.options || []).map((option) => String(option || "").trim()).filter(Boolean);
+  while (options.length < 4) {
+    options.push("");
+  }
+  return {
+    id: `import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    text: String(item.text || item.question || "").trim(),
+    marks: String(item.points || item.marks || 1),
+    options,
+    correctIndex: normalizeAnswerIndex(item.correct_answer ?? item.answer ?? item.correctIndex, options),
+    explanation: String(item.explanation || item.note || "").trim(),
+    sourceLabel: item.sourceLabel || "Imported file",
+  };
+};
+
+const parseJsonQuestions = (rawText) => {
+  const parsed = JSON.parse(rawText);
+  const rows = Array.isArray(parsed) ? parsed : parsed.questions;
+  if (!Array.isArray(rows)) {
+    throw new Error("JSON must be an array or an object with a questions array.");
+  }
+  return rows.map((item) => ({
+    text: item.text || item.question || item.prompt,
+    options: Array.isArray(item.options)
+      ? item.options
+      : [item.a, item.b, item.c, item.d, item.e].filter((option) => option !== undefined),
+    answer: item.answer ?? item.correct_answer ?? item.correct,
+    points: item.points || item.marks,
+    explanation: item.explanation || item.note,
+    sourceLabel: "Imported JSON",
+  }));
+};
+
+const parseDelimitedQuestions = (rawText) => {
+  const lines = rawText.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+  const delimiter = lines[0].includes("\t") ? "\t" : ",";
+  const headers = splitCsvLine(lines[0], delimiter).map((header) => header.trim().toLowerCase());
+  const questionIndex = headers.findIndex((header) => ["question", "text", "prompt"].includes(header));
+  const answerIndex = headers.findIndex((header) => ["answer", "correct", "correct_answer"].includes(header));
+  if (questionIndex < 0 || answerIndex < 0) return [];
+  const optionIndexes = headers
+    .map((header, index) => ({ header, index }))
+    .filter(({ header }) => ["a", "b", "c", "d", "e", "option_a", "option_b", "option_c", "option_d", "option_e"].includes(header));
+  const pointsIndex = headers.findIndex((header) => ["points", "marks", "score"].includes(header));
+  const explanationIndex = headers.findIndex((header) => ["explanation", "note", "teacher_note"].includes(header));
+  return lines.slice(1).map((line) => {
+    const cells = splitCsvLine(line, delimiter);
+    return {
+      text: cells[questionIndex],
+      options: optionIndexes.map(({ index }) => cells[index]).filter(Boolean),
+      answer: cells[answerIndex],
+      points: pointsIndex >= 0 ? cells[pointsIndex] : 1,
+      explanation: explanationIndex >= 0 ? cells[explanationIndex] : "",
+      sourceLabel: delimiter === "\t" ? "Imported TSV" : "Imported CSV",
+    };
+  });
+};
+
+const isQuestionStarterLine = (line) => {
+  const value = String(line || "").trim();
+  if (!value) return false;
+  if (/^([A-E])[\).:-]\s+/i.test(value)) return false;
+  if (/^(answer|correct|correct answer|explanation|note)\s*[:=-]/i.test(value)) return false;
+  if (/^\d+[\).]\s+/.test(value)) return true;
+  if (/[?؟]$/.test(value)) return true;
+  return value.length > 12;
+};
+
+const splitQuestionBlocks = (rawText) => {
+  const normalizedLines = String(rawText || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const blocks = [];
+  let current = [];
+  let hasOption = false;
+  let hasAnswer = false;
+
+  normalizedLines.forEach((line) => {
+    const isOption = /^([A-E])[\).:-]\s+/i.test(line);
+    const isAnswer = /^(answer|correct|correct answer)\s*[:=-]\s*(.+)$/i.test(line);
+    const startsNewNumbered = /^\d+[\).]\s+/.test(line);
+    const startsNewUnnumbered = !isOption && !isAnswer && hasOption && (hasAnswer || isQuestionStarterLine(line));
+
+    if (current.length && (startsNewNumbered || startsNewUnnumbered)) {
+      blocks.push(current.join("\n"));
+      current = [];
+      hasOption = false;
+      hasAnswer = false;
+    }
+
+    current.push(line);
+    if (isOption) hasOption = true;
+    if (isAnswer) hasAnswer = true;
+  });
+
+  if (current.length) {
+    blocks.push(current.join("\n"));
+  }
+  return blocks;
+};
+
+const parseTextQuestions = (rawText) => {
+  const paragraphBlocks = rawText
+    .replace(/\r/g, "")
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const blocks = paragraphBlocks.length > 1 ? paragraphBlocks.flatMap(splitQuestionBlocks) : splitQuestionBlocks(rawText);
+  return blocks.map((block) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const options = [];
+    let answer = "";
+    let explanation = "";
+    const questionLines = [];
+    lines.forEach((line) => {
+      const optionMatch = line.match(/^([A-E])[\).:-]\s*(.+)$/i);
+      const answerMatch = line.match(/^(answer|correct|correct answer)\s*[:=-]\s*(.+)$/i);
+      const explanationMatch = line.match(/^(explanation|note)\s*[:=-]\s*(.+)$/i);
+      if (answerMatch) {
+        answer = answerMatch[2];
+      } else if (explanationMatch) {
+        explanation = explanationMatch[2];
+      } else if (optionMatch) {
+        options.push(optionMatch[2].trim());
+      } else {
+        questionLines.push(line.replace(/^\d+[\).]\s*/, ""));
+      }
+    });
+    return {
+      text: questionLines.join(" ").trim(),
+      options,
+      answer,
+      points: 1,
+      explanation,
+      sourceLabel: "Imported text",
+    };
+  });
+};
+
+const parseImportedQuestions = (rawText) => {
+  const text = String(rawText || "").trim();
+  if (!text) {
+    throw new Error("Paste questions or choose a file before importing.");
+  }
+  if (/^PK/.test(text) && text.includes("[Content_Types].xml")) {
+    throw new Error("This looks like raw DOCX data. Choose the .docx file instead so it can be converted to text.");
+  }
+  let parsedRows = [];
+  if (/^[\[{]/.test(text)) {
+    parsedRows = parseJsonQuestions(text);
+  } else {
+    parsedRows = parseDelimitedQuestions(text);
+    if (!parsedRows.length) {
+      parsedRows = parseTextQuestions(text);
+    }
+  }
+  const questions = parsedRows.map(buildImportedQuestion).filter((question) => {
+    const filledOptions = question.options.filter(Boolean);
+    return question.text.length >= 3 && filledOptions.length >= 2 && filledOptions[question.correctIndex];
+  });
+  if (!questions.length) {
+    throw new Error("No valid MCQ questions found. Check the format and correct answer labels.");
+  }
+  return questions;
+};
+
+const isBlankBuilderQuestion = (question) =>
+  !String(question?.text || "").trim() &&
+  !(question?.options || []).some((option) => String(option || "").trim()) &&
+  !String(question?.explanation || "").trim();
 export function TeacherExamManager({
   questionTemplates = [],
   pendingSubmissions = [],
@@ -226,12 +627,16 @@ export function TeacherExamBuilder({
   const [bankLoading, setBankLoading] = useState(false);
   const [bankError, setBankError] = useState("");
   const [selectedBankQuestionIds, setSelectedBankQuestionIds] = useState([]);
+  const [importText, setImportText] = useState("");
+  const [importFeedback, setImportFeedback] = useState("");
+  const [importError, setImportError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const isEditing = Boolean(initialExam?.id);
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
+  const canUseCbtQuestionBank = session?.user?.role !== "teacher";
   const builderSections = [
     ["details", "Exam Details"],
     ["sections", "Sections"],
@@ -288,7 +693,9 @@ export function TeacherExamBuilder({
   }, [form.endTime, form.examDate, form.startTime]);
 
   const loadBankQuestions = useCallback(async () => {
-    if (!session) {
+    if (!session || !canUseCbtQuestionBank) {
+      setBankQuestions([]);
+      setSelectedBankQuestionIds([]);
       return;
     }
     setBankLoading(true);
@@ -306,7 +713,7 @@ export function TeacherExamBuilder({
     } finally {
       setBankLoading(false);
     }
-  }, [form.subjectId, session]);
+  }, [canUseCbtQuestionBank, form.subjectId, session]);
 
   useEffect(() => {
     loadBankQuestions();
@@ -450,6 +857,37 @@ export function TeacherExamBuilder({
     setFeedback(`${selectedQuestions.length} CBT bank question${selectedQuestions.length === 1 ? "" : "s"} added.`);
   };
 
+  const importStandardQuestions = () => {
+    setImportError("");
+    setImportFeedback("");
+    try {
+      const importedQuestions = parseImportedQuestions(importText);
+      setQuestions((previous) =>
+        previous.length === 1 && isBlankBuilderQuestion(previous[0]) ? importedQuestions : [...previous, ...importedQuestions]
+      );
+      setImportText("");
+      setError("");
+      setImportFeedback(`${importedQuestions.length} question${importedQuestions.length === 1 ? "" : "s"} imported.`);
+    } catch (importParseError) {
+      setImportError(importParseError.message || "Could not import questions.");
+    }
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await readImportFileText(file);
+      setImportText(text);
+      setImportError("");
+      setImportFeedback(`${file.name} converted to editable text. Review it, then import.`);
+    } catch (fileError) {
+      setImportFeedback("");
+      setImportError(fileError.message || "Could not read the selected file.");
+    }
+    event.target.value = "";
+  };
+
   const updateQuestion = (questionId, patch) => {
     setQuestions((previous) => previous.map((item) => (item.id === questionId ? { ...item, ...patch } : item)));
   };
@@ -565,7 +1003,7 @@ export function TeacherExamBuilder({
 
           {activeSection === "questions" ? (
             <div className="exam-builder-list">
-              <div className="cbt-bank-picker">
+              {canUseCbtQuestionBank ? <div className="cbt-bank-picker">
                 <div className="cbt-bank-picker-head">
                   <div>
                     <h3>CBT question bank</h3>
@@ -614,6 +1052,36 @@ export function TeacherExamBuilder({
                     })}
                   </div>
                 )}
+              </div> : null}
+              <div className="standard-question-import">
+                <div className="cbt-bank-picker-head">
+                  <div>
+                    <h3>Import standard questions</h3>
+                    <p>Teachers and admins can paste or upload MCQs from common school question formats.</p>
+                  </div>
+                  <div className="table-actions-inline">
+                    <label className="table-action file-action">
+                      Choose file
+                      <input type="file" onChange={handleImportFile} />
+                    </label>
+                    <button type="button" className="table-action active" onClick={importStandardQuestions}>
+                      Import questions
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  className="standard-import-textarea"
+                  value={importText}
+                  onChange={(event) => {
+                    setImportText(event.target.value);
+                    setImportError("");
+                    setImportFeedback("");
+                  }}
+                  placeholder={IMPORT_SAMPLE}
+                  rows={8}
+                />
+                {importError ? <p className="form-feedback error">{importError}</p> : null}
+                {importFeedback ? <p className="form-feedback success">{importFeedback}</p> : null}
               </div>
               {questions.map((question, index) => (
                 <div key={question.id} className="exam-builder-question">
