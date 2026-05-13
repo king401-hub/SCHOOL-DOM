@@ -1100,7 +1100,7 @@ function AdminFinanceScreen({
   );
 }
 
-function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, session, onCreateExam, onUpdateExam }) {
+function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, session, onCreateExam, onUpdateExam }) {
   const results = data?.exam_results || data?.submitted_results || data?.cbt_results || data?.results || [];
   const exams = data?.exams || data?.available_exams || [];
   const classOptions = data?.options?.classes || data?.classes || [];
@@ -1122,6 +1122,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [deleteBusyId, setDeleteBusyId] = useState("");
+  const [deleteFeedback, setDeleteFeedback] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -1249,6 +1252,30 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       setUploadError(actionError.message || "Upload failed.");
     } finally {
       setUploadBusy(false);
+    }
+  };
+
+  const handleDeleteResult = async (row) => {
+    const attemptId = row.attempt_id || row.id;
+    if (!attemptId) {
+      setDeleteError("This result does not have a CBT attempt ID.");
+      return;
+    }
+    const studentName = row.student_name || "this student";
+    const examTitle = row.exam_title || row.exam || "this exam";
+    if (!window.confirm(`Delete ${studentName}'s result for ${examTitle}? The student will be able to retake the exam.`)) {
+      return;
+    }
+    setDeleteBusyId(String(attemptId));
+    setDeleteError("");
+    setDeleteFeedback("");
+    try {
+      const result = await onDeleteResult?.(attemptId);
+      setDeleteFeedback(result?.message || "Result deleted. The student can retake the exam.");
+    } catch (actionError) {
+      setDeleteError(actionError.message || "Could not delete result.");
+    } finally {
+      setDeleteBusyId("");
     }
   };
 
@@ -1470,6 +1497,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             {results.length ? <span className="pill muted">{results.length} total</span> : null}
           </div>
         </div>
+        {deleteError ? <p className="form-feedback error">{deleteError}</p> : null}
+        {deleteFeedback ? <p className="form-feedback success">{deleteFeedback}</p> : null}
 
         {filteredResults.length > 0 ? (
           <table className="data-table">
@@ -1483,6 +1512,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                 <th>Total Time</th>
                 <th>Subjects</th>
                 <th>Breakdown</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -1504,6 +1534,16 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                     <td>{row.total_time || row.duration || "-"}</td>
                     <td>{subjectList}</td>
                     <td>{renderSubjectBreakdown(row.score_by_subject || row.correct_attempt_by_subject || row.attempt_by_subject)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="table-action danger"
+                        onClick={() => handleDeleteResult(row)}
+                        disabled={deleteBusyId === String(row.attempt_id || row.id)}
+                      >
+                        {deleteBusyId === String(row.attempt_id || row.id) ? "Deleting..." : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

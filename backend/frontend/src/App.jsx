@@ -3423,36 +3423,6 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             )}
           </article>
           </div>
-        <article className="app-panel full">
-          <h3>Answer Summaries</h3>
-          {cbtResults.length ? (
-            <div className="message-stack">
-              {cbtResults.slice(0, 5).map((result, index) => {
-                const answers = result.answer_summary || result.answers || [];
-                const correctCount = answers.filter((answer) => answer.is_correct).length;
-                return (
-                  <div key={result.id || index} className="message-item">
-                    <div className="message-head">
-                      <p>{result.student_name || "Student"} - {result.exam_title || "Exam"}</p>
-                      <small>{correctCount}/{answers.length || result.total_points || 0} correct</small>
-                    </div>
-                    <span className="message-meta">
-                      {answers.slice(0, 3).map((answer, answerIndex) => (
-                        <span key={answerIndex}>
-                          Q{answerIndex + 1}: {answer.is_correct ? "Correct" : "Incorrect"}
-                          {answerIndex < Math.min(answers.length, 3) - 1 ? " - " : ""}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="panel-empty">Submitted answer summaries will appear here.</p>
-          )}
-        </article>
-
         {isRefreshing ? <p className="field-note">Auto-refreshing...</p> : null}
       </section>
     </section>
@@ -5302,6 +5272,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleDeleteExamResult = useCallback(
+    async (attemptId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/exams/results/${attemptId}/`);
+      addAdminNotification({
+        category: "Exams",
+        module: "CBT Results",
+        action: `Deleted CBT result attempt ${attemptId}; retake is now available.`,
+        status: "Deleted",
+        priority: "High",
+        tone: "warning",
+      });
+      await Promise.all([loadScreen("/exams", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleDatabaseImportUpload = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/database-imports/", payload);
@@ -5607,6 +5594,7 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onUpload={handleUploadExamResults}
+        onDeleteResult={handleDeleteExamResult}
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}

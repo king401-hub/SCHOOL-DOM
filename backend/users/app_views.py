@@ -4257,6 +4257,31 @@ def exams_snapshot(request):
     )
 
 
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_exam_attempt_result(request, attempt_id):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school admins can delete student exam results."}, status=status.HTTP_403_FORBIDDEN)
+
+    attempt_qs = _scope_to_user_tenant(
+        ExamAttempt.objects.select_related("exam", "student"),
+        user,
+    )
+    attempt = get_object_or_404(attempt_qs, id=attempt_id)
+    student_name = attempt.student.get_full_name() or attempt.student.email
+    exam_title = attempt.exam.title
+    with db_transaction.atomic():
+        attempt.delete()
+    return Response(
+        {
+            "success": True,
+            "message": f"Deleted {student_name}'s result for {exam_title}. The student can retake the exam.",
+            "attempt_id": attempt_id,
+        }
+    )
+
+
 def _exam_editor_payload(exam):
     questions = list(exam.questions.all())
     return {

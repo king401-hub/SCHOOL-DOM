@@ -34,6 +34,7 @@ urlpatterns = [
     path("exams/create/", app_views.create_exam, name="app_create_exam"),
     path("exams/<int:exam_id>/", app_views.exam_detail, name="app_exam_detail"),
     path("exams/<int:exam_id>/results/upload/", app_views.upload_exam_results, name="app_upload_exam_results"),
+    path("exams/results/<int:attempt_id>/", app_views.delete_exam_attempt_result, name="app_delete_exam_attempt_result"),
     path("exams/<int:exam_id>/notify/", app_views.notify_exam_update, name="app_notify_exam_update"),
     path("messages/", app_views.messages_snapshot, name="app_messages_snapshot"),
     path("messages/inbox/", app_views.messages_inbox, name="app_messages_inbox"),

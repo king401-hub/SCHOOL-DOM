@@ -78,8 +78,8 @@ function PricingPage({ onNavigate }) {
 
               <div className="token-price-block">
                 <span>Activation token</span>
-                <strong>₦200</strong>
-                <small>per student access token</small>
+                <strong>₦200/token.</strong>
+                <small>TOKEN EXPIRES MONTHLY</small>
               </div>
 
               <p className="pricing-charge-title">Additional document charges</p>
@@ -107,7 +107,7 @@ function PricingPage({ onNavigate }) {
               <button type="button" className="pricing-action" onClick={goToSignup}>
                 Get Started
               </button>
-              <p className="pricing-footnote">New schools receive free starter activation tokens during setup.</p>
+              <p className="pricing-footnote">New schools receive 50 free activation tokens during setup.</p>
             </article>
           </div>
         </section>
