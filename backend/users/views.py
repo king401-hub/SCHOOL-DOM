@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
@@ -14,9 +15,11 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils.text import slugify
 import random
+import secrets
 import string
 import jwt
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 from core.models import SchoolTenant, Domain
 from tenants.models import Tenant
 from .models import User, LoginHistory
@@ -161,35 +164,64 @@ def is_admin_otp_user(user):
 
 
 def get_admin_email_device(user, challenge=None):
-    from django_otp.plugins.otp_email.models import EmailDevice
-
-    if challenge:
-        try:
-            return EmailDevice.objects.get(id=challenge, user=user)
-        except (EmailDevice.DoesNotExist, ValueError):
-            return None
-
-    device = EmailDevice.objects.filter(user=user, name="admin-email").order_by("-id").first()
-    if not device:
-        device = EmailDevice.objects.create(user=user, name="admin-email", confirmed=True)
-    elif not device.confirmed:
-        device.confirmed = True
-        device.save(update_fields=["confirmed"])
-
-    if hasattr(device, "email") and device.email != user.email:
-        device.email = user.email
-        device.save(update_fields=["email"])
-    return device
+    if not challenge or user.admin_otp_challenge != challenge:
+        return None
+    if not user.admin_otp_sent_at:
+        return None
+    expires_at = user.admin_otp_sent_at + timedelta(minutes=ADMIN_OTP_EXPIRY_MINUTES)
+    if timezone.now() > expires_at:
+        return None
+    return user
 
 
 def send_admin_otp(user, purpose="login"):
-    device = get_admin_email_device(user)
-    device.generate_challenge()
-    return str(device.id)
+    code = "".join(secrets.choice(string.digits) for _ in range(6))
+    challenge = secrets.token_urlsafe(32)
+    user.admin_otp_hash = make_password(code)
+    user.admin_otp_sent_at = timezone.now()
+    user.admin_otp_purpose = purpose
+    user.admin_otp_attempts = 0
+    user.admin_otp_challenge = challenge
+    user.save(update_fields=[
+        "admin_otp_hash",
+        "admin_otp_sent_at",
+        "admin_otp_purpose",
+        "admin_otp_attempts",
+        "admin_otp_challenge",
+    ])
+
+    message = render_to_string("emails/admin_otp.html", {
+        "user": user,
+        "code": code,
+        "purpose": purpose,
+        "expires_minutes": ADMIN_OTP_EXPIRY_MINUTES,
+    })
+    send_mail(
+        "Your SchoolDom admin verification code",
+        f"Your SchoolDom verification code is {code}. It expires in {ADMIN_OTP_EXPIRY_MINUTES} minutes.",
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        html_message=message,
+        fail_silently=False,
+    )
+    return challenge
 
 
 def clear_admin_otp(user):
-    return None
+    user.admin_otp_hash = None
+    user.admin_otp_sent_at = None
+    user.admin_otp_purpose = ''
+    user.admin_otp_attempts = 0
+    user.admin_otp_challenge = None
+    user.admin_otp_verified_at = timezone.now()
+    user.save(update_fields=[
+        "admin_otp_hash",
+        "admin_otp_sent_at",
+        "admin_otp_purpose",
+        "admin_otp_attempts",
+        "admin_otp_challenge",
+        "admin_otp_verified_at",
+    ])
 
 
 def admin_redirect_url(user):
@@ -202,6 +234,24 @@ def admin_redirect_url(user):
         'parent': '/parent/dashboard/',
         'staff': '/staff/dashboard/',
     }.get(user.role, '/dashboard/')
+
+
+def build_frontend_url(request, path, query=None):
+    base_url = (getattr(settings, "FRONTEND_BASE_URL", "") or "").strip().rstrip("/")
+    if not base_url:
+        scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+        host = request.get_host()
+        port = str(getattr(settings, "FRONTEND_DEV_PORT", "") or "").strip()
+        hostname = host.split(":", 1)[0]
+        if port and hostname in {"localhost", "127.0.0.1"}:
+            host = f"{hostname}:{port}"
+        base_url = f"{scheme}://{host}"
+
+    normalized_path = f"/{str(path or '').lstrip('/')}"
+    url = f"{base_url}{normalized_path}"
+    if query:
+        url = f"{url}?{urlencode(query)}"
+    return url
 
 
 def get_tokens_for_user(user):
@@ -555,17 +605,20 @@ def admin_verify_otp(request):
     if user.is_locked:
         create_login_history(user, request, status='locked')
         return Response({'success': False, 'message': 'Account is locked. Contact support.'}, status=status.HTTP_423_LOCKED)
-    device = get_admin_email_device(user, challenge=challenge)
-    if not device:
+    otp_user = get_admin_email_device(user, challenge=challenge)
+    if not otp_user:
         create_login_history(user, request, status='failed')
         return Response({'success': False, 'message': 'Invalid OTP challenge.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not device.verify_token(code):
-        user.increment_login_attempts()
+    if not user.admin_otp_hash or not check_password(code, user.admin_otp_hash):
+        user.admin_otp_attempts += 1
+        user.save(update_fields=['admin_otp_attempts'])
+        if user.admin_otp_attempts >= 5:
+            user.increment_login_attempts()
         create_login_history(user, request, status='failed')
-        if user.is_locked:
+        if user.is_locked or user.admin_otp_attempts >= 5:
             return Response({'success': False, 'message': 'Too many failed OTP attempts. Account locked.'}, status=status.HTTP_423_LOCKED)
-        remaining = max(5 - user.login_attempts, 0)
+        remaining = max(5 - user.admin_otp_attempts, 0)
         return Response({
             'success': False,
             'message': f'Invalid OTP code. {remaining} attempt{"s" if remaining != 1 else ""} remaining.'
@@ -578,6 +631,7 @@ def admin_verify_otp(request):
     user.last_login = timezone.now()
     user.update_last_login_ip(get_client_ip(request))
     user.reset_login_attempts()
+    clear_admin_otp(user)
     create_login_history(user, request, status='success')
     tokens = get_tokens_for_user(user)
     return Response({
@@ -639,9 +693,12 @@ def password_reset_request(request):
             
             # Send email
             subject = 'Password Reset Request'
+            reset_url = build_frontend_url(request, "/reset-password", {"token": token})
             message = render_to_string('emails/password_reset.html', {
                 'user': user,
-                'token': token
+                'token': token,
+                'reset_url': reset_url,
+                'expires_hours': 24,
             })
             
             send_mail(
@@ -698,7 +755,17 @@ def password_reset_confirm(request):
             user.set_password(new_password)
             user.password_reset_token = None
             user.password_reset_sent_at = None
-            user.save()
+            user.last_password_change = timezone.now()
+            user.login_attempts = 0
+            user.is_locked = False
+            user.save(update_fields=[
+                'password',
+                'password_reset_token',
+                'password_reset_sent_at',
+                'last_password_change',
+                'login_attempts',
+                'is_locked',
+            ])
             
             return Response({
                 'success': True,

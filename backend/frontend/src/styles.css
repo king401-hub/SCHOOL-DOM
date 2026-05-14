@@ -1695,6 +1695,21 @@ h1 {
   height: 15px;
 }
 
+.forgot-password-link {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: var(--toggle-color);
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 700;
+  padding: 0.1rem 0;
+}
+
+.forgot-password-link:hover {
+  color: var(--toggle-hover);
+}
+
 .help-text {
   margin: 0.45rem 0 0;
   color: var(--help-color);

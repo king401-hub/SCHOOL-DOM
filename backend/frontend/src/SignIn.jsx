@@ -113,7 +113,13 @@ async function postAuth(path, payload) {
 
 function Signin({ onAuthenticated, onBack }) {
   const [theme, setTheme] = useState("dark");
-  const [mode, setMode] = useState("signin");
+  const [mode, setMode] = useState(() => {
+    const path = window.location.pathname;
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (path === "/reset-password" || token) return "reset";
+    if (path === "/forgot-password") return "forgot";
+    return "signin";
+  });
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -135,6 +141,12 @@ function Signin({ onAuthenticated, onBack }) {
   const [otpPurpose, setOtpPurpose] = useState("");
   const [otpExpiresIn, setOtpExpiresIn] = useState(0);
   const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token") || "");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
 
   const [showCreateSchool, setShowCreateSchool] = useState(false);
   const [schoolName, setSchoolName] = useState("");
@@ -150,7 +162,16 @@ function Signin({ onAuthenticated, onBack }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [typedTitle, setTypedTitle] = useState("");
 
-  const titleText = mode === "otp" ? "Verify admin access." : mode === "signin" ? "Sign in to SchoolDom." : "Create your SchoolDom account.";
+  const titleText =
+    mode === "otp"
+      ? "Verify admin access."
+      : mode === "forgot"
+        ? "Reset your password."
+        : mode === "reset"
+          ? "Choose a new password."
+          : mode === "signin"
+            ? "Sign in to SchoolDom."
+            : "Create your SchoolDom account.";
 
   useEffect(() => {
     document.body.setAttribute("data-theme", theme);
@@ -212,6 +233,11 @@ function Signin({ onAuthenticated, onBack }) {
   }, [confirmPassword, firstName, lastName, signupEmail, signupPassword]);
 
   const canCreateSchool = useMemo(() => schoolName.trim().length >= 3, [schoolName]);
+  const canRequestReset = useMemo(() => forgotEmail.trim().length > 0, [forgotEmail]);
+  const canResetPassword = useMemo(
+    () => resetToken.trim().length > 0 && resetPassword.length >= 8 && resetPassword === resetConfirmPassword,
+    [resetConfirmPassword, resetPassword, resetToken]
+  );
 
   const clearSession = () => {
     window.localStorage.removeItem(SESSION_KEY);
@@ -225,6 +251,14 @@ function Signin({ onAuthenticated, onBack }) {
   const resetSchoolCreationMessages = () => {
     setSchoolError("");
     setSchoolSuccess("");
+  };
+
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setShowCreateSchool(false);
+    setError("");
+    setSuccessMessage("");
+    resetSchoolCreationMessages();
   };
 
   const handleCreateSchool = async () => {
@@ -493,6 +527,49 @@ function Signin({ onAuthenticated, onBack }) {
     }
   };
 
+  const handleForgotPassword = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setIsSubmitting(true);
+    try {
+      const data = await postAuth("/api/auth/password-reset/", {
+        email: forgotEmail.trim(),
+      });
+      setSuccessMessage(data.message || "If that account exists, a reset link has been sent.");
+    } catch (requestError) {
+      setError(requestError.message || "Could not send reset email.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResetPassword = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setIsSubmitting(true);
+    try {
+      const data = await postAuth("/api/auth/password-reset/confirm/", {
+        token: resetToken.trim(),
+        password: resetPassword,
+        confirm_password: resetConfirmPassword,
+      });
+      setResetPassword("");
+      setResetConfirmPassword("");
+      setPassword("");
+      setMode("signin");
+      setShowCreateSchool(false);
+      resetSchoolCreationMessages();
+      setSuccessMessage(data.message || "Password reset successful. You can sign in now.");
+      window.history.replaceState({}, "", "/signin");
+    } catch (requestError) {
+      setError(requestError.message || "Password reset failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSignOut = () => {
     clearSession();
     setSignedInUser(null);
@@ -608,11 +685,7 @@ function Signin({ onAuthenticated, onBack }) {
                     type="button"
                     className={`mode-button ${mode === "signin" ? "active" : ""}`}
                     onClick={() => {
-                      setMode("signin");
-                      setShowCreateSchool(false);
-                      setError("");
-                      setSuccessMessage("");
-                      resetSchoolCreationMessages();
+                      switchMode("signin");
                     }}
                   >
                     Sign in
@@ -621,18 +694,108 @@ function Signin({ onAuthenticated, onBack }) {
                     type="button"
                     className={`mode-button ${mode === "signup" ? "active" : ""}`}
                     onClick={() => {
-                      setMode("signup");
-                      setShowCreateSchool(false);
-                      setError("");
-                      setSuccessMessage("");
-                      resetSchoolCreationMessages();
+                      switchMode("signup");
                     }}
                   >
                     Sign up
                   </button>
                 </div>
 
-                {mode === "otp" ? (
+                {mode === "forgot" ? (
+                  <form className="signup-form" onSubmit={handleForgotPassword} noValidate>
+                    <p className="help-text">Enter your account email and we will send a secure reset link.</p>
+                    <label htmlFor="forgot-email">Email address</label>
+                    <div className="input-wrap">
+                      <span className="input-icon">@</span>
+                      <input
+                        id="forgot-email"
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(event) => setForgotEmail(event.target.value)}
+                        placeholder="you@school.edu"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+                    {error ? <p className="error-text">{error}</p> : null}
+                    {successMessage ? <p className="success-text">{successMessage}</p> : null}
+                    <button type="submit" className="signup-button" disabled={!canRequestReset || isSubmitting}>
+                      {isSubmitting ? "Sending reset link..." : "Send reset link"}
+                    </button>
+                    <button type="button" className="create-school-trigger" onClick={() => switchMode("signin")}>
+                      Back to sign in
+                    </button>
+                  </form>
+                ) : mode === "reset" ? (
+                  <form className="signup-form" onSubmit={handleResetPassword} noValidate>
+                    <label htmlFor="reset-token">Reset token</label>
+                    <div className="input-wrap">
+                      <span className="input-icon">T</span>
+                      <input
+                        id="reset-token"
+                        type="text"
+                        value={resetToken}
+                        onChange={(event) => setResetToken(event.target.value)}
+                        placeholder="Paste reset token"
+                        autoComplete="off"
+                        required
+                      />
+                    </div>
+                    <label htmlFor="reset-password">New password</label>
+                    <div className="input-wrap password-wrap">
+                      <span className="input-icon">#</span>
+                      <input
+                        id="reset-password"
+                        type={showResetPassword ? "text" : "password"}
+                        value={resetPassword}
+                        onChange={(event) => setResetPassword(event.target.value)}
+                        placeholder="Minimum 8 characters"
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowResetPassword((previous) => !previous)}
+                        aria-label={showResetPassword ? "Hide password" : "Show password"}
+                      >
+                        {showResetPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <label htmlFor="reset-confirm-password">Confirm password</label>
+                    <div className="input-wrap password-wrap">
+                      <span className="input-icon">#</span>
+                      <input
+                        id="reset-confirm-password"
+                        type={showResetConfirmPassword ? "text" : "password"}
+                        value={resetConfirmPassword}
+                        onChange={(event) => setResetConfirmPassword(event.target.value)}
+                        placeholder="Re-enter password"
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowResetConfirmPassword((previous) => !previous)}
+                        aria-label={showResetConfirmPassword ? "Hide password" : "Show password"}
+                      >
+                        {showResetConfirmPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    {resetPassword && resetConfirmPassword && resetPassword !== resetConfirmPassword ? (
+                      <p className="error-text">Passwords do not match.</p>
+                    ) : null}
+                    {error ? <p className="error-text">{error}</p> : null}
+                    {successMessage ? <p className="success-text">{successMessage}</p> : null}
+                    <button type="submit" className="signup-button" disabled={!canResetPassword || isSubmitting}>
+                      {isSubmitting ? "Updating password..." : "Update password"}
+                    </button>
+                    <button type="button" className="create-school-trigger" onClick={() => switchMode("signin")}>
+                      Back to sign in
+                    </button>
+                  </form>
+                ) : mode === "otp" ? (
                   <form className="signup-form otp-form" onSubmit={handleVerifyOtp} noValidate>
                     <p className="success-text">
                       We sent a 6-digit admin verification code to <strong>{otpEmail}</strong>.
@@ -668,10 +831,8 @@ function Signin({ onAuthenticated, onBack }) {
                       type="button"
                       className="create-school-trigger"
                       onClick={() => {
-                        setMode("signin");
+                        switchMode("signin");
                         setOtpCode("");
-                        setError("");
-                        setSuccessMessage("");
                       }}
                     >
                       Back to sign in
@@ -751,6 +912,13 @@ function Signin({ onAuthenticated, onBack }) {
                       />
                       Keep me signed in on this device
                     </label>
+
+                    <button type="button" className="forgot-password-link" onClick={() => {
+                      setForgotEmail(email.trim());
+                      switchMode("forgot");
+                    }}>
+                      Forgot password?
+                    </button>
 
                     {error ? <p className="error-text">{error}</p> : null}
                     {successMessage ? <p className="success-text">{successMessage}</p> : null}

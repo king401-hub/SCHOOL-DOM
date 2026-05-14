@@ -15,8 +15,8 @@ export const API_BASE_URL = (() => {
   return `${window.location.protocol}//${window.location.host}${withoutApi.startsWith("/") ? withoutApi : `/${withoutApi}`}`;
 })();
 export const ID_CARD_VERIFY_PATH = "/id-cards/verify";
-export const PUBLIC_ROUTES = new Set(["/", "/signin", "/login", "/resource", "/pricing", "/faq", "/privacy", ID_CARD_VERIFY_PATH]);
-export const AUTH_ROUTES = new Set(["/signin", "/login"]);
+export const PUBLIC_ROUTES = new Set(["/", "/signin", "/login", "/forgot-password", "/reset-password", "/resource", "/pricing", "/faq", "/privacy", ID_CARD_VERIFY_PATH]);
+export const AUTH_ROUTES = new Set(["/signin", "/login", "/forgot-password", "/reset-password"]);
 export const STUDENT_POLL_INTERVAL_MS = 60 * 1000;
 export const TEACHER_POLL_INTERVAL_MS = 30 * 1000;
 export const DEFAULT_POLL_INTERVAL_MS = 20 * 1000;
