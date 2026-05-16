@@ -228,6 +228,7 @@ function AdminFinanceScreen({
   onWithdraw,
   onClassFeeSave,
   onClassFeeDelete,
+  onStudentFeeSave,
   onAdjustWallet,
   onPaymentAccountSave,
   onPurchaseCredits,
@@ -242,6 +243,7 @@ function AdminFinanceScreen({
   const finance = data?.finance_overview || data || {};
   const adminWallet = finance?.admin_wallet || {};
   const classFees = finance?.class_fee_rows || [];
+  const studentFeeRows = finance?.student_fee_rows || [];
   const classOptions = finance?.class_options || [];
   const paymentRows = finance?.student_payment_rows || [];
   const creditPool = finance?.activation_credit_pool || {};
@@ -269,6 +271,14 @@ function AdminFinanceScreen({
     due_date: "",
   });
   const [editingClassFeeId, setEditingClassFeeId] = useState("");
+  const [studentFeeForm, setStudentFeeForm] = useState({
+    title: "",
+    amount: "",
+    due_date: "",
+    status: "pending",
+    auto_deduct: true,
+  });
+  const [editingStudentFeeId, setEditingStudentFeeId] = useState("");
   const [adjustForm, setAdjustForm] = useState({
     student_id: "",
     amount: "",
@@ -315,6 +325,7 @@ function AdminFinanceScreen({
   const bonusCreditCount = Math.floor(requestedCreditCount / 100) * 10;
   const totalCreditCount = requestedCreditCount + bonusCreditCount;
   const selectedSalaryStaff = staffRows.find((item) => item.id === salaryPayForm.staff_id);
+  const selectedStudentFee = studentFeeRows.find((fee) => fee.id === editingStudentFeeId);
 
   const handleSalaryStaffChange = (staffId) => {
     const staff = staffRows.find((item) => item.id === staffId);
@@ -414,6 +425,42 @@ function AdminFinanceScreen({
       setFeedback("Class fee deactivated.");
     } catch (err) {
       setFormError(err.message || "Unable to deactivate class fee.");
+    }
+  };
+
+  const startEditStudentFee = (fee) => {
+    setFeedback("");
+    setFormError("");
+    setEditingStudentFeeId(fee.id);
+    setStudentFeeForm({
+      title: fee.title || "",
+      amount: fee.amount || "",
+      due_date: fee.due_date || "",
+      status: fee.status || "pending",
+      auto_deduct: fee.auto_deduct !== false,
+    });
+  };
+
+  const resetStudentFeeForm = () => {
+    setEditingStudentFeeId("");
+    setStudentFeeForm({ title: "", amount: "", due_date: "", status: "pending", auto_deduct: true });
+  };
+
+  const handleStudentFeeSubmit = async (event) => {
+    event.preventDefault();
+    if (!editingStudentFeeId) return;
+    setFeedback("");
+    setFormError("");
+    try {
+      await onStudentFeeSave({
+        id: editingStudentFeeId,
+        ...studentFeeForm,
+        amount: Number(studentFeeForm.amount),
+      });
+      setFeedback("Student fee updated.");
+      resetStudentFeeForm();
+    } catch (err) {
+      setFormError(err.message || "Unable to update student fee.");
     }
   };
 
@@ -639,6 +686,56 @@ function AdminFinanceScreen({
 
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {formError ? <p className="form-feedback error">{formError}</p> : null}
+
+          {editingStudentFeeId ? (
+            <article className="app-panel edit-modal-card student-fee-modal" role="dialog" aria-modal="true" aria-labelledby="student-fee-edit-title">
+              <div className="edit-modal-head">
+                <div>
+                  <h3 id="student-fee-edit-title">Edit Student Fee</h3>
+                  <p className="panel-sub">
+                    {selectedStudentFee?.student_name || "Selected student"}
+                    {selectedStudentFee?.student_identifier ? ` - ${selectedStudentFee.student_identifier}` : ""}
+                  </p>
+                </div>
+                <button type="button" className="table-action" onClick={resetStudentFeeForm}>Close</button>
+              </div>
+              <form className="panel-form student-fee-edit-form" onSubmit={handleStudentFeeSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">
+                    Fee title
+                    <input value={studentFeeForm.title} onChange={(event) => setStudentFeeForm((current) => ({ ...current, title: event.target.value }))} required />
+                  </label>
+                  <label className="panel-field">
+                    Amount
+                    <input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(event) => setStudentFeeForm((current) => ({ ...current, amount: event.target.value }))} required />
+                  </label>
+                  <label className="panel-field">
+                    Due date
+                    <input type="date" value={studentFeeForm.due_date} onChange={(event) => setStudentFeeForm((current) => ({ ...current, due_date: event.target.value }))} required />
+                  </label>
+                  <label className="panel-field">
+                    Status
+                    <select value={studentFeeForm.status} onChange={(event) => setStudentFeeForm((current) => ({ ...current, status: event.target.value }))}>
+                      <option value="pending">Pending</option>
+                      <option value="paid">Paid</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                  </label>
+                  <label className="panel-field checkbox-field">
+                    <input type="checkbox" checked={studentFeeForm.auto_deduct} onChange={(event) => setStudentFeeForm((current) => ({ ...current, auto_deduct: event.target.checked }))} />
+                    Auto deduct when due
+                  </label>
+                </div>
+                <div className="field-note">
+                  This change applies only to this student and will not update the class fee for other students.
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onStudentFeeSave}>Update student fee</button>
+                  <button type="button" onClick={resetStudentFeeForm}>Cancel</button>
+                </div>
+              </form>
+            </article>
+          ) : null}
 
           <div className="finance-workspace">
             <article className="app-panel finance-chart-panel">
@@ -923,6 +1020,7 @@ function AdminFinanceScreen({
               <h3>Class Fee Schedule</h3>
               <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
                 <option value="class-fees">Class Fee Schedule</option>
+                <option value="student-fees">Student Fee Editor</option>
                 <option value="student-payments">Student Payment Status</option>
                 <option value="activation-alerts">Activation Alerts</option>
                 <option value="credit-history">Token Transaction History</option>
@@ -960,9 +1058,59 @@ function AdminFinanceScreen({
 
           <article className="app-panel">
             <div className="mobile-section-head">
+              <h3>Student Fee Editor</h3>
+              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
+                <option value="class-fees">Class Fee Schedule</option>
+                <option value="student-fees">Student Fee Editor</option>
+                <option value="student-payments">Student Payment Status</option>
+                <option value="activation-alerts">Activation Alerts</option>
+                <option value="credit-history">Token Transaction History</option>
+              </select>
+            </div>
+            <div className={`mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Class</th>
+                      <th>Fee</th>
+                      <th>Amount</th>
+                      <th>Paid</th>
+                      <th>Balance</th>
+                      <th>Status</th>
+                      <th>Due</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {studentFeeRows.length > 0 ? studentFeeRows.map((fee) => (
+                      <tr key={fee.id}>
+                        <td>{fee.student_name}<small>{fee.student_identifier}</small></td>
+                        <td>{fee.class_label}</td>
+                        <td>{fee.title}{fee.is_customized ? <small>Customized</small> : null}</td>
+                        <td>{formatFinanceAmount(fee.amount)}</td>
+                        <td>{formatFinanceAmount(fee.amount_paid)}</td>
+                        <td>{formatFinanceAmount(fee.remaining_balance)}</td>
+                        <td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td>
+                        <td>{formatDate(fee.due_date)}</td>
+                        <td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan="9">No student fees have been generated yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
               <h3>Student Payment Status</h3>
               <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
                 <option value="class-fees">Class Fee Schedule</option>
+                <option value="student-fees">Student Fee Editor</option>
                 <option value="student-payments">Student Payment Status</option>
                 <option value="activation-alerts">Activation Alerts</option>
                 <option value="credit-history">Token Transaction History</option>
@@ -1010,6 +1158,7 @@ function AdminFinanceScreen({
               <h3>Activation Alerts</h3>
               <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
                 <option value="class-fees">Class Fee Schedule</option>
+                <option value="student-fees">Student Fee Editor</option>
                 <option value="student-payments">Student Payment Status</option>
                 <option value="activation-alerts">Activation Alerts</option>
                 <option value="credit-history">Token Transaction History</option>
@@ -1054,6 +1203,7 @@ function AdminFinanceScreen({
               <h3>Token Transaction History</h3>
               <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
                 <option value="class-fees">Class Fee Schedule</option>
+                <option value="student-fees">Student Fee Editor</option>
                 <option value="student-payments">Student Payment Status</option>
                 <option value="activation-alerts">Activation Alerts</option>
                 <option value="credit-history">Token Transaction History</option>

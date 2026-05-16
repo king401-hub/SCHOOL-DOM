@@ -11,6 +11,7 @@ urlpatterns = [
     path("admin/payment-account/", views.admin_payment_account, name="admin_payment_account"),
     path("admin/class-fees/", views.admin_class_fee_create, name="admin_class_fee_create"),
     path("admin/class-fees/<uuid:fee_id>/", views.admin_class_fee_detail, name="admin_class_fee_detail"),
+    path("admin/fees/<uuid:fee_id>/", views.admin_school_fee_detail, name="admin_school_fee_detail"),
     path("admin/activation-credits/purchase/", views.admin_activation_credit_purchase, name="admin_activation_credit_purchase"),
     path("admin/activation-credits/verify/", views.admin_activation_credit_verify, name="admin_activation_credit_verify"),
     path("admin/activation-credits/assign/", views.admin_activation_credit_assign, name="admin_activation_credit_assign"),

@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
+import json
 import random
 from datetime import timedelta
 
@@ -62,6 +63,12 @@ def _attempt_due_at(attempt):
 
 def _shuffle_options(options, correct_answer):
     normalized_correct = str(correct_answer or "").strip()
+    if isinstance(options, str):
+        try:
+            decoded = json.loads(options)
+            options = decoded if isinstance(decoded, list) else []
+        except (TypeError, ValueError):
+            options = []
     cleaned = [str(option).strip() for option in (options or []) if str(option).strip()]
     if normalized_correct and normalized_correct not in cleaned:
         cleaned.append(normalized_correct)
@@ -792,7 +799,9 @@ class PersonalQuizGenerate(APIView):
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
-            return Response(_personal_attempt_payload(existing_attempt, include_questions=True), status=status.HTTP_200_OK)
+            if existing_attempt.questions.exists():
+                return Response(_personal_attempt_payload(existing_attempt, include_questions=True), status=status.HTTP_200_OK)
+            existing_attempt.delete()
 
         try:
             question_count = int(request.data.get("question_count", MAX_PERSONAL_QUESTIONS))
@@ -855,7 +864,10 @@ class PersonalQuizFlagQuestion(APIView):
         if attempt.is_submitted:
             return Response({"detail": "This quiz has already been submitted."}, status=status.HTTP_400_BAD_REQUEST)
 
-        question = get_object_or_404(attempt.questions.all(), id=request.data.get("question_id"))
+        question_id = request.data.get("question_id")
+        if not question_id:
+            return Response({"detail": "Question id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        question = get_object_or_404(attempt.questions.all(), id=question_id)
         reason = str(request.data.get("reason") or "").strip()
         if not reason:
             return Response({"detail": "Please describe why this question is inappropriate."}, status=status.HTTP_400_BAD_REQUEST)

@@ -165,11 +165,19 @@ def _admin_finance_snapshot(user):
     generated_fees = SchoolFee.objects.filter(
         student__in=students,
         class_fee__in=class_fees,
-    ).select_related("student", "class_fee")
+    ).select_related("student", "student__user", "student__current_class", "class_fee")
     fee_by_student_and_class_fee = {
         (fee.student_id, fee.class_fee_id): fee
         for fee in generated_fees
     }
+    manual_fees = list(
+        SchoolFee.objects.filter(student__in=students, class_fee__isnull=True)
+        .select_related("student", "student__user", "student__current_class")
+        .order_by("due_date", "title")
+    )
+    manual_fees_by_student = {}
+    for fee in manual_fees:
+        manual_fees_by_student.setdefault(fee.student_id, []).append(fee)
 
     student_rows = []
     activation_rows = []
@@ -193,10 +201,15 @@ def _admin_finance_snapshot(user):
         expected_for_student = Decimal("0.00")
         paid_for_student = Decimal("0.00")
         for class_fee in fees_by_class.get(student.current_class_id, []):
-            expected_for_student += class_fee.amount
             fee = fee_by_student_and_class_fee.get((student.id, class_fee.id))
             if fee:
+                expected_for_student += fee.amount
                 paid_for_student += fee_paid_amount(fee)
+            else:
+                expected_for_student += class_fee.amount
+        for fee in manual_fees_by_student.get(student.id, []):
+            expected_for_student += fee.amount
+            paid_for_student += fee_paid_amount(fee)
 
         remaining = max(expected_for_student - paid_for_student, Decimal("0.00"))
         if expected_for_student <= 0:
@@ -257,7 +270,9 @@ def _admin_finance_snapshot(user):
         student_count = count_by_class.get(class_fee.school_class_id, 0)
         generated_for_fee = [fee for fee in generated_fees if fee.class_fee_id == class_fee.id]
         paid_for_fee = sum((fee_paid_amount(fee) for fee in generated_for_fee), Decimal("0.00"))
-        expected_for_fee = class_fee.amount * student_count
+        expected_for_fee = sum((fee.amount for fee in generated_for_fee), Decimal("0.00"))
+        missing_count = max(student_count - len(generated_for_fee), 0)
+        expected_for_fee += class_fee.amount * missing_count
         class_fee_rows.append(
             {
                 "id": str(class_fee.id),
@@ -274,6 +289,10 @@ def _admin_finance_snapshot(user):
                 "outstanding_amount": max(expected_for_fee - paid_for_fee, Decimal("0.00")),
             }
         )
+    student_fee_rows = SchoolFeeSerializer(
+        sorted([*generated_fees, *manual_fees], key=lambda fee: (fee.student.user.last_name, fee.student.user.first_name, fee.due_date, fee.title)),
+        many=True,
+    ).data
 
     pool = get_or_create_activation_credit_pool(user.tenant)
     bank_payments = BankPayment.objects.select_related("student", "student__user", "payment_reference").filter(tenant=user.tenant)
@@ -308,6 +327,7 @@ def _admin_finance_snapshot(user):
         "confirmed_bank_payments": bank_payments.filter(status__in=[BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL]).count(),
         "unmatched_bank_payments": bank_payments.filter(status=BankPayment.STATUS_UNMATCHED).count(),
         "student_payment_rows": student_rows,
+        "student_fee_rows": student_fee_rows,
         "class_fee_rows": class_fee_rows,
         "bank_payment_rows": BankPaymentSerializer(bank_payments[:100], many=True).data,
         "transaction_history": TransactionSerializer(transaction_history, many=True).data,
@@ -570,6 +590,7 @@ def admin_overview(request):
             "confirmed_bank_payments": finance_snapshot["confirmed_bank_payments"],
             "unmatched_bank_payments": finance_snapshot["unmatched_bank_payments"],
             "student_payment_rows": finance_snapshot["student_payment_rows"],
+            "student_fee_rows": finance_snapshot["student_fee_rows"],
             "class_fee_rows": finance_snapshot["class_fee_rows"],
             "bank_payment_rows": finance_snapshot["bank_payment_rows"],
             "transaction_history": finance_snapshot["transaction_history"],
@@ -720,6 +741,58 @@ def admin_class_fee_detail(request, fee_id):
         class_fee.save(update_fields=sorted(set(update_fields)))
         sync_class_fee_assignments(class_fee, actor=user)
     return Response({"success": True, "class_fee": ClassFeeSerializer(class_fee).data})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_school_fee_detail(request, fee_id):
+    """Edit one student's school-fee bill without changing the whole class fee."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+
+    fee = get_object_or_404(
+        SchoolFee.objects.select_related("student", "student__user", "student__current_class", "class_fee").filter(
+            student__user__tenant=user.tenant
+        ),
+        id=fee_id,
+    )
+
+    update_fields = []
+    if "title" in request.data:
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"success": False, "message": "title cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        fee.title = title
+        update_fields.append("title")
+    if "amount" in request.data:
+        try:
+            fee.amount = _parse_amount(request.data.get("amount"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields.append("amount")
+    if "due_date" in request.data:
+        due_date = parse_date(str(request.data.get("due_date") or "").strip())
+        if not due_date:
+            return Response({"success": False, "message": "due_date must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        fee.due_date = due_date
+        update_fields.append("due_date")
+    if "status" in request.data:
+        fee_status = str(request.data.get("status") or "").strip()
+        if fee_status not in {choice[0] for choice in SchoolFee.STATUS_CHOICES}:
+            return Response({"success": False, "message": "status must be pending, paid, or overdue."}, status=status.HTTP_400_BAD_REQUEST)
+        fee.status = fee_status
+        update_fields.append("status")
+    if "auto_deduct" in request.data:
+        fee.auto_deduct = _parse_bool(request.data.get("auto_deduct"), default=True)
+        update_fields.append("auto_deduct")
+
+    if update_fields:
+        fee.is_customized = True
+        update_fields.extend(["is_customized", "updated_at"])
+        fee.save(update_fields=sorted(set(update_fields)))
+
+    return Response({"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)})
 
 
 @api_view(["POST"])

@@ -38,18 +38,26 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
     amount_paid = serializers.SerializerMethodField()
     remaining_balance = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
+    student_name = serializers.SerializerMethodField()
+    student_identifier = serializers.SerializerMethodField()
+    class_label = serializers.SerializerMethodField()
 
     class Meta:
         model = SchoolFee
         fields = [
             "id",
+            "student",
+            "student_name",
+            "student_identifier",
             "class_fee",
+            "class_label",
             "title",
             "amount",
             "currency",
             "due_date",
             "status",
             "auto_deduct",
+            "is_customized",
             "amount_paid",
             "remaining_balance",
             "payment_status",
@@ -68,6 +76,19 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
         if paid > 0:
             return "partial"
         return obj.status
+
+    def get_student_name(self, obj):
+        return obj.student.user.get_full_name() or obj.student.user.email
+
+    def get_student_identifier(self, obj):
+        return obj.student.student_id or obj.student.admission_number
+
+    def get_class_label(self, obj):
+        school_class = obj.student.current_class
+        if not school_class:
+            return ""
+        section = getattr(school_class, "section", "") or ""
+        return f"{school_class.name} - {section}" if section else school_class.name
 
 
 class StudentPaymentReferenceSerializer(serializers.ModelSerializer):
@@ -153,6 +174,7 @@ class ExpenseRecordSerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="record_type", required=False)
     date = serializers.DateField(source="record_date", required=False)
     receiptNumber = serializers.CharField(source="receipt_number", required=False, allow_blank=True)
+    phoneNumber = serializers.CharField(source="phone_number", required=False, allow_blank=True)
 
     class Meta:
         model = ExpenseRecord
@@ -160,6 +182,7 @@ class ExpenseRecordSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "vendor",
+            "phoneNumber",
             "amount",
             "currency",
             "type",

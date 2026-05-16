@@ -20,6 +20,7 @@ export default function ExpenseTracker({ data, loading, error, onRetry, onCreate
   const [form, setForm] = useState({
     title: "",
     vendor: "",
+    phoneNumber: "",
     amount: "",
     type: "expense",
     category: EXPENSE_TAGS[0].label,
@@ -165,6 +166,7 @@ export default function ExpenseTracker({ data, loading, error, onRetry, onCreate
         ...form,
         title: form.title.trim(),
         vendor: form.vendor.trim() || "Unassigned",
+        phoneNumber: form.phoneNumber.trim(),
         amount,
         note: form.note.trim(),
         receiptNumber: form.receiptNumber.trim(),
@@ -173,6 +175,7 @@ export default function ExpenseTracker({ data, loading, error, onRetry, onCreate
         ...current,
         title: "",
         vendor: "",
+        phoneNumber: "",
         amount: "",
         note: "",
         receiptNumber: "",
@@ -406,6 +409,10 @@ export default function ExpenseTracker({ data, loading, error, onRetry, onCreate
                 <input value={form.vendor} onChange={(event) => setForm((current) => ({ ...current, vendor: event.target.value }))} placeholder="Vendor or staff member" />
               </label>
               <label className="panel-field">
+                Phone number
+                <input type="tel" value={form.phoneNumber} onChange={(event) => setForm((current) => ({ ...current, phoneNumber: event.target.value }))} placeholder="Vendor phone number" />
+              </label>
+              <label className="panel-field">
                 Date
                 <input type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} />
               </label>
@@ -546,7 +553,7 @@ export default function ExpenseTracker({ data, loading, error, onRetry, onCreate
             <tbody>
               {filteredItems.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.title}<small>{item.vendor}{item.note ? ` - ${item.note}` : ""}</small></td>
+                  <td>{item.title}<small>{[item.vendor, item.phoneNumber, item.note].filter(Boolean).join(" - ")}</small></td>
                   <td><span className="expense-tag-pill" style={{ "--tag-color": item.color }}>{item.category}</span></td>
                   <td>{item.type}</td>
                   <td>{item.receiptNumber || "-"}</td>

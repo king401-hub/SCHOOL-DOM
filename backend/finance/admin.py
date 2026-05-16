@@ -36,8 +36,8 @@ class TransactionAdmin(admin.ModelAdmin):
 
 @admin.register(SchoolFee)
 class SchoolFeeAdmin(admin.ModelAdmin):
-    list_display = ("title", "student", "amount", "status", "due_date", "class_fee")
-    list_filter = ("status", "class_fee")
+    list_display = ("title", "student", "amount", "status", "due_date", "class_fee", "is_customized")
+    list_filter = ("status", "class_fee", "is_customized")
     search_fields = ("title", "student__user__email")
 
 
@@ -50,9 +50,9 @@ class ClassFeeAdmin(admin.ModelAdmin):
 
 @admin.register(ExpenseRecord)
 class ExpenseRecordAdmin(admin.ModelAdmin):
-    list_display = ("title", "tenant", "record_type", "amount", "status", "record_date", "created_by")
+    list_display = ("title", "tenant", "vendor", "phone_number", "record_type", "amount", "status", "record_date", "created_by")
     list_filter = ("record_type", "status", "tenant", "record_date")
-    search_fields = ("title", "vendor", "category", "receipt_number", "note")
+    search_fields = ("title", "vendor", "phone_number", "category", "receipt_number", "note")
     readonly_fields = ("created_at", "updated_at")
 
 

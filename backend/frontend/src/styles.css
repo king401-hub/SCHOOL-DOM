@@ -2381,6 +2381,10 @@ body[data-dashboard-role="student"] .global-notification-button {
   min-height: 0;
 }
 
+.student-fee-modal {
+  width: min(720px, calc(100vw - 24px));
+}
+
 .panel-list {
   margin: 0.6rem 0 0;
   padding-left: 1rem;
@@ -6760,15 +6764,11 @@ html {
   display: flex;
   align-items: center;
   padding: 5rem 2rem;
-  background:
-    linear-gradient(135deg, rgba(16, 185, 129, 0.08), transparent 28%),
-    linear-gradient(180deg, #050607, #090b0f 55%, #050607);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), transparent 28%), linear-gradient(180deg, #68c764, #081737 55%, #0774e1);
 }
 
 .pricing-page.theme-light .pricing-showcase-section {
-  background:
-    linear-gradient(135deg, rgba(16, 185, 129, 0.12), transparent 30%),
-    linear-gradient(180deg, #f7fbff, #edf5f1);
+background: radial-gradient(circle at 20% 50%, rgba(37, 99, 235, 0.15), transparent 50%), radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.1), transparent 50%);
 }
 
 .pricing-showcase-container {
@@ -6830,11 +6830,11 @@ html {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 1.35rem;
-  width: 100%;
+  gap: 0.35rem;
+  width: 99%;
   padding: 2rem;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(13, 15, 19, 0.98), rgba(2, 5, 7, 0.98));
+  background: linear-gradient(180deg, #334155, rgb(18 16 121 / 98%));
   border: 1px solid rgba(0, 220, 120, 0.62);
   color: #ffffff;
   box-shadow:
@@ -6862,13 +6862,13 @@ html {
 }
 
 .pricing-card-glyph {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 4.25rem;
+  height: 4.25rem;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 220, 120, 0.32);
-  color: #12e984;
+  border-radius: 49px;
+  border: 5px solid rgba(0, 220, 120, 0.32);
+  color: #0c8bfb;
   font-size: 1.4rem;
 }
 
@@ -6897,7 +6897,7 @@ html {
 }
 
 .token-price-block small {
-  color: #19e889;
+  color: #08f569b3;
   font-weight: 800;
 }
 
@@ -6937,8 +6937,7 @@ html {
 
 .single-pricing-card .pricing-action {
   border-radius: 999px;
-  background: #18d878;
-  color: #031009;
+  background: #e5e7eb;  color: #031009;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   box-shadow: none;
@@ -6949,7 +6948,7 @@ html {
 }
 
 .pricing-page.theme-light .single-pricing-card {
-  background: #080a0d;
+  background: linear-gradient(180deg, #334155, rgb(18 16 121 / 98%));
 }
 
 .pricing-footnote {
@@ -7095,7 +7094,7 @@ html {
 
 .landing-page.theme-light .pricing-note,
 .landing-page.theme-light .pricing-features {
-  color: #4b5563;
+  color: #ffffff;
 }
 
 .landing-page.theme-light .pricing-label {

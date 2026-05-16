@@ -4798,6 +4798,24 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleAdminStudentFeeSave = useCallback(
+    async (payload) => {
+      const { id, ...body } = payload;
+      const result = await requestJson(session, "PATCH", `/api/finance/admin/fees/${id}/`, body);
+      addAdminNotification({
+        category: "Finance",
+        module: "Student Fees",
+        action: `Updated a student fee${payload?.amount ? ` to ${NAIRA_SYMBOL}${payload.amount}` : ""}.`,
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAdminExpenseCreate = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/expenses/", payload);
@@ -5439,6 +5457,7 @@ const unreadNotificationsCount =
         onPaymentAccountSave={handleAdminPaymentAccountSave}
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
+        onStudentFeeSave={handleAdminStudentFeeSave}
         onAdjustWallet={handleAdminAdjustWallet}
         onPurchaseCredits={handleActivationCreditPurchase}
         onVerifyCredits={handleActivationCreditVerify}

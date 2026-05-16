@@ -762,7 +762,7 @@ def sync_class_fee_for_student(student_profile, class_fee, actor=None):
             "created_by": actor or class_fee.created_by,
         },
     )
-    if not created and fee.status != SchoolFee.STATUS_PAID:
+    if not created and fee.status != SchoolFee.STATUS_PAID and not fee.is_customized:
         update_fields = []
         for field, value in {
             "title": class_fee.title,

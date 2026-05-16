@@ -343,6 +343,7 @@ class SchoolFee(models.Model):
     due_date = models.DateField()
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
     auto_deduct = models.BooleanField(default=True)
+    is_customized = models.BooleanField(default=False)
     last_attempted_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -493,6 +494,7 @@ class ExpenseRecord(models.Model):
     )
     title = models.CharField(max_length=160)
     vendor = models.CharField(max_length=160, blank=True)
+    phone_number = models.CharField(max_length=40, blank=True)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=5, default="NGN")
     record_type = models.CharField(max_length=16, choices=TYPE_CHOICES, default=TYPE_EXPENSE)
