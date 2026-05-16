@@ -10212,6 +10212,109 @@ body[data-theme="light"] .quiz-choice {
   color: var(--text, #e2e8f0);
 }
 
+.personal-metrics-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.9fr);
+  gap: 14px;
+}
+
+.personal-term-card {
+  grid-column: 1 / -1;
+}
+
+.personal-dashboard-head,
+.personal-metric-strip,
+.personal-subject-metric-row,
+.personal-trend-row,
+.personal-term-list > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.personal-dashboard-head {
+  justify-content: space-between;
+}
+
+.personal-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.personal-metric-strip > div,
+.personal-rank-grid > div,
+.personal-term-list > div {
+  border: 1px solid var(--border, #1f2937);
+  border-radius: 12px;
+  background: var(--panel-soft, #111827);
+  padding: 12px;
+}
+
+.personal-metric-strip span,
+.personal-rank-grid span,
+.personal-term-list span,
+.personal-subject-metric-row small {
+  color: var(--muted, #94a3b8);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.personal-metric-strip strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text, #e2e8f0);
+  font-size: 1.55rem;
+}
+
+.personal-subject-metrics,
+.personal-trend-list,
+.personal-term-list {
+  display: grid;
+  gap: 10px;
+}
+
+.personal-subject-metric-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) minmax(0, 1.5fr) 58px 76px;
+}
+
+.personal-trend-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 58px;
+}
+
+.personal-rank-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.personal-rank-grid p {
+  margin: 8px 0 0;
+  color: var(--muted, #94a3b8);
+}
+
+.personal-rank-grid strong,
+.personal-term-list strong,
+.personal-subject-metric-row strong,
+.personal-trend-row strong {
+  color: var(--text, #e2e8f0);
+}
+
+.personal-term-list {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.personal-term-list > div {
+  justify-content: space-between;
+}
+
+.personal-term-list > div.active {
+  border-color: rgba(34, 197, 94, 0.55);
+}
+
 @keyframes statRise {
   from {
     opacity: 0;
@@ -11780,7 +11883,15 @@ body[data-theme="dark"] .migration-status-list span {
   }
 
   .personal-stats-grid,
-  .personal-quiz-workspace {
+  .personal-quiz-workspace,
+  .personal-metrics-dashboard,
+  .personal-metric-strip,
+  .personal-rank-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-subject-metric-row,
+  .personal-trend-row {
     grid-template-columns: 1fr;
   }
 

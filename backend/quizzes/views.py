@@ -4,6 +4,7 @@ from django.db import transaction
 import json
 import random
 from datetime import timedelta
+from collections import defaultdict
 
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -13,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from academic.models import GradeScale, Subject
+from academic.models import AcademicYear, GradeScale, Subject, Term
 from notifications.models import Notification
 from users.models import User, resolve_legacy_tenant_for_school
 from .models import (
@@ -55,6 +56,52 @@ def _normalize_answer(value):
 
 def _today():
     return timezone.localdate()
+
+
+def _week_start(value):
+    return value - timedelta(days=value.weekday())
+
+
+def _month_start(value):
+    return value.replace(day=1)
+
+
+def _percentage(score, total):
+    return round((float(score or 0) / max(float(total or 0), 1.0)) * 100, 1) if total else 0
+
+
+def _active_academic_year(user):
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    years = AcademicYear.objects.filter(is_active=True).order_by("-start_date")
+    if legacy_tenant:
+        years = years.filter(tenant=legacy_tenant)
+    return years.first()
+
+
+def _active_term(user):
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    terms = Term.objects.select_related("academic_year").filter(is_active=True).order_by("-start_date")
+    if legacy_tenant:
+        terms = terms.filter(tenant=legacy_tenant)
+    return terms.first()
+
+
+def _term_for_date(user, value):
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    terms = Term.objects.select_related("academic_year").filter(start_date__lte=value, end_date__gte=value).order_by("-start_date")
+    if legacy_tenant:
+        terms = terms.filter(tenant=legacy_tenant)
+    return terms.first() or _active_term(user)
+
+
+def _year_for_date(user, value, term=None):
+    if term and term.academic_year_id:
+        return term.academic_year
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    years = AcademicYear.objects.filter(start_date__lte=value, end_date__gte=value).order_by("-start_date")
+    if legacy_tenant:
+        years = years.filter(tenant=legacy_tenant)
+    return years.first() or _active_academic_year(user)
 
 
 def _attempt_due_at(attempt):
@@ -209,6 +256,161 @@ def _daily_streak(attempts):
     return streak
 
 
+def _weekly_streak(attempts, today=None):
+    today = today or _today()
+    current_week_start = _week_start(today)
+    dates = {
+        attempt.daily_date or timezone.localtime(attempt.submitted_at).date()
+        for attempt in attempts
+        if attempt.is_submitted and attempt.submitted_at
+    }
+    cursor = today
+    streak = 0
+    while cursor >= current_week_start and cursor in dates:
+        streak += 1
+        cursor = cursor - timedelta(days=1)
+    return streak
+
+
+def _personal_quiz_metrics(student, attempts=None):
+    today = _today()
+    current_week = _week_start(today)
+    current_month = _month_start(today)
+    active_term = _active_term(student)
+    attempts = list(
+        attempts
+        if attempts is not None
+        else PersonalQuizAttempt.objects.filter(student=student, is_submitted=True)
+        .select_related("subject", "class_group", "term", "academic_year")
+        .order_by("-submitted_at")
+    )
+
+    def attempt_date(attempt):
+        if attempt.daily_date:
+            return attempt.daily_date
+        if attempt.submitted_at:
+            return timezone.localtime(attempt.submitted_at).date()
+        return timezone.localdate(attempt.started_at)
+
+    def attempt_percentage(attempt):
+        return round(float(attempt.percentage), 1) if getattr(attempt, "percentage", 0) else _percentage(attempt.score, attempt.total_points)
+
+    current_term_attempts = [
+        attempt for attempt in attempts
+        if (active_term and attempt.term_id == active_term.id)
+        or (not active_term and (not attempt.term_id or attempt_date(attempt).year == today.year))
+    ]
+    current_month_attempts = [attempt for attempt in current_term_attempts if _month_start(attempt.month_start or attempt_date(attempt)) == current_month]
+    current_week_attempts = [attempt for attempt in current_term_attempts if (attempt.week_start or _week_start(attempt_date(attempt))) == current_week]
+
+    subject_map = {}
+    for attempt in current_month_attempts:
+        key = attempt.subject_id or f"subject-{attempt.subject.name if attempt.subject else 'general'}"
+        row = subject_map.setdefault(
+            key,
+            {
+                "subject_id": attempt.subject_id,
+                "subject": attempt.subject.name if attempt.subject else "General",
+                "completed": 0,
+                "total_percentage": 0,
+                "best_percentage": 0,
+            },
+        )
+        pct = attempt_percentage(attempt)
+        row["completed"] += 1
+        row["total_percentage"] += pct
+        row["best_percentage"] = max(row["best_percentage"], pct)
+    subject_rows = []
+    for row in subject_map.values():
+        average = round(row["total_percentage"] / max(row["completed"], 1), 1)
+        subject_rows.append({**row, "average_percentage": average})
+    subject_rows.sort(key=lambda item: (-item["average_percentage"], item["subject"]))
+
+    monthly_trends = []
+    month_map = defaultdict(list)
+    for attempt in current_term_attempts:
+        month_map[attempt.month_start or _month_start(attempt_date(attempt))].append(attempt_percentage(attempt))
+    for month, percentages in sorted(month_map.items()):
+        monthly_trends.append(
+            {
+                "month": month,
+                "label": month.strftime("%b %Y"),
+                "completed": len(percentages),
+                "average_percentage": round(sum(percentages) / max(len(percentages), 1), 1),
+            }
+        )
+
+    week_map = defaultdict(set)
+    for attempt in current_term_attempts:
+        date_value = attempt_date(attempt)
+        week_map[attempt.week_start or _week_start(date_value)].add(date_value)
+    weekly_history = [
+        {
+            "week_start": week,
+            "week_end": week + timedelta(days=6),
+            "completed_days": len(days),
+            "completed_quizzes": sum(1 for attempt in current_term_attempts if (attempt.week_start or _week_start(attempt_date(attempt))) == week),
+        }
+        for week, days in sorted(week_map.items(), reverse=True)
+    ]
+
+    term_map = defaultdict(list)
+    for attempt in attempts:
+        key = attempt.term_id or "unassigned"
+        term_map[key].append(attempt)
+    term_history = []
+    for key, records in term_map.items():
+        term = records[0].term if key != "unassigned" else None
+        percentages = [attempt_percentage(item) for item in records]
+        term_history.append(
+            {
+                "term_id": term.id if term else None,
+                "term": term.name if term else "Unassigned term",
+                "academic_year": term.academic_year.name if term and term.academic_year_id else (records[0].academic_year.name if records[0].academic_year_id else ""),
+                "is_active": bool(active_term and term and term.id == active_term.id),
+                "completed": len(records),
+                "average_percentage": round(sum(percentages) / max(len(percentages), 1), 1),
+                "best_percentage": max(percentages, default=0),
+                "archived": bool(active_term and (not term or term.id != active_term.id)),
+            }
+        )
+    term_history.sort(key=lambda item: (not item["is_active"], item["term"]))
+
+    month_percentages = [attempt_percentage(attempt) for attempt in current_month_attempts]
+    term_percentages = [attempt_percentage(attempt) for attempt in current_term_attempts]
+    return {
+        "active_term": {
+            "id": active_term.id if active_term else None,
+            "name": active_term.name if active_term else "Current term",
+            "start_date": active_term.start_date if active_term else None,
+            "end_date": active_term.end_date if active_term else None,
+        },
+        "weekly_streak": {
+            "week_start": current_week,
+            "week_end": current_week + timedelta(days=6),
+            "current": _weekly_streak(current_term_attempts, today),
+            "completed_this_week": len(current_week_attempts),
+            "completed_days_this_week": len({attempt_date(attempt) for attempt in current_week_attempts}),
+            "history": weekly_history[:12],
+        },
+        "monthly": {
+            "month_start": current_month,
+            "total_completed": len(current_month_attempts),
+            "overall_average_percentage": round(sum(month_percentages) / max(len(month_percentages), 1), 1) if month_percentages else 0,
+            "highest_subjects": subject_rows[:3],
+            "weakest_subjects": sorted(subject_rows, key=lambda item: (item["average_percentage"], item["subject"]))[:3],
+            "subjects": subject_rows,
+            "progress_trends": monthly_trends[-6:],
+        },
+        "term": {
+            "total_completed": len(current_term_attempts),
+            "overall_average_percentage": round(sum(term_percentages) / max(len(term_percentages), 1), 1) if term_percentages else 0,
+            "history": term_history,
+        },
+        "history": [_personal_attempt_payload(attempt) for attempt in attempts[:50]],
+    }
+
+
 def _personal_question_payload(question, include_answer=False, answer=None):
     payload = {
         "id": question.id,
@@ -261,13 +463,17 @@ def _grade_for_attempt(attempt, percentage):
 
 def _personal_attempt_payload(attempt, include_questions=False, include_answers=False):
     total = attempt.total_points or attempt.questions.count()
-    percentage = round((attempt.score / total) * 100, 1) if total else 0
+    percentage = round(float(attempt.percentage), 1) if getattr(attempt, "percentage", 0) else _percentage(attempt.score, total)
     payload = {
         "id": attempt.id,
         "title": attempt.title,
         "subject": attempt.subject.name if attempt.subject else "",
         "subject_id": attempt.subject_id,
         "class_group": _class_label(attempt.class_group),
+        "academic_year": attempt.academic_year.name if getattr(attempt, "academic_year_id", None) else "",
+        "term": attempt.term.name if getattr(attempt, "term_id", None) else "",
+        "week_start": attempt.week_start,
+        "month_start": attempt.month_start,
         "time_limit_minutes": attempt.time_limit_minutes,
         "score": attempt.score,
         "total_points": total,
@@ -318,10 +524,18 @@ def _finalize_personal_attempt(attempt, answer_map=None, auto_submitted=False):
     PersonalQuizAnswer.objects.bulk_create(answer_records)
     attempt.score = score
     attempt.total_points = sum(question.points for question in questions)
+    attempt.percentage = _percentage(score, attempt.total_points)
     attempt.submitted_at = timezone.now()
+    basis_date = attempt.daily_date or timezone.localdate(attempt.submitted_at)
+    attempt.week_start = _week_start(basis_date)
+    attempt.month_start = _month_start(basis_date)
+    if not attempt.term_id:
+        attempt.term = _term_for_date(attempt.student, basis_date)
+    if not attempt.academic_year_id:
+        attempt.academic_year = _year_for_date(attempt.student, basis_date, attempt.term)
     attempt.is_submitted = True
     attempt.auto_submitted = auto_submitted
-    attempt.save(update_fields=["score", "total_points", "submitted_at", "is_submitted", "auto_submitted", "updated_at"])
+    attempt.save(update_fields=["score", "total_points", "percentage", "submitted_at", "week_start", "month_start", "term", "academic_year", "is_submitted", "auto_submitted", "updated_at"])
     return attempt
 
 
@@ -717,12 +931,17 @@ class PersonalQuizOptions(APIView):
             .prefetch_related("questions")
             .order_by("-started_at")[:8]
         )
-        submitted = list(PersonalQuizAttempt.objects.filter(student=request.user, is_submitted=True).order_by("-submitted_at"))
+        submitted = list(
+            PersonalQuizAttempt.objects.filter(student=request.user, is_submitted=True)
+            .select_related("subject", "class_group", "term", "academic_year")
+            .order_by("-submitted_at")
+        )
         average = 0
         if submitted:
-            average = round(sum(attempt.score / max(attempt.total_points, 1) for attempt in submitted) * 100 / len(submitted), 1)
-        best = max((round((attempt.score / max(attempt.total_points, 1)) * 100, 1) for attempt in submitted), default=0)
+            average = round(sum(_percentage(attempt.score, attempt.total_points) for attempt in submitted) / len(submitted), 1)
+        best = max((_percentage(attempt.score, attempt.total_points) for attempt in submitted), default=0)
         completed_today = sum(1 for attempt in today_attempts.values() if attempt.is_submitted)
+        metrics = _personal_quiz_metrics(request.user, submitted)
         subject_payload = []
         for subject in subjects:
             attempt = today_attempts.get(subject.id)
@@ -758,10 +977,12 @@ class PersonalQuizOptions(APIView):
                     "average_percentage": average,
                     "best_percentage": best,
                     "streak_days": _daily_streak(submitted),
+                    "weekly_streak": metrics["weekly_streak"]["current"],
                     "completed_today": completed_today,
                     "available_today": max(len(subjects) - completed_today, 0),
                     "total_subjects": len(subjects),
                 },
+                "metrics": metrics,
                 "history": [_personal_attempt_payload(attempt) for attempt in history],
             }
         )
@@ -814,10 +1035,14 @@ class PersonalQuizGenerate(APIView):
             student=request.user,
             subject=subject,
             class_group=profile.current_class,
+            academic_year=_year_for_date(request.user, today, _term_for_date(request.user, today)),
+            term=_term_for_date(request.user, today),
             title=f"{subject.name} Daily Personal Quiz",
             time_limit_minutes=DAILY_PERSONAL_TIME_LIMIT_MINUTES,
             total_points=question_count,
             daily_date=today,
+            week_start=_week_start(today),
+            month_start=_month_start(today),
         )
         questions = _build_personal_questions(subject, profile.current_class, question_count, legacy_tenant)
         for question in questions:
@@ -887,16 +1112,18 @@ class PersonalQuizHistory(APIView):
             return Response({"detail": "Only students can view personal quiz history."}, status=status.HTTP_403_FORBIDDEN)
         attempts = (
             PersonalQuizAttempt.objects.filter(student=request.user)
-            .select_related("subject", "class_group")
+            .select_related("subject", "class_group", "term", "academic_year")
             .prefetch_related("questions")
             .order_by("-started_at")
         )
         submitted = attempts.filter(is_submitted=True)
-        total_submitted = submitted.count()
+        submitted_list = list(submitted)
+        total_submitted = len(submitted_list)
         average = 0
         if total_submitted:
-            average = round(sum(attempt.score / max(attempt.total_points, 1) for attempt in submitted) * 100 / total_submitted, 1)
-        best = max((round((attempt.score / max(attempt.total_points, 1)) * 100, 1) for attempt in submitted), default=0)
+            average = round(sum(_percentage(attempt.score, attempt.total_points) for attempt in submitted_list) / total_submitted, 1)
+        best = max((_percentage(attempt.score, attempt.total_points) for attempt in submitted_list), default=0)
+        metrics = _personal_quiz_metrics(request.user, submitted_list)
         return Response(
             {
                 "stats": {
@@ -904,8 +1131,10 @@ class PersonalQuizHistory(APIView):
                     "submitted": total_submitted,
                     "average_percentage": average,
                     "best_percentage": best,
-                    "streak_days": _daily_streak(list(submitted)),
+                    "streak_days": _daily_streak(submitted_list),
+                    "weekly_streak": metrics["weekly_streak"]["current"],
                 },
+                "metrics": metrics,
                 "history": [_personal_attempt_payload(attempt) for attempt in attempts[:20]],
             }
         )

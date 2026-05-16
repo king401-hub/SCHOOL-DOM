@@ -2156,6 +2156,14 @@ function StudentQuizPage({ session, onNavigate }) {
   const studentInitials = userInitials(session?.user);
   const studentAvatar = session?.user?.profile_picture || "";
   const stats = options.stats || {};
+  const metrics = options.metrics || {};
+  const weeklyStreak = metrics.weekly_streak || {};
+  const monthlyMetrics = metrics.monthly || {};
+  const termMetrics = metrics.term || {};
+  const activeMetricsTerm = metrics.active_term || {};
+  const subjectMetrics = monthlyMetrics.subjects || [];
+  const progressTrends = monthlyMetrics.progress_trends || [];
+  const termHistory = termMetrics.history || [];
   const history = options.history || [];
   const dailySubjects = options.subjects || [];
   const selectedSubjectName = options.subjects?.find((subject) => String(subject.id) === String(selectedSubject))?.name || "Selected subject";
@@ -2547,7 +2555,7 @@ function StudentQuizPage({ session, onNavigate }) {
           ["Submitted", stats.submitted || 0],
           ["Average", `${stats.average_percentage || 0}%`],
           ["Best score", `${stats.best_percentage || 0}%`],
-          ["Streak", `${stats.streak_days || 0} days`],
+          ["Weekly streak", `${stats.weekly_streak ?? weeklyStreak.current ?? 0} days`],
           ["Today", `${stats.completed_today || 0}/${stats.total_subjects || dailySubjects.length}`],
         ].map(([label, value]) => (
           <article key={label} className="personal-stat-card">
@@ -2555,6 +2563,92 @@ function StudentQuizPage({ session, onNavigate }) {
             <strong>{value}</strong>
           </article>
         ))}
+      </section>
+
+      <section className="personal-metrics-dashboard">
+        <article className="personal-chart-card personal-month-card">
+          <div className="personal-dashboard-head">
+            <div>
+              <p className="quiz-kicker">Monthly dashboard</p>
+              <h3>{formatDate(monthlyMetrics.month_start) || "This month"}</h3>
+            </div>
+            <span className="pill muted">{activeMetricsTerm.name || "Current term"}</span>
+          </div>
+          <div className="personal-metric-strip">
+            <div>
+              <span>Total completed</span>
+              <strong>{monthlyMetrics.total_completed || 0}</strong>
+            </div>
+            <div>
+              <span>Overall average</span>
+              <strong>{monthlyMetrics.overall_average_percentage || 0}%</strong>
+            </div>
+            <div>
+              <span>Week streak</span>
+              <strong>{weeklyStreak.current || 0} days</strong>
+            </div>
+          </div>
+          <div className="personal-subject-metrics">
+            {subjectMetrics.length ? subjectMetrics.map((subject) => (
+              <div key={subject.subject_id || subject.subject} className="personal-subject-metric-row">
+                <span>{subject.subject}</span>
+                <div className="personal-chart-track">
+                  <div style={{ width: `${Math.max(4, subject.average_percentage || 0)}%` }} />
+                </div>
+                <strong>{subject.average_percentage || 0}%</strong>
+                <small>{subject.completed} quiz{Number(subject.completed) === 1 ? "" : "zes"}</small>
+              </div>
+            )) : <p className="panel-empty">Subject-by-subject metrics will appear after this month’s first submitted quiz.</p>}
+          </div>
+        </article>
+
+        <article className="personal-chart-card">
+          <div>
+            <p className="quiz-kicker">Strengths & focus</p>
+            <h3>Performance tracking</h3>
+          </div>
+          <div className="personal-rank-grid">
+            <div>
+              <span>Highest scoring</span>
+              {(monthlyMetrics.highest_subjects || []).length ? monthlyMetrics.highest_subjects.map((subject) => (
+                <p key={`high-${subject.subject_id || subject.subject}`}><strong>{subject.subject}</strong> {subject.average_percentage}%</p>
+              )) : <p>No high-score records yet.</p>}
+            </div>
+            <div>
+              <span>Weakest subjects</span>
+              {(monthlyMetrics.weakest_subjects || []).length ? monthlyMetrics.weakest_subjects.map((subject) => (
+                <p key={`weak-${subject.subject_id || subject.subject}`}><strong>{subject.subject}</strong> {subject.average_percentage}%</p>
+              )) : <p>No weak-subject records yet.</p>}
+            </div>
+          </div>
+          <div className="personal-trend-list">
+            {progressTrends.length ? progressTrends.map((trend) => (
+              <div key={trend.label} className="personal-trend-row">
+                <span>{trend.label}</span>
+                <div className="personal-chart-track">
+                  <div style={{ width: `${Math.max(4, trend.average_percentage || 0)}%` }} />
+                </div>
+                <strong>{trend.average_percentage || 0}%</strong>
+              </div>
+            )) : <p className="panel-empty">Monthly progress trends will appear as you complete more quizzes.</p>}
+          </div>
+        </article>
+
+        <article className="personal-chart-card personal-term-card">
+          <div>
+            <p className="quiz-kicker">Term archive</p>
+            <h3>{termMetrics.total_completed || 0} quizzes this term</h3>
+          </div>
+          <div className="personal-term-list">
+            {termHistory.length ? termHistory.map((term) => (
+              <div key={term.term_id || term.term} className={term.is_active ? "active" : ""}>
+                <span>{term.term}</span>
+                <strong>{term.average_percentage || 0}%</strong>
+                <small>{term.completed} completed {term.archived ? "archived" : "current"}</small>
+              </div>
+            )) : <p className="panel-empty">Past term records will stay here after each term changes.</p>}
+          </div>
+        </article>
       </section>
 
       <section className="personal-quiz-workspace">
