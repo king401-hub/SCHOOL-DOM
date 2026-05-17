@@ -59,6 +59,35 @@ For a physical phone, use your computer LAN IP or a public HTTPS URL.
 
 ## Build Android/iOS
 
+Without Android Studio, use Expo cloud build from `mobile-app`:
+
+```bash
+npx eas-cli login
+npx eas-cli build --platform android --profile preview
+```
+
+That produces a downloadable APK. Download it and save it as:
+
+```text
+media/app/schooldom-app.apk
+```
+
+Before building for real users, update `mobile-app/eas.json` and replace:
+
+```text
+https://your-schooldom-domain.com
+```
+
+with your live SchoolDom backend URL.
+
+For Google Play Store upload, build an AAB:
+
+```bash
+npx eas-cli build --platform android --profile production
+```
+
+Local builds require Android Studio:
+
 ```bash
 cd mobile-app
 npm run prebuild
@@ -95,6 +124,14 @@ On the VPS, the file path will be inside your deployed project folder, for examp
 ```
 
 Until that file exists, the download page will show that the APK has not been uploaded yet.
+
+On Windows, this repo includes a helper:
+
+```bat
+build-schooldom-apk.bat
+```
+
+It builds `mobile-app/android/app/build/outputs/apk/release/app-release.apk` and copies it to `media/app/schooldom-app.apk`. It requires Java plus the Android SDK platform/build-tools to be installed through Android Studio.
 
 ## Notes
 

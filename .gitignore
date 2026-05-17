@@ -53,9 +53,10 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+mobile-app/.expo/
 
-# Media (optional, if you don't want to commit uploaded files)
-# media/
+# Uploaded media
+media/
 
 # Logs
 *.log
