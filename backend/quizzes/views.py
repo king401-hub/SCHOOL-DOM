@@ -37,7 +37,7 @@ from .serializers import (
 
 
 MAX_PERSONAL_QUESTIONS = 20
-DAILY_PERSONAL_TIME_LIMIT_MINUTES = 12
+DAILY_PERSONAL_TIME_LIMIT_MINUTES = 15
 
 
 def _student_profile(user):

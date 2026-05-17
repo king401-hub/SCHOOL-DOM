@@ -67,6 +67,12 @@ class ExamAttempt(TenantAwareModel, TimeStampedModel):
     total_points = models.FloatField(default=0)
     percentage = models.FloatField(default=0)
     graded_at = models.DateTimeField(null=True, blank=True)
+    auto_submitted = models.BooleanField(default=False)
+    auto_submit_reason = models.CharField(max_length=80, blank=True, default="")
+    auto_submit_reason_display = models.CharField(max_length=160, blank=True, default="")
+    auto_submit_details = models.TextField(blank=True, default="")
+    auto_submit_warning_history = models.JSONField(default=list, blank=True)
+    auto_submit_activity_logs = models.JSONField(default=list, blank=True)
     
     # Sync fields
     device_id = models.CharField(max_length=255, null=True, blank=True)

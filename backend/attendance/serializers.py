@@ -45,7 +45,11 @@ class TeacherAttendanceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'teacher', 'teacher_details', 'attendance_date',
             'check_in_time', 'check_in_time_formatted', 'check_out_time',
-            'check_out_time_formatted', 'status', 'ip_address', 'device_info', 'notes'
+            'check_out_time_formatted', 'status', 'ip_address', 'device_info',
+            'client_device_info', 'check_in_latitude', 'check_in_longitude',
+            'check_in_accuracy_meters', 'check_in_address', 'check_out_latitude',
+            'check_out_longitude', 'check_out_accuracy_meters', 'check_out_address',
+            'notes'
         ]
         read_only_fields = [
             'id', 'attendance_date', 'check_in_time', 'check_out_time', 'ip_address'
@@ -68,6 +72,7 @@ class AttendanceListSerializer(serializers.ModelSerializer):
     check_in_time_formatted = serializers.SerializerMethodField()
     check_out_time_formatted = serializers.SerializerMethodField()
     device_info = serializers.CharField(read_only=True)
+    client_device_info = serializers.CharField(read_only=True)
     ip_address = serializers.IPAddressField(read_only=True)
     
     class Meta:
@@ -76,7 +81,10 @@ class AttendanceListSerializer(serializers.ModelSerializer):
             'id', 'teacher_name', 'teacher_email', 'attendance_date',
             'teacher_role', 'check_in_time', 'check_in_time_formatted',
             'check_out_time', 'check_out_time_formatted', 'status',
-            'device_info', 'ip_address',
+            'device_info', 'client_device_info', 'ip_address',
+            'check_in_latitude', 'check_in_longitude', 'check_in_accuracy_meters',
+            'check_in_address', 'check_out_latitude', 'check_out_longitude',
+            'check_out_accuracy_meters', 'check_out_address',
         ]
         read_only_fields = [
             'id', 'teacher_name', 'teacher_email', 'attendance_date',

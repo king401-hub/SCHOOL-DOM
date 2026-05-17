@@ -125,7 +125,7 @@ class DailyPersonalQuizTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.student)
 
-    def test_student_gets_one_daily_subject_attempt_with_twelve_minute_timer(self):
+    def test_student_gets_one_daily_subject_attempt_with_fifteen_minute_timer(self):
         response = self.client.post(
             "/api/quizzes/personal/generate/",
             {"subject_id": self.subject.id, "question_count": 20},
@@ -133,7 +133,7 @@ class DailyPersonalQuizTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["time_limit_minutes"], 12)
+        self.assertEqual(response.data["time_limit_minutes"], 15)
         self.assertEqual(response.data["question_count"], 20)
         self.assertEqual(PersonalQuizAttempt.objects.count(), 1)
 

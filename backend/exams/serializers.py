@@ -46,7 +46,12 @@ class ExamAttemptSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ExamAttempt
-        fields = ['id', 'exam', 'start_time', 'is_completed', 'is_submitted', 'answers']
+        fields = [
+            'id', 'exam', 'start_time', 'is_completed', 'is_submitted',
+            'auto_submitted', 'auto_submit_reason', 'auto_submit_reason_display',
+            'auto_submit_details', 'auto_submit_warning_history',
+            'auto_submit_activity_logs', 'answers'
+        ]
 
 class ExamAttemptDetailSerializer(serializers.Serializer):
     """Serializer for exam attempt detail response"""

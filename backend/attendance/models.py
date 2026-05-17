@@ -121,6 +121,15 @@ class TeacherAttendance(models.Model):
     # Additional info
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     device_info = models.CharField(max_length=255, blank=True, default="")
+    client_device_info = models.TextField(blank=True, default="")
+    check_in_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    check_in_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    check_in_accuracy_meters = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    check_in_address = models.TextField(blank=True, default="")
+    check_out_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    check_out_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    check_out_accuracy_meters = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    check_out_address = models.TextField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
     
     class Meta:

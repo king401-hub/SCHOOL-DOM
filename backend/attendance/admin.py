@@ -28,16 +28,25 @@ class AttendanceQRCodeAdmin(admin.ModelAdmin):
 @admin.register(TeacherAttendance)
 class TeacherAttendanceAdmin(admin.ModelAdmin):
     """Admin interface for teacher attendance records."""
-    list_display = ['teacher_email', 'attendance_date', 'check_in_time_formatted', 'status', 'tenant']
+    list_display = ['teacher_email', 'attendance_date', 'check_in_time_formatted', 'status', 'check_in_map', 'tenant']
     list_filter = ['status', 'attendance_date', 'tenant', 'check_in_time']
-    search_fields = ['teacher__email', 'teacher__first_name', 'teacher__last_name', 'tenant__name']
-    readonly_fields = ['id', 'check_in_time', 'attendance_date', 'ip_address']
+    search_fields = ['teacher__email', 'teacher__first_name', 'teacher__last_name', 'tenant__name', 'check_in_address', 'check_out_address']
+    readonly_fields = [
+        'id', 'check_in_time', 'attendance_date', 'ip_address',
+        'check_in_map', 'check_out_map',
+    ]
     fieldsets = (
         ('Attendance Record', {
             'fields': ('id', 'teacher', 'attendance_date', 'check_in_time', 'check_out_time', 'status')
         }),
         ('Device Information', {
-            'fields': ('ip_address', 'device_info')
+            'fields': ('ip_address', 'device_info', 'client_device_info')
+        }),
+        ('Geo Tracking', {
+            'fields': (
+                'check_in_latitude', 'check_in_longitude', 'check_in_accuracy_meters', 'check_in_address', 'check_in_map',
+                'check_out_latitude', 'check_out_longitude', 'check_out_accuracy_meters', 'check_out_address', 'check_out_map',
+            )
         }),
         ('Additional Info', {
             'fields': ('tenant', 'qr_code', 'notes')
@@ -52,6 +61,20 @@ class TeacherAttendanceAdmin(admin.ModelAdmin):
     def check_in_time_formatted(self, obj):
         return obj.check_in_time.strftime('%H:%M:%S') if obj.check_in_time else '-'
     check_in_time_formatted.short_description = 'Check-in Time'
+
+    def check_in_map(self, obj):
+        return self._map_link(obj.check_in_latitude, obj.check_in_longitude)
+    check_in_map.short_description = 'Check-in Map'
+
+    def check_out_map(self, obj):
+        return self._map_link(obj.check_out_latitude, obj.check_out_longitude)
+    check_out_map.short_description = 'Check-out Map'
+
+    def _map_link(self, latitude, longitude):
+        if latitude is None or longitude is None:
+            return '-'
+        url = f'https://www.google.com/maps?q={latitude},{longitude}'
+        return format_html('<a href="{}" target="_blank" rel="noopener">View map</a>', url)
     
     def has_add_permission(self, request):
         # Attendance should only be created via QR code scanning

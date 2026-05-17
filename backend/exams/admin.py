@@ -43,9 +43,9 @@ class ExamAdmin(admin.ModelAdmin):
 
 @admin.register(ExamAttempt)
 class ExamAttemptAdmin(admin.ModelAdmin):
-    list_display = ("exam", "student", "tenant", "is_completed", "is_submitted", "start_time", "end_time")
-    list_filter = ("tenant", "is_completed", "is_submitted", "is_offline", "sync_status")
-    search_fields = ("exam__title", "student__email")
+    list_display = ("exam", "student", "tenant", "is_completed", "is_submitted", "auto_submitted", "auto_submit_reason_display", "start_time", "end_time")
+    list_filter = ("tenant", "is_completed", "is_submitted", "auto_submitted", "auto_submit_reason", "is_offline", "sync_status")
+    search_fields = ("exam__title", "student__email", "student__first_name", "student__last_name", "auto_submit_reason_display")
 
 
 @admin.register(StudentAnswer)

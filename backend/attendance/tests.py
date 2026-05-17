@@ -62,6 +62,13 @@ class TeacherAttendanceTestCase(TestCase):
         )
         self.qr_code, _ = AttendanceQRCode.get_or_create_for_tenant(self.tenant)
         self.client = APIClient()
+        self.location_payload = {
+            "latitude": 6.5243793,
+            "longitude": 3.3792057,
+            "accuracy": 12.5,
+            "address": "Lagos, Nigeria",
+            "device_info": "Test browser | platform=test",
+        }
     
     def test_attendance_creation(self):
         """Test creating attendance record."""
@@ -124,21 +131,69 @@ class TeacherAttendanceTestCase(TestCase):
         )
         response = self.client.post(
             f"/api/attendance/scan/{self.qr_code.token}/",
-            {"user_id": str(staff_user.id)},
+            {"user_id": str(staff_user.id), "location": self.location_payload},
             format="json",
         )
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["success"])
-        self.assertTrue(TeacherAttendance.objects.filter(teacher=staff_user).exists())
+        attendance = TeacherAttendance.objects.get(teacher=staff_user)
+        self.assertEqual(str(attendance.check_in_latitude), "6.5243793")
+        self.assertEqual(str(attendance.check_in_longitude), "3.3792057")
+        self.assertEqual(attendance.check_in_address, "Lagos, Nigeria")
 
     def test_invalid_bearer_header_does_not_block_attendance(self):
         response = self.client.post(
             f"/api/attendance/scan/{self.qr_code.token}/",
-            {"user_id": str(self.teacher.id)},
+            {"user_id": str(self.teacher.id), "location": self.location_payload},
             format="json",
             HTTP_AUTHORIZATION="Bearer expired-or-bad-token",
         )
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["success"])
+
+    def test_qr_attendance_requires_location(self):
+        response = self.client.post(
+            f"/api/attendance/scan/{self.qr_code.token}/",
+            {"user_id": str(self.teacher.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertFalse(TeacherAttendance.objects.filter(teacher=self.teacher).exists())
+
+    def test_clock_out_requires_location_and_stores_location(self):
+        self.client.post(
+            f"/api/attendance/scan/{self.qr_code.token}/",
+            {"user_id": str(self.teacher.id), "location": self.location_payload},
+            format="json",
+        )
+
+        missing_location = self.client.post(
+            "/api/attendance/clock-out/",
+            {"user_id": str(self.teacher.id)},
+            format="json",
+        )
+        self.assertEqual(missing_location.status_code, 400)
+
+        response = self.client.post(
+            "/api/attendance/clock-out/",
+            {
+                "user_id": str(self.teacher.id),
+                "location": {
+                    **self.location_payload,
+                    "latitude": 6.45,
+                    "longitude": 3.40,
+                    "address": "School gate",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        attendance = TeacherAttendance.objects.get(teacher=self.teacher)
+        self.assertIsNotNone(attendance.check_out_time)
+        self.assertEqual(str(attendance.check_out_latitude), "6.4500000")
+        self.assertEqual(attendance.check_out_address, "School gate")

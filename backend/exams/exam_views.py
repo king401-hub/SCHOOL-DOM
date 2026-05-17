@@ -35,6 +35,70 @@ def _question_queryset_for_exam(exam):
         return Question.objects.none()
 
 
+AUTO_SUBMIT_REASON_LABELS = {
+    "timer_expired": "Exam timer expired",
+    "tab_switch_limit": "Exceeded tab-switching warnings",
+    "malpractice": "Attempted malpractice",
+    "connection_lost": "Lost connection for too long",
+    "force_exit": "Forcefully exited exam environment",
+    "fullscreen_exit": "Exited full-screen exam mode",
+    "security_violation": "Security violation",
+    "server_timer_expired": "Server timer expired",
+    "offline_timeout_sync": "Offline timeout submission",
+    "unknown": "Auto-submitted by exam monitor",
+}
+
+
+def _safe_json_list(value, limit=80):
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value[:limit]:
+        if isinstance(item, dict):
+            cleaned.append({str(key)[:80]: str(val)[:1000] for key, val in item.items()})
+        else:
+            cleaned.append({"message": str(item)[:1000]})
+    return cleaned
+
+
+def _auto_submit_payload(request, fallback_reason="unknown"):
+    raw_reason = str(request.data.get("auto_submit_reason") or request.data.get("reason_code") or fallback_reason).strip()
+    reason = raw_reason if raw_reason in AUTO_SUBMIT_REASON_LABELS else fallback_reason
+    display = str(request.data.get("auto_submit_reason_display") or request.data.get("reason") or "").strip()
+    details = str(request.data.get("auto_submit_details") or request.data.get("details") or "").strip()
+    return {
+        "reason": reason,
+        "display": (display or AUTO_SUBMIT_REASON_LABELS.get(reason, AUTO_SUBMIT_REASON_LABELS["unknown"]))[:160],
+        "details": details[:4000],
+        "warnings": _safe_json_list(request.data.get("warning_history") or request.data.get("warnings") or []),
+        "logs": _safe_json_list(request.data.get("activity_logs") or request.data.get("logs") or []),
+    }
+
+
+def _mark_attempt_submitted(attempt, *, auto_submitted=False, auto_payload=None, submitted_at=None):
+    attempt.end_time = submitted_at or timezone.now()
+    attempt.is_completed = True
+    attempt.is_submitted = True
+    update_fields = ["end_time", "is_completed", "is_submitted", "updated_at"]
+    if auto_submitted:
+        payload = auto_payload or {}
+        attempt.auto_submitted = True
+        attempt.auto_submit_reason = payload.get("reason") or "unknown"
+        attempt.auto_submit_reason_display = payload.get("display") or AUTO_SUBMIT_REASON_LABELS["unknown"]
+        attempt.auto_submit_details = payload.get("details") or ""
+        attempt.auto_submit_warning_history = payload.get("warnings") or []
+        attempt.auto_submit_activity_logs = payload.get("logs") or []
+        update_fields.extend([
+            "auto_submitted",
+            "auto_submit_reason",
+            "auto_submit_reason_display",
+            "auto_submit_details",
+            "auto_submit_warning_history",
+            "auto_submit_activity_logs",
+        ])
+    attempt.save(update_fields=update_fields)
+
+
 def _normalize_selected_answer(value):
     if isinstance(value, list):
         return value[0] if value else None
@@ -267,10 +331,17 @@ class ExamAttemptDetailView(APIView):
         exam = attempt.exam
         elapsed = (timezone.now() - attempt.start_time).total_seconds()
         if elapsed >= exam.duration_minutes * 60:
-            attempt.end_time = timezone.now()
-            attempt.is_completed = True
-            attempt.is_submitted = True
-            attempt.save(update_fields=["end_time", "is_completed", "is_submitted", "updated_at"])
+            _mark_attempt_submitted(
+                attempt,
+                auto_submitted=True,
+                auto_payload={
+                    "reason": "server_timer_expired",
+                    "display": AUTO_SUBMIT_REASON_LABELS["server_timer_expired"],
+                    "details": "Attempt detail was requested after the server-side exam duration had elapsed.",
+                    "warnings": [],
+                    "logs": [{"type": "server_timer_check", "message": "Server submitted expired attempt.", "time": timezone.now().isoformat()}],
+                },
+            )
             _grade_attempt(attempt)
             return Response({'error': 'Exam time has expired and the attempt was submitted.'}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -481,11 +552,9 @@ class SubmitExamView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Mark as submitted
-        attempt.end_time = timezone.now()
-        attempt.is_completed = True
-        attempt.is_submitted = True
-        attempt.save()
+        auto_submitted = bool(request.data.get("auto_submitted"))
+        auto_payload = _auto_submit_payload(request) if auto_submitted else None
+        _mark_attempt_submitted(attempt, auto_submitted=auto_submitted, auto_payload=auto_payload)
         
         score, total_points = _grade_attempt(attempt)
         
@@ -577,10 +646,17 @@ def exam_timer_sync(request, attempt_id):
     
     if time_remaining <= 0:
         # Auto-submit
-        attempt.end_time = timezone.now()
-        attempt.is_completed = True
-        attempt.is_submitted = True
-        attempt.save()
+        _mark_attempt_submitted(
+            attempt,
+            auto_submitted=True,
+            auto_payload={
+                "reason": "timer_expired",
+                "display": AUTO_SUBMIT_REASON_LABELS["timer_expired"],
+                "details": "Server timer sync reached zero remaining seconds.",
+                "warnings": [],
+                "logs": [{"type": "timer_sync", "message": "Timer sync submitted expired attempt.", "time": timezone.now().isoformat()}],
+            },
+        )
         _grade_attempt(attempt)
         return Response({'expired': True, 'auto_submitted': True})
     
@@ -601,6 +677,8 @@ def sync_offline_exam_attempt(request):
     offline_attempt_id = str(request.data.get("offline_attempt_id") or "").strip()
     started_at = parse_datetime(str(request.data.get("started_at") or "")) or timezone.now()
     submitted_at = parse_datetime(str(request.data.get("submitted_at") or "")) or timezone.now()
+    auto_submitted = bool(request.data.get("auto_submitted"))
+    auto_payload = _auto_submit_payload(request, fallback_reason="offline_timeout_sync") if auto_submitted else None
 
     if not exam_id:
         return Response({"success": False, "message": "exam_id is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -651,18 +729,16 @@ def sync_offline_exam_attempt(request):
             },
         )
 
-    attempt.end_time = submitted_at
-    attempt.is_completed = True
-    attempt.is_submitted = True
+    if auto_submitted:
+        _mark_attempt_submitted(attempt, auto_submitted=True, auto_payload=auto_payload, submitted_at=submitted_at)
+    else:
+        _mark_attempt_submitted(attempt, submitted_at=submitted_at)
     attempt.is_offline = True
     attempt.sync_status = "synced"
     if offline_attempt_id and not attempt.device_id:
         attempt.device_id = offline_attempt_id
     attempt.save(
         update_fields=[
-            "end_time",
-            "is_completed",
-            "is_submitted",
             "is_offline",
             "sync_status",
             "device_id",

@@ -77,3 +77,30 @@ class FlagExamQuestionTests(TestCase):
         self.assertIn("Correct answer: Bad option", message.body)
         self.assertIn("Student selected answer: B. Bad option", message.body)
         self.assertIn("This question contains inappropriate wording.", message.body)
+
+    def test_auto_submission_reason_and_logs_are_stored(self):
+        response = self.client.post(
+            reverse("exams:submit_exam", args=[self.attempt.id]),
+            {
+                "auto_submitted": True,
+                "auto_submit_reason": "tab_switch_limit",
+                "auto_submit_reason_display": "Exceeded tab-switching warnings",
+                "auto_submit_details": "Opening another tab or window was attempted.",
+                "warning_history": [
+                    {"type": "warning", "message": "Opening another tab was detected.", "time": timezone.now().isoformat()}
+                ],
+                "activity_logs": [
+                    {"type": "security_violation", "message": "Second tab switch detected.", "time": timezone.now().isoformat()}
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.attempt.refresh_from_db()
+        self.assertTrue(self.attempt.is_submitted)
+        self.assertTrue(self.attempt.auto_submitted)
+        self.assertEqual(self.attempt.auto_submit_reason, "tab_switch_limit")
+        self.assertEqual(self.attempt.auto_submit_reason_display, "Exceeded tab-switching warnings")
+        self.assertEqual(len(self.attempt.auto_submit_warning_history), 1)
+        self.assertEqual(len(self.attempt.auto_submit_activity_logs), 1)

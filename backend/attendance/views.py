@@ -1,5 +1,6 @@
 import io
 import uuid
+from decimal import Decimal, InvalidOperation
 
 import qrcode
 from django.db import IntegrityError, transaction
@@ -97,6 +98,56 @@ def actor_required_response():
         {'success': False, 'message': 'User account is required for attendance.'},
         status=status.HTTP_400_BAD_REQUEST,
     )
+
+
+def _decimal_from_payload(value, field_name):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f'{field_name} must be a valid number.')
+
+
+def attendance_location_payload(request):
+    """Validate and normalize the browser GPS payload required for attendance."""
+    payload = request.data.get('location') or {}
+    latitude = payload.get('latitude', request.data.get('latitude'))
+    longitude = payload.get('longitude', request.data.get('longitude'))
+    accuracy = payload.get('accuracy', request.data.get('accuracy'))
+
+    if latitude in (None, '') or longitude in (None, ''):
+        raise ValueError('Enable device location services and allow GPS access before marking attendance.')
+
+    latitude = _decimal_from_payload(latitude, 'Latitude')
+    longitude = _decimal_from_payload(longitude, 'Longitude')
+    if latitude < Decimal('-90') or latitude > Decimal('90'):
+        raise ValueError('Latitude is outside the valid GPS range.')
+    if longitude < Decimal('-180') or longitude > Decimal('180'):
+        raise ValueError('Longitude is outside the valid GPS range.')
+
+    accuracy_value = None
+    if accuracy not in (None, ''):
+        accuracy_value = _decimal_from_payload(accuracy, 'Accuracy')
+        if accuracy_value < 0:
+            raise ValueError('GPS accuracy cannot be negative.')
+
+    address = str(payload.get('address') or request.data.get('address') or '').strip()
+    if not address:
+        address = f'{latitude}, {longitude}'
+
+    device_details = str(
+        payload.get('device_info')
+        or request.data.get('device_info')
+        or request.data.get('client_device_info')
+        or ''
+    ).strip()
+
+    return {
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracy': accuracy_value,
+        'address': address[:2000],
+        'device_info': device_details[:2000],
+    }
 
 
 # ==================== QR Code Management (Admin Only) ====================
@@ -277,6 +328,14 @@ def scan_qr_code(request, token):
             {'success': False, 'message': 'Unauthorized access.'},
             status=status.HTTP_403_FORBIDDEN
         )
+
+    try:
+        location = attendance_location_payload(request)
+    except ValueError as exc:
+        return Response(
+            {'success': False, 'message': str(exc)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     
     today = timezone.localdate()
 
@@ -291,6 +350,11 @@ def scan_qr_code(request, token):
                     'status': 'present',
                     'ip_address': get_client_ip(request),
                     'device_info': request.META.get('HTTP_USER_AGENT', '')[:255],
+                    'client_device_info': location['device_info'],
+                    'check_in_latitude': location['latitude'],
+                    'check_in_longitude': location['longitude'],
+                    'check_in_accuracy_meters': location['accuracy'],
+                    'check_in_address': location['address'],
                 },
             )
 
@@ -416,8 +480,29 @@ def clock_out(request):
             'data': serializer.data,
         })
 
+    try:
+        location = attendance_location_payload(request)
+    except ValueError as exc:
+        return Response(
+            {'success': False, 'message': str(exc)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     attendance.check_out_time = timezone.now()
-    attendance.save(update_fields=['check_out_time'])
+    attendance.check_out_latitude = location['latitude']
+    attendance.check_out_longitude = location['longitude']
+    attendance.check_out_accuracy_meters = location['accuracy']
+    attendance.check_out_address = location['address']
+    if location['device_info']:
+        attendance.client_device_info = location['device_info']
+    attendance.save(update_fields=[
+        'check_out_time',
+        'check_out_latitude',
+        'check_out_longitude',
+        'check_out_accuracy_meters',
+        'check_out_address',
+        'client_device_info',
+    ])
     serializer = TeacherAttendanceSerializer(attendance)
     return Response({
         'success': True,
