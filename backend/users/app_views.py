@@ -42,7 +42,7 @@ from academic.models import (
     TeacherNote,
 )
 from core.models import SchoolTenant, Domain
-from exams.models import Exam, ExamAttempt, ExamType, Question, QuestionBank, StudentAnswer
+from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
 from users.models import DatabaseImportJob, StudentEnrollment, StudentProfile, StudentTestimonial, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 
@@ -475,6 +475,82 @@ def _exam_auto_submission_payload(attempt):
         "warning_count": len(warning_history),
         "activity_count": len(activity_logs),
     }
+
+
+def _notify_admins_exam_ready(exam, teacher):
+    if not Notification or not getattr(teacher, "tenant_id", None):
+        return
+
+    admin_users = User.objects.filter(
+        tenant=teacher.tenant,
+        role__in=ADMIN_ROLES,
+        is_active=True,
+    ).exclude(id=teacher.id)[:20]
+    teacher_name = teacher.get_full_name() or teacher.email
+    notifications = [
+        Notification(
+            tenant=teacher.tenant,
+            user=admin,
+            title="Exam ready for publishing",
+            message=f"{teacher_name} submitted {exam.title} for admin review and publishing.",
+            notification_type="info",
+            priority=3,
+            channel="in_app",
+            event_type="exam_ready_for_publishing",
+            reference_id=exam.id,
+            reference_model="exams.Exam",
+            deep_link="/exams",
+            is_delivered=True,
+            delivered_at=timezone.now(),
+        )
+        for admin in admin_users
+    ]
+    if notifications:
+        Notification.objects.bulk_create(notifications)
+
+
+def _exam_pin_payload(pin, include_usage=False):
+    exam = pin.exam
+    usage_qs = pin.usages.select_related("student", "attempt").order_by("-created_at")
+    successful_qs = usage_qs.filter(status=ExamPinUsage.STATUS_ACCEPTED)
+    payload = {
+        "id": pin.id,
+        "exam_id": pin.exam_id,
+        "exam_title": exam.title,
+        "subject": exam.subject.name if exam.subject else "General",
+        "subject_id": exam.subject_id,
+        "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
+        "class_id": exam.class_group_id,
+        "exam_type": exam.exam_type.name if exam.exam_type else "Exam",
+        "start_date": exam.start_date,
+        "end_date": exam.end_date,
+        "usage_policy": pin.usage_policy,
+        "is_active": pin.is_active,
+        "is_expired": pin.is_expired,
+        "expires_at": pin.expires_at,
+        "pin_preview": pin.pin_preview,
+        "created_by": pin.created_by.get_full_name() or pin.created_by.email if pin.created_by else "",
+        "created_at": pin.created_at,
+        "last_regenerated_at": pin.last_regenerated_at,
+        "reset_at": pin.reset_at,
+        "usage_count": successful_qs.count(),
+        "rejected_count": usage_qs.filter(status=ExamPinUsage.STATUS_REJECTED).count(),
+    }
+    if include_usage:
+        payload["usage_history"] = [
+            {
+                "id": usage.id,
+                "status": usage.status,
+                "message": usage.message,
+                "student": usage.student.get_full_name() or usage.student.email if usage.student else "",
+                "student_email": usage.student.email if usage.student else "",
+                "attempt_id": usage.attempt_id,
+                "ip_address": usage.ip_address,
+                "created_at": usage.created_at,
+            }
+            for usage in usage_qs[:80]
+        ]
+    return payload
 
 
 def _to_bool(value, default=False):
@@ -4167,8 +4243,6 @@ def exams_snapshot(request):
     ).order_by("-start_date")
     if user.role == "teacher":
         exams = exams.filter(teacher=user)
-    elif user.role in ADMIN_ROLES:
-        exams = exams.filter(Q(teacher=user) | Q(questions__question_banks__is_shared=True)).distinct()
 
     attempts = _scope_to_user_tenant(
         ExamAttempt.objects.select_related("exam", "exam__subject", "exam__class_group", "student"),
@@ -4179,7 +4253,7 @@ def exams_snapshot(request):
         attempts = attempts.filter(exam__teacher=user)
         monitor_attempts = monitor_attempts.filter(exam__teacher=user)
     elif user.role in ADMIN_ROLES:
-        attempts = attempts.filter(Q(exam__teacher=user) | Q(exam__questions__question_banks__is_shared=True)).distinct()
+        attempts = attempts.distinct()
         monitor_attempts = monitor_attempts.distinct()
     submitted_attempts_qs = attempts.filter(is_submitted=True).prefetch_related("answers__question").order_by("-end_time")
     submitted_attempts = list(submitted_attempts_qs[:30])
@@ -4231,6 +4305,8 @@ def exams_snapshot(request):
                     "end_date": exam.end_date,
                     "is_published": exam.is_published,
                     "question_count": exam.questions.count(),
+                    "pin_required": exam.pins.filter(is_active=True).exists(),
+                    "active_pin_count": exam.pins.filter(is_active=True).count(),
                     "attempts": attempts_by_exam.get(exam.id, 0),
                     "submissions": submissions_by_exam.get(exam.id, 0),
                 }
@@ -4319,7 +4395,19 @@ def delete_exam_attempt_result(request, attempt_id):
     )
 
 
-def _exam_editor_payload(exam):
+def _question_group_payload(group, request=None):
+    if not group:
+        return None
+    return {
+        "id": group.id,
+        "title": group.title,
+        "group_type": group.group_type,
+        "passage_text": group.passage_text,
+        "image": _media_url(request, group.image),
+    }
+
+
+def _exam_editor_payload(exam, request=None):
     questions = list(exam.questions.all())
     return {
         "id": exam.id,
@@ -4336,6 +4424,8 @@ def _exam_editor_payload(exam):
         "shuffle_questions": exam.shuffle_questions,
         "show_results_immediately": exam.show_results_immediately,
         "is_published": exam.is_published,
+        "pin_required": exam.pins.filter(is_active=True).exists(),
+        "active_pin_count": exam.pins.filter(is_active=True).count(),
         "question_count": len(questions),
         "questions": [
             {
@@ -4346,6 +4436,9 @@ def _exam_editor_payload(exam):
                 "options": question.options or [],
                 "correct_answer": question.correct_answer or "",
                 "explanation": question.explanation or "",
+                "image": _media_url(request, question.image),
+                "group_order": question.group_order,
+                "group": _question_group_payload(question.group, request),
                 "source_question_id": question.id if question.question_banks.exists() else None,
             }
             for question in questions
@@ -4354,6 +4447,11 @@ def _exam_editor_payload(exam):
 
 
 def _clean_exam_questions_payload(raw_questions):
+    if isinstance(raw_questions, str):
+        try:
+            raw_questions = json.loads(raw_questions)
+        except Exception:
+            return None, "Questions payload must be valid JSON."
     if not isinstance(raw_questions, list) or not raw_questions:
         return None, "Add at least one objective question before saving the exam."
 
@@ -4371,6 +4469,11 @@ def _clean_exam_questions_payload(raw_questions):
             source_question_id = int(item.get("source_question_id") or 0) or None
         except Exception:
             source_question_id = None
+        group_payload = item.get("group") if isinstance(item.get("group"), dict) else {}
+        group_key = str(item.get("group_key") or group_payload.get("key") or "").strip()
+        group_type = str(group_payload.get("group_type") or item.get("group_type") or "").strip() or "passage"
+        if group_type not in {choice[0] for choice in QuestionGroup.GROUP_TYPES}:
+            group_type = "passage"
 
         if len(text) < 3:
             return None, f"Question {index} must include the question text."
@@ -4389,12 +4492,20 @@ def _clean_exam_questions_payload(raw_questions):
                 "points": points,
                 "explanation": str(item.get("explanation", "")).strip() if isinstance(item, dict) else "",
                 "source_question_id": source_question_id,
+                "question_image_field": str(item.get("question_image_field") or "").strip(),
+                "group_key": group_key,
+                "group": {
+                    "title": str(group_payload.get("title") or "").strip(),
+                    "group_type": group_type,
+                    "passage_text": str(group_payload.get("passage_text") or "").strip(),
+                    "image_field": str(group_payload.get("image_field") or "").strip(),
+                } if group_key else None,
             }
         )
     return cleaned_questions, ""
 
 
-def _exam_question_from_payload(item, tenant_obj, user):
+def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_key=None, group_order=0):
     source_question_id = item.get("source_question_id")
     if source_question_id:
         source_qs = _scope_to_user_tenant(
@@ -4414,11 +4525,33 @@ def _exam_question_from_payload(item, tenant_obj, user):
         tenant=tenant_obj,
         question_type="mcq",
         text=item["text"],
+        image=request.FILES.get(item.get("question_image_field")) if request and item.get("question_image_field") else None,
         options=item["options"],
         correct_answer=item["correct_answer"],
         points=item["points"],
         explanation=item["explanation"],
+        group=(groups_by_key or {}).get(item.get("group_key")),
+        group_order=group_order,
     )
+
+
+def _question_groups_from_payload(cleaned_questions, tenant_obj, user, request=None):
+    groups_by_key = {}
+    for item in cleaned_questions:
+        group_key = item.get("group_key")
+        group_payload = item.get("group") or {}
+        if not group_key or group_key in groups_by_key:
+            continue
+        group = QuestionGroup.objects.create(
+            tenant=tenant_obj,
+            title=group_payload.get("title") or "",
+            group_type=group_payload.get("group_type") or "passage",
+            passage_text=group_payload.get("passage_text") or "",
+            image=request.FILES.get(group_payload.get("image_field")) if request and group_payload.get("image_field") else None,
+            teacher=user,
+        )
+        groups_by_key[group_key] = group
+    return groups_by_key
 
 
 def _cbt_bank_question_payload(question, bank=None):
@@ -4432,9 +4565,159 @@ def _cbt_bank_question_payload(question, bank=None):
         "options": question.options or [],
         "correct_answer": question.correct_answer or "",
         "explanation": question.explanation or "",
+        "image": _media_url(None, question.image),
+        "group_order": question.group_order,
+        "group": _question_group_payload(question.group),
         "subject_id": bank.subject_id if bank else None,
         "subject_name": bank.subject.name if bank and bank.subject else "",
     }
+
+
+def _admin_exam_pin_queryset(user):
+    pins = _scope_to_user_tenant(
+        ExamPin.objects.select_related(
+            "exam",
+            "exam__subject",
+            "exam__class_group",
+            "exam__exam_type",
+            "created_by",
+        ).prefetch_related("usages"),
+        user,
+    )
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return pins.none()
+    return pins
+
+
+def _generate_unique_exam_pin(length=8):
+    for _ in range(20):
+        plain_pin = ExamPin.generate_plain_pin(length=length)
+        if not ExamPin.objects.filter(pin_digest=ExamPin.digest_pin(plain_pin)).exists():
+            return plain_pin
+    raise RuntimeError("Could not generate a unique exam PIN.")
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def cbt_exam_pins(request):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only authorized administrators can manage exam PINs."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "GET":
+        pins = _admin_exam_pin_queryset(user)
+        exam_id = request.query_params.get("exam_id")
+        if exam_id:
+            pins = pins.filter(exam_id=exam_id)
+        return Response({"success": True, "pins": [_exam_pin_payload(pin, include_usage=True) for pin in pins[:100]]})
+
+    exam = get_object_or_404(
+        _scope_to_user_tenant(Exam.objects.select_related("subject", "class_group", "exam_type"), user),
+        id=request.data.get("exam_id"),
+    )
+    usage_policy = str(request.data.get("usage_policy") or ExamPin.USE_ONE_TIME).strip()
+    if usage_policy not in {ExamPin.USE_ONE_TIME, ExamPin.USE_REUSABLE}:
+        return Response({"success": False, "message": "usage_policy must be one_time or reusable."}, status=status.HTTP_400_BAD_REQUEST)
+
+    expires_at = None
+    expires_raw = request.data.get("expires_at")
+    if expires_raw:
+        expires_at = parse_datetime(expires_raw)
+        if not expires_at:
+            return Response({"success": False, "message": "expires_at must be a valid date-time."}, status=status.HTTP_400_BAD_REQUEST)
+
+    plain_pin = _generate_unique_exam_pin(request.data.get("length") or 8)
+    pin = ExamPin(
+        tenant=exam.tenant,
+        exam=exam,
+        usage_policy=usage_policy,
+        expires_at=expires_at,
+        created_by=user,
+    )
+    pin.set_pin(plain_pin)
+    pin.save()
+    return Response(
+        {
+            "success": True,
+            "message": "Exam PIN generated.",
+            "pin": _exam_pin_payload(pin, include_usage=True),
+            "plain_pin": plain_pin,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET", "PATCH", "POST"])
+@permission_classes([IsAuthenticated])
+def cbt_exam_pin_detail(request, pin_id):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only authorized administrators can manage exam PINs."}, status=status.HTTP_403_FORBIDDEN)
+
+    pin = get_object_or_404(_admin_exam_pin_queryset(user), id=pin_id)
+    if request.method == "GET":
+        return Response({"success": True, "pin": _exam_pin_payload(pin, include_usage=True)})
+
+    action = str(request.data.get("action") or "").strip().lower()
+    if request.method == "PATCH":
+        action = action or "update"
+    if action == "regenerate":
+        plain_pin = _generate_unique_exam_pin(request.data.get("length") or 8)
+        pin.set_pin(plain_pin)
+        pin.is_active = True
+        pin.deactivated_at = None
+        pin.deactivated_by = None
+        pin.last_regenerated_at = timezone.now()
+        pin.last_regenerated_by = user
+        pin.save(update_fields=["pin_digest", "pin_hash", "pin_preview", "is_active", "deactivated_at", "deactivated_by", "last_regenerated_at", "last_regenerated_by", "updated_at"])
+        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, student=user, status=ExamPinUsage.STATUS_REGENERATED, message="PIN regenerated by administrator.")
+        return Response({"success": True, "message": "Exam PIN regenerated.", "pin": _exam_pin_payload(pin, include_usage=True), "plain_pin": plain_pin})
+
+    if action == "deactivate":
+        pin.is_active = False
+        pin.deactivated_at = timezone.now()
+        pin.deactivated_by = user
+        pin.save(update_fields=["is_active", "deactivated_at", "deactivated_by", "updated_at"])
+        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, student=user, status=ExamPinUsage.STATUS_DEACTIVATED, message="PIN deactivated by administrator.")
+        return Response({"success": True, "message": "Exam PIN deactivated.", "pin": _exam_pin_payload(pin, include_usage=True)})
+
+    if action == "reset":
+        pin.reset_at = timezone.now()
+        pin.reset_by = user
+        pin.is_active = True
+        pin.deactivated_at = None
+        pin.deactivated_by = None
+        pin.save(update_fields=["reset_at", "reset_by", "is_active", "deactivated_at", "deactivated_by", "updated_at"])
+        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, student=user, status=ExamPinUsage.STATUS_RESET, message="PIN usage reset by administrator.")
+        return Response({"success": True, "message": "Exam PIN reset.", "pin": _exam_pin_payload(pin, include_usage=True)})
+
+    if action in {"update", ""}:
+        update_fields = []
+        if "usage_policy" in request.data:
+            usage_policy = str(request.data.get("usage_policy") or "").strip()
+            if usage_policy not in {ExamPin.USE_ONE_TIME, ExamPin.USE_REUSABLE}:
+                return Response({"success": False, "message": "usage_policy must be one_time or reusable."}, status=status.HTTP_400_BAD_REQUEST)
+            pin.usage_policy = usage_policy
+            update_fields.append("usage_policy")
+        if "expires_at" in request.data:
+            raw_value = request.data.get("expires_at")
+            pin.expires_at = parse_datetime(raw_value) if raw_value else None
+            if raw_value and not pin.expires_at:
+                return Response({"success": False, "message": "expires_at must be a valid date-time."}, status=status.HTTP_400_BAD_REQUEST)
+            update_fields.append("expires_at")
+        if "is_active" in request.data:
+            pin.is_active = _to_bool(request.data.get("is_active"), default=pin.is_active)
+            if pin.is_active:
+                pin.deactivated_at = None
+                pin.deactivated_by = None
+                update_fields.extend(["deactivated_at", "deactivated_by"])
+            update_fields.append("is_active")
+        if update_fields:
+            update_fields.append("updated_at")
+            pin.save(update_fields=list(dict.fromkeys(update_fields)))
+        return Response({"success": True, "message": "Exam PIN updated.", "pin": _exam_pin_payload(pin, include_usage=True)})
+
+    return Response({"success": False, "message": "Unsupported PIN action."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(["GET"])
@@ -4824,7 +5107,8 @@ def create_exam(request):
     if not exam_type:
         exam_type = ExamType.objects.create(tenant=tenant_obj, name=exam_type_name)
 
-    is_published = _to_bool(request.data.get("is_published"), default=False)
+    can_publish_exam = request.user.role in ADMIN_ROLES
+    is_published = _to_bool(request.data.get("is_published"), default=False) if can_publish_exam else False
     shuffle_questions = _to_bool(request.data.get("shuffle_questions"), default=False)
     cleaned_questions, questions_error = _clean_exam_questions_payload(request.data.get("questions") or [])
     if questions_error:
@@ -4848,13 +5132,21 @@ def create_exam(request):
         is_published=is_published,
         tenant=tenant_obj,
     )
-    created_questions = [_exam_question_from_payload(item, tenant_obj, request.user) for item in cleaned_questions]
+    groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
+    created_questions = [
+        _exam_question_from_payload(item, tenant_obj, request.user, request, groups_by_key, index)
+        for index, item in enumerate(cleaned_questions, start=1)
+    ]
     exam.questions.add(*created_questions)
+    if request.user.role == "teacher":
+        _notify_admins_exam_ready(exam, request.user)
 
     return Response(
         {
             "success": True,
-            "message": "Exam created with CBT questions.",
+            "message": "Exam created and published." if is_published else (
+                "Exam sent to admin for publishing." if request.user.role == "teacher" else "Exam saved as draft."
+            ),
             "exam": {
                 "id": exam.id,
                 "title": exam.title,
@@ -4880,14 +5172,17 @@ def exam_detail(request, exam_id):
     )
     if request.user.role == "teacher":
         exams_qs = exams_qs.filter(teacher=request.user)
-    elif request.user.role in ADMIN_ROLES:
-        exams_qs = exams_qs.filter(Q(teacher=request.user) | Q(questions__question_banks__is_shared=True)).distinct()
     exam = get_object_or_404(exams_qs, id=exam_id)
 
     if request.method == "GET":
-        return Response({"success": True, "exam": _exam_editor_payload(exam)})
+        return Response({"success": True, "exam": _exam_editor_payload(exam, request)})
 
     if request.method == "DELETE":
+        if request.user.role == "teacher" and exam.is_published:
+            return Response(
+                {"success": False, "message": "Published exams can only be deleted by an administrator."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         exam.delete()
         return Response({"success": True, "message": "Exam deleted."})
 
@@ -4976,7 +5271,19 @@ def exam_detail(request, exam_id):
         update_fields.append("show_results_immediately")
 
     if "is_published" in request.data:
-        exam.is_published = _to_bool(request.data.get("is_published"), default=exam.is_published)
+        if request.user.role not in ADMIN_ROLES:
+            if _to_bool(request.data.get("is_published"), default=False):
+                return Response(
+                    {"success": False, "message": "Only administrators can publish exams."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        else:
+            exam.is_published = _to_bool(request.data.get("is_published"), default=exam.is_published)
+            update_fields.append("is_published")
+
+    teacher_update_needs_admin_review = request.user.role == "teacher"
+    if teacher_update_needs_admin_review and exam.is_published:
+        exam.is_published = False
         update_fields.append("is_published")
 
     if update_fields:
@@ -4999,20 +5306,29 @@ def exam_detail(request, exam_id):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         tenant_obj = exam.tenant or _tenant_for_model(Question, request.user, school_code=request.data.get("school_code"))
-        replacement_questions = [_exam_question_from_payload(item, tenant_obj, request.user) for item in cleaned_questions]
+        groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
+        replacement_questions = [
+            _exam_question_from_payload(item, tenant_obj, request.user, request, groups_by_key, index)
+            for index, item in enumerate(cleaned_questions, start=1)
+        ]
         exam.questions.set(replacement_questions)
+        if request.user.role == "teacher" and exam.is_published:
+            exam.is_published = False
+            exam.save(update_fields=["is_published", "updated_at"])
 
     exam = (
         Exam.objects.select_related("subject", "class_group", "exam_type")
         .prefetch_related("questions")
         .get(id=exam.id)
     )
+    if request.user.role == "teacher":
+        _notify_admins_exam_ready(exam, request.user)
 
     return Response(
         {
             "success": True,
-            "message": "Exam updated.",
-            "exam": _exam_editor_payload(exam),
+            "message": "Exam sent to admin for publishing." if request.user.role == "teacher" else "Exam updated.",
+            "exam": _exam_editor_payload(exam, request),
         }
     )
 

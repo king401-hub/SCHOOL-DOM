@@ -8,6 +8,9 @@ const ExamsList = ({ session, onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(null);
+  const [pinExam, setPinExam] = useState(null);
+  const [examPin, setExamPin] = useState("");
+  const [pinError, setPinError] = useState("");
   const [currentTime, setCurrentTime] = useState(() => new Date());
 
   useEffect(() => {
@@ -81,8 +84,9 @@ const ExamsList = ({ session, onNavigate }) => {
     };
   };
 
-  const handleStartExam = async (examId) => {
+  const handleStartExam = async (examId, pin = "") => {
     setStarting(examId);
+    setPinError("");
     try {
       const response = await fetch(`/api/exams/${examId}/start/`, {
         method: "POST",
@@ -90,7 +94,7 @@ const ExamsList = ({ session, onNavigate }) => {
           "Content-Type": "application/json",
           ...(session?.access ? { Authorization: `Bearer ${session.access}` } : {}),
         },
-        body: JSON.stringify({ is_offline: false }),
+        body: JSON.stringify({ is_offline: false, pin }),
       });
 
       if (!response.ok) {
@@ -99,11 +103,33 @@ const ExamsList = ({ session, onNavigate }) => {
       }
 
       const data = await response.json();
+      setPinExam(null);
+      setExamPin("");
       onNavigate?.(`/exam/${data.attempt_id}/`);
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      if (pinExam) {
+        setPinError(err.message);
+      } else {
+        alert(`Error: ${err.message}`);
+      }
       setStarting(null);
     }
+  };
+
+  const requestStartExam = (exam) => {
+    if (exam.pin_required) {
+      setPinExam(exam);
+      setExamPin("");
+      setPinError("");
+      return;
+    }
+    handleStartExam(exam.id);
+  };
+
+  const submitPin = (event) => {
+    event.preventDefault();
+    if (!pinExam) return;
+    handleStartExam(pinExam.id, examPin);
   };
 
   if (loading) {
@@ -164,12 +190,17 @@ const ExamsList = ({ session, onNavigate }) => {
                     <p className="exam-schedule">
                       <strong>Ends:</strong> {formatDateTime(exam.end_date)}
                     </p>
+                    {exam.pin_required && (
+                      <p className="exam-pin-required">
+                        <strong>PIN required</strong>
+                      </p>
+                    )}
                   </div>
 
                   <div className="exam-card-footer">
                     <button
                       className="btn-start-exam"
-                      onClick={() => handleStartExam(exam.id)}
+                      onClick={() => requestStartExam(exam)}
                       disabled={!examState.canStart || starting === exam.id}
                     >
                       {starting === exam.id ? "Starting..." : examState.action}
@@ -185,6 +216,35 @@ const ExamsList = ({ session, onNavigate }) => {
           </div>
         )}
       </div>
+
+      {pinExam && (
+        <div className="exam-pin-modal" role="dialog" aria-modal="true" aria-labelledby="exam-pin-title">
+          <form className="exam-pin-card" onSubmit={submitPin}>
+            <h2 id="exam-pin-title">Enter Exam PIN</h2>
+            <p>{pinExam.title}</p>
+            <input
+              value={examPin}
+              onChange={(event) => {
+                setExamPin(event.target.value.toUpperCase());
+                setPinError("");
+              }}
+              placeholder="Exam PIN"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+            />
+            {pinError && <div className="exam-pin-error">{pinError}</div>}
+            <div className="exam-pin-actions">
+              <button type="button" className="btn-exam-pin-secondary" onClick={() => setPinExam(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-exam-pin-primary" disabled={starting === pinExam.id}>
+                {starting === pinExam.id ? "Checking..." : "Continue"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

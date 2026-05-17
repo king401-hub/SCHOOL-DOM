@@ -63,6 +63,16 @@ const QuestionDisplay = ({
       </div>
 
       <div className="question-content">
+        {question.group ? (
+          <article className="question-passage-card">
+            <div className="question-passage-head">
+              <span>{question.group.group_type || "passage"}</span>
+              <strong>{question.group.title || "Shared passage"}</strong>
+            </div>
+            {question.group.passage_text ? <div className="question-passage-text"><RichQuizText text={question.group.passage_text} /></div> : null}
+            {question.group.image ? <img src={question.group.image} alt={question.group.title || "Passage illustration"} className="question-passage-image" /> : null}
+          </article>
+        ) : null}
         <div className="question-text">
           <h2><RichQuizText text={question.text} /></h2>
           {question.image ? (

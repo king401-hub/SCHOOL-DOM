@@ -401,6 +401,20 @@ const isBlankBuilderQuestion = (question) =>
   !String(question?.text || "").trim() &&
   !(question?.options || []).some((option) => String(option || "").trim()) &&
   !String(question?.explanation || "").trim();
+
+const newBuilderQuestion = () => ({
+  id: Date.now(),
+  text: "",
+  marks: "1",
+  options: ["", "", "", ""],
+  correctIndex: 0,
+  explanation: "",
+  groupKey: "",
+  group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+  questionImagePreview: "",
+});
+
+const filePreviewUrl = (file) => (file ? URL.createObjectURL(file) : "");
 export function TeacherExamManager({
   questionTemplates = [],
   pendingSubmissions = [],
@@ -621,7 +635,7 @@ export function TeacherExamBuilder({
   });
   const [sections, setSections] = useState([{ id: 1, title: "Section A", marks: "50" }]);
   const [questions, setQuestions] = useState([
-    { id: 1, text: "", marks: "1", options: ["", "", "", ""], correctIndex: 0, explanation: "" },
+    { ...newBuilderQuestion(), id: 1 },
   ]);
   const [bankQuestions, setBankQuestions] = useState([]);
   const [bankLoading, setBankLoading] = useState(false);
@@ -636,6 +650,7 @@ export function TeacherExamBuilder({
   const isEditing = Boolean(initialExam?.id);
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
+  const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
   const canUseCbtQuestionBank = session?.user?.role !== "teacher";
   const builderSections = [
     ["details", "Exam Details"],
@@ -671,16 +686,21 @@ export function TeacherExamBuilder({
       options.push("");
     }
     const correctIndex = Math.max(0, options.findIndex((option) => option === item.correct_answer));
-    return {
-      id: `bank-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      cbtBankQuestionId: item.id,
-      sourceLabel: item.bank_name || "CBT question bank",
-      text: item.text || "",
-      marks: String(item.points || 1),
-      options,
-      correctIndex,
-      explanation: item.explanation || "",
-    };
+      return {
+        id: `bank-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        cbtBankQuestionId: item.id,
+        sourceLabel: item.bank_name || "CBT question bank",
+        text: item.text || "",
+        marks: String(item.points || 1),
+        options,
+        correctIndex,
+        explanation: item.explanation || "",
+        groupKey: item.group?.id ? `bank-group-${item.group.id}` : "",
+        group: item.group
+          ? { ...item.group, imagePreview: item.group.image || "" }
+          : { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+        questionImagePreview: item.image || "",
+      };
   };
   const calculatedDuration = useMemo(() => {
     const start = form.examDate && form.startTime ? new Date(`${form.examDate}T${form.startTime}`) : null;
@@ -753,12 +773,17 @@ export function TeacherExamBuilder({
         explanation: question.explanation || "",
         cbtBankQuestionId: question.source_question_id || null,
         sourceLabel: question.source_question_id ? "CBT question bank" : "",
+        groupKey: question.group?.id ? `group-${question.group.id}` : "",
+        group: question.group
+          ? { ...question.group, imagePreview: question.group.image || "" }
+          : { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+        questionImagePreview: question.image || "",
       };
     });
     setQuestions(
       loadedQuestions.length
         ? loadedQuestions
-        : [{ id: 1, text: "", marks: "1", options: ["", "", "", ""], correctIndex: 0, explanation: "" }]
+        : [{ ...newBuilderQuestion(), id: 1 }]
     );
     setSections([{ id: 1, title: "Section A", marks: String(initialExam.duration_minutes || 50) }]);
     setActiveSection("details");
@@ -781,6 +806,7 @@ export function TeacherExamBuilder({
     }
     const preparedQuestions = questions.map((question) => {
       const options = (question.options || []).map((option) => option.trim()).filter(Boolean);
+      const groupKey = question.groupKey || "";
       return {
         text: question.text.trim(),
         points: Number(question.marks) || 1,
@@ -788,6 +814,17 @@ export function TeacherExamBuilder({
         correct_answer: (question.options || [])[Number(question.correctIndex)]?.trim() || "",
         explanation: question.explanation?.trim() || "",
         source_question_id: question.cbtBankQuestionId || undefined,
+        question_image_field: question.questionImageFile ? `question_image_${question.id}` : "",
+        group_key: groupKey,
+        group: groupKey
+          ? {
+              key: groupKey,
+              title: question.group?.title || "",
+              group_type: question.group?.group_type || "passage",
+              passage_text: question.group?.passage_text || "",
+              image_field: question.group?.imageFile ? `passage_image_${groupKey}` : "",
+            }
+          : null,
       };
     });
     const invalidQuestion = preparedQuestions.find(
@@ -812,11 +849,30 @@ export function TeacherExamBuilder({
         instructions: form.instructions,
         shuffle_questions: form.randomizeQuestions,
         show_results_immediately: false,
-        is_published: form.publishNow,
+        is_published: canPublishExam ? form.publishNow : false,
         questions: preparedQuestions,
       };
-      const result = isEditing ? await onUpdateExam(initialExam.id, payload) : await onCreateExam(payload);
-      setFeedback(result?.message || "Exam saved.");
+      const hasImages = questions.some((question) => question.questionImageFile || question.group?.imageFile);
+      let requestPayload = payload;
+      if (hasImages) {
+        const formData = new FormData();
+        Object.entries(payload).forEach(([key, value]) => {
+          formData.append(key, key === "questions" ? JSON.stringify(value) : value);
+        });
+        const addedPassageImages = new Set();
+        questions.forEach((question) => {
+          if (question.questionImageFile) {
+            formData.append(`question_image_${question.id}`, question.questionImageFile);
+          }
+          if (question.groupKey && question.group?.imageFile && !addedPassageImages.has(question.groupKey)) {
+            formData.append(`passage_image_${question.groupKey}`, question.group.imageFile);
+            addedPassageImages.add(question.groupKey);
+          }
+        });
+        requestPayload = formData;
+      }
+      const result = isEditing ? await onUpdateExam(initialExam.id, requestPayload) : await onCreateExam(requestPayload);
+      setFeedback(result?.message || (canPublishExam ? "Exam saved." : "Exam sent to admin for publishing."));
     } catch (saveError) {
       setError(saveError.message || "Could not save exam.");
     } finally {
@@ -829,10 +885,7 @@ export function TeacherExamBuilder({
   };
 
   const addQuestion = () => {
-    setQuestions((previous) => [
-      ...previous,
-      { id: Date.now(), text: "", marks: "1", options: ["", "", "", ""], correctIndex: 0, explanation: "" },
-    ]);
+    setQuestions((previous) => [...previous, newBuilderQuestion()]);
   };
 
   const toggleBankQuestion = (questionId) => {
@@ -892,6 +945,33 @@ export function TeacherExamBuilder({
     setQuestions((previous) => previous.map((item) => (item.id === questionId ? { ...item, ...patch } : item)));
   };
 
+  const updateQuestionGroup = (questionId, patch) => {
+    setQuestions((previous) =>
+      previous.map((item) => {
+        const source = previous.find((question) => question.id === questionId);
+        if (!source?.groupKey || item.groupKey !== source.groupKey) {
+          return item.id === questionId ? { ...item, group: { ...(item.group || {}), ...patch } } : item;
+        }
+        return { ...item, group: { ...(item.group || {}), ...patch } };
+      })
+    );
+  };
+
+  const attachQuestionToGroup = (questionId, groupKey) => {
+    const source = questions.find((item) => item.groupKey === groupKey && item.id !== questionId);
+    updateQuestion(questionId, {
+      groupKey,
+      group: source?.group || { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+    });
+  };
+
+  const createQuestionGroup = (questionId) => {
+    updateQuestion(questionId, {
+      groupKey: `group-${Date.now()}`,
+      group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+    });
+  };
+
   const updateQuestionOption = (questionId, optionIndex, value) => {
     setQuestions((previous) =>
       previous.map((item) => {
@@ -902,6 +982,18 @@ export function TeacherExamBuilder({
       })
     );
   };
+
+  const groupOptions = questions
+    .filter((item) => item.groupKey)
+    .reduce((options, item) => {
+      if (!options.some((option) => option.key === item.groupKey)) {
+        options.push({
+          key: item.groupKey,
+          label: item.group?.title || `${item.group?.group_type || "Passage"} group`,
+        });
+      }
+      return options;
+    }, []);
 
   return (
     <section className={`exam-builder-shell ${isEditing ? "exam-builder-editing" : ""}`}>
@@ -947,7 +1039,7 @@ export function TeacherExamBuilder({
               Preview Exam
             </button>
             <button type="button" onClick={handleSaveExam} disabled={saving}>
-              {saving ? "Saving..." : "Save Exam"}
+              {saving ? "Saving..." : canPublishExam ? "Save Exam" : "Send to Admin"}
             </button>
           </div>
         </div>
@@ -1091,6 +1183,96 @@ export function TeacherExamBuilder({
                     <label className="panel-field">Type<input value="Objective MCQ" readOnly /></label>
                     <label className="panel-field">Marks<input type="number" min="1" value={question.marks} onChange={(event) => updateQuestion(question.id, { marks: event.target.value })} /></label>
                   </div>
+                  <div className="exam-builder-row question-media-row">
+                    <label className="panel-field">
+                      Question image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] || null;
+                          updateQuestion(question.id, {
+                            questionImageFile: file,
+                            questionImagePreview: file ? filePreviewUrl(file) : question.questionImagePreview || "",
+                          });
+                        }}
+                      />
+                    </label>
+                    {question.questionImagePreview ? (
+                      <img className="question-builder-image-preview" src={question.questionImagePreview} alt="Question attachment preview" />
+                    ) : null}
+                  </div>
+                  <div className="question-group-builder">
+                    <div className="exam-builder-row">
+                      <label className="panel-field">
+                        Passage / group
+                        <select
+                          value={question.groupKey || ""}
+                          onChange={(event) => {
+                            const nextKey = event.target.value;
+                            if (!nextKey) updateQuestion(question.id, { groupKey: "", group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" } });
+                            else attachQuestionToGroup(question.id, nextKey);
+                          }}
+                        >
+                          <option value="">Standalone question</option>
+                          {groupOptions.map((group) => (
+                            <option key={group.key} value={group.key}>{group.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" className="table-action" onClick={() => createQuestionGroup(question.id)}>
+                        New passage group
+                      </button>
+                    </div>
+                    {question.groupKey ? (
+                      <>
+                        <div className="exam-builder-row">
+                          <label className="panel-field">
+                            Group type
+                            <select value={question.group?.group_type || "passage"} onChange={(event) => updateQuestionGroup(question.id, { group_type: event.target.value })}>
+                              <option value="passage">Passage</option>
+                              <option value="comprehension">Comprehension</option>
+                              <option value="register">Register</option>
+                              <option value="diagram">Diagram / chart</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </label>
+                          <label className="panel-field full">
+                            Group title
+                            <input value={question.group?.title || ""} onChange={(event) => updateQuestionGroup(question.id, { title: event.target.value })} placeholder="e.g. Passage A" />
+                          </label>
+                        </div>
+                        <label className="panel-field full">
+                          Passage / shared prompt
+                          <textarea
+                            value={question.group?.passage_text || ""}
+                            onChange={(event) => updateQuestionGroup(question.id, { passage_text: event.target.value })}
+                            rows={4}
+                            placeholder="Text shown once before all linked questions"
+                          />
+                        </label>
+                        <div className="exam-builder-row question-media-row">
+                          <label className="panel-field">
+                            Passage image
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0] || null;
+                                updateQuestionGroup(question.id, {
+                                  imageFile: file,
+                                  imagePreview: file ? filePreviewUrl(file) : question.group?.imagePreview || "",
+                                });
+                              }}
+                            />
+                          </label>
+                          {question.group?.imagePreview ? (
+                            <img className="question-builder-image-preview" src={question.group.imagePreview} alt="Passage attachment preview" />
+                          ) : null}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                   <div className="cbt-option-grid">
                     {(question.options || []).map((option, optionIndex) => (
                       <label key={optionIndex} className="panel-field">
@@ -1137,7 +1319,11 @@ export function TeacherExamBuilder({
             <div className="exam-builder-settings">
               <label className="remember-row"><input type="checkbox" checked={form.randomizeQuestions} onChange={(event) => setField("randomizeQuestions", event.target.checked)} /> Randomize questions</label>
               <label className="remember-row"><input type="checkbox" checked={form.showResults} disabled /> Send results to teacher only after submission</label>
-              <label className="remember-row"><input type="checkbox" checked={form.publishNow} onChange={(event) => setField("publishNow", event.target.checked)} /> Publish immediately</label>
+              {canPublishExam ? (
+                <label className="remember-row"><input type="checkbox" checked={form.publishNow} onChange={(event) => setField("publishNow", event.target.checked)} /> Publish immediately</label>
+              ) : (
+                <p className="student-panel-sub">Saving sends this exam to an administrator for publishing.</p>
+              )}
             </div>
           ) : null}
 
@@ -1165,6 +1351,10 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [pinBusy, setPinBusy] = useState("");
+  const [pinMessage, setPinMessage] = useState("");
+  const [pinPlain, setPinPlain] = useState("");
+  const canManagePins = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
 
   const loadExams = useCallback(async () => {
     setLoading(true);
@@ -1206,6 +1396,26 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
         ? upcomingExams
         : exams;
 
+  const generatePin = async (exam) => {
+    setPinBusy(`generate-${exam.id}`);
+    setPinMessage("");
+    setPinPlain("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/exams/pins/", {
+        exam_id: exam.id,
+        usage_policy: "reusable",
+        expires_at: exam.end_date,
+      });
+      setPinPlain(result.plain_pin || "");
+      setPinMessage(`PIN generated for ${exam.title}.`);
+      await loadExams();
+    } catch (pinError) {
+      setPinMessage(pinError.message || "Could not generate PIN.");
+    } finally {
+      setPinBusy("");
+    }
+  };
+
   return (
     <section className="app-panel teacher-past-exams-panel">
       <div className="student-panel-head">
@@ -1227,6 +1437,7 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
 
       {error ? <p className="form-feedback error">{error}</p> : null}
       {editError ? <p className="form-feedback error">{editError}</p> : null}
+      {pinMessage ? <p className={`form-feedback ${pinPlain ? "success" : "error"}`}>{pinMessage}{pinPlain ? ` PIN: ${pinPlain}` : ""}</p> : null}
 
       <div className="segmented-control inbox-filter">
         <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>
@@ -1255,6 +1466,7 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
                 <th>Schedule</th>
                 <th>Window</th>
                 <th>Status</th>
+                {canManagePins ? <th>PIN</th> : null}
                 <th>Submissions</th>
                 <th>Action</th>
               </tr>
@@ -1279,6 +1491,18 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
                       {exam.is_published ? "Published" : "Draft"}
                     </span>
                   </td>
+                  {canManagePins ? (
+                    <td>
+                      <button
+                        type="button"
+                        className={`table-action ${exam.pin_required ? "active" : ""}`}
+                        onClick={() => generatePin(exam)}
+                        disabled={pinBusy === `generate-${exam.id}`}
+                      >
+                        {pinBusy === `generate-${exam.id}` ? "Generating..." : exam.pin_required ? `Active (${exam.active_pin_count || 1})` : "Generate PIN"}
+                      </button>
+                    </td>
+                  ) : null}
                   <td>{exam.submissions ?? 0}</td>
                   <td>
                     <button

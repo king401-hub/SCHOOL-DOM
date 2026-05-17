@@ -2,22 +2,38 @@ from rest_framework import serializers
 from .models import Exam, ExamAttempt, Question, StudentAnswer
 
 class QuestionSerializer(serializers.ModelSerializer):
+    group = serializers.SerializerMethodField()
+
     class Meta:
         model = Question
-        fields = ['id', 'text', 'image', 'options', 'question_type', 'points']
+        fields = ['id', 'text', 'image', 'options', 'question_type', 'points', 'group', 'group_order']
+
+    def get_group(self, obj):
+        group = getattr(obj, "group", None)
+        if not group:
+            return None
+        return {
+            "id": group.id,
+            "title": group.title,
+            "group_type": group.group_type,
+            "passage_text": group.passage_text,
+            "image": group.image.url if group.image else "",
+        }
 
 class ExamSerializer(serializers.ModelSerializer):
     questions = QuestionSerializer(many=True, read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
     class_name = serializers.SerializerMethodField()
     question_count = serializers.SerializerMethodField()
+    pin_required = serializers.SerializerMethodField()
     
     class Meta:
         model = Exam
         fields = [
             'id', 'title', 'subject', 'duration_minutes', 'questions',
             'shuffle_questions', 'show_results_immediately', 'instructions',
-            'start_date', 'end_date', 'subject_name', 'class_name', 'question_count'
+            'start_date', 'end_date', 'subject_name', 'class_name', 'question_count',
+            'pin_required'
         ]
 
     def get_class_name(self, obj):
@@ -34,6 +50,9 @@ class ExamSerializer(serializers.ModelSerializer):
             return Question.objects.filter(question_banks__exam=obj).distinct().count()
         except Exception:
             return 0
+
+    def get_pin_required(self, obj):
+        return obj.pins.filter(is_active=True).exists()
 
 class StudentAnswerSerializer(serializers.ModelSerializer):
     class Meta:

@@ -1,0 +1,7 @@
+node_modules/
+.expo/
+android/local.properties
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/build/

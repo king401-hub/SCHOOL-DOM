@@ -11,10 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from datetime import datetime, timedelta
+import random
 
 from notifications.models import Notification
 from users.models import StudentEnrollment, User, resolve_legacy_tenant_for_school
-from .models import Exam, ExamAttempt, Question, StudentAnswer
+from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, Question, StudentAnswer
 from .serializers import (
     ExamSerializer,
     ExamAttemptSerializer,
@@ -28,11 +29,123 @@ from .serializers import (
 def _question_queryset_for_exam(exam):
     direct = exam.questions.all()
     if direct.exists():
-        return direct.distinct()
+        return direct.select_related("group").distinct()
     try:
-        return Question.objects.filter(question_banks__exam=exam).distinct()
+        return Question.objects.filter(question_banks__exam=exam).select_related("group").distinct()
     except Exception:
         return Question.objects.none()
+
+
+def _file_url(request, field):
+    if not field:
+        return ""
+    try:
+        url = field.url
+    except Exception:
+        return ""
+    return request.build_absolute_uri(url) if request else url
+
+
+def _question_payload(question, request=None):
+    group = question.group
+    return {
+        "id": question.id,
+        "text": question.text,
+        "image": _file_url(request, question.image),
+        "options": question.options or [],
+        "question_type": question.question_type,
+        "points": question.points,
+        "group_order": question.group_order,
+        "group": {
+            "id": group.id,
+            "title": group.title,
+            "group_type": group.group_type,
+            "passage_text": group.passage_text,
+            "image": _file_url(request, group.image),
+        } if group else None,
+    }
+
+
+def _question_units(questions):
+    units = []
+    grouped = {}
+    for question in questions:
+        if question.group_id:
+            grouped.setdefault(question.group_id, []).append(question)
+        else:
+            units.append([question])
+    for rows in grouped.values():
+        rows.sort(key=lambda item: (item.group_order or 0, item.id))
+        units.append(rows)
+    units.sort(key=lambda rows: min(item.id for item in rows))
+    return units
+
+
+def _build_attempt_question_order(exam):
+    questions = list(_question_queryset_for_exam(exam).order_by("id"))
+    units = _question_units(questions)
+    if exam.shuffle_questions:
+        random.SystemRandom().shuffle(units)
+    return [question.id for unit in units for question in unit]
+
+
+def _ordered_questions_for_attempt(attempt):
+    questions_by_id = {question.id: question for question in _question_queryset_for_exam(attempt.exam)}
+    order = [int(item) for item in (attempt.question_order or []) if str(item).isdigit()]
+    ordered = [questions_by_id.pop(question_id) for question_id in order if question_id in questions_by_id]
+    if questions_by_id:
+        ordered.extend([question for unit in _question_units(questions_by_id.values()) for question in unit])
+    return ordered
+
+
+def _client_ip(request):
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
+
+
+def _record_pin_usage(request, *, exam, pin=None, entered_pin="", status_value=ExamPinUsage.STATUS_REJECTED, message="", attempt=None):
+    digest = ExamPin.digest_pin(entered_pin) if entered_pin else ""
+    return ExamPinUsage.objects.create(
+        tenant=exam.tenant,
+        pin=pin,
+        exam=exam,
+        student=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+        attempt=attempt,
+        entered_pin_digest=digest,
+        status=status_value,
+        message=message[:255],
+        ip_address=_client_ip(request),
+        user_agent=str(request.META.get("HTTP_USER_AGENT", ""))[:255],
+    )
+
+
+def _validate_exam_pin_for_start(request, exam, active_attempt=None):
+    active_pins = exam.pins.filter(is_active=True)
+    if not active_pins.exists():
+        return True, None, ""
+
+    entered_pin = ExamPin.normalize_pin(request.data.get("pin") or request.data.get("exam_pin") or "")
+    if not entered_pin:
+        _record_pin_usage(request, exam=exam, entered_pin="", message="PIN was not provided.")
+        return False, None, "Enter the exam PIN to access this CBT exam."
+
+    pin_digest = ExamPin.digest_pin(entered_pin)
+    pin = active_pins.filter(pin_digest=pin_digest).first()
+    if not pin or not pin.check_pin(entered_pin):
+        _record_pin_usage(request, exam=exam, entered_pin=entered_pin, message="Invalid PIN.")
+        return False, None, "Invalid exam PIN."
+
+    if active_attempt and pin.successful_usage_queryset().filter(attempt=active_attempt, student=request.user).exists():
+        return True, pin, ""
+
+    usable, reason = pin.can_be_used()
+    if not usable:
+        _record_pin_usage(request, exam=exam, pin=pin, entered_pin=entered_pin, message=reason)
+        return False, pin, reason
+
+    return True, pin, ""
 
 
 AUTO_SUBMIT_REASON_LABELS = {
@@ -262,7 +375,7 @@ class StartExamView(APIView):
                 {'error': 'Exam is not available at this time'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Check attempt limit
         existing_attempts = ExamAttempt.objects.filter(
             exam=exam,
@@ -281,13 +394,24 @@ class StartExamView(APIView):
             student=request.user,
             is_submitted=False
         ).first()
+
+        pin_valid, validated_pin, pin_error = _validate_exam_pin_for_start(request, exam, active_attempt=active_attempt)
+        if not pin_valid:
+            return Response(
+                {'error': pin_error or 'Invalid exam PIN'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         if active_attempt:
+            if not active_attempt.question_order:
+                active_attempt.question_order = _build_attempt_question_order(exam)
+                active_attempt.save(update_fields=["question_order", "updated_at"])
             return Response({
                 'attempt_id': active_attempt.id,
                 'exam_id': exam.id,
                 'start_time': active_attempt.start_time,
                 'duration_minutes': exam.duration_minutes,
-                'question_count': _question_queryset_for_exam(exam).count()
+                'question_count': len(active_attempt.question_order or [])
             })
         
         # Create exam attempt
@@ -296,14 +420,19 @@ class StartExamView(APIView):
             student=request.user,
             tenant=exam.tenant,
             is_offline=request.data.get('is_offline', False),
-            device_id=request.data.get('device_id', None)
+            device_id=request.data.get('device_id', None),
+            question_order=_build_attempt_question_order(exam),
         )
-        
-        # Fetch questions
-        questions = _question_queryset_for_exam(exam)
-        
-        if exam.shuffle_questions:
-            questions = questions.order_by('?')
+        if validated_pin:
+            _record_pin_usage(
+                request,
+                exam=exam,
+                pin=validated_pin,
+                entered_pin=request.data.get("pin") or request.data.get("exam_pin") or "",
+                status_value=ExamPinUsage.STATUS_ACCEPTED,
+                message="PIN accepted and exam attempt started.",
+                attempt=attempt,
+            )
         
         # Prepare response
         return Response({
@@ -311,7 +440,7 @@ class StartExamView(APIView):
             'exam_id': exam.id,
             'start_time': attempt.start_time,
             'duration_minutes': exam.duration_minutes,
-            'question_count': questions.count()
+            'question_count': len(attempt.question_order or [])
         }, status=status.HTTP_201_CREATED)
 
 
@@ -345,8 +474,7 @@ class ExamAttemptDetailView(APIView):
             _grade_attempt(attempt)
             return Response({'error': 'Exam time has expired and the attempt was submitted.'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Fetch questions for this exam
-        questions = _question_queryset_for_exam(exam).values('id', 'text', 'image', 'options', 'question_type', 'points')
+        questions = _ordered_questions_for_attempt(attempt)
         
         # Fetch student answers
         student_answers = StudentAnswer.objects.filter(attempt=attempt)
@@ -371,7 +499,7 @@ class ExamAttemptDetailView(APIView):
                 'duration_minutes': exam.duration_minutes,
                 'instructions': getattr(exam, 'instructions', '')
             },
-            'questions': list(questions),
+            'questions': [_question_payload(question, request) for question in questions],
             'student': {
                 'id': str(request.user.id),
                 'name': f"{request.user.first_name} {request.user.last_name}",

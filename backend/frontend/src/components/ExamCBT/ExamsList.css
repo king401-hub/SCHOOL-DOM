@@ -112,7 +112,8 @@
 
 .exam-subject,
 .exam-questions,
-.exam-schedule {
+.exam-schedule,
+.exam-pin-required {
   margin: 0;
   font-size: 14px;
   color: #4b5563;
@@ -120,9 +121,14 @@
 
 .exam-subject strong,
 .exam-questions strong,
-.exam-schedule strong {
+.exam-schedule strong,
+.exam-pin-required strong {
   color: #1f2937;
   font-weight: 600;
+}
+
+.exam-pin-required {
+  color: #7c2d12;
 }
 
 .exam-card-footer {
@@ -209,6 +215,86 @@
   color: white;
   font-size: 16px;
   margin: 0;
+}
+
+.exam-pin-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.58);
+}
+
+.exam-pin-card {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+
+.exam-pin-card h2 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 22px;
+}
+
+.exam-pin-card p {
+  margin: 0 0 16px;
+  color: #4b5563;
+}
+
+.exam-pin-card input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.exam-pin-error {
+  margin-top: 12px;
+  color: #991b1b;
+  font-size: 14px;
+}
+
+.exam-pin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn-exam-pin-secondary,
+.btn-exam-pin-primary {
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 0 14px;
+  border: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-exam-pin-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-exam-pin-primary {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.btn-exam-pin-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 /* Responsive */

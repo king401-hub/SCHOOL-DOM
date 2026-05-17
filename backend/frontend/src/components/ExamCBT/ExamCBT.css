@@ -326,6 +326,42 @@
   margin-bottom: 24px;
 }
 
+.question-passage-card {
+  margin: 0 0 24px;
+  padding: 18px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.question-passage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.question-passage-head span {
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.question-passage-head strong {
+  color: #111827;
+}
+
+.question-passage-text {
+  color: #374151;
+  line-height: 1.65;
+}
+
+.question-passage-image,
 .question-text {
   margin-bottom: 24px;
 }
@@ -342,6 +378,16 @@
   max-height: 300px;
   border-radius: 6px;
   margin-top: 12px;
+  object-fit: contain;
+}
+
+.question-passage-image {
+  display: block;
+  width: min(100%, 720px);
+  max-height: 380px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #ffffff;
 }
 
 .question-options {
@@ -1176,6 +1222,16 @@ body[data-theme="dark"] .exam-completed-card p {
   .question-display {
     padding: 20px;
     margin: 12px;
+  }
+
+  .question-passage-card {
+    padding: 14px;
+  }
+
+  .question-passage-image,
+  .question-image {
+    width: 100%;
+    max-height: 260px;
   }
 
   .question-navigation {
