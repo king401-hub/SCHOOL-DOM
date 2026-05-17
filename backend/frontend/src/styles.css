@@ -6666,6 +6666,15 @@ html {
   white-space: nowrap;
 }
 
+.app-pill-button.download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: #22c55e;
+  color: #052e16;
+}
+
 .app-pill-button.ghost {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(226, 232, 240, 0.32);

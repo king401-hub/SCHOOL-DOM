@@ -68,6 +68,34 @@ npm run ios
 
 iOS builds require macOS and Xcode.
 
+## Website APK Download
+
+The website download button points to:
+
+```text
+/app/download/
+```
+
+The direct APK endpoint is:
+
+```text
+/app/download/apk/
+```
+
+After building a release APK, upload or copy it to:
+
+```text
+media/app/schooldom-app.apk
+```
+
+On the VPS, the file path will be inside your deployed project folder, for example:
+
+```bash
+/path/to/virtual-school-platform/media/app/schooldom-app.apk
+```
+
+Until that file exists, the download page will show that the APK has not been uploaded yet.
+
 ## Notes
 
 The current implementation establishes the native app foundation and core role-aware screens. More complex web-only workflows can now be ported screen by screen into native components without changing the Django backend contract.

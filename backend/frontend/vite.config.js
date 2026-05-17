@@ -27,6 +27,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        "/app": {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   };

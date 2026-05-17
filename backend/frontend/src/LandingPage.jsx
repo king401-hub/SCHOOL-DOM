@@ -168,6 +168,9 @@ function LandingPage({ onGetStarted }) {
               <button type="button" className="app-pill-button" onClick={handleInstallApp} disabled={pwaStatus.isInstalled}>
                 {installButtonText}
               </button>
+              <a className="app-pill-button download-link" href="/app/download/">
+                Download APK
+              </a>
               <button type="button" className="app-pill-button ghost" onClick={handleEnableNotifications}>
                 Enable Alerts
               </button>

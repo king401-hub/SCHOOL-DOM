@@ -27,7 +27,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 import json
 from apps.auth.views import LoginView, LogoutView, RegisterView
-from apps.app.views import AppDownloadView
+from apps.app.views import AppDownloadView, download_android_apk
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
@@ -88,6 +88,7 @@ urlpatterns = [
     path('logout/', LogoutView.as_view(), name='logout'),
     path('school/settings/', TemplateView.as_view(template_name='school/settings.html'), name='school_settings'),
     path('app/download/', AppDownloadView.as_view(), name='app_download'),
+    path('app/download/apk/', download_android_apk, name='app_apk_download'),
     path('dashboard/', placeholder_view, name='dashboard'),
     path('exams/', placeholder_view, name='exam_list'),
     path('exams/upload-results/', placeholder_view, name='upload_results'),
