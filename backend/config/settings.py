@@ -32,6 +32,16 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def env_list(name: str, default: str = "") -> list[str]:
     raw = os.getenv(name, default)
     return [item.strip() for item in raw.split(",") if item.strip()]
@@ -299,7 +309,9 @@ USE_I18N = True
 USE_TZ = True
 
 # Custom settings
-MAX_UPLOAD_SIZE = 52428800  # 50MB
+MAX_UPLOAD_SIZE = env_int('MAX_UPLOAD_SIZE', 52428800)  # 50MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
+FILE_UPLOAD_MAX_MEMORY_SIZE = env_int('FILE_UPLOAD_MAX_MEMORY_SIZE', 2621440)
 OFFLINE_EXAM_EXPIRY_DAYS = 30
 FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', '')
 FRONTEND_DEV_PORT = os.getenv('FRONTEND_DEV_PORT', '5173')

@@ -1340,6 +1340,27 @@ class SchoolSettingsAPITests(TestCase):
         self.assertTrue(self.school.logo.name)
         self.assertEqual(self.school.currency, "NGN")
 
+    def test_school_admin_can_upload_one_megabyte_school_logo(self):
+        self.client.force_authenticate(user=self.admin_user)
+        logo = SimpleUploadedFile(
+            "logo.png",
+            b"\x89PNG\r\n\x1a\n" + (b"0" * (1024 * 1024)),
+            content_type="image/png",
+        )
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={
+                "name": "Settings School",
+                "logo": logo,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.school.refresh_from_db()
+        self.assertTrue(self.school.logo.name.endswith(".png"))
+
     def test_non_admin_cannot_update_school_name(self):
         self.client.force_authenticate(user=self.student_user)
         response = self.client.patch(

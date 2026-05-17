@@ -413,6 +413,13 @@ await refreshAccessToken(session);
     }
   }
 
+  if (response?.status === 413) {
+    const error = new Error("The selected file is too large for the server upload limit. Try a smaller image or increase MAX_UPLOAD_SIZE on the server.");
+    error.status = response.status;
+    error.statusCode = response.status;
+    throw error;
+  }
+
   const error = new Error(formatApiError(data, `Request failed (${response?.status || "network"}).`));
   error.status = response?.status;
   error.statusCode = response?.status;
