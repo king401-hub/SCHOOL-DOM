@@ -1,0 +1,65 @@
+{
+  "name": "SchoolDom App",
+  "short_name": "SchoolDom",
+  "description": "SchoolDom app for learning, CBT, attendance, finance, messaging, and school management.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "fullscreen"],
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "categories": ["education", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/schooldom-favicon.jpeg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/schooldom-favicon.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/schooldom-favicon.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/schooldom-favicon.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "SchoolDom App"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Sign in",
+      "short_name": "Sign in",
+      "url": "/signin",
+      "icons": [{ "src": "/schooldom-favicon.jpeg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Exams",
+      "short_name": "Exams",
+      "url": "/exams",
+      "icons": [{ "src": "/schooldom-favicon.jpeg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Messages",
+      "short_name": "Messages",
+      "url": "/messages",
+      "icons": [{ "src": "/schooldom-favicon.jpeg", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -60,6 +60,99 @@ function formatTime(value, fallback) {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function formatCoordinate(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(6) : String(value);
+}
+
+function locationSummary(record, prefix = "check_in") {
+  const latitude = record?.[`${prefix}_latitude`];
+  const longitude = record?.[`${prefix}_longitude`];
+  if (latitude === null || latitude === undefined || longitude === null || longitude === undefined) return null;
+  const latText = formatCoordinate(latitude);
+  const lngText = formatCoordinate(longitude);
+  return {
+    latitude: latText,
+    longitude: lngText,
+    address: record?.[`${prefix}_address`] || `${latText}, ${lngText}`,
+    accuracy: record?.[`${prefix}_accuracy_meters`],
+    mapUrl: `https://www.google.com/maps?q=${encodeURIComponent(`${latText},${lngText}`)}`,
+    embedUrl: `https://www.google.com/maps?q=${encodeURIComponent(`${latText},${lngText}`)}&output=embed`,
+  };
+}
+
+function collectDeviceInfo() {
+  const screenSize = window.screen ? `${window.screen.width}x${window.screen.height}` : "unknown-screen";
+  return [
+    navigator.userAgent,
+    `platform=${navigator.platform || "unknown"}`,
+    `language=${navigator.language || "unknown"}`,
+    `timezone=${Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown"}`,
+    `screen=${screenSize}`,
+  ].join(" | ");
+}
+
+async function reverseGeocode(latitude, longitude) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 4500);
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
+      { signal: controller.signal, headers: { Accept: "application/json" } }
+    );
+    if (!response.ok) return "";
+    const data = await response.json().catch(() => null);
+    return data?.display_name || "";
+  } catch (_error) {
+    return "";
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function requestBrowserPosition() {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("This device does not support browser location services."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    });
+  });
+}
+
+async function getAttendanceLocationPayload() {
+  let position;
+  try {
+    position = await requestBrowserPosition();
+  } catch (locationError) {
+    if (locationError?.code === 1) {
+      throw new Error("Location permission was denied. Enable location access before marking attendance.");
+    }
+    if (locationError?.code === 2) {
+      throw new Error("Location is unavailable. Turn on GPS/location services before marking attendance.");
+    }
+    if (locationError?.code === 3) {
+      throw new Error("Location request timed out. Move to an open area and try again.");
+    }
+    throw new Error(locationError?.message || "Enable location services before marking attendance.");
+  }
+
+  const { latitude, longitude, accuracy } = position.coords;
+  const address = await reverseGeocode(latitude, longitude);
+  return {
+    latitude,
+    longitude,
+    accuracy,
+    address: address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+    device_info: collectDeviceInfo(),
+  };
+}
+
 function statusLabel(status) {
   if (!status) return "Present";
   return status
@@ -252,6 +345,7 @@ export function AttendanceDashboard({ session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [mapLocation, setMapLocation] = useState(null);
 
   const loadToday = useCallback(async () => {
     setError("");
@@ -259,6 +353,11 @@ export function AttendanceDashboard({ session }) {
       const result = await attendanceRequest(null, withUserId("/api/attendance/today/", session));
       setRecords(result.data || []);
       setSummary({ date: result.date, total_present: result.total_present || 0 });
+      setMapLocation((current) => {
+        if (!current) return current;
+        const stillExists = (result.data || []).some((record) => record.id === current.recordId);
+        return stillExists ? current : null;
+      });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -315,25 +414,58 @@ export function AttendanceDashboard({ session }) {
                 <th>Check-in Time</th>
                 <th>Check-out Time</th>
                 <th>Status</th>
+                <th>Location</th>
                 <th>Device</th>
               </tr>
             </thead>
             <tbody>
-              {records.map((record) => (
-                <tr key={record.id}>
-                  <td>{record.teacher_name || "Unknown staff member"}</td>
-                  <td>{record.teacher_email || "-"}</td>
-                  <td>{roleLabel(record.teacher_role)}</td>
-                  <td>{formatTime(record.check_in_time, record.check_in_time_formatted)}</td>
-                  <td>{formatTime(record.check_out_time, record.check_out_time_formatted)}</td>
-                  <td>
-                    <AttendanceStatusPill status={record.check_out_time ? "checked_out" : record.status} />
-                  </td>
-                  <td title={record.device_info || ""}>{record.device_info ? `${record.device_info.slice(0, 42)}...` : "-"}</td>
-                </tr>
-              ))}
+              {records.map((record) => {
+                const checkInLocation = locationSummary(record, "check_in");
+                return (
+                  <tr key={record.id}>
+                    <td>{record.teacher_name || "Unknown staff member"}</td>
+                    <td>{record.teacher_email || "-"}</td>
+                    <td>{roleLabel(record.teacher_role)}</td>
+                    <td>{formatTime(record.check_in_time, record.check_in_time_formatted)}</td>
+                    <td>{formatTime(record.check_out_time, record.check_out_time_formatted)}</td>
+                    <td>
+                      <AttendanceStatusPill status={record.check_out_time ? "checked_out" : record.status} />
+                    </td>
+                    <td>
+                      {checkInLocation ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => setMapLocation({ ...checkInLocation, recordId: record.id, teacher: record.teacher_name || "Staff member" })}
+                        >
+                          View map
+                        </button>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td title={record.client_device_info || record.device_info || ""}>
+                      {(record.client_device_info || record.device_info) ? `${(record.client_device_info || record.device_info).slice(0, 42)}...` : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          {mapLocation ? (
+            <div className="attendance-map-panel">
+              <div>
+                <h4>{mapLocation.teacher}</h4>
+                <p>{mapLocation.address}</p>
+                <small>
+                  {mapLocation.latitude}, {mapLocation.longitude}
+                  {mapLocation.accuracy ? ` - +/-${Math.round(Number(mapLocation.accuracy))}m` : ""}
+                </small>
+                <a href={mapLocation.mapUrl} target="_blank" rel="noreferrer">Open in Google Maps</a>
+              </div>
+              <iframe title="Attendance location map" src={mapLocation.embedUrl} loading="lazy" />
+            </div>
+          ) : null}
         </div>
       )}
     </article>
@@ -347,6 +479,7 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [locationStatus, setLocationStatus] = useState("");
 
   const canUseAttendance = ATTENDANCE_ROLES.has(session?.user?.role);
 
@@ -381,13 +514,17 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
     setSubmitting(true);
     setError("");
     setMessage("");
+    setLocationStatus("Requesting GPS location...");
     try {
+      const location = await getAttendanceLocationPayload();
+      setLocationStatus("Location captured. Recording attendance...");
       const result = await attendanceRequest(null, `/api/attendance/scan/${encodeURIComponent(token)}/`, {
         method: "POST",
-        body: JSON.stringify(attendanceBody(session)),
+        body: JSON.stringify(attendanceBody(session, { location })),
       });
       setStatusDetails(result);
       setMessage(result.message || "Attendance marked successfully.");
+      setLocationStatus("");
     } catch (requestError) {
       setError(requestError.message);
       await loadPage();
@@ -400,13 +537,17 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
     setSubmitting(true);
     setError("");
     setMessage("");
+    setLocationStatus("Requesting GPS location...");
     try {
+      const location = await getAttendanceLocationPayload();
+      setLocationStatus("Location captured. Recording clock-out...");
       const result = await attendanceRequest(null, "/api/attendance/clock-out/", {
         method: "POST",
-        body: JSON.stringify(attendanceBody(session)),
+        body: JSON.stringify(attendanceBody(session, { location })),
       });
       setStatusDetails(result);
       setMessage(result.message || "Clock-out recorded.");
+      setLocationStatus("");
     } catch (requestError) {
       setError(requestError.message);
       await loadPage();
@@ -436,6 +577,8 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
   const checkedIn = Boolean(statusDetails?.checked_in);
   const checkedOut = Boolean(statusDetails?.checked_out || statusDetails?.data?.check_out_time);
   const checkInData = statusDetails?.data;
+  const checkInLocation = locationSummary(checkInData, "check_in");
+  const checkOutLocation = locationSummary(checkInData, "check_out");
 
   return (
     <main className="signup-page dashboard-page">
@@ -458,6 +601,7 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
           {loading ? <p className="panel-empty">Verifying QR code...</p> : null}
           {error ? <p className="form-feedback error">{error}</p> : null}
           {message ? <p className="form-feedback success">{message}</p> : null}
+          {locationStatus ? <p className="panel-empty">{locationStatus}</p> : null}
 
           {qrDetails && !loading ? (
             <div className="panel-list">
@@ -477,10 +621,20 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
               <p style={{ marginBottom: 0 }}>
                 Check-out time: <strong>{formatTime(checkInData?.check_out_time, checkInData?.check_out_time_formatted)}</strong>
               </p>
+              {checkInLocation ? (
+                <p style={{ marginBottom: 0 }}>
+                  Check-in location: <strong>{checkInLocation.address}</strong>
+                </p>
+              ) : null}
+              {checkOutLocation ? (
+                <p style={{ marginBottom: 0 }}>
+                  Check-out location: <strong>{checkOutLocation.address}</strong>
+                </p>
+              ) : null}
             </div>
           ) : (
             <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
-              <button type="button" onClick={markAttendance} disabled={loading || submitting || Boolean(error)}>
+              <button type="button" onClick={markAttendance} disabled={loading || submitting || !qrDetails}>
                 {submitting ? "Recording..." : "Clock In"}
               </button>
             </div>
@@ -488,7 +642,7 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
 
           {checkedIn && !checkedOut ? (
             <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
-              <button type="button" onClick={clockOut} disabled={loading || submitting || Boolean(error)}>
+              <button type="button" onClick={clockOut} disabled={loading || submitting || !qrDetails}>
                 {submitting ? "Recording..." : "Clock Out"}
               </button>
             </div>

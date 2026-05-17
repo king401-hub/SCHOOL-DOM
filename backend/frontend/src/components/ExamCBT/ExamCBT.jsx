@@ -8,6 +8,26 @@ import SubmitModal from "./SubmitModal";
 
 const CBT_CACHE_KEY = "schooldom.cbt_attempt_cache";
 const CBT_SUBMISSION_QUEUE_KEY = "schooldom.cbt_submission_queue";
+const CONNECTION_LOST_AUTO_SUBMIT_MS = 120000;
+
+const AUTO_SUBMIT_REASON_LABELS = {
+  timer_expired: "Exam timer expired",
+  tab_switch_limit: "Exceeded tab-switching warnings",
+  malpractice: "Attempted malpractice",
+  connection_lost: "Lost connection for too long",
+  force_exit: "Forcefully exited exam environment",
+  fullscreen_exit: "Exited full-screen exam mode",
+  security_violation: "Security violation",
+};
+
+function classifySecurityReason(reason, fallback = "security_violation") {
+  const text = String(reason || "").toLowerCase();
+  if (text.includes("tab")) return "tab_switch_limit";
+  if (text.includes("copy") || text.includes("paste") || text.includes("right-click") || text.includes("developer tools")) return "malpractice";
+  if (text.includes("full-screen") || text.includes("fullscreen")) return "fullscreen_exit";
+  if (text.includes("leaving") || text.includes("reload") || text.includes("window")) return "force_exit";
+  return fallback;
+}
 
 function readJsonStore(key, fallback) {
   try {
@@ -54,6 +74,17 @@ function queueOfflineSubmission(attemptId, payload) {
   writeJsonStore(CBT_SUBMISSION_QUEUE_KEY, next);
 }
 
+function makeMonitorLog(type, message, extra = {}) {
+  return {
+    type,
+    message,
+    time: new Date().toISOString(),
+    page_hidden: document.hidden,
+    online: navigator.onLine,
+    ...extra,
+  };
+}
+
 async function syncQueuedSubmissions(session) {
   const queue = readJsonStore(CBT_SUBMISSION_QUEUE_KEY, []);
   if (!queue.length || !navigator.onLine) return;
@@ -96,10 +127,14 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   const [securityWarningOpen, setSecurityWarningOpen] = useState(false);
   const [fullscreenPrompt, setFullscreenPrompt] = useState(false);
   const warningIssuedRef = useRef(false);
+  const warningHistoryRef = useRef([]);
+  const activityLogsRef = useRef([]);
   const completedRef = useRef(false);
   const submittingRef = useRef(false);
   const answersRef = useRef({});
   const violationCooldownRef = useRef(0);
+  const offlineSinceRef = useRef(null);
+  const connectionAutoSubmitTimerRef = useRef(null);
 
   useEffect(() => {
     completedRef.current = completed;
@@ -112,6 +147,22 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  const recordActivity = useCallback((type, message, extra = {}) => {
+    activityLogsRef.current = [
+      ...activityLogsRef.current,
+      makeMonitorLog(type, message, extra),
+    ].slice(-80);
+  }, []);
+
+  const recordWarning = useCallback((reason, reasonCode) => {
+    const warning = makeMonitorLog("warning", reason, {
+      reason_code: reasonCode,
+      warning_number: warningHistoryRef.current.length + 1,
+    });
+    warningHistoryRef.current = [...warningHistoryRef.current, warning].slice(-40);
+    activityLogsRef.current = [...activityLogsRef.current, warning].slice(-80);
+  }, []);
 
   const requestExamFullscreen = useCallback(async () => {
     const root = document.documentElement;
@@ -259,11 +310,26 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   };
 
   // Submit exam
-  const handleSubmitExam = useCallback(async () => {
+  const handleSubmitExam = useCallback(async (autoSubmit = null) => {
     if (submittingRef.current || completedRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
     setSubmitError("");
+    const autoPayload = autoSubmit
+      ? {
+          auto_submitted: true,
+          auto_submit_reason: autoSubmit.reasonCode || "unknown",
+          auto_submit_reason_display: autoSubmit.reasonDisplay || AUTO_SUBMIT_REASON_LABELS[autoSubmit.reasonCode] || "Auto-submitted by exam monitor",
+          auto_submit_details: autoSubmit.details || "",
+          warning_history: warningHistoryRef.current,
+          activity_logs: [
+            ...activityLogsRef.current,
+            makeMonitorLog("auto_submit", autoSubmit.reasonDisplay || autoSubmit.details || "Auto-submission triggered", {
+              reason_code: autoSubmit.reasonCode || "unknown",
+            }),
+          ].slice(-80),
+        }
+      : {};
     try {
       await syncQueuedSubmissions(session);
       const response = await fetch(`/api/exams/attempt/${attemptId}/submit/`, {
@@ -272,6 +338,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
           "Content-Type": "application/json",
           ...(session?.access ? { Authorization: `Bearer ${session.access}` } : {}),
         },
+        body: JSON.stringify(autoPayload),
       });
 
       if (response.ok) {
@@ -298,6 +365,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
           started_at: cached.attempt?.start_time || new Date().toISOString(),
           submitted_at: new Date().toISOString(),
           answers: answersRef.current,
+          ...autoPayload,
         });
         markCachedSubmitted(attemptId);
         setOfflineMode(true);
@@ -313,7 +381,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   }, [attemptId, session]);
 
   const handleSecurityViolation = useCallback(
-    async (reason) => {
+    async (reason, reasonCode = null) => {
       if (!examData || completedRef.current || submittingRef.current) {
         return;
       }
@@ -322,9 +390,12 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
         return;
       }
       violationCooldownRef.current = now;
+      const resolvedReasonCode = reasonCode || classifySecurityReason(reason);
+      recordActivity("security_violation", reason, { reason_code: resolvedReasonCode });
 
       if (!warningIssuedRef.current) {
         warningIssuedRef.current = true;
+        recordWarning(reason, resolvedReasonCode);
         setSecurityWarning(`${reason}. This is your only warning. The exam will be submitted automatically if it happens again.`);
         setSecurityWarningOpen(true);
         return;
@@ -332,9 +403,13 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
 
       setSecurityWarning(`${reason}. The exam is being submitted automatically.`);
       setSecurityWarningOpen(true);
-      await handleSubmitExam();
+      await handleSubmitExam({
+        reasonCode: resolvedReasonCode,
+        reasonDisplay: AUTO_SUBMIT_REASON_LABELS[resolvedReasonCode] || AUTO_SUBMIT_REASON_LABELS.security_violation,
+        details: reason,
+      });
     },
-    [examData, handleSubmitExam]
+    [examData, handleSubmitExam, recordActivity, recordWarning]
   );
 
   // Timer countdown
@@ -344,7 +419,12 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          handleSubmitExam();
+          recordActivity("timer_expired", "Exam timer reached zero.", { reason_code: "timer_expired" });
+          handleSubmitExam({
+            reasonCode: "timer_expired",
+            reasonDisplay: AUTO_SUBMIT_REASON_LABELS.timer_expired,
+            details: "The countdown timer reached zero.",
+          });
           return 0;
         }
         return prev - 1;
@@ -352,7 +432,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [examData, handleSubmitExam, timeRemaining]);
+  }, [examData, handleSubmitExam, recordActivity, timeRemaining]);
 
   useEffect(() => {
     if (!examData || completed) {
@@ -363,27 +443,36 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
 
     const blockInteraction = (event) => {
       event.preventDefault();
-      setSecurityWarning((current) => current || "Copy, paste, and right-click are disabled during this exam.");
+      handleSecurityViolation("Attempted malpractice: copy, paste, or right-click was blocked", "malpractice");
     };
     const blockKeys = (event) => {
       const key = String(event.key || "").toLowerCase();
+      const isPrintScreen = event.key === "PrintScreen";
+      const isMacCapture = event.metaKey && event.shiftKey && ["3", "4", "5", "s"].includes(key);
+      const isScreenRecorder = (event.metaKey || event.ctrlKey) && event.altKey && key === "r";
+      if (isPrintScreen || isMacCapture || isScreenRecorder) {
+        event.preventDefault();
+        if (isPrintScreen && navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText("").catch(() => {});
+        }
+        handleSecurityViolation("Attempted screenshot or screen recording was blocked", "malpractice");
+      }
       if ((event.ctrlKey || event.metaKey) && ["c", "x", "v", "a", "s", "p"].includes(key)) {
         event.preventDefault();
-        setSecurityWarning((current) => current || "Keyboard shortcuts for copy, paste, save, and print are disabled during this exam.");
-        setSecurityWarningOpen(true);
+        handleSecurityViolation("Attempted malpractice: restricted keyboard shortcut was blocked", "malpractice");
       }
       if ((event.ctrlKey || event.metaKey) && ["t", "n", "w"].includes(key)) {
         event.preventDefault();
-        handleSecurityViolation("Opening another tab or window was attempted");
+        handleSecurityViolation("Opening another tab or window was attempted", "tab_switch_limit");
       }
       if (event.key === "F12" || ((event.ctrlKey || event.metaKey) && event.shiftKey && ["i", "j", "c"].includes(key))) {
         event.preventDefault();
-        handleSecurityViolation("Developer tools access was attempted");
+        handleSecurityViolation("Developer tools access was attempted", "malpractice");
       }
     };
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        handleSecurityViolation("Opening or switching to another tab was detected");
+        handleSecurityViolation("Opening or switching to another tab was detected", "tab_switch_limit");
       }
     };
     const handleBlur = () => {
@@ -397,13 +486,13 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
       if (!completedRef.current && !submittingRef.current) {
         event.preventDefault();
         event.returnValue = "Leaving this exam page will be recorded as a warning.";
-        handleSecurityViolation("Leaving or reloading the exam page was attempted");
+        handleSecurityViolation("Leaving or reloading the exam page was attempted", "force_exit");
       }
     };
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement && !completedRef.current && !submittingRef.current) {
         setFullscreenPrompt(true);
-        handleSecurityViolation("Exiting full-screen mode was detected");
+        handleSecurityViolation("Exiting full-screen mode was detected", "fullscreen_exit");
       }
     };
 
@@ -412,6 +501,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
     document.addEventListener("cut", blockInteraction);
     document.addEventListener("paste", blockInteraction);
     document.addEventListener("keydown", blockKeys);
+    document.addEventListener("keyup", blockKeys);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     window.addEventListener("blur", handleBlur);
@@ -423,6 +513,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
       document.removeEventListener("cut", blockInteraction);
       document.removeEventListener("paste", blockInteraction);
       document.removeEventListener("keydown", blockKeys);
+      document.removeEventListener("keyup", blockKeys);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       window.removeEventListener("blur", handleBlur);
@@ -436,6 +527,54 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
     sync();
     return () => window.removeEventListener("online", sync);
   }, [session]);
+
+  useEffect(() => {
+    if (!examData || completed) {
+      return undefined;
+    }
+
+    const clearConnectionTimer = () => {
+      if (connectionAutoSubmitTimerRef.current) {
+        window.clearTimeout(connectionAutoSubmitTimerRef.current);
+        connectionAutoSubmitTimerRef.current = null;
+      }
+    };
+    const handleOnline = () => {
+      recordActivity("connection_restored", "Internet connection restored.", {
+        offline_since: offlineSinceRef.current ? new Date(offlineSinceRef.current).toISOString() : "",
+      });
+      offlineSinceRef.current = null;
+      clearConnectionTimer();
+    };
+    const handleOffline = () => {
+      if (completedRef.current || submittingRef.current) return;
+      const started = Date.now();
+      offlineSinceRef.current = started;
+      recordActivity("connection_lost", "Internet connection lost during exam.", { reason_code: "connection_lost" });
+      clearConnectionTimer();
+      connectionAutoSubmitTimerRef.current = window.setTimeout(() => {
+        if (!navigator.onLine && !completedRef.current && !submittingRef.current) {
+          handleSubmitExam({
+            reasonCode: "connection_lost",
+            reasonDisplay: AUTO_SUBMIT_REASON_LABELS.connection_lost,
+            details: `Connection remained offline for at least ${Math.round(CONNECTION_LOST_AUTO_SUBMIT_MS / 1000)} seconds.`,
+          });
+        }
+      }, CONNECTION_LOST_AUTO_SUBMIT_MS);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    if (!navigator.onLine) {
+      handleOffline();
+    }
+
+    return () => {
+      clearConnectionTimer();
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [completed, examData, handleSubmitExam, recordActivity]);
 
   if (loading) {
     return (

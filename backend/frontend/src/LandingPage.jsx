@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function Logo() {
   return (
@@ -10,12 +10,82 @@ function Logo() {
 
 function LandingPage({ onGetStarted }) {
   const [theme, setTheme] = useState("dark");
+  const [pwaStatus, setPwaStatus] = useState(() =>
+    typeof window !== "undefined" && window.schoolDomPWA
+      ? window.schoolDomPWA.getStatus()
+      : {
+          canInstall: false,
+          isInstalled: false,
+          notificationPermission: "default",
+          serviceWorkerSupported: false,
+        }
+  );
+  const [installMessage, setInstallMessage] = useState("");
+  const [notificationMessage, setNotificationMessage] = useState("");
 
   const handleGetStarted = () => {
     if (typeof onGetStarted === "function") {
       onGetStarted();
     }
   };
+
+  useEffect(() => {
+    const syncStatus = (event) => {
+      setPwaStatus((previous) => ({
+        ...previous,
+        ...(window.schoolDomPWA?.getStatus?.() || {}),
+        ...(event?.detail || {}),
+      }));
+    };
+
+    syncStatus();
+    window.addEventListener("schooldom-pwa-install-status", syncStatus);
+    return () => window.removeEventListener("schooldom-pwa-install-status", syncStatus);
+  }, []);
+
+  const handleInstallApp = async () => {
+    setInstallMessage("");
+    if (!window.schoolDomPWA) {
+      setInstallMessage("Open this site in Chrome, Edge, or Safari to install the app.");
+      return;
+    }
+
+    const result = await window.schoolDomPWA.install();
+    if (result?.outcome === "accepted" || result?.outcome === "installed") {
+      setInstallMessage("SchoolDom is ready as an installed app.");
+    } else if (result?.outcome === "dismissed") {
+      setInstallMessage("Install was cancelled. You can try again anytime.");
+    } else {
+      setInstallMessage("On iPhone or iPad, use Share, then Add to Home Screen.");
+    }
+
+    setPwaStatus(window.schoolDomPWA.getStatus());
+  };
+
+  const handleEnableNotifications = async () => {
+    setNotificationMessage("");
+    if (!window.schoolDomPWA) {
+      setNotificationMessage("Notifications are not available in this browser.");
+      return;
+    }
+
+    const permission = await window.schoolDomPWA.requestNotifications();
+    if (permission === "granted") {
+      setNotificationMessage("Notifications are enabled for this device.");
+    } else if (permission === "denied") {
+      setNotificationMessage("Notifications are blocked in this browser.");
+    } else {
+      setNotificationMessage("Notifications are not supported on this device.");
+    }
+
+    setPwaStatus(window.schoolDomPWA.getStatus());
+  };
+
+  const installButtonText = pwaStatus.isInstalled
+    ? "App Installed"
+    : pwaStatus.canInstall
+      ? "Install App"
+      : "Install on Device";
 
   return (
     <div className={`landing-page ${theme === "light" ? "theme-light" : ""}`}>
@@ -31,6 +101,9 @@ function LandingPage({ onGetStarted }) {
             <a href="/resource" className="nav-link">Resource Center</a>
             <a href="/pricing" className="nav-link">Pricing</a>
             <a href="#about" className="nav-link">About</a>
+            <button type="button" className="nav-link nav-install-link" onClick={handleInstallApp}>
+              Install App
+            </button>
           </nav>
 
           <button
@@ -70,6 +143,42 @@ function LandingPage({ onGetStarted }) {
                 <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleInstallApp}
+              disabled={pwaStatus.isInstalled}
+            >
+              {installButtonText}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="mobile-app-panel" aria-live="polite">
+            <div>
+              <p className="mobile-app-kicker">SchoolDom App</p>
+              <h2>Install SchoolDom from this website</h2>
+              <p>
+                Use the same account, classes, exams, messages, attendance, files, and school data across browser and installed app.
+              </p>
+            </div>
+            <div className="mobile-app-actions">
+              <button type="button" className="app-pill-button" onClick={handleInstallApp} disabled={pwaStatus.isInstalled}>
+                {installButtonText}
+              </button>
+              <button type="button" className="app-pill-button ghost" onClick={handleEnableNotifications}>
+                Enable Alerts
+              </button>
+            </div>
+            <div className="mobile-app-status">
+              <span>{pwaStatus.serviceWorkerSupported ? "Offline cache ready" : "Offline cache unavailable"}</span>
+              <span>{pwaStatus.notificationPermission === "granted" ? "Notifications on" : "Notifications optional"}</span>
+              <span>GPS, camera, and uploads supported on secure devices</span>
+            </div>
+            {installMessage ? <p className="mobile-app-message">{installMessage}</p> : null}
+            {notificationMessage ? <p className="mobile-app-message">{notificationMessage}</p> : null}
           </div>
 
           <div className="hero-stats">

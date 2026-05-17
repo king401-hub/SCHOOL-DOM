@@ -20,6 +20,7 @@ import {
 import { TeacherExamBuilder } from "./TeacherExamPanels";
 
 const NAIRA_SYMBOL = "\u20A6";
+const FINANCE_TABLE_PREVIEW_COUNT = 3;
 function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage }) {
   const metrics = data?.metrics || {};
   const announcements = data?.announcements || [];
@@ -107,6 +108,21 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
           </div>
 
           <div className="panel-grid">
+            <button
+              type="button"
+              className="metric-card tone-emerald dashboard-click-card"
+              onClick={() => setRecentStudentsOpen(true)}
+            >
+              <div className="metric-card-head">
+                <span className="metric-icon">
+                  <DashboardIcon name="students" className="inline-icon" />
+                </span>
+                <p className="metric-label">Recently Registered Students</p>
+              </div>
+              <p className="metric-value">{recentStudentsCount}</p>
+              <p className="metric-trend">Click to filter by registration date</p>
+            </button>
+
             <article className="app-panel">
               <h3>Broadcast Message</h3>
               <form className="panel-form" onSubmit={handleBroadcastSubmit}>
@@ -139,7 +155,7 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
               </form>
             </article>
 
-            <article className="app-panel">
+            <article className="app-panel admin-announcements-panel">
               <h3>Recent Announcements</h3>
               {announcements.length > 0 ? (
                 <ul className="panel-list">
@@ -153,21 +169,6 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
                 <p className="panel-empty">No announcements yet.</p>
               )}
             </article>
-
-            <button
-              type="button"
-              className="metric-card tone-emerald dashboard-click-card"
-              onClick={() => setRecentStudentsOpen(true)}
-            >
-              <div className="metric-card-head">
-                <span className="metric-icon">
-                  <DashboardIcon name="students" className="inline-icon" />
-                </span>
-                <p className="metric-label">Recently Registered Students</p>
-              </div>
-              <p className="metric-value">{recentStudentsCount}</p>
-              <p className="metric-trend">Click to filter by registration date</p>
-            </button>
           </div>
 
           {recentStudentsOpen ? (
@@ -307,6 +308,7 @@ function AdminFinanceScreen({
     scope: "all",
   });
   const [mobileFinanceSection, setMobileFinanceSection] = useState("class-fees");
+  const [expandedFinanceTables, setExpandedFinanceTables] = useState({});
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
   const financeCurrency = "NGN";
@@ -326,6 +328,35 @@ function AdminFinanceScreen({
   const totalCreditCount = requestedCreditCount + bonusCreditCount;
   const selectedSalaryStaff = staffRows.find((item) => item.id === salaryPayForm.staff_id);
   const selectedStudentFee = studentFeeRows.find((fee) => fee.id === editingStudentFeeId);
+  const visibleClassFees = expandedFinanceTables.classFees ? classFees : classFees.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleStudentFeeRows = expandedFinanceTables.studentFees ? studentFeeRows : studentFeeRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visiblePaymentRows = expandedFinanceTables.studentPayments ? paymentRows : paymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleCreditRows = expandedFinanceTables.activationAlerts ? creditRows : creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleBankPaymentRows = expandedFinanceTables.bankPaymentHistory
+    ? bankPaymentRows
+    : bankPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleCreditPurchaseHistory = expandedFinanceTables.creditHistory
+    ? creditPurchaseHistory
+    : creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const toggleFinanceTable = (tableKey) => {
+    setExpandedFinanceTables((current) => ({
+      ...current,
+      [tableKey]: !current[tableKey],
+    }));
+  };
+  const renderFinanceMoreButton = (tableKey, rowCount) => {
+    if (rowCount <= FINANCE_TABLE_PREVIEW_COUNT) {
+      return null;
+    }
+    const isExpanded = Boolean(expandedFinanceTables[tableKey]);
+    return (
+      <div className="finance-table-actions">
+        <button type="button" className="pill-button ghost" onClick={() => toggleFinanceTable(tableKey)}>
+          {isExpanded ? "Show less" : `More (${rowCount - FINANCE_TABLE_PREVIEW_COUNT})`}
+        </button>
+      </div>
+    );
+  };
 
   const handleSalaryStaffChange = (staffId) => {
     const staff = staffRows.find((item) => item.id === staffId);
@@ -854,6 +885,78 @@ function AdminFinanceScreen({
               </form>
             </article>
 
+            <article className="app-panel">
+              <h3>{editingClassFeeId ? "Update School Fee" : "Create School Fee"}</h3>
+              <p className="panel-sub">Create a school fee for one class at a time.</p>
+              <form className="panel-form" onSubmit={handleClassFeeSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field full">
+                    Class
+                    <select
+                      value={classFeeForm.school_class}
+                      onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))}
+                      required
+                    >
+                      <option value="">Select class</option>
+                      {classOptions.map((item) => (
+                        <option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>
+                          {item.label || item.name || item.class_label || item.value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="panel-field">
+                    Fee title
+                    <input
+                      value={classFeeForm.title}
+                      onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="1st term school fees"
+                      required
+                    />
+                  </label>
+                  <label className="panel-field">
+                    Amount
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={classFeeForm.amount}
+                      onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))}
+                      required
+                    />
+                  </label>
+                  <label className="panel-field full">
+                    Due date
+                    <input
+                      type="date"
+                      value={classFeeForm.due_date}
+                      onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))}
+                      required
+                    />
+                  </label>
+                </div>
+                <div className="field-note">
+                  The fee is generated for students in the selected class and appears in the class fee schedule.
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onClassFeeSave}>
+                    {editingClassFeeId ? "Update class fee" : "Create class fee"}
+                  </button>
+                  {editingClassFeeId ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingClassFeeId("");
+                        setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" });
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            </article>
+
           </div>
 
           <div className="finance-workspace">
@@ -889,7 +992,7 @@ function AdminFinanceScreen({
                       <tr><th>Student</th><th>Amount</th><th>Status</th><th>Narration</th><th>Action</th></tr>
                     </thead>
                     <tbody>
-                      {bankPaymentRows.map((payment) => (
+                      {visibleBankPaymentRows.map((payment) => (
                         <tr key={payment.id}>
                           <td>{payment.student_name || "Unmatched"}<small>{payment.reference_code || ""}</small></td>
                           <td>{NAIRA_SYMBOL}{Number(payment.amount || 0).toLocaleString()}</td>
@@ -911,6 +1014,7 @@ function AdminFinanceScreen({
                       ))}
                     </tbody>
                   </table>
+                  {renderFinanceMoreButton("bankPaymentHistory", bankPaymentRows.length)}
                 </div>
               ) : <p className="panel-empty">No bank transactions have been monitored yet.</p>}
             </article>
@@ -1039,7 +1143,7 @@ function AdminFinanceScreen({
                   </tr>
                 </thead>
                 <tbody>
-                  {classFees.length > 0 ? classFees.map((fee) => (
+                  {classFees.length > 0 ? visibleClassFees.map((fee) => (
                     <tr key={fee.id}>
                       <td>{fee.class_label}</td>
                       <td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td>
@@ -1053,6 +1157,7 @@ function AdminFinanceScreen({
                   )}
                 </tbody>
               </table>
+              {renderFinanceMoreButton("classFees", classFees.length)}
             </div>
           </article>
 
@@ -1084,7 +1189,7 @@ function AdminFinanceScreen({
                     </tr>
                   </thead>
                   <tbody>
-                    {studentFeeRows.length > 0 ? studentFeeRows.map((fee) => (
+                    {studentFeeRows.length > 0 ? visibleStudentFeeRows.map((fee) => (
                       <tr key={fee.id}>
                         <td>{fee.student_name}<small>{fee.student_identifier}</small></td>
                         <td>{fee.class_label}</td>
@@ -1102,6 +1207,7 @@ function AdminFinanceScreen({
                   </tbody>
                 </table>
               </div>
+              {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
             </div>
           </article>
 
@@ -1130,7 +1236,7 @@ function AdminFinanceScreen({
                     </tr>
                   </thead>
                   <tbody>
-                  {paymentRows.length > 0 ? paymentRows.map((row) => (
+                  {paymentRows.length > 0 ? visiblePaymentRows.map((row) => (
                     <tr key={row.id}>
                       <td>{row.name}<small>{row.student_id}</small></td>
                       <td>{row.class_name}</td>
@@ -1150,6 +1256,7 @@ function AdminFinanceScreen({
                   )}
                 </tbody>
               </table>
+              {renderFinanceMoreButton("studentPayments", paymentRows.length)}
             </div>
           </article>
 
@@ -1177,7 +1284,7 @@ function AdminFinanceScreen({
                   </tr>
                 </thead>
                 <tbody>
-                  {creditRows.length > 0 ? creditRows.map((row) => (
+                  {creditRows.length > 0 ? visibleCreditRows.map((row) => (
                     <tr key={row.id}>
                       <td>{row.student_name}<small>{row.student_identifier}</small></td>
                       <td>{row.class_name}</td>
@@ -1195,6 +1302,7 @@ function AdminFinanceScreen({
                   )}
                 </tbody>
               </table>
+              {renderFinanceMoreButton("activationAlerts", creditRows.length)}
             </div>
           </article>
 
@@ -1225,7 +1333,7 @@ function AdminFinanceScreen({
                   </tr>
                 </thead>
                 <tbody>
-                  {creditPurchaseHistory.length > 0 ? creditPurchaseHistory.map((row) => (
+                  {creditPurchaseHistory.length > 0 ? visibleCreditPurchaseHistory.map((row) => (
                     <tr key={row.id || row.reference}>
                       <td>{formatDate(row.created_at)}</td>
                       <td>{row.reference}</td>
@@ -1242,6 +1350,7 @@ function AdminFinanceScreen({
                   )}
                 </tbody>
               </table>
+              {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
             </div>
           </article>
         </>
@@ -1252,6 +1361,7 @@ function AdminFinanceScreen({
 
 function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, session, onCreateExam, onUpdateExam }) {
   const results = data?.exam_results || data?.submitted_results || data?.cbt_results || data?.results || [];
+  const autoSubmissions = data?.auto_submitted_exams || data?.auto_submissions || [];
   const exams = data?.exams || data?.available_exams || [];
   const classOptions = data?.options?.classes || data?.classes || [];
   const subjectOptions = (data?.options?.subjects || data?.subjects || []).filter((subject) => {
@@ -1471,6 +1581,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         </button>
         <button type="button" className={`table-action ${activeView === "results" ? "active" : ""}`} onClick={() => setActiveView("results")}>
           View Results
+        </button>
+        <button type="button" className={`table-action ${activeView === "auto-submissions" ? "active" : ""}`} onClick={() => setActiveView("auto-submissions")}>
+          Auto Submissions
         </button>
       </div>
 
@@ -1703,6 +1816,71 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           <p className="panel-empty">{loading ? "Loading results..." : "No results match your filters."}</p>
         )}
       </article> : null}
+
+      {activeView === "auto-submissions" ? (
+        <article className="app-panel">
+          <div className="panel-head">
+            <h3>Auto-submission monitoring</h3>
+            <small>{autoSubmissions.length} recorded security or timer-triggered submission{autoSubmissions.length === 1 ? "" : "s"}</small>
+          </div>
+          {autoSubmissions.length ? (
+            <div className="auto-submit-report-list">
+              {autoSubmissions.map((item) => (
+                <section key={item.attempt_id || item.id} className="auto-submit-report-card">
+                  <div className="auto-submit-report-head">
+                    <div>
+                      <p className="quiz-kicker">{item.subject || "General"} - {item.class_name || "All classes"}</p>
+                      <h4>{item.student_name || "Student"}: {item.exam_title || "Exam"}</h4>
+                    </div>
+                    <span className="pill danger">{item.reason || "Auto-submitted"}</span>
+                  </div>
+                  <div className="auto-submit-report-grid">
+                    <div><span>Submitted</span><strong>{formatDate(item.submitted_at)}</strong></div>
+                    <div><span>Warnings</span><strong>{item.warning_count ?? item.warning_history?.length ?? 0}</strong></div>
+                    <div><span>Activity logs</span><strong>{item.activity_count ?? item.activity_logs?.length ?? 0}</strong></div>
+                    <div><span>Student email</span><strong>{item.student_email || "-"}</strong></div>
+                  </div>
+                  {item.details ? <p className="field-note">{item.details}</p> : null}
+                  <div className="auto-submit-log-columns">
+                    <div>
+                      <strong>Warning history</strong>
+                      {(item.warning_history || []).length ? (
+                        <ul>
+                          {(item.warning_history || []).slice(0, 6).map((log, index) => (
+                            <li key={`${item.attempt_id}-warning-${index}`}>
+                              <span>{formatDate(log.time)}</span>
+                              {log.message || log.reason || "-"}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="panel-empty compact">No warning history was recorded.</p>
+                      )}
+                    </div>
+                    <div>
+                      <strong>Activity logs</strong>
+                      {(item.activity_logs || []).length ? (
+                        <ul>
+                          {(item.activity_logs || []).slice(0, 8).map((log, index) => (
+                            <li key={`${item.attempt_id}-activity-${index}`}>
+                              <span>{formatDate(log.time)}</span>
+                              {log.message || log.type || "-"}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="panel-empty compact">No related activity logs were recorded.</p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <p className="panel-empty">{loading ? "Loading auto-submission report..." : "No auto-submitted exams have been recorded."}</p>
+          )}
+        </article>
+      ) : null}
     </section>
   );
 }

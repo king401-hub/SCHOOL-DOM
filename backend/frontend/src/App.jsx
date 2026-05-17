@@ -1913,6 +1913,8 @@ function StudentQuizPage({ session, onNavigate }) {
   const [flagStatus, setFlagStatus] = useState({ busy: false, error: "", success: "" });
   const [flagCount, setFlagCount] = useState(0);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const [showAllPersonalHistory, setShowAllPersonalHistory] = useState(false);
+  const [screenSecurityWarning, setScreenSecurityWarning] = useState("");
   const flagFeedbackTimerRef = useRef(null);
 
   const loadPersonalQuizData = useCallback(async () => {
@@ -2046,6 +2048,65 @@ function StudentQuizPage({ session, onNavigate }) {
     };
   }, [activeQuiz, result]);
 
+  useEffect(() => {
+    if (!activeQuiz || result) {
+      setScreenSecurityWarning("");
+      return undefined;
+    }
+
+    const warnCaptureBlocked = (message = "Screenshots, screen recording, printing, and copying are disabled during this quiz.") => {
+      setScreenSecurityWarning(message);
+    };
+    const clearClipboard = () => {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText("").catch(() => {});
+      }
+    };
+    const blockInteraction = (event) => {
+      event.preventDefault();
+      warnCaptureBlocked();
+    };
+    const blockKeys = (event) => {
+      const key = String(event.key || "").toLowerCase();
+      const isPrintScreen = event.key === "PrintScreen";
+      const isMacCapture = event.metaKey && event.shiftKey && ["3", "4", "5", "s"].includes(key);
+      const isScreenRecorder = (event.metaKey || event.ctrlKey) && event.altKey && key === "r";
+      const isRestricted =
+        isPrintScreen ||
+        isMacCapture ||
+        isScreenRecorder ||
+        ((event.ctrlKey || event.metaKey) && ["p", "s", "c", "x", "v"].includes(key));
+
+      if (isRestricted) {
+        event.preventDefault();
+        if (isPrintScreen) clearClipboard();
+        warnCaptureBlocked(isPrintScreen ? "Screenshot capture is disabled during this quiz." : undefined);
+      }
+    };
+    const blockPrint = (event) => {
+      event.preventDefault();
+      warnCaptureBlocked("Printing is disabled during this quiz.");
+    };
+
+    document.addEventListener("contextmenu", blockInteraction);
+    document.addEventListener("copy", blockInteraction);
+    document.addEventListener("cut", blockInteraction);
+    document.addEventListener("paste", blockInteraction);
+    document.addEventListener("keydown", blockKeys);
+    document.addEventListener("keyup", blockKeys);
+    window.addEventListener("beforeprint", blockPrint);
+
+    return () => {
+      document.removeEventListener("contextmenu", blockInteraction);
+      document.removeEventListener("copy", blockInteraction);
+      document.removeEventListener("cut", blockInteraction);
+      document.removeEventListener("paste", blockInteraction);
+      document.removeEventListener("keydown", blockKeys);
+      document.removeEventListener("keyup", blockKeys);
+      window.removeEventListener("beforeprint", blockPrint);
+    };
+  }, [activeQuiz, result]);
+
   const selectAnswer = (questionId, value) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   };
@@ -2165,8 +2226,9 @@ function StudentQuizPage({ session, onNavigate }) {
   const progressTrends = monthlyMetrics.progress_trends || [];
   const termHistory = termMetrics.history || [];
   const history = options.history || [];
+  const visiblePersonalHistory = showAllPersonalHistory ? history : history.slice(0, 3);
+  const hasMorePersonalHistory = history.length > 3;
   const dailySubjects = options.subjects || [];
-  const selectedSubjectName = options.subjects?.find((subject) => String(subject.id) === String(selectedSubject))?.name || "Selected subject";
 
   const renderQuizText = (value) => <RichQuizText text={value} />;
 
@@ -2423,6 +2485,7 @@ function StudentQuizPage({ session, onNavigate }) {
               {error ? <p className="form-feedback error">{error}</p> : null}
               {flagStatus.error ? <p className="form-feedback error">{flagStatus.error}</p> : null}
               {flagStatus.success ? <p className="form-feedback success">{flagStatus.success}</p> : null}
+              {screenSecurityWarning ? <p className="form-feedback error">{screenSecurityWarning}</p> : null}
             </div>
 
             <section className="cbt-question-panel">
@@ -2538,7 +2601,7 @@ function StudentQuizPage({ session, onNavigate }) {
         <div>
           <p className="quiz-kicker">Daily Personal Quiz</p>
           <h1>Private daily practice</h1>
-          <p>Optional subject quizzes from your registered subjects. Each subject opens once per day with a fixed 12-minute timer.</p>
+          <p>Optional subject quizzes from your registered subjects. Each subject opens once per day with a fixed 15-minute timer.</p>
         </div>
         <div className="quiz-actions">
           <button type="button" className="pill-button ghost" onClick={() => onNavigate?.("/dashboard")}>
@@ -2707,28 +2770,6 @@ function StudentQuizPage({ session, onNavigate }) {
             )) : <p className="panel-empty">No registered subjects found for your class.</p>}
           </div>
         </article>
-
-        <article className="personal-chart-card">
-          <div>
-            <p className="quiz-kicker">Performance</p>
-            <h3>{selectedSubjectName}</h3>
-          </div>
-          <div className="personal-chart">
-            {history.slice(0, 6).length ? (
-              history.slice(0, 6).map((attempt) => (
-                <div key={attempt.id} className="personal-chart-row">
-                  <span>{attempt.subject || "Quiz"}</span>
-                  <div className="personal-chart-track">
-                    <div style={{ width: `${Math.max(4, attempt.percentage || 0)}%` }} />
-                  </div>
-                  <strong>{attempt.percentage || 0}%</strong>
-                </div>
-              ))
-            ) : (
-              <p className="panel-empty">Your score chart will appear after your first submission.</p>
-            )}
-          </div>
-        </article>
       </section>
 
       <section className="quiz-list-section teacher-quiz-section">
@@ -2771,7 +2812,7 @@ function StudentQuizPage({ session, onNavigate }) {
             <p className="quiz-kicker">Quiz history</p>
             <h3>Recent attempts</h3>
           </div>
-          <span className="pill muted">{history.length} shown</span>
+          <span className="pill muted">{visiblePersonalHistory.length} of {history.length} shown</span>
         </div>
         {loading ? (
           <p className="panel-empty">Loading quiz history...</p>
@@ -2786,7 +2827,7 @@ function StudentQuizPage({ session, onNavigate }) {
               <span>Status</span>
               <span>Date</span>
             </div>
-            {history.map((attempt) => (
+            {visiblePersonalHistory.map((attempt) => (
               <div key={attempt.id} className="personal-history-row">
                 <span>{attempt.subject || "Personal quiz"}</span>
                 <span>{attempt.class_group}</span>
@@ -2795,6 +2836,17 @@ function StudentQuizPage({ session, onNavigate }) {
                 <span>{formatDate(attempt.submitted_at || attempt.started_at)}</span>
               </div>
             ))}
+            {hasMorePersonalHistory ? (
+              <div className="personal-history-actions">
+                <button
+                  type="button"
+                  className="pill-button ghost"
+                  onClick={() => setShowAllPersonalHistory((current) => !current)}
+                >
+                  {showAllPersonalHistory ? "Show less" : `More (${history.length - 3})`}
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

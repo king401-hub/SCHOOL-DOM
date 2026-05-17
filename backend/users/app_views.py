@@ -52,11 +52,12 @@ except Exception:  # pragma: no cover - HR app is optional in older installs
     StaffProfile = None
 
 try:
-    from notifications.models import Announcement, InAppMessage, Notification
+    from notifications.models import Announcement, InAppMessage, Notification, NotificationPreference
 except Exception:  # pragma: no cover - optional app fallback
     Announcement = None
     InAppMessage = None
     Notification = None
+    NotificationPreference = None
 
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
 ID_CARD_SIGNING_SALT = "schooldom.id-card.verify"
@@ -449,6 +450,30 @@ def _teacher_note_payload(note):
         "term": note.term.name if note.term_id else "",
         "academic_year": note.academic_year.name if note.academic_year_id else "",
         "updated_at": note.updated_at,
+    }
+
+
+def _exam_auto_submission_payload(attempt):
+    warning_history = attempt.auto_submit_warning_history if isinstance(attempt.auto_submit_warning_history, list) else []
+    activity_logs = attempt.auto_submit_activity_logs if isinstance(attempt.auto_submit_activity_logs, list) else []
+    return {
+        "id": attempt.id,
+        "attempt_id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "exam_title": attempt.exam.title,
+        "student_name": attempt.student.get_full_name() or attempt.student.email,
+        "student_email": attempt.student.email,
+        "student_id": getattr(getattr(attempt.student, "student_profile", None), "student_id", ""),
+        "class_name": _class_label(attempt.exam.class_group) if attempt.exam.class_group else "All classes",
+        "subject": attempt.exam.subject.name if attempt.exam.subject else "General",
+        "submitted_at": attempt.end_time,
+        "reason_code": attempt.auto_submit_reason or "unknown",
+        "reason": attempt.auto_submit_reason_display or attempt.auto_submit_reason or "Auto-submitted",
+        "details": attempt.auto_submit_details,
+        "warning_history": warning_history,
+        "activity_logs": activity_logs,
+        "warning_count": len(warning_history),
+        "activity_count": len(activity_logs),
     }
 
 
@@ -1501,6 +1526,7 @@ def dashboard_snapshot(request):
 
     upcoming_exams = exams_qs.filter(start_date__gte=now).count()
     pending_submissions = attempts_qs.filter(is_submitted=False).count()
+    auto_submitted_exams = attempts_qs.filter(auto_submitted=True, is_submitted=True).count()
     unread_notifications = Notification.objects.filter(user=user, is_read=False).count() if Notification else 0
 
     recent_announcements = announcements[:3]
@@ -1546,6 +1572,7 @@ def dashboard_snapshot(request):
                 "classes": classes_qs.count(),
                 "upcoming_exams": upcoming_exams,
                 "pending_submissions": pending_submissions,
+                "auto_submitted_exams": auto_submitted_exams,
                 "unread_notifications": unread_notifications,
             },
             "announcements": [
@@ -4147,12 +4174,17 @@ def exams_snapshot(request):
         ExamAttempt.objects.select_related("exam", "exam__subject", "exam__class_group", "student"),
         user,
     )
+    monitor_attempts = attempts
     if user.role == "teacher":
         attempts = attempts.filter(exam__teacher=user)
+        monitor_attempts = monitor_attempts.filter(exam__teacher=user)
     elif user.role in ADMIN_ROLES:
         attempts = attempts.filter(Q(exam__teacher=user) | Q(exam__questions__question_banks__is_shared=True)).distinct()
+        monitor_attempts = monitor_attempts.distinct()
     submitted_attempts_qs = attempts.filter(is_submitted=True).prefetch_related("answers__question").order_by("-end_time")
     submitted_attempts = list(submitted_attempts_qs[:30])
+    auto_submitted_attempts_qs = monitor_attempts.filter(auto_submitted=True, is_submitted=True).order_by("-end_time")
+    auto_submitted_attempts = list(auto_submitted_attempts_qs[:50])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
 
     class_options = _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")
@@ -4183,6 +4215,7 @@ def exams_snapshot(request):
                 "tests_count": exams.filter(exam_type__name__iexact="Test").count(),
                 "exams_count": exams.exclude(exam_type__name__iexact="Test").count(),
                 "submitted_results": submitted_attempts_qs.count(),
+                "auto_submitted_exams": auto_submitted_attempts_qs.count(),
                 "average_cbt_score": round(float(average_percentage), 1),
             },
             "exams": [
@@ -4229,6 +4262,10 @@ def exams_snapshot(request):
                 ],
             }
             for attempt in submitted_attempts
+        ],
+        "auto_submitted_exams": [
+            _exam_auto_submission_payload(attempt)
+            for attempt in auto_submitted_attempts
         ],
         "options": {
             "classes": [
@@ -6094,6 +6131,70 @@ def mark_notification_read(request, notification_id):
     notification = get_object_or_404(Notification, id=notification_id, user=request.user)
     notification.mark_as_read()
     return Response({"success": True, "message": "Notification marked as read."})
+
+
+@api_view(["POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+def register_mobile_device(request):
+    token = str(request.data.get("token") or "").strip()
+    platform = str(request.data.get("platform") or "").strip().lower()
+    provider = str(request.data.get("provider") or "expo").strip().lower()
+    device_name = str(request.data.get("device_name") or "").strip()
+
+    if not token:
+        return Response(
+            {"success": False, "message": "Device token is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = request.user
+    existing_tokens = list(user.device_tokens or [])
+    normalized_tokens = []
+    for item in existing_tokens:
+        if isinstance(item, str):
+            normalized_tokens.append({"token": item, "provider": "legacy"})
+        elif isinstance(item, dict) and item.get("token"):
+            normalized_tokens.append(item)
+
+    if request.method == "DELETE":
+        next_tokens = [item for item in normalized_tokens if item.get("token") != token]
+        user.device_tokens = next_tokens
+        user.save(update_fields=["device_tokens"])
+        if NotificationPreference:
+            preference = NotificationPreference.objects.filter(user=user).first()
+            if preference:
+                preference.device_tokens = [item for item in list(preference.device_tokens or []) if item.get("token", item) != token]
+                preference.save(update_fields=["device_tokens"])
+        return Response({"success": True, "message": "Device removed.", "device_count": len(next_tokens)})
+
+    device_payload = {
+        "token": token,
+        "platform": platform,
+        "provider": provider,
+        "device_name": device_name,
+        "registered_at": timezone.now().isoformat(),
+    }
+    next_tokens = [item for item in normalized_tokens if item.get("token") != token]
+    next_tokens.append(device_payload)
+    user.device_tokens = next_tokens[-12:]
+    user.save(update_fields=["device_tokens"])
+
+    if NotificationPreference and getattr(user, "tenant", None):
+        preference, _ = NotificationPreference.objects.get_or_create(
+            user=user,
+            defaults={"tenant": user.tenant},
+        )
+        preference.device_tokens = user.device_tokens
+        preference.allow_push = True
+        preference.save(update_fields=["device_tokens", "allow_push", "updated_at"])
+
+    return Response(
+        {
+            "success": True,
+            "message": "Device registered.",
+            "device_count": len(user.device_tokens),
+        }
+    )
 
 
 @api_view(["DELETE"])

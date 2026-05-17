@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "SchoolDom App",
+    "slug": "schooldom-app",
+    "scheme": "schooldom",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.schooldom.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SchoolDom uses the camera for profile photos, document uploads, attendance evidence, and QR scanning.",
+        "NSFaceIDUsageDescription": "SchoolDom uses Face ID to unlock your saved school session.",
+        "NSLocationWhenInUseUsageDescription": "SchoolDom uses location for attendance and school security features.",
+        "NSPhotoLibraryUsageDescription": "SchoolDom needs photo access for profile pictures and document uploads."
+      }
+    },
+    "android": {
+      "package": "com.schooldom.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS",
+        "USE_BIOMETRIC"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-notifications",
+      "expo-location",
+      "expo-camera",
+      "expo-document-picker",
+      "expo-image-picker",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://127.0.0.1:8000"
+    }
+  }
+}

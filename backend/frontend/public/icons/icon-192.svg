@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="SchoolDom">
+  <rect width="192" height="192" rx="44" fill="#0f172a"/>
+  <path d="M38 91 96 45l58 46v57a9 9 0 0 1-9 9h-31v-36H78v36H47a9 9 0 0 1-9-9V91Z" fill="#38bdf8"/>
+  <path d="M58 84 96 54l38 30v10L96 65 58 94V84Z" fill="#ffffff" opacity=".92"/>
+  <path d="M75 85h42v18H75z" fill="#f8fafc" opacity=".96"/>
+  <path d="M82 91h28" stroke="#2563eb" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="146" cy="48" r="14" fill="#22c55e"/>
+</svg>
