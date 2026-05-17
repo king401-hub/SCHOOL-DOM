@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config";
+import { notifySessionExpired } from "../auth/authEvents";
 import { clearSession, getSession, saveSession } from "../storage/sessionStore";
 import { readQueue, writeQueue } from "../storage/offlineQueue";
 
@@ -14,6 +15,12 @@ function parseApiError(data, fallback) {
 }
 
 async function refreshAccessToken(session) {
+  if (!session?.refresh) {
+    await clearSession();
+    notifySessionExpired();
+    throw new Error("Session expired. Please sign in again.");
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/auth/refresh/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -22,6 +29,7 @@ async function refreshAccessToken(session) {
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.access) {
     await clearSession();
+    notifySessionExpired();
     throw new Error("Session expired. Please sign in again.");
   }
   const nextSession = {
@@ -58,9 +66,14 @@ export async function apiRequest(method, endpoint, payload = null, options = {})
   const data = await response.json().catch(() => null);
   if (response.ok) return data || {};
 
-  if (response.status === 401 && retry && session?.refresh) {
+  if (response.status === 401 && retry) {
     session = await refreshAccessToken(session);
     return apiRequest(method, endpoint, payload, { ...options, retry: false, session });
+  }
+
+  if (response.status === 401) {
+    await clearSession();
+    notifySessionExpired();
   }
 
   throw new Error(parseApiError(data, `Request failed (${response.status}).`));

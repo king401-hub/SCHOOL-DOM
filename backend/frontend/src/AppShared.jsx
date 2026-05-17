@@ -291,6 +291,7 @@ export async function refreshAccessToken(session) {
 
   const data = await response.json().catch(() => null);
   if (!response?.ok || !data?.access) {
+    clearStoredSession();
     throw new Error(data?.message || "Session expired. Please sign in again.");
   }
 

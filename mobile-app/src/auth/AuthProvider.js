@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import * as LocalAuthentication from "expo-local-authentication";
+import { subscribeToAuthEvents } from "./authEvents";
 import { clearSession, getSession, isBiometricEnabled, saveSession, setBiometricEnabled } from "../storage/sessionStore";
 import { login, verifyAdminOtp } from "../api/auth";
 import { registerForPushNotifications } from "../services/notifications";
@@ -25,6 +26,15 @@ export function AuthProvider({ children }) {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    return subscribeToAuthEvents(async (event) => {
+      if (event?.type !== "sessionExpired") return;
+      await clearSession();
+      setSession(null);
+      setLocked(false);
+    });
   }, []);
 
   const value = useMemo(

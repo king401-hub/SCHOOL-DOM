@@ -2328,6 +2328,7 @@ body[data-dashboard-role="student"] .global-notification-button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+  align-items: start;
 }
 
 .admin-announcements-panel {
@@ -3582,6 +3583,11 @@ body[data-dashboard-role="student"] .student-main-topbar {
   text-align: left;
   cursor: pointer;
   font: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  min-height: 126px;
 }
 
 .dashboard-click-card:hover {
