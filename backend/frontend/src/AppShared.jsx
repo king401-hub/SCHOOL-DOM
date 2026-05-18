@@ -275,7 +275,11 @@ export function readStoredTheme() {
 
 export async function refreshAccessToken(session) {
   if (!session?.refresh) {
-    throw new Error("Session expired. Please sign in again.");
+    const error = new Error("Session expired. Please sign in again.");
+    error.status = 401;
+    error.statusCode = 401;
+    error.authExpired = true;
+    throw error;
   }
 
   let response;
@@ -292,7 +296,11 @@ export async function refreshAccessToken(session) {
   const data = await response.json().catch(() => null);
   if (!response?.ok || !data?.access) {
     clearStoredSession();
-    throw new Error(data?.message || "Session expired. Please sign in again.");
+    const error = new Error(data?.message || "Session expired. Please sign in again.");
+    error.status = response?.status || 401;
+    error.statusCode = response?.status || 401;
+    error.authExpired = true;
+    throw error;
   }
 
   session.access = data.access;
@@ -371,6 +379,13 @@ export async function requestJson(session, method, endpoint, payload = null, opt
   const headers = {};
   if (session?.access) {
     headers.Authorization = `Bearer ${session.access}`;
+  } else {
+    const error = new Error("Session expired. Please sign in again.");
+    error.status = 401;
+    error.statusCode = 401;
+    error.authExpired = true;
+    clearStoredSession();
+    throw error;
   }
 
   const shouldSendFormData = payload !== null && (payload instanceof FormData || payloadContainsFile(payload));

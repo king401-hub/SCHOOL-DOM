@@ -5978,6 +5978,10 @@ const [error, setError] = useState("");
     return snapshot;
       })
       .catch((requestError) => {
+      if (requestError?.authExpired || requestError?.status === 401 || requestError?.statusCode === 401) {
+        onSignOut();
+        return null;
+      }
       setError(requestError.message || "Could not load dashboard.");
     throw requestError;
       })
@@ -5989,7 +5993,7 @@ const [error, setError] = useState("");
 
     inflightRequestRef.current = pending;
     return pending;
-  }, [session]);
+  }, [onSignOut, session]);
 
   useEffect(() => {
     if (initialLoadRef.current) {

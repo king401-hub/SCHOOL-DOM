@@ -6354,7 +6354,14 @@ body[data-dashboard-role="teacher"] .teacher-workspace-shell {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  overflow-x: hidden;
   transition: background-color 220ms ease, color 220ms ease;
+}
+
+.landing-page,
+.landing-page * {
+  box-sizing: border-box;
 }
 
 html {
@@ -6966,6 +6973,10 @@ html {
   padding: 4rem 2rem;
   background: linear-gradient(180deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05));
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.landing-resource-section-hidden {
+  display: none;
 }
 
 .landing-page.theme-light .resource-section {

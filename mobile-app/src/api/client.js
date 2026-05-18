@@ -45,8 +45,13 @@ async function refreshAccessToken(session) {
 export async function apiRequest(method, endpoint, payload = null, options = {}) {
   const { retry = true, queueWhenOffline = false } = options;
   let session = await getSession();
+  if (!session?.access) {
+    await clearSession();
+    notifySessionExpired();
+    throw new Error("Session expired. Please sign in again.");
+  }
   const headers = {};
-  if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+  headers.Authorization = `Bearer ${session.access}`;
 
   const body = payload instanceof FormData ? payload : payload ? JSON.stringify(payload) : undefined;
   if (payload && !(payload instanceof FormData)) headers["Content-Type"] = "application/json";

@@ -98,12 +98,8 @@ function LandingPage({ onGetStarted }) {
           </div>
 
           <nav className="header-nav">
-            <a href="/resource" className="nav-link">Resource Center</a>
             <a href="/pricing" className="nav-link">Pricing</a>
             <a href="#about" className="nav-link">About</a>
-            <button type="button" className="nav-link nav-install-link" onClick={handleInstallApp}>
-              Install App
-            </button>
           </nav>
 
           <button
@@ -201,7 +197,7 @@ function LandingPage({ onGetStarted }) {
       </section>
 
       {/* Resource Center Section */}
-      <section id="resource" className="resource-section">
+      <section id="resource" className="resource-section landing-resource-section-hidden">
         <div className="section-container">
           <h2 className="section-title">Resources & Learning</h2>
           <p className="section-subtitle">Everything you need to succeed</p>
@@ -261,7 +257,6 @@ function LandingPage({ onGetStarted }) {
           <div className="footer-section">
             <h4>Quick Links</h4>
             <ul>
-              <li><a href="#resource">Resources</a></li>
               <li><a href="/pricing">Pricing</a></li>
               <li><a href="#about">About</a></li>
               <li><a href="#">Features</a></li>
