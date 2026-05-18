@@ -14468,6 +14468,13 @@ body[data-theme="dark"] .metric-card .metric-trend {
     white-space: nowrap !important;
   }
 
+  body[data-dashboard-role="student"] .student-main-topbar h1,
+  body[data-dashboard-role="student"] .student-main-topbar h2,
+  body[data-dashboard-role="student"] .student-main-topbar small,
+  body[data-dashboard-role="student"] .student-main-topbar p:not(.topbar-kicker) {
+    display: none !important;
+  }
+
   body[data-dashboard-role="student"] .student-user-chip,
   body[data-dashboard-role="student"] .student-topbar-actions {
     display: none !important;
