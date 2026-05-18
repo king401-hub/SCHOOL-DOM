@@ -4570,6 +4570,18 @@ body[data-theme="dark"] .token-usage-toast {
   font-family: inherit;
 }
 
+.panel-field input[type="file"]::file-selector-button {
+  border: 0;
+  border-radius: 6px;
+  margin-right: 0.55rem;
+  padding: 0.34rem 0.58rem;
+  background: #e2e8f0;
+  color: #0f172a;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .panel-field select[multiple] {
   min-height: 110px;
 }
@@ -6038,6 +6050,11 @@ body[data-theme="dark"] .panel-field select,
 body[data-theme="dark"] .panel-field textarea {
   border-color: #334155;
   background: #0b1220;
+  color: #e2e8f0;
+}
+
+body[data-theme="dark"] .panel-field input[type="file"]::file-selector-button {
+  background: #1e293b;
   color: #e2e8f0;
 }
 
@@ -10082,7 +10099,8 @@ body[data-theme="dark"] .exam-builder-question {
 
 body[data-theme="dark"] .cbt-bank-picker,
 body[data-theme="dark"] .cbt-bank-question,
-body[data-theme="dark"] .standard-question-import {
+body[data-theme="dark"] .standard-question-import,
+body[data-theme="dark"] .question-group-builder {
   background: #111827;
   border-color: #334155;
   color: #e5e7eb;
