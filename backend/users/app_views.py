@@ -39,6 +39,7 @@ from academic.models import (
     GradeScale,
     ResultBatch,
     StudentSubjectScore,
+    StudentClassPromotion,
     TeacherNote,
 )
 from core.models import SchoolTenant, Domain
@@ -1329,6 +1330,162 @@ def _class_payload(class_obj, student_count=None):
     if student_count is not None:
         payload["student_count"] = student_count
     return payload
+
+
+def _promotion_payload(promotion):
+    return {
+        "id": promotion.id,
+        "student_id": str(promotion.student_id),
+        "student_name": promotion.student.user.get_full_name() if promotion.student_id else "",
+        "student_code": promotion.student.student_id if promotion.student_id else "",
+        "from_class_id": promotion.from_class_id,
+        "from_class_name": _class_label(promotion.from_class) if promotion.from_class else "Unassigned",
+        "to_class_id": promotion.to_class_id,
+        "to_class_name": _class_label(promotion.to_class) if promotion.to_class else "Unassigned",
+        "from_term_id": promotion.from_term_id,
+        "from_term_name": promotion.from_term.name if promotion.from_term else "",
+        "to_term_id": promotion.to_term_id,
+        "to_term_name": promotion.to_term.name if promotion.to_term else "",
+        "from_academic_year_id": promotion.from_academic_year_id,
+        "from_academic_year_name": promotion.from_academic_year.name if promotion.from_academic_year else "",
+        "to_academic_year_id": promotion.to_academic_year_id,
+        "to_academic_year_name": promotion.to_academic_year.name if promotion.to_academic_year else "",
+        "scope": promotion.scope,
+        "scope_value": promotion.scope_value,
+        "batch_reference": promotion.batch_reference,
+        "promoted_by": promotion.promoted_by.get_full_name() if promotion.promoted_by else "System",
+        "created_at": promotion.created_at,
+    }
+
+
+def _promotion_scope_students(user, payload):
+    scope = str(payload.get("scope") or StudentClassPromotion.SCOPE_CLASS).strip().lower()
+    if scope not in {choice[0] for choice in StudentClassPromotion.SCOPE_CHOICES}:
+        raise ValueError("Choose a valid promotion scope.")
+
+    students = StudentProfile.objects.select_related("user", "current_class", "current_term").filter(
+        user__tenant=user.tenant,
+        user__is_active=True,
+    )
+    scope_value = ""
+    source_class = None
+    source_term = None
+
+    source_class_id = payload.get("source_class_id")
+    if source_class_id not in (None, ""):
+        source_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=source_class_id)
+        students = students.filter(current_class=source_class)
+        scope_value = _class_label(source_class)
+
+    source_term_id = payload.get("source_term_id")
+    if source_term_id not in (None, ""):
+        source_term = get_object_or_404(_scope_to_user_tenant(Term.objects.select_related("academic_year"), user), id=source_term_id)
+        students = students.filter(current_term=source_term)
+
+    if scope == StudentClassPromotion.SCOPE_CLASS and not source_class:
+        raise ValueError("Select the class you want to promote from.")
+
+    if scope == StudentClassPromotion.SCOPE_DEPARTMENT:
+        department = str(payload.get("source_department") or payload.get("scope_value") or "").strip()
+        if not department:
+            raise ValueError("Enter or select a department/section.")
+        students = students.filter(current_class__section__iexact=department)
+        scope_value = department
+
+    if scope == StudentClassPromotion.SCOPE_LEVEL:
+        level = str(payload.get("source_level") or payload.get("scope_value") or "").strip()
+        if not level:
+            raise ValueError("Enter an academic level to match.")
+        students = students.filter(current_class__name__icontains=level)
+        scope_value = level
+
+    if scope == StudentClassPromotion.SCOPE_SESSION:
+        if not source_term:
+            raise ValueError("Select a current term/session for session-wide promotion.")
+        scope_value = source_term.name
+
+    return scope, scope_value, source_class, source_term, students.order_by("user__first_name", "user__last_name")
+
+
+def _build_promotion_preview(user, payload):
+    scope, scope_value, source_class, source_term, students_qs = _promotion_scope_students(user, payload)
+    target_class_id = payload.get("target_class_id")
+    if target_class_id in (None, ""):
+        raise ValueError("Select the destination class.")
+    target_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=target_class_id)
+
+    target_term = None
+    target_term_id = payload.get("target_term_id")
+    if target_term_id not in (None, ""):
+        target_term = get_object_or_404(_scope_to_user_tenant(Term.objects.select_related("academic_year"), user), id=target_term_id)
+    else:
+        target_term = _active_term(user)
+
+    source_term = source_term or _active_term(user)
+    source_year = source_term.academic_year if source_term and source_term.academic_year_id else _active_academic_year(user)
+    target_year = target_term.academic_year if target_term and target_term.academic_year_id else source_year
+
+    if source_class and source_class.id == target_class.id:
+        raise ValueError("Source and destination class cannot be the same.")
+
+    existing_qs = StudentClassPromotion.objects.filter(
+        tenant=_tenant_for_model(StudentClassPromotion, user),
+        student_id__in=students_qs.values_list("id", flat=True),
+        to_class=target_class,
+        from_term=source_term,
+        to_term=target_term,
+        from_academic_year=source_year,
+        to_academic_year=target_year,
+    )
+    if source_class:
+        existing_qs = existing_qs.filter(from_class=source_class)
+    existing = set(existing_qs.values_list("student_id", flat=True))
+
+    eligible = []
+    blocked = []
+    for student in students_qs[:1000]:
+        reason = ""
+        if student.current_class_id == target_class.id:
+            reason = "Already in destination class"
+        elif student.id in existing:
+            reason = "Already promoted for this class/session"
+
+        item = {
+            "id": str(student.id),
+            "name": student.user.get_full_name(),
+            "student_id": student.student_id,
+            "email": student.user.email,
+            "from_class_id": student.current_class_id,
+            "from_class_name": _class_label(student.current_class) if student.current_class else "Unassigned",
+            "to_class_id": target_class.id,
+            "to_class_name": _class_label(target_class),
+            "current_term_id": student.current_term_id,
+            "current_term_name": student.current_term.name if student.current_term else "",
+        }
+        if reason:
+            blocked.append({**item, "reason": reason})
+        else:
+            eligible.append(item)
+
+    return {
+        "scope": scope,
+        "scope_value": scope_value,
+        "source_class": _class_payload(source_class) if source_class else None,
+        "target_class": _class_payload(target_class),
+        "source_term": _term_payload(source_term),
+        "target_term": _term_payload(target_term),
+        "source_academic_year": _academic_year_payload(source_year),
+        "target_academic_year": _academic_year_payload(target_year),
+        "summary": {
+            "matched_students": students_qs.count(),
+            "eligible_students": len(eligible),
+            "blocked_students": len(blocked),
+            "already_in_target": len([item for item in blocked if item["reason"] == "Already in destination class"]),
+            "duplicate_promotions": len([item for item in blocked if item["reason"] == "Already promoted for this class/session"]),
+        },
+        "students": eligible[:100],
+        "blocked_students": blocked[:100],
+    }
 
 
 def _teacher_assigned_classes(user):
@@ -4078,6 +4235,8 @@ def database_imports(request):
 def classes_snapshot(request):
     user = request.user
     classes = _scope_to_user_tenant(Class.objects.prefetch_related("subjects"), user)
+    terms = _scope_to_user_tenant(Term.objects.select_related("academic_year"), user).order_by("-start_date", "name")
+    academic_years = _scope_to_user_tenant(AcademicYear.objects.all(), user).order_by("-start_date", "name")
 
     student_counts = (
         StudentProfile.objects.filter(user__tenant=user.tenant)
@@ -4103,6 +4262,133 @@ def classes_snapshot(request):
                 _subject_payload(subject)
                 for subject in _scope_to_user_tenant(Subject.objects.all(), user).order_by("name")[:500]
             ],
+            "terms": [_term_payload(term) for term in terms[:100]],
+            "academic_years": [_academic_year_payload(year) for year in academic_years[:50]],
+            "promotion_history": [
+                _promotion_payload(item)
+                for item in StudentClassPromotion.objects.select_related(
+                    "student__user",
+                    "from_class",
+                    "to_class",
+                    "from_term",
+                    "to_term",
+                    "from_academic_year",
+                    "to_academic_year",
+                    "promoted_by",
+                )
+                .filter(tenant=_tenant_for_model(StudentClassPromotion, user))
+                .order_by("-created_at")[:20]
+            ],
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def class_promotions(request):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can promote classes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    action = str(request.data.get("action") or "preview").strip().lower()
+    if action not in {"preview", "apply"}:
+        return Response(
+            {"success": False, "message": "action must be preview or apply."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        preview = _build_promotion_preview(user, request.data)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if action == "preview":
+        return Response({"success": True, "message": "Promotion preview ready.", "preview": preview})
+
+    if not _to_bool(request.data.get("confirm"), default=False):
+        return Response(
+            {"success": False, "message": "Confirmation is required before applying a bulk promotion."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    tenant_obj = _tenant_for_model(StudentClassPromotion, user)
+    if not tenant_obj:
+        return Response(
+            {"success": False, "message": "Could not resolve tenant for class promotion."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    eligible_ids = [item["id"] for item in preview["students"]]
+    if not eligible_ids:
+        return Response(
+            {"success": False, "message": "No eligible students to promote."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    target_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=preview["target_class"]["id"])
+    target_term = None
+    if preview.get("target_term"):
+        target_term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=preview["target_term"]["id"])
+    source_class = None
+    if preview.get("source_class"):
+        source_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=preview["source_class"]["id"])
+    source_term = None
+    if preview.get("source_term"):
+        source_term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=preview["source_term"]["id"])
+    source_year = None
+    if preview.get("source_academic_year"):
+        source_year = get_object_or_404(_scope_to_user_tenant(AcademicYear.objects.all(), user), id=preview["source_academic_year"]["id"])
+    target_year = None
+    if preview.get("target_academic_year"):
+        target_year = get_object_or_404(_scope_to_user_tenant(AcademicYear.objects.all(), user), id=preview["target_academic_year"]["id"])
+
+    batch_reference = timezone.now().strftime("PROMO-%Y%m%d%H%M%S")
+    note = str(request.data.get("note") or "").strip()
+
+    with db_transaction.atomic():
+        students = list(
+            StudentProfile.objects.select_related("user", "current_class", "current_term")
+            .filter(id__in=eligible_ids, user__tenant=user.tenant)
+            .order_by("user__first_name", "user__last_name")
+        )
+        StudentClassPromotion.objects.bulk_create(
+            [
+                StudentClassPromotion(
+                    tenant=tenant_obj,
+                    student=student,
+                    from_class=source_class or student.current_class,
+                    to_class=target_class,
+                    from_term=source_term or student.current_term,
+                    to_term=target_term,
+                    from_academic_year=source_year,
+                    to_academic_year=target_year,
+                    scope=preview["scope"],
+                    scope_value=preview["scope_value"],
+                    batch_reference=batch_reference,
+                    promoted_by=user,
+                    note=note,
+                )
+                for student in students
+            ],
+            ignore_conflicts=True,
+        )
+        for student in students:
+            student.current_class = target_class
+            if target_term:
+                student.current_term = target_term
+            student.save(update_fields=["current_class", "current_term"] if target_term else ["current_class"])
+
+    applied_preview = _build_promotion_preview(user, request.data)
+    return Response(
+        {
+            "success": True,
+            "message": f"Promoted {len(students)} student(s) to {_class_label(target_class)}.",
+            "batch_reference": batch_reference,
+            "applied_count": len(students),
+            "preview": applied_preview,
         }
     )
 
@@ -4278,6 +4564,26 @@ def exams_snapshot(request):
         if item["exam"] is not None
     }
 
+    exam_rows = []
+    for exam in exams[:100]:
+        exam_row = {
+            "id": exam.id,
+            "title": exam.title,
+            "assessment_type": _assessment_type_for_exam(exam),
+            "subject": exam.subject.name if exam.subject else "General",
+            "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
+            "class_id": exam.class_group_id,
+            "subject_id": exam.subject_id,
+            "start_date": exam.start_date,
+            "end_date": exam.end_date,
+            "is_published": exam.is_published,
+            "question_count": exam.questions.count(),
+            "attempts": attempts_by_exam.get(exam.id, 0),
+            "submissions": submissions_by_exam.get(exam.id, 0),
+        }
+        exam_row.update(_exam_pin_summary_for_user(exam, user))
+        exam_rows.append(exam_row)
+
     return Response(
         {
             "success": True,
@@ -4292,81 +4598,62 @@ def exams_snapshot(request):
                 "auto_submitted_exams": auto_submitted_attempts_qs.count(),
                 "average_cbt_score": round(float(average_percentage), 1),
             },
-            "exams": [
+            "exams": exam_rows,
+            "submitted_results": [
                 {
-                    "id": exam.id,
-                    "title": exam.title,
-                    "assessment_type": _assessment_type_for_exam(exam),
-                    "subject": exam.subject.name if exam.subject else "General",
-                    "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
-                    "class_id": exam.class_group_id,
-                    "subject_id": exam.subject_id,
-                    "start_date": exam.start_date,
-                    "end_date": exam.end_date,
-                    "is_published": exam.is_published,
-                    "question_count": exam.questions.count(),
-                    "pin_required": exam.pins.filter(is_active=True).exists(),
-                    "active_pin_count": exam.pins.filter(is_active=True).count(),
-                    "attempts": attempts_by_exam.get(exam.id, 0),
-                    "submissions": submissions_by_exam.get(exam.id, 0),
+                    "id": attempt.id,
+                    "attempt_id": attempt.id,
+                    "exam_id": attempt.exam_id,
+                    "exam_title": attempt.exam.title,
+                    "student_name": attempt.student.get_full_name() or attempt.student.email,
+                    "student_email": attempt.student.email,
+                    "subject": attempt.exam.subject.name if attempt.exam.subject else "General",
+                    "class_name": _class_label(attempt.exam.class_group) if attempt.exam.class_group else "All classes",
+                    "score": attempt.score,
+                    "total_points": attempt.total_points,
+                    "percentage": round(float(attempt.percentage or 0), 1),
+                    "submitted_at": attempt.end_time,
+                    "answer_summary": [
+                        {
+                            "question": answer.question.text,
+                            "selected_answer": answer.selected_options,
+                            "correct_answer": answer.question.correct_answer,
+                            "is_correct": answer.is_correct,
+                            "score": answer.score,
+                        }
+                        for answer in attempt.answers.all()
+                    ],
                 }
-                for exam in exams[:100]
-        ],
-        "submitted_results": [
-            {
-                "id": attempt.id,
-                "attempt_id": attempt.id,
-                "exam_id": attempt.exam_id,
-                "exam_title": attempt.exam.title,
-                "student_name": attempt.student.get_full_name() or attempt.student.email,
-                "student_email": attempt.student.email,
-                "subject": attempt.exam.subject.name if attempt.exam.subject else "General",
-                "class_name": _class_label(attempt.exam.class_group) if attempt.exam.class_group else "All classes",
-                "score": attempt.score,
-                "total_points": attempt.total_points,
-                "percentage": round(float(attempt.percentage or 0), 1),
-                "submitted_at": attempt.end_time,
-                "answer_summary": [
+                for attempt in submitted_attempts
+            ],
+            "auto_submitted_exams": [
+                _exam_auto_submission_payload(attempt)
+                for attempt in auto_submitted_attempts
+            ],
+            "options": {
+                "classes": [
                     {
-                        "question": answer.question.text,
-                        "selected_answer": answer.selected_options,
-                        "correct_answer": answer.question.correct_answer,
-                        "is_correct": answer.is_correct,
-                        "score": answer.score,
+                        "id": item.id,
+                        "name": item.name,
+                        "section": item.section or "",
+                        "label": _class_label(item),
                     }
-                    for answer in attempt.answers.all()
+                    for item in class_options[:100]
                 ],
-            }
-            for attempt in submitted_attempts
-        ],
-        "auto_submitted_exams": [
-            _exam_auto_submission_payload(attempt)
-            for attempt in auto_submitted_attempts
-        ],
-        "options": {
-            "classes": [
-                {
-                    "id": item.id,
-                    "name": item.name,
-                    "section": item.section or "",
-                    "label": _class_label(item),
-                }
-                for item in class_options[:100]
-            ],
-            "subjects": [
-                {
-                    "id": item.id,
-                    "name": item.name,
-                    "code": item.code,
-                }
-                for item in subject_options[:100]
-            ],
-            "assessment_types": [
-                {"value": "exam", "label": "Exam"},
-                {"value": "test", "label": "Test"},
-            ],
+                "subjects": [
+                    {
+                        "id": item.id,
+                        "name": item.name,
+                        "code": item.code,
+                    }
+                    for item in subject_options[:100]
+                ],
+                "assessment_types": [
+                    {"value": "exam", "label": "Exam"},
+                    {"value": "test", "label": "Test"},
+                ],
+            },
         },
-    }
     )
 
 
@@ -4407,9 +4694,26 @@ def _question_group_payload(group, request=None):
     }
 
 
+def _can_manage_exam_pins(user):
+    return getattr(user, "role", None) in ADMIN_ROLES
+
+
+def _exam_pin_summary_for_user(exam, user):
+    if not _can_manage_exam_pins(user):
+        return {
+            "pin_required": False,
+            "active_pin_count": 0,
+        }
+    return {
+        "pin_required": exam.pins.filter(is_active=True).exists(),
+        "active_pin_count": exam.pins.filter(is_active=True).count(),
+    }
+
+
 def _exam_editor_payload(exam, request=None):
     questions = list(exam.questions.all())
-    return {
+    user = getattr(request, "user", None)
+    payload = {
         "id": exam.id,
         "title": exam.title,
         "assessment_type": _assessment_type_for_exam(exam),
@@ -4424,8 +4728,6 @@ def _exam_editor_payload(exam, request=None):
         "shuffle_questions": exam.shuffle_questions,
         "show_results_immediately": exam.show_results_immediately,
         "is_published": exam.is_published,
-        "pin_required": exam.pins.filter(is_active=True).exists(),
-        "active_pin_count": exam.pins.filter(is_active=True).count(),
         "question_count": len(questions),
         "questions": [
             {
@@ -4444,6 +4746,8 @@ def _exam_editor_payload(exam, request=None):
             for question in questions
         ],
     }
+    payload.update(_exam_pin_summary_for_user(exam, user))
+    return payload
 
 
 def _clean_exam_questions_payload(raw_questions):
@@ -4589,9 +4893,9 @@ def _admin_exam_pin_queryset(user):
     return pins
 
 
-def _generate_unique_exam_pin(length=8):
+def _generate_unique_exam_pin():
     for _ in range(20):
-        plain_pin = ExamPin.generate_plain_pin(length=length)
+        plain_pin = ExamPin.generate_plain_pin()
         if not ExamPin.objects.filter(pin_digest=ExamPin.digest_pin(plain_pin)).exists():
             return plain_pin
     raise RuntimeError("Could not generate a unique exam PIN.")
@@ -4626,7 +4930,7 @@ def cbt_exam_pins(request):
         if not expires_at:
             return Response({"success": False, "message": "expires_at must be a valid date-time."}, status=status.HTTP_400_BAD_REQUEST)
 
-    plain_pin = _generate_unique_exam_pin(request.data.get("length") or 8)
+    plain_pin = _generate_unique_exam_pin()
     pin = ExamPin(
         tenant=exam.tenant,
         exam=exam,
@@ -4662,7 +4966,7 @@ def cbt_exam_pin_detail(request, pin_id):
     if request.method == "PATCH":
         action = action or "update"
     if action == "regenerate":
-        plain_pin = _generate_unique_exam_pin(request.data.get("length") or 8)
+        plain_pin = _generate_unique_exam_pin()
         pin.set_pin(plain_pin)
         pin.is_active = True
         pin.deactivated_at = None

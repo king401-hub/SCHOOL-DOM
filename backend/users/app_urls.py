@@ -26,6 +26,7 @@ urlpatterns = [
     path("enrollments/create/", app_views.create_enrollment, name="app_create_enrollment"),
     path("classes/", app_views.classes_snapshot, name="app_classes_snapshot"),
     path("classes/create/", app_views.create_class, name="app_create_class"),
+    path("classes/promotions/", app_views.class_promotions, name="app_class_promotions"),
     path("classes/<int:class_id>/", app_views.class_detail, name="app_class_detail"),
     path("subjects/create/", app_views.create_subject, name="app_create_subject"),
     path("subjects/<int:subject_id>/", app_views.subject_detail, name="app_subject_detail"),

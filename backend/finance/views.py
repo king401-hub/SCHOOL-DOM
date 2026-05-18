@@ -58,6 +58,7 @@ from finance.services import (
     initiate_admin_withdrawal,
     process_due_fees,
     fee_paid_amount,
+    reconcile_fee_status,
     sync_class_fee_assignments,
     sync_student_class_fees,
     sync_tenant_class_fees,
@@ -689,7 +690,10 @@ def admin_class_fee_create(request):
         },
     )
     sync_class_fee_assignments(class_fee, actor=user)
-    return Response({"success": True, "class_fee": ClassFeeSerializer(class_fee).data}, status=status.HTTP_201_CREATED)
+    return Response(
+        {"success": True, "class_fee": ClassFeeSerializer(class_fee).data, "finance": _admin_finance_snapshot(user)},
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["PATCH", "DELETE"])
@@ -707,7 +711,7 @@ def admin_class_fee_detail(request, fee_id):
     if request.method == "DELETE":
         class_fee.is_active = False
         class_fee.save(update_fields=["is_active", "updated_at"])
-        return Response({"success": True, "message": "Class fee deactivated."})
+        return Response({"success": True, "message": "Class fee deactivated.", "finance": _admin_finance_snapshot(user)})
 
     update_fields = []
     if "title" in request.data:
@@ -740,7 +744,7 @@ def admin_class_fee_detail(request, fee_id):
         update_fields.append("updated_at")
         class_fee.save(update_fields=sorted(set(update_fields)))
         sync_class_fee_assignments(class_fee, actor=user)
-    return Response({"success": True, "class_fee": ClassFeeSerializer(class_fee).data})
+    return Response({"success": True, "class_fee": ClassFeeSerializer(class_fee).data, "finance": _admin_finance_snapshot(user)})
 
 
 @api_view(["PATCH"])
@@ -791,6 +795,8 @@ def admin_school_fee_detail(request, fee_id):
         fee.is_customized = True
         update_fields.extend(["is_customized", "updated_at"])
         fee.save(update_fields=sorted(set(update_fields)))
+        reconcile_fee_status(fee)
+        fee.refresh_from_db()
 
     return Response({"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)})
 
@@ -1200,7 +1206,7 @@ def admin_adjust_wallet(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def admin_assign_fee(request):
-    """Create a school fee schedule for a student."""
+    """Create or update a manual school fee schedule for a student."""
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
@@ -1224,16 +1230,25 @@ def admin_assign_fee(request):
         StudentProfile.objects.select_related("user").filter(user__tenant=user.tenant),
         id=student_id,
     )
-    fee = SchoolFee.objects.create(
+    fee, created = SchoolFee.objects.update_or_create(
         student=student_profile,
+        class_fee__isnull=True,
         title=title,
-        amount=amount,
-        currency="NGN",
         due_date=due_date,
-        auto_deduct=auto_deduct,
-        created_by=user,
+        defaults={
+            "amount": amount,
+            "currency": "NGN",
+            "auto_deduct": auto_deduct,
+            "is_customized": True,
+            "created_by": user,
+        },
     )
-    return Response({"success": True, "fee": SchoolFeeSerializer(fee).data}, status=status.HTTP_201_CREATED)
+    reconcile_fee_status(fee)
+    fee.refresh_from_db()
+    return Response(
+        {"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)},
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])

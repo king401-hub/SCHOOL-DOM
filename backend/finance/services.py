@@ -839,10 +839,8 @@ def sync_tenant_class_fees(tenant, actor=None):
     return count
 
 
-def fee_paid_amount(fee):
-    """Return successful payment amount already booked for a fee."""
-    if fee.status == SchoolFee.STATUS_PAID:
-        return fee.amount
+def fee_recorded_paid_amount(fee):
+    """Return successful ledger-backed payment amount booked for a fee."""
     wallet_debits = (
         Transaction.objects.filter(
             tx_type=Transaction.FEE_DEBIT,
@@ -862,6 +860,35 @@ def fee_paid_amount(fee):
     )
     total = wallet_debits + bank_credits
     return min(total, fee.amount)
+
+
+def fee_paid_amount(fee):
+    """Return successful payment amount already booked for a fee."""
+    recorded_total = fee_recorded_paid_amount(fee)
+    if recorded_total > 0:
+        return recorded_total
+    if fee.status == SchoolFee.STATUS_PAID:
+        return fee.amount
+    return Decimal("0.00")
+
+
+def reconcile_fee_status(fee):
+    """Keep a fee status aligned with ledger-backed payments after manual edits."""
+    recorded_paid = fee_recorded_paid_amount(fee)
+    if recorded_paid <= 0:
+        return fee
+
+    if recorded_paid >= fee.amount:
+        next_status = SchoolFee.STATUS_PAID
+    elif fee.due_date < timezone.localdate():
+        next_status = SchoolFee.STATUS_OVERDUE
+    else:
+        next_status = SchoolFee.STATUS_PENDING
+
+    if fee.status != next_status:
+        fee.status = next_status
+        fee.save(update_fields=["status", "updated_at"])
+    return fee
 
 
 def outstanding_amount_for_student(student_profile):

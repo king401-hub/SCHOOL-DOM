@@ -155,9 +155,12 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         return hmac.new(secret, normalized.encode("utf-8"), hashlib.sha256).hexdigest()
 
     @classmethod
-    def generate_plain_pin(cls, length=8):
+    def generate_plain_pin(cls, length=5):
         alphabet = string.ascii_uppercase + string.digits
-        return "".join(secrets.choice(alphabet) for _ in range(max(6, min(int(length or 8), 16))))
+        while True:
+            plain_pin = "".join(secrets.choice(alphabet) for _ in range(5))
+            if any(char.isalpha() for char in plain_pin) and any(char.isdigit() for char in plain_pin):
+                return plain_pin
 
     def set_pin(self, plain_pin):
         normalized = self.normalize_pin(plain_pin)

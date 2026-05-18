@@ -1140,6 +1140,7 @@ function AdminFinanceScreen({
                     <th>Expected</th>
                     <th>Received</th>
                     <th>Due</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1151,9 +1152,15 @@ function AdminFinanceScreen({
                       <td>{formatFinanceAmount(fee.expected_amount)}</td>
                       <td>{formatFinanceAmount(fee.amount_received)}</td>
                       <td>{formatDate(fee.due_date)}</td>
+                      <td>
+                        <div className="table-actions-inline">
+                          <button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button>
+                          <button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button>
+                        </div>
+                      </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan="6">No class fees configured yet.</td></tr>
+                    <tr><td colSpan="7">No class fees configured yet.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -2180,9 +2187,11 @@ function AdminTableScreen({ title, description, loading, error, onRetry, columns
   );
 }
 
-function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate, onCreateSubject, onDeleteSubject }) {
+function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate, onBulkPromotion, onCreateSubject, onDeleteSubject }) {
   const classes = data?.classes || [];
   const subjects = data?.subjects || [];
+  const terms = data?.terms || [];
+  const promotionHistory = data?.promotion_history || [];
   const [name, setName] = useState("");
   const [section, setSection] = useState("");
   const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
@@ -2195,6 +2204,26 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
   const [subjectBusy, setSubjectBusy] = useState(false);
   const [subjectError, setSubjectError] = useState("");
   const [subjectSuccess, setSubjectSuccess] = useState("");
+  const [promotionForm, setPromotionForm] = useState({
+    scope: "class",
+    source_class_id: "",
+    source_department: "",
+    source_level: "",
+    source_term_id: "",
+    target_class_id: "",
+    target_term_id: "",
+    note: "",
+  });
+  const [promotionPreview, setPromotionPreview] = useState(null);
+  const [promotionBusy, setPromotionBusy] = useState(false);
+  const [promotionError, setPromotionError] = useState("");
+  const [promotionSuccess, setPromotionSuccess] = useState("");
+  const [promotionConfirmed, setPromotionConfirmed] = useState(false);
+
+  const departmentOptions = useMemo(
+    () => Array.from(new Set(classes.map((item) => item.section).filter(Boolean))).sort(),
+    [classes]
+  );
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -2282,6 +2311,66 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
     setSubjectSuccess("");
   };
 
+  const buildPromotionPayload = (action) => ({
+    action,
+    scope: promotionForm.scope,
+    source_class_id: promotionForm.scope === "class" ? promotionForm.source_class_id : "",
+    source_department: promotionForm.scope === "department" ? promotionForm.source_department.trim() : "",
+    source_level: promotionForm.scope === "level" ? promotionForm.source_level.trim() : "",
+    source_term_id: promotionForm.source_term_id,
+    target_class_id: promotionForm.target_class_id,
+    target_term_id: promotionForm.target_term_id,
+    note: promotionForm.note.trim(),
+    confirm: action === "apply" ? promotionConfirmed : false,
+  });
+
+  const handlePromotionPreview = async (event) => {
+    event.preventDefault();
+    setPromotionError("");
+    setPromotionSuccess("");
+    setPromotionPreview(null);
+    setPromotionConfirmed(false);
+    setPromotionBusy(true);
+    try {
+      const result = await onBulkPromotion?.(buildPromotionPayload("preview"));
+      setPromotionPreview(result?.preview || null);
+      setPromotionSuccess(result?.message || "Promotion preview ready.");
+    } catch (actionError) {
+      setPromotionError(actionError.message || "Could not preview promotion.");
+    } finally {
+      setPromotionBusy(false);
+    }
+  };
+
+  const handlePromotionApply = async () => {
+    setPromotionError("");
+    setPromotionSuccess("");
+    if (!promotionPreview?.summary?.eligible_students) {
+      setPromotionError("Preview a promotion with eligible students first.");
+      return;
+    }
+    if (!promotionConfirmed) {
+      setPromotionError("Confirm the promotion before applying.");
+      return;
+    }
+    const targetName = promotionPreview?.target_class?.label || "the destination class";
+    const count = promotionPreview?.summary?.eligible_students || 0;
+    if (!window.confirm(`Promote ${count} student(s) to ${targetName}?`)) {
+      return;
+    }
+    setPromotionBusy(true);
+    try {
+      const result = await onBulkPromotion?.(buildPromotionPayload("apply"));
+      setPromotionSuccess(result?.message || "Promotion applied.");
+      setPromotionPreview(result?.preview || null);
+      setPromotionConfirmed(false);
+    } catch (actionError) {
+      setPromotionError(actionError.message || "Could not apply promotion.");
+    } finally {
+      setPromotionBusy(false);
+    }
+  };
+
   return (
     <section className="screen-grid">
       <div className="screen-hero">
@@ -2341,6 +2430,140 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
             </button>
           </div>
         </form>
+      </article>
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Bulk class promotion</h3>
+          <small>Preview and promote students in one controlled batch.</small>
+        </div>
+        <form className="panel-form" onSubmit={handlePromotionPreview}>
+          <div className="panel-form-grid">
+            <label className="panel-field">
+              Promotion Scope
+              <select
+                value={promotionForm.scope}
+                onChange={(event) => {
+                  setPromotionForm((prev) => ({ ...prev, scope: event.target.value }));
+                  setPromotionPreview(null);
+                  setPromotionConfirmed(false);
+                }}
+              >
+                <option value="class">Class</option>
+                <option value="department">Department</option>
+                <option value="level">Academic level</option>
+                <option value="session">Academic session</option>
+              </select>
+            </label>
+            {promotionForm.scope === "class" ? (
+              <label className="panel-field">
+                From Class
+                <select value={promotionForm.source_class_id} onChange={(event) => setPromotionForm((prev) => ({ ...prev, source_class_id: event.target.value }))}>
+                  <option value="">Select class</option>
+                  {classes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+            ) : null}
+            {promotionForm.scope === "department" ? (
+              <label className="panel-field">
+                Department / Section
+                <select value={promotionForm.source_department} onChange={(event) => setPromotionForm((prev) => ({ ...prev, source_department: event.target.value }))}>
+                  <option value="">Select department</option>
+                  {departmentOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+            ) : null}
+            {promotionForm.scope === "level" ? (
+              <label className="panel-field">
+                Academic Level
+                <input value={promotionForm.source_level} onChange={(event) => setPromotionForm((prev) => ({ ...prev, source_level: event.target.value }))} placeholder="e.g., Grade 9, JSS2, SSS1" />
+              </label>
+            ) : null}
+            <label className="panel-field">
+              Current Session / Term
+              <select value={promotionForm.source_term_id} onChange={(event) => setPromotionForm((prev) => ({ ...prev, source_term_id: event.target.value }))}>
+                <option value="">Active / any term</option>
+                {terms.map((term) => <option key={term.id} value={term.id}>{term.name}</option>)}
+              </select>
+            </label>
+            <label className="panel-field">
+              Promote / Transfer To
+              <select value={promotionForm.target_class_id} onChange={(event) => setPromotionForm((prev) => ({ ...prev, target_class_id: event.target.value }))}>
+                <option value="">Select destination</option>
+                {classes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="panel-field">
+              New Session / Term
+              <select value={promotionForm.target_term_id} onChange={(event) => setPromotionForm((prev) => ({ ...prev, target_term_id: event.target.value }))}>
+                <option value="">Use active term</option>
+                {terms.map((term) => <option key={term.id} value={term.id}>{term.name}</option>)}
+              </select>
+            </label>
+            <label className="panel-field full">
+              Promotion Note
+              <textarea value={promotionForm.note} onChange={(event) => setPromotionForm((prev) => ({ ...prev, note: event.target.value }))} placeholder="Optional batch note" />
+            </label>
+          </div>
+          {promotionError ? <p className="form-feedback error">{promotionError}</p> : null}
+          {promotionSuccess ? <p className="form-feedback success">{promotionSuccess}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={promotionBusy}>{promotionBusy ? "Checking..." : "Preview promotion"}</button>
+          </div>
+        </form>
+
+        {promotionPreview ? (
+          <div className="promotion-preview">
+            <div className="metric-grid compact">
+              <MetricCard label="Matched" value={promotionPreview.summary?.matched_students ?? 0} trend="Students found" />
+              <MetricCard label="Eligible" value={promotionPreview.summary?.eligible_students ?? 0} trend="Ready to promote" />
+              <MetricCard label="Blocked" value={promotionPreview.summary?.blocked_students ?? 0} trend="Needs review" />
+              <MetricCard label="Duplicates" value={promotionPreview.summary?.duplicate_promotions ?? 0} trend="Already promoted" />
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(promotionPreview.students || []).slice(0, 12).map((student) => (
+                    <tr key={student.id}>
+                      <td>{student.name}<small>{student.student_id}</small></td>
+                      <td>{student.from_class_name}</td>
+                      <td>{student.to_class_name}</td>
+                      <td><span className="finance-status status-paid">eligible</span></td>
+                    </tr>
+                  ))}
+                  {(promotionPreview.blocked_students || []).slice(0, 8).map((student) => (
+                    <tr key={`blocked-${student.id}`}>
+                      <td>{student.name}<small>{student.student_id}</small></td>
+                      <td>{student.from_class_name}</td>
+                      <td>{student.to_class_name}</td>
+                      <td><span className="finance-status status-pending">{student.reason}</span></td>
+                    </tr>
+                  ))}
+                  {!(promotionPreview.students || []).length && !(promotionPreview.blocked_students || []).length ? (
+                    <tr><td colSpan="4">No students matched this promotion.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+            <label className="panel-field checkbox-field">
+              <input type="checkbox" checked={promotionConfirmed} onChange={(event) => setPromotionConfirmed(event.target.checked)} />
+              I confirm this bulk promotion is correct.
+            </label>
+            <div className="panel-form-actions">
+              <button type="button" disabled={promotionBusy || !promotionConfirmed || !promotionPreview.summary?.eligible_students} onClick={handlePromotionApply}>
+                {promotionBusy ? "Applying..." : "Apply promotion"}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </article>
 
       <article className="app-panel">
@@ -2457,6 +2680,41 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
           </table>
         ) : (
           <p className="panel-empty">No subjects yet.</p>
+        )}
+      </article>
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Promotion history</h3>
+          <small>{promotionHistory.length} latest movement(s)</small>
+        </div>
+        {promotionHistory.length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Session</th>
+                  <th>Batch</th>
+                </tr>
+              </thead>
+              <tbody>
+                {promotionHistory.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.student_name}<small>{item.student_code}</small></td>
+                    <td>{item.from_class_name}</td>
+                    <td>{item.to_class_name}</td>
+                    <td>{item.to_term_name || item.to_academic_year_name || "-"}</td>
+                    <td>{item.batch_reference}<small>{formatDate(item.created_at)}</small></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel-empty">No class promotions recorded yet.</p>
         )}
       </article>
     </section>

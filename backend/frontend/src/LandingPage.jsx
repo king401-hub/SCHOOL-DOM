@@ -154,27 +154,23 @@ function LandingPage({ onGetStarted }) {
 
           <div className="mobile-app-panel" aria-live="polite">
             <div>
-              <p className="mobile-app-kicker">SchoolDom App</p>
-              <h2>Install SchoolDom from this website</h2>
+              <p className="mobile-app-kicker">SchoolDom Mobile App</p>
+              <h2>SchoolDom Mobile App</h2>
               <p>
-                Use the same account, classes, exams, messages, attendance, files, and school data across browser and installed app.
+                Install the SchoolDom app for faster, smoother, and full mobile access to your school platform. Access your classes, CBT exams, assignments, attendance, results, finance records, messages, e-learning tools, and school activities anytime using the same account across both the website and mobile app.
               </p>
-            </div>
-            <div className="mobile-app-actions">
-              <button type="button" className="app-pill-button" onClick={handleInstallApp} disabled={pwaStatus.isInstalled}>
-                {installButtonText}
-              </button>
-              <a className="app-pill-button download-link" href="/app/download/">
-                Download APK
-              </a>
-              <button type="button" className="app-pill-button ghost" onClick={handleEnableNotifications}>
-                Enable Alerts
-              </button>
-            </div>
-            <div className="mobile-app-status">
-              <span>{pwaStatus.serviceWorkerSupported ? "Offline cache ready" : "Offline cache unavailable"}</span>
-              <span>{pwaStatus.notificationPermission === "granted" ? "Notifications on" : "Notifications optional"}</span>
-              <span>GPS, camera, and uploads supported on secure devices</span>
+              <ul className="mobile-app-feature-list">
+                <li>Install SchoolDom directly on your device</li>
+                <li>Sync data in real time across web and mobile</li>
+                <li>Access CBT exams, quizzes, and classroom activities</li>
+                <li>Receive instant notifications and school alerts</li>
+                <li>Offline cache support for faster performance</li>
+                <li>Secure login with protected student and staff data</li>
+                <li>GPS-enabled attendance and location verification</li>
+                <li>Camera, file uploads, and media support</li>
+                <li>Optimized for students, teachers, parents, and administrators</li>
+                <li>Designed for Android.</li>
+              </ul>
             </div>
             {installMessage ? <p className="mobile-app-message">{installMessage}</p> : null}
             {notificationMessage ? <p className="mobile-app-message">{notificationMessage}</p> : null}
@@ -195,24 +191,7 @@ function LandingPage({ onGetStarted }) {
           <div className="decoration-blob blob-3" />
         </div>
       </section>
-
-      {/* Resource Center Section */}
-      <section id="resource" className="resource-section landing-resource-section-hidden">
-        <div className="section-container">
-          <h2 className="section-title">Resources & Learning</h2>
-          <p className="section-subtitle">Everything you need to succeed</p>
-          
-          <div className="featured-card-container">
-            <div className="featured-card">
-              <div className="featured-card-icon">📚</div>
-              <h3>Access Library</h3>
-              <p>Explore a wide range of study materials, videos, and practice resources in one place.</p>
-              <a href="/resource" className="card-link">Learn More →</a>
-            </div>
-          </div>
-        </div>
-      </section>
-
+      
       {/* About Section */}
       <section id="about" className="about-section">
         <div className="section-container">

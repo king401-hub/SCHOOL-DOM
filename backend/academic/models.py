@@ -47,6 +47,97 @@ class Class(TenantAwareModel, TimeStampedModel):
         return f"{self.name} - {self.section}"
 
 
+class StudentClassPromotion(TenantAwareModel, TimeStampedModel):
+    SCOPE_CLASS = "class"
+    SCOPE_DEPARTMENT = "department"
+    SCOPE_LEVEL = "level"
+    SCOPE_SESSION = "session"
+    SCOPE_CHOICES = [
+        (SCOPE_CLASS, "Class"),
+        (SCOPE_DEPARTMENT, "Department"),
+        (SCOPE_LEVEL, "Academic level"),
+        (SCOPE_SESSION, "Academic session"),
+    ]
+
+    student = models.ForeignKey(
+        "users.StudentProfile",
+        on_delete=models.CASCADE,
+        related_name="class_promotions",
+    )
+    from_class = models.ForeignKey(
+        Class,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="promotions_from",
+    )
+    to_class = models.ForeignKey(
+        Class,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="promotions_to",
+    )
+    from_term = models.ForeignKey(
+        Term,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="promotions_from",
+    )
+    to_term = models.ForeignKey(
+        Term,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="promotions_to",
+    )
+    from_academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="promotions_from",
+    )
+    to_academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="promotions_to",
+    )
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CLASS)
+    scope_value = models.CharField(max_length=120, blank=True)
+    batch_reference = models.CharField(max_length=64, db_index=True)
+    promoted_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="class_promotions_performed",
+    )
+    note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = (
+            "student",
+            "from_class",
+            "to_class",
+            "from_term",
+            "to_term",
+            "from_academic_year",
+            "to_academic_year",
+        )
+        indexes = [
+            models.Index(fields=["tenant", "batch_reference"]),
+            models.Index(fields=["tenant", "scope", "scope_value"]),
+        ]
+
+    def __str__(self):
+        return f"{self.student} promoted to {self.to_class}"
+
+
 class GradeScale(TenantAwareModel, TimeStampedModel):
     letter = models.CharField(max_length=5)
     min_percentage = models.DecimalField(max_digits=5, decimal_places=2)

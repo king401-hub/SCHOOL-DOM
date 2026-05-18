@@ -5273,6 +5273,30 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleBulkClassPromotion = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/classes/promotions/", payload);
+      if (payload?.action === "apply") {
+        addAdminNotification({
+          category: "Students",
+          module: "Class Promotions",
+          action: result?.message || "Applied bulk class promotion.",
+          status: "Success",
+          priority: "High",
+          tone: "success",
+        });
+        await Promise.all([
+          loadScreen("/classes", true),
+          loadScreen("/students", true),
+          loadScreen("/dashboard", true),
+          loadScreen("/results", true),
+        ]);
+      }
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleCreateSubject = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/subjects/create/", payload);
@@ -5747,6 +5771,7 @@ const unreadNotificationsCount =
         onRetry={handleRetry}
         onCreate={handleCreateClass}
         onUpdate={handleUpdateClass}
+        onBulkPromotion={handleBulkClassPromotion}
         onCreateSubject={handleCreateSubject}
         onDeleteSubject={handleDeleteSubject}
       />

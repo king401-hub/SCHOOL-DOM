@@ -6680,7 +6680,7 @@ html {
   margin: 0 auto 2.25rem;
   padding: 1.1rem;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   text-align: left;
   background: rgba(15, 23, 42, 0.72);
@@ -6724,6 +6724,22 @@ html {
 
 .landing-page.theme-light .mobile-app-panel p {
   color: #475569;
+}
+
+.mobile-app-feature-list {
+  margin: 0.8rem 0 0;
+  padding-left: 1.15rem;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.mobile-app-feature-list li + li {
+  margin-top: 0.32rem;
+}
+
+.landing-page.theme-light .mobile-app-feature-list {
+  color: #334155;
 }
 
 .mobile-app-actions {

@@ -14,11 +14,13 @@ from academic.models import (
     QuestionPrompt,
     QuestionResponse,
     ResultBatch,
+    StudentClassPromotion,
     StudentSubjectScore,
     Subject,
+    Term,
 )
 from core.models import Domain, SchoolTenant
-from exams.models import Exam, ExamAttempt, Question, QuestionBank
+from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage
@@ -446,7 +448,7 @@ class EnrollmentsAPITests(TestCase):
         announcement = Announcement.objects.filter(tenant=self.school, title="Schedule update").first()
         self.assertIsNotNone(announcement)
         self.assertEqual(announcement.audience_type, "role")
-        self.assertCountEqual(announcement.target_roles, ["student", "teacher"])
+        self.assertCountEqual(announcement.target_roles, ["student", "teacher", "staff"])
         self.assertEqual(announcement.author, self.admin_user)
 
         self.client.force_authenticate(user=student_user)
@@ -892,6 +894,55 @@ class TeacherDashboardAPITests(TestCase):
         self.assertGreaterEqual(exams_response.data["summary"]["tests_count"], 1)
         self.assertIn("assessment_type", exams_response.data["exams"][0])
 
+    def test_only_admin_can_generate_cbt_pin_and_pin_is_five_alphanumeric_chars(self):
+        exam = Exam.objects.filter(teacher=self.teacher_user).first()
+
+        self.client.force_authenticate(user=self.teacher_user)
+        teacher_response = self.client.post(
+            "/api/app/exams/pins/",
+            data={"exam_id": exam.id, "length": 12},
+            format="json",
+        )
+        self.assertEqual(teacher_response.status_code, 403)
+
+        self.client.force_authenticate(user=self.admin_user)
+        admin_response = self.client.post(
+            "/api/app/exams/pins/",
+            data={"exam_id": exam.id, "length": 12},
+            format="json",
+        )
+
+        self.assertEqual(admin_response.status_code, 201)
+        self.assertTrue(admin_response.data["success"])
+        plain_pin = admin_response.data["plain_pin"]
+        self.assertRegex(plain_pin, r"^(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5}$")
+
+    def test_teacher_exam_list_does_not_expose_pin_status(self):
+        exam = Exam.objects.filter(teacher=self.teacher_user).first()
+        plain_pin = ExamPin.generate_plain_pin()
+        pin = ExamPin(
+            tenant=exam.tenant,
+            exam=exam,
+            usage_policy=ExamPin.USE_REUSABLE,
+            created_by=self.admin_user,
+        )
+        pin.set_pin(plain_pin)
+        pin.save()
+
+        self.client.force_authenticate(user=self.teacher_user)
+        teacher_response = self.client.get("/api/app/exams/")
+        self.assertEqual(teacher_response.status_code, 200)
+        teacher_exam = next(item for item in teacher_response.data["exams"] if item["id"] == exam.id)
+        self.assertFalse(teacher_exam["pin_required"])
+        self.assertEqual(teacher_exam["active_pin_count"], 0)
+
+        self.client.force_authenticate(user=self.admin_user)
+        admin_response = self.client.get("/api/app/exams/")
+        self.assertEqual(admin_response.status_code, 200)
+        admin_exam = next(item for item in admin_response.data["exams"] if item["id"] == exam.id)
+        self.assertTrue(admin_exam["pin_required"])
+        self.assertEqual(admin_exam["active_pin_count"], 1)
+
     def test_teacher_cbt_bank_only_includes_assigned_subjects(self):
         chemistry = Subject.objects.create(
             tenant=self.legacy_tenant,
@@ -999,12 +1050,28 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(detail_response.data["exam"]["id"], exam.id)
         self.assertEqual(len(detail_response.data["exam"]["questions"]), 1)
 
+        publish_response = self.client.patch(
+            f"/api/app/exams/{exam.id}/",
+            data={
+                "title": "Edited Algebra Exam",
+                "is_published": True,
+                "questions": [
+                    {
+                        "text": "Edited question?",
+                        "options": ["True", "False"],
+                        "correct_answer": "True",
+                        "points": 2,
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(publish_response.status_code, 403)
+
         patch_response = self.client.patch(
             f"/api/app/exams/{exam.id}/",
             data={
                 "title": "Edited Algebra Exam",
-                "duration_minutes": 75,
-                "is_published": True,
                 "questions": [
                     {
                         "text": "Edited question?",
@@ -1021,8 +1088,7 @@ class TeacherDashboardAPITests(TestCase):
         self.assertTrue(patch_response.data["success"])
         exam.refresh_from_db()
         self.assertEqual(exam.title, "Edited Algebra Exam")
-        self.assertEqual(exam.duration_minutes, 75)
-        self.assertTrue(exam.is_published)
+        self.assertFalse(exam.is_published)
         self.assertEqual(exam.questions.count(), 1)
         self.assertEqual(exam.questions.first().text, "Edited question?")
 
@@ -2143,6 +2209,7 @@ class AuthSchoolScopeTests(TestCase):
         self.assertFalse(response.data["success"])
         self.assertIn("school code is required", str(response.data["errors"]).lower())
 
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
     def test_school_admin_login_with_school_code_backfills_tenant(self):
         user = User.objects.create_user(
             email="backfill.admin@school.edu",
@@ -2262,6 +2329,147 @@ class AuthSchoolScopeTests(TestCase):
         class_obj = Class.objects.get(name="Science Department")
         self.assertEqual(set(class_obj.subjects.values_list("id", flat=True)), {math.id, physics.id})
 
+    def test_bulk_class_promotion_preview_and_apply_updates_students(self):
+        user = User.objects.create_user(
+            email="promotion.admin@school.edu",
+            password="AdminPass123",
+            first_name="Promotion",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        legacy_tenant = Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        term_one = Term.objects.create(
+            name="2026 Term 1",
+            start_date=timezone.now().date(),
+            end_date=timezone.now().date() + timedelta(days=90),
+            is_active=True,
+            tenant=legacy_tenant,
+        )
+        source_class = Class.objects.create(name="Grade 9", section="A", tenant=legacy_tenant)
+        target_class = Class.objects.create(name="Grade 10", section="A", tenant=legacy_tenant)
+        student_user = User.objects.create_user(
+            email="promote.student@school.edu",
+            password="StudentPass123",
+            first_name="Promote",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="ST-PROMO-1",
+            admission_number="ADM-PROMO-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian",
+            guardian_phone="08000000000",
+            guardian_relation="Parent",
+            current_class=source_class,
+            current_term=term_one,
+        )
+        self.client.force_authenticate(user=user)
+
+        preview_response = self.client.post(
+            "/api/app/classes/promotions/",
+            data={
+                "action": "preview",
+                "scope": "class",
+                "source_class_id": source_class.id,
+                "source_term_id": term_one.id,
+                "target_class_id": target_class.id,
+                "target_term_id": term_one.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_response.data["preview"]["summary"]["eligible_students"], 1)
+
+        apply_response = self.client.post(
+            "/api/app/classes/promotions/",
+            data={
+                "action": "apply",
+                "scope": "class",
+                "source_class_id": source_class.id,
+                "source_term_id": term_one.id,
+                "target_class_id": target_class.id,
+                "target_term_id": term_one.id,
+                "confirm": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(apply_response.status_code, 200)
+        student.refresh_from_db()
+        self.assertEqual(student.current_class, target_class)
+        self.assertEqual(StudentClassPromotion.objects.filter(student=student, to_class=target_class).count(), 1)
+
+    def test_bulk_class_promotion_blocks_duplicate_preview(self):
+        user = User.objects.create_user(
+            email="promotion.duplicate.admin@school.edu",
+            password="AdminPass123",
+            first_name="Promotion",
+            last_name="Duplicate",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        legacy_tenant = Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        source_class = Class.objects.create(name="Grade 8", section="B", tenant=legacy_tenant)
+        target_class = Class.objects.create(name="Grade 9", section="B", tenant=legacy_tenant)
+        student_user = User.objects.create_user(
+            email="duplicate.promotion.student@school.edu",
+            password="StudentPass123",
+            first_name="Duplicate",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="ST-PROMO-2",
+            admission_number="ADM-PROMO-2",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian",
+            guardian_phone="08000000001",
+            guardian_relation="Parent",
+            current_class=source_class,
+        )
+        StudentClassPromotion.objects.create(
+            tenant=legacy_tenant,
+            student=student,
+            from_class=source_class,
+            to_class=target_class,
+            scope="class",
+            scope_value="Grade 8 - B",
+            batch_reference="TEST-BATCH",
+            promoted_by=user,
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.post(
+            "/api/app/classes/promotions/",
+            data={
+                "action": "preview",
+                "scope": "class",
+                "source_class_id": source_class.id,
+                "target_class_id": target_class.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["preview"]["summary"]["eligible_students"], 0)
+        self.assertEqual(response.data["preview"]["summary"]["duplicate_promotions"], 1)
+
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
     def test_refresh_token_endpoint_allows_refresh_without_access_token(self):
         user = User.objects.create_user(
             email="refresh.admin@school.edu",
