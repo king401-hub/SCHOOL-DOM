@@ -1,8 +1,9 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -2168,6 +2169,37 @@ class AuthSchoolScopeTests(TestCase):
         self.assertTrue(response.data["success"])
         user.refresh_from_db()
         self.assertEqual(user.tenant_id, self.school.id)
+
+    @override_settings(DEBUG=True, ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK=True)
+    @patch("users.views.ADMIN_OTP_ENABLED", True)
+    @patch("users.views.send_mail", side_effect=Exception("SMTP rejected credentials"))
+    @patch("users.views.render_to_string", return_value="<p>OTP</p>")
+    def test_admin_otp_login_uses_console_fallback_when_email_fails_in_debug(self, _render_to_string, _send_mail):
+        user = User.objects.create_user(
+            email="otp.fallback.admin@school.edu",
+            password="AdminPass123",
+            first_name="Otp",
+            last_name="Fallback",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": user.email,
+                "password": "AdminPass123",
+                "school_code": self.school.schema_name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(response.data["requires_otp"])
+        self.assertTrue(response.data["otp_challenge"])
 
     def test_create_class_accepts_school_code_when_user_tenant_missing(self):
         user = User.objects.create_user(

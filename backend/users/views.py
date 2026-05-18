@@ -196,14 +196,28 @@ def send_admin_otp(user, purpose="login"):
         "purpose": purpose,
         "expires_minutes": ADMIN_OTP_EXPIRY_MINUTES,
     })
-    send_mail(
-        "Your SchoolDom admin verification code",
-        f"Your SchoolDom verification code is {code}. It expires in {ADMIN_OTP_EXPIRY_MINUTES} minutes.",
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        html_message=message,
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            "Your SchoolDom admin verification code",
+            f"Your SchoolDom verification code is {code}. It expires in {ADMIN_OTP_EXPIRY_MINUTES} minutes.",
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            html_message=message,
+            fail_silently=False,
+        )
+    except Exception:
+        if not (
+            getattr(settings, "DEBUG", False)
+            and getattr(settings, "ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK", False)
+        ):
+            raise
+        logger.warning(
+            "Admin OTP email delivery failed for %s. Using local console fallback. "
+            "SchoolDom admin OTP code: %s",
+            user.email,
+            code,
+            exc_info=True,
+        )
     return challenge
 
 
