@@ -140,6 +140,7 @@ function Signin({ onAuthenticated, onBack }) {
   const [otpChallenge, setOtpChallenge] = useState("");
   const [otpPurpose, setOtpPurpose] = useState("");
   const [otpExpiresIn, setOtpExpiresIn] = useState(0);
+  const [otpDebugCode, setOtpDebugCode] = useState("");
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token") || "");
@@ -338,6 +339,7 @@ function Signin({ onAuthenticated, onBack }) {
         challenge: data.otp_challenge,
         purpose: data.otp_purpose || "login",
         expiresIn: data.otp_expires_in || 600,
+        debugCode: data.debug_otp || "",
         message: data.message || "Enter the OTP sent to your email.",
         user: data.user,
       };
@@ -375,6 +377,7 @@ function Signin({ onAuthenticated, onBack }) {
         setOtpChallenge(session.challenge);
         setOtpPurpose(session.purpose);
         setOtpExpiresIn(session.expiresIn);
+        setOtpDebugCode(session.debugCode || "");
         setOtpCode("");
         setMode("otp");
         setSuccessMessage(session.message);
@@ -434,6 +437,7 @@ function Signin({ onAuthenticated, onBack }) {
         setOtpChallenge(data.otp_challenge);
         setOtpPurpose(data.otp_purpose || "signup");
         setOtpExpiresIn(data.otp_expires_in || 600);
+        setOtpDebugCode(data.debug_otp || "");
         setOtpCode("");
         setMode("otp");
         setSuccessMessage(data.message || "Enter the OTP sent to your email.");
@@ -515,6 +519,7 @@ function Signin({ onAuthenticated, onBack }) {
       setOtpChallenge(data.otp_challenge || otpChallenge);
       setOtpPurpose(data.otp_purpose || otpPurpose);
       setOtpExpiresIn(data.otp_expires_in || 600);
+      setOtpDebugCode(data.debug_otp || "");
       setOtpCode("");
       setSuccessMessage(data.message || "A new OTP code has been sent.");
     } catch (requestError) {
@@ -818,6 +823,11 @@ function Signin({ onAuthenticated, onBack }) {
                     <p className="help-text">
                       Code expires in about {Math.max(Math.ceil(Number(otpExpiresIn || 0) / 60), 1)} minutes. After too many wrong attempts, the account will lock.
                     </p>
+                    {otpDebugCode ? (
+                      <p className="success-text">
+                        Local development OTP: <strong>{otpDebugCode}</strong>
+                      </p>
+                    ) : null}
                     {error ? <p className="error-text">{error}</p> : null}
                     {successMessage ? <p className="success-text">{successMessage}</p> : null}
                     <button type="submit" className="signup-button" disabled={otpCode.length !== 6 || isSubmitting}>
@@ -832,6 +842,7 @@ function Signin({ onAuthenticated, onBack }) {
                       onClick={() => {
                         switchMode("signin");
                         setOtpCode("");
+                        setOtpDebugCode("");
                       }}
                     >
                       Back to sign in

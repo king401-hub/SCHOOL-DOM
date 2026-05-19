@@ -145,6 +145,34 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(repeat.status_code, 200)
         self.assertEqual(PersonalQuizAttempt.objects.count(), 1)
 
+    def test_personal_quiz_fallback_does_not_use_another_school_pool(self):
+        other_tenant = Tenant.objects.create(name="Other Quiz School", slug="other_quiz_school")
+        other_folder = PersonalQuizFolder.objects.create(
+            tenant=other_tenant,
+            name="Other school test pool",
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=other_folder,
+            question_type="objective",
+            prompt="Other tenant test question should not appear",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+        self.school_class.subjects.add(english)
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 3},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        prompts = [item["prompt"] for item in response.data["questions"]]
+        self.assertNotIn("Other tenant test question should not appear", prompts)
+        self.assertTrue(any("English" in prompt or "subject" in prompt.lower() for prompt in prompts))
+
     def test_submitted_daily_subject_cannot_be_recreated_until_next_day(self):
         first = self.client.post(
             "/api/quizzes/personal/generate/",

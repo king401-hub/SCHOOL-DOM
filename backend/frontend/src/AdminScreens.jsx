@@ -3,6 +3,8 @@ import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
   RECOMMENDED_SUBJECT_GROUPS,
+} from "./appConstants";
+import {
   MultiSelectBox,
   requestJson,
   formatDate,
@@ -21,6 +23,12 @@ import { TeacherExamBuilder } from "./TeacherExamPanels";
 
 const NAIRA_SYMBOL = "\u20A6";
 const FINANCE_TABLE_PREVIEW_COUNT = 3;
+
+const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
+const heatTone = (status) => (status === "strong" ? "strong" : status === "watch" ? "watch" : "weak");
+const formatAnalyticsAmount = (value) =>
+  `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
 function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage }) {
   const metrics = data?.metrics || {};
   const announcements = data?.announcements || [];
@@ -217,6 +225,197 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
           ) : null}
         </>
       ) : null}
+    </section>
+  );
+}
+
+function HeatMetric({ label, value, suffix = "%", status = "watch", detail = "" }) {
+  return (
+    <article className={`heat-metric-card tone-${heatTone(status)}`}>
+      <span>{label}</span>
+      <strong>{value}{suffix}</strong>
+      {detail ? <small>{detail}</small> : null}
+    </article>
+  );
+}
+
+function HeatBar({ label, value, status, meta = "", right = "" }) {
+  const percent = clampPercent(value);
+  return (
+    <div className={`heat-bar-row tone-${heatTone(status)}`}>
+      <div className="heat-bar-label">
+        <strong>{label}</strong>
+        {meta ? <small>{meta}</small> : null}
+      </div>
+      <div className="heat-bar-track" aria-hidden="true">
+        <i style={{ width: `${percent}%` }} />
+      </div>
+      <b>{right || `${percent}%`}</b>
+    </div>
+  );
+}
+
+function MiniTrend({ rows = [] }) {
+  const maxAmount = Math.max(...rows.map((item) => Number(item.amount || 0)), 1);
+  return (
+    <div className="heat-mini-trend" aria-label="Fee payment transaction trend">
+      {rows.slice(-18).map((item, index) => {
+        const height = Math.max(8, Math.round((Number(item.amount || 0) / maxAmount) * 100));
+        return (
+          <span
+            key={`${item.date}-${index}`}
+            className={String(item.status || "").toLowerCase().includes("success") ? "paid" : "pending"}
+            style={{ height: `${height}%` }}
+            title={`${item.date}: ${formatAnalyticsAmount(item.amount)}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminPerformanceHeatmapScreen({ data = {}, loading, error, onRetry }) {
+  if (loading || error) {
+    return <ScreenState loading={loading} error={error} onRetry={onRetry} />;
+  }
+
+  const summary = data.summary || {};
+  const weakSubjects = data.weak_subjects || [];
+  const lowClasses = data.low_classes || [];
+  const attendanceRows = data.attendance_decline || [];
+  const feeTrends = data.fee_trends || {};
+  const examStats = data.examination_statistics || {};
+  const departments = data.departmental_performance || [];
+  const generatedAt = data.generated_at ? formatDate(data.generated_at) : "Live";
+
+  return (
+    <section className="performance-heatmap-screen">
+      <header className="performance-heatmap-hero">
+        <div>
+          <p className="topbar-kicker">Real-time analytics</p>
+          <h1>School Performance Heatmap</h1>
+          <p>Color-coded signals for academics, attendance, fees, examinations, and departments.</p>
+        </div>
+        <div className={`heat-risk-orb tone-${heatTone(summary.risk_status)}`}>
+          <span>Risk</span>
+          <strong>{Number(summary.risk_score || 0).toFixed(1)}%</strong>
+          <small>Updated {generatedAt}</small>
+        </div>
+      </header>
+
+      <div className="heat-metric-grid">
+        <HeatMetric label="Weak Subjects" value={summary.weak_subjects ?? 0} suffix="" status={summary.weak_subjects > 0 ? "weak" : "strong"} detail={`${summary.score_entries ?? 0} score entries`} />
+        <HeatMetric label="Low Classes" value={summary.low_classes ?? 0} suffix="" status={summary.low_classes > 0 ? "weak" : "strong"} detail={`${summary.students ?? 0} students tracked`} />
+        <HeatMetric label="Attendance" value={Number(summary.attendance_current || 0).toFixed(1)} status={summary.attendance_current >= 70 ? "strong" : summary.attendance_current >= 50 ? "watch" : "weak"} detail="Current 14-day rate" />
+        <HeatMetric label="Fee Collection" value={Number(summary.fee_collection_rate || 0).toFixed(1)} status={summary.fee_collection_rate >= 70 ? "strong" : summary.fee_collection_rate >= 50 ? "watch" : "weak"} detail="All active fee bills" />
+        <HeatMetric label="Exam Average" value={Number(summary.exam_average || 0).toFixed(1)} status={summary.exam_average >= 70 ? "strong" : summary.exam_average >= 50 ? "watch" : "weak"} detail={`${summary.exam_completion ?? 0}% completion`} />
+      </div>
+
+      <div className="heatmap-layout">
+        <article className="app-panel heat-panel">
+          <div className="panel-head">
+            <h3>Weak Subject Signals</h3>
+            <small>Lowest averages across published result entries.</small>
+          </div>
+          <div className="heat-bar-list">
+            {weakSubjects.length ? weakSubjects.map((item) => (
+              <HeatBar
+                key={`${item.name}-${item.code}`}
+                label={item.name}
+                value={item.average}
+                status={item.status}
+                meta={`${item.entries} entries • ${item.class_count} classes`}
+              />
+            )) : <p className="panel-empty">No subject scores are available yet.</p>}
+          </div>
+        </article>
+
+        <article className="app-panel heat-panel">
+          <div className="panel-head">
+            <h3>Low-Performing Classes</h3>
+            <small>Classes sorted by lowest academic average.</small>
+          </div>
+          <div className="heat-tile-grid">
+            {lowClasses.length ? lowClasses.map((item) => (
+              <div key={item.name} className={`heat-class-tile tone-${heatTone(item.status)}`}>
+                <strong>{item.name}</strong>
+                <span>{item.average}%</span>
+                <small>{item.subject_count} subjects • {item.entries} entries</small>
+              </div>
+            )) : <p className="panel-empty">No class performance data yet.</p>}
+          </div>
+        </article>
+
+        <article className="app-panel heat-panel">
+          <div className="panel-head">
+            <h3>Attendance Decline</h3>
+            <small>Current 14 days compared with the previous 14 days.</small>
+          </div>
+          <div className="heat-bar-list">
+            {attendanceRows.length ? attendanceRows.map((item) => (
+              <HeatBar
+                key={item.class_name}
+                label={item.class_name}
+                value={item.current_rate}
+                status={item.status}
+                meta={`${item.decline > 0 ? "-" : "+"}${Math.abs(Number(item.decline || 0)).toFixed(1)} pts vs previous`}
+              />
+            )) : <p className="panel-empty">No recent attendance records yet.</p>}
+          </div>
+        </article>
+
+        <article className="app-panel heat-panel">
+          <div className="panel-head">
+            <h3>Fee Payment Trends</h3>
+            <small>{formatAnalyticsAmount(feeTrends.paid)} collected of {formatAnalyticsAmount(feeTrends.expected)}.</small>
+          </div>
+          <MiniTrend rows={feeTrends.monthly_transactions || []} />
+          <div className="heat-bar-list compact">
+            {(feeTrends.class_trends || []).length ? feeTrends.class_trends.map((item) => (
+              <HeatBar
+                key={item.class_name}
+                label={item.class_name}
+                value={item.collection_rate}
+                status={item.status}
+                meta={`${formatAnalyticsAmount(item.paid)} paid`}
+              />
+            )) : <p className="panel-empty">No fee bills or payment transactions yet.</p>}
+          </div>
+        </article>
+
+        <article className="app-panel heat-panel">
+          <div className="panel-head">
+            <h3>Examination Statistics</h3>
+            <small>{examStats.attempts ?? 0} attempts this month.</small>
+          </div>
+          <div className="exam-stat-strip">
+            <HeatMetric label="Completion" value={Number(examStats.completion_rate || 0).toFixed(1)} status={examStats.completion_rate >= 70 ? "strong" : "watch"} />
+            <HeatMetric label="Average" value={Number(examStats.average || 0).toFixed(1)} status={examStats.average >= 70 ? "strong" : examStats.average >= 50 ? "watch" : "weak"} />
+            <HeatMetric label="Auto-submit" value={Number(examStats.auto_submit_rate || 0).toFixed(1)} status={examStats.auto_submit_rate > 20 ? "weak" : examStats.auto_submit_rate > 5 ? "watch" : "strong"} />
+          </div>
+          <div className="heat-bar-list compact">
+            {(examStats.subjects || []).map((item) => (
+              <HeatBar key={item.name} label={item.name} value={item.average} status={item.status} meta={`${item.attempts} attempts`} />
+            ))}
+          </div>
+        </article>
+
+        <article className="app-panel heat-panel">
+          <div className="panel-head">
+            <h3>Departmental Performance</h3>
+            <small>Subject clusters grouped for leadership review.</small>
+          </div>
+          <div className="department-heat-grid">
+            {departments.length ? departments.map((item) => (
+              <div key={item.name} className={`department-heat-card tone-${heatTone(item.status)}`}>
+                <span>{item.name}</span>
+                <strong>{item.average}%</strong>
+                <small>{item.subject_count} subjects • {item.entries} scores</small>
+              </div>
+            )) : <p className="panel-empty">No departmental performance data yet.</p>}
+          </div>
+        </article>
+      </div>
     </section>
   );
 }
@@ -5931,6 +6130,7 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
 
 export {
   AdminDashboardScreen,
+  AdminPerformanceHeatmapScreen,
   AdminFinanceScreen,
   AdminExamResultsScreen,
   AdminResultsScreen,

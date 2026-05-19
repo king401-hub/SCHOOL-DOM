@@ -1825,6 +1825,298 @@ def _build_unique_announcement_slug(title):
     return candidate
 
 
+def _performance_status(value, low=50, mid=70, inverse=False):
+    numeric = float(value or 0)
+    if inverse:
+        if numeric <= low:
+            return "strong"
+        if numeric <= mid:
+            return "watch"
+        return "weak"
+    if numeric >= mid:
+        return "strong"
+    if numeric >= low:
+        return "watch"
+    return "weak"
+
+
+def _department_bucket(subject_name="", subject_code=""):
+    label = f"{subject_name} {subject_code}".lower()
+    if any(item in label for item in ["math", "physics", "chem", "biology", "basic science", "agric", "computer", "ict"]):
+        return "Sciences"
+    if any(item in label for item in ["english", "literature", "language", "french", "yoruba", "igbo", "hausa"]):
+        return "Languages"
+    if any(item in label for item in ["account", "commerce", "economics", "business"]):
+        return "Commercial"
+    if any(item in label for item in ["government", "history", "civic", "social", "religion", "crs", "irs"]):
+        return "Humanities"
+    return "General Studies"
+
+
+def _score_percentage(score):
+    max_score = float(score.max_score or 0)
+    if max_score <= 0:
+        return 0
+    return round((float(score.score or 0) / max_score) * 100, 1)
+
+
+def _average(values):
+    values = [float(item or 0) for item in values]
+    if not values:
+        return 0
+    return round(sum(values) / len(values), 1)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def performance_heatmap_snapshot(request):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can view the performance heatmap."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    school = _resolve_school_tenant_for_user(user, school_code=request.query_params.get("school_code"))
+    if not school:
+        return Response({"success": False, "message": "Could not resolve school tenant."}, status=status.HTTP_400_BAD_REQUEST)
+
+    today = timezone.localdate()
+    current_start = today - timedelta(days=13)
+    previous_start = today - timedelta(days=27)
+    month_start = today.replace(day=1)
+
+    students_qs = User.objects.filter(role="student", tenant=school)
+    scores_qs = (
+        _scope_to_user_tenant(StudentSubjectScore.objects.select_related("subject", "class_group", "student"), user)
+        .filter(student__user__tenant=school)
+        .order_by("-updated_at")
+    )
+    scores = list(scores_qs[:2000])
+
+    subjects = {}
+    classes = {}
+    departments = {}
+    for item in scores:
+        percentage = _score_percentage(item)
+        subject_name = item.subject.name if item.subject else "General"
+        subject_code = item.subject.code if item.subject else ""
+        class_name = _class_label(item.class_group) if item.class_group else "Unassigned"
+        subject_key = item.subject_id or subject_name
+        class_key = item.class_group_id or class_name
+
+        subjects.setdefault(subject_key, {"name": subject_name, "code": subject_code, "scores": [], "classes": set()})
+        subjects[subject_key]["scores"].append(percentage)
+        subjects[subject_key]["classes"].add(class_name)
+
+        classes.setdefault(class_key, {"name": class_name, "scores": [], "subjects": set()})
+        classes[class_key]["scores"].append(percentage)
+        classes[class_key]["subjects"].add(subject_name)
+
+        department = _department_bucket(subject_name, subject_code)
+        departments.setdefault(department, {"name": department, "scores": [], "subjects": set()})
+        departments[department]["scores"].append(percentage)
+        departments[department]["subjects"].add(subject_name)
+
+    weak_subjects = sorted(
+        [
+            {
+                "name": item["name"],
+                "code": item["code"],
+                "average": _average(item["scores"]),
+                "entries": len(item["scores"]),
+                "class_count": len(item["classes"]),
+                "status": _performance_status(_average(item["scores"])),
+            }
+            for item in subjects.values()
+        ],
+        key=lambda row: row["average"],
+    )[:12]
+
+    low_classes = sorted(
+        [
+            {
+                "name": item["name"],
+                "average": _average(item["scores"]),
+                "entries": len(item["scores"]),
+                "subject_count": len(item["subjects"]),
+                "status": _performance_status(_average(item["scores"])),
+            }
+            for item in classes.values()
+        ],
+        key=lambda row: row["average"],
+    )[:12]
+
+    attendance_qs = (
+        _scope_to_user_tenant(AttendanceRecord.objects.select_related("class_group", "student"), user)
+        .filter(student__tenant=school, date__gte=previous_start)
+    )
+    attendance_by_class = {}
+    present_statuses = {"present", "late"}
+    for item in attendance_qs[:5000]:
+        class_name = _class_label(item.class_group) if item.class_group else "Unassigned"
+        bucket = attendance_by_class.setdefault(class_name, {"current_total": 0, "current_present": 0, "previous_total": 0, "previous_present": 0})
+        is_present = str(item.status or "").lower() in present_statuses
+        if item.date >= current_start:
+            bucket["current_total"] += 1
+            bucket["current_present"] += 1 if is_present else 0
+        else:
+            bucket["previous_total"] += 1
+            bucket["previous_present"] += 1 if is_present else 0
+
+    attendance_decline = []
+    for class_name, item in attendance_by_class.items():
+        current_rate = round((item["current_present"] / item["current_total"]) * 100, 1) if item["current_total"] else 0
+        previous_rate = round((item["previous_present"] / item["previous_total"]) * 100, 1) if item["previous_total"] else current_rate
+        decline = round(previous_rate - current_rate, 1)
+        attendance_decline.append(
+            {
+                "class_name": class_name,
+                "current_rate": current_rate,
+                "previous_rate": previous_rate,
+                "decline": decline,
+                "status": _performance_status(current_rate),
+            }
+        )
+    attendance_decline = sorted(attendance_decline, key=lambda row: (row["decline"], -row["current_rate"]), reverse=True)[:10]
+
+    fees_qs = (
+        SchoolFee.objects.select_related("student", "student__user", "student__current_class")
+        .filter(student__user__tenant=school)
+        .order_by("-created_at")[:1500]
+    )
+    fee_expected = Decimal("0")
+    fee_paid = Decimal("0")
+    fee_by_class = {}
+    for fee in fees_qs:
+        amount = Decimal(fee.amount or 0)
+        paid = Decimal(fee_paid_amount(fee) or 0)
+        fee_expected += amount
+        fee_paid += paid
+        class_name = _class_label(fee.student.current_class) if getattr(fee.student, "current_class", None) else "Unassigned"
+        bucket = fee_by_class.setdefault(class_name, {"expected": Decimal("0"), "paid": Decimal("0")})
+        bucket["expected"] += amount
+        bucket["paid"] += paid
+    collection_rate = round((float(fee_paid) / float(fee_expected)) * 100, 1) if fee_expected else 0
+    fee_class_trends = []
+    for class_name, item in fee_by_class.items():
+        rate = round((float(item["paid"]) / float(item["expected"])) * 100, 1) if item["expected"] else 0
+        fee_class_trends.append(
+            {
+                "class_name": class_name,
+                "expected": float(item["expected"]),
+                "paid": float(item["paid"]),
+                "collection_rate": rate,
+                "status": _performance_status(rate),
+            }
+        )
+    fee_class_trends = sorted(fee_class_trends, key=lambda row: row["collection_rate"])[:10]
+
+    monthly_transactions = [
+        {
+            "date": tx.created_at.date(),
+            "amount": float(tx.amount or 0),
+            "status": tx.status,
+            "type": tx.tx_type,
+        }
+        for tx in Transaction.objects.filter(admin_wallet__tenant=school, created_at__date__gte=month_start).order_by("created_at")[:500]
+    ]
+
+    attempts_qs = (
+        _scope_to_user_tenant(ExamAttempt.objects.select_related("exam", "exam__subject", "exam__class_group"), user)
+        .filter(created_at__date__gte=month_start)
+        .order_by("-created_at")
+    )
+    attempts = list(attempts_qs[:2000])
+    exam_completion = _average([100 if item.is_submitted or item.is_completed else 0 for item in attempts])
+    exam_average = _average([float(item.percentage or 0) for item in attempts if item.is_submitted or item.is_completed])
+    exam_auto_rate = _average([100 if item.auto_submitted else 0 for item in attempts])
+    exams_by_subject = {}
+    for item in attempts:
+        subject_name = item.exam.subject.name if item.exam and item.exam.subject else "General"
+        bucket = exams_by_subject.setdefault(subject_name, {"scores": [], "attempts": 0, "auto": 0})
+        bucket["attempts"] += 1
+        bucket["auto"] += 1 if item.auto_submitted else 0
+        if item.is_submitted or item.is_completed:
+            bucket["scores"].append(float(item.percentage or 0))
+    exam_subjects = sorted(
+        [
+            {
+                "name": name,
+                "average": _average(item["scores"]),
+                "attempts": item["attempts"],
+                "auto_submitted": item["auto"],
+                "status": _performance_status(_average(item["scores"])),
+            }
+            for name, item in exams_by_subject.items()
+        ],
+        key=lambda row: row["average"],
+    )[:10]
+
+    department_rows = sorted(
+        [
+            {
+                "name": item["name"],
+                "average": _average(item["scores"]),
+                "subject_count": len(item["subjects"]),
+                "entries": len(item["scores"]),
+                "status": _performance_status(_average(item["scores"])),
+            }
+            for item in departments.values()
+        ],
+        key=lambda row: row["average"],
+    )
+
+    risk_score = _average(
+        [
+            100 - _average([row["average"] for row in weak_subjects]) if weak_subjects else 0,
+            100 - _average([row["average"] for row in low_classes]) if low_classes else 0,
+            100 - _average([row["current_rate"] for row in attendance_decline]) if attendance_decline else 0,
+            100 - collection_rate,
+            100 - exam_average,
+        ]
+    )
+
+    return Response(
+        {
+            "success": True,
+            "generated_at": timezone.now(),
+            "school": _school_payload(school, request),
+            "summary": {
+                "students": students_qs.count(),
+                "score_entries": len(scores),
+                "weak_subjects": sum(1 for item in weak_subjects if item["status"] == "weak"),
+                "low_classes": sum(1 for item in low_classes if item["status"] == "weak"),
+                "attendance_current": _average([row["current_rate"] for row in attendance_decline]),
+                "fee_collection_rate": collection_rate,
+                "exam_average": exam_average,
+                "exam_completion": exam_completion,
+                "exam_auto_submit_rate": exam_auto_rate,
+                "risk_score": round(risk_score, 1),
+                "risk_status": _performance_status(100 - risk_score),
+            },
+            "weak_subjects": weak_subjects,
+            "low_classes": low_classes,
+            "attendance_decline": attendance_decline,
+            "fee_trends": {
+                "expected": float(fee_expected),
+                "paid": float(fee_paid),
+                "collection_rate": collection_rate,
+                "class_trends": fee_class_trends,
+                "monthly_transactions": monthly_transactions,
+            },
+            "examination_statistics": {
+                "attempts": len(attempts),
+                "completion_rate": exam_completion,
+                "average": exam_average,
+                "auto_submit_rate": exam_auto_rate,
+                "subjects": exam_subjects,
+            },
+            "departmental_performance": department_rows,
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dashboard_snapshot(request):

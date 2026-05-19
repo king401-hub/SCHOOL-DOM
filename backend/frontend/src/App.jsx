@@ -32,6 +32,8 @@ import {
   STUDENT_ROUTES,
   STUDENT_ROUTE_SET,
   RECOMMENDED_SUBJECT_GROUPS,
+} from "./appConstants";
+import {
   MultiSelectBox,
   normalizePath,
   isTeacherAttendanceScanPath,
@@ -81,6 +83,7 @@ const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
 
 const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
+const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
 const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
@@ -102,19 +105,49 @@ const NAIRA_SYMBOL = "\u20A6";
 const DAILY_PERSONAL_QUESTION_LIMIT = 20;
 const ADMIN_ACTIVITY_LOG_KEY = "schooldom.admin_activity_notifications";
 
-function readAdminActivityLog() {
-  if (typeof window === "undefined") return [];
+function isMobileQuizViewport() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(max-width: 900px) and (pointer: coarse)").matches;
+}
+
+async function requestLandscapeForPersonalQuiz() {
+  if (!isMobileQuizViewport()) return;
   try {
-    return JSON.parse(window.localStorage.getItem(ADMIN_ACTIVITY_LOG_KEY) || "[]");
+    await window.screen?.orientation?.lock?.("landscape");
   } catch {
-    window.localStorage.removeItem(ADMIN_ACTIVITY_LOG_KEY);
+    // Mobile browsers may only allow orientation lock for installed/fullscreen apps.
+  }
+}
+
+function adminActivityLogKey(session) {
+  const schoolCode =
+    session?.school_code ||
+    session?.schoolCode ||
+    session?.school?.school_code ||
+    session?.school?.schoolCode ||
+    session?.user?.tenant?.schema_name ||
+    session?.user?.tenant?.school_code ||
+    session?.user?.tenant_id ||
+    session?.user?.tenant ||
+    "global";
+  const userId = session?.user?.id || session?.user?.email || "anonymous";
+  return `${ADMIN_ACTIVITY_LOG_KEY}.${String(schoolCode).toLowerCase()}.${userId}`;
+}
+
+function readAdminActivityLog(session) {
+  if (typeof window === "undefined") return [];
+  const storageKey = adminActivityLogKey(session);
+  try {
+    return JSON.parse(window.localStorage.getItem(storageKey) || "[]");
+  } catch {
+    window.localStorage.removeItem(storageKey);
     return [];
   }
 }
 
-function writeAdminActivityLog(items) {
+function writeAdminActivityLog(session, items) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(ADMIN_ACTIVITY_LOG_KEY, JSON.stringify(items.slice(0, 80)));
+  window.localStorage.setItem(adminActivityLogKey(session), JSON.stringify(items.slice(0, 80)));
 }
 
 function createAdminActivityNotification(payload = {}, actor = {}) {
@@ -1978,6 +2011,7 @@ function StudentQuizPage({ session, onNavigate }) {
         subject_id: Number(subjectId),
         question_count: DAILY_PERSONAL_QUESTION_LIMIT,
       });
+      requestLandscapeForPersonalQuiz();
       setActiveQuiz(quiz);
       setQuizSource("personal");
       setAnswers({});
@@ -2107,6 +2141,39 @@ function StudentQuizPage({ session, onNavigate }) {
       window.removeEventListener("beforeprint", blockPrint);
     };
   }, [activeQuiz, result]);
+
+  useEffect(() => {
+    const shouldUseMobileLandscape = Boolean(activeQuiz && quizSource === "personal" && !result);
+    if (!shouldUseMobileLandscape) {
+      document.body.classList.remove("personal-quiz-mobile-landscape");
+      try {
+        window.screen?.orientation?.unlock?.();
+      } catch {
+        // Some browsers do not expose orientation unlock.
+      }
+      return undefined;
+    }
+
+    const syncLandscapeClass = () => {
+      document.body.classList.toggle("personal-quiz-mobile-landscape", isMobileQuizViewport());
+    };
+
+    syncLandscapeClass();
+    requestLandscapeForPersonalQuiz();
+    window.addEventListener("resize", syncLandscapeClass);
+    window.addEventListener("orientationchange", syncLandscapeClass);
+
+    return () => {
+      window.removeEventListener("resize", syncLandscapeClass);
+      window.removeEventListener("orientationchange", syncLandscapeClass);
+      document.body.classList.remove("personal-quiz-mobile-landscape");
+      try {
+        window.screen?.orientation?.unlock?.();
+      } catch {
+        // Some browsers do not expose orientation unlock.
+      }
+    };
+  }, [activeQuiz, quizSource, result]);
 
   const selectAnswer = (questionId, value) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -2402,7 +2469,7 @@ function StudentQuizPage({ session, onNavigate }) {
     }
 
     return (
-      <section className="cbt-page">
+      <section className={`cbt-page ${quizSource === "personal" ? "personal-cbt-page" : "teacher-cbt-page"}`}>
         <header className="cbt-topbar">
           <div className="cbt-brand">
             <span className="cbt-monitor-icon" aria-hidden="true">
@@ -4671,7 +4738,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const [screenData, setScreenData] = useState({});
   const [screenLoading, setScreenLoading] = useState({});
   const [screenError, setScreenError] = useState({});
-  const [adminActivityRecords, setAdminActivityRecords] = useState(() => readAdminActivityLog());
+  const [adminActivityRecords, setAdminActivityRecords] = useState(() => readAdminActivityLog(session));
   const [navOpen, setNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(null);
@@ -4683,6 +4750,10 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       onNavigate(activePath, { replace: true });
     }
   }, [activePath, currentPath, onNavigate]);
+
+  useEffect(() => {
+    setAdminActivityRecords(readAdminActivityLog(session));
+  }, [session]);
 
   const loadScreen = useCallback(
     async (path, force = false) => {
@@ -4766,21 +4837,21 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       const nextItem = createAdminActivityNotification(payload, session?.user);
       setAdminActivityRecords((previous) => {
         const next = [nextItem, ...previous].slice(0, 80);
-        writeAdminActivityLog(next);
+        writeAdminActivityLog(session, next);
         return next;
       });
       return nextItem;
     },
-    [session?.user]
+    [session]
   );
 
   const markAdminActivityRead = useCallback((notificationId) => {
     setAdminActivityRecords((previous) => {
       const next = previous.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item));
-      writeAdminActivityLog(next);
+      writeAdminActivityLog(session, next);
       return next;
     });
-  }, []);
+  }, [session]);
 
   const handleSendMessage = useCallback(
     async (payload, options = {}) => {
@@ -5625,6 +5696,15 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onBroadcastMessage={handleSendMessage}
+      />
+    );
+  } else if (activePath === "/performance-heatmap") {
+    content = (
+      <AdminPerformanceHeatmapScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
       />
     );
   } else if (activePath === "/finance") {

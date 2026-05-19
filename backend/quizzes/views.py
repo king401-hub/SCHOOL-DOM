@@ -563,12 +563,14 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
     else:
         subject_pool = subject_pool.filter(folder__class_group__isnull=True)
     folder_questions = list(subject_pool.order_by("?")[:count])
-    if not folder_questions:
+    if not folder_questions and not tenant:
         folder_questions = list(
             PersonalQuizFolderQuestion.objects.filter(
                 folder__is_active=True,
                 is_active=True,
+                folder__tenant__isnull=True,
                 folder__subject__isnull=True,
+                folder__class_group__isnull=True,
             ).order_by("?")[:count]
         )
     if folder_questions:
@@ -783,7 +785,8 @@ class PersonalQuizResourceQuestion(APIView):
     def post(self, request, folder_id):
         if request.user.role not in {"school_admin", "principal", "super_admin"}:
             return Response({"detail": "Only school administrators can add personal quiz questions."}, status=status.HTTP_403_FORBIDDEN)
-        folder = get_object_or_404(PersonalQuizFolder, id=folder_id, is_active=True)
+        legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        folder = get_object_or_404(PersonalQuizFolder, id=folder_id, is_active=True, tenant=legacy_tenant)
         prompt = str(request.data.get("prompt") or "").strip()
         correct_answer = str(request.data.get("correct_answer") or "").strip()
         if len(prompt) < 3 or not correct_answer:

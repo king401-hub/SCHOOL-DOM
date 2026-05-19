@@ -9,7 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
-from django.core.mail import send_mail
+from django.core.mail import get_connection, send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -174,9 +174,14 @@ def get_admin_email_device(user, challenge=None):
     return user
 
 
+def admin_otp_challenge_matches(user, challenge=None):
+    return bool(challenge and user.admin_otp_challenge == challenge)
+
+
 def send_admin_otp(user, purpose="login"):
     code = "".join(secrets.choice(string.digits) for _ in range(6))
     challenge = secrets.token_urlsafe(32)
+    user._admin_otp_debug_code = code
     user.admin_otp_hash = make_password(code)
     user.admin_otp_sent_at = timezone.now()
     user.admin_otp_purpose = purpose
@@ -197,28 +202,33 @@ def send_admin_otp(user, purpose="login"):
         "expires_minutes": ADMIN_OTP_EXPIRY_MINUTES,
     })
     try:
+        connection = get_connection(timeout=getattr(settings, "EMAIL_TIMEOUT", 10))
         send_mail(
             "Your SchoolDom admin verification code",
             f"Your SchoolDom verification code is {code}. It expires in {ADMIN_OTP_EXPIRY_MINUTES} minutes.",
             settings.DEFAULT_FROM_EMAIL,
             [user.email],
+            connection=connection,
             html_message=message,
             fail_silently=False,
         )
     except Exception:
-        if not (
-            getattr(settings, "DEBUG", False)
-            and getattr(settings, "ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK", False)
-        ):
+        if not getattr(settings, "ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK", False):
             raise
         logger.warning(
             "Admin OTP email delivery failed for %s. Using local console fallback. "
             "SchoolDom admin OTP code: %s",
             user.email,
             code,
-            exc_info=True,
         )
     return challenge
+
+
+def admin_otp_debug_payload(user):
+    if not getattr(settings, "ADMIN_OTP_DEBUG_CODE_ENABLED", False):
+        return {}
+    code = getattr(user, "_admin_otp_debug_code", "")
+    return {"debug_otp": code} if code else {}
 
 
 def clear_admin_otp(user):
@@ -309,6 +319,7 @@ def register(request):
                 'otp_expires_in': ADMIN_OTP_EXPIRY_MINUTES * 60,
                 'message': 'Account created. Enter the 6-digit OTP sent to your email to activate admin access.',
                 'user': UserSerializer(user).data,
+                **admin_otp_debug_payload(user),
             }, status=status.HTTP_201_CREATED)
         
         # Return response
@@ -436,6 +447,7 @@ def login_view(request):
                 'message': 'Enter the 6-digit OTP sent to your email to continue.',
                 'user': UserSerializer(user).data,
                 'school_code': user.tenant.schema_name if user.tenant else '',
+                **admin_otp_debug_payload(user),
             })
 
         tokens = get_tokens_for_user(user)
@@ -671,7 +683,7 @@ def admin_resend_otp(request):
         return Response({'success': False, 'message': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
     if not is_admin_otp_user(user):
         return Response({'success': False, 'message': 'OTP resend is only available for admin accounts.'}, status=status.HTTP_400_BAD_REQUEST)
-    if challenge and not get_admin_email_device(user, challenge=challenge):
+    if challenge and not admin_otp_challenge_matches(user, challenge=challenge):
         return Response({'success': False, 'message': 'Invalid OTP challenge.'}, status=status.HTTP_400_BAD_REQUEST)
     purpose = 'login' if user.is_verified else 'signup'
     try:
@@ -686,6 +698,7 @@ def admin_resend_otp(request):
         'otp_purpose': purpose,
         'otp_challenge': next_challenge,
         'otp_expires_in': ADMIN_OTP_EXPIRY_MINUTES * 60,
+        **admin_otp_debug_payload(user),
     })
 
 @api_view(['POST'])

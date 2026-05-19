@@ -2304,6 +2304,47 @@ class AuthSchoolScopeTests(TestCase):
         self.assertTrue(response.data["requires_otp"])
         self.assertTrue(response.data["otp_challenge"])
 
+    @override_settings(DEBUG=True, ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK=True)
+    @patch("users.views.ADMIN_OTP_ENABLED", True)
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>OTP</p>")
+    def test_admin_otp_resend_accepts_matching_expired_challenge(self, _render_to_string, _send_mail):
+        user = User.objects.create_user(
+            email="otp.expired.admin@school.edu",
+            password="AdminPass123",
+            first_name="Otp",
+            last_name="Expired",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=False,
+        )
+        user.admin_otp_hash = "old-hash"
+        user.admin_otp_challenge = "expired-challenge"
+        user.admin_otp_sent_at = timezone.now() - timedelta(minutes=30)
+        user.admin_otp_purpose = "signup"
+        user.save(update_fields=[
+            "admin_otp_hash",
+            "admin_otp_challenge",
+            "admin_otp_sent_at",
+            "admin_otp_purpose",
+        ])
+
+        response = self.client.post(
+            "/api/auth/admin/resend-otp/",
+            data={
+                "email": user.email,
+                "challenge": "expired-challenge",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["otp_purpose"], "signup")
+        self.assertTrue(response.data["otp_challenge"])
+        self.assertNotEqual(response.data["otp_challenge"], "expired-challenge")
+
     def test_create_class_accepts_school_code_when_user_tenant_missing(self):
         user = User.objects.create_user(
             email="class.admin@school.edu",
