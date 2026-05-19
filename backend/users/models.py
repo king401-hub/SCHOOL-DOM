@@ -64,6 +64,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('super_admin', 'Super Administrator'),
         ('school_admin', 'School Administrator'),
         ('principal', 'Principal'),
+        ('accountant', 'Accountant'),
         ('teacher', 'Teacher'),
         ('staff', 'Staff'),
         ('student', 'Student'),

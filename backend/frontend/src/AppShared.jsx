@@ -46,9 +46,15 @@ export const ADMIN_ROUTES = [
   { path: "/messages", label: "Messages" },
   { path: "/settings", label: "Settings" },
 ];
+export const ACCOUNTANT_ROUTES = [
+  { path: "/finance", label: "Finance" },
+  { path: "/expenses", label: "Expenses" },
+  { path: "/hr-self-service", label: "Payroll & Leave" },
+];
 export const ADMIN_ROUTE_SET = new Set([
   ...ADMIN_ROUTES.map((item) => item.path),
-  ...ADMIN_ROUTES.filter((item) => item.children).flatMap((item) => item.children.map((child) => child.path))
+  ...ADMIN_ROUTES.filter((item) => item.children).flatMap((item) => item.children.map((child) => child.path)),
+  ...ACCOUNTANT_ROUTES.map((item) => item.path)
 ]);
 export const ADMIN_ROUTE_REDIRECTS = {
   "/hr": "/hr/activity",
@@ -57,6 +63,7 @@ export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",
   "/finance": "/api/finance/admin/overview/",
   "/expenses": "/api/finance/admin/expenses/",
+  "/hr-self-service": "/api/hr/self-service/",
   "/hr/activity": "/api/hr/activity/",
   "/non-teaching-staff": "/api/hr/overview/",
   "/students": "/api/app/students/",
@@ -808,6 +815,15 @@ function messageBody(message = {}) {
   return message.body || message.message || message.content || message.text || message.response_text || "";
 }
 
+function messageAttachments(message = {}) {
+  return Array.isArray(message.attachments) ? message.attachments : [];
+}
+
+function attachmentLabel(file) {
+  if (!file) return "";
+  return file.name || file.filename || file.url || "Attachment";
+}
+
 function LegacyMessageInboxPanel({
   title = "Inbox",
   messages = [],
@@ -1037,6 +1053,8 @@ export function MessageInboxPanel({
   const [isComposing, setIsComposing] = useState(false);
   const [actionBusyId, setActionBusyId] = useState("");
   const [localSentMessages, setLocalSentMessages] = useState(() => readLocalSentMessages());
+  const [composeAttachments, setComposeAttachments] = useState([]);
+  const attachmentInputRef = useRef(null);
 
   useEffect(() => {
     if (!onRefresh || !refreshIntervalMs) return undefined;
@@ -1108,7 +1126,7 @@ export function MessageInboxPanel({
       const createdAt = message.created_at || message.sent_at || "";
       if (!thread.latestAt || new Date(createdAt || 0) > new Date(thread.latestAt || 0)) {
         thread.latestAt = createdAt;
-        thread.preview = messageSubject(message) || messageBody(message) || "";
+        thread.preview = messageSubject(message) || messageBody(message) || (messageAttachments(message).length ? "Attachment" : "");
       }
     });
 
@@ -1159,15 +1177,15 @@ export function MessageInboxPanel({
       setComposeError("Select a recipient before sending.");
       return;
     }
-    if (!composeForm.body.trim()) {
-      setComposeError("Add a message before sending.");
+    if (!composeForm.body.trim() && composeAttachments.length === 0) {
+      setComposeError("Add a message or attachment before sending.");
       return;
     }
     setComposeError("");
     setComposeFeedback("");
     setIsComposing(true);
     try {
-      await onComposeSubmit(composeForm.recipient, composeForm.subject.trim(), composeForm.body.trim(), selectedRecipient);
+      await onComposeSubmit(composeForm.recipient, composeForm.subject.trim(), composeForm.body.trim(), selectedRecipient, composeAttachments);
       const sentMessage = {
         id: `local-sent-${Date.now()}`,
         direction: "outgoing",
@@ -1177,6 +1195,7 @@ export function MessageInboxPanel({
         from: "You",
         subject: composeForm.subject.trim(),
         body: composeForm.body.trim(),
+        attachments: composeAttachments.map((file) => ({ name: file.name, size: file.size, content_type: file.type })),
         created_at: new Date().toISOString(),
         is_read: true,
       };
@@ -1187,12 +1206,22 @@ export function MessageInboxPanel({
       });
       setComposeFeedback("Message sent.");
       setComposeForm((prev) => ({ ...prev, subject: "", body: "" }));
+      setComposeAttachments([]);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
       await onRefresh?.();
     } catch (submissionError) {
       setComposeError(submissionError.message || "Could not send message.");
     } finally {
       setIsComposing(false);
     }
+  };
+
+  const handleAttachmentChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    setComposeAttachments(files.slice(0, 5));
+    setComposeError("");
   };
 
   const handleMarkRead = async (messageId) => {
@@ -1299,6 +1328,19 @@ export function MessageInboxPanel({
                 <span>{message.direction === "outgoing" ? "You" : message.from || message.from_name || activeThread.name}</span>
                 {messageSubject(message) ? <strong>{messageSubject(message)}</strong> : null}
                 <p>{messageBody(message) || "No content provided."}</p>
+                {messageAttachments(message).length ? (
+                  <div className="message-attachment-list">
+                    {messageAttachments(message).map((attachment, index) => (
+                      attachment.url ? (
+                        <a key={`${attachment.url}-${index}`} href={attachment.url} target="_blank" rel="noreferrer">
+                          {attachmentLabel(attachment)}
+                        </a>
+                      ) : (
+                        <span key={`${attachmentLabel(attachment)}-${index}`}>{attachmentLabel(attachment)}</span>
+                      )
+                    ))}
+                  </div>
+                ) : null}
                 <small>{formatDate(message.created_at)} - {message.direction === "outgoing" ? "Sent" : message.is_read ? "Read" : "Unread"}</small>
                 <div className="modern-bubble-actions">
                   {message.direction !== "outgoing" && !message.is_read ? (
@@ -1319,6 +1361,15 @@ export function MessageInboxPanel({
               <textarea value={composeForm.body} onChange={(event) => setComposeForm((prev) => ({ ...prev, body: event.target.value }))} placeholder={composerRecipient ? `Message ${composerRecipient.label}` : "Write a message"} />
               <button type="submit" disabled={composerRecipientOptions.length === 0 || isComposing}>{isComposing ? "..." : "Send"}</button>
             </div>
+            <label className="message-attachment-picker">
+              <span>Attach files</span>
+              <input ref={attachmentInputRef} type="file" multiple onChange={handleAttachmentChange} />
+            </label>
+            {composeAttachments.length ? (
+              <div className="message-attachment-list pending">
+                {composeAttachments.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+              </div>
+            ) : null}
             {composeError ? <p className="form-feedback error">{composeError}</p> : null}
             {composeFeedback ? <p className="form-feedback success">{composeFeedback}</p> : null}
           </form>

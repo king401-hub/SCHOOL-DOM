@@ -5131,6 +5131,45 @@ body[data-theme="dark"] .token-usage-toast {
   cursor: not-allowed;
 }
 
+.message-attachment-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.message-attachment-picker input {
+  max-width: 260px;
+  font-size: 0.78rem;
+}
+
+.message-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.message-attachment-list a,
+.message-attachment-list span {
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.message-attachment-list.pending span {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .admin-notification-center {
   animation: notificationPageIn 280ms ease both;
 }
@@ -11746,6 +11785,139 @@ body[data-theme="dark"] .migration-status-list span {
   background: linear-gradient(90deg, #f97316, #ef4444);
 }
 
+.accountant-dashboard {
+  color: #0f172a;
+}
+
+.school-finance-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(14, 116, 144, 0.1), rgba(34, 197, 94, 0.08)),
+    #ffffff;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.07);
+}
+
+.school-finance-hero p,
+.school-finance-hero h2,
+.school-finance-hero span,
+.school-finance-hero-stat small,
+.school-finance-hero-stat strong {
+  margin: 0;
+}
+
+.school-finance-hero p {
+  color: #0e7490;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.school-finance-hero h2 {
+  margin-top: 0.25rem;
+  color: #0f172a;
+  font-size: 1.7rem;
+  line-height: 1.15;
+}
+
+.school-finance-hero span {
+  display: block;
+  max-width: 760px;
+  margin-top: 0.45rem;
+  color: #475569;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.school-finance-hero-stat {
+  min-width: 190px;
+  display: grid;
+  align-content: center;
+  gap: 0.3rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: #0f766e;
+  color: #ecfeff;
+}
+
+.school-finance-hero-stat strong {
+  color: #ffffff;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.school-finance-hero-stat span,
+.school-finance-hero-stat small {
+  color: rgba(240, 253, 250, 0.86);
+}
+
+.accountant-analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 0.75rem;
+}
+
+.class-finance-stat-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.class-finance-stat {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.8fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.class-finance-stat strong,
+.class-finance-stat span,
+.class-finance-stat small {
+  display: block;
+}
+
+.class-finance-stat strong {
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.class-finance-stat span,
+.class-finance-stat small {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.class-finance-meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.class-finance-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0ea5e9, #22c55e);
+}
+
+.accountant-dashboard .mobile-finance-panel {
+  display: none;
+}
+
+.accountant-dashboard .mobile-finance-panel.active {
+  display: block;
+}
+
 .table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -12223,6 +12395,15 @@ body[data-theme="dark"] .migration-status-list span {
   }
 
   .finance-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .school-finance-hero {
+    flex-direction: column;
+  }
+
+  .accountant-analytics-grid,
+  .class-finance-stat {
     grid-template-columns: 1fr;
   }
 

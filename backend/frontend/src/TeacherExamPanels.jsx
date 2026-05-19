@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDate, MetricCard, requestJson } from "./AppShared";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
@@ -1527,9 +1527,11 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
 
 export function ClassMessageComposer({ classOptions = [], onSend }) {
   const [form, setForm] = useState({ classId: "", subject: "", body: "" });
+  const [attachments, setAttachments] = useState([]);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const attachmentInputRef = useRef(null);
 
   useEffect(() => {
     if (classOptions.length === 0) {
@@ -1547,8 +1549,8 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
       setError("Select a class before sending.");
   return;
     }
-    if (!form.body.trim()) {
-      setError("Write a message before sending.");
+    if (!form.body.trim() && attachments.length === 0) {
+      setError("Write a message or choose an attachment before sending.");
       return;
     }
     setError("");
@@ -1559,9 +1561,14 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
         class_id: form.classId,
         subject: form.subject.trim(),
         body: form.body.trim(),
+        attachments,
       });
       setFeedback(result?.message || "Message sent to the class.");
       setForm((prev) => ({ ...prev, subject: "", body: "" }));
+      setAttachments([]);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
     } catch (sendError) {
       setError(sendError.message || "Could not send class message.");
     } finally {
@@ -1603,6 +1610,11 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
               onChange={(event) => setForm((prev) => ({ ...prev, body: event.target.value }))}
               placeholder="Write your announcement for this class"
             />
+          </label>
+          <label className="panel-field full">
+            Attachments
+            <input ref={attachmentInputRef} type="file" multiple onChange={(event) => setAttachments(Array.from(event.target.files || []).slice(0, 5))} />
+            {attachments.length ? <small className="field-note">{attachments.map((file) => file.name).join(", ")}</small> : null}
           </label>
         </div>
         {error ? <p className="form-feedback error">{error}</p> : null}

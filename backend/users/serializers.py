@@ -8,8 +8,8 @@ from core.models import SchoolTenant
 from finance.services import student_has_login_credit, update_student_activation_alerts
 import re
 
-SCHOOL_SCOPED_ROLES = {"student", "teacher", "staff", "parent", "school_admin", "principal"}
-STRICT_SCHOOL_CODE_LOGIN_ROLES = {"student", "teacher", "staff"}
+SCHOOL_SCOPED_ROLES = {"student", "teacher", "staff", "accountant", "parent", "school_admin", "principal"}
+STRICT_SCHOOL_CODE_LOGIN_ROLES = {"student", "teacher", "staff", "accountant"}
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -241,7 +241,7 @@ class LoginSerializer(serializers.Serializer):
 
                 if requires_school_code and not school_code:
                     raise serializers.ValidationError({
-                    'error': 'School code is required for student, teacher, and staff login.'
+                    'error': 'School code is required for student, teacher, staff, and accountant login.'
                     })
 
                 if requires_school_scope and not user.tenant and not school_code:

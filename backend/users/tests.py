@@ -407,6 +407,42 @@ class EnrollmentsAPITests(TestCase):
         first_message = response.data["inbox"][0]
         self.assertIn("from_email", first_message)
         self.assertIn("body", first_message)
+        self.assertIn("attachments", first_message)
+
+    def test_message_send_accepts_attachments(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.attachment@smoke.edu",
+            password="TeacherPass123",
+            first_name="File",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        upload = SimpleUploadedFile("notice.txt", b"Bring your notebook.", content_type="text/plain")
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "recipient_email": teacher_user.email,
+                "subject": "Attached note",
+                "body": "Please check the file.",
+                "attachments": [upload],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        message = InAppMessage.objects.get(recipient=teacher_user)
+        self.assertEqual(len(message.attachments), 1)
+        self.assertEqual(message.attachments[0]["name"], "notice.txt")
+
+        self.client.force_authenticate(user=teacher_user)
+        inbox_response = self.client.get("/api/app/messages/")
+        self.assertEqual(inbox_response.status_code, 200)
+        self.assertEqual(inbox_response.data["inbox"][0]["attachments"][0]["name"], "notice.txt")
 
     def test_admin_can_publish_announcement_for_students_and_teachers(self):
         student_user = User.objects.create_user(

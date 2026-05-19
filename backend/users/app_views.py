@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import uuid
 import zipfile
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
@@ -11,6 +12,7 @@ from urllib.parse import quote
 import qrcode
 from django.conf import settings
 from django.core import signing
+from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Q, Sum, Prefetch
@@ -1532,6 +1534,88 @@ def _is_allowed_message_recipient(sender, recipient):
     return _message_recipient_queryset_for_user(sender).filter(id=recipient.id).exists()
 
 
+MESSAGE_ATTACHMENT_MAX_FILES = 5
+MESSAGE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _message_attachment_url(path, request=None):
+    if not path:
+        return ""
+    try:
+        url = default_storage.url(path)
+    except Exception:
+        media_url = getattr(settings, "MEDIA_URL", "/media/")
+        url = f"{media_url.rstrip('/')}/{path.lstrip('/')}"
+    return request.build_absolute_uri(url) if request else url
+
+
+def _message_attachment_payload(item, request=None):
+    if not isinstance(item, dict):
+        return None
+    payload = {
+        "name": item.get("name") or item.get("filename") or "Attachment",
+        "content_type": item.get("content_type") or "",
+        "size": item.get("size") or 0,
+        "url": item.get("url") or _message_attachment_url(item.get("path"), request=request),
+    }
+    return payload if payload["url"] else None
+
+
+def _message_payload(message, request=None, viewer=None):
+    viewer_id = getattr(viewer, "id", None)
+    outgoing = viewer_id and message.sender_id == viewer_id
+    attachments = [
+        payload
+        for payload in (_message_attachment_payload(item, request=request) for item in (message.attachments or []))
+        if payload
+    ]
+    return {
+        "id": str(message.id),
+        "from": message.sender.get_full_name(),
+        "from_name": message.sender.get_full_name(),
+        "from_email": message.sender.email,
+        "from_role": message.sender.role,
+        "to": message.recipient.get_full_name(),
+        "to_name": message.recipient.get_full_name(),
+        "to_email": message.recipient.email,
+        "to_role": message.recipient.role,
+        "direction": "outgoing" if outgoing else "incoming",
+        "subject": message.subject or "",
+        "body": message.body,
+        "attachments": attachments,
+        "is_read": message.is_read,
+        "created_at": message.created_at,
+    }
+
+
+def _collect_message_attachments(request):
+    uploaded_files = []
+    for field_name in ("attachments", "attachment", "files"):
+        uploaded_files.extend(request.FILES.getlist(field_name))
+    if len(uploaded_files) > MESSAGE_ATTACHMENT_MAX_FILES:
+        raise ValueError(f"You can attach up to {MESSAGE_ATTACHMENT_MAX_FILES} files per message.")
+
+    attachments = []
+    for uploaded_file in uploaded_files:
+        if uploaded_file.size > MESSAGE_ATTACHMENT_MAX_BYTES:
+            raise ValueError(f"{uploaded_file.name} is larger than 10 MB.")
+        original_name = os.path.basename(uploaded_file.name or "attachment")
+        saved_path = default_storage.save(
+            f"message_attachments/{timezone.now():%Y/%m}/{uuid.uuid4().hex}_{original_name}",
+            uploaded_file,
+        )
+        attachments.append(
+            {
+                "name": original_name,
+                "path": saved_path,
+                "url": _message_attachment_url(saved_path, request=request),
+                "size": uploaded_file.size,
+                "content_type": getattr(uploaded_file, "content_type", "") or "",
+            }
+        )
+    return attachments
+
+
 def _ensure_default_grade_scales(user):
     tenant_obj = _tenant_for_model(GradeScale, user)
     if not tenant_obj:
@@ -2206,15 +2290,7 @@ def student_dashboard(request):
                 for prompt in question_prompt_list
             ],
             "inbox": [
-                {
-                    "id": str(item.id),
-                    "from": item.sender.get_full_name(),
-                    "from_email": item.sender.email,
-                    "subject": item.subject or "",
-                    "body": item.body,
-                    "is_read": item.is_read,
-                    "created_at": item.created_at,
-                }
+                _message_payload(item, request=request, viewer=user)
                 for item in inbox_qs[:12]
             ],
             "recent_results": recent_results,
@@ -2570,15 +2646,7 @@ def teacher_dashboard(request):
                 for item in announcements[:4]
             ],
             "inbox": [
-                {
-                    "id": str(item.id),
-                    "from": item.sender.get_full_name(),
-                    "from_email": item.sender.email,
-                    "subject": item.subject or "",
-                    "body": item.body,
-                    "is_read": item.is_read,
-                    "created_at": item.created_at,
-                }
+                _message_payload(item, request=request, viewer=user)
                 for item in inbox_qs[:6]
             ],
             "options": {
@@ -5130,15 +5198,7 @@ def messages_snapshot(request):
                 for item in notifications[:8]
             ],
             "inbox": [
-                {
-                    "id": str(item.id),
-                    "from": item.sender.get_full_name(),
-                    "from_email": item.sender.email,
-                    "subject": item.subject or "",
-                    "body": item.body,
-                    "is_read": item.is_read,
-                    "created_at": item.created_at,
-                }
+                _message_payload(item, request=request, viewer=user)
                 for item in inbox[:20]
             ],
             "announcements": [
@@ -6514,15 +6574,7 @@ def messages_inbox(request):
                 "unread": messages.filter(is_read=False).count(),
             },
             "messages": [
-                {
-                    "id": str(msg.id),
-                    "from": msg.sender.get_full_name(),
-                    "from_email": msg.sender.email,
-                    "subject": msg.subject or "",
-                    "body": msg.body,
-                    "is_read": msg.is_read,
-                    "created_at": msg.created_at,
-                }
+                _message_payload(msg, request=request, viewer=request.user)
                 for msg in messages[:20]
             ],
         }
@@ -6536,10 +6588,17 @@ def send_message(request):
     recipient_email = str(request.data.get("recipient_email", "")).strip().lower()
     body = str(request.data.get("body", "")).strip()
     subject = str(request.data.get("subject", "")).strip()
-
-    if len(body) < 1:
+    try:
+        attachments = _collect_message_attachments(request)
+    except ValueError as exc:
         return Response(
-            {"success": False, "message": "Message body is required."},
+            {"success": False, "message": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if len(body) < 1 and not attachments:
+        return Response(
+            {"success": False, "message": "Message body or attachment is required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -6570,6 +6629,7 @@ def send_message(request):
             content=body,
             audience_type="role",
             target_roles=["student", "teacher", "staff"],
+            attachments=attachments,
             publish_from=timezone.now(),
             is_published=True,
         )
@@ -6632,6 +6692,7 @@ def send_message(request):
                 recipient=recipient,
                 subject=title,
                 body=body,
+                attachments=[dict(item) for item in attachments],
             )
             for recipient in recipients
         ]
@@ -6667,6 +6728,7 @@ def send_message(request):
                     "class_label": _class_label(class_obj),
                     "recipient_count": len(messages),
                     "subject": title,
+                    "attachments": attachments,
                 },
             },
             status=status.HTTP_201_CREATED,
@@ -6691,6 +6753,7 @@ def send_message(request):
         recipient=recipient,
         subject=subject or None,
         body=body,
+        attachments=attachments,
     )
     if Notification:
         Notification.objects.create(
@@ -6718,6 +6781,7 @@ def send_message(request):
                 "to": recipient.email,
                 "subject": message.subject or "",
                 "body": message.body,
+                "attachments": _message_payload(message, request=request, viewer=request.user)["attachments"],
                 "created_at": message.created_at,
             },
         },

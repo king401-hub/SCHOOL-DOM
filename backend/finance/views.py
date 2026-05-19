@@ -77,6 +77,7 @@ from users.models import StudentProfile, User
 
 
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
+FINANCE_ROLES = ADMIN_ROLES | {"accountant"}
 
 
 def _parse_amount(raw_amount):
@@ -543,8 +544,8 @@ def wallet_verify(request):
 def admin_overview(request):
     """Finance overview for administrators."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     admin_wallet = get_or_create_admin_wallet(user.tenant)
     finance_snapshot = _admin_finance_snapshot(user)
@@ -626,8 +627,8 @@ def admin_overview(request):
 def admin_payment_account(request):
     """Save the school bank account shown to students for fee transfers."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     bank_account_name = str(request.data.get("bank_account_name") or request.data.get("account_name") or "").strip()
     bank_account_number = str(request.data.get("bank_account_number") or request.data.get("account_number") or "").strip()
@@ -663,8 +664,8 @@ def admin_payment_account(request):
 def admin_class_fee_create(request):
     """Create a class fee and sync it to students in that class."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     title = str(request.data.get("title", "")).strip() or "School Fee"
     school_class_id = request.data.get("school_class") or request.data.get("class_id")
@@ -701,8 +702,8 @@ def admin_class_fee_create(request):
 def admin_class_fee_detail(request, fee_id):
     """Edit or deactivate a class fee."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     class_fee = get_object_or_404(
         ClassFee.objects.select_related("school_class").filter(school_class__in=_classes_for_user(user)),
@@ -752,8 +753,8 @@ def admin_class_fee_detail(request, fee_id):
 def admin_school_fee_detail(request, fee_id):
     """Edit one student's school-fee bill without changing the whole class fee."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     fee = get_object_or_404(
         SchoolFee.objects.select_related("student", "student__user", "student__current_class", "class_fee").filter(
@@ -806,8 +807,8 @@ def admin_school_fee_detail(request, fee_id):
 def admin_activation_credit_purchase(request):
     """Add purchased activation tokens to the school pool at fixed N200 per token."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         credits = int(request.data.get("credits") or 0)
@@ -873,8 +874,8 @@ def flutterwave_webhook(request):
 def admin_activation_credit_verify(request):
     """Verify a Flutterwave activation-token purchase and add tokens to the pool."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     reference = str(request.data.get("reference") or "").strip()
     if not reference:
@@ -895,8 +896,8 @@ def admin_activation_credit_verify(request):
 def admin_activation_credit_assign(request):
     """Assign monthly activation tokens to all students or students with at least 50% fees paid."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     scope = str(request.data.get("scope") or "all").strip()
     try:
@@ -919,8 +920,8 @@ def admin_activation_credit_assign(request):
 def admin_activation_credit_settings(request):
     """Enable or disable monthly auto-assignment of activation tokens."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     pool = get_or_create_activation_credit_pool(user.tenant)
     scope = str(request.data.get("scope") or pool.auto_assign_scope or "all").strip()
@@ -937,8 +938,8 @@ def admin_activation_credit_settings(request):
 def admin_activation_credit_run_auto(request):
     """Run configured monthly auto-assignment now."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     pool = get_or_create_activation_credit_pool(user.tenant)
     if not pool.auto_assign_enabled:
@@ -961,8 +962,8 @@ def admin_activation_credit_run_auto(request):
 def admin_bank_payment_ingest(request):
     """Ingest bank statement rows and match transfer narrations to student references."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     rows = request.data.get("transactions")
     if not isinstance(rows, list):
@@ -992,8 +993,8 @@ def admin_bank_payment_ingest(request):
 def admin_bank_payment_recover(request, payment_id):
     """Manually attach an unmatched or wrong-narration payment to the correct student."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     payment = get_object_or_404(BankPayment.objects.filter(tenant=user.tenant), id=payment_id)
     student_lookup = str(request.data.get("student_id") or request.data.get("student") or "").strip()
@@ -1030,8 +1031,8 @@ def admin_bank_payment_recover(request, payment_id):
 def admin_expense_records(request):
     """List or create tenant-scoped bills, expenses, and receipts."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == "GET":
         records = ExpenseRecord.objects.filter(tenant=user.tenant)
@@ -1096,8 +1097,8 @@ def admin_expense_records(request):
 def admin_expense_record_detail(request, record_id):
     """Delete one tenant-scoped expense tracker record."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     record = get_object_or_404(ExpenseRecord.objects.filter(tenant=user.tenant), id=record_id)
     record.delete()
@@ -1113,7 +1114,7 @@ def bank_payment_receipt(request, payment_id):
     payments = BankPayment.objects.select_related("student", "student__user", "payment_reference", "tenant")
     if user.role == "student":
         payments = payments.filter(student__user=user)
-    elif user.role in ADMIN_ROLES:
+    elif user.role in FINANCE_ROLES:
         payments = payments.filter(tenant=user.tenant)
     else:
         return Response({"success": False, "message": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
@@ -1149,8 +1150,8 @@ def bank_payment_receipt(request, payment_id):
 def admin_adjust_wallet(request):
     """Allow admins to adjust an existing student wallet balance."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     student_id = request.data.get("student_id")
     direction = str(request.data.get("direction", "")).lower()
@@ -1208,8 +1209,8 @@ def admin_adjust_wallet(request):
 def admin_assign_fee(request):
     """Create or update a manual school fee schedule for a student."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     student_id = request.data.get("student_id")
     title = str(request.data.get("title", "")).strip() or "School Fee"
@@ -1256,8 +1257,8 @@ def admin_assign_fee(request):
 def admin_withdraw(request):
     """Withdraw funds from the admin wallet to a bank account."""
     user = request.user
-    if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Admin role required."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role != "super_admin":
+        return Response({"success": False, "message": "School-fee withdrawals are restricted."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         amount = _parse_amount(request.data.get("amount"))

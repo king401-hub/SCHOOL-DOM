@@ -25,6 +25,7 @@ import {
   MESSAGE_POLL_INTERVAL_MS,
   TEACHER_ATTENDANCE_PREFIX,
   ADMIN_ROUTES,
+  ACCOUNTANT_ROUTES,
   ADMIN_ROUTE_SET,
   ADMIN_ROUTE_REDIRECTS,
   ADMIN_ENDPOINTS,
@@ -1285,9 +1286,9 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
     return () => window.clearInterval(pollId);
   }, [loadMessages]);
 
-  const handleComposeMessage = async (recipient, subject, body) => {
+  const handleComposeMessage = async (recipient, subject, body, _selectedRecipient, attachments = []) => {
     if (!onMessageSend) return;
-    await onMessageSend(recipient, subject, body);
+    await onMessageSend(recipient, subject, body, attachments);
     await loadMessages();
   };
 
@@ -4244,8 +4245,8 @@ function TeacherWorkspace({
   );
 
   const handleCompose = useCallback(
-    (recipientValue, subject, body) => {
-      return onMessageSend(recipientValue, subject, body);
+    (recipientValue, subject, body, _selectedRecipient, attachments = []) => {
+      return onMessageSend(recipientValue, subject, body, attachments);
     },
     [onMessageSend]
   );
@@ -4656,7 +4657,17 @@ function AdminNotificationsCenter({ session, data = {}, activityRecords = [], lo
 }
 
 function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreference, onThemeChange, onSessionUpdate }) {
-  const activePath = ADMIN_ROUTE_SET.has(currentPath) ? currentPath : "/dashboard";
+  const isAccountant = session?.user?.role === "accountant";
+  const visibleRoutes = isAccountant ? ACCOUNTANT_ROUTES : ADMIN_ROUTES;
+  const visibleRouteSet = useMemo(
+    () =>
+      new Set([
+        ...visibleRoutes.map((item) => item.path),
+        ...visibleRoutes.filter((item) => item.children).flatMap((item) => item.children.map((child) => child.path)),
+      ]),
+    [visibleRoutes]
+  );
+  const activePath = visibleRouteSet.has(currentPath) ? currentPath : visibleRoutes[0]?.path || "/dashboard";
   const [screenData, setScreenData] = useState({});
   const [screenLoading, setScreenLoading] = useState({});
   const [screenError, setScreenError] = useState({});
@@ -5650,6 +5661,15 @@ const unreadNotificationsCount =
         onDelete={handleAdminExpenseDelete}
       />
     );
+  } else if (activePath === "/hr-self-service") {
+    content = (
+      <StaffSelfServicePanel
+        session={session}
+        initialData={data}
+        standalone
+        onRefresh={() => loadScreen("/hr-self-service", true)}
+      />
+    );
   } else if (activePath === "/hr") {
     content = (
       <AdminHRPayrollScreen
@@ -5834,7 +5854,7 @@ const unreadNotificationsCount =
         </div>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {ADMIN_ROUTES.map((route) => {
+          {visibleRoutes.map((route) => {
             if (route.children) {
               const isOpen = dropdownOpen === route.path;
               return (
@@ -5900,10 +5920,10 @@ const unreadNotificationsCount =
           <div>
             <p className="topbar-kicker">Protected Workspace</p>
             <h2>{(() => {
-              const route = ADMIN_ROUTES.find((item) => item.path === activePath);
+              const route = visibleRoutes.find((item) => item.path === activePath);
               if (route) return route.label;
               // Check child routes
-              for (const parentRoute of ADMIN_ROUTES) {
+              for (const parentRoute of visibleRoutes) {
                 if (parentRoute.children) {
                   const childRoute = parentRoute.children.find((child) => child.path === activePath);
                   if (childRoute) return childRoute.label;
@@ -6120,7 +6140,7 @@ const result =     await postJson(session, `/api/app/exams/${examId}/notify/`, p
   );
 
   const handleMessageSend = useCallback(
-async (recipientValue, subject, body) => {
+async (recipientValue, subject, body, attachments = []) => {
     const payload = {
         subject,
         body,
@@ -6128,6 +6148,10 @@ async (recipientValue, subject, body) => {
       if (recipientValue) {
         payload.recipient_email = recipientValue;
       }
+      attachments.forEach((file) => {
+        if (!payload.attachments) payload.attachments = [];
+        payload.attachments.push(file);
+      });
       const result = await postJson(session, "/api/app/messages/send/", payload);
     await loadDashboard();
       return result;
@@ -6481,7 +6505,7 @@ useEffect(() => {
   }
 
   const role = session?.user?.role;
-  const isAdmin =     role === "school_admin" || role === "principal" || role === "super_admin";
+  const isAdmin =     role === "school_admin" || role === "principal" || role === "super_admin" || role === "accountant";
 if (isAdmin && ADMIN_ROUTE_REDIRECTS[currentPath]) {
       navigate(ADMIN_ROUTE_REDIRECTS[currentPath], { replace: true });
       return;
@@ -6528,11 +6552,12 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
   );
 
   const handleStandaloneMessageSend = useCallback(
-    async (recipientValue, subject, body) => {
+    async (recipientValue, subject, body, attachments = []) => {
       return postJson(session, "/api/app/messages/send/", {
         recipient_email: recipientValue,
         subject,
         body,
+        attachments,
       });
     },
     [session]
@@ -6583,7 +6608,7 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
   }
 
   const role = session?.user?.role;
-  const isAdmin = role === "school_admin" || role === "principal" || role === "super_admin";
+  const isAdmin = role === "school_admin" || role === "principal" || role === "super_admin" || role === "accountant";
   if (isTeacherAttendanceScanPath(currentPath)) {
     return withGlobalNotifications(
       <TeacherQRCodeAttendancePage

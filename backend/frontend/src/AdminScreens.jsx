@@ -637,92 +637,100 @@ function AdminFinanceScreen({
     }
   };
 
+  const classStats = classFees.map((fee) => {
+    const expected = Number(fee.expected_amount || 0);
+    const received = Number(fee.amount_received || 0);
+    return {
+      ...fee,
+      collectionRate: expected > 0 ? Math.min(100, Math.round((received / expected) * 100)) : 0,
+    };
+  });
+  const topClassStats = classStats.slice(0, 6);
+  const recentTransactions = transactionHistory.length
+    ? transactionHistory.slice(0, 6)
+    : [
+        ...paymentRows.slice(0, 3).map((row) => ({
+          id: `payment-${row.id}`,
+          description: `${row.name || "Student"} school fee`,
+          amount: row.amount_paid,
+          status: row.payment_status,
+          created_at: row.updated_at || row.due_date,
+        })),
+        ...bankPaymentRows.slice(0, 3).map((row) => ({
+          id: `bank-${row.id}`,
+          description: row.student_name ? `${row.student_name} transfer` : "Unmatched school-fee transfer",
+          amount: row.amount,
+          status: row.status,
+          created_at: row.matched_at || row.created_at,
+        })),
+      ];
+  const payrollRows = data?.hr_snapshot?.payroll || [];
+  const pendingPayroll = payrollRows.filter((item) => item.status !== "paid").length;
+
   return (
-    <section className="screen-grid">
-      <div className="screen-hero">
-        <h2>Finance</h2>
-        <p>Manage school fees, wallet balances, and payouts.</p>
+    <section className="screen-grid accountant-dashboard">
+      <div className="school-finance-hero">
+        <div>
+          <p>SchoolDom Accountant</p>
+          <h2>Finance Dashboard</h2>
+          <span>School fees, class collections, expenses, payroll, student payments, and reports in one focused workspace.</span>
+        </div>
+        <div className="school-finance-hero-stat">
+          <small>Collection Rate</small>
+          <strong>{receivedPercent}%</strong>
+          <span>{formatFinanceAmount(receivedAmount)} collected</span>
+        </div>
       </div>
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
       {data ? (
         <>
-          <div className="finance-summary-grid">
+          {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+          {formError ? <p className="form-feedback error">{formError}</p> : null}
+
+          <div className="finance-summary-grid accountant-summary-grid">
             <article className="finance-summary-card tone-expected">
               <div className="finance-summary-icon" aria-hidden="true">
                 <DashboardIcon name="currency-naira" className="inline-icon" />
               </div>
               <div>
                 <p>Expected Fees</p>
-                <strong>{formatFinanceAmount(finance?.expected_fee_amount)}</strong>
+                <strong>{formatFinanceAmount(expectedAmount)}</strong>
               </div>
             </article>
             <article className="finance-summary-card tone-received">
               <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="currency-naira" className="inline-icon" />
+                <DashboardIcon name="check" className="inline-icon" />
               </div>
               <div>
-                <p>Amount Received</p>
-                <strong>{formatFinanceAmount(finance?.amount_received ?? adminWallet.balance)}</strong>
+                <p>Fees Collected</p>
+                <strong>{formatFinanceAmount(receivedAmount)}</strong>
               </div>
             </article>
             <article className="finance-summary-card tone-outstanding">
-              <div className="finance-summary-icon" aria-hidden="true">
-               <DashboardIcon name="currency-naira" className="inline-icon" />
-              </div>
-              <div>
-                <p>Outstanding Balance</p>
-                <strong>{formatFinanceAmount(finance?.outstanding_balance)}</strong>
-              </div>
-            </article>
-            <article className="finance-summary-card tone-pending">
               <div className="finance-summary-icon" aria-hidden="true">
                 <DashboardIcon name="pending" className="inline-icon" />
               </div>
               <div>
-                <p>Pending Payments</p>
-                <strong>{finance?.pending_payments ?? 0}</strong>
+                <p>Outstanding</p>
+                <strong>{formatFinanceAmount(outstandingAmount)}</strong>
+              </div>
+            </article>
+            <article className="finance-summary-card tone-pending">
+              <div className="finance-summary-icon" aria-hidden="true">
+                <DashboardIcon name="staff" className="inline-icon" />
+              </div>
+              <div>
+                <p>Payroll Queue</p>
+                <strong>{pendingPayroll}</strong>
               </div>
             </article>
           </div>
-
-          <div className="finance-summary-grid credit-summary-grid">
-            <article className="finance-summary-card tone-expected">
-              <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="currency-naira" className="inline-icon" />
-              </div>
-              <div>
-                <p>Token Price</p>
-                <strong>{formatFinanceAmount(tokenUnitPrice)}</strong>
-              </div>
-            </article>
-            <article className="finance-summary-card tone-received">
-              <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="currency-naira" className="inline-icon" />
-              </div>
-              <div>
-                <p>Available Tokens</p>
-                <strong>{creditSummary.available_credits ?? creditPool.balance ?? 0}</strong>
-              </div>
-            </article>
-            <article className="finance-summary-card tone-outstanding">
-              <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="currency-naira" className="inline-icon" />
-              </div>
-              <div>
-                <p>Inactive Students</p>
-                <strong>{creditSummary.inactive_students ?? 0}</strong>
-              </div>
-            </article>
-          </div>
-
-          {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-          {formError ? <p className="form-feedback error">{formError}</p> : null}
 
           {editingStudentFeeId ? (
             <article className="app-panel edit-modal-card student-fee-modal" role="dialog" aria-modal="true" aria-labelledby="student-fee-edit-title">
               <div className="edit-modal-head">
                 <div>
-                  <h3 id="student-fee-edit-title">Edit Student Fee</h3>
+                  <h3 id="student-fee-edit-title">Edit Student Payment Record</h3>
                   <p className="panel-sub">
                     {selectedStudentFee?.student_name || "Selected student"}
                     {selectedStudentFee?.student_identifier ? ` - ${selectedStudentFee.student_identifier}` : ""}
@@ -732,46 +740,26 @@ function AdminFinanceScreen({
               </div>
               <form className="panel-form student-fee-edit-form" onSubmit={handleStudentFeeSubmit}>
                 <div className="panel-form-grid">
-                  <label className="panel-field">
-                    Fee title
-                    <input value={studentFeeForm.title} onChange={(event) => setStudentFeeForm((current) => ({ ...current, title: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Amount
-                    <input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(event) => setStudentFeeForm((current) => ({ ...current, amount: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Due date
-                    <input type="date" value={studentFeeForm.due_date} onChange={(event) => setStudentFeeForm((current) => ({ ...current, due_date: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Status
-                    <select value={studentFeeForm.status} onChange={(event) => setStudentFeeForm((current) => ({ ...current, status: event.target.value }))}>
-                      <option value="pending">Pending</option>
-                      <option value="paid">Paid</option>
-                      <option value="overdue">Overdue</option>
-                    </select>
-                  </label>
-                  <label className="panel-field checkbox-field">
-                    <input type="checkbox" checked={studentFeeForm.auto_deduct} onChange={(event) => setStudentFeeForm((current) => ({ ...current, auto_deduct: event.target.checked }))} />
-                    Auto deduct when due
-                  </label>
-                </div>
-                <div className="field-note">
-                  This change applies only to this student and will not update the class fee for other students.
+                  <label className="panel-field">Fee title<input value={studentFeeForm.title} onChange={(event) => setStudentFeeForm((current) => ({ ...current, title: event.target.value }))} required /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(event) => setStudentFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
+                  <label className="panel-field">Due date<input type="date" value={studentFeeForm.due_date} onChange={(event) => setStudentFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
+                  <label className="panel-field">Status<select value={studentFeeForm.status} onChange={(event) => setStudentFeeForm((current) => ({ ...current, status: event.target.value }))}><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onStudentFeeSave}>Update student fee</button>
+                  <button type="submit" disabled={!onStudentFeeSave}>Update record</button>
                   <button type="button" onClick={resetStudentFeeForm}>Cancel</button>
                 </div>
               </form>
             </article>
           ) : null}
 
-          <div className="finance-workspace">
+          <div className="accountant-analytics-grid">
             <article className="app-panel finance-chart-panel">
-              <h3>Finance Overview</h3>
-              <div className="finance-chart-bars" aria-label="Finance overview chart">
+              <div className="panel-head">
+                <h3>Fee Analytics</h3>
+                <small>{finance?.pending_payments ?? 0} pending student payments</small>
+              </div>
+              <div className="finance-chart-bars" aria-label="School fee collection analytics">
                 <div>
                   <span>Received</span>
                   <strong>{receivedPercent}%</strong>
@@ -786,334 +774,56 @@ function AdminFinanceScreen({
             </article>
 
             <article className="app-panel">
-              <h3>School Fee Receiving Account</h3>
-              <p className="panel-sub">Students will see this bank account and their unique reference on the fees page.</p>
-              <form className="panel-form" onSubmit={handlePaymentAccountSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field full">
-                    Account name
-                    <input
-                      value={paymentAccountForm.bank_account_name}
-                      onChange={(event) => setPaymentAccountForm((current) => ({ ...current, bank_account_name: event.target.value }))}
-                      placeholder="School account name"
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Account number
-                    <input
-                      inputMode="numeric"
-                      value={paymentAccountForm.bank_account_number}
-                      onChange={(event) => setPaymentAccountForm((current) => ({ ...current, bank_account_number: event.target.value.replace(/\D/g, "") }))}
-                      placeholder="0123456789"
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Bank name
-                    <input
-                      value={paymentAccountForm.bank_name}
-                      onChange={(event) => setPaymentAccountForm((current) => ({ ...current, bank_name: event.target.value }))}
-                      placeholder="Example: Access Bank"
-                    />
-                  </label>
-                </div>
-                <div className="field-note">
-                  Students should include their displayed payment reference in the transfer narration so payments can be matched.
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit">Save receiving account</button>
-                </div>
-              </form>
+              <div className="panel-head">
+                <h3>Class Finance Statistics</h3>
+                <small>{classFees.length} fee schedules</small>
+              </div>
+              <div className="class-finance-stat-list">
+                {topClassStats.length ? topClassStats.map((fee) => (
+                  <div key={fee.id} className="class-finance-stat">
+                    <div>
+                      <strong>{fee.class_label}</strong>
+                      <span>{fee.title} - {fee.student_count || 0} students</span>
+                    </div>
+                    <div className="class-finance-meter"><i style={{ width: `${fee.collectionRate}%` }} /></div>
+                    <small>{fee.collectionRate}% collected</small>
+                  </div>
+                )) : <p className="panel-empty">No class fee statistics yet.</p>}
+              </div>
             </article>
+          </div>
 
+          <div className="finance-workspace">
             <article className="app-panel">
-              <h3>Withdraw School Fees</h3>
-              <p className="panel-sub">Send collected school-fee funds to the school bank account.</p>
-              <form className="panel-form" onSubmit={handleWithdrawSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">
-                    Available balance
-                    <input value={formatFinanceAmount(adminWallet.balance || finance?.amount_received || 0)} readOnly />
-                  </label>
-                  <label className="panel-field">
-                    Amount
-                    <input
-                      type="number"
-                      min="1"
-                      step="0.01"
-                      max={Number(adminWallet.balance || 0) || undefined}
-                      value={withdrawForm.amount}
-                      onChange={(event) => setWithdrawForm((current) => ({ ...current, amount: event.target.value }))}
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Bank name
-                    <input
-                      value={withdrawForm.bank_name}
-                      onChange={(event) => setWithdrawForm((current) => ({ ...current, bank_name: event.target.value }))}
-                      placeholder="Example: Access Bank"
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Account number
-                    <input
-                      value={withdrawForm.account_number}
-                      onChange={(event) => setWithdrawForm((current) => ({ ...current, account_number: event.target.value }))}
-                      placeholder="0123456789"
-                      required
-                    />
-                  </label>
-                  <label className="panel-field full">
-                    Account name
-                    <input
-                      value={withdrawForm.account_name}
-                      onChange={(event) => setWithdrawForm((current) => ({ ...current, account_name: event.target.value }))}
-                      placeholder="School account name"
-                      required
-                    />
-                  </label>
-                </div>
-                <div className="field-note">
-                  Withdrawals use Flutterwave transfers and are limited to the admin wallet balance.
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit">Withdraw to school account</button>
-                </div>
-              </form>
-            </article>
-
-            <article className="app-panel">
-              <h3>{editingClassFeeId ? "Update School Fee" : "Create School Fee"}</h3>
-              <p className="panel-sub">Create a school fee for one class at a time.</p>
+              <h3>{editingClassFeeId ? "Update Class Fee" : "Create Class Fee"}</h3>
+              <p className="panel-sub">Create school-focused bills for each class. No personal finance categories are shown here.</p>
               <form className="panel-form" onSubmit={handleClassFeeSubmit}>
                 <div className="panel-form-grid">
-                  <label className="panel-field full">
-                    Class
-                    <select
-                      value={classFeeForm.school_class}
-                      onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))}
-                      required
-                    >
-                      <option value="">Select class</option>
-                      {classOptions.map((item) => (
-                        <option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>
-                          {item.label || item.name || item.class_label || item.value}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="panel-field">
-                    Fee title
-                    <input
-                      value={classFeeForm.title}
-                      onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))}
-                      placeholder="1st term school fees"
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Amount
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={classFeeForm.amount}
-                      onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))}
-                      required
-                    />
-                  </label>
-                  <label className="panel-field full">
-                    Due date
-                    <input
-                      type="date"
-                      value={classFeeForm.due_date}
-                      onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))}
-                      required
-                    />
-                  </label>
-                </div>
-                <div className="field-note">
-                  The fee is generated for students in the selected class and appears in the class fee schedule.
+                  <label className="panel-field full">Class<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">Select class</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
+                  <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
+                  <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onClassFeeSave}>
-                    {editingClassFeeId ? "Update class fee" : "Create class fee"}
-                  </button>
-                  {editingClassFeeId ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingClassFeeId("");
-                        setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" });
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
+                  <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? "Update class fee" : "Create class fee"}</button>
+                  {editingClassFeeId ? <button type="button" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
                 </div>
               </form>
             </article>
 
-          </div>
-
-          <div className="finance-workspace">
             <article className="app-panel">
-              <h3>Bank Transaction Monitor</h3>
-              <form className="panel-form" onSubmit={handleBankPaymentSubmit}>
+              <h3>Payroll Management</h3>
+              <p className="panel-sub">Prepare staff payroll requests from the school HR records linked to finance.</p>
+              <form className="panel-form" onSubmit={handleSalaryPaySubmit}>
                 <div className="panel-form-grid">
-                  <label className="panel-field">
-                    Bank reference
-                    <input value={bankPaymentForm.bank_reference} onChange={(event) => setBankPaymentForm((current) => ({ ...current, bank_reference: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Amount
-                    <input type="number" min="1" step="0.01" value={bankPaymentForm.amount} onChange={(event) => setBankPaymentForm((current) => ({ ...current, amount: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field full">
-                    Narration
-                    <input value={bankPaymentForm.narration} onChange={(event) => setBankPaymentForm((current) => ({ ...current, narration: event.target.value }))} placeholder="Example: School fees SDAB1234" required />
-                  </label>
+                  <label className="panel-field full">Staff<select value={salaryPayForm.staff_id} onChange={(event) => handleSalaryStaffChange(event.target.value)} required><option value="">Select staff</option>{staffRows.map((item) => (<option key={item.id} value={item.id}>{item.name} - {item.role || "Staff"}</option>))}</select></label>
+                  <label className="panel-field">Year<input type="number" value={salaryPayForm.year} onChange={(event) => setSalaryPayForm((current) => ({ ...current, year: event.target.value }))} /></label>
+                  <label className="panel-field">Month<input type="number" min="1" max="12" value={salaryPayForm.month} onChange={(event) => setSalaryPayForm((current) => ({ ...current, month: event.target.value }))} /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={salaryPayForm.amount_paid} onChange={(event) => setSalaryPayForm((current) => ({ ...current, amount_paid: event.target.value }))} placeholder={selectedSalaryStaff?.base_salary || "0.00"} /></label>
+                  <label className="panel-field full">Note<input value={salaryPayForm.notes} onChange={(event) => setSalaryPayForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Payroll note" /></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit">Check transaction</button>
-                </div>
-              </form>
-            </article>
-
-            <article className="app-panel">
-              <h3>Bank Payment History</h3>
-              {bankPaymentRows.length ? (
-                <div className="table-scroll">
-                  <table className="student-table">
-                    <thead>
-                      <tr><th>Student</th><th>Amount</th><th>Status</th><th>Narration</th><th>Action</th></tr>
-                    </thead>
-                    <tbody>
-                      {visibleBankPaymentRows.map((payment) => (
-                        <tr key={payment.id}>
-                          <td>{payment.student_name || "Unmatched"}<small>{payment.reference_code || ""}</small></td>
-                          <td>{NAIRA_SYMBOL}{Number(payment.amount || 0).toLocaleString()}</td>
-                          <td><span className={`finance-status status-${payment.status}`}>{payment.status}</span></td>
-                          <td>{payment.narration}</td>
-                          <td>
-                            {payment.status === "unmatched" ? (
-                              <div className="table-actions-inline">
-                                <input
-                                  placeholder="Student ID/email"
-                                  value={recoveryForm[payment.id]?.student_id || ""}
-                                  onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { ...(current[payment.id] || {}), student_id: event.target.value } }))}
-                                />
-                                <button type="button" className="table-action" onClick={() => handleRecoverPayment(payment.id)}>Recover</button>
-                              </div>
-                            ) : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {renderFinanceMoreButton("bankPaymentHistory", bankPaymentRows.length)}
-                </div>
-              ) : <p className="panel-empty">No bank transactions have been monitored yet.</p>}
-            </article>
-          </div>
-
-          <div className="finance-workspace">
-            <article className="app-panel">
-              <h3>Activation Tokens</h3>
-              <form className="panel-form" onSubmit={handleCreditPurchaseSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">
-                    Tokens to add
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={creditPurchaseForm.credits}
-                      onChange={(event) => setCreditPurchaseForm({ credits: event.target.value })}
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Total cost
-                    <input value={formatFinanceAmount(requestedCreditCount * tokenUnitPrice)} readOnly />
-                    <small className="field-note">
-                      Bonus: {bonusCreditCount.toLocaleString()} free tokens. Total credited: {totalCreditCount.toLocaleString()}.
-                    </small>
-                  </label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit">Pay with Flutterwave</button>
-                </div>
-                {creditPurchaseReference ? (
-                  <p className="field-note">
-                    Reference: {creditPurchaseReference}
-                    {creditPurchaseUrl ? " - checkout opened in a new tab." : ""}
-                  </p>
-                ) : null}
-              </form>
-
-              <form className="panel-form" onSubmit={handleCreditAssignSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">
-                    Assign to
-                    <select
-                      value={creditAssignForm.scope}
-                      onChange={(event) => setCreditAssignForm((current) => ({ ...current, scope: event.target.value }))}
-                    >
-                      <option value="all">All students</option>
-                      <option value="paid_50">Students with at least 50% fees paid</option>
-                    </select>
-                  </label>
-                  <label className="panel-field">
-                    Months
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={creditAssignForm.months}
-                      onChange={(event) => setCreditAssignForm((current) => ({ ...current, months: event.target.value }))}
-                    />
-                  </label>
-                </div>
-                <div className="field-note">
-                  Eligible now: {creditAssignForm.scope === "paid_50" ? creditSummary.eligible_paid_50 ?? 0 : creditSummary.eligible_all ?? 0}
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit">Assign monthly tokens</button>
-                </div>
-              </form>
-            </article>
-
-            <article className="app-panel">
-              <h3>Auto-Assignment</h3>
-              <form className="panel-form" onSubmit={handleCreditSettingsSubmit}>
-                <label className="panel-field checkbox-field">
-                  <input
-                    type="checkbox"
-                    checked={creditSettingsForm.enabled}
-                    onChange={(event) => setCreditSettingsForm((current) => ({ ...current, enabled: event.target.checked }))}
-                  />
-                  Enable monthly auto-assignment
-                </label>
-                <label className="panel-field">
-                  Auto-assign to
-                  <select
-                    value={creditSettingsForm.scope}
-                    onChange={(event) => setCreditSettingsForm((current) => ({ ...current, scope: event.target.value }))}
-                  >
-                    <option value="all">All students</option>
-                    <option value="paid_50">Students with at least 50% fees paid</option>
-                  </select>
-                </label>
-                <div className="field-note">
-                  Students inactive for 15 days are flagged and excluded from automatic deductions.
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit">Save settings</button>
-                  <button type="button" onClick={handleRunAutoCredits}>Run now</button>
+                  <button type="submit" disabled={!onPaySalary || !salaryPayForm.staff_id}>Request payroll</button>
                 </div>
               </form>
             </article>
@@ -1121,249 +831,47 @@ function AdminFinanceScreen({
 
           <article className="app-panel">
             <div className="mobile-section-head">
-              <h3>Class Fee Schedule</h3>
+              <h3>Student Payment Records</h3>
               <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
-                <option value="class-fees">Class Fee Schedule</option>
+                <option value="student-payments">Student Payment Records</option>
                 <option value="student-fees">Student Fee Editor</option>
-                <option value="student-payments">Student Payment Status</option>
-                <option value="activation-alerts">Activation Alerts</option>
-                <option value="credit-history">Token Transaction History</option>
-              </select>
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Class</th>
-                    <th>Fee</th>
-                    <th>Students</th>
-                    <th>Expected</th>
-                    <th>Received</th>
-                    <th>Due</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {classFees.length > 0 ? visibleClassFees.map((fee) => (
-                    <tr key={fee.id}>
-                      <td>{fee.class_label}</td>
-                      <td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td>
-                      <td>{fee.student_count}</td>
-                      <td>{formatFinanceAmount(fee.expected_amount)}</td>
-                      <td>{formatFinanceAmount(fee.amount_received)}</td>
-                      <td>{formatDate(fee.due_date)}</td>
-                      <td>
-                        <div className="table-actions-inline">
-                          <button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button>
-                          <button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="7">No class fees configured yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-              {renderFinanceMoreButton("classFees", classFees.length)}
-            </div>
-          </article>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Student Fee Editor</h3>
-              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
                 <option value="class-fees">Class Fee Schedule</option>
-                <option value="student-fees">Student Fee Editor</option>
-                <option value="student-payments">Student Payment Status</option>
-                <option value="activation-alerts">Activation Alerts</option>
-                <option value="credit-history">Token Transaction History</option>
-              </select>
-            </div>
-            <div className={`mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Student</th>
-                      <th>Class</th>
-                      <th>Fee</th>
-                      <th>Amount</th>
-                      <th>Paid</th>
-                      <th>Balance</th>
-                      <th>Status</th>
-                      <th>Due</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {studentFeeRows.length > 0 ? visibleStudentFeeRows.map((fee) => (
-                      <tr key={fee.id}>
-                        <td>{fee.student_name}<small>{fee.student_identifier}</small></td>
-                        <td>{fee.class_label}</td>
-                        <td>{fee.title}{fee.is_customized ? <small>Customized</small> : null}</td>
-                        <td>{formatFinanceAmount(fee.amount)}</td>
-                        <td>{formatFinanceAmount(fee.amount_paid)}</td>
-                        <td>{formatFinanceAmount(fee.remaining_balance)}</td>
-                        <td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td>
-                        <td>{formatDate(fee.due_date)}</td>
-                        <td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td>
-                      </tr>
-                    )) : (
-                      <tr><td colSpan="9">No student fees have been generated yet.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
-            </div>
-          </article>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Student Payment Status</h3>
-              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
-                <option value="class-fees">Class Fee Schedule</option>
-                <option value="student-fees">Student Fee Editor</option>
-                <option value="student-payments">Student Payment Status</option>
-                <option value="activation-alerts">Activation Alerts</option>
-                <option value="credit-history">Token Transaction History</option>
+                <option value="transactions">Transaction History</option>
               </select>
             </div>
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-payments" ? "active" : ""}`}>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Student</th>
-                    <th>Class</th>
-                    <th>Status</th>
-                    <th>Expected</th>
-                    <th>Paid</th>
-                      <th>Balance</th>
-                      <th>Login Access</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {paymentRows.length > 0 ? visiblePaymentRows.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.name}<small>{row.student_id}</small></td>
-                      <td>{row.class_name}</td>
-                      <td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td>
-                      <td>{formatFinanceAmount(row.expected_amount)}</td>
-                      <td>{formatFinanceAmount(row.amount_paid)}</td>
-                      <td>{formatFinanceAmount(row.remaining_balance)}</td>
-                      <td>
-                        <span className={`finance-status ${row.has_login_credit ? "status-paid" : "status-pending"}`}>
-                          {row.has_login_credit ? "active" : "inactive"}
-                        </span>
-                        <small>{row.activation_active_until ? `Until ${formatDate(row.activation_active_until)}` : "No token"}</small>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="7">No students found for this school.</td></tr>
-                  )}
-                </tbody>
+                <thead><tr><th>Student</th><th>Class</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
+                <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("studentPayments", paymentRows.length)}
             </div>
-          </article>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Activation Alerts</h3>
-              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
-                <option value="class-fees">Class Fee Schedule</option>
-                <option value="student-fees">Student Fee Editor</option>
-                <option value="student-payments">Student Payment Status</option>
-                <option value="activation-alerts">Activation Alerts</option>
-                <option value="credit-history">Token Transaction History</option>
-              </select>
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "activation-alerts" ? "active" : ""}`}>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Student</th>
-                    <th>Class</th>
-                    <th>Active Until</th>
-                    <th>Inactive Since</th>
-                    <th>Auto Deduction</th>
-                    <th>Fee Paid</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {creditRows.length > 0 ? visibleCreditRows.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.student_name}<small>{row.student_identifier}</small></td>
-                      <td>{row.class_name}</td>
-                      <td>{row.active_until ? formatDate(row.active_until) : "No token"}</td>
-                      <td>{row.inactive_since ? formatDate(row.inactive_since) : "Active"}</td>
-                      <td>
-                        <span className={`finance-status ${row.is_excluded_from_auto_deductions ? "status-pending" : "status-paid"}`}>
-                          {row.is_excluded_from_auto_deductions ? "excluded" : "included"}
-                        </span>
-                      </td>
-                      <td>{Math.round(Number(row.paid_ratio || 0) * 100)}%</td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="6">No activation token records yet.</td></tr>
-                  )}
-                </tbody>
+                <thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
               </table>
-              {renderFinanceMoreButton("activationAlerts", creditRows.length)}
+              {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
             </div>
-          </article>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Token Transaction History</h3>
-              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
-                <option value="class-fees">Class Fee Schedule</option>
-                <option value="student-fees">Student Fee Editor</option>
-                <option value="student-payments">Student Payment Status</option>
-                <option value="activation-alerts">Activation Alerts</option>
-                <option value="credit-history">Token Transaction History</option>
-              </select>
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "credit-history" ? "active" : ""}`}>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Reference</th>
-                    <th>Tokens</th>
-                    <th>Bonus</th>
-                    <th>Total</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Provider</th>
-                    <th>Created By</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {creditPurchaseHistory.length > 0 ? visibleCreditPurchaseHistory.map((row) => (
-                    <tr key={row.id || row.reference}>
-                      <td>{formatDate(row.created_at)}</td>
-                      <td>{row.reference}</td>
-                      <td>{Number(row.purchased_credits ?? row.credits ?? 0).toLocaleString()}</td>
-                      <td>{Number(row.bonus_credits || 0).toLocaleString()}</td>
-                      <td>{Number(row.total_credits ?? row.credits ?? 0).toLocaleString()}</td>
-                      <td>{formatFinanceAmount(row.amount)}</td>
-                      <td><span className={`finance-status status-${row.status}`}>{row.status}</span></td>
-                      <td>{row.provider || "flutterwave"}</td>
-                      <td>{row.created_by || "Admin"}</td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="9">No activation token purchases yet.</td></tr>
-                  )}
-                </tbody>
+                <thead><tr><th>Class</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
+                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No class fees configured yet.</td></tr>}</tbody>
               </table>
-              {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
+              {renderFinanceMoreButton("classFees", classFees.length)}
+            </div>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "transactions" ? "active" : ""}`}>
+              <table className="data-table">
+                <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th></tr></thead>
+                <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.description || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td></tr>)) : <tr><td colSpan="4">No transactions yet.</td></tr>}</tbody>
+              </table>
             </div>
           </article>
         </>
       ) : null}
     </section>
   );
+
 }
 
 function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, session, onCreateExam, onUpdateExam }) {
@@ -6195,11 +5703,12 @@ function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessag
       role: roleLabel(item.role),
     }));
 
-  const handleChatSend = async (recipientValue, subject, messageBody) => {
+  const handleChatSend = async (recipientValue, subject, messageBody, _selectedRecipient, attachments = []) => {
     return onSendMessage?.({
       recipient_email: String(recipientValue || "").trim().toLowerCase(),
       subject: subject || "",
       body: messageBody,
+      attachments,
     }, { refresh: true });
   };
 
@@ -6439,3 +5948,6 @@ export {
   AdminMessagesScreen,
   AdminDatabaseImportScreen,
 };
+
+
+

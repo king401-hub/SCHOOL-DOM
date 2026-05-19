@@ -28,6 +28,7 @@ from .models import (
 
 
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
+SELF_SERVICE_ROLES = {"teacher", "staff", "accountant"}
 
 
 def _tenant_for_user(user):
@@ -91,7 +92,7 @@ def _generate_short_staff_code(tenant, prefix, seed=""):
 
 def _self_staff_profile(user, create_teacher_profile=True):
     tenant = _tenant_for_user(user)
-    if not tenant or getattr(user, "role", "") not in {"teacher", "staff"}:
+    if not tenant or getattr(user, "role", "") not in SELF_SERVICE_ROLES:
         return None
 
     direct = StaffProfile.objects.filter(tenant=tenant, user=user).first()
@@ -129,6 +130,27 @@ def _self_staff_profile(user, create_teacher_profile=True):
             emergency_contact_relation=getattr(teacher_profile, "emergency_contact_relation", "") or "",
         )
         _activity(tenant, staff, user, "staff_profile_self_linked", "Teacher HR profile created for self-service")
+        return staff
+
+    if user.role == "accountant":
+        staff = StaffProfile.objects.create(
+            tenant=tenant,
+            user=user,
+            staff_code=_unique_staff_code(tenant, f"AC{school_code_letters(tenant)}{random_code_digits()}"),
+            first_name=user.first_name or user.get_short_name(),
+            last_name=user.last_name or "",
+            email=user.email,
+            phone=user.phone,
+            gender=user.gender or "",
+            date_of_birth=user.date_of_birth,
+            staff_type=StaffProfile.NON_TEACHING,
+            role="Accountant",
+            department="Finance",
+            employment_type="contract",
+            hire_date=timezone.localdate(),
+            base_salary=Decimal("0.00"),
+        )
+        _activity(tenant, staff, user, "accountant_profile_self_linked", "Accountant HR profile created for self-service")
         return staff
 
     return None
@@ -179,7 +201,7 @@ def _sync_staff_login_user(staff, data):
     linked_user.email = email or linked_user.email
     linked_user.phone = staff.phone
     linked_user.gender = staff.gender
-    linked_user.role = "staff"
+    linked_user.role = "accountant" if staff.staff_type == StaffProfile.NON_TEACHING and staff.role.strip().lower() == "accountant" else "staff"
     linked_user.tenant = staff.tenant
     linked_user.is_active = True
     linked_user.is_verified = True
@@ -528,6 +550,7 @@ def create_staff(request):
     linked_user = None
 
     if email and staff_password:
+        account_role = "accountant" if staff_type == StaffProfile.NON_TEACHING and role.strip().lower() == "accountant" else "staff"
         if staff_password != confirm_staff_password:
             return Response({"success": False, "message": "Staff password and confirm password must match."}, status=status.HTTP_400_BAD_REQUEST)
         if len(staff_password) < 8:
@@ -538,7 +561,7 @@ def create_staff(request):
         if linked_user:
             linked_user.first_name = first_name
             linked_user.last_name = last_name
-            linked_user.role = "staff"
+            linked_user.role = account_role
             linked_user.tenant = tenant
             linked_user.phone = str(request.data.get("phone", "")).strip()
             linked_user.gender = gender
@@ -552,7 +575,7 @@ def create_staff(request):
                 password=staff_password,
                 first_name=first_name,
                 last_name=last_name,
-                role="staff",
+                role=account_role,
                 tenant=tenant,
                 phone=str(request.data.get("phone", "")).strip(),
                 gender=gender,

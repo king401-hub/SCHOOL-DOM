@@ -248,17 +248,13 @@ function Signin({ onAuthenticated, onBack }) {
     window.localStorage.removeItem("refresh_token");
   };
 
-  const resetSchoolCreationMessages = () => {
-    setSchoolError("");
-    setSchoolSuccess("");
-  };
-
   const switchMode = (nextMode) => {
     setMode(nextMode);
     setShowCreateSchool(false);
     setError("");
     setSuccessMessage("");
-    resetSchoolCreationMessages();
+    setSchoolError("");
+    setSchoolSuccess("");
   };
 
   const handleCreateSchool = async () => {
@@ -268,7 +264,8 @@ function Signin({ onAuthenticated, onBack }) {
 
     setError("");
     setSuccessMessage("");
-    resetSchoolCreationMessages();
+    setSchoolError("");
+    setSchoolSuccess("");
     setIsCreatingSchool(true);
 
     try {
@@ -560,7 +557,8 @@ function Signin({ onAuthenticated, onBack }) {
       setPassword("");
       setMode("signin");
       setShowCreateSchool(false);
-      resetSchoolCreationMessages();
+      setSchoolError("");
+      setSchoolSuccess("");
       setSuccessMessage(data.message || "Password reset successful. You can sign in now.");
       window.history.replaceState({}, "", "/signin");
     } catch (requestError) {
@@ -575,7 +573,8 @@ function Signin({ onAuthenticated, onBack }) {
     setSignedInUser(null);
     setSuccessMessage("");
     setError("");
-    resetSchoolCreationMessages();
+    setSchoolError("");
+    setSchoolSuccess("");
   };
 
   const schoolCreationPanel = showCreateSchool ? (
@@ -888,21 +887,6 @@ function Signin({ onAuthenticated, onBack }) {
                       />
                     </div>
 
-                    <button
-                      type="button"
-                      className="create-school-trigger"
-                      onClick={() => {
-                        setShowCreateSchool((previous) => !previous);
-                        resetSchoolCreationMessages();
-                      }}
-                    >
-                      <CreateSchoolIcon />
-                      {showCreateSchool ? "Close school creator" : "Create school"}
-                    </button>
-
-                    {schoolCreationPanel}
-                    {schoolSuccess ? <p className="success-text">{schoolSuccess}</p> : null}
-
                     <label className="remember-row" htmlFor="remember-me">
                       <input
                         id="remember-me"
@@ -1042,7 +1026,8 @@ function Signin({ onAuthenticated, onBack }) {
                       className="create-school-trigger"
                       onClick={() => {
                         setShowCreateSchool((previous) => !previous);
-                        resetSchoolCreationMessages();
+                        setSchoolError("");
+                        setSchoolSuccess("");
                       }}
                     >
                       <CreateSchoolIcon />

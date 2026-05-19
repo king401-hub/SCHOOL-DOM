@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Text } from "react-native";
+import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { Card } from "../components/Card";
 import { loadMessages } from "../api/endpoints";
@@ -21,6 +21,15 @@ export function MessagesScreen() {
         <Card key={String(item.id || item.created_at)}>
           <Text style={{ color: colors.textDark, fontWeight: "900" }}>{item.subject || item.title || "Message"}</Text>
           <Text style={{ color: colors.mutedDark }}>{item.body || item.message || ""}</Text>
+          {Array.isArray(item.attachments) && item.attachments.length ? (
+            <View style={{ marginTop: 10, gap: 6 }}>
+              {item.attachments.map((attachment, index) => (
+                <Pressable key={`${attachment.url || attachment.name}-${index}`} onPress={() => attachment.url && Linking.openURL(attachment.url)}>
+                  <Text style={{ color: colors.primary, fontWeight: "800" }}>{attachment.name || "Attachment"}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
         </Card>
       )) : <Text style={{ color: colors.muted }}>No messages found.</Text>}
     </Screen>
