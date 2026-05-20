@@ -23,11 +23,405 @@ import { TeacherExamBuilder } from "./TeacherExamPanels";
 
 const NAIRA_SYMBOL = "\u20A6";
 const FINANCE_TABLE_PREVIEW_COUNT = 3;
+const CBT_DESKTOP_STATE_KEY = "schooldom.cbt_desktop_state";
 
 const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
 const heatTone = (status) => (status === "strong" ? "strong" : status === "watch" ? "watch" : "weak");
 const formatAnalyticsAmount = (value) =>
   `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+const defaultCbtDesktopState = {
+  serverRunning: true,
+  lanAddress: "192.168.1.12:8088",
+  syncState: "Ready",
+  syncQueue: 12,
+  encryptedExams: 6,
+  pendingSubmissions: 18,
+  activeSessionId: "mock-session-1",
+  sessions: [
+    {
+      id: "mock-session-1",
+      title: "JSS 3 Mathematics Mock CBT",
+      className: "JSS 3",
+      examPin: "483921",
+      status: "Live",
+      duration: 90,
+      students: 44,
+      submissions: 26,
+    },
+    {
+      id: "mock-session-2",
+      title: "SS 2 English Language",
+      className: "SS 2",
+      examPin: "917304",
+      status: "Ready",
+      duration: 75,
+      students: 38,
+      submissions: 0,
+    },
+  ],
+  students: [
+    { id: "SD-2026-014", name: "Amina Yusuf", station: "LAB-PC-03", status: "Writing", progress: 68, warnings: 0, saved: "18 sec ago" },
+    { id: "SD-2026-022", name: "David Okoro", station: "LAB-PC-08", status: "Writing", progress: 41, warnings: 1, saved: "5 sec ago" },
+    { id: "SD-2026-031", name: "Grace Bello", station: "LAB-PC-12", status: "Submitted", progress: 100, warnings: 0, saved: "Synced locally" },
+    { id: "SD-2026-044", name: "Samuel Ade", station: "LAB-PC-15", status: "Recovered", progress: 57, warnings: 2, saved: "Recovered draft" },
+  ],
+  auditLogs: [
+    { time: "09:02", event: "Local CBT server started", actor: "Admin", tone: "success" },
+    { time: "09:05", event: "Exam package decrypted for LAN delivery", actor: "System", tone: "info" },
+    { time: "09:18", event: "Tab switch warning recorded for SD-2026-022", actor: "Proctor", tone: "warning" },
+    { time: "09:27", event: "Emergency recovery restored SD-2026-044 draft", actor: "System", tone: "success" },
+  ],
+};
+
+function readCbtDesktopState() {
+  if (typeof window === "undefined") return defaultCbtDesktopState;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(CBT_DESKTOP_STATE_KEY) || "null");
+    return stored ? { ...defaultCbtDesktopState, ...stored } : defaultCbtDesktopState;
+  } catch {
+    window.localStorage.removeItem(CBT_DESKTOP_STATE_KEY);
+    return defaultCbtDesktopState;
+  }
+}
+
+function writeCbtDesktopState(state) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CBT_DESKTOP_STATE_KEY, JSON.stringify(state));
+}
+
+function CbtStatusPill({ tone = "info", children }) {
+  return <span className={`cbt-status-pill tone-${tone}`}>{children}</span>;
+}
+
+function SchoolDomCbtDesktop({ exams = [], results = [] }) {
+  const [desktopState, setDesktopState] = useState(() => readCbtDesktopState());
+  const [mode, setMode] = useState("admin");
+  const [syncing, setSyncing] = useState(false);
+  const [studentLogin, setStudentLogin] = useState({ studentId: "SD-2026-022", pin: "483921" });
+  const [studentExamStarted, setStudentExamStarted] = useState(false);
+  const [studentAnswer, setStudentAnswer] = useState(() => window.localStorage.getItem("schooldom.cbt_student_autosave") || "B");
+  const activeSession = desktopState.sessions.find((item) => item.id === desktopState.activeSessionId) || desktopState.sessions[0];
+
+  useEffect(() => {
+    writeCbtDesktopState(desktopState);
+  }, [desktopState]);
+
+  useEffect(() => {
+    if (!studentExamStarted) return undefined;
+    const saveTimer = window.setTimeout(() => {
+      window.localStorage.setItem("schooldom.cbt_student_autosave", studentAnswer);
+    }, 350);
+    return () => window.clearTimeout(saveTimer);
+  }, [studentAnswer, studentExamStarted]);
+
+  const pushAudit = (event, tone = "info", actor = "Admin") => {
+    const now = new Date();
+    setDesktopState((previous) => ({
+      ...previous,
+      auditLogs: [
+        {
+          time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          event,
+          actor,
+          tone,
+        },
+        ...previous.auditLogs,
+      ].slice(0, 8),
+    }));
+  };
+
+  const toggleServer = () => {
+    setDesktopState((previous) => {
+      const nextRunning = !previous.serverRunning;
+      return {
+        ...previous,
+        serverRunning: nextRunning,
+        syncState: nextRunning ? "Ready" : "Server stopped",
+      };
+    });
+    pushAudit(desktopState.serverRunning ? "Local CBT server stopped" : "Local CBT server started", desktopState.serverRunning ? "warning" : "success");
+  };
+
+  const startSession = () => {
+    setDesktopState((previous) => ({
+      ...previous,
+      sessions: previous.sessions.map((item) =>
+        item.id === previous.activeSessionId ? { ...item, status: item.status === "Live" ? "Paused" : "Live" } : item
+      ),
+    }));
+    pushAudit(`${activeSession?.title || "CBT session"} ${activeSession?.status === "Live" ? "paused" : "started"}`, "success");
+  };
+
+  const simulateSync = () => {
+    setSyncing(true);
+    setDesktopState((previous) => ({ ...previous, syncState: "Syncing to SchoolDom..." }));
+    window.setTimeout(() => {
+      setDesktopState((previous) => ({
+        ...previous,
+        syncState: "Synced",
+        syncQueue: 0,
+        pendingSubmissions: 0,
+      }));
+      setSyncing(false);
+      pushAudit("Offline submissions and audit logs synced to SchoolDom", "success", "System");
+    }, 900);
+  };
+
+  const collectSubmissions = () => {
+    setDesktopState((previous) => ({
+      ...previous,
+      pendingSubmissions: previous.pendingSubmissions + 4,
+      syncQueue: previous.syncQueue + 4,
+      sessions: previous.sessions.map((item) =>
+        item.id === previous.activeSessionId ? { ...item, submissions: Math.min(item.students, item.submissions + 4) } : item
+      ),
+    }));
+    pushAudit("Collected 4 offline student submissions over LAN", "info", "System");
+  };
+
+  const createLocalSession = () => {
+    const nextIndex = desktopState.sessions.length + 1;
+    const sourceExam = exams[0];
+    const newSession = {
+      id: `local-session-${Date.now()}`,
+      title: sourceExam?.title || sourceExam?.name || `Local CBT Session ${nextIndex}`,
+      className: sourceExam?.class_name || sourceExam?.class || "All classes",
+      examPin: String(Math.floor(100000 + Math.random() * 899999)),
+      status: "Ready",
+      duration: sourceExam?.duration || 60,
+      students: sourceExam?.student_count || 30,
+      submissions: 0,
+    };
+    setDesktopState((previous) => ({
+      ...previous,
+      activeSessionId: newSession.id,
+      encryptedExams: previous.encryptedExams + 1,
+      sessions: [newSession, ...previous.sessions],
+    }));
+    pushAudit(`Created encrypted local session: ${newSession.title}`, "success");
+  };
+
+  const studentLoginReady = studentLogin.studentId.trim() && studentLogin.pin.trim();
+
+  return (
+    <section className="cbt-desktop-app">
+      <header className="cbt-desktop-hero">
+        <div>
+          <p className="quiz-kicker">Windows desktop CBT</p>
+          <h2>SchoolDom CBT</h2>
+          <p>One installed app for the admin LAN server, offline exam storage, student exam delivery, recovery, and result sync.</p>
+        </div>
+        <div className="cbt-hero-status">
+          <CbtStatusPill tone={desktopState.serverRunning ? "success" : "danger"}>
+            {desktopState.serverRunning ? "Local server online" : "Server offline"}
+          </CbtStatusPill>
+          <strong>{desktopState.lanAddress}</strong>
+          <small>{desktopState.syncState}</small>
+        </div>
+      </header>
+
+      <div className="cbt-mode-switch" role="tablist" aria-label="SchoolDom CBT mode">
+        <button type="button" className={mode === "admin" ? "active" : ""} onClick={() => setMode("admin")}>
+          <DashboardIcon name="overview" className="inline-icon" />
+          Admin Mode
+        </button>
+        <button type="button" className={mode === "student" ? "active" : ""} onClick={() => setMode("student")}>
+          <DashboardIcon name="exam" className="inline-icon" />
+          Student Mode
+        </button>
+      </div>
+
+      {mode === "admin" ? (
+        <>
+          <div className="metric-grid cbt-metric-grid">
+            <MetricCard label="LAN Students" value={desktopState.students.filter((item) => item.status !== "Submitted").length} trend="Connected to local server" icon="students" tone="emerald" />
+            <MetricCard label="Encrypted Exams" value={desktopState.encryptedExams} trend="Stored locally for offline use" icon="exam" tone="violet" />
+            <MetricCard label="Pending Sync" value={desktopState.syncQueue} trend="Submissions, results, and logs" icon="results" tone="amber" />
+            <MetricCard label="Result Records" value={results.length} trend="Available in dashboard data" icon="results" tone="blue" />
+          </div>
+
+          <div className="cbt-admin-layout">
+            <article className="app-panel cbt-server-panel">
+              <div className="panel-head">
+                <h3>Local CBT server</h3>
+                <small>Admin computer acts as the secure server for the school LAN.</small>
+              </div>
+              <div className="cbt-server-card">
+                <div>
+                  <span>LAN endpoint</span>
+                  <strong>{desktopState.lanAddress}</strong>
+                  <small>Student computers connect with Student ID and Exam PIN.</small>
+                </div>
+                <CbtStatusPill tone={desktopState.serverRunning ? "success" : "danger"}>
+                  {desktopState.serverRunning ? "Accepting clients" : "Stopped"}
+                </CbtStatusPill>
+              </div>
+              <div className="cbt-action-row">
+                <button type="button" onClick={toggleServer}>{desktopState.serverRunning ? "Stop server" : "Start server"}</button>
+                <button type="button" onClick={createLocalSession}>Create local session</button>
+                <button type="button" onClick={collectSubmissions}>Collect submissions</button>
+                <button type="button" disabled={syncing || desktopState.syncQueue === 0} onClick={simulateSync}>
+                  {syncing ? "Syncing..." : "Sync results"}
+                </button>
+              </div>
+              <div className="cbt-security-grid">
+                {[
+                  ["Encrypted local exam packages", "AES-ready storage layer for questions and keys"],
+                  ["Autosave and recovery", "Draft answers survive power loss or shutdown"],
+                  ["Fullscreen lockdown", "Copy, paste, print, and tab switching are tracked"],
+                  ["Offline-first results", "Submissions queue until internet returns"],
+                ].map(([title, detail]) => (
+                  <div key={title}>
+                    <strong>{title}</strong>
+                    <span>{detail}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="app-panel cbt-session-panel">
+              <div className="panel-head">
+                <h3>Exam sessions</h3>
+                <small>Start, pause, and monitor CBT rooms.</small>
+              </div>
+              <div className="cbt-session-list">
+                {desktopState.sessions.map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={item.id === desktopState.activeSessionId ? "active" : ""}
+                    onClick={() => setDesktopState((previous) => ({ ...previous, activeSessionId: item.id }))}
+                  >
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{item.className} - PIN {item.examPin} - {item.duration} mins</small>
+                    </span>
+                    <CbtStatusPill tone={item.status === "Live" ? "success" : item.status === "Paused" ? "warning" : "info"}>{item.status}</CbtStatusPill>
+                  </button>
+                ))}
+              </div>
+              <div className="cbt-selected-session">
+                <div>
+                  <span>Active session</span>
+                  <strong>{activeSession?.title}</strong>
+                  <small>{activeSession?.submissions}/{activeSession?.students} submissions collected locally</small>
+                </div>
+                <button type="button" onClick={startSession}>{activeSession?.status === "Live" ? "Pause exam" : "Start exam"}</button>
+              </div>
+            </article>
+          </div>
+
+          <div className="cbt-admin-layout secondary">
+            <article className="app-panel">
+              <div className="panel-head">
+                <h3>Active students</h3>
+                <small>Live monitoring from LAN clients.</small>
+              </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Student</th><th>Station</th><th>Status</th><th>Progress</th><th>Warnings</th><th>Autosave</th></tr>
+                  </thead>
+                  <tbody>
+                    {desktopState.students.map((student) => (
+                      <tr key={student.id}>
+                        <td><strong>{student.name}</strong><br /><small>{student.id}</small></td>
+                        <td>{student.station}</td>
+                        <td>{student.status}</td>
+                        <td><div className="cbt-progress"><i style={{ width: `${student.progress}%` }} /></div></td>
+                        <td>{student.warnings}</td>
+                        <td>{student.saved}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article className="app-panel">
+              <div className="panel-head">
+                <h3>Audit and recovery</h3>
+                <small>Security events, sync actions, and crash recovery records.</small>
+              </div>
+              <div className="cbt-audit-list">
+                {desktopState.auditLogs.map((log, index) => (
+                  <div key={`${log.time}-${index}`} className={`cbt-audit-item tone-${log.tone}`}>
+                    <span>{log.time}</span>
+                    <strong>{log.event}</strong>
+                    <small>{log.actor}</small>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </div>
+        </>
+      ) : (
+        <article className="cbt-student-shell" onCopy={(event) => event.preventDefault()} onPaste={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()}>
+          <aside className="cbt-student-login">
+            <SchoolBrand school={{ name: "SchoolDom CBT" }} subtitle="Student Mode" compact />
+            <label>
+              Student ID
+              <input value={studentLogin.studentId} onChange={(event) => setStudentLogin((previous) => ({ ...previous, studentId: event.target.value }))} />
+            </label>
+            <label>
+              Exam PIN
+              <input value={studentLogin.pin} onChange={(event) => setStudentLogin((previous) => ({ ...previous, pin: event.target.value }))} />
+            </label>
+            <button type="button" disabled={!studentLoginReady} onClick={() => setStudentExamStarted(true)}>
+              Enter fullscreen exam
+            </button>
+            <div className="cbt-student-rules">
+              <span>Offline LAN exam</span>
+              <span>Randomized questions</span>
+              <span>Autosaves every few seconds</span>
+              <span>Auto-submit when timer expires</span>
+            </div>
+          </aside>
+          <section className={`cbt-exam-preview ${studentExamStarted ? "active" : ""}`}>
+            <header>
+              <div>
+                <p className="quiz-kicker">{activeSession?.className} - PIN {activeSession?.examPin}</p>
+                <h3>{activeSession?.title}</h3>
+              </div>
+              <div className="cbt-timer">01:14:32</div>
+            </header>
+            <div className="cbt-question-layout">
+              <nav aria-label="Question navigator">
+                {Array.from({ length: 12 }).map((_, index) => (
+                  <button key={index} type="button" className={index < 5 ? "answered" : index === 5 ? "current" : ""}>{index + 1}</button>
+                ))}
+              </nav>
+              <main>
+                <CbtStatusPill tone="success">Autosaved locally</CbtStatusPill>
+                <h4>Question 6</h4>
+                <p>Which option best describes a LAN-based CBT deployment during an offline school examination?</p>
+                {[
+                  ["A", "Every student computer connects directly to the internet."],
+                  ["B", "One admin computer hosts the local exam server while students connect over the school network."],
+                  ["C", "Students submit answers by email after the exam."],
+                  ["D", "Question papers are printed from the dashboard."],
+                ].map(([value, label]) => (
+                  <label key={value} className="cbt-answer-option">
+                    <input type="radio" name="cbt-preview-answer" checked={studentAnswer === value} onChange={() => setStudentAnswer(value)} />
+                    <span>{value}</span>
+                    {label}
+                  </label>
+                ))}
+              </main>
+            </div>
+            <footer>
+              <CbtStatusPill tone="warning">Tab switch detection armed</CbtStatusPill>
+              <button type="button">Previous</button>
+              <button type="button">Next</button>
+              <button type="button">Submit exam</button>
+            </footer>
+          </section>
+        </article>
+      )}
+    </section>
+  );
+}
 
 function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage }) {
   const metrics = data?.metrics || {};
@@ -501,7 +895,8 @@ function AdminFinanceScreen({
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
   const [creditPurchaseUrl, setCreditPurchaseUrl] = useState("");
-  const [creditAssignForm, setCreditAssignForm] = useState({ scope: "all", months: "1" });
+  const [creditAssignForm, setCreditAssignForm] = useState({ scope: "student", months: "1", student_id: "" });
+  const [creditStudentSearch, setCreditStudentSearch] = useState("");
   const [creditSettingsForm, setCreditSettingsForm] = useState({
     enabled: false,
     scope: "all",
@@ -530,6 +925,24 @@ function AdminFinanceScreen({
   const visibleClassFees = expandedFinanceTables.classFees ? classFees : classFees.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleStudentFeeRows = expandedFinanceTables.studentFees ? studentFeeRows : studentFeeRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visiblePaymentRows = expandedFinanceTables.studentPayments ? paymentRows : paymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const inactiveCreditRows = creditRows.filter((row) => !row.has_login_credit);
+  const normalizedCreditStudentSearch = creditStudentSearch.trim().toLowerCase();
+  const filteredInactiveCreditRows = inactiveCreditRows.filter((row) => {
+    if (!normalizedCreditStudentSearch) {
+      return true;
+    }
+    const searchable = [
+      row.student_name,
+      row.student_email,
+      row.student_identifier,
+      row.student_id,
+      row.class_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchable.includes(normalizedCreditStudentSearch);
+  });
   const visibleCreditRows = expandedFinanceTables.activationAlerts ? creditRows : creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleBankPaymentRows = expandedFinanceTables.bankPaymentHistory
     ? bankPaymentRows
@@ -761,9 +1174,14 @@ function AdminFinanceScreen({
     setFeedback("");
     setFormError("");
     try {
+      if (creditAssignForm.scope === "student" && !creditAssignForm.student_id) {
+        setFormError("Select an inactive student before assigning credits.");
+        return;
+      }
       const result = await onAssignCredits({
         scope: creditAssignForm.scope,
         months: Number(creditAssignForm.months),
+        student_id: creditAssignForm.scope === "student" ? creditAssignForm.student_id : undefined,
       });
       setFeedback(`${result.assigned || 0} student accounts activated.`);
     } catch (err) {
@@ -867,12 +1285,12 @@ function AdminFinanceScreen({
   const pendingPayroll = payrollRows.filter((item) => item.status !== "paid").length;
 
   return (
-    <section className="screen-grid accountant-dashboard">
+    <section className="screen-grid finance-dashboard">
       <div className="school-finance-hero">
         <div>
-          <p>SchoolDom Accountant</p>
+          <p>SchoolDom Finance</p>
           <h2>Finance Dashboard</h2>
-          <span>School fees, class collections, expenses, payroll, student payments, and reports in one focused workspace.</span>
+          <span>School fees, class collections, expenses, payroll, student payments, and reports in one workspace.</span>
         </div>
         <div className="school-finance-hero-stat">
           <small>Collection Rate</small>
@@ -886,7 +1304,7 @@ function AdminFinanceScreen({
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {formError ? <p className="form-feedback error">{formError}</p> : null}
 
-          <div className="finance-summary-grid accountant-summary-grid">
+          <div className="finance-summary-grid">
             <article className="finance-summary-card tone-expected">
               <div className="finance-summary-icon" aria-hidden="true">
                 <DashboardIcon name="currency-naira" className="inline-icon" />
@@ -914,13 +1332,31 @@ function AdminFinanceScreen({
                 <strong>{formatFinanceAmount(outstandingAmount)}</strong>
               </div>
             </article>
-            <article className="finance-summary-card tone-pending">
+            <article className="finance-summary-card tone-expected">
               <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="staff" className="inline-icon" />
+                <DashboardIcon name="money" className="inline-icon" />
               </div>
               <div>
-                <p>Payroll Queue</p>
-                <strong>{pendingPayroll}</strong>
+                <p>Credit Price</p>
+                <strong>{formatFinanceAmount(tokenUnitPrice)}</strong>
+              </div>
+            </article>
+            <article className="finance-summary-card tone-received">
+              <div className="finance-summary-icon" aria-hidden="true">
+                <DashboardIcon name="check" className="inline-icon" />
+              </div>
+              <div>
+                <p>Available Credits</p>
+                <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong>
+              </div>
+            </article>
+            <article className="finance-summary-card tone-outstanding">
+              <div className="finance-summary-icon" aria-hidden="true">
+                <DashboardIcon name="requests" className="inline-icon" />
+              </div>
+              <div>
+                <p>Inactive Students</p>
+                <strong>{Number(creditSummary.inactive_students || 0).toLocaleString()}</strong>
               </div>
             </article>
           </div>
@@ -952,7 +1388,7 @@ function AdminFinanceScreen({
             </article>
           ) : null}
 
-          <div className="accountant-analytics-grid">
+          <div className="finance-analytics-grid">
             <article className="app-panel finance-chart-panel">
               <div className="panel-head">
                 <h3>Fee Analytics</h3>
@@ -991,6 +1427,91 @@ function AdminFinanceScreen({
               </div>
             </article>
           </div>
+
+          <section className="activation-credit-grid">
+            <article className="app-panel activation-credit-panel">
+              <div className="panel-head">
+                <h3>Activation Credits</h3>
+                <small>Buy credits, verify payments, and activate student access from this finance page.</small>
+              </div>
+              <div className="activation-credit-summary">
+                <span>Balance <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong></span>
+                <span>Active <strong>{Number(creditSummary.active_students || 0).toLocaleString()}</strong></span>
+                <span>Inactive <strong>{Number(creditSummary.inactive_students || 0).toLocaleString()}</strong></span>
+                <span>Excluded <strong>{Number(creditSummary.excluded_students || 0).toLocaleString()}</strong></span>
+              </div>
+              <form className="panel-form" onSubmit={handleCreditPurchaseSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">Credits to buy<input type="number" min="1" value={creditPurchaseForm.credits} onChange={(event) => setCreditPurchaseForm({ credits: event.target.value })} placeholder="100" /></label>
+                  <label className="panel-field">Estimated total<input value={formatFinanceAmount(Math.max(requestedCreditCount, 0) * tokenUnitPrice)} readOnly /></label>
+                  <label className="panel-field">Bonus credits<input value={bonusCreditCount ? `${bonusCreditCount} bonus` : "No bonus"} readOnly /></label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1}>Buy credits</button>
+                  {creditPurchaseUrl ? <a className="table-action" href={creditPurchaseUrl} target="_blank" rel="noreferrer">Open checkout</a> : null}
+                </div>
+              </form>
+              <form className="panel-form inline-credit-form" onSubmit={(event) => { event.preventDefault(); if (creditPurchaseReference && onVerifyCredits) onVerifyCredits({ reference: creditPurchaseReference }); }}>
+                <label className="panel-field full">Payment reference<input value={creditPurchaseReference} onChange={(event) => setCreditPurchaseReference(event.target.value)} placeholder="Flutterwave reference" /></label>
+                <button type="submit" disabled={!onVerifyCredits || !creditPurchaseReference}>Verify payment</button>
+              </form>
+            </article>
+
+            <article className="app-panel activation-credit-panel">
+              <div className="panel-head">
+                <h3>Assign Credits</h3>
+                <small>Activate all eligible students or students who have paid at least 50%.</small>
+              </div>
+              <form className="panel-form" onSubmit={handleCreditAssignSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">Scope<select value={creditAssignForm.scope} onChange={(event) => setCreditAssignForm((current) => ({ ...current, scope: event.target.value, student_id: event.target.value === "student" ? current.student_id : "" }))}><option value="student">Selected inactive student</option><option value="all">All inactive students ({creditSummary.eligible_all || 0})</option><option value="paid_50">Paid 50% and above ({creditSummary.eligible_paid_50 || 0})</option></select></label>
+                  <label className="panel-field">Months<input type="number" min="1" value={creditAssignForm.months} onChange={(event) => setCreditAssignForm((current) => ({ ...current, months: event.target.value }))} /></label>
+                  {creditAssignForm.scope === "student" && (
+                    <>
+                      <label className="panel-field">Search inactive student<input value={creditStudentSearch} onChange={(event) => setCreditStudentSearch(event.target.value)} placeholder="Name, email, or student ID" /></label>
+                      <label className="panel-field">Assign to inactive student<select value={creditAssignForm.student_id} onChange={(event) => setCreditAssignForm((current) => ({ ...current, student_id: event.target.value }))}><option value="">Select inactive student</option>{filteredInactiveCreditRows.map((row) => (<option key={row.student_id} value={row.student_id}>{row.student_name || "Unnamed student"}{row.student_identifier ? ` - ${row.student_identifier}` : ""}{row.student_email ? ` - ${row.student_email}` : ""}</option>))}</select></label>
+                    </>
+                  )}
+                </div>
+                {creditAssignForm.scope === "student" && !filteredInactiveCreditRows.length && (
+                  <p className="form-hint">No inactive student matches that search.</p>
+                )}
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onAssignCredits}>Assign credits</button>
+                  <button type="button" className="table-action" onClick={handleRunAutoCredits} disabled={!onRunAutoCredits}>Run auto assign</button>
+                </div>
+              </form>
+              <form className="panel-form" onSubmit={handleCreditSettingsSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">Auto assignment<select value={creditSettingsForm.enabled ? "on" : "off"} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, enabled: event.target.value === "on" }))}><option value="off">Off</option><option value="on">On</option></select></label>
+                  <label className="panel-field">Auto scope<select value={creditSettingsForm.scope} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, scope: event.target.value }))}><option value="all">All inactive students</option><option value="paid_50">Paid 50% and above</option></select></label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onCreditSettings}>Save credit settings</button>
+                </div>
+              </form>
+            </article>
+          </section>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
+              <h3>Credit Activity</h3>
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Student</th><th>Status</th><th>Assigned</th><th>Active Until</th><th>Inactive Since</th><th>Excluded</th></tr></thead>
+                <tbody>{creditRows.length ? visibleCreditRows.map((row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>)) : <tr><td colSpan="6">No activation credit records yet.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("activationAlerts", creditRows.length)}
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Date</th><th>Reference</th><th>Credits</th><th>Amount</th><th>Status</th></tr></thead>
+                <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map((row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>)) : <tr><td colSpan="5">No credit purchases yet.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
+            </div>
+          </article>
 
           <div className="finance-workspace">
             <article className="app-panel">
@@ -1084,7 +1605,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     return !["PHY", "CHEM"].includes(code) && !["physics", "chemistry"].includes(name);
   });
 
-  const [activeView, setActiveView] = useState("builder");
+  const [activeView, setActiveView] = useState("desktop");
   const [editingExam, setEditingExam] = useState(null);
   const [editError, setEditError] = useState("");
   const [loadingExamId, setLoadingExamId] = useState("");
@@ -1290,6 +1811,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       <ScreenState loading={loading && !results.length} error={error} onRetry={onRetry} />
 
       <div className="table-actions-inline">
+        <button type="button" className={`table-action ${activeView === "desktop" ? "active" : ""}`} onClick={() => setActiveView("desktop")}>
+          SchoolDom CBT Desktop
+        </button>
         <button type="button" className={`table-action ${activeView === "builder" ? "active" : ""}`} onClick={() => setActiveView("builder")}>
           Set Exam
         </button>
@@ -1300,6 +1824,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           Auto Submissions
         </button>
       </div>
+
+      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} /> : null}
 
       {activeView === "builder" ? (
         <>

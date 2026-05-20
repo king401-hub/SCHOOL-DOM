@@ -26,7 +26,6 @@ export const ADMIN_ROUTES = [
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
   { path: "/hr/activity", label: "HR Activity" },
-  { path: "/attendance", label: "Attendance" },
   { path: "/students", label: "Students" },
   { path: "/id-cards", label: "ID Cards" },
   { path: "/documents", label: "Transcripts & Testimonials" },
@@ -49,6 +48,7 @@ export const ACCOUNTANT_ROUTES = [
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
   { path: "/hr-self-service", label: "Payroll & Leave" },
+  { path: "/messages", label: "Messages" },
 ];
 export const ADMIN_ROUTE_SET = new Set([
   ...ADMIN_ROUTES.map((item) => item.path),

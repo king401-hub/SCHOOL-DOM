@@ -249,6 +249,7 @@ def _admin_finance_snapshot(user):
                 "id": str(activation_credit.id),
                 "student_id": str(student.id),
                 "student_name": student.user.get_full_name() or student.user.email,
+                "student_email": student.user.email,
                 "student_identifier": student.student_id or student.admission_number,
                 "class_name": _class_label(student.current_class),
                 "active_until": activation_credit.active_until,
@@ -894,15 +895,23 @@ def admin_activation_credit_verify(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def admin_activation_credit_assign(request):
-    """Assign monthly activation tokens to all students or students with at least 50% fees paid."""
+    """Assign monthly activation tokens to inactive students."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     scope = str(request.data.get("scope") or "all").strip()
+    student_id = request.data.get("student_id")
     try:
         months = int(request.data.get("months") or 1)
-        result = assign_monthly_activation_credits(user.tenant, scope=scope, months=months, actor=user, auto=False)
+        result = assign_monthly_activation_credits(
+            user.tenant,
+            scope=scope,
+            months=months,
+            actor=user,
+            auto=False,
+            student_id=student_id,
+        )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

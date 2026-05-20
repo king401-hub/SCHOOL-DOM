@@ -1278,6 +1278,9 @@ function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "
     if (viewerRole === "student") {
       return isAdmin || isTeacher;
     }
+    if (["staff", "accountant"].includes(viewerRole)) {
+      return true;
+    }
     return isAdmin;
   });
 }
@@ -1338,30 +1341,36 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
   return (
     <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
       <aside className="student-sidebar">
-        <SchoolBrand school={school} subtitle="Student" />
+        <SchoolBrand school={school} subtitle={roleLabel(session?.user?.role) || "Messages"} />
         <nav className="student-nav">
           <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/dashboard"); setNavOpen(false); }}>
             <span className="student-nav-icon" aria-hidden="true">D</span>
             <span>Dashboard</span>
           </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/fees"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">
-              <DashboardIcon name="money" className="inline-icon" />
-            </span>
-            <span>School Fees</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">Q</span>
-            <span>Quizzes</span>
-          </button>
+          {session?.user?.role === "student" ? (
+            <>
+              <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/fees"); setNavOpen(false); }}>
+                <span className="student-nav-icon" aria-hidden="true">
+                  <DashboardIcon name="money" className="inline-icon" />
+                </span>
+                <span>School Fees</span>
+              </button>
+              <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
+                <span className="student-nav-icon" aria-hidden="true">Q</span>
+                <span>Quizzes</span>
+              </button>
+            </>
+          ) : null}
           <button className="student-nav-item active" type="button">
             <span className="student-nav-icon" aria-hidden="true">M</span>
             <span>Messages</span>
           </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/results"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">R</span>
-            <span>Results</span>
-          </button>
+          {session?.user?.role === "student" ? (
+            <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/results"); setNavOpen(false); }}>
+              <span className="student-nav-icon" aria-hidden="true">R</span>
+              <span>Results</span>
+            </button>
+          ) : null}
         </nav>
       </aside>
 
@@ -3123,7 +3132,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
   });
   const [leaveForm, setLeaveForm] = useState({ leave_type: "Annual", start_date: "", end_date: "", reason: "" });
   const [advanceForm, setAdvanceForm] = useState({ amount: "", reason: "" });
-  const [attendanceForm, setAttendanceForm] = useState({ qr_token: "", notes: "" });
+  const [messageData, setMessageData] = useState({ inbox: [], recipients: [] });
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -3160,11 +3169,29 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
     return result;
   }, [session]);
 
+  const loadMessages = useCallback(async () => {
+    if (!session) return null;
+    const result = await requestJson(session, "GET", "/api/app/messages/");
+    setMessageData(result || { inbox: [], recipients: [] });
+    return result;
+  }, [session]);
+
   useEffect(() => {
     if (!initialData && session) {
       loadSelfService().catch((loadError) => setError(loadError.message || "Could not load staff requests."));
     }
   }, [initialData, loadSelfService, session]);
+
+  useEffect(() => {
+    if (!session) return undefined;
+    loadMessages().catch(() => {});
+    const pollId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadMessages().catch(() => {});
+      }
+    }, MESSAGE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(pollId);
+  }, [loadMessages, session]);
 
   const runAction = async (key, action, reset) => {
     setBusy(key);
@@ -3201,15 +3228,6 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
     );
   };
 
-  const handleAttendanceSubmit = (event) => {
-    event.preventDefault();
-    runAction(
-      "attendance",
-      () => postJson(session, "/api/hr/attendance/mark/", attendanceForm),
-      () => setAttendanceForm({ qr_token: "", notes: "" })
-    );
-  };
-
   const handleProfileSubmit = (event) => {
     event.preventDefault();
     const formData = new FormData();
@@ -3232,13 +3250,39 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
   const advances = snapshot?.advances || [];
   const payroll = snapshot?.payroll || [];
   const attendance = snapshot?.attendance || [];
+  const staffRecipientOptions = filterRecipientsForRole(messageData?.recipients || [], session?.user)
+    .filter((contact) => contact?.email)
+    .map((contact) => ({
+      value: contact.email,
+      label: `${contact.name || contact.email} - ${roleLabel(contact.role) || "Contact"}`,
+    }));
+
+  const handleStaffMessageSend = async (recipientValue, subject, body, _selectedRecipient, attachments = []) => {
+    await postJson(session, "/api/app/messages/send/", {
+      recipient_email: recipientValue,
+      subject,
+      body,
+      attachments,
+    });
+    await loadMessages();
+  };
+
+  const handleStaffMessageRead = async (messageId) => {
+    await requestJson(session, "POST", `/api/app/messages/${messageId}/read/`);
+    await loadMessages();
+  };
+
+  const handleStaffMessageDelete = async (messageId) => {
+    await requestJson(session, "DELETE", `/api/app/messages/${messageId}/`);
+    await loadMessages();
+  };
 
   return (
     <section className={`screen-grid ${standalone ? "staff-self-service-page" : ""}`}>
       {standalone ? (
         <div className="screen-hero">
           <h2>Staff Self-Service</h2>
-          <p>Request leave, request salary advances, and review your HR records.</p>
+          <p>Request leave, request salary advances, review attendance history, and message your school team.</p>
         </div>
       ) : null}
 
@@ -3281,20 +3325,6 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
         subtitle="Editable biodata"
       />
 
-
-      {showAttendance ? (
-        <article className="app-panel">
-          <div className="panel-head"><h3>Sign attendance</h3><small>Paste or scan the shared staff QR code.</small></div>
-          <form className="panel-form" onSubmit={handleAttendanceSubmit}>
-            <div className="panel-form-grid">
-              <label className="panel-field full">Shared QR token or URL<input value={attendanceForm.qr_token} onChange={(event) => setAttendanceForm((prev) => ({ ...prev, qr_token: event.target.value.split("/").filter(Boolean).pop() || event.target.value }))} placeholder="Scan the shared staff QR code here" required /></label>
-              <label className="panel-field full">Notes<input value={attendanceForm.notes} onChange={(event) => setAttendanceForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Optional" /></label>
-            </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "attendance"}>{busy === "attendance" ? "Signing..." : "Sign attendance"}</button></div>
-          </form>
-        </article>
-      ) : null}
-
       <section className="panel-grid">
         <article className="app-panel">
           <div className="panel-head"><h3>Request leave</h3><small>Sent to HR for approval.</small></div>
@@ -3327,6 +3357,16 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
         <RecordList title="Payroll history" rows={payroll.slice(0, 8)} render={(item) => `${item.period} - ${formatMoney(item.net_salary)} - ${item.status}`} />
         <RecordList title="Attendance history" rows={attendance.slice(0, 8)} render={(item) => `${item.date} - ${item.status}`} />
       </section>
+
+      <MessageInboxPanel
+        title="Staff Messages"
+        messages={messageData?.inbox || []}
+        recipientOptions={staffRecipientOptions}
+        onComposeSubmit={handleStaffMessageSend}
+        onMarkRead={handleStaffMessageRead}
+        onDelete={handleStaffMessageDelete}
+        onRefresh={loadMessages}
+      />
     </section>
   );
 }
@@ -5930,7 +5970,7 @@ const unreadNotificationsCount =
     <main className={`app-shell-page ${navOpen ? "nav-open" : ""}`}>
       <aside className="app-sidebar">
         <div className="brand-block">
-          <SchoolBrand school={schoolBrand} subtitle="Admin" compact />
+          <SchoolBrand school={schoolBrand} subtitle={roleLabel(session?.user?.role) || "Staff"} compact />
         </div>
 
         <nav className="app-nav" aria-label="Main navigation">

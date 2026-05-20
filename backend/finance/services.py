@@ -568,15 +568,35 @@ def eligible_students_for_activation_credits(tenant, scope="all", include_exclud
     return eligible
 
 
-def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None, auto=False):
+def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None, auto=False, student_id=None):
     months = int(months or 1)
     if months <= 0:
         raise ValueError("months must be a positive number.")
-    if scope not in {"all", "paid_50"}:
-        raise ValueError("scope must be 'all' or 'paid_50'.")
+    if scope not in {"all", "paid_50", "student"}:
+        raise ValueError("scope must be 'all', 'paid_50', or 'student'.")
 
     pool = get_or_create_activation_credit_pool(tenant)
-    students = eligible_students_for_activation_credits(tenant, scope=scope, include_excluded=False)
+    if scope == "student":
+        from users.models import StudentProfile
+
+        if not student_id:
+            raise ValueError("Select an inactive student to assign credits.")
+        try:
+            student = StudentProfile.objects.select_related("user", "current_class").get(
+                id=student_id,
+                user__tenant=tenant,
+                user__role="student",
+            )
+        except StudentProfile.DoesNotExist:
+            raise ValueError("Selected student was not found for this school.")
+        credit = get_or_create_student_activation_credit(student)
+        if credit.is_excluded_from_auto_deductions:
+            raise ValueError("Selected student is excluded from activation credit assignment.")
+        if credit.has_login_credit:
+            raise ValueError("Selected student already has active login credits.")
+        students = [student]
+    else:
+        students = eligible_students_for_activation_credits(tenant, scope=scope, include_excluded=False)
     credits_needed = len(students) * months
     if credits_needed <= 0:
         return {"assigned": 0, "skipped": 0, "pool": pool}
