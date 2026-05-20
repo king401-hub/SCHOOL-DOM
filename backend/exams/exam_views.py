@@ -7,9 +7,10 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import datetime, timedelta
 import random
 
@@ -24,6 +25,86 @@ from .serializers import (
     StudentAnswerSerializer,
     ExamResultSerializer,
 )
+
+
+def _tokens_for_cbt_student(user):
+    refresh = RefreshToken.for_user(user)
+    refresh["role"] = user.role
+    refresh["tenant"] = str(user.tenant.id) if user.tenant else None
+    return {
+        "refresh": str(refresh),
+        "access": str(refresh.access_token),
+    }
+
+
+def _student_session_payload(user):
+    profile = getattr(user, "student_profile", None)
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "full_name": user.get_full_name() or user.email,
+        "role": user.role,
+        "student_id": getattr(profile, "student_id", "") or "",
+        "admission_number": getattr(profile, "admission_number", "") or "",
+        "class_name": str(getattr(profile, "current_class", "") or ""),
+        "is_active": user.is_active,
+    }
+
+
+def _find_student_by_identifier(identifier):
+    value = str(identifier or "").strip()
+    if not value:
+        return None
+    return (
+        User.objects.filter(role="student", is_active=True)
+        .filter(
+            Q(student_profile__student_id__iexact=value)
+            | Q(student_profile__admission_number__iexact=value)
+            | Q(email__iexact=value)
+        )
+        .select_related("tenant", "student_profile", "student_profile__current_class")
+        .first()
+    )
+
+
+def _exams_for_student(student, *, pin):
+    now = timezone.now()
+    normalized_pin = ExamPin.normalize_pin(pin)
+    pin_digest = ExamPin.digest_pin(normalized_pin)
+    exams = Exam.objects.filter(
+        pins__pin_digest=pin_digest,
+        pins__is_active=True,
+        is_published=True,
+        start_date__lte=now,
+        end_date__gte=now,
+    ).distinct()
+
+    profile = getattr(student, "student_profile", None)
+    enrolled_exam_ids = []
+    if profile:
+        enrolled_exam_ids = list(
+            StudentEnrollment.objects.filter(student=profile)
+            .values_list("exams__id", flat=True)
+        )
+        enrolled_exam_ids = [exam_id for exam_id in enrolled_exam_ids if exam_id]
+
+    if profile and profile.current_class_id:
+        exams = exams.filter(
+            Q(class_group_id=profile.current_class_id)
+            | Q(class_group__isnull=True)
+            | Q(id__in=enrolled_exam_ids)
+        )
+    elif enrolled_exam_ids:
+        exams = exams.filter(Q(class_group__isnull=True) | Q(id__in=enrolled_exam_ids))
+    else:
+        exams = exams.filter(class_group__isnull=True)
+
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(student, "tenant", None))
+    if legacy_tenant:
+        exams = exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant))
+    return exams.order_by("start_date")
 
 
 def _question_queryset_for_exam(exam):
@@ -359,6 +440,94 @@ class ExamListView(APIView):
         
         serializer = ExamSerializer(exams.distinct().order_by("start_date"), many=True)
         return Response(serializer.data)
+
+
+class StudentCbtEntryView(APIView):
+    """Start/resume CBT with only Student ID and Exam PIN for desktop exam stations."""
+    permission_classes = [AllowAny]
+
+    @transaction.atomic
+    def post(self, request):
+        student_identifier = request.data.get("student_id") or request.data.get("admission_number") or request.data.get("student")
+        entered_pin = ExamPin.normalize_pin(request.data.get("pin") or request.data.get("exam_pin") or "")
+        student = _find_student_by_identifier(student_identifier)
+        if not student:
+            return Response({"success": False, "message": "Student ID was not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not entered_pin:
+            return Response({"success": False, "message": "Enter the exam PIN."}, status=status.HTTP_400_BAD_REQUEST)
+
+        exam = _exams_for_student(student, pin=entered_pin).first()
+        if not exam:
+            return Response({"success": False, "message": "No open exam matches this Student ID and PIN."}, status=status.HTTP_404_NOT_FOUND)
+
+        submitted_count = ExamAttempt.objects.filter(exam=exam, student=student, is_submitted=True).count()
+        if submitted_count >= exam.max_attempts:
+            return Response(
+                {"success": False, "message": f"Maximum {exam.max_attempts} attempt(s) allowed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        active_attempt = ExamAttempt.objects.select_for_update().filter(
+            exam=exam,
+            student=student,
+            is_submitted=False,
+        ).first()
+
+        active_pins = exam.pins.filter(is_active=True)
+        pin = active_pins.filter(pin_digest=ExamPin.digest_pin(entered_pin)).first()
+        if not pin or not pin.check_pin(entered_pin):
+            return Response({"success": False, "message": "Invalid exam PIN."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not (active_attempt and pin.successful_usage_queryset().filter(attempt=active_attempt, student=student).exists()):
+            usable, reason = pin.can_be_used()
+            if not usable:
+                return Response({"success": False, "message": reason}, status=status.HTTP_403_FORBIDDEN)
+
+        if active_attempt:
+            attempt = active_attempt
+            if not attempt.question_order:
+                attempt.question_order = _build_attempt_question_order(exam)
+                attempt.save(update_fields=["question_order", "updated_at"])
+        else:
+            attempt = ExamAttempt.objects.create(
+                exam=exam,
+                student=student,
+                tenant=exam.tenant,
+                is_offline=bool(request.data.get("is_offline", False)),
+                device_id=request.data.get("device_id") or _client_ip(request),
+                question_order=_build_attempt_question_order(exam),
+            )
+
+        if not pin.successful_usage_queryset().filter(attempt=attempt, student=student).exists():
+            ExamPinUsage.objects.create(
+                tenant=exam.tenant,
+                pin=pin,
+                exam=exam,
+                student=student,
+                attempt=attempt,
+                entered_pin_digest=ExamPin.digest_pin(entered_pin),
+                status=ExamPinUsage.STATUS_ACCEPTED,
+                message="PIN accepted from Student CBT desktop entry.",
+                ip_address=_client_ip(request),
+                user_agent=str(request.META.get("HTTP_USER_AGENT", ""))[:255],
+            )
+
+        tokens = _tokens_for_cbt_student(student)
+        return Response({
+            "success": True,
+            "attempt_id": attempt.id,
+            "exam_id": exam.id,
+            "exam": ExamSerializer(exam).data,
+            "student": _student_session_payload(student),
+            "session": {
+                "user": _student_session_payload(student),
+                "access": tokens["access"],
+                "refresh": tokens["refresh"],
+                "school_code": student.tenant.schema_name if student.tenant else "",
+                "signedInAt": timezone.now().isoformat(),
+                "auth_mode": "cbt_entry",
+            },
+        }, status=status.HTTP_200_OK)
 
 
 class StartExamView(APIView):

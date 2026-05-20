@@ -23,402 +23,110 @@ import { TeacherExamBuilder } from "./TeacherExamPanels";
 
 const NAIRA_SYMBOL = "\u20A6";
 const FINANCE_TABLE_PREVIEW_COUNT = 3;
-const CBT_DESKTOP_STATE_KEY = "schooldom.cbt_desktop_state";
 
 const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
 const heatTone = (status) => (status === "strong" ? "strong" : status === "watch" ? "watch" : "weak");
 const formatAnalyticsAmount = (value) =>
   `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
-const defaultCbtDesktopState = {
-  serverRunning: true,
-  lanAddress: "192.168.1.12:8088",
-  syncState: "Ready",
-  syncQueue: 12,
-  encryptedExams: 6,
-  pendingSubmissions: 18,
-  activeSessionId: "mock-session-1",
-  sessions: [
-    {
-      id: "mock-session-1",
-      title: "JSS 3 Mathematics Mock CBT",
-      className: "JSS 3",
-      examPin: "483921",
-      status: "Live",
-      duration: 90,
-      students: 44,
-      submissions: 26,
-    },
-    {
-      id: "mock-session-2",
-      title: "SS 2 English Language",
-      className: "SS 2",
-      examPin: "917304",
-      status: "Ready",
-      duration: 75,
-      students: 38,
-      submissions: 0,
-    },
-  ],
-  students: [
-    { id: "SD-2026-014", name: "Amina Yusuf", station: "LAB-PC-03", status: "Writing", progress: 68, warnings: 0, saved: "18 sec ago" },
-    { id: "SD-2026-022", name: "David Okoro", station: "LAB-PC-08", status: "Writing", progress: 41, warnings: 1, saved: "5 sec ago" },
-    { id: "SD-2026-031", name: "Grace Bello", station: "LAB-PC-12", status: "Submitted", progress: 100, warnings: 0, saved: "Synced locally" },
-    { id: "SD-2026-044", name: "Samuel Ade", station: "LAB-PC-15", status: "Recovered", progress: 57, warnings: 2, saved: "Recovered draft" },
-  ],
-  auditLogs: [
-    { time: "09:02", event: "Local CBT server started", actor: "Admin", tone: "success" },
-    { time: "09:05", event: "Exam package decrypted for LAN delivery", actor: "System", tone: "info" },
-    { time: "09:18", event: "Tab switch warning recorded for SD-2026-022", actor: "Proctor", tone: "warning" },
-    { time: "09:27", event: "Emergency recovery restored SD-2026-044 draft", actor: "System", tone: "success" },
-  ],
-};
-
-function readCbtDesktopState() {
-  if (typeof window === "undefined") return defaultCbtDesktopState;
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(CBT_DESKTOP_STATE_KEY) || "null");
-    return stored ? { ...defaultCbtDesktopState, ...stored } : defaultCbtDesktopState;
-  } catch {
-    window.localStorage.removeItem(CBT_DESKTOP_STATE_KEY);
-    return defaultCbtDesktopState;
-  }
-}
-
-function writeCbtDesktopState(state) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(CBT_DESKTOP_STATE_KEY, JSON.stringify(state));
-}
-
 function CbtStatusPill({ tone = "info", children }) {
   return <span className={`cbt-status-pill tone-${tone}`}>{children}</span>;
 }
 
 function SchoolDomCbtDesktop({ exams = [], results = [] }) {
-  const [desktopState, setDesktopState] = useState(() => readCbtDesktopState());
-  const [mode, setMode] = useState("admin");
-  const [syncing, setSyncing] = useState(false);
-  const [studentLogin, setStudentLogin] = useState({ studentId: "SD-2026-022", pin: "483921" });
-  const [studentExamStarted, setStudentExamStarted] = useState(false);
-  const [studentAnswer, setStudentAnswer] = useState(() => window.localStorage.getItem("schooldom.cbt_student_autosave") || "B");
-  const activeSession = desktopState.sessions.find((item) => item.id === desktopState.activeSessionId) || desktopState.sessions[0];
-
-  useEffect(() => {
-    writeCbtDesktopState(desktopState);
-  }, [desktopState]);
-
-  useEffect(() => {
-    if (!studentExamStarted) return undefined;
-    const saveTimer = window.setTimeout(() => {
-      window.localStorage.setItem("schooldom.cbt_student_autosave", studentAnswer);
-    }, 350);
-    return () => window.clearTimeout(saveTimer);
-  }, [studentAnswer, studentExamStarted]);
-
-  const pushAudit = (event, tone = "info", actor = "Admin") => {
-    const now = new Date();
-    setDesktopState((previous) => ({
-      ...previous,
-      auditLogs: [
-        {
-          time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          event,
-          actor,
-          tone,
-        },
-        ...previous.auditLogs,
-      ].slice(0, 8),
-    }));
-  };
-
-  const toggleServer = () => {
-    setDesktopState((previous) => {
-      const nextRunning = !previous.serverRunning;
-      return {
-        ...previous,
-        serverRunning: nextRunning,
-        syncState: nextRunning ? "Ready" : "Server stopped",
-      };
-    });
-    pushAudit(desktopState.serverRunning ? "Local CBT server stopped" : "Local CBT server started", desktopState.serverRunning ? "warning" : "success");
-  };
-
-  const startSession = () => {
-    setDesktopState((previous) => ({
-      ...previous,
-      sessions: previous.sessions.map((item) =>
-        item.id === previous.activeSessionId ? { ...item, status: item.status === "Live" ? "Paused" : "Live" } : item
-      ),
-    }));
-    pushAudit(`${activeSession?.title || "CBT session"} ${activeSession?.status === "Live" ? "paused" : "started"}`, "success");
-  };
-
-  const simulateSync = () => {
-    setSyncing(true);
-    setDesktopState((previous) => ({ ...previous, syncState: "Syncing to SchoolDom..." }));
-    window.setTimeout(() => {
-      setDesktopState((previous) => ({
-        ...previous,
-        syncState: "Synced",
-        syncQueue: 0,
-        pendingSubmissions: 0,
-      }));
-      setSyncing(false);
-      pushAudit("Offline submissions and audit logs synced to SchoolDom", "success", "System");
-    }, 900);
-  };
-
-  const collectSubmissions = () => {
-    setDesktopState((previous) => ({
-      ...previous,
-      pendingSubmissions: previous.pendingSubmissions + 4,
-      syncQueue: previous.syncQueue + 4,
-      sessions: previous.sessions.map((item) =>
-        item.id === previous.activeSessionId ? { ...item, submissions: Math.min(item.students, item.submissions + 4) } : item
-      ),
-    }));
-    pushAudit("Collected 4 offline student submissions over LAN", "info", "System");
-  };
-
-  const createLocalSession = () => {
-    const nextIndex = desktopState.sessions.length + 1;
-    const sourceExam = exams[0];
-    const newSession = {
-      id: `local-session-${Date.now()}`,
-      title: sourceExam?.title || sourceExam?.name || `Local CBT Session ${nextIndex}`,
-      className: sourceExam?.class_name || sourceExam?.class || "All classes",
-      examPin: String(Math.floor(100000 + Math.random() * 899999)),
-      status: "Ready",
-      duration: sourceExam?.duration || 60,
-      students: sourceExam?.student_count || 30,
-      submissions: 0,
-    };
-    setDesktopState((previous) => ({
-      ...previous,
-      activeSessionId: newSession.id,
-      encryptedExams: previous.encryptedExams + 1,
-      sessions: [newSession, ...previous.sessions],
-    }));
-    pushAudit(`Created encrypted local session: ${newSession.title}`, "success");
-  };
-
-  const studentLoginReady = studentLogin.studentId.trim() && studentLogin.pin.trim();
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const studentAppDownloadUrl = `${origin}/app/download/student-cbt/`;
+  const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
+  const openExams = publishedExams.filter((exam) => {
+    const now = Date.now();
+    const starts = new Date(exam.start_date || exam.startDate || 0).getTime();
+    const ends = new Date(exam.end_date || exam.endDate || 0).getTime();
+    return starts <= now && (!ends || now <= ends);
+  });
+  const submittedResults = results.filter((item) => item.attempt_id || item.id);
+  const autoSubmitted = results.filter((item) => item.auto_submitted || item.reason || item.warning_count);
+  const recentExams = [...publishedExams]
+    .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
+    .slice(0, 6);
 
   return (
     <section className="cbt-desktop-app">
       <header className="cbt-desktop-hero">
         <div>
-          <p className="quiz-kicker">Windows desktop CBT</p>
-          <h2>SchoolDom CBT</h2>
-          <p>One installed app for the admin LAN server, offline exam storage, student exam delivery, recovery, and result sync.</p>
+          <p className="quiz-kicker">Desktop CBT deployment</p>
+          <h2>Student CBT App</h2>
+          <p>Students write exams from the desktop client while this admin server remains the single source of exams, PIN checks, autosaves, submissions, and results.</p>
         </div>
         <div className="cbt-hero-status">
-          <CbtStatusPill tone={desktopState.serverRunning ? "success" : "danger"}>
-            {desktopState.serverRunning ? "Local server online" : "Server offline"}
-          </CbtStatusPill>
-          <strong>{desktopState.lanAddress}</strong>
-          <small>{desktopState.syncState}</small>
+          <CbtStatusPill tone={origin ? "success" : "warning"}>{origin ? "Admin server online" : "Open the admin server"}</CbtStatusPill>
+          <strong>Ready to package</strong>
+          <small>The download embeds this admin server automatically.</small>
         </div>
       </header>
 
-      <div className="cbt-mode-switch" role="tablist" aria-label="SchoolDom CBT mode">
-        <button type="button" className={mode === "admin" ? "active" : ""} onClick={() => setMode("admin")}>
-          <DashboardIcon name="overview" className="inline-icon" />
-          Admin Mode
-        </button>
-        <button type="button" className={mode === "student" ? "active" : ""} onClick={() => setMode("student")}>
-          <DashboardIcon name="exam" className="inline-icon" />
-          Student Mode
-        </button>
+      <div className="metric-grid cbt-metric-grid">
+        <MetricCard label="Published Exams" value={publishedExams.length} trend="Available to eligible students" icon="exam" tone="violet" />
+        <MetricCard label="Open Now" value={openExams.length} trend="Within scheduled exam time" icon="overview" tone="emerald" />
+        <MetricCard label="Submissions" value={submittedResults.length} trend="Real CBT result records" icon="results" tone="blue" />
+        <MetricCard label="Auto Submissions" value={autoSubmitted.length} trend="Timer or security triggered" icon="results" tone="amber" />
       </div>
 
-      {mode === "admin" ? (
-        <>
-          <div className="metric-grid cbt-metric-grid">
-            <MetricCard label="LAN Students" value={desktopState.students.filter((item) => item.status !== "Submitted").length} trend="Connected to local server" icon="students" tone="emerald" />
-            <MetricCard label="Encrypted Exams" value={desktopState.encryptedExams} trend="Stored locally for offline use" icon="exam" tone="violet" />
-            <MetricCard label="Pending Sync" value={desktopState.syncQueue} trend="Submissions, results, and logs" icon="results" tone="amber" />
-            <MetricCard label="Result Records" value={results.length} trend="Available in dashboard data" icon="results" tone="blue" />
+      <div className="cbt-admin-layout">
+        <article className="app-panel cbt-server-panel">
+          <div className="panel-head">
+            <h3>Admin local server</h3>
+            <small>Run Django and the frontend on the admin computer with LAN access enabled.</small>
           </div>
-
-          <div className="cbt-admin-layout">
-            <article className="app-panel cbt-server-panel">
-              <div className="panel-head">
-                <h3>Local CBT server</h3>
-                <small>Admin computer acts as the secure server for the school LAN.</small>
+          <div className="cbt-server-card">
+            <div>
+              <span>Student application</span>
+              <strong>SchoolDom Student CBT</strong>
+              <small>Download the app here, copy it to each student computer, and open SchoolDom-Student-CBT.exe.</small>
+            </div>
+            <CbtStatusPill tone="success">Real API backed</CbtStatusPill>
+          </div>
+          <div className="cbt-action-row">
+            <a className="cbt-download-button" href={studentAppDownloadUrl}>
+              Download Student CBT App (.exe)
+            </a>
+          </div>
+          <div className="cbt-security-grid">
+            {[
+              ["Authentication", "Students sign in with their real SchoolDom account before exams load."],
+              ["Exam PINs", "PIN validation happens on the server before an attempt is created."],
+              ["Autosave", "Answers are saved to the server and cached locally for recovery."],
+              ["Monitoring", "Fullscreen exits, tab switches, and auto-submit reasons are recorded."],
+            ].map(([title, detail]) => (
+              <div key={title}>
+                <strong>{title}</strong>
+                <span>{detail}</span>
               </div>
-              <div className="cbt-server-card">
-                <div>
-                  <span>LAN endpoint</span>
-                  <strong>{desktopState.lanAddress}</strong>
-                  <small>Student computers connect with Student ID and Exam PIN.</small>
-                </div>
-                <CbtStatusPill tone={desktopState.serverRunning ? "success" : "danger"}>
-                  {desktopState.serverRunning ? "Accepting clients" : "Stopped"}
+            ))}
+          </div>
+        </article>
+
+        <article className="app-panel cbt-session-panel">
+          <div className="panel-head">
+            <h3>Published CBT exams</h3>
+            <small>Only real exams from the database are shown here.</small>
+          </div>
+          <div className="cbt-session-list">
+            {recentExams.length ? recentExams.map((exam) => (
+              <div key={exam.id || exam.exam_id} className="cbt-real-session">
+                <span>
+                  <strong>{exam.title || exam.name || `Exam ${exam.id || exam.exam_id}`}</strong>
+                  <small>{exam.class_name || exam.class || "All classes"} - {exam.duration_minutes || exam.duration || "-"} mins</small>
+                </span>
+                <CbtStatusPill tone={openExams.some((item) => String(item.id || item.exam_id) === String(exam.id || exam.exam_id)) ? "success" : "info"}>
+                  {openExams.some((item) => String(item.id || item.exam_id) === String(exam.id || exam.exam_id)) ? "Open" : "Scheduled"}
                 </CbtStatusPill>
               </div>
-              <div className="cbt-action-row">
-                <button type="button" onClick={toggleServer}>{desktopState.serverRunning ? "Stop server" : "Start server"}</button>
-                <button type="button" onClick={createLocalSession}>Create local session</button>
-                <button type="button" onClick={collectSubmissions}>Collect submissions</button>
-                <button type="button" disabled={syncing || desktopState.syncQueue === 0} onClick={simulateSync}>
-                  {syncing ? "Syncing..." : "Sync results"}
-                </button>
-              </div>
-              <div className="cbt-security-grid">
-                {[
-                  ["Encrypted local exam packages", "AES-ready storage layer for questions and keys"],
-                  ["Autosave and recovery", "Draft answers survive power loss or shutdown"],
-                  ["Fullscreen lockdown", "Copy, paste, print, and tab switching are tracked"],
-                  ["Offline-first results", "Submissions queue until internet returns"],
-                ].map(([title, detail]) => (
-                  <div key={title}>
-                    <strong>{title}</strong>
-                    <span>{detail}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="app-panel cbt-session-panel">
-              <div className="panel-head">
-                <h3>Exam sessions</h3>
-                <small>Start, pause, and monitor CBT rooms.</small>
-              </div>
-              <div className="cbt-session-list">
-                {desktopState.sessions.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={item.id === desktopState.activeSessionId ? "active" : ""}
-                    onClick={() => setDesktopState((previous) => ({ ...previous, activeSessionId: item.id }))}
-                  >
-                    <span>
-                      <strong>{item.title}</strong>
-                      <small>{item.className} - PIN {item.examPin} - {item.duration} mins</small>
-                    </span>
-                    <CbtStatusPill tone={item.status === "Live" ? "success" : item.status === "Paused" ? "warning" : "info"}>{item.status}</CbtStatusPill>
-                  </button>
-                ))}
-              </div>
-              <div className="cbt-selected-session">
-                <div>
-                  <span>Active session</span>
-                  <strong>{activeSession?.title}</strong>
-                  <small>{activeSession?.submissions}/{activeSession?.students} submissions collected locally</small>
-                </div>
-                <button type="button" onClick={startSession}>{activeSession?.status === "Live" ? "Pause exam" : "Start exam"}</button>
-              </div>
-            </article>
+            )) : (
+              <p className="panel-empty">Publish a CBT exam to make it available in the student desktop app.</p>
+            )}
           </div>
-
-          <div className="cbt-admin-layout secondary">
-            <article className="app-panel">
-              <div className="panel-head">
-                <h3>Active students</h3>
-                <small>Live monitoring from LAN clients.</small>
-              </div>
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr><th>Student</th><th>Station</th><th>Status</th><th>Progress</th><th>Warnings</th><th>Autosave</th></tr>
-                  </thead>
-                  <tbody>
-                    {desktopState.students.map((student) => (
-                      <tr key={student.id}>
-                        <td><strong>{student.name}</strong><br /><small>{student.id}</small></td>
-                        <td>{student.station}</td>
-                        <td>{student.status}</td>
-                        <td><div className="cbt-progress"><i style={{ width: `${student.progress}%` }} /></div></td>
-                        <td>{student.warnings}</td>
-                        <td>{student.saved}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-
-            <article className="app-panel">
-              <div className="panel-head">
-                <h3>Audit and recovery</h3>
-                <small>Security events, sync actions, and crash recovery records.</small>
-              </div>
-              <div className="cbt-audit-list">
-                {desktopState.auditLogs.map((log, index) => (
-                  <div key={`${log.time}-${index}`} className={`cbt-audit-item tone-${log.tone}`}>
-                    <span>{log.time}</span>
-                    <strong>{log.event}</strong>
-                    <small>{log.actor}</small>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </div>
-        </>
-      ) : (
-        <article className="cbt-student-shell" onCopy={(event) => event.preventDefault()} onPaste={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()}>
-          <aside className="cbt-student-login">
-            <SchoolBrand school={{ name: "SchoolDom CBT" }} subtitle="Student Mode" compact />
-            <label>
-              Student ID
-              <input value={studentLogin.studentId} onChange={(event) => setStudentLogin((previous) => ({ ...previous, studentId: event.target.value }))} />
-            </label>
-            <label>
-              Exam PIN
-              <input value={studentLogin.pin} onChange={(event) => setStudentLogin((previous) => ({ ...previous, pin: event.target.value }))} />
-            </label>
-            <button type="button" disabled={!studentLoginReady} onClick={() => setStudentExamStarted(true)}>
-              Enter fullscreen exam
-            </button>
-            <div className="cbt-student-rules">
-              <span>Offline LAN exam</span>
-              <span>Randomized questions</span>
-              <span>Autosaves every few seconds</span>
-              <span>Auto-submit when timer expires</span>
-            </div>
-          </aside>
-          <section className={`cbt-exam-preview ${studentExamStarted ? "active" : ""}`}>
-            <header>
-              <div>
-                <p className="quiz-kicker">{activeSession?.className} - PIN {activeSession?.examPin}</p>
-                <h3>{activeSession?.title}</h3>
-              </div>
-              <div className="cbt-timer">01:14:32</div>
-            </header>
-            <div className="cbt-question-layout">
-              <nav aria-label="Question navigator">
-                {Array.from({ length: 12 }).map((_, index) => (
-                  <button key={index} type="button" className={index < 5 ? "answered" : index === 5 ? "current" : ""}>{index + 1}</button>
-                ))}
-              </nav>
-              <main>
-                <CbtStatusPill tone="success">Autosaved locally</CbtStatusPill>
-                <h4>Question 6</h4>
-                <p>Which option best describes a LAN-based CBT deployment during an offline school examination?</p>
-                {[
-                  ["A", "Every student computer connects directly to the internet."],
-                  ["B", "One admin computer hosts the local exam server while students connect over the school network."],
-                  ["C", "Students submit answers by email after the exam."],
-                  ["D", "Question papers are printed from the dashboard."],
-                ].map(([value, label]) => (
-                  <label key={value} className="cbt-answer-option">
-                    <input type="radio" name="cbt-preview-answer" checked={studentAnswer === value} onChange={() => setStudentAnswer(value)} />
-                    <span>{value}</span>
-                    {label}
-                  </label>
-                ))}
-              </main>
-            </div>
-            <footer>
-              <CbtStatusPill tone="warning">Tab switch detection armed</CbtStatusPill>
-              <button type="button">Previous</button>
-              <button type="button">Next</button>
-              <button type="button">Submit exam</button>
-            </footer>
-          </section>
         </article>
-      )}
+      </div>
     </section>
   );
 }

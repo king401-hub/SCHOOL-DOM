@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "desktop:student": "electron electron/main.cjs",
     "cap:sync": "npm run build && npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"
@@ -22,6 +23,7 @@
     "@capacitor/cli": "^6.2.1",
     "@capacitor/ios": "^6.2.1",
     "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^31.7.7",
     "esbuild": "^0.21.5",
     "vite": "^5.4.14"
   }

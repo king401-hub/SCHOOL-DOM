@@ -590,6 +590,8 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   }
 
   if (completed) {
+    const returnPath = session?.auth_mode === "cbt_entry" ? "/student-cbt" : "/dashboard";
+    const returnLabel = session?.auth_mode === "cbt_entry" ? "Next Student" : "Return to Dashboard";
     return (
       <div className="exam-completed-screen">
         <div className="exam-completed-card">
@@ -597,8 +599,17 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
           <p className="exam-completed-kicker">Submission received</p>
           <h1>Exam Completed</h1>
           <p>{offlineMode ? "Your answers were saved offline and will sync for grading when internet is available." : "Your answers have been submitted successfully. Your teacher will review the result and keep it for records."}</p>
-          <button type="button" className="btn-home" onClick={() => onNavigate?.("/dashboard", { replace: true })}>
-            Return to Dashboard
+          <button
+            type="button"
+            className="btn-home"
+            onClick={() => {
+              if (session?.auth_mode === "cbt_entry") {
+                window.sessionStorage.removeItem("schooldom.session");
+              }
+              onNavigate?.(returnPath, { replace: true });
+            }}
+          >
+            {returnLabel}
           </button>
         </div>
       </div>

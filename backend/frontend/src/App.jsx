@@ -104,6 +104,7 @@ const AdminDatabaseImportScreen = lazyAdminScreen("AdminDatabaseImportScreen");
 const NAIRA_SYMBOL = "\u20A6";
 const DAILY_PERSONAL_QUESTION_LIMIT = 20;
 const ADMIN_ACTIVITY_LOG_KEY = "schooldom.admin_activity_notifications";
+const STUDENT_CBT_DESKTOP_PATH = "/student-cbt";
 
 function isMobileQuizViewport() {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -187,6 +188,128 @@ function genderDisplay(value) {
   if (normalized === "M") return "Male";
   if (normalized === "F") return "Female";
   return value || "";
+}
+
+const CBT_ENTRY_CACHE_KEY = "schooldom.student_cbt_entry_cache";
+
+function cbtEntryCacheKey(studentId, pin) {
+  return `${String(studentId || "").trim().toLowerCase()}::${String(pin || "").trim().toUpperCase()}`;
+}
+
+function readCbtEntryCache() {
+  try {
+    return JSON.parse(window.localStorage.getItem(CBT_ENTRY_CACHE_KEY) || "{}");
+  } catch {
+    window.localStorage.removeItem(CBT_ENTRY_CACHE_KEY);
+    return {};
+  }
+}
+
+function writeCbtEntryCache(cache) {
+  window.localStorage.setItem(CBT_ENTRY_CACHE_KEY, JSON.stringify(cache));
+}
+
+function StudentCbtEntry({ onEntry }) {
+  const [studentId, setStudentId] = useState("");
+  const [examPin, setExamPin] = useState("");
+  const [error, setError] = useState("");
+  const [offlineNotice, setOfflineNotice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    clearStoredSession();
+  }, []);
+
+  const canSubmit = studentId.trim().length > 0 && examPin.trim().length > 0 && !submitting;
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError("");
+    setOfflineNotice("");
+    const normalizedPin = examPin.trim().toUpperCase();
+    const cacheKey = cbtEntryCacheKey(studentId, normalizedPin);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/exams/cbt-entry/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: studentId.trim(),
+          exam_pin: normalizedPin,
+          is_offline: false,
+          device_id: window.schoolDomDesktop?.client || window.navigator.userAgent,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.success || !payload?.session || !payload?.attempt_id) {
+        throw new Error(payload?.message || payload?.error || "Could not open this CBT exam.");
+      }
+      const nextSession = { ...payload.session, auth_mode: "cbt_entry" };
+      window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+      const cache = readCbtEntryCache();
+      cache[cacheKey] = {
+        attempt_id: payload.attempt_id,
+        exam_id: payload.exam_id,
+        session: nextSession,
+        student_id: studentId.trim(),
+        exam_pin: normalizedPin,
+        cached_at: new Date().toISOString(),
+      };
+      writeCbtEntryCache(cache);
+      onEntry?.(nextSession, payload.attempt_id);
+    } catch (entryError) {
+      const cached = readCbtEntryCache()[cacheKey];
+      if (cached?.attempt_id && cached?.session) {
+        window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached.session));
+        setOfflineNotice("Offline mode: reopening the last exam package saved on this computer.");
+        onEntry?.({ ...cached.session, auth_mode: "cbt_entry" }, cached.attempt_id);
+        return;
+      }
+      setError(entryError.message || "Could not open this CBT exam. Check the admin server connection.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <main className="student-cbt-entry-page">
+      <section className="student-cbt-entry-card">
+        <SchoolBrand school={{ name: "SchoolDom CBT" }} subtitle="Student Exam App" compact />
+        <form onSubmit={handleSubmit} className="student-cbt-entry-form">
+          <label>
+            Student ID
+            <input
+              value={studentId}
+              onChange={(event) => {
+                setStudentId(event.target.value);
+                setError("");
+              }}
+              autoComplete="off"
+              autoFocus
+            />
+          </label>
+          <label>
+            Exam PIN
+            <input
+              value={examPin}
+              onChange={(event) => {
+                setExamPin(event.target.value.toUpperCase());
+                setError("");
+              }}
+              autoComplete="one-time-code"
+            />
+          </label>
+          {error ? <p className="form-feedback error">{error}</p> : null}
+          {offlineNotice ? <p className="form-feedback success">{offlineNotice}</p> : null}
+          <button type="submit" disabled={!canSubmit}>
+            {submitting ? "Opening exam..." : "Open Exam"}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
 }
 
 function RecordList({ title, rows = [], render, onSelect }) {
@@ -6602,7 +6725,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (!session) {
-    if (!PUBLIC_ROUTES.has(currentPath)) {
+    if (currentPath !== STUDENT_CBT_DESKTOP_PATH && !PUBLIC_ROUTES.has(currentPath)) {
       if (isTeacherAttendanceScanPath(currentPath)) {
         window.sessionStorage.setItem(PENDING_AUTH_REDIRECT_KEY, currentPath);
       }
@@ -6615,7 +6738,7 @@ useEffect(() => {
     return;
   }
 
-  if (PUBLIC_ROUTES.has(currentPath)) {
+  if (currentPath !== STUDENT_CBT_DESKTOP_PATH && PUBLIC_ROUTES.has(currentPath)) {
     navigate("/dashboard", { replace: true });
     return;
   }
@@ -6631,12 +6754,12 @@ if (isAdmin && ADMIN_ROUTE_REDIRECTS[currentPath]) {
       return;
     }
 
-if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
+if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(currentPath)) {
       navigate("/dashboard", { replace: true });
       return;
     }
 
-    if (!isAdmin && !STUDENT_ROUTE_SET.has(currentPath) && !isStudentExamPath(currentPath)) {
+    if (!isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !STUDENT_ROUTE_SET.has(currentPath) && !isStudentExamPath(currentPath)) {
       navigate("/dashboard", { replace: true });
     }
   }, [currentPath, navigate, session]);
@@ -6646,7 +6769,19 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
       setSession(nextSession);
       const pendingRedirect = window.sessionStorage.getItem(PENDING_AUTH_REDIRECT_KEY);
       window.sessionStorage.removeItem(PENDING_AUTH_REDIRECT_KEY);
+      if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
+        navigate(STUDENT_CBT_DESKTOP_PATH, { replace: true });
+        return;
+      }
       navigate(isTeacherAttendanceScanPath(pendingRedirect) ? pendingRedirect : "/dashboard", { replace: true });
+    },
+    [currentPath, navigate]
+  );
+
+  const handleCbtEntry = useCallback(
+    (nextSession, attemptId) => {
+      setSession(nextSession);
+      navigate(`/exam/${attemptId}`, { replace: true });
     },
     [navigate]
   );
@@ -6709,6 +6844,9 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
   }
 
   if (!session) {
+    if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
+      return <StudentCbtEntry onEntry={handleCbtEntry} />;
+    }
     if (currentPath === "/") {
       return withGlobalHome(<LandingPage onGetStarted={() => navigate("/signin")} />);
     }
@@ -6729,6 +6867,11 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
 
   const role = session?.user?.role;
   const isAdmin = role === "school_admin" || role === "principal" || role === "super_admin" || role === "accountant";
+
+  if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
+    return <StudentCbtEntry onEntry={handleCbtEntry} />;
+  }
+
   if (isTeacherAttendanceScanPath(currentPath)) {
     return withGlobalNotifications(
       <TeacherQRCodeAttendancePage
@@ -6740,6 +6883,11 @@ if (isAdmin && !ADMIN_ROUTE_SET.has(currentPath)) {
   }
 
   if (isAdmin) {
+    if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
+      return withGlobalHome(
+        <ScreenState error="The desktop CBT app is only for student accounts. Sign in as a student on this computer to write an exam." />
+      );
+    }
     return withGlobalHome(
       <AdminShell
         session={session}

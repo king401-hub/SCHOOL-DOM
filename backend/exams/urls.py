@@ -5,6 +5,7 @@ app_name = 'exams'
 
 urlpatterns = [
     # Exam endpoints
+    path('cbt-entry/', exam_views.StudentCbtEntryView.as_view(), name='student_cbt_entry'),
     path('list/', exam_views.ExamListView.as_view(), name='exam_list'),
     path('<int:exam_id>/start/', exam_views.StartExamView.as_view(), name='start_exam'),
     
