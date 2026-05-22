@@ -3534,7 +3534,7 @@ function IdCardPreview({ person, school, qrDataUrl }) {
   );
 }
 
-function IdCardVerificationPage() {
+export function IdCardVerificationPage() {
   const [state, setState] = useState({ loading: true, error: "", data: null });
   const token = useMemo(() => new URLSearchParams(window.location.search).get("token") || "", []);
 

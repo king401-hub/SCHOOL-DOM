@@ -82,6 +82,7 @@ const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
 
+const IdCardVerificationPage = lazyAdminScreen("IdCardVerificationPage");
 const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
@@ -118,6 +119,58 @@ async function requestLandscapeForPersonalQuiz() {
   } catch {
     // Mobile browsers may only allow orientation lock for installed/fullscreen apps.
   }
+}
+
+function collectAttendanceDeviceInfo() {
+  const screenSize = window.screen ? `${window.screen.width}x${window.screen.height}` : "unknown-screen";
+  return [
+    navigator.userAgent,
+    `platform=${navigator.platform || "unknown"}`,
+    `language=${navigator.language || "unknown"}`,
+    `timezone=${Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown"}`,
+    `screen=${screenSize}`,
+  ].join(" | ");
+}
+
+function requestAttendancePosition() {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("This device does not support browser location services."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    });
+  });
+}
+
+async function getTeacherAttendanceLocationPayload() {
+  let position;
+  try {
+    position = await requestAttendancePosition();
+  } catch (locationError) {
+    if (locationError?.code === 1) {
+      throw new Error("Location permission was denied. Enable location access before marking attendance.");
+    }
+    if (locationError?.code === 2) {
+      throw new Error("Location is unavailable. Turn on GPS/location services before marking attendance.");
+    }
+    if (locationError?.code === 3) {
+      throw new Error("Location request timed out. Move to an open area and try again.");
+    }
+    throw new Error(locationError?.message || "Enable location services before marking attendance.");
+  }
+
+  const { latitude, longitude, accuracy } = position.coords;
+  return {
+    latitude,
+    longitude,
+    accuracy,
+    address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+    device_info: collectAttendanceDeviceInfo(),
+  };
 }
 
 function adminActivityLogKey(session) {
@@ -3815,6 +3868,8 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
   const [rosterSearch, setRosterSearch] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const [locationStatus, setLocationStatus] = useState("");
+  const [savingStatus, setSavingStatus] = useState("");
   const activeStudent = students[index];
   const selectedClass = classOptions.find((item) => String(item.id) === String(classId));
   const filteredRoster = useMemo(() => {
@@ -3865,12 +3920,17 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
     if (!activeStudent) return;
     setError("");
     setFeedback("");
+    setLocationStatus("Requesting GPS location...");
+    setSavingStatus(statusValue);
     try {
+      const location = await getTeacherAttendanceLocationPayload();
+      setLocationStatus("Location captured. Saving attendance...");
       const result = await requestJson(session, "POST", "/api/app/attendance/teacher-mark/", {
         student_id: activeStudent.student_id,
         class_id: classId,
         status: statusValue,
         date,
+        location,
       });
       setHistory((previous) => [
         result.attendance,
@@ -3878,8 +3938,11 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
       ].slice(0, 20));
       setFeedback(result.message || "Attendance saved.");
       setIndex((previous) => Math.min(previous + 1, students.length));
+      setLocationStatus("");
     } catch (markError) {
       setError(markError.message || "Could not save attendance.");
+    } finally {
+      setSavingStatus("");
     }
   };
 
@@ -3976,15 +4039,16 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
               <h3>{activeStudent.name}</h3>
               <p>{activeStudent.student_id} - {activeStudent.class_name}</p>
               <div className="swipe-actions">
-                <button type="button" className="danger" onClick={() => mark("absent")}>Absent</button>
-                <button type="button" onClick={() => mark("late")}>Late</button>
-                <button type="button" onClick={() => mark("present")}>Present</button>
+                <button type="button" className="danger" onClick={() => mark("absent")} disabled={Boolean(savingStatus)}>{savingStatus === "absent" ? "Saving..." : "Absent"}</button>
+                <button type="button" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? "Saving..." : "Late"}</button>
+                <button type="button" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? "Saving..." : "Present"}</button>
               </div>
-              <small>Tap once to save and move to the next student.</small>
+              <small>Tap once to capture GPS, save, and move to the next student.</small>
             </>
           ) : (
             <p className="panel-empty">{classId ? "No more students to mark." : "Select an assigned class to begin."}</p>
           )}
+          {locationStatus ? <p className="panel-empty">{locationStatus}</p> : null}
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {error ? <p className="form-feedback error">{error}</p> : null}
         </article>
@@ -6840,7 +6904,11 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   );
 
   if (currentPath === ID_CARD_VERIFY_PATH) {
-    return withGlobalHome(<IdCardVerificationPage />);
+    return withGlobalHome(
+      <Suspense fallback={<ScreenState loading />}>
+        <IdCardVerificationPage />
+      </Suspense>
+    );
   }
 
   if (!session) {

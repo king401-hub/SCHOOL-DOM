@@ -1316,6 +1316,56 @@ def _parse_money_amount(raw_value, field_name="amount"):
         raise ValueError(f"{field_name} must be a valid amount.")
 
 
+def _decimal_from_request(value, field_name):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
+
+
+def _attendance_location_payload(request):
+    payload = request.data.get("location") or {}
+    latitude = payload.get("latitude", request.data.get("latitude"))
+    longitude = payload.get("longitude", request.data.get("longitude"))
+    accuracy = payload.get("accuracy", request.data.get("accuracy"))
+
+    if latitude in (None, "") or longitude in (None, ""):
+        raise ValueError("Enable device location services and allow GPS access before marking attendance.")
+
+    latitude = _decimal_from_request(latitude, "Latitude")
+    longitude = _decimal_from_request(longitude, "Longitude")
+    if latitude < Decimal("-90") or latitude > Decimal("90"):
+        raise ValueError("Latitude is outside the valid GPS range.")
+    if longitude < Decimal("-180") or longitude > Decimal("180"):
+        raise ValueError("Longitude is outside the valid GPS range.")
+
+    accuracy_value = None
+    if accuracy not in (None, ""):
+        accuracy_value = _decimal_from_request(accuracy, "Accuracy")
+        if accuracy_value < 0:
+            raise ValueError("GPS accuracy cannot be negative.")
+
+    address = str(payload.get("address") or request.data.get("address") or "").strip()
+    if not address:
+        address = f"{latitude}, {longitude}"
+
+    device_info = str(
+        payload.get("device_info")
+        or request.data.get("device_info")
+        or request.data.get("client_device_info")
+        or request.META.get("HTTP_USER_AGENT", "")
+        or ""
+    ).strip()
+
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "accuracy": accuracy_value,
+        "address": address[:2000],
+        "device_info": device_info[:2000],
+    }
+
+
 def _subject_payload(subject):
     return {"id": subject.id, "name": subject.name, "code": subject.code}
 
@@ -6304,6 +6354,10 @@ def teacher_class_students(request):
                     "date": item.date,
                     "status": item.status,
                     "noted_by": item.noted_by.get_full_name() if item.noted_by else "",
+                    "latitude": item.latitude,
+                    "longitude": item.longitude,
+                    "location_accuracy_meters": item.location_accuracy_meters,
+                    "location_address": item.location_address,
                     "updated_at": item.updated_at,
                 }
                 for item in attendance_qs[:200]
@@ -6342,12 +6396,26 @@ def teacher_mark_student_attendance(request):
             {"success": False, "message": "You can only mark attendance for classes assigned to you."},
             status=status.HTTP_403_FORBIDDEN,
         )
+    try:
+        location = _attendance_location_payload(request)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     attendance_date = parse_date(str(request.data.get("date") or "")) or timezone.localdate()
     tenant_obj = _tenant_for_model(AttendanceRecord, user)
     attendance, _created = AttendanceRecord.objects.update_or_create(
         student=student_profile.user,
         date=attendance_date,
-        defaults={"status": status_value, "class_group": student_profile.current_class, "noted_by": user, "tenant": tenant_obj},
+        defaults={
+            "status": status_value,
+            "class_group": student_profile.current_class,
+            "noted_by": user,
+            "tenant": tenant_obj,
+            "latitude": location["latitude"],
+            "longitude": location["longitude"],
+            "location_accuracy_meters": location["accuracy"],
+            "location_address": location["address"],
+            "device_info": location["device_info"],
+        },
     )
     return Response(
         {
@@ -6360,6 +6428,10 @@ def teacher_mark_student_attendance(request):
                 "class_name": _class_label(attendance.class_group) if attendance.class_group else "Unassigned",
                 "date": attendance.date,
                 "status": attendance.status,
+                "latitude": attendance.latitude,
+                "longitude": attendance.longitude,
+                "location_accuracy_meters": attendance.location_accuracy_meters,
+                "location_address": attendance.location_address,
             },
         }
     )

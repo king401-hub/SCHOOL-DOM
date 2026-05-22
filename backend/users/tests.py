@@ -1842,18 +1842,45 @@ class AttendanceAndPromptTests(TestCase):
         self.client.force_authenticate(user=self.teacher_user)
         response = self.client.post(
             "/api/app/attendance/teacher-mark/",
-            data={"student_id": "STU-ATT-3", "class_id": other_class.id, "status": "present"},
+            data={
+                "student_id": "STU-ATT-3",
+                "class_id": other_class.id,
+                "status": "present",
+                "location": {"latitude": 6.5243793, "longitude": 3.3792057, "accuracy": 12.5},
+            },
             format="json",
         )
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(AttendanceRecord.objects.filter(student=other_student_user).exists())
 
-    def test_teacher_can_mark_assigned_class_attendance(self):
+    def test_teacher_attendance_requires_geo_location(self):
         self.client.force_authenticate(user=self.teacher_user)
         response = self.client.post(
             "/api/app/attendance/teacher-mark/",
             data={"student_id": "STU-ATT-1", "class_id": self.classroom.id, "status": "present"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_user).exists())
+
+    def test_teacher_can_mark_assigned_class_attendance(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={
+                "student_id": "STU-ATT-1",
+                "class_id": self.classroom.id,
+                "status": "present",
+                "location": {
+                    "latitude": 6.5243793,
+                    "longitude": 3.3792057,
+                    "accuracy": 12.5,
+                    "address": "Lagos, Nigeria",
+                    "device_info": "Test browser",
+                },
+            },
             format="json",
         )
 
@@ -1862,6 +1889,9 @@ class AttendanceAndPromptTests(TestCase):
         self.assertEqual(record.status, "present")
         self.assertEqual(record.class_group, self.classroom)
         self.assertEqual(record.noted_by, self.teacher_user)
+        self.assertEqual(str(record.latitude), "6.5243793")
+        self.assertEqual(str(record.longitude), "3.3792057")
+        self.assertEqual(record.location_address, "Lagos, Nigeria")
 
     def test_student_cannot_mark_own_attendance(self):
         self.client.force_authenticate(user=self.student_user)

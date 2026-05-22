@@ -298,6 +298,11 @@ class AttendanceRecord(TenantAwareModel, TimeStampedModel):
         blank=True,
         related_name="noted_attendance",
     )
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    location_accuracy_meters = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    location_address = models.TextField(blank=True, default="")
+    device_info = models.TextField(blank=True, default="")
 
     class Meta:
         unique_together = ("student", "date")
