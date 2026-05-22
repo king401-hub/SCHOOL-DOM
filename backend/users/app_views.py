@@ -1003,6 +1003,20 @@ def _public_id_card_verification_person(person):
     }
 
 
+def _id_card_challenge_payload(person):
+    return {
+        "person_type": person.get("person_type"),
+        "display_type": person.get("display_type") or "ID Card",
+        "id_label": "Student ID" if person.get("person_type") == "student" else "Staff ID",
+    }
+
+
+def _id_card_credentials_match(person, email, unique_id):
+    expected_email = str(person.get("email") or "").strip().lower()
+    expected_id = str(person.get("unique_id") or "").strip().lower()
+    return bool(expected_email and expected_id and email.strip().lower() == expected_email and unique_id.strip().lower() == expected_id)
+
+
 def _resolve_id_card_person(user, person_type, person_id, request=None):
     tenant = getattr(user, "tenant", None)
     normalized_type = str(person_type or "").strip().lower()
@@ -4066,10 +4080,10 @@ def id_card_qr_code(request):
     return response
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def id_card_verify(request):
-    token = str(request.query_params.get("token") or "").strip()
+    token = str(request.query_params.get("token") or request.data.get("token") or "").strip()
     if not token:
         return Response({"success": False, "message": "Verification token is required."}, status=status.HTTP_400_BAD_REQUEST)
     try:
@@ -4089,6 +4103,32 @@ def id_card_verify(request):
     )
     if not person or str(person.get("unique_id") or "") != str(payload.get("unique_id") or ""):
         return Response({"success": False, "message": "ID card profile could not be verified."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "GET":
+        return Response(
+            {
+                "success": True,
+                "challenge_required": True,
+                "verified": False,
+                "message": "Enter the email and ID on the card to verify this profile.",
+                "school": _school_identity_payload(tenant, request=request),
+                "challenge": _id_card_challenge_payload(person),
+            }
+        )
+
+    email = str(request.data.get("email") or "").strip()
+    unique_id = str(request.data.get("unique_id") or request.data.get("student_id") or request.data.get("staff_id") or "").strip()
+    if not email or not unique_id:
+        return Response(
+            {"success": False, "message": "Email and ID are required to verify this card."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not _id_card_credentials_match(person, email, unique_id):
+        return Response(
+            {"success": False, "message": "Email and ID do not match this card."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     is_active = bool(person.get("is_active"))
     return Response(
         {

@@ -3536,6 +3536,9 @@ function IdCardPreview({ person, school, qrDataUrl }) {
 
 export function IdCardVerificationPage() {
   const [state, setState] = useState({ loading: true, error: "", data: null });
+  const [form, setForm] = useState({ email: "", unique_id: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
   const token = useMemo(() => new URLSearchParams(window.location.search).get("token") || "", []);
 
   useEffect(() => {
@@ -3572,7 +3575,34 @@ export function IdCardVerificationPage() {
   const person = payload?.person || {};
   const school = resolveSchoolBrand(payload?.school || {});
   const isValid = Boolean(payload?.verified && payload?.valid);
-  const statusText = state.loading ? "Checking ID" : isValid ? "Verified ID" : payload?.verified ? "Inactive Profile" : "Not Verified";
+  const challenge = payload?.challenge || {};
+  const statusText = state.loading ? "Checking ID" : isValid ? "Verified ID" : payload?.verified ? "Inactive Profile" : "Verification Required";
+
+  const handleVerifySubmit = async (event) => {
+    event.preventDefault();
+    setVerifyError("");
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/app/id-cards/verify/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          email: form.email.trim(),
+          unique_id: form.unique_id.trim(),
+        }),
+      });
+      const verifiedPayload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(verifiedPayload?.message || "This ID card could not be verified.");
+      }
+      setState({ loading: false, error: "", data: verifiedPayload });
+    } catch (submitError) {
+      setVerifyError(submitError.message || "This ID card could not be verified.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <main className="id-verify-page">
@@ -3592,6 +3622,48 @@ export function IdCardVerificationPage() {
               <h1>ID card not verified</h1>
               <p>{state.error}</p>
             </div>
+          ) : payload?.challenge_required ? (
+            <>
+              <header className="id-verify-school">
+                <div className="school-brand-logo id-verify-logo">
+                  {school.logo ? <img src={school.logo} alt={`${school.name} logo`} /> : <span>{school.initials}</span>}
+                </div>
+                <div>
+                  <h1>{school.name}</h1>
+                  <p>{school.code || "Official identity verification"}</p>
+                </div>
+              </header>
+
+              <form className="panel-form id-verify-message" onSubmit={handleVerifySubmit}>
+                <h1>Verify ID card</h1>
+                <p>{payload.message || "Enter the email and ID on the card."}</p>
+                <label className="panel-field">
+                  Email
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+                <label className="panel-field">
+                  {challenge.id_label || "ID"}
+                  <input
+                    value={form.unique_id}
+                    onChange={(event) => setForm((current) => ({ ...current, unique_id: event.target.value }))}
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+                {verifyError ? <p className="form-feedback error">{verifyError}</p> : null}
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={submitting}>
+                    {submitting ? "Verifying..." : "Verify ID"}
+                  </button>
+                </div>
+              </form>
+            </>
           ) : (
             <>
               <header className="id-verify-school">

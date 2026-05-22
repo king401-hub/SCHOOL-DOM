@@ -2166,7 +2166,7 @@ class TeachersAPITests(TestCase):
         teacher_user.refresh_from_db()
         self.assertTrue(teacher_user.check_password("NewPass123"))
 
-    def test_id_card_verify_returns_only_public_identity(self):
+    def test_id_card_verify_requires_email_and_id_challenge(self):
         student_user = User.objects.create_user(
             email="privacy.student@teacher-smoke.edu",
             password="StudentPass123",
@@ -2201,6 +2201,24 @@ class TeachersAPITests(TestCase):
         response = self.client.get(f"/api/app/id-cards/verify/?token={token}")
 
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["challenge_required"])
+        self.assertNotIn("person", response.data)
+
+        blocked = self.client.post(
+            "/api/app/id-cards/verify/",
+            data={"token": token, "email": "wrong@student.edu", "unique_id": "STU-PRIVATE-1"},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 403)
+
+        response = self.client.post(
+            "/api/app/id-cards/verify/",
+            data={"token": token, "email": "privacy.student@teacher-smoke.edu", "unique_id": "STU-PRIVATE-1"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["verified"])
         person = response.data["person"]
         self.assertEqual(person["unique_id"], "STU-PRIVATE-1")
         self.assertEqual(person["email"], "privacy.student@teacher-smoke.edu")
