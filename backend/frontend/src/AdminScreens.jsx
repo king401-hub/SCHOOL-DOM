@@ -395,7 +395,7 @@ function AdminPerformanceHeatmapScreen({ data = {}, loading, error, onRetry }) {
       <header className="performance-heatmap-hero">
         <div>
           <p className="topbar-kicker">Real-time analytics</p>
-          <h1>School Performance Heatmap</h1>
+          <h1>School Data Analytics</h1>
           <p>Color-coded signals for academics, attendance, fees, examinations, and departments.</p>
         </div>
         <div className={`heat-risk-orb tone-${heatTone(summary.risk_status)}`}>
