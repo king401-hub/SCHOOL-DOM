@@ -13998,10 +13998,15 @@ body[data-theme="dark"] .heat-bar-track {
   backface-visibility: hidden;
 }
 
+.id-card-front {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
 .id-card-back {
   transform: rotateY(180deg);
   display: grid;
-  grid-template-rows: 48px 1fr 28px;
+  grid-template-rows: 42px minmax(0, 1fr) 24px;
   background: #08111f;
   color: #ffffff;
 }
@@ -14014,20 +14019,20 @@ body[data-theme="dark"] .heat-bar-track {
   letter-spacing: 0;
   font-size: 0.62rem;
   font-weight: 900;
-  padding: 0.32rem 0.55rem;
+  padding: 0.22rem 0.55rem;
 }
 
 .id-card-top {
   display: flex;
   gap: 0.55rem;
   align-items: center;
-  padding: 0.5rem 0.7rem;
+  padding: 0.36rem 0.62rem;
   background: linear-gradient(135deg, #f8fbff, #e8f2fb);
 }
 
 .id-card-school-logo {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
   background: #ffffff;
   flex: 0 0 auto;
@@ -14039,27 +14044,37 @@ body[data-theme="dark"] .heat-bar-track {
 }
 
 .id-card-top strong {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   line-height: 1.05;
 }
 
 .id-card-top span {
   color: var(--id-card-muted);
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   margin-top: 0.08rem;
+}
+
+.id-card-front-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 0.45rem;
+  min-height: 0;
+  padding: 0.42rem 0.62rem 0.35rem;
 }
 
 .id-card-person {
   display: grid;
-  grid-template-columns: 74px 1fr;
-  gap: 0.65rem;
-  padding: 0.55rem 0.7rem 0.45rem;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 0.45rem;
+  align-content: start;
+  min-width: 0;
+  padding: 0;
 }
 
 .id-card-photo {
-  width: 74px;
-  height: 86px;
-  border-radius: 10px;
+  width: 58px;
+  height: 70px;
+  border-radius: 8px;
   border: 1px solid var(--id-card-line);
   background: #f8fafc;
   overflow: hidden;
@@ -14076,10 +14091,11 @@ body[data-theme="dark"] .heat-bar-track {
 }
 
 .id-card-person p {
-  margin: 0.1rem 0 0.35rem;
-  font-size: 1rem;
+  margin: 0.02rem 0 0.24rem;
+  font-size: 0.72rem;
   line-height: 1.05;
   font-weight: 900;
+  overflow-wrap: anywhere;
 }
 
 .id-card-person strong {
@@ -14088,8 +14104,8 @@ body[data-theme="dark"] .heat-bar-track {
   background: #e7f7ef;
   color: #0d6b3f;
   border-radius: 7px;
-  padding: 0.22rem 0.4rem;
-  font-size: 0.62rem;
+  padding: 0.16rem 0.32rem;
+  font-size: 0.52rem;
   overflow-wrap: anywhere;
 }
 
@@ -14097,23 +14113,26 @@ body[data-theme="dark"] .heat-bar-track {
   display: block;
   color: #475569;
   font-weight: 800;
-  margin-top: 0.35rem;
-  font-size: 0.68rem;
+  margin-top: 0.24rem;
+  font-size: 0.55rem;
+  overflow-wrap: anywhere;
 }
 
 .id-card-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.32rem;
-  padding: 0 0.7rem 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.18rem;
+  align-content: start;
+  min-height: 0;
+  padding: 0;
   margin: 0;
 }
 
 .id-card-details div {
   border: 1px solid #e2e8f0;
   background: #f8fafc;
-  border-radius: 7px;
-  padding: 0.28rem 0.35rem;
+  border-radius: 6px;
+  padding: 0.16rem 0.22rem;
   min-width: 0;
 }
 
@@ -14121,13 +14140,14 @@ body[data-theme="dark"] .heat-bar-track {
   color: var(--id-card-muted);
   text-transform: uppercase;
   letter-spacing: 0;
-  font-size: 0.46rem;
+  font-size: 0.38rem;
   font-weight: 900;
 }
 
 .id-card-details dd {
-  margin: 0.1rem 0 0;
-  font-size: 0.58rem;
+  margin: 0.04rem 0 0;
+  font-size: 0.46rem;
+  line-height: 1.05;
   font-weight: 800;
   overflow-wrap: anywhere;
 }
@@ -14137,9 +14157,9 @@ body[data-theme="dark"] .heat-bar-track {
   grid-template-columns: 74px 1fr;
   gap: 0.5rem;
   align-items: center;
-  margin: 0 0.7rem 0.6rem;
-  padding: 0.38rem 0.5rem;
-  border-radius: 8px;
+  margin: 0 0.62rem 0.42rem;
+  padding: 0.26rem 0.42rem;
+  border-radius: 7px;
   background: #08111f;
   color: #ffffff;
 }
@@ -14173,9 +14193,9 @@ body[data-theme="dark"] .heat-bar-track {
 
 .id-card-footer span {
   color: #cbd5e1;
-  font-size: 0.55rem;
-  line-height: 1.25;
-  margin-top: 0.12rem;
+  font-size: 0.48rem;
+  line-height: 1.12;
+  margin-top: 0;
   overflow-wrap: anywhere;
 }
 
@@ -14183,7 +14203,7 @@ body[data-theme="dark"] .heat-bar-track {
   display: flex;
   gap: 0.55rem;
   align-items: center;
-  padding: 0.45rem 0.7rem;
+  padding: 0.34rem 0.62rem;
   background: #102033;
 }
 
@@ -14194,39 +14214,39 @@ body[data-theme="dark"] .heat-bar-track {
 
 .id-card-back-head strong {
   color: #ffffff;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   line-height: 1.05;
 }
 
 .id-card-back-head span {
   margin-top: 0.08rem;
   color: #cbd5e1;
-  font-size: 0.58rem;
+  font-size: 0.52rem;
 }
 
 .id-card-back-qr-panel {
   display: grid;
   align-content: center;
   justify-items: center;
-  padding: 0.35rem 0.8rem 0.25rem;
+  padding: 0.2rem 0.7rem 0.15rem;
   text-align: center;
 }
 
 .id-card-back-qr-panel p {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.18rem;
   color: #a7f3d0;
   text-transform: uppercase;
   letter-spacing: 0;
-  font-size: 0.56rem;
+  font-size: 0.48rem;
   font-weight: 900;
 }
 
 .id-card-back-qr {
-  width: 96px;
-  height: 96px;
-  border-radius: 10px;
+  width: 82px;
+  height: 82px;
+  border-radius: 8px;
   background: #ffffff;
-  padding: 0.35rem;
+  padding: 0.25rem;
   display: grid;
   place-items: center;
   color: var(--id-card-teal);
@@ -14242,29 +14262,29 @@ body[data-theme="dark"] .heat-bar-track {
 .id-card-back-qr-panel > strong {
   display: inline-flex;
   max-width: 100%;
-  margin-top: 0.35rem;
-  padding: 0.22rem 0.45rem;
+  margin-top: 0.2rem;
+  padding: 0.14rem 0.36rem;
   border-radius: 7px;
   background: #e7f7ef;
   color: #0d6b3f;
-  font-size: 0.62rem;
+  font-size: 0.5rem;
   overflow-wrap: anywhere;
 }
 
 .id-card-back-qr-panel > span {
-  margin-top: 0.22rem;
-  font-size: 0.9rem;
+  margin-top: 0.14rem;
+  font-size: 0.7rem;
   line-height: 1.05;
   font-weight: 900;
   overflow-wrap: anywhere;
 }
 
 .id-card-back-footer {
-  padding: 0 0.85rem 0.5rem;
+  padding: 0 0.75rem 0.38rem;
   color: #cbd5e1;
   text-align: center;
-  font-size: 0.54rem;
-  line-height: 1.25;
+  font-size: 0.46rem;
+  line-height: 1.12;
 }
 
 .id-card-flip-button {

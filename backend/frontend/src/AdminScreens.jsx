@@ -3458,43 +3458,45 @@ function IdCardPreview({ person, school, qrDataUrl }) {
             </div>
           </header>
 
-          <section className="id-card-person">
-            <div className="id-card-photo">
-              {person.profile_picture ? <img src={person.profile_picture} alt={`${person.name} profile`} /> : <span>{userInitials({ full_name: person.name })}</span>}
-            </div>
-            <div>
-              <p>{person.name || "Unnamed user"}</p>
-              <strong>{person.unique_id || "No ID assigned"}</strong>
-              <span>{person.primary_label || "-"}</span>
-            </div>
-          </section>
+          <section className="id-card-front-body">
+            <section className="id-card-person">
+              <div className="id-card-photo">
+                {person.profile_picture ? <img src={person.profile_picture} alt={`${person.name} profile`} /> : <span>{userInitials({ full_name: person.name })}</span>}
+              </div>
+              <div>
+                <p>{person.name || "Unnamed user"}</p>
+                <strong>{person.unique_id || "No ID assigned"}</strong>
+                <span>{person.primary_label || "-"}</span>
+              </div>
+            </section>
 
-          <dl className="id-card-details">
-            <div>
-              <dt>{person.person_type === "student" ? "Admission" : "Employment"}</dt>
-              <dd>{idCardDate(person.admission_or_employment_date)}</dd>
-            </div>
-            <div>
-              <dt>Date of Birth</dt>
-              <dd>{idCardDate(person.date_of_birth)}</dd>
-            </div>
-            <div>
-              <dt>Gender</dt>
-              <dd>{genderDisplay(person.gender)}</dd>
-            </div>
-            <div>
-              <dt>{person.person_type === "student" ? "Class" : "Role"}</dt>
-              <dd>{person.primary_label || "-"}</dd>
-            </div>
-            <div>
-              <dt>{person.person_type === "student" ? "Guardian" : "Department"}</dt>
-              <dd>{person.guardian_name || person.department || person.secondary_label || "-"}</dd>
-            </div>
-            <div>
-              <dt>Phone</dt>
-              <dd>{person.phone || person.guardian_phone || "-"}</dd>
-            </div>
-          </dl>
+            <dl className="id-card-details">
+              <div>
+                <dt>{person.person_type === "student" ? "Admission" : "Employment"}</dt>
+                <dd>{idCardDate(person.admission_or_employment_date)}</dd>
+              </div>
+              <div>
+                <dt>Date of Birth</dt>
+                <dd>{idCardDate(person.date_of_birth)}</dd>
+              </div>
+              <div>
+                <dt>Gender</dt>
+                <dd>{genderDisplay(person.gender)}</dd>
+              </div>
+              <div>
+                <dt>{person.person_type === "student" ? "Class" : "Role"}</dt>
+                <dd>{person.primary_label || "-"}</dd>
+              </div>
+              <div>
+                <dt>{person.person_type === "student" ? "Guardian" : "Department"}</dt>
+                <dd>{person.guardian_name || person.department || person.secondary_label || "-"}</dd>
+              </div>
+              <div>
+                <dt>Phone</dt>
+                <dd>{person.phone || person.guardian_phone || "-"}</dd>
+              </div>
+            </dl>
+          </section>
 
           <footer className="id-card-footer id-card-front-footer">
             <strong><span>Flip card to verify {person.email || person.secondary_label || "SchoolDom profile verification"}
