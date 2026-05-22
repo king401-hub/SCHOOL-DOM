@@ -25,6 +25,7 @@ export const ADMIN_ROUTES = [
   { path: "/performance-heatmap", label: "Performance Heatmap" },
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
+  { path: "/attendance", label: "Attendance" },
   { path: "/hr/activity", label: "HR Activity" },
   { path: "/students", label: "Students" },
   { path: "/id-cards", label: "ID Cards" },

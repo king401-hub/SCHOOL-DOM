@@ -3431,12 +3431,6 @@ function blobToDataUrl(blob) {
   });
 }
 
-function buildIdCardFileName(person) {
-  const id = String(person?.unique_id || person?.id || "id-card").replace(/[^a-z0-9_-]+/gi, "-");
-  const name = String(person?.name || "user").replace(/[^a-z0-9_-]+/gi, "-");
-  return `${id}-${name}-id-card.png`;
-}
-
 function IdCardPreview({ person, school, qrDataUrl }) {
   const brand = resolveSchoolBrand(school);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -3790,21 +3784,6 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
     return () => window.clearTimeout(timeoutId);
   }, [actionSuccess]);
 
-  const handleDownload = async () => {
-    if (!selectedPerson) return;
-    setActionError("");
-    setActionSuccess("");
-    try {
-      const result = await fetchQrDataUrl(selectedPerson, true);
-      setQrDataUrl(result.dataUrl);
-      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-      await downloadPrintablePng("schooldom-id-card-document", buildIdCardFileName(selectedPerson), "ID Card");
-      setActionSuccess(result.tokenMessage || "1 token used to generate ID card.");
-    } catch (downloadError) {
-      setActionError(downloadError.message || "Could not download ID card.");
-    }
-  };
-
   const handlePrint = async () => {
     if (!selectedPerson) return;
     setActionError("");
@@ -3842,7 +3821,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
             <article className="app-panel id-card-directory">
               <div className="panel-head">
                 <h3>People</h3>
-                <small>Select a profile to preview, download, or print.</small>
+                <small>Select a profile to preview or print.</small>
               </div>
               <div className="id-card-tools">
                 <label className="panel-field">
@@ -3884,15 +3863,12 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
             <article className="app-panel id-card-preview-panel">
               <div className="panel-head">
                 <h3>Preview</h3>
-                <small>{qrLoading ? "Generating secure QR..." : "Ready for download or print"}</small>
+                <small>{qrLoading ? "Generating secure QR..." : "CR80 3.375in x 2.125in"}</small>
               </div>
               {actionSuccess ? <div className="token-usage-toast" role="status">{actionSuccess}</div> : null}
               {actionError ? <p className="form-feedback error">{actionError}</p> : null}
               <IdCardPreview person={selectedPerson} school={cardSchool} qrDataUrl={qrDataUrl} />
               <div className="panel-form-actions id-card-actions">
-                <button type="button" onClick={handleDownload} disabled={!selectedPerson || qrLoading}>
-                  Generate PNG
-                </button>
                 <button type="button" className="table-action" onClick={handlePrint} disabled={!selectedPerson || qrLoading}>
                   Generate / Print Card
                 </button>
