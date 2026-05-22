@@ -3,6 +3,21 @@ import "./ExamsList.css";
 
 const CBT_EXAMS_CACHE_KEY = "schooldom.cbt_available_exams";
 
+function cacheScope(session) {
+  return String(
+    session?.school_code ||
+      session?.school?.school_code ||
+      session?.user?.tenant_id ||
+      session?.user?.tenant ||
+      session?.user?.id ||
+      "anonymous"
+  ).toLowerCase();
+}
+
+function scopedExamsCacheKey(session) {
+  return `${CBT_EXAMS_CACHE_KEY}.${cacheScope(session)}`;
+}
+
 const ExamsList = ({ session, onNavigate }) => {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,9 +39,9 @@ const ExamsList = ({ session, onNavigate }) => {
         if (!response.ok) throw new Error("Failed to fetch exams");
         const data = await response.json();
         setExams(data);
-        window.localStorage.setItem(CBT_EXAMS_CACHE_KEY, JSON.stringify(data));
+        window.localStorage.setItem(scopedExamsCacheKey(session), JSON.stringify(data));
       } catch (err) {
-        const cached = JSON.parse(window.localStorage.getItem(CBT_EXAMS_CACHE_KEY) || "[]");
+        const cached = JSON.parse(window.localStorage.getItem(scopedExamsCacheKey(session)) || "[]");
         if (cached.length) {
           setExams(cached);
           setError("Offline mode: showing the last exams loaded on this device.");

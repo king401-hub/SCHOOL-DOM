@@ -6,6 +6,8 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from core.models import SchoolTenant
+from tenants.models import Tenant
 from users.models import User
 from .models import Exam, ExamAttempt, Question, StudentAnswer
 
@@ -104,3 +106,63 @@ class FlagExamQuestionTests(TestCase):
         self.assertEqual(self.attempt.auto_submit_reason_display, "Exceeded tab-switching warnings")
         self.assertEqual(len(self.attempt.auto_submit_warning_history), 1)
         self.assertEqual(len(self.attempt.auto_submit_activity_logs), 1)
+
+
+class ExamTenantIsolationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school_a = SchoolTenant.objects.create(name="Alpha School", schema_name="alpha", is_active=True)
+        self.school_b = SchoolTenant.objects.create(name="Beta School", schema_name="beta", is_active=True)
+        self.legacy_a = Tenant.objects.create(name="Alpha School", slug="alpha")
+        self.legacy_b = Tenant.objects.create(name="Beta School", slug="beta")
+        self.student_a = User.objects.create_user(
+            email="student.alpha@example.com",
+            password="password",
+            role="student",
+            tenant=self.school_a,
+        )
+        self.teacher_b = User.objects.create_user(
+            email="teacher.beta@example.com",
+            password="password",
+            role="teacher",
+            tenant=self.school_b,
+        )
+        self.exam_b = Exam.objects.create(
+            tenant=self.legacy_b,
+            title="Beta Only Exam",
+            teacher=self.teacher_b,
+            start_date=timezone.now() - timedelta(minutes=5),
+            end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60,
+            is_published=True,
+        )
+        self.question_b = Question.objects.create(
+            tenant=self.legacy_b,
+            question_type="mcq",
+            text="Beta-only question",
+            options=["A", "B"],
+            correct_answer="A",
+            points=1,
+        )
+        self.exam_b.questions.add(self.question_b)
+        self.client.force_authenticate(self.student_a)
+
+    def test_student_cannot_start_exam_from_another_tenant(self):
+        response = self.client.post(reverse("exams:start_exam", args=[self.exam_b.id]), {}, format="json")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(ExamAttempt.objects.filter(exam=self.exam_b, student=self.student_a).exists())
+
+    def test_offline_sync_rejects_exam_from_another_tenant(self):
+        response = self.client.post(
+            reverse("exams:sync_offline_exam_attempt"),
+            {
+                "exam_id": self.exam_b.id,
+                "answers": {str(self.question_b.id): "A"},
+                "offline_attempt_id": "offline-cross-tenant",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(ExamAttempt.objects.filter(exam=self.exam_b, student=self.student_a).exists())

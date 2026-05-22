@@ -1,10 +1,11 @@
 """Tests for attendance app."""
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from core.models import SchoolTenant
 from .models import AttendanceQRCode, TeacherAttendance
+from .utils import build_teacher_scan_url
 
 User = get_user_model()
 
@@ -43,6 +44,16 @@ class AttendanceQRCodeTestCase(TestCase):
         # Invalid token
         verified = AttendanceQRCode.verify_token("invalid_token")
         self.assertIsNone(verified)
+
+    @override_settings(FRONTEND_BASE_URL="https://schooldom.academy", NGROK_PUBLIC_URL="")
+    def test_qr_scan_url_uses_schooldom_website(self):
+        """Attendance QR codes should open the production frontend scan page."""
+        qr_code, _ = AttendanceQRCode.get_or_create_for_tenant(self.tenant)
+
+        self.assertEqual(
+            build_teacher_scan_url(None, qr_code),
+            f"https://schooldom.academy/attendance/scan/{qr_code.token}",
+        )
 
 
 class TeacherAttendanceTestCase(TestCase):

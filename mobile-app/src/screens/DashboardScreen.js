@@ -11,20 +11,27 @@ export function DashboardScreen() {
   const { session } = useAuth();
   const [snapshot, setSnapshot] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const cacheScope =
+    session?.school_code ||
+    session?.school?.school_code ||
+    session?.user?.tenant_id ||
+    session?.user?.tenant ||
+    session?.user?.id ||
+    session?.user?.email;
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
       const data = await loadDashboard(session?.user?.role);
       setSnapshot(data);
-      await writeCache("dashboard", data);
+      await writeCache("dashboard", data, cacheScope);
     } catch {
-      const cached = await readCache("dashboard");
+      const cached = await readCache("dashboard", cacheScope);
       if (cached?.data) setSnapshot(cached.data);
     } finally {
       setRefreshing(false);
     }
-  }, [session?.user?.role]);
+  }, [cacheScope, session?.user?.role]);
 
   useEffect(() => {
     refresh();

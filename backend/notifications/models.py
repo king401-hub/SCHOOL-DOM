@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from core.models import TimeStampedModel
@@ -169,6 +170,15 @@ class Notification(TimeStampedModel, UUIDModel):
     
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.title[:50]}"
+
+    def clean(self):
+        super().clean()
+        if self.user_id and self.tenant_id and self.user.tenant_id != self.tenant_id:
+            raise ValidationError("Notification tenant must match the recipient user's tenant.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
     
     def mark_as_read(self):
         self.is_read = True
@@ -333,6 +343,15 @@ class Announcement(TimeStampedModel, UUIDModel):
     
     def __str__(self):
         return f"{self.title} - {self.publish_from.date()}"
+
+    def clean(self):
+        super().clean()
+        if self.author_id and self.tenant_id and self.author.tenant_id != self.tenant_id:
+            raise ValidationError("Announcement tenant must match the author's tenant.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
     
     def increment_views(self, unique=False):
         self.view_count += 1
@@ -446,6 +465,17 @@ class InAppMessage(TimeStampedModel, UUIDModel):
     
     def __str__(self):
         return f"From: {self.sender.get_full_name()} To: {self.recipient.get_full_name()}"
+
+    def clean(self):
+        super().clean()
+        if self.sender_id and self.tenant_id and self.sender.tenant_id != self.tenant_id:
+            raise ValidationError("Message tenant must match the sender's tenant.")
+        if self.recipient_id and self.tenant_id and self.recipient.tenant_id != self.tenant_id:
+            raise ValidationError("Message tenant must match the recipient's tenant.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
     
     def mark_as_read(self):
         self.is_read = True

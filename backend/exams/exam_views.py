@@ -107,6 +107,14 @@ def _exams_for_student(student, *, pin):
     return exams.order_by("start_date")
 
 
+def _published_exam_queryset_for_user(user):
+    queryset = Exam.objects.filter(is_published=True)
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    if not legacy_tenant:
+        return queryset.none()
+    return queryset.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant)).distinct()
+
+
 def _question_queryset_for_exam(exam):
     direct = exam.questions.all()
     if direct.exists():
@@ -353,10 +361,14 @@ def _admin_users_for_school(school):
     return queryset
 
 
-def _resolve_flag_report_recipients(school):
+def _resolve_flag_report_recipients(school, teacher=None):
     configured_email = str(getattr(settings, "INAPPROPRIATE_QUESTION_REPORT_EMAIL", "") or "").strip()
     recipients = [configured_email] if configured_email else []
     recipients.extend(_admin_users_for_school(school).values_list("email", flat=True)[:10])
+    teacher_email = str(getattr(teacher, "email", "") or "").strip()
+    teacher_school = getattr(teacher, "tenant", None)
+    if teacher_email and (not school or teacher_school == school):
+        recipients.append(teacher_email)
     return list(dict.fromkeys(recipients))
 
 
@@ -535,7 +547,7 @@ class StartExamView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, exam_id):
-        exam = get_object_or_404(Exam, id=exam_id, is_published=True)
+        exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
         
         # Check if exam is available
         now = timezone.now()
@@ -764,7 +776,7 @@ class FlagExamQuestionView(APIView):
 
         question = get_object_or_404(_question_queryset_for_exam(attempt.exam), id=question_id)
         admin_users = list(_admin_users_for_school(school)[:10])
-        recipients = _resolve_flag_report_recipients(school)
+        recipients = _resolve_flag_report_recipients(school, teacher=attempt.exam.teacher)
         if not recipients:
             return Response(
                 {"error": "No report recipient email is configured."},
@@ -982,7 +994,7 @@ def sync_offline_exam_attempt(request):
     if not isinstance(answers, dict):
         return Response({"success": False, "message": "answers must be an object keyed by question id."}, status=status.HTTP_400_BAD_REQUEST)
 
-    exam = get_object_or_404(Exam, id=exam_id, is_published=True)
+    exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
     question_ids = set(_question_queryset_for_exam(exam).values_list("id", flat=True))
     if not question_ids:
         return Response({"success": False, "message": "This exam has no questions to sync."}, status=status.HTTP_400_BAD_REQUEST)

@@ -20,6 +20,21 @@ const AUTO_SUBMIT_REASON_LABELS = {
   security_violation: "Security violation",
 };
 
+function cacheScope(session) {
+  return String(
+    session?.school_code ||
+      session?.school?.school_code ||
+      session?.user?.tenant_id ||
+      session?.user?.tenant ||
+      session?.user?.id ||
+      "anonymous"
+  ).toLowerCase();
+}
+
+function scopedStoreKey(baseKey, session) {
+  return `${baseKey}.${cacheScope(session)}`;
+}
+
 function classifySecurityReason(reason, fallback = "security_violation") {
   const text = String(reason || "").toLowerCase();
   if (text.includes("tab")) return "tab_switch_limit";
@@ -42,21 +57,21 @@ function writeJsonStore(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
-function cacheAttemptPackage(attemptId, payload) {
-  const cache = readJsonStore(CBT_CACHE_KEY, {});
+function cacheAttemptPackage(session, attemptId, payload) {
+  const cache = readJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), {});
   cache[attemptId] = { ...payload, cached_at: new Date().toISOString() };
-  writeJsonStore(CBT_CACHE_KEY, cache);
+  writeJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), cache);
 }
 
-function updateCachedAnswers(attemptId, answers) {
-  const cache = readJsonStore(CBT_CACHE_KEY, {});
+function updateCachedAnswers(session, attemptId, answers) {
+  const cache = readJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), {});
   if (!cache[attemptId]) return;
   cache[attemptId] = { ...cache[attemptId], answers, cached_at: new Date().toISOString() };
-  writeJsonStore(CBT_CACHE_KEY, cache);
+  writeJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), cache);
 }
 
-function markCachedSubmitted(attemptId) {
-  const cache = readJsonStore(CBT_CACHE_KEY, {});
+function markCachedSubmitted(session, attemptId) {
+  const cache = readJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), {});
   if (!cache[attemptId]) return;
   cache[attemptId] = {
     ...cache[attemptId],
@@ -64,14 +79,14 @@ function markCachedSubmitted(attemptId) {
     submitted_at: new Date().toISOString(),
     cached_at: new Date().toISOString(),
   };
-  writeJsonStore(CBT_CACHE_KEY, cache);
+  writeJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), cache);
 }
 
-function queueOfflineSubmission(attemptId, payload) {
-  const queue = readJsonStore(CBT_SUBMISSION_QUEUE_KEY, []);
+function queueOfflineSubmission(session, attemptId, payload) {
+  const queue = readJsonStore(scopedStoreKey(CBT_SUBMISSION_QUEUE_KEY, session), []);
   const next = queue.filter((item) => String(item.attempt_id) !== String(attemptId));
   next.push(payload);
-  writeJsonStore(CBT_SUBMISSION_QUEUE_KEY, next);
+  writeJsonStore(scopedStoreKey(CBT_SUBMISSION_QUEUE_KEY, session), next);
 }
 
 function makeMonitorLog(type, message, extra = {}) {
@@ -86,7 +101,8 @@ function makeMonitorLog(type, message, extra = {}) {
 }
 
 async function syncQueuedSubmissions(session) {
-  const queue = readJsonStore(CBT_SUBMISSION_QUEUE_KEY, []);
+  const queueKey = scopedStoreKey(CBT_SUBMISSION_QUEUE_KEY, session);
+  const queue = readJsonStore(queueKey, []);
   if (!queue.length || !navigator.onLine) return;
   const remaining = [];
   for (const item of queue) {
@@ -104,7 +120,7 @@ async function syncQueuedSubmissions(session) {
       remaining.push(item);
     }
   }
-  writeJsonStore(CBT_SUBMISSION_QUEUE_KEY, remaining);
+  writeJsonStore(queueKey, remaining);
 }
 
 const ExamCBT = ({ attemptId, session, onNavigate }) => {
@@ -196,11 +212,11 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
         setAnswers(data.answers || {});
         setTimeRemaining(data.time_remaining_seconds || data.exam.duration_minutes * 60);
         setStudentInfo(data.student);
-        cacheAttemptPackage(attemptId, data);
+        cacheAttemptPackage(session, attemptId, data);
         setLoading(false);
       } catch (error) {
         console.error("Failed to load exam:", error);
-        const cached = readJsonStore(CBT_CACHE_KEY, {})[attemptId];
+        const cached = readJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), {})[attemptId];
         if (cached?.exam && cached?.questions?.length) {
           setOfflineMode(true);
           setExamData(cached.exam);
@@ -226,7 +242,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
       const nextAnswers = { ...answersRef.current, [questionId]: selectedOptions };
       answersRef.current = nextAnswers;
       setAnswers(nextAnswers);
-      updateCachedAnswers(attemptId, nextAnswers);
+      updateCachedAnswers(session, attemptId, nextAnswers);
 
       try {
         const response = await fetch(`/api/exams/attempt/${attemptId}/answer/`, {
@@ -351,14 +367,14 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
       throw new Error(data.error || data.message || "Error submitting exam. Please try again.");
     } catch (error) {
       console.error("Failed to submit exam:", error);
-      const cached = readJsonStore(CBT_CACHE_KEY, {})[attemptId];
+      const cached = readJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), {})[attemptId];
       const looksOffline =
         !navigator.onLine ||
         error?.name === "TypeError" ||
         String(error?.message || "").toLowerCase().includes("fetch") ||
         String(error?.message || "").toLowerCase().includes("network");
       if (cached?.exam && looksOffline) {
-        queueOfflineSubmission(attemptId, {
+        queueOfflineSubmission(session, attemptId, {
           offline_attempt_id: `offline-${attemptId}`,
           attempt_id: attemptId,
           exam_id: cached.exam.id,
@@ -367,7 +383,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
           answers: answersRef.current,
           ...autoPayload,
         });
-        markCachedSubmitted(attemptId);
+        markCachedSubmitted(session, attemptId);
         setOfflineMode(true);
         setShowSubmitModal(false);
         setCompleted(true);

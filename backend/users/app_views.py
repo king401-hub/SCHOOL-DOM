@@ -692,7 +692,7 @@ def _is_terminal_testimonial_class(class_name):
 
 def _student_document_payload(student_profile, request=None):
     payload = _student_payload(student_profile, request=request)
-    payload["admission_number"] = student_profile.student_id
+    payload["admission_number"] = student_profile.admission_number
     payload["is_testimonial_eligible"] = _is_terminal_testimonial_class(payload.get("class_name"))
     return payload
 
@@ -707,7 +707,7 @@ def _testimonial_defaults_for_student(student_profile, request=None):
         else []
     )
     return {
-        "admission_number": student_profile.student_id,
+        "admission_number": student_profile.admission_number,
         "student_name": student_profile.user.get_full_name(),
         "date_of_birth": student_profile.user.date_of_birth,
         "gender": student_profile.user.gender or "",
@@ -1588,6 +1588,18 @@ def _message_payload(message, request=None, viewer=None):
     }
 
 
+def _tenant_notifications_for_user(user):
+    if not Notification or not getattr(user, "tenant_id", None):
+        return Notification.objects.none() if Notification else []
+    return Notification.objects.filter(user=user, tenant=user.tenant)
+
+
+def _tenant_inbox_for_user(user):
+    if not InAppMessage or not getattr(user, "tenant_id", None):
+        return InAppMessage.objects.none() if InAppMessage else []
+    return InAppMessage.objects.filter(recipient=user, tenant=user.tenant, deleted_by_recipient=False)
+
+
 def _collect_message_attachments(request):
     uploaded_files = []
     for field_name in ("attachments", "attachment", "files"):
@@ -2136,7 +2148,7 @@ def dashboard_snapshot(request):
     upcoming_exams = exams_qs.filter(start_date__gte=now).count()
     pending_submissions = attempts_qs.filter(is_submitted=False).count()
     auto_submitted_exams = attempts_qs.filter(auto_submitted=True, is_submitted=True).count()
-    unread_notifications = Notification.objects.filter(user=user, is_read=False).count() if Notification else 0
+    unread_notifications = _tenant_notifications_for_user(user).filter(is_read=False).count() if Notification else 0
 
     recent_announcements = announcements[:3]
     recent_students = (
@@ -2271,11 +2283,7 @@ def student_dashboard(request):
             )
         }
 
-    inbox_qs = (
-        InAppMessage.objects.filter(recipient=user, deleted_by_recipient=False).order_by("-created_at")
-        if InAppMessage
-        else []
-    )
+    inbox_qs = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     unread_inbox = inbox_qs.filter(is_read=False).count() if InAppMessage else 0
 
     announcements = _visible_announcements_for_user(user, now=now)
@@ -2819,11 +2827,7 @@ def teacher_dashboard(request):
     submitted_attempts = list(submitted_attempts_qs[:20])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
     announcements = _visible_announcements_for_user(user, now=now)
-    inbox_qs = (
-        InAppMessage.objects.filter(recipient=user, deleted_by_recipient=False).order_by("-created_at")
-        if InAppMessage
-        else []
-    )
+    inbox_qs = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     if teacher_profile:
         classes_qs = _teacher_assigned_classes(user).order_by("name", "section")
         subjects_qs = _scope_to_user_tenant(teacher_profile.subjects.all(), user).order_by("name")
@@ -5465,8 +5469,8 @@ def messages_snapshot(request):
     user = request.user
     now = timezone.now()
 
-    notifications = Notification.objects.filter(user=user).order_by("-created_at") if Notification else []
-    inbox = InAppMessage.objects.filter(recipient=user, deleted_by_recipient=False).order_by("-created_at") if InAppMessage else []
+    notifications = _tenant_notifications_for_user(user).order_by("-created_at") if Notification else []
+    inbox = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     announcements = _visible_announcements_for_user(user, now=now)
     recipients = _message_recipient_queryset_for_user(user).order_by("role", "first_name", "last_name", "email")
 
@@ -6857,7 +6861,7 @@ def messages_inbox(request):
             {"success": True, "summary": {"total": 0, "unread": 0}, "messages": []},
         )
 
-    messages = InAppMessage.objects.filter(recipient=request.user, deleted_by_recipient=False).order_by("-created_at")
+    messages = _tenant_inbox_for_user(request.user).order_by("-created_at")
     return Response(
         {
             "success": True,
@@ -7090,7 +7094,7 @@ def mark_message_read(request, message_id):
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-    message = get_object_or_404(InAppMessage, id=message_id, recipient=request.user, deleted_by_recipient=False)
+    message = get_object_or_404(_tenant_inbox_for_user(request.user), id=message_id)
     message.mark_as_read()
     return Response({"success": True, "message": "Message marked as read."})
 
@@ -7104,7 +7108,7 @@ def mark_notification_read(request, notification_id):
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-    notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+    notification = get_object_or_404(_tenant_notifications_for_user(request.user), id=notification_id)
     notification.mark_as_read()
     return Response({"success": True, "message": "Notification marked as read."})
 
@@ -7182,7 +7186,10 @@ def delete_message(request, message_id):
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-    message = get_object_or_404(InAppMessage, id=message_id)
+    message = get_object_or_404(
+        InAppMessage.objects.filter(tenant=request.user.tenant).filter(Q(sender=request.user) | Q(recipient=request.user)),
+        id=message_id,
+    )
     if message.sender_id == request.user.id:
         message.deleted_by_sender = True
         message.save(update_fields=["deleted_by_sender"])

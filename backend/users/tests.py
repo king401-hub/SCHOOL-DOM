@@ -23,7 +23,7 @@ from core.models import Domain, SchoolTenant
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
 from hr.models import StaffProfile
-from notifications.models import Announcement, InAppMessage
+from notifications.models import Announcement, InAppMessage, Notification
 from tenants.models import Tenant
 from users.models import StudentEnrollment, StudentProfile, TeacherProfile, User
 
@@ -408,6 +408,84 @@ class EnrollmentsAPITests(TestCase):
         self.assertIn("from_email", first_message)
         self.assertIn("body", first_message)
         self.assertIn("attachments", first_message)
+
+    def test_messages_snapshot_hides_cross_tenant_rows_even_for_same_user(self):
+        other_school = SchoolTenant.objects.create(name="Other School", schema_name="other_school", is_active=True)
+        other_sender = User.objects.create_user(
+            email="other.sender@smoke.edu",
+            password="TeacherPass123",
+            first_name="Other",
+            last_name="Sender",
+            role="teacher",
+            tenant=other_school,
+            is_active=True,
+            is_verified=True,
+        )
+        InAppMessage.objects.bulk_create(
+            [
+                InAppMessage(
+                    tenant=other_school,
+                    sender=other_sender,
+                    recipient=self.admin_user,
+                    subject="Wrong tenant message",
+                    body="This should not appear.",
+                )
+            ]
+        )
+        Notification.objects.bulk_create(
+            [
+                Notification(
+                    tenant=other_school,
+                    user=self.admin_user,
+                    title="Wrong tenant notification",
+                    message="This should not appear.",
+                    notification_type="info",
+                    priority=2,
+                    channel="in_app",
+                    is_delivered=True,
+                    delivered_at=timezone.now(),
+                )
+            ]
+        )
+
+        response = self.client.get("/api/app/messages/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(item["subject"] == "Wrong tenant message" for item in response.data["inbox"]))
+        self.assertFalse(any(item["title"] == "Wrong tenant notification" for item in response.data["notifications"]))
+        self.assertEqual(response.data["summary"]["unread_inbox"], 0)
+        self.assertEqual(response.data["summary"]["unread_notifications"], 0)
+
+    def test_cross_tenant_notification_and_message_writes_are_rejected(self):
+        other_school = SchoolTenant.objects.create(name="Other Guard School", schema_name="other_guard", is_active=True)
+        other_user = User.objects.create_user(
+            email="other.guard@smoke.edu",
+            password="TeacherPass123",
+            role="teacher",
+            tenant=other_school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        with self.assertRaises(ValidationError):
+            Notification.objects.create(
+                tenant=other_school,
+                user=self.admin_user,
+                title="Wrong tenant notification",
+                message="Blocked",
+                notification_type="info",
+                priority=2,
+                channel="in_app",
+            )
+
+        with self.assertRaises(ValidationError):
+            InAppMessage.objects.create(
+                tenant=self.school,
+                sender=self.admin_user,
+                recipient=other_user,
+                subject="Wrong tenant message",
+                body="Blocked",
+            )
 
     def test_message_send_accepts_attachments(self):
         teacher_user = User.objects.create_user(

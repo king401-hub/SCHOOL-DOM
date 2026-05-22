@@ -60,7 +60,7 @@ if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['*']:
 
 CSRF_TRUSTED_ORIGINS = env_list(
     'CSRF_TRUSTED_ORIGINS',
-    'http://localhost:5173,http://127.0.0.1:5173,https://eliana-cecal-unpitiably.ngrok-free.dev'
+    'http://localhost:5173,http://127.0.0.1:5173,https://schooldom.academy'
 )
 USE_X_FORWARDED_HOST = env_bool('USE_X_FORWARDED_HOST', True)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -298,7 +298,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # For development
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = env_list(
     'CORS_ALLOWED_ORIGINS',
-    "http://localhost:5173,http://127.0.0.1:5173,https://eliana-cecal-unpitiably.ngrok-free.dev"
+    "http://localhost:5173,http://127.0.0.1:5173,https://schooldom.academy"
 )
 
 # File Uploads
@@ -319,6 +319,6 @@ MAX_UPLOAD_SIZE = env_int('MAX_UPLOAD_SIZE', 52428800)  # 50MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_SIZE
 FILE_UPLOAD_MAX_MEMORY_SIZE = env_int('FILE_UPLOAD_MAX_MEMORY_SIZE', 2621440)
 OFFLINE_EXAM_EXPIRY_DAYS = 30
-FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', '')
+FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'https://schooldom.academy')
 FRONTEND_DEV_PORT = os.getenv('FRONTEND_DEV_PORT', '5173')
-NGROK_PUBLIC_URL = os.getenv('NGROK_PUBLIC_URL', 'https://eliana-cecal-unpitiably.ngrok-free.dev')
+NGROK_PUBLIC_URL = os.getenv('NGROK_PUBLIC_URL', '')

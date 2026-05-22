@@ -2,14 +2,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PREFIX = "schooldom.cache.";
 
-export async function readCache(key) {
-  const raw = await AsyncStorage.getItem(`${PREFIX}${key}`);
+function scopeKey(key, scope) {
+  const normalized = String(scope || "anonymous").trim().toLowerCase();
+  return `${PREFIX}${normalized}.${key}`;
+}
+
+export async function readCache(key, scope) {
+  const raw = await AsyncStorage.getItem(scopeKey(key, scope));
   return raw ? JSON.parse(raw) : null;
 }
 
-export async function writeCache(key, data) {
+export async function writeCache(key, data, scope) {
   await AsyncStorage.setItem(
-    `${PREFIX}${key}`,
+    scopeKey(key, scope),
     JSON.stringify({
       data,
       cachedAt: new Date().toISOString(),
