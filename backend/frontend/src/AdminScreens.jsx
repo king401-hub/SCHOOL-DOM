@@ -3605,13 +3605,10 @@ export function IdCardVerificationPage() {
               </header>
 
               <section className="id-verify-person">
-                <div className="id-card-photo id-verify-photo">
-                  {person.profile_picture ? <img src={person.profile_picture} alt={`${person.name} profile`} /> : <span>{userInitials({ full_name: person.name })}</span>}
-                </div>
                 <div>
                   <p>{person.display_type || "ID Card"}</p>
-                  <h2>{person.name || "Unnamed user"}</h2>
-                  <strong>{person.unique_id || "No ID assigned"}</strong>
+                  <h2>{person.unique_id || "No ID assigned"}</h2>
+                  <strong>{person.email || "No email on record"}</strong>
                 </div>
               </section>
 
@@ -3621,24 +3618,12 @@ export function IdCardVerificationPage() {
                   <dd>{payload.message || (isValid ? "ID card verified." : "Profile is inactive.")}</dd>
                 </div>
                 <div>
-                  <dt>{person.person_type === "student" ? "Class" : "Role"}</dt>
-                  <dd>{person.primary_label || "-"}</dd>
+                  <dt>{person.person_type === "student" ? "Student ID" : "Staff ID"}</dt>
+                  <dd>{person.unique_id || "No ID assigned"}</dd>
                 </div>
                 <div>
-                  <dt>{person.person_type === "student" ? "Admission Date" : "Employment Date"}</dt>
-                  <dd>{idCardDate(person.admission_or_employment_date)}</dd>
-                </div>
-                <div>
-                  <dt>Gender</dt>
-                  <dd>{genderDisplay(person.gender)}</dd>
-                </div>
-                <div>
-                  <dt>{person.person_type === "student" ? "Guardian" : "Department"}</dt>
-                  <dd>{person.guardian_name || person.department || person.secondary_label || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Phone</dt>
-                  <dd>{person.phone || person.guardian_phone || "-"}</dd>
+                  <dt>Email</dt>
+                  <dd>{person.email || "-"}</dd>
                 </div>
               </dl>
             </>
@@ -5343,6 +5328,8 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
     subjects_text: "",
     subjects: [],
     classes: [],
+    teacher_password: "",
+    confirm_teacher_password: "",
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [editError, setEditError] = useState("");
@@ -5350,6 +5337,8 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
   const [isDeleting, setIsDeleting] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
 
   const toDateInputValue = (value) => {
     const raw = String(value || "");
@@ -5377,6 +5366,8 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
     subjects_text: teacher?.subjects_text || "",
     subjects: (teacher?.subjects || []).map((item) => String(item.id)),
     classes: (teacher?.assigned_classes || []).map((item) => String(item.id)),
+    teacher_password: "",
+    confirm_teacher_password: "",
   });
 
   const filteredTeachers = useMemo(() => {
@@ -5535,6 +5526,30 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
     setIsUpdating(true);
     setEditError("");
     setEditSuccess("");
+    const password = (editForm.teacher_password || "").trim();
+    const confirm = (editForm.confirm_teacher_password || "").trim();
+    if (password || confirm) {
+      if (!password || !confirm) {
+        setEditError("Enter and confirm the new password.");
+        setIsUpdating(false);
+        return;
+      }
+      if (password !== confirm) {
+        setEditError("Passwords do not match.");
+        setIsUpdating(false);
+        return;
+      }
+      if (
+        password.length < 8 ||
+        !/[A-Z]/.test(password) ||
+        !/[a-z]/.test(password) ||
+        !/[0-9]/.test(password)
+      ) {
+        setEditError("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
+        setIsUpdating(false);
+        return;
+      }
+    }
     try {
       const payload = {
         first_name: editForm.first_name.trim(),
@@ -5553,6 +5568,10 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
         subject_ids: editForm.subjects,
         class_ids: editForm.classes,
       };
+      if (password) {
+        payload.teacher_password = password;
+        payload.confirm_teacher_password = confirm;
+      }
       if (editForm.hire_date) {
         payload.hire_date = editForm.hire_date;
       }
@@ -5560,6 +5579,8 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
       if (result?.teacher) {
         setEditForm(buildEditForm(result.teacher));
       }
+      setShowEditPassword(false);
+      setShowEditConfirmPassword(false);
       setEditSuccess(result?.message || "Teacher updated.");
     } catch (actionError) {
       setEditError(actionError.message || "Could not update teacher.");
@@ -5853,6 +5874,51 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     Employee ID
                     <input value={editForm.employee_id} onChange={(event) => setEditForm((prev) => ({ ...prev, employee_id: event.target.value }))} required />
                   </label>
+                  <label className="panel-field">
+                    New password
+                    <div className="password-wrap">
+                      <input
+                        type={showEditPassword ? "text" : "password"}
+                        value={editForm.teacher_password}
+                        onChange={(event) => setEditForm((prev) => ({ ...prev, teacher_password: event.target.value }))}
+                        placeholder="Leave blank to keep current"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowEditPassword((prev) => !prev)}
+                        aria-label={showEditPassword ? "Hide password" : "Show password"}
+                      >
+                        {showEditPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                  </label>
+                  <label className="panel-field">
+                    Confirm new password
+                    <div className="password-wrap">
+                      <input
+                        type={showEditConfirmPassword ? "text" : "password"}
+                        value={editForm.confirm_teacher_password}
+                        onChange={(event) => setEditForm((prev) => ({ ...prev, confirm_teacher_password: event.target.value }))}
+                        placeholder="Repeat new password"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowEditConfirmPassword((prev) => !prev)}
+                        aria-label={showEditConfirmPassword ? "Hide confirmation" : "Show confirmation"}
+                      >
+                        {showEditConfirmPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                  </label>
+                  <div className="panel-field full">
+                    <p className="field-note">
+                      Leave password fields blank unless you want to reset this teacher's login password.
+                    </p>
+                  </div>
                   <label className="panel-field">
                     Employment
                     <select value={editForm.employment_type} onChange={(event) => setEditForm((prev) => ({ ...prev, employment_type: event.target.value }))}>

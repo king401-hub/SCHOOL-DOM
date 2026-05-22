@@ -993,6 +993,16 @@ def _id_card_staff_payload(staff, request=None):
     }
 
 
+def _public_id_card_verification_person(person):
+    return {
+        "person_type": person.get("person_type"),
+        "display_type": person.get("display_type") or "ID Card",
+        "unique_id": person.get("unique_id") or "",
+        "email": person.get("email") or "",
+        "is_active": bool(person.get("is_active")),
+    }
+
+
 def _resolve_id_card_person(user, person_type, person_id, request=None):
     tenant = getattr(user, "tenant", None)
     normalized_type = str(person_type or "").strip().lower()
@@ -4089,7 +4099,7 @@ def id_card_verify(request):
             "status": "active" if is_active else "inactive",
             "message": "ID card verified." if is_active else "ID card belongs to this school, but the profile is inactive.",
             "school": _school_identity_payload(tenant, request=request),
-            "person": person,
+            "person": _public_id_card_verification_person(person),
         }
     )
 
@@ -4278,6 +4288,27 @@ def teacher_detail(request, teacher_id):
             if getattr(teacher_user, field) != new_value:
                 setattr(teacher_user, field, new_value)
                 user_update_fields.append(field)
+
+    if "gender" in request.data:
+        gender = str(request.data.get("gender") or "").strip()
+        if gender and gender not in {"M", "F", "O", "N"}:
+            return Response(
+                {"success": False, "message": "gender must be one of M, F, O, or N."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if teacher_user.gender != gender:
+            teacher_user.gender = gender
+            user_update_fields.append("gender")
+
+    teacher_password = str(request.data.get("teacher_password") or request.data.get("password") or "").strip()
+    confirm_teacher_password = str(request.data.get("confirm_teacher_password") or request.data.get("confirm_password") or "").strip()
+    if teacher_password or confirm_teacher_password:
+        try:
+            validated_password = _validate_teacher_password(teacher_password, confirm_teacher_password)
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        teacher_user.set_password(validated_password)
+        user_update_fields.append("password")
 
     if "is_active" in request.data:
         new_active = _to_bool(request.data.get("is_active"), default=teacher_user.is_active)

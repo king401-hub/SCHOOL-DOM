@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -26,6 +27,7 @@ from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, Notification
 from tenants.models import Tenant
 from users.models import StudentEnrollment, StudentProfile, TeacherProfile, User
+from users.app_views import ID_CARD_SIGNING_SALT
 
 
 class SchoolRegistrationCreditTests(TestCase):
@@ -2125,6 +2127,86 @@ class TeachersAPITests(TestCase):
         self.assertEqual(profile.qualification, "B.Ed")
         self.assertEqual(profile.employment_type, "part_time")
         self.assertEqual(profile.years_of_experience, 6)
+
+    def test_update_teacher_profile_api_can_reset_password(self):
+        teacher_user = User.objects.create_user(
+            email="password.teacher@teacher-smoke.edu",
+            password="OldPass123",
+            first_name="Password",
+            last_name="Teacher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = TeacherProfile.objects.create(
+            user=teacher_user,
+            employee_id="TCH-PASS-1",
+            qualification="M.Ed",
+            specialization="Science",
+            years_of_experience=3,
+            hire_date=timezone.now().date(),
+            employment_type="full_time",
+            emergency_contact_name="Password Contact",
+            emergency_contact_phone="+15557770000",
+            emergency_contact_relation="Sibling",
+        )
+
+        response = self.client.patch(
+            f"/api/app/teachers/{profile.id}/",
+            data={
+                "teacher_password": "NewPass123",
+                "confirm_teacher_password": "NewPass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        teacher_user.refresh_from_db()
+        self.assertTrue(teacher_user.check_password("NewPass123"))
+
+    def test_id_card_verify_returns_only_public_identity(self):
+        student_user = User.objects.create_user(
+            email="privacy.student@teacher-smoke.edu",
+            password="StudentPass123",
+            first_name="Private",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            phone="+15551112222",
+            is_active=True,
+            is_verified=True,
+        )
+        profile = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-PRIVATE-1",
+            admission_number="ADM-PRIVATE-1",
+            admission_date=timezone.now().date(),
+            guardian_name="Private Guardian",
+            guardian_phone="+15553334444",
+            guardian_relation="Parent",
+        )
+        token = signing.dumps(
+            {
+                "tenant_id": str(self.school.id),
+                "person_type": "student",
+                "person_id": str(profile.id),
+                "unique_id": profile.student_id,
+            },
+            salt=ID_CARD_SIGNING_SALT,
+            compress=True,
+        )
+
+        response = self.client.get(f"/api/app/id-cards/verify/?token={token}")
+
+        self.assertEqual(response.status_code, 200)
+        person = response.data["person"]
+        self.assertEqual(person["unique_id"], "STU-PRIVATE-1")
+        self.assertEqual(person["email"], "privacy.student@teacher-smoke.edu")
+        self.assertNotIn("guardian_name", person)
+        self.assertNotIn("phone", person)
+        self.assertNotIn("date_of_birth", person)
 
     def test_delete_teacher_api_removes_profile_and_user(self):
         teacher_user = User.objects.create_user(
