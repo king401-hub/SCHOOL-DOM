@@ -2220,6 +2220,7 @@ class TeachersAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["verified"])
         person = response.data["person"]
+        self.assertEqual(person["name"], "Private Student")
         self.assertEqual(person["unique_id"], "STU-PRIVATE-1")
         self.assertEqual(person["email"], "privacy.student@teacher-smoke.edu")
         self.assertNotIn("guardian_name", person)

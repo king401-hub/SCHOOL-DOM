@@ -3679,8 +3679,9 @@ export function IdCardVerificationPage() {
               <section className="id-verify-person">
                 <div>
                   <p>{person.display_type || "ID Card"}</p>
-                  <h2>{person.unique_id || "No ID assigned"}</h2>
-                  <strong>{person.email || "No email on record"}</strong>
+                  <h2>{person.name || person.unique_id || "No ID assigned"}</h2>
+                  <strong>{person.unique_id || "No ID assigned"}</strong>
+                  <span>{person.email || "No email on record"}</span>
                 </div>
               </section>
 
@@ -3688,6 +3689,10 @@ export function IdCardVerificationPage() {
                 <div>
                   <dt>Status</dt>
                   <dd>{payload.message || (isValid ? "ID card verified." : "Profile is inactive.")}</dd>
+                </div>
+                <div>
+                  <dt>Name</dt>
+                  <dd>{person.name || "-"}</dd>
                 </div>
                 <div>
                   <dt>{person.person_type === "student" ? "Student ID" : "Staff ID"}</dt>

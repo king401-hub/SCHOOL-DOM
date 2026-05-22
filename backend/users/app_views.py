@@ -997,6 +997,7 @@ def _public_id_card_verification_person(person):
     return {
         "person_type": person.get("person_type"),
         "display_type": person.get("display_type") or "ID Card",
+        "name": person.get("name") or "",
         "unique_id": person.get("unique_id") or "",
         "email": person.get("email") or "",
         "is_active": bool(person.get("is_active")),
