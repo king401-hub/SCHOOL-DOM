@@ -524,6 +524,62 @@ class EnrollmentsAPITests(TestCase):
         self.assertEqual(inbox_response.status_code, 200)
         self.assertEqual(inbox_response.data["inbox"][0]["attachments"][0]["name"], "notice.txt")
 
+    def test_messages_snapshot_includes_guardian_sms_contacts_for_admins(self):
+        student_user = User.objects.create_user(
+            email="guardian.snapshot@smoke.edu",
+            password="StudentPass123",
+            first_name="Guardian",
+            last_name="Snapshot",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-SMOKE-SMS",
+            admission_number="ADM-SMOKE-SMS",
+            admission_date=timezone.now().date(),
+            guardian_name="First Guardian",
+            guardian_phone="09036425748",
+            guardian_relation="Parent",
+            second_guardian_name="Second Guardian",
+            second_guardian_phone="+2348153197053",
+            second_guardian_relation="Mother",
+        )
+
+        response = self.client.get("/api/app/messages/")
+
+        self.assertEqual(response.status_code, 200)
+        phones = {item["phone"] for item in response.data["guardian_sms_recipients"]}
+        self.assertIn("2349036425748", phones)
+        self.assertIn("2348153197053", phones)
+
+    @override_settings(KUDISMS_TOKEN="test-token", KUDISMS_SENDER_ID="neo", KUDISMS_GATEWAY="2")
+    @patch("users.app_views.requests.get")
+    def test_admin_can_send_guardian_bulk_sms(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.text = "OK"
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "guardian_sms",
+                "body": "School closes by 2 PM today.",
+                "recipients": ["09036425748", "+2348153197053", "09036425748"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["sms_data"]["recipient_count"], 2)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["token"], "test-token")
+        self.assertEqual(kwargs["params"]["senderID"], "neo")
+        self.assertEqual(kwargs["params"]["recipients"], "2349036425748,2348153197053")
+        self.assertEqual(kwargs["params"]["gateway"], "2")
+
     def test_admin_can_publish_announcement_for_students_and_teachers(self):
         student_user = User.objects.create_user(
             email="student.msg@smoke.edu",

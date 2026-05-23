@@ -9436,6 +9436,12 @@ body[data-theme="dark"] .segmented-control button.active {
     border-radius: 999px;
     justify-content: center;
     transform: none;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .global-notification-shell.has-mobile-position {
+    justify-items: start;
   }
 
   body[data-dashboard-role="student"] .global-notification-button {
@@ -12266,6 +12272,297 @@ body[data-theme="dark"] .activation-credit-summary span {
   white-space: nowrap;
 }
 
+.school-bill-template {
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  animation: billTemplateIn 420ms ease both;
+}
+
+.school-bill-paper {
+  position: relative;
+  display: grid;
+  gap: 1.1rem;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  padding: 1.2rem;
+  background: #ffffff;
+  color: #111827;
+  overflow: hidden;
+  box-shadow: 0 18px 45px rgba(2, 8, 23, 0.2);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.school-bill-paper::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(32, 227, 207, 0.12), transparent 28%),
+    linear-gradient(315deg, rgba(99, 102, 241, 0.1), transparent 26%);
+  opacity: 0.72;
+}
+
+.school-bill-paper:hover {
+  transform: translateY(-2px);
+  border-color: #aab8c8;
+  box-shadow: 0 24px 58px rgba(2, 8, 23, 0.26);
+}
+
+.school-bill-paper > * {
+  position: relative;
+}
+
+.school-bill-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.school-bill-logo {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f3d5e;
+  font-weight: 900;
+  animation: billLogoSettle 560ms ease both;
+}
+
+.school-bill-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.school-bill-header > div:last-child {
+  display: grid;
+  gap: 0.25rem;
+  text-align: right;
+}
+
+.school-bill-header strong {
+  font-size: 1.05rem;
+  color: #111827;
+}
+
+.school-bill-header span,
+.school-bill-title-row span {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.school-bill-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.school-bill-title-row h4 {
+  margin: 0;
+  color: #111827;
+  font-size: clamp(2rem, 7vw, 3.3rem);
+  line-height: 0.95;
+  text-transform: uppercase;
+  animation: billTitleIn 520ms ease both;
+}
+
+.school-bill-title-row > div {
+  display: grid;
+  gap: 0.25rem;
+  text-align: right;
+}
+
+.school-bill-lines {
+  display: grid;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.school-bill-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 0.32fr);
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 42px;
+  border-bottom: 1px dashed #cbd5e1;
+  padding: 0.35rem 0;
+  animation: billLineIn 320ms ease both;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.school-bill-line:nth-child(2) { animation-delay: 35ms; }
+.school-bill-line:nth-child(3) { animation-delay: 70ms; }
+.school-bill-line:nth-child(4) { animation-delay: 105ms; }
+.school-bill-line:nth-child(5) { animation-delay: 140ms; }
+.school-bill-line:nth-child(6) { animation-delay: 175ms; }
+.school-bill-line:nth-child(7) { animation-delay: 210ms; }
+.school-bill-line:nth-child(8) { animation-delay: 245ms; }
+.school-bill-line:nth-child(n + 9) { animation-delay: 280ms; }
+
+.school-bill-line:hover {
+  background: #f8fafc;
+  transform: translateX(2px);
+}
+
+.school-bill-line span {
+  color: #111827;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.expense-tracker .school-bill-line input {
+  border: 1px solid #d8e0ea;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 6px;
+  padding: 0.55rem 0.6rem;
+}
+
+.expense-tracker .school-bill-line input[type="number"] {
+  text-align: right;
+}
+
+.school-bill-total {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1.4rem;
+  align-items: baseline;
+  color: #111827;
+  font-weight: 900;
+  animation: billTotalPop 420ms ease both;
+}
+
+.school-bill-total strong {
+  color: #111827;
+  font-size: 1.25rem;
+}
+
+.school-bill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.school-bill-actions button {
+  border: 1px solid #34504b;
+  border-radius: 8px;
+  background: #12201e;
+  color: #d8e9e5;
+  padding: 0.58rem 0.85rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.school-bill-actions button:hover,
+.expense-panel-head > .table-action:hover {
+  transform: translateY(-1px);
+  border-color: #20e3cf;
+  background: rgba(32, 227, 207, 0.14);
+}
+
+@keyframes billTemplateIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes billLogoSettle {
+  from {
+    opacity: 0;
+    transform: scale(0.86) rotate(-4deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes billTitleIn {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes billLineIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes billTotalPop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .school-bill-template,
+  .school-bill-paper,
+  .school-bill-logo,
+  .school-bill-title-row h4,
+  .school-bill-line,
+  .school-bill-total,
+  .school-bill-actions button {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media print {
+  .school-bill-template,
+  .school-bill-paper,
+  .school-bill-logo,
+  .school-bill-title-row h4,
+  .school-bill-line,
+  .school-bill-total,
+  .school-bill-actions button {
+    animation: none;
+    transition: none;
+    transform: none;
+  }
+
+  .school-bill-paper {
+    box-shadow: none;
+  }
+
+  .school-bill-paper::before {
+    display: none;
+  }
+}
+
 .expense-panel-head {
   display: flex;
   align-items: center;
@@ -12518,6 +12815,20 @@ body[data-theme="dark"] .activation-credit-summary span {
 
   .expense-total-card {
     min-width: 0;
+  }
+
+  .school-bill-header,
+  .school-bill-title-row {
+    flex-direction: column;
+  }
+
+  .school-bill-header > div:last-child,
+  .school-bill-title-row > div {
+    text-align: left;
+  }
+
+  .school-bill-line {
+    grid-template-columns: 1fr;
   }
 
   .expense-chart-row {

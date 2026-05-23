@@ -173,6 +173,61 @@ class DailyPersonalQuizTests(TestCase):
         self.assertNotIn("Other tenant test question should not appear", prompts)
         self.assertTrue(any("English" in prompt or "subject" in prompt.lower() for prompt in prompts))
 
+    def test_personal_quiz_uses_global_subject_pool_across_tenants(self):
+        global_folder = PersonalQuizFolder.objects.create(
+            tenant=None,
+            name="Global math pool",
+            subject=None,
+            subject_code="MTH",
+            subject_name="Mathematics",
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=global_folder,
+            question_type="objective",
+            prompt="Global math question available to every tenant",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+        self.legacy_tenant.personal_quiz_folders.all().delete()
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": self.subject.id, "question_count": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Global math question available to every tenant")
+
+    def test_personal_quiz_uses_global_general_pool_when_subject_pool_missing(self):
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+        self.school_class.subjects.add(english)
+        global_folder = PersonalQuizFolder.objects.create(
+            tenant=None,
+            name="Global general pool",
+            subject=None,
+            subject_code="",
+            subject_name="",
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=global_folder,
+            question_type="objective",
+            prompt="Global general question available to every tenant",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Global general question available to every tenant")
+
     def test_submitted_daily_subject_cannot_be_recreated_until_next_day(self):
         first = self.client.post(
             "/api/quizzes/personal/generate/",

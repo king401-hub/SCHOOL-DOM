@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
 import qrcode
+import requests
 from django.conf import settings
 from django.core import signing
 from django.core.files.storage import default_storage
@@ -55,12 +56,13 @@ except Exception:  # pragma: no cover - HR app is optional in older installs
     StaffProfile = None
 
 try:
-    from notifications.models import Announcement, InAppMessage, Notification, NotificationPreference
+    from notifications.models import Announcement, InAppMessage, Notification, NotificationPreference, SMSConfiguration
 except Exception:  # pragma: no cover - optional app fallback
     Announcement = None
     InAppMessage = None
     Notification = None
     NotificationPreference = None
+    SMSConfiguration = None
 
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
 ID_CARD_SIGNING_SALT = "schooldom.id-card.verify"
@@ -1607,6 +1609,127 @@ def _is_allowed_message_recipient(sender, recipient):
     if _can_manage_school_settings(sender):
         return True
     return _message_recipient_queryset_for_user(sender).filter(id=recipient.id).exists()
+
+
+def _normalize_sms_phone(value):
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 11 and digits.startswith("0"):
+        return f"234{digits[1:]}"
+    if len(digits) == 10:
+        return f"234{digits}"
+    return digits
+
+
+def _guardian_sms_contacts_for_school(school):
+    if not school:
+        return []
+
+    contacts = []
+    seen = set()
+    profiles = (
+        StudentProfile.objects.select_related("user", "current_class")
+        .filter(user__tenant=school, user__is_active=True)
+        .order_by("user__first_name", "user__last_name", "student_id")
+    )
+    for profile in profiles:
+        student_name = profile.user.get_full_name() or profile.student_id
+        for slot, name_attr, phone_attr, relation_attr in (
+            ("primary", "guardian_name", "guardian_phone", "guardian_relation"),
+            ("secondary", "second_guardian_name", "second_guardian_phone", "second_guardian_relation"),
+        ):
+            phone = _normalize_sms_phone(getattr(profile, phone_attr, ""))
+            if not phone or phone in seen:
+                continue
+            seen.add(phone)
+            guardian_name = str(getattr(profile, name_attr, "") or "").strip()
+            relation = str(getattr(profile, relation_attr, "") or "").strip()
+            contacts.append(
+                {
+                    "id": f"{profile.id}:{slot}",
+                    "name": guardian_name or relation or "Guardian",
+                    "phone": phone,
+                    "raw_phone": getattr(profile, phone_attr, "") or "",
+                    "relation": relation,
+                    "student_id": str(profile.id),
+                    "student_code": profile.student_id,
+                    "student_name": student_name,
+                    "class_name": _class_label(profile.current_class) if profile.current_class else "Unassigned",
+                    "source": slot,
+                }
+            )
+    return contacts
+
+
+def _kudisms_config_for_school(school):
+    config = None
+    if SMSConfiguration and school:
+        try:
+            config = getattr(school, "sms_config", None)
+        except Exception:
+            config = None
+
+    token = (
+        str(getattr(config, "api_key", "") or "").strip()
+        or str(getattr(settings, "KUDISMS_TOKEN", "") or os.environ.get("KUDISMS_TOKEN", "")).strip()
+    )
+    sender_id = (
+        str(getattr(config, "sender_id", "") or "").strip()
+        or str(getattr(settings, "KUDISMS_SENDER_ID", "") or os.environ.get("KUDISMS_SENDER_ID", "")).strip()
+        or "neo"
+    )
+    gateway = str(getattr(settings, "KUDISMS_GATEWAY", "") or os.environ.get("KUDISMS_GATEWAY", "") or "2").strip()
+    is_active = bool(getattr(config, "is_active", False)) if config else bool(token)
+    if config and getattr(config, "provider", "") and getattr(config, "provider", "") != "custom":
+        is_active = False
+
+    return {
+        "token": token,
+        "sender_id": sender_id,
+        "gateway": gateway,
+        "is_active": is_active,
+    }
+
+
+def _send_kudisms_bulk_sms(school, phone_numbers, message):
+    config = _kudisms_config_for_school(school)
+    if not config["token"] or not config["is_active"]:
+        raise ValueError("Bulk SMS is not configured. Add a Custom SMS configuration with your KudiSMS token.")
+
+    recipients = []
+    seen = set()
+    for phone in phone_numbers:
+        normalized = _normalize_sms_phone(phone)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            recipients.append(normalized)
+
+    if not recipients:
+        raise ValueError("Add at least one valid guardian phone number.")
+
+    response = requests.get(
+        "https://my.kudisms.net/api/sms",
+        params={
+            "token": config["token"],
+            "senderID": config["sender_id"],
+            "recipients": ",".join(recipients),
+            "message": message,
+            "gateway": config["gateway"],
+        },
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise ValueError(f"KudiSMS rejected the request with status {response.status_code}.")
+
+    return {
+        "recipient_count": len(recipients),
+        "recipients": recipients,
+        "provider_response": response.text[:500],
+        "sender_id": config["sender_id"],
+    }
 
 
 MESSAGE_ATTACHMENT_MAX_FILES = 5
@@ -5595,6 +5718,9 @@ def messages_snapshot(request):
     inbox = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     announcements = _visible_announcements_for_user(user, now=now)
     recipients = _message_recipient_queryset_for_user(user).order_by("role", "first_name", "last_name", "email")
+    can_manage_messages = _can_manage_school_settings(user)
+    guardian_sms_recipients = _guardian_sms_contacts_for_school(user.tenant) if can_manage_messages else []
+    sms_config = _kudisms_config_for_school(user.tenant) if can_manage_messages else {}
 
     return Response(
         {
@@ -5638,6 +5764,8 @@ def messages_snapshot(request):
                 }
                 for item in recipients[:100]
             ],
+            "guardian_sms_recipients": guardian_sms_recipients,
+            "sms_configured": bool(sms_config.get("token") and sms_config.get("is_active")) if can_manage_messages else False,
         }
     )
 
@@ -7040,6 +7168,47 @@ def send_message(request):
         return Response(
             {"success": False, "message": "Message body or attachment is required."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if target == "guardian_sms":
+        if not _can_manage_school_settings(request.user):
+            return Response(
+                {"success": False, "message": "Only administrators can send guardian SMS."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not getattr(request.user, "tenant_id", None):
+            return Response(
+                {"success": False, "message": "Your account is not linked to a school."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        raw_recipients = request.data.get("recipients") or request.data.get("phone_numbers") or []
+        if isinstance(raw_recipients, str):
+            raw_recipients = re.split(r"[\s,;]+", raw_recipients)
+        if not isinstance(raw_recipients, (list, tuple)):
+            return Response(
+                {"success": False, "message": "recipients must be a list of phone numbers."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            sms_result = _send_kudisms_bulk_sms(request.user.tenant, raw_recipients, body)
+        except ValueError as exc:
+            return Response(
+                {"success": False, "message": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except requests.RequestException:
+            return Response(
+                {"success": False, "message": "Could not reach KudiSMS. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "success": True,
+                "message": f"SMS sent to {sms_result['recipient_count']} guardian number(s).",
+                "sms_data": sms_result,
+            },
+            status=status.HTTP_201_CREATED,
         )
 
     if target in {"students_teachers_announcement", "school_broadcast"}:

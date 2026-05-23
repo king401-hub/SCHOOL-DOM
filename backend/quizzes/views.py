@@ -552,18 +552,37 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
     if subject.code:
         subject_filters |= Q(folder__tenant__isnull=True, folder__subject__isnull=True, folder__subject_code__iexact=subject.code)
     subject_filters |= Q(folder__tenant__isnull=True, folder__subject__isnull=True, folder__subject_name__iexact=subject.name)
+
+    available_folder_filter = Q(folder__tenant__isnull=True)
+    if tenant:
+        available_folder_filter |= Q(folder__tenant=tenant)
+
     subject_pool = PersonalQuizFolderQuestion.objects.filter(
         folder__is_active=True,
         is_active=True,
-    ).filter(subject_filters)
-    if tenant:
-        subject_pool = subject_pool.filter(Q(folder__tenant=tenant) | Q(folder__tenant__isnull=True))
+    ).filter(available_folder_filter).filter(subject_filters)
     if class_group:
         subject_pool = subject_pool.filter(Q(folder__class_group=class_group) | Q(folder__class_group__isnull=True))
     else:
         subject_pool = subject_pool.filter(folder__class_group__isnull=True)
     folder_questions = list(subject_pool.order_by("?")[:count])
-    if not folder_questions and not tenant:
+
+    if not folder_questions:
+        general_pool = PersonalQuizFolderQuestion.objects.filter(
+            folder__is_active=True,
+            is_active=True,
+        ).filter(available_folder_filter).filter(
+            folder__subject__isnull=True,
+            folder__subject_code="",
+            folder__subject_name="",
+        )
+        if class_group:
+            general_pool = general_pool.filter(Q(folder__class_group=class_group) | Q(folder__class_group__isnull=True))
+        else:
+            general_pool = general_pool.filter(folder__class_group__isnull=True)
+        folder_questions = list(general_pool.order_by("?")[:count])
+
+    if not folder_questions:
         folder_questions = list(
             PersonalQuizFolderQuestion.objects.filter(
                 folder__is_active=True,
@@ -770,13 +789,14 @@ class PersonalQuizResourceFolder(APIView):
     def post(self, request):
         if request.user.role not in {"school_admin", "principal", "super_admin"}:
             return Response({"detail": "Only school administrators can manage personal quiz folders."}, status=status.HTTP_403_FORBIDDEN)
-        legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        is_global = bool(request.data.get("is_global")) and request.user.role == "super_admin"
+        legacy_tenant = None if is_global else resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
         folder = PersonalQuizFolder.objects.create(
             tenant=legacy_tenant,
             name=str(request.data.get("name") or "Personal Quiz Questions").strip(),
             description=str(request.data.get("description") or "").strip(),
         )
-        return Response({"id": folder.id, "name": folder.name, "description": folder.description, "question_count": 0}, status=status.HTTP_201_CREATED)
+        return Response({"id": folder.id, "name": folder.name, "description": folder.description, "is_global": folder.tenant_id is None, "question_count": 0}, status=status.HTTP_201_CREATED)
 
 
 class PersonalQuizResourceQuestion(APIView):
@@ -786,7 +806,12 @@ class PersonalQuizResourceQuestion(APIView):
         if request.user.role not in {"school_admin", "principal", "super_admin"}:
             return Response({"detail": "Only school administrators can add personal quiz questions."}, status=status.HTTP_403_FORBIDDEN)
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
-        folder = get_object_or_404(PersonalQuizFolder, id=folder_id, is_active=True, tenant=legacy_tenant)
+        folder_query = PersonalQuizFolder.objects.filter(id=folder_id, is_active=True)
+        if request.user.role == "super_admin":
+            folder_query = folder_query.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True))
+        else:
+            folder_query = folder_query.filter(tenant=legacy_tenant)
+        folder = get_object_or_404(folder_query)
         prompt = str(request.data.get("prompt") or "").strip()
         correct_answer = str(request.data.get("correct_answer") or "").strip()
         if len(prompt) < 3 or not correct_answer:

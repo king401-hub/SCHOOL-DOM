@@ -5,6 +5,7 @@ import ExamSidebar from "./ExamSidebar";
 import QuestionDisplay from "./QuestionDisplay";
 import StudentInfo from "./StudentInfo";
 import SubmitModal from "./SubmitModal";
+import { emitSchoolDomDataMutation } from "../../AppShared";
 
 const CBT_CACHE_KEY = "schooldom.cbt_attempt_cache";
 const CBT_SUBMISSION_QUEUE_KEY = "schooldom.cbt_submission_queue";
@@ -68,6 +69,7 @@ function updateCachedAnswers(session, attemptId, answers) {
   if (!cache[attemptId]) return;
   cache[attemptId] = { ...cache[attemptId], answers, cached_at: new Date().toISOString() };
   writeJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), cache);
+  emitSchoolDomDataMutation({ source: "offline-cbt", action: "answer-cache", attempt_id: attemptId });
 }
 
 function markCachedSubmitted(session, attemptId) {
@@ -80,6 +82,7 @@ function markCachedSubmitted(session, attemptId) {
     cached_at: new Date().toISOString(),
   };
   writeJsonStore(scopedStoreKey(CBT_CACHE_KEY, session), cache);
+  emitSchoolDomDataMutation({ source: "offline-cbt", action: "submitted-cache", attempt_id: attemptId });
 }
 
 function queueOfflineSubmission(session, attemptId, payload) {
@@ -87,6 +90,7 @@ function queueOfflineSubmission(session, attemptId, payload) {
   const next = queue.filter((item) => String(item.attempt_id) !== String(attemptId));
   next.push(payload);
   writeJsonStore(scopedStoreKey(CBT_SUBMISSION_QUEUE_KEY, session), next);
+  emitSchoolDomDataMutation({ source: "offline-cbt", action: "submission-queued", attempt_id: attemptId });
 }
 
 function makeMonitorLog(type, message, extra = {}) {
@@ -116,6 +120,7 @@ async function syncQueuedSubmissions(session) {
         body: JSON.stringify(item),
       });
       if (!response.ok) throw new Error("Sync failed");
+      emitSchoolDomDataMutation({ source: "offline-cbt", action: "submission-synced", attempt_id: item.attempt_id });
     } catch {
       remaining.push(item);
     }
@@ -257,6 +262,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
           }),
         });
         if (!response.ok) throw new Error("Could not save answer online");
+        emitSchoolDomDataMutation({ source: "cbt", action: "answer-saved", attempt_id: attemptId });
         if (offlineMode) setOfflineMode(false);
       } catch (error) {
         setOfflineMode(true);
@@ -291,6 +297,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
         if (!response.ok) {
           throw new Error(data.error || data.message || "Could not send the question report.");
         }
+        emitSchoolDomDataMutation({ source: "cbt", action: "question-flagged", attempt_id: attemptId });
         setFlagStatus((prev) => ({ ...prev, [questionId]: { busy: false, success: true } }));
       } catch (error) {
         setFlagStatus((prev) => ({
@@ -359,6 +366,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
 
       if (response.ok) {
         await response.json();
+        emitSchoolDomDataMutation({ source: "cbt", action: "exam-submitted", attempt_id: attemptId });
         setShowSubmitModal(false);
         setCompleted(true);
         return;

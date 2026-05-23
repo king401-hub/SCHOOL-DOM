@@ -131,6 +131,126 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
   );
 }
 
+const normalizeSmsPhone = (value) => String(value || "").replace(/\D/g, "");
+
+function GuardianSmsComposer({ recipients = [], smsConfigured = false, onSend }) {
+  const [selectedPhones, setSelectedPhones] = useState([]);
+  const [manualPhone, setManualPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const uniquePhones = [];
+    const seen = new Set();
+    recipients.forEach((item) => {
+      const phone = normalizeSmsPhone(item.phone || item.raw_phone);
+      if (phone && !seen.has(phone)) {
+        seen.add(phone);
+        uniquePhones.push(phone);
+      }
+    });
+    setSelectedPhones(uniquePhones);
+  }, [recipients]);
+
+  const contactByPhone = useMemo(() => {
+    const map = new Map();
+    recipients.forEach((item) => {
+      const phone = normalizeSmsPhone(item.phone || item.raw_phone);
+      if (phone && !map.has(phone)) {
+        map.set(phone, item);
+      }
+    });
+    return map;
+  }, [recipients]);
+
+  const addManualPhone = () => {
+    const phone = normalizeSmsPhone(manualPhone);
+    if (!phone) return;
+    setSelectedPhones((current) => (current.includes(phone) ? current : [...current, phone]));
+    setManualPhone("");
+  };
+
+  const removePhone = (phone) => {
+    setSelectedPhones((current) => current.filter((item) => item !== phone));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const body = message.trim();
+    if (!body) {
+      setError("Write an SMS message first.");
+      return;
+    }
+    if (!selectedPhones.length) {
+      setError("Add at least one guardian phone number.");
+      return;
+    }
+    setBusy(true);
+    setFeedback("");
+    setError("");
+    try {
+      const result = await onSend?.({
+        target: "guardian_sms",
+        body,
+        recipients: selectedPhones,
+      }, { refresh: true });
+      setFeedback(result?.message || `SMS sent to ${selectedPhones.length} guardian number(s).`);
+      setMessage("");
+    } catch (sendError) {
+      setError(sendError.message || "Could not send guardian SMS.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="app-panel">
+      <div className="panel-head">
+        <div>
+          <h3>Bulk SMS to Guardians</h3>
+          <small>{selectedPhones.length} selected from {recipients.length} guardian record(s)</small>
+        </div>
+        <CbtStatusPill tone={smsConfigured ? "success" : "warning"}>{smsConfigured ? "SMS configured" : "Needs SMS token"}</CbtStatusPill>
+      </div>
+      <form className="panel-form" onSubmit={handleSubmit}>
+        <label className="panel-field full">
+          Message
+          <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows="4" placeholder="Type the SMS parents should receive." />
+        </label>
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Add guardian number
+            <input value={manualPhone} onChange={(event) => setManualPhone(event.target.value)} placeholder="2349036425748" />
+          </label>
+          <div className="panel-field field-action">
+            <span>&nbsp;</span>
+            <button type="button" className="pill-button ghost" onClick={addManualPhone}>Add Number</button>
+          </div>
+        </div>
+        <div className="teacher-class-chip-list guardian-sms-chip-list">
+          {selectedPhones.slice(0, 80).map((phone) => {
+            const contact = contactByPhone.get(phone);
+            const label = contact ? `${contact.name || "Guardian"} - ${contact.student_name || contact.student_code || phone}` : phone;
+            return (
+              <button key={phone} type="button" onClick={() => removePhone(phone)} title="Remove recipient">
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {selectedPhones.length > 80 ? <p className="field-note">Showing first 80 selected numbers.</p> : null}
+        {error ? <p className="form-feedback error">{error}</p> : null}
+        {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+        <div className="panel-form-actions">
+          <button type="submit" disabled={busy || !onSend || !selectedPhones.length}>{busy ? "Sending..." : "Send Guardian SMS"}</button>
+        </div>
+      </form>
+    </article>
+  );
+}
+
 function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage }) {
   const metrics = data?.metrics || {};
   const announcements = data?.announcements || [];
@@ -6292,6 +6412,12 @@ function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessag
             onMarkRead={onMarkRead}
             onDelete={onDelete}
             onRefresh={onRetry}
+          />
+
+          <GuardianSmsComposer
+            recipients={data?.guardian_sms_recipients || []}
+            smsConfigured={Boolean(data?.sms_configured)}
+            onSend={onSendMessage}
           />
 
           <p className="panel-empty compact">Broadcast announcements are shown in the notifications popup.</p>

@@ -282,6 +282,12 @@ FLUTTERWAVE_BASE_URL = os.getenv('FLUTTERWAVE_BASE_URL', 'https://api.flutterwav
 FLUTTERWAVE_CALLBACK_URL = os.getenv('FLUTTERWAVE_CALLBACK_URL', '')
 FLUTTERWAVE_WEBHOOK_SECRET_HASH = os.getenv('FLUTTERWAVE_WEBHOOK_SECRET_HASH', '')
 
+# KudiSMS bulk SMS configuration. Schools may also set a Custom SMSConfiguration
+# in admin; that tenant-level configuration takes priority over these defaults.
+KUDISMS_TOKEN = os.getenv('KUDISMS_TOKEN', '')
+KUDISMS_SENDER_ID = os.getenv('KUDISMS_SENDER_ID', 'neo')
+KUDISMS_GATEWAY = os.getenv('KUDISMS_GATEWAY', '2')
+
 if not FLUTTERWAVE_SECRET_KEY:
     missing = [
         name for name, value in (

@@ -49,6 +49,7 @@ import {
   buildFormData,
   formatApiError,
   requestJson,
+  SCHOOL_DATA_MUTATED_EVENT,
   fetchDashboardSnapshot,
   postJson,
   copyToClipboard,
@@ -5059,6 +5060,26 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     loadScreen("/messages", true);
   }, [loadScreen]);
 
+  useEffect(() => {
+    let refreshTimer = null;
+    const handleDataMutation = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        const paths = new Set([...Object.keys(screenData), activePath, "/dashboard", "/messages"]);
+        Promise.all(
+          Array.from(paths)
+            .filter((path) => ADMIN_ENDPOINTS[path])
+            .map((path) => loadScreen(path, true))
+        ).catch(() => null);
+      }, 120);
+    };
+    window.addEventListener(SCHOOL_DATA_MUTATED_EVENT, handleDataMutation);
+    return () => {
+      window.clearTimeout(refreshTimer);
+      window.removeEventListener(SCHOOL_DATA_MUTATED_EVENT, handleDataMutation);
+    };
+  }, [activePath, loadScreen, screenData]);
+
   const addAdminNotification = useCallback(
     (payload) => {
       const nextItem = createAdminActivityNotification(payload, session?.user);
@@ -5238,7 +5259,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
         priority: "High",
         tone: "success",
       });
-      await Promise.all([loadScreen("/finance", true), loadScreen("/students", true), loadScreen("/dashboard", true)]);
+      await Promise.all([loadScreen("/finance", true), loadScreen("/expenses", true), loadScreen("/students", true), loadScreen("/dashboard", true)]);
       return result;
     },
     [addAdminNotification, loadScreen, session]
@@ -5247,7 +5268,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const handleAdminClassFeeDelete = useCallback(
     async (feeId) => {
       const result = await requestJson(session, "DELETE", `/api/finance/admin/class-fees/${feeId}/`);
-      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      await Promise.all([loadScreen("/finance", true), loadScreen("/expenses", true), loadScreen("/dashboard", true)]);
       return result;
     },
     [loadScreen, session]
@@ -5961,11 +5982,14 @@ const unreadNotificationsCount =
     content = (
       <AdminExpenseTrackerScreen
         data={data}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         loading={loading}
         error={error}
         onRetry={handleRetry}
         onCreate={handleAdminExpenseCreate}
         onDelete={handleAdminExpenseDelete}
+        onClassFeeSave={handleAdminClassFeeSave}
+        onClassFeeDelete={handleAdminClassFeeDelete}
       />
     );
   } else if (activePath === "/hr-self-service") {
@@ -6363,6 +6387,23 @@ const [error, setError] = useState("");
     }, pollIntervalMs);
     return () => clearInterval(handle);
   }, [loadDashboard, pollIntervalMs]);
+
+  useEffect(() => {
+    let refreshTimer = null;
+    const handleDataMutation = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        if (document.visibilityState === "visible") {
+          loadDashboard();
+        }
+      }, 120);
+    };
+    window.addEventListener(SCHOOL_DATA_MUTATED_EVENT, handleDataMutation);
+    return () => {
+      window.clearTimeout(refreshTimer);
+      window.removeEventListener(SCHOOL_DATA_MUTATED_EVENT, handleDataMutation);
+    };
+  }, [loadDashboard]);
 
   const handlePromptResponse = useCallback(
     async (promptId, responseText) => {

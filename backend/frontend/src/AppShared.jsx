@@ -253,6 +253,22 @@ export function formatApiError(data, fallback) {
   return fallback;
 }
 
+export const SCHOOL_DATA_MUTATED_EVENT = "schooldom:data-mutated";
+
+export function emitSchoolDomDataMutation(detail = {}) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent(SCHOOL_DATA_MUTATED_EVENT, {
+      detail: {
+        changed_at: new Date().toISOString(),
+        ...detail,
+      },
+    })
+  );
+}
+
 export async function requestJson(session, method, endpoint, payload = null, options = {}) {
   const { retryOnAuthFailure = true } = options;
   const headers = {};
@@ -294,6 +310,9 @@ body,
   
   const data = await response.json().catch(() => null);
   if (response?.ok) {
+if (!["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase())) {
+      emitSchoolDomDataMutation({ endpoint, method });
+    }
 return     data ?? {};
   }
 
@@ -419,6 +438,9 @@ export function resolveSchoolBrand(...sources) {
     name,
     code: school.school_code || school.schoolCode || "",
     logo: school.logo || school.logo_url || school.logoUrl || school.school_logo || school.schoolLogo || school.logo_path || "",
+    address: school.address || school.school_address || school.schoolAddress || "",
+    phone: school.phone || school.phone_number || school.phoneNumber || school.school_phone || school.schoolPhone || "",
+    email: school.email || school.school_email || school.schoolEmail || "",
     initials: name
       .split(/\s+/)
       .filter(Boolean)
@@ -641,6 +663,7 @@ export function writeOfflineDrafts(payload) {
     return;
   }
   window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(payload));
+  emitSchoolDomDataMutation({ source: "offline-exam-draft", action: "drafts-updated" });
 }
 
 export function readOfflineExamCreateQueue() {
@@ -656,6 +679,7 @@ export function readOfflineExamCreateQueue() {
 export function writeOfflineExamCreateQueue(payload) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(OFFLINE_EXAM_CREATE_QUEUE_KEY, JSON.stringify(payload));
+  emitSchoolDomDataMutation({ source: "offline-exam-create", action: "queue-updated" });
 }
 
 export function queueOfflineExamCreate(payload) {
@@ -1341,8 +1365,19 @@ export function GlobalNotificationBell({ session, onNavigate }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [readIds, setReadIds] = useState(() => new Set());
   const [busyId, setBusyId] = useState("");
+  const [mobileBellEnabled, setMobileBellEnabled] = useState(false);
+  const [mobileBellPosition, setMobileBellPosition] = useState(() => {
+    try {
+      if (typeof window === "undefined") return null;
+      const saved = window.localStorage.getItem("schooldom.mobileNotificationBellPosition");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const latestUnreadIdRef = useRef("");
   const initializedRef = useRef(false);
+  const dragRef = useRef({ active: false, moved: false, offsetX: 0, offsetY: 0 });
 
   const loadInbox = useCallback(async () => {
     try {
@@ -1402,6 +1437,22 @@ export function GlobalNotificationBell({ session, onNavigate }) {
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
+  useEffect(() => {
+    const updateMobileState = () => setMobileBellEnabled(isMobileViewport());
+    updateMobileState();
+    window.addEventListener("resize", updateMobileState);
+    return () => window.removeEventListener("resize", updateMobileState);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileBellPosition) return;
+    try {
+      window.localStorage.setItem("schooldom.mobileNotificationBellPosition", JSON.stringify(mobileBellPosition));
+    } catch {
+      // Ignore storage failures; dragging should still work for the current page.
+    }
+  }, [mobileBellPosition]);
+
   const notificationItems = useMemo(() => {
     const items = [
       ...(snapshot.notifications || []).map((item) => mapGlobalNotificationItem(item, "notification")),
@@ -1424,6 +1475,54 @@ export function GlobalNotificationBell({ session, onNavigate }) {
   }, [notificationItems, searchTerm]);
 
   const unreadCount = notificationItems.filter((item) => !item.isRead).length;
+
+  const isMobileViewport = () => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+
+  const clampMobileBellPosition = useCallback((x, y) => {
+    const buttonSize = 44;
+    const padding = 8;
+    const maxX = Math.max(padding, window.innerWidth - buttonSize - padding);
+    const maxY = Math.max(padding, window.innerHeight - buttonSize - padding);
+    return {
+      x: Math.min(Math.max(padding, x), maxX),
+      y: Math.min(Math.max(padding, y), maxY),
+    };
+  }, []);
+
+  const beginMobileBellDrag = (event) => {
+    if (!isMobileViewport()) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      active: true,
+      moved: false,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveMobileBell = (event) => {
+    if (!dragRef.current.active || !isMobileViewport()) return;
+    const next = clampMobileBellPosition(event.clientX - dragRef.current.offsetX, event.clientY - dragRef.current.offsetY);
+    const previous = mobileBellPosition || {};
+    if (Math.abs((previous.x ?? next.x) - next.x) > 2 || Math.abs((previous.y ?? next.y) - next.y) > 2) {
+      dragRef.current.moved = true;
+    }
+    setMobileBellPosition(next);
+  };
+
+  const endMobileBellDrag = (event) => {
+    if (!dragRef.current.active) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    window.setTimeout(() => {
+      dragRef.current = { active: false, moved: false, offsetX: 0, offsetY: 0 };
+    }, 0);
+  };
+
+  const handleBellClick = () => {
+    if (dragRef.current.moved) return;
+    setOpen(true);
+  };
 
   const markRead = async (item) => {
     setBusyId(item.id);
@@ -1474,7 +1573,10 @@ export function GlobalNotificationBell({ session, onNavigate }) {
   };
 
   return (
-    <div className="global-notification-shell">
+    <div
+      className={`global-notification-shell ${mobileBellEnabled && mobileBellPosition ? "has-mobile-position" : ""}`}
+      style={mobileBellEnabled && mobileBellPosition ? { top: `${mobileBellPosition.y}px`, left: `${mobileBellPosition.x}px`, right: "auto" } : undefined}
+    >
       {toast ? (
         <button type="button" className="notification-toast" onClick={() => setOpen(true)}>
           <strong>New message</strong>
@@ -1484,7 +1586,11 @@ export function GlobalNotificationBell({ session, onNavigate }) {
       <button
         type="button"
         className={`notification-button global-notification-button ${unreadCount > 0 ? "has-unread" : ""}`}
-        onClick={() => setOpen(true)}
+        onClick={handleBellClick}
+        onPointerDown={beginMobileBellDrag}
+        onPointerMove={moveMobileBell}
+        onPointerUp={endMobileBellDrag}
+        onPointerCancel={endMobileBellDrag}
         title={latestUnread ? `${latestUnread.from || "New notification"}${latestUnread.subject ? `: ${latestUnread.subject}` : ""}` : "Notifications"}
         aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
       >

@@ -373,7 +373,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("source", help="Folder containing paired .docx files, or one .docx with inline Answer: lines.")
-        parser.add_argument("--tenant-slug", required=True, help="School tenant slug to attach imported folders to.")
+        parser.add_argument("--tenant-slug", default="", help="School tenant slug to attach imported folders to.")
+        parser.add_argument("--global", dest="is_global", action="store_true", help="Import into a global pool available to every tenant.")
         parser.add_argument("--subject", default="", help="Subject name or code. If omitted, importer tries the filename.")
         parser.add_argument("--class", dest="class_name", default="", help="Class/department name or section.")
         parser.add_argument("--replace", action="store_true", help="Replace existing imported questions in matched folders.")
@@ -384,19 +385,24 @@ class Command(BaseCommand):
         if not source.exists():
             raise CommandError(f"Source not found: {source}")
 
-        tenant = Tenant.objects.filter(slug__iexact=options["tenant_slug"]).first()
-        if not tenant:
+        if options["is_global"]:
+            tenant = None
+        else:
+            if not options["tenant_slug"]:
+                raise CommandError("--tenant-slug is required unless --global is used.")
+            tenant = Tenant.objects.filter(slug__iexact=options["tenant_slug"]).first()
+        if not tenant and not options["is_global"]:
             raise CommandError(f"Tenant with slug '{options['tenant_slug']}' was not found.")
 
         total_imported = 0
-        class_group = _find_class(tenant, options["class_name"])
+        class_group = None if options["is_global"] else _find_class(tenant, options["class_name"])
         if options["class_name"] and not class_group:
-            raise CommandError(f"Class/department '{options['class_name']}' was not found for this tenant.")
+            raise CommandError("Class/department imports are tenant-specific. Remove --global or omit --class.")
 
         if source.is_file():
             if source.suffix.lower() != ".docx" or source.name.startswith("~$"):
                 raise CommandError(f"Source file is not a .docx file: {source}")
-            subject = _find_subject(tenant, options["subject"]) or _find_subject(tenant, _pair_key(source))
+            subject = None if options["is_global"] else (_find_subject(tenant, options["subject"]) or _find_subject(tenant, _pair_key(source)))
             questions = _parse_inline_answer_questions(_docx_paragraphs(source))
             rows = []
             for question in questions:
@@ -419,7 +425,11 @@ class Command(BaseCommand):
                         name=folder_name,
                         subject=subject,
                         class_group=class_group,
-                        defaults={"description": f"Imported from {source.name}."},
+                        defaults={
+                            "description": f"Imported from {source.name}.",
+                            "subject_code": str(options["subject"] or _pair_key(source)).strip().upper() if options["is_global"] else "",
+                            "subject_name": label_subject if options["is_global"] else "",
+                        },
                     )
                     if options["replace"]:
                         folder.folder_questions.all().delete()
@@ -471,7 +481,7 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             for key, pair in ready_pairs.items():
-                subject = _find_subject(tenant, options["subject"]) or _find_subject(tenant, key)
+                subject = None if options["is_global"] else (_find_subject(tenant, options["subject"]) or _find_subject(tenant, key))
                 questions = _parse_questions(_docx_paragraphs(pair["question"]))
                 answers = _parse_answers(_docx_paragraphs(pair["answer"]))
                 rows = []
@@ -497,7 +507,11 @@ class Command(BaseCommand):
                     name=folder_name,
                     subject=subject,
                     class_group=class_group,
-                    defaults={"description": f"Imported from {pair['question'].name} and {pair['answer'].name}."},
+                    defaults={
+                        "description": f"Imported from {pair['question'].name} and {pair['answer'].name}.",
+                        "subject_code": str(options["subject"] or key).strip().upper() if options["is_global"] else "",
+                        "subject_name": label_subject if options["is_global"] else "",
+                    },
                 )
                 if options["replace"]:
                     folder.folder_questions.all().delete()
