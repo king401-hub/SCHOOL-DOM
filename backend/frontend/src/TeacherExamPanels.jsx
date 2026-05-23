@@ -647,6 +647,8 @@ export function TeacherExamBuilder({
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [publishedPin, setPublishedPin] = useState(null);
+  const [copyFeedback, setCopyFeedback] = useState("");
   const isEditing = Boolean(initialExam?.id);
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
@@ -872,11 +874,37 @@ export function TeacherExamBuilder({
         requestPayload = formData;
       }
       const result = isEditing ? await onUpdateExam(initialExam.id, requestPayload) : await onCreateExam(requestPayload);
-      setFeedback(result?.message || (canPublishExam ? "Exam saved." : "Exam sent to admin for publishing."));
+      const savedExam = result?.exam || {};
+      if (canPublishExam && form.publishNow && savedExam.id) {
+        const pinResult = await requestJson(session, "POST", "/api/app/exams/pins/", {
+          exam_id: savedExam.id,
+          usage_policy: "reusable",
+          expires_at: savedExam.end_date || payload.end_date,
+        });
+        setPublishedPin({
+          pin: pinResult.plain_pin || "",
+          examTitle: savedExam.title || payload.title,
+          expiresAt: savedExam.end_date || payload.end_date,
+        });
+        setCopyFeedback("");
+        setFeedback("Exam published. Share the CBT PIN with eligible students.");
+      } else {
+        setFeedback(result?.message || (canPublishExam ? "Exam saved." : "Exam sent to admin for publishing."));
+      }
     } catch (saveError) {
       setError(saveError.message || "Could not save exam.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const copyPublishedPin = async () => {
+    if (!publishedPin?.pin) return;
+    try {
+      await navigator.clipboard.writeText(publishedPin.pin);
+      setCopyFeedback("Copied.");
+    } catch {
+      setCopyFeedback("Select and copy the PIN manually.");
     }
   };
 
@@ -997,6 +1025,28 @@ export function TeacherExamBuilder({
 
   return (
     <section className={`exam-builder-shell ${isEditing ? "exam-builder-editing" : ""}`}>
+      {publishedPin ? (
+        <div className="cbt-info-modal" role="dialog" aria-modal="true" aria-labelledby="published-pin-title">
+          <div className="cbt-info-card cbt-pin-card">
+            <p className="cbt-info-kicker">Exam published</p>
+            <h3 id="published-pin-title">CBT exam PIN</h3>
+            <p>
+              Share this PIN with students for {publishedPin.examTitle || "this exam"}. It is shown now so it can be copied before you close this popup.
+            </p>
+            <div className="cbt-pin-display" aria-label="Generated CBT exam PIN">
+              {publishedPin.pin}
+            </div>
+            {publishedPin.expiresAt ? (
+              <p className="cbt-pin-meta">Expires when the exam window closes: {formatDate(publishedPin.expiresAt)}</p>
+            ) : null}
+            {copyFeedback ? <p className="cbt-pin-copy-feedback">{copyFeedback}</p> : null}
+            <div className="cbt-flag-actions">
+              <button type="button" onClick={copyPublishedPin}>Copy PIN</button>
+              <button type="button" onClick={() => setPublishedPin(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <aside className="exam-builder-sidebar">
         <div className="exam-builder-brand">
           <div className="exam-builder-mark">E</div>
