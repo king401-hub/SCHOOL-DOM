@@ -15,6 +15,7 @@ urlpatterns = [
     path("admin/activation-credits/purchase/", views.admin_activation_credit_purchase, name="admin_activation_credit_purchase"),
     path("admin/activation-credits/verify/", views.admin_activation_credit_verify, name="admin_activation_credit_verify"),
     path("admin/activation-credits/assign/", views.admin_activation_credit_assign, name="admin_activation_credit_assign"),
+    path("admin/activation-credits/price/", views.admin_activation_credit_price, name="admin_activation_credit_price"),
     path("admin/activation-credits/settings/", views.admin_activation_credit_settings, name="admin_activation_credit_settings"),
     path("admin/activation-credits/run-auto/", views.admin_activation_credit_run_auto, name="admin_activation_credit_run_auto"),
     path("admin/bank-payments/ingest/", views.admin_bank_payment_ingest, name="admin_bank_payment_ingest"),

@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from attendance.models import AttendanceQRCode
 from users.models import User, generate_short_teacher_id, random_code_digits, school_code_letters
 from users.models import TeacherProfile
-from finance.services import generate_reference, get_or_create_admin_wallet, initiate_admin_withdrawal
+from finance.services import generate_reference, get_or_create_admin_wallet, initiate_admin_withdrawal, record_finance_activity
 from .models import (
     LeaveRequest,
     PayrollRecord,
@@ -388,7 +388,7 @@ def hr_snapshot(request):
                     "created_at": item.created_at,
                     "actor": item.actor.get_full_name() if item.actor else "",
                 }
-                for item in StaffActivity.objects.filter(tenant=tenant).select_related("staff", "actor")[:40]
+                for item in StaffActivity.objects.filter(tenant=tenant).select_related("staff", "actor").order_by("-created_at")[:40]
             ],
         }
     )
@@ -978,9 +978,27 @@ def create_payroll_record(request):
     staff.save(update_fields=["salary_balance", "updated_at"])
     if pay_with_flutterwave:
         _activity(staff.tenant, staff, request.user, "salary_paid_flutterwave", f"Salary payment sent for {payroll.period_label}: {amount_paid}")
+        record_finance_activity(
+            staff.tenant,
+            request.user,
+            "salary_payment_sent",
+            f"Salary payment sent to {staff.full_name} for {payroll.period_label}.",
+            amount=amount_paid,
+            reference=transfer_reference,
+            metadata={"staff_id": str(staff.id), "period": payroll.period_label, "status": payroll.status},
+        )
         message = "Salary payment sent to staff via Flutterwave."
     else:
         _activity(staff.tenant, staff, request.user, "payroll_processed", f"Payroll {'created' if created else 'updated'} for {payroll.period_label}")
+        record_finance_activity(
+            staff.tenant,
+            request.user,
+            "payroll_processed",
+            f"Payroll {'created' if created else 'updated'} for {staff.full_name} ({payroll.period_label}).",
+            amount=payroll.net_salary,
+            reference=str(payroll.id),
+            metadata={"staff_id": str(staff.id), "period": payroll.period_label, "status": payroll.status},
+        )
         message = "Payroll calculated."
     return Response(
         {

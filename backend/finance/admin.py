@@ -6,6 +6,7 @@ from finance.models import (
     AdminWallet,
     ClassFee,
     ExpenseRecord,
+    FinanceLedgerLog,
     SchoolFee,
     StudentActivationCredit,
     Transaction,
@@ -59,6 +60,23 @@ class ExpenseRecordAdmin(admin.ModelAdmin):
 @admin.register(AdminWallet)
 class AdminWalletAdmin(admin.ModelAdmin):
     list_display = ("tenant", "balance", "currency", "updated_at")
+
+
+@admin.register(FinanceLedgerLog)
+class FinanceLedgerLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "tenant", "action", "amount", "currency", "reference", "actor")
+    list_filter = ("action", "currency", "created_at")
+    search_fields = ("action", "description", "reference", "actor__email")
+    readonly_fields = ("tenant", "actor", "action", "description", "amount", "currency", "reference", "metadata", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(ActivationCreditPool)

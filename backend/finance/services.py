@@ -6,6 +6,7 @@ import uuid
 
 import requests
 from django.conf import settings
+from django.db import OperationalError, ProgrammingError
 from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
@@ -17,6 +18,7 @@ from finance.models import (
     BankPayment,
     ClassFee,
     DocumentGenerationCreditTransaction,
+    FinanceLedgerLog,
     SchoolFee,
     StudentActivationCredit,
     StudentPaymentReference,
@@ -108,14 +110,32 @@ def get_or_create_admin_wallet(tenant=None) -> AdminWallet:
     return wallet
 
 
+def record_finance_activity(tenant, actor, action, description, amount=Decimal("0.00"), currency="NGN", reference="", metadata=None):
+    """Append an immutable finance audit record."""
+    try:
+        amount = Decimal(str(amount or "0.00")).quantize(Decimal("0.01"))
+    except Exception:
+        amount = Decimal("0.00")
+    try:
+        return FinanceLedgerLog.objects.create(
+            tenant=tenant,
+            actor=actor,
+            action=str(action or "finance_activity")[:80],
+            description=str(description or "Financial activity recorded.")[:255],
+            amount=amount,
+            currency=str(currency or "NGN")[:5],
+            reference=str(reference or "")[:100],
+            metadata=metadata or {},
+        )
+    except (OperationalError, ProgrammingError):
+        return None
+
+
 def get_or_create_activation_credit_pool(tenant=None) -> ActivationCreditPool:
     pool, _ = ActivationCreditPool.objects.get_or_create(
         tenant=tenant,
         defaults={"price_per_credit": ACTIVATION_CREDIT_PRICE},
     )
-    if pool.price_per_credit != ACTIVATION_CREDIT_PRICE:
-        pool.price_per_credit = ACTIVATION_CREDIT_PRICE
-        pool.save(update_fields=["price_per_credit", "updated_at"])
     return pool
 
 
@@ -129,14 +149,13 @@ def grant_school_registration_credits(tenant, credits=50, actor=None):
     with transaction.atomic():
         locked_pool = ActivationCreditPool.objects.select_for_update().get(pk=pool.pk)
         locked_pool.balance += credits
-        locked_pool.price_per_credit = ACTIVATION_CREDIT_PRICE
-        locked_pool.save(update_fields=["balance", "price_per_credit", "updated_at"])
+        locked_pool.save(update_fields=["balance", "updated_at"])
         ActivationCreditTransaction.objects.create(
             pool=locked_pool,
             tx_type=ActivationCreditTransaction.ADJUSTMENT,
             status=ActivationCreditTransaction.STATUS_SUCCESS,
             credits=credits,
-            price_per_credit=ACTIVATION_CREDIT_PRICE,
+            price_per_credit=locked_pool.price_per_credit,
             amount=Decimal("0.00"),
             reference=generate_reference("GFT"),
             narration="New school registration bonus",
@@ -167,17 +186,17 @@ def add_activation_credits_to_pool(tenant, credits, actor=None):
     pool = get_or_create_activation_credit_pool(tenant)
     bonus_credits = activation_credit_bonus_for_purchase(credits)
     total_credits = credits + bonus_credits
-    amount = ACTIVATION_CREDIT_PRICE * credits
+    amount = pool.price_per_credit * credits
     with transaction.atomic():
         locked = ActivationCreditPool.objects.select_for_update().get(pk=pool.pk)
         locked.balance += total_credits
-        locked.price_per_credit = ACTIVATION_CREDIT_PRICE
-        locked.save(update_fields=["balance", "price_per_credit", "updated_at"])
+        amount = locked.price_per_credit * credits
+        locked.save(update_fields=["balance", "updated_at"])
         ActivationCreditTransaction.objects.create(
             pool=locked,
             tx_type=ActivationCreditTransaction.PURCHASE,
             credits=credits,
-            price_per_credit=ACTIVATION_CREDIT_PRICE,
+            price_per_credit=locked.price_per_credit,
             amount=amount,
             reference=generate_reference("CRP"),
             narration="Activation token purchase",
@@ -258,14 +277,14 @@ def initialize_activation_credit_purchase(tenant, credits, actor):
     pool = get_or_create_activation_credit_pool(tenant)
     bonus_credits = activation_credit_bonus_for_purchase(credits)
     total_credits = credits + bonus_credits
-    amount = ACTIVATION_CREDIT_PRICE * credits
+    amount = pool.price_per_credit * credits
     reference = generate_reference("CRP")
     ActivationCreditTransaction.objects.create(
         pool=pool,
         tx_type=ActivationCreditTransaction.PURCHASE,
         status=ActivationCreditTransaction.STATUS_PENDING,
         credits=credits,
-        price_per_credit=ACTIVATION_CREDIT_PRICE,
+        price_per_credit=pool.price_per_credit,
         amount=amount,
         reference=reference,
         narration="Activation token purchase via Flutterwave",
@@ -474,10 +493,100 @@ def _apply_flutterwave_payment_to_admin_and_fees(tx: Transaction, actor=None):
                 created_by=actor,
             )
 
-        if remaining_amount != tx.amount:
+        if tx.amount > 0:
             admin_locked.save(update_fields=["balance", "updated_at"])
 
     return admin_wallet
+
+
+def _admin_wallet_bank_payload(admin_wallet: AdminWallet) -> dict:
+    return {
+        "account_number": (admin_wallet.bank_account_number or "").strip(),
+        "bank_code": (admin_wallet.bank_code or "").strip(),
+        "account_name": (admin_wallet.bank_account_name or "").strip(),
+    }
+
+
+def _has_complete_admin_bank_account(admin_wallet: AdminWallet) -> bool:
+    bank_payload = _admin_wallet_bank_payload(admin_wallet)
+    return all(bank_payload.values())
+
+
+def settle_flutterwave_school_fee_payment(tx: Transaction, actor=None):
+    """Transfer a verified Flutterwave school-fee payment to the school's saved bank account."""
+    if not getattr(settings, "FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES", True):
+        return None
+    if tx.tx_type != Transaction.FUNDING or tx.status != Transaction.STATUS_SUCCESS:
+        return None
+
+    metadata = tx.metadata or {}
+    settlement = metadata.get("admin_bank_settlement") or {}
+    if settlement.get("status") == Transaction.STATUS_SUCCESS:
+        return settlement
+
+    wallet = tx.wallet
+    if not wallet or not wallet.user:
+        raise ValueError("Invalid student wallet transaction.")
+
+    admin_wallet = get_or_create_admin_wallet(wallet.user.tenant)
+    if not _has_complete_admin_bank_account(admin_wallet):
+        settlement = {
+            "status": Transaction.STATUS_FAILED,
+            "reason": "admin_bank_account_not_configured",
+            "message": "School receiving account is not fully configured.",
+        }
+        tx.metadata = {**metadata, "admin_bank_settlement": settlement}
+        tx.save(update_fields=["metadata", "updated_at"])
+        return settlement
+
+    reference = generate_reference("SET")
+    bank_payload = _admin_wallet_bank_payload(admin_wallet)
+    tx.metadata = {
+        **metadata,
+        "admin_bank_settlement": {
+            "status": Transaction.STATUS_PENDING,
+            "reference": reference,
+            "amount": str(_as_decimal(tx.amount)),
+            "bank": bank_payload,
+        },
+    }
+    tx.save(update_fields=["metadata", "updated_at"])
+
+    try:
+        initiate_admin_withdrawal(
+            admin_wallet,
+            tx.amount,
+            reference,
+            bank_payload=bank_payload,
+            actor=actor or wallet.user,
+        )
+    except Exception as exc:
+        tx.refresh_from_db()
+        tx.metadata = {
+            **(tx.metadata or {}),
+            "admin_bank_settlement": {
+                "status": Transaction.STATUS_FAILED,
+                "reference": reference,
+                "amount": str(_as_decimal(tx.amount)),
+                "bank": bank_payload,
+                "error": str(exc),
+            },
+        }
+        tx.save(update_fields=["metadata", "updated_at"])
+        return tx.metadata["admin_bank_settlement"]
+
+    tx.refresh_from_db()
+    settlement = {
+        "status": Transaction.STATUS_SUCCESS,
+        "reference": reference,
+        "amount": str(_as_decimal(tx.amount)),
+        "bank": bank_payload,
+    }
+    tx.metadata = {**(tx.metadata or {}), "admin_bank_settlement": settlement}
+    tx.save(update_fields=["metadata", "updated_at"])
+    admin_wallet.last_settled_at = timezone.now()
+    admin_wallet.save(update_fields=["last_settled_at", "updated_at"])
+    return settlement
 
 
 def complete_wallet_funding(reference: str, actor=None, verification: Optional[dict] = None):
@@ -486,6 +595,9 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
     if tx.tx_type != Transaction.FUNDING:
         raise ValueError("Invalid school fee payment reference.")
     if tx.status == Transaction.STATUS_SUCCESS:
+        settlement = (tx.metadata or {}).get("admin_bank_settlement") or {}
+        if settlement.get("status") in {Transaction.STATUS_PENDING, Transaction.STATUS_FAILED}:
+            settle_flutterwave_school_fee_payment(tx, actor=actor or tx.wallet.user)
         return tx.wallet
 
     verification = verification or verify_flutterwave_transaction(reference)
@@ -511,6 +623,7 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
 
     tx.refresh_from_db()
     _apply_flutterwave_payment_to_admin_and_fees(tx, actor=actor or tx.wallet.user)
+    settle_flutterwave_school_fee_payment(tx, actor=actor or tx.wallet.user)
     if tx.wallet:
         tx.wallet.refresh_from_db()
     return tx.wallet
@@ -561,6 +674,8 @@ def eligible_students_for_activation_credits(tenant, scope="all", include_exclud
     for student in students:
         credit = get_or_create_student_activation_credit(student)
         if credit.is_excluded_from_auto_deductions and not include_excluded:
+            continue
+        if credit.has_login_credit:
             continue
         if scope == "paid_50" and _student_paid_ratio(student) < Decimal("0.50"):
             continue
@@ -637,8 +752,8 @@ def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None,
                 student_credit=credit,
                 tx_type=tx_type,
                 credits=-months,
-                price_per_credit=ACTIVATION_CREDIT_PRICE,
-                amount=ACTIVATION_CREDIT_PRICE * months,
+                price_per_credit=locked_pool.price_per_credit,
+                amount=locked_pool.price_per_credit * months,
                 reference=generate_reference("CRA"),
                 narration="Monthly student account activation",
                 metadata={"scope": scope, "months": months, "student_id": str(student.id)},
@@ -800,7 +915,45 @@ def sync_class_fee_for_student(student_profile, class_fee, actor=None):
     return fee
 
 
-def sync_class_fee_assignments(class_fee, actor=None):
+def notify_students_of_class_fee(class_fee, fees):
+    """Notify students that a class bill is available on their fees page."""
+    if not class_fee or not fees:
+        return 0
+
+    from notifications.models import Notification
+
+    now = timezone.now()
+    notifications = []
+    seen_users = set()
+    for fee in fees:
+        student_user = getattr(getattr(fee, "student", None), "user", None)
+        if not student_user or not getattr(student_user, "tenant_id", None) or student_user.id in seen_users:
+            continue
+        seen_users.add(student_user.id)
+        notifications.append(
+            Notification(
+                tenant=student_user.tenant,
+                user=student_user,
+                title="New school bill",
+                message=f"{class_fee.title} has been added to your school fees.",
+                notification_type="info",
+                priority=3,
+                channel="in_app",
+                event_type="fee_due",
+                reference_id=fee.id,
+                reference_model="finance.SchoolFee",
+                action_text="Open Fees",
+                deep_link="/fees",
+                is_delivered=True,
+                delivered_at=now,
+            )
+        )
+    if notifications:
+        Notification.objects.bulk_create(notifications)
+    return len(notifications)
+
+
+def sync_class_fee_assignments(class_fee, actor=None, notify_students=False):
     """Ensure every student currently in a class has the active class fee."""
     if not class_fee or not class_fee.is_active:
         return 0
@@ -813,9 +966,14 @@ def sync_class_fee_assignments(class_fee, actor=None):
     if not class_fee.created_by_id:
         students = StudentProfile.objects.select_related("user").filter(current_class=class_fee.school_class)
     count = 0
+    synced_fees = []
     for student in students:
-        sync_class_fee_for_student(student, class_fee, actor=actor)
-        count += 1
+        fee = sync_class_fee_for_student(student, class_fee, actor=actor)
+        if fee:
+            synced_fees.append(fee)
+            count += 1
+    if notify_students:
+        notify_students_of_class_fee(class_fee, synced_fees)
     return count
 
 

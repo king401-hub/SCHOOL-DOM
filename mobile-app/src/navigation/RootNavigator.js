@@ -10,6 +10,7 @@ import { MessagesScreen } from "../screens/MessagesScreen";
 import { AttendanceScreen } from "../screens/AttendanceScreen";
 import { ResultsScreen } from "../screens/ResultsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import { ExpensesScreen } from "../screens/ExpensesScreen";
 import { colors } from "../theme/tokens";
 
 const Stack = createNativeStackNavigator();
@@ -23,7 +24,12 @@ function TabIcon({ label, focused }) {
   );
 }
 
+const FINANCE_ROLES = new Set(["school_admin", "principal", "super_admin", "accountant"]);
+
 function AppTabs() {
+  const { session } = useAuth();
+  const showExpenses = FINANCE_ROLES.has(session?.user?.role);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -36,6 +42,7 @@ function AppTabs() {
       })}
     >
       <Tab.Screen name="Home" component={DashboardScreen} />
+      {showExpenses ? <Tab.Screen name="Expenses" component={ExpensesScreen} /> : null}
       <Tab.Screen name="Exams" component={ExamsScreen} />
       <Tab.Screen name="Messages" component={MessagesScreen} />
       <Tab.Screen name="Attendance" component={AttendanceScreen} />

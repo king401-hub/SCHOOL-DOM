@@ -1148,38 +1148,29 @@ function StudentDashboard({
 
 function StudentFeesPage({
   session,
-  onFund,
-  onVerify,
   onNavigate,
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [walletData, setWalletData] = useState(null);
+  const [financeData, setFinanceData] = useState({});
   const [paymentInstructions, setPaymentInstructions] = useState({});
   const [bankPayments, setBankPayments] = useState([]);
   const [fees, setFees] = useState([]);
-  const [fundAmount, setFundAmount] = useState("");
-  const [pendingReference, setPendingReference] = useState("");
-  const [authUrl, setAuthUrl] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [verifyFeedback, setVerifyFeedback] = useState("");
-  const [verifyError, setVerifyError] = useState("");
   const [navOpen, setNavOpen] = useState(false);
-  const school = resolveSchoolBrand(walletData?.school, session?.school, session);
+  const school = resolveSchoolBrand(financeData?.school, session?.school, session);
 
   const loadFinance = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const result = await requestJson(session, "GET", "/api/finance/wallet/");
-      setWalletData({ ...(result.wallet || {}), school: result.school || {} });
+      setFinanceData({ school: result.school || {} });
       setPaymentInstructions(result.payment_instructions || {});
       setBankPayments(result.bank_payments || []);
       setFees(result.fees || []);
-      setVerifyFeedback("");
-      setAuthUrl("");
     } catch (loadError) {
-      setError(loadError.message || "Could not load wallet.");
+      setError(loadError.message || "Could not load school fees.");
     } finally {
       setLoading(false);
     }
@@ -1189,62 +1180,14 @@ function StudentFeesPage({
     loadFinance();
   }, [loadFinance]);
 
-  const handleFund = async (event) => {
-    event.preventDefault();
-    setFeedback("");
-    setVerifyError("");
-    const numericAmount = Number(fundAmount);
-    if (!numericAmount || numericAmount <= 0) {
-      setFeedback("Enter an amount above 0.");
-      return;
-    }
-    try {
-      const result = await onFund(numericAmount);
-      const ref = result?.reference || "";
-      const url = result?.authorization_url || result?.link || "";
-      setPendingReference(ref);
-      setAuthUrl(url);
-      setFeedback(url ? "Payment initialized. Complete Flutterwave checkout; your wallet will update automatically." : "Payment initialized. Waiting for payment confirmation.");
-      if (url) {
-        window.open(url, "_blank", "noopener");
-      }
-    } catch (fundError) {
-      setFeedback(fundError.message || "Could not start payment.");
-    }
-  };
-
-  useEffect(() => {
-    if (!pendingReference) return undefined;
-    let cancelled = false;
-    const confirmPayment = async () => {
-      try {
-        await onVerify(pendingReference);
-        if (cancelled) return;
-        setVerifyFeedback("Payment confirmed and wallet updated.");
-        setVerifyError("");
-        setPendingReference("");
-        setFundAmount("");
-        await loadFinance();
-      } catch {
-        if (!cancelled) {
-          setVerifyFeedback("");
-        }
-      }
-    };
-    const intervalId = window.setInterval(confirmPayment, 5000);
-    confirmPayment();
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [loadFinance, onVerify, pendingReference]);
-
-  const walletBalance = walletData ? `${NAIRA_SYMBOL}${Number(walletData.balance || 0).toLocaleString()}` : "-";
-  const feeCurrency = NAIRA_SYMBOL;
   const expectedFees = fees.reduce((sum, fee) => sum + Number(fee.amount || 0), 0);
   const paidFees = fees.reduce((sum, fee) => sum + Number(fee.amount_paid || 0), 0);
   const remainingFees = fees.reduce((sum, fee) => sum + Number(fee.remaining_balance ?? Math.max(Number(fee.amount || 0) - Number(fee.amount_paid || 0), 0)), 0);
-  const formatFeeAmount = (value) => `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString()}`;
+  const formatFeeAmount = (value) =>
+    `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   const copyText = async (value) => {
     if (!value) return;
     const copied = await copyToClipboard(value);
@@ -1296,14 +1239,14 @@ function StudentFeesPage({
                 <span />
               </span>
             </button>
-            <p className="topbar-kicker">Student Wallet</p>
+            <p className="topbar-kicker">Student Payments</p>
             <h1>School Fees</h1>
-            <small>Fund wallet with Flutterwave; fees auto-deduct when due.</small>
+            <small>Use your bank transfer reference and track confirmed school-fee payments.</small>
           </div>
         </div>
 
         {loading ? (
-          <p className="panel-empty">Loading wallet...</p>
+          <p className="panel-empty">Loading school fees...</p>
         ) : error ? (
           <>
             <p className="form-feedback error">{error}</p>
@@ -1328,12 +1271,6 @@ function StudentFeesPage({
                 <p className="metric-trend">{remainingFees > 0 ? "Outstanding balance." : "Fully paid."}</p>
               </article>
               <article className="app-panel frosted">
-                <p className="metric-label">Available balance</p>
-                <h2 className="metric-value">{walletBalance}</h2>
-                <p className="metric-trend">Funds stay on-platform until fees are due.</p>
-                {!walletData ? <p className="field-note">Your wallet will appear after creation.</p> : null}
-              </article>
-              <article className="app-panel frosted">
                 <h3>Bank Transfer Reference</h3>
                 <p className="metric-label">Use this code in your transfer narration</p>
                 <h2 className="metric-value">{paymentInstructions.reference_code || "-"}</h2>
@@ -1345,30 +1282,7 @@ function StudentFeesPage({
                   Bank: {paymentInstructions.bank_account_name || "-"} - {paymentInstructions.bank_account_number || "No account set"}
                 </p>
               </article>
-              <article className="app-panel frosted">
-                <form className="panel-form" onSubmit={handleFund}>
-                  <label className="panel-field">
-                    Amount ({NAIRA_SYMBOL})
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={fundAmount}
-                      onChange={(event) => setFundAmount(event.target.value)}
-                      placeholder="5000"
-                      required
-                    />
-                  </label>
-                  <div className="panel-form-actions" style={{ gap: "8px" }}>
-                    <button className="student-primary-btn" type="submit">Fund with Flutterwave</button>
-                  </div>
-                  {pendingReference ? <p className="field-note">Ref: {pendingReference}</p> : null}
-                  {authUrl ? <p className="field-note"><a href={authUrl} target="_blank" rel="noreferrer">Open checkout</a></p> : null}
-                  {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-                  {verifyFeedback ? <p className="form-feedback success">{verifyFeedback}</p> : null}
-                  {verifyError ? <p className="form-feedback error">{verifyError}</p> : null}
-                </form>
-              </article>
+              {feedback ? <p className="form-feedback success">{feedback}</p> : null}
             </div>
             <article className="app-panel">
               <h3>Fee Breakdown</h3>
@@ -1405,16 +1319,19 @@ function StudentFeesPage({
               ) : <p className="panel-empty">No school fees have been assigned to your class yet.</p>}
             </article>
             <article className="app-panel">
-              <h3>Bank Transfer History</h3>
+              <h3>Student Bank Payment History</h3>
               {bankPayments.length ? (
                 <table className="student-table">
-                  <thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Date</th><th>Reference</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th></tr></thead>
                   <tbody>
                     {bankPayments.map((payment) => (
                       <tr key={payment.id}>
                         <td>{formatDate(payment.created_at)}</td>
-                        <td>{NAIRA_SYMBOL}{Number(payment.amount || 0).toLocaleString()}</td>
-                        <td>{payment.status}</td>
+                        <td>{payment.bank_reference || payment.reference_code || "-"}</td>
+                        <td>{formatFeeAmount(payment.amount)}</td>
+                        <td>{formatFeeAmount(payment.applied_amount)}</td>
+                        <td>{formatFeeAmount(payment.unapplied_amount)}</td>
+                        <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -5318,23 +5235,6 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
-  const handleAdminAdjustWallet = useCallback(
-    async (payload) => {
-      const result = await requestJson(session, "POST", "/api/finance/admin/adjust/", payload);
-      addAdminNotification({
-        category: "Finance",
-        module: "Wallet Adjustments",
-        action: `Adjusted student wallet${payload?.amount ? ` by ${NAIRA_SYMBOL}${payload.amount}` : ""}.`,
-        status: "Success",
-        priority: "High",
-        tone: "warning",
-      });
-      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
-      return result;
-    },
-    [addAdminNotification, loadScreen, session]
-  );
-
   const handleBankPaymentsIngest = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/bank-payments/ingest/", payload);
@@ -5369,27 +5269,13 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
-  const handleFinanceSalaryPay = useCallback(
-    async (payload) => {
-      const result = await requestJson(session, "POST", "/api/hr/payroll/create/", payload);
-      await Promise.all([
-        loadScreen("/finance", true),
-        loadScreen("/non-teaching-staff", true),
-        loadScreen("/hr/activity", true),
-        loadScreen("/dashboard", true),
-      ]);
-      return result;
-    },
-    [loadScreen, session]
-  );
-
   const handleActivationCreditPurchase = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/activation-credits/purchase/", payload);
       addAdminNotification({
         category: "Finance",
-        module: "Activation Credits",
-        action: `Started activation credit purchase${payload?.quantity ? ` for ${payload.quantity} credits` : ""}.`,
+        module: "Activation Tokens",
+        action: `Started activation token purchase${payload?.credits ? ` for ${payload.credits} tokens` : ""}.`,
         status: "Pending",
         priority: "High",
         tone: "warning",
@@ -5404,8 +5290,8 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       const result = await requestJson(session, "POST", "/api/finance/admin/activation-credits/verify/", payload);
       addAdminNotification({
         category: "Finance",
-        module: "Activation Credits",
-        action: "Verified activation credit purchase.",
+        module: "Activation Tokens",
+        action: "Verified activation token purchase.",
         status: "Success",
         priority: "High",
         tone: "success",
@@ -5421,8 +5307,8 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       const result = await requestJson(session, "POST", "/api/finance/admin/activation-credits/assign/", payload);
       addAdminNotification({
         category: "Finance",
-        module: "Activation Credits",
-        action: "Assigned activation credits to student accounts.",
+        module: "Activation Tokens",
+        action: "Assigned activation tokens to student accounts.",
         status: "Success",
         priority: "High",
         tone: "success",
@@ -5448,7 +5334,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       addAdminNotification({
         category: "System",
         module: "Auto Activation",
-        action: "Ran automatic student activation credit deductions.",
+        action: "Ran automatic student activation token deductions.",
         status: "Success",
         priority: "High",
         tone: "info",
@@ -5967,7 +5853,6 @@ const unreadNotificationsCount =
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
         onStudentFeeSave={handleAdminStudentFeeSave}
-        onAdjustWallet={handleAdminAdjustWallet}
         onPurchaseCredits={handleActivationCreditPurchase}
         onVerifyCredits={handleActivationCreditVerify}
         onAssignCredits={handleActivationCreditAssign}
@@ -5975,7 +5860,6 @@ const unreadNotificationsCount =
         onRunAutoCredits={handleActivationCreditRunAuto}
         onBankPaymentsIngest={handleBankPaymentsIngest}
         onBankPaymentRecover={handleBankPaymentRecover}
-        onPaySalary={handleFinanceSalaryPay}
       />
     );
   } else if (activePath === "/expenses") {
@@ -6009,7 +5893,6 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onMarkAttendance={handleMarkHrAttendance}
-        onCreatePayroll={handleCreateHrPayroll}
         onCreateLeave={handleCreateHrLeave}
         onReviewLeave={handleReviewHrLeave}
         onCreateAdvance={handleCreateHrAdvance}
@@ -6031,12 +5914,15 @@ const unreadNotificationsCount =
     );
   } else if (activePath === "/hr/activity") {
     content = (
-      <AdminHRActivityScreen
+      <AdminHRPayrollScreen
         data={data}
         loading={loading}
         error={error}
         onRetry={handleRetry}
+        onMarkAttendance={handleMarkHrAttendance}
+        onCreateLeave={handleCreateHrLeave}
         onReviewLeave={handleReviewHrLeave}
+        onCreateAdvance={handleCreateHrAdvance}
         onReviewAdvance={handleReviewHrAdvance}
       />
     );
@@ -6897,20 +6783,6 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
     navigate("/signin", { replace: true });
   }, [navigate]);
 
-  const handleWalletFund = useCallback(
-    async (amount) => {
-      return postJson(session, "/api/finance/wallet/fund/", { amount });
-    },
-    [session]
-  );
-
-  const handleWalletVerify = useCallback(
-    async (reference) => {
-      return postJson(session, "/api/finance/wallet/verify/", { reference });
-    },
-    [session]
-  );
-
   const handleStandaloneMessageSend = useCallback(
     async (recipientValue, subject, body, attachments = []) => {
       return postJson(session, "/api/app/messages/send/", {
@@ -7042,8 +6914,6 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
     return withGlobalNotifications(
       <StudentFeesPage
         session={session}
-        onFund={handleWalletFund}
-        onVerify={handleWalletVerify}
         onNavigate={navigate}
       />
     );

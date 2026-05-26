@@ -111,6 +111,9 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
     const students = classFees.reduce((sum, fee) => sum + Number(fee.student_count || 0), 0);
     return { expected, received, outstanding, students };
   }, [classFees]);
+  const staffSalaryAmount = Number(salaryPaymentSummary.staff_salary_amount || 0);
+  const unsettledPaymentsAmount = Number(salaryPaymentSummary.unsettled_amount || 0);
+  const balanceAmount = schoolFeeStats.expected - staffSalaryAmount - unsettledPaymentsAmount;
   const latestClassFees = classFees.slice(0, 4);
 
   const categoryRows = useMemo(() => {
@@ -144,13 +147,13 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
     }
     setSavingClassFee(true);
     try {
-      await onClassFeeSave?.({
+      const result = await onClassFeeSave?.({
         id: editingClassFeeId,
         ...classFeeForm,
         title: "Bills",
         amount: billTotal,
       });
-      setClassFeeFeedback(editingClassFeeId ? "School-fee bill updated." : "School-fee bill created.");
+      setClassFeeFeedback(result?.message || (editingClassFeeId ? "School-fee bill updated." : "School-fee bill created."));
       resetClassFeeForm();
     } catch (err) {
       setClassFeeError(err.message || "Could not save school-fee bill.");
@@ -323,45 +326,6 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
       </div>
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
 
-      <div className="expense-summary-grid">
-        <article className="finance-summary-card tone-expected">
-          <div className="finance-summary-icon" aria-hidden="true">
-            <DashboardIcon name="currency-naira" className="inline-icon" />
-          </div>
-          <div>
-            <p>Expenses</p>
-            <strong>{formatExpenseAmount(totals.expenses)}</strong>
-          </div>
-        </article>
-        <article className="finance-summary-card tone-pending">
-          <div className="finance-summary-icon" aria-hidden="true">
-            <DashboardIcon name="pending" className="inline-icon" />
-          </div>
-          <div>
-            <p>Bills</p>
-            <strong>{formatExpenseAmount(totals.bills)}</strong>
-          </div>
-        </article>
-        <article className="finance-summary-card tone-received">
-          <div className="finance-summary-icon" aria-hidden="true">
-            <DashboardIcon name="check" className="inline-icon" />
-          </div>
-          <div>
-            <p>Receipts</p>
-            <strong>{formatExpenseAmount(totals.receipts)}</strong>
-          </div>
-        </article>
-        <article className="finance-summary-card tone-outstanding">
-          <div className="finance-summary-icon" aria-hidden="true">
-            <DashboardIcon name="pending" className="inline-icon" />
-          </div>
-          <div>
-            <p>Open Balance</p>
-            <strong>{formatExpenseAmount(totals.due)}</strong>
-          </div>
-        </article>
-      </div>
-
       <article className="app-panel expense-chart-panel">
         <div className="expense-panel-head">
           <h3>Spending Graph</h3>
@@ -371,7 +335,7 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
           <div>
             <div className="expense-donut" style={{ "--paid": `${Math.round(((totals.paid || 0) / Math.max(totals.expenses + totals.bills + totals.receipts, 1)) * 100)}%` }}>
               <strong>{Math.round(((totals.paid || 0) / Math.max(totals.expenses + totals.bills + totals.receipts, 1)) * 100)}%</strong>
-              <span>paid</span>
+              <span>spent</span>
             </div>
             <div className="expense-bar-chart" aria-label="Expenses by color tag">
               {categoryRows.map((row) => (
@@ -387,38 +351,38 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
           </div>
           <div className="expense-stat-board">
             <div>
-              <span>School-fee bills</span>
-              <strong>{classFees.length}</strong>
-            </div>
-            <div>
-              <span>Students billed</span>
-              <strong>{schoolFeeStats.students}</strong>
-            </div>
-            <div>
-              <span>Expected fees</span>
+              <span>Expected income</span>
               <strong>{formatExpenseAmount(schoolFeeStats.expected)}</strong>
             </div>
             <div>
-              <span>Received fees</span>
-              <strong>{formatExpenseAmount(schoolFeeStats.received)}</strong>
-            </div>
-            <div>
-              <span>Open fees</span>
-              <strong>{formatExpenseAmount(schoolFeeStats.outstanding)}</strong>
+              <span>Staff salary</span>
+              <strong>{formatExpenseAmount(staffSalaryAmount)}</strong>
             </div>
             <div>
               <span>Unsettled payments</span>
-              <strong>{formatExpenseAmount(salaryPaymentSummary.unsettled_amount)}</strong>
+              <strong>{formatExpenseAmount(unsettledPaymentsAmount)}</strong>
+            </div>
+            <div>
+              <span>Balance</span>
+              <strong>{formatExpenseAmount(balanceAmount)}</strong>
             </div>
           </div>
         </div>
       </article>
 
       <div className="expense-workspace">
-        <article className="app-panel expense-create-panel">
+        <article
+          className={`app-panel expense-create-panel ${editingClassFeeId ? "edit-modal-card expense-bill-edit-modal" : ""}`}
+          role={editingClassFeeId ? "dialog" : undefined}
+          aria-modal={editingClassFeeId ? "true" : undefined}
+          aria-labelledby="expense-bill-form-title"
+        >
           <div className="expense-panel-head">
-            <h3>{editingClassFeeId ? "Edit Bills Template" : "Create Bills Template"}</h3>
-            <button type="button" className="table-action" onClick={handlePrintBill}>Print</button>
+            <h3 id="expense-bill-form-title">{editingClassFeeId ? "Edit Bills Template" : "Create Bills Template"}</h3>
+            <div className="table-actions-inline">
+              <button type="button" className="table-action" onClick={handlePrintBill}>Print</button>
+              {editingClassFeeId ? <button type="button" className="table-action" onClick={resetClassFeeForm}>Close</button> : null}
+            </div>
           </div>
           <form className="panel-form" onSubmit={handleClassFeeSubmit}>
             <div className="panel-form-grid">

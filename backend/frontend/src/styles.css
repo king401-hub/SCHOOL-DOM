@@ -2420,6 +2420,15 @@ body[data-dashboard-role="student"] .global-notification-button {
   width: min(720px, calc(100vw - 24px));
 }
 
+.class-fee-edit-modal,
+.expense-bill-edit-modal {
+  width: min(860px, calc(100vw - 24px));
+}
+
+.expense-bill-edit-modal {
+  max-height: calc(100vh - 24px);
+}
+
 .panel-list {
   margin: 0.6rem 0 0;
   padding-left: 1rem;
@@ -4773,6 +4782,15 @@ body[data-theme="dark"] .token-usage-toast {
   align-items: center;
   gap: 0.35rem;
   flex-wrap: wrap;
+}
+
+.table-inline-input {
+  width: min(100%, 9rem);
+  min-height: 2rem;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
 }
 
 .finance-table-actions {
@@ -12804,6 +12822,31 @@ body[data-theme="dark"] .activation-credit-summary span {
 }
 
 @media (max-width: 640px) {
+  .edit-modal-card {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    border-radius: 12px 12px 0 0;
+    transform: none;
+  }
+
+  .edit-modal-head {
+    align-items: flex-start;
+  }
+
+  .edit-modal-head,
+  .edit-modal-head .table-actions-inline {
+    flex-direction: column;
+  }
+
+  .edit-modal-head .table-action,
+  .edit-modal-head .table-actions-inline,
+  .expense-bill-edit-modal .panel-form-actions button {
+    width: 100%;
+  }
+
   .expense-tracker {
     padding: 0.65rem;
   }

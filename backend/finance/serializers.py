@@ -10,6 +10,7 @@ from finance.models import (
     ClassFee,
     BankPayment,
     ExpenseRecord,
+    FinanceLedgerLog,
     SchoolFee,
     StudentPaymentReference,
     StudentActivationCredit,
@@ -32,6 +33,29 @@ class TransactionSerializer(serializers.ModelSerializer):
             "narration",
             "created_at",
         ]
+
+
+class FinanceLedgerLogSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FinanceLedgerLog
+        fields = [
+            "id",
+            "action",
+            "description",
+            "amount",
+            "currency",
+            "reference",
+            "actor_name",
+            "created_at",
+            "metadata",
+        ]
+
+    def get_actor_name(self, obj):
+        if not obj.actor_id:
+            return "System"
+        return obj.actor.get_full_name() or obj.actor.email
 
 
 class SchoolFeeSerializer(serializers.ModelSerializer):

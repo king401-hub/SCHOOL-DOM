@@ -1,3 +1,6 @@
+import json
+
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.core.mail import send_mail
@@ -152,6 +155,25 @@ def _question_payload(question, request=None):
             "passage_text": group.passage_text,
             "image": _file_url(request, group.image),
         } if group else None,
+    }
+
+
+def _offline_question_payload(question, request=None):
+    payload = _question_payload(question, request)
+    payload["type"] = payload.get("question_type")
+    payload["marks"] = payload.get("points")
+    return payload
+
+
+def _offline_student_payload(user):
+    profile = getattr(user, "student_profile", None)
+    return {
+        "id": str(user.id),
+        "student_id": getattr(profile, "student_id", "") or getattr(profile, "admission_number", "") or user.email,
+        "admission_number": getattr(profile, "admission_number", "") or "",
+        "full_name": user.get_full_name() or user.email,
+        "email": user.email,
+        "class_name": str(getattr(profile, "current_class", "") or ""),
     }
 
 
@@ -1067,3 +1089,188 @@ def sync_offline_exam_attempt(request):
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def cbt_offline_sync_package(request):
+    """Return the published CBT package used by the offline SchoolDom desktop client."""
+    if request.user.role not in {"school_admin", "principal", "super_admin", "teacher", "accountant"}:
+        return Response({"success": False, "message": "Admin or teacher access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    exams = _published_exam_queryset_for_user(request.user).prefetch_related("questions", "pins").select_related("subject", "class_group")
+    student_queryset = User.objects.filter(role="student", is_active=True).select_related("tenant", "student_profile", "student_profile__current_class")
+    if getattr(request.user, "tenant", None):
+        student_queryset = student_queryset.filter(tenant=request.user.tenant)
+
+    exam_rows = []
+    for exam in exams.order_by("start_date"):
+        active_pin = exam.pins.filter(is_active=True).order_by("-created_at").first()
+        questions = [_offline_question_payload(question, request) for question in _question_queryset_for_exam(exam).order_by("id")]
+        exam_rows.append(
+            {
+                "id": exam.id,
+                "title": exam.title,
+                "subject": getattr(exam.subject, "name", "") or "",
+                "class_name": getattr(exam.class_group, "name", "") or "All classes",
+                "duration_minutes": exam.duration_minutes,
+                "duration_seconds": exam.duration_minutes * 60,
+                "start_date": exam.start_date,
+                "end_date": exam.end_date,
+                "instructions": exam.instructions,
+                "questions": questions,
+                "pin_preview": active_pin.pin_preview if active_pin else "",
+                # If future PIN generation stores a desktop-safe SHA-256 digest, expose it here as offline_pin_hash.
+                "offline_pin_hash": getattr(active_pin, "offline_pin_hash", "") if active_pin else "",
+            }
+        )
+
+    return Response(
+        {
+            "success": True,
+            "package_type": "schooldom_cbt_exam_package",
+            "package_version": 1,
+            "generated_at": timezone.now(),
+            "exams": exam_rows,
+            "students": [_offline_student_payload(student) for student in student_queryset.order_by("last_name", "first_name", "email")],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def cbt_exam_package_export(request):
+    """Download a portable JSON package for fully offline CBT clients."""
+    package_response = cbt_offline_sync_package(request)
+    if package_response.status_code >= 400:
+        return package_response
+    payload = package_response.data
+    stamp = timezone.now().strftime("%Y%m%d%H%M%S")
+    response = HttpResponse(
+        json.dumps(payload, default=str, indent=2),
+        content_type="application/json",
+    )
+    response["Content-Disposition"] = f'attachment; filename="schooldom-cbt-package-{stamp}.json"'
+    return response
+
+
+def _ingest_cbt_offline_result(actor, payload):
+    exam_id = payload.get("exam_id")
+    student_identifier = payload.get("student_id") or payload.get("admission_number") or payload.get("student")
+    answers = payload.get("answers") or {}
+    offline_session_id = str(payload.get("session_id") or payload.get("offline_attempt_id") or "").strip()
+    started_at = parse_datetime(str(payload.get("started_at") or "")) or timezone.now()
+    submitted_at = parse_datetime(str(payload.get("submitted_at") or "")) or timezone.now()
+
+    if not exam_id:
+        return {"success": False, "message": "exam_id is required."}, status.HTTP_400_BAD_REQUEST
+    if not isinstance(answers, dict):
+        return {"success": False, "message": "answers must be an object keyed by question id."}, status.HTTP_400_BAD_REQUEST
+
+    student = _find_student_by_identifier(student_identifier)
+    if not student:
+        return {"success": False, "message": "Student was not found."}, status.HTTP_404_NOT_FOUND
+
+    exam = get_object_or_404(_published_exam_queryset_for_user(actor), id=exam_id)
+    if offline_session_id:
+        existing = ExamAttempt.objects.filter(device_id=offline_session_id, student=student, exam=exam, is_submitted=True).first()
+        if existing:
+            return {"success": True, "attempt_id": existing.id, "message": "Offline result already synced."}, status.HTTP_200_OK
+
+    attempt = ExamAttempt.objects.create(
+        exam=exam,
+        student=student,
+        tenant=exam.tenant,
+        start_time=started_at,
+        is_offline=True,
+        sync_status="pending",
+        device_id=offline_session_id or None,
+        question_order=[question.id for question in _question_queryset_for_exam(exam).order_by("id")],
+    )
+    question_ids = set(_question_queryset_for_exam(exam).values_list("id", flat=True))
+    for raw_question_id, answer_value in answers.items():
+        try:
+            question_id = int(raw_question_id)
+        except (TypeError, ValueError):
+            continue
+        if question_id not in question_ids:
+            continue
+        StudentAnswer.objects.update_or_create(
+            attempt=attempt,
+            question_id=question_id,
+            defaults={
+                "tenant": attempt.tenant or exam.tenant,
+                "selected_options": answer_value,
+                "answer_text": answer_value if isinstance(answer_value, str) else "",
+            },
+        )
+
+    _mark_attempt_submitted(
+        attempt,
+        auto_submitted=str(payload.get("cause") or "").lower() in {"timer_elapsed", "auto_submit"},
+        auto_payload={
+            "reason": "offline_timeout_sync" if str(payload.get("cause") or "").lower() == "timer_elapsed" else "unknown",
+            "display": "Offline CBT submission",
+            "details": "Submitted from SchoolDom CBT Client.",
+            "warnings": payload.get("malpractice_log") or [],
+            "logs": payload.get("malpractice_log") or [],
+        },
+        submitted_at=submitted_at,
+    )
+    attempt.is_offline = True
+    attempt.sync_status = "synced"
+    attempt.save(update_fields=["is_offline", "sync_status", "updated_at"])
+    score, total_points = _grade_attempt(attempt)
+    return {
+        "success": True,
+        "attempt_id": attempt.id,
+        "score": score,
+        "total_points": total_points,
+        "percentage": attempt.percentage,
+        "message": "Offline CBT result synced.",
+    }, status.HTTP_201_CREATED
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def cbt_offline_result_ingest(request):
+    """Ingest a result submitted by the admin desktop client for a student who wrote offline."""
+    if request.user.role not in {"school_admin", "principal", "super_admin", "teacher", "accountant"}:
+        return Response({"success": False, "message": "Admin or teacher access required."}, status=status.HTTP_403_FORBIDDEN)
+    payload, response_status = _ingest_cbt_offline_result(request.user, request.data)
+    return Response(payload, status=response_status)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cbt_results_package_import(request):
+    """Import a portable result package exported from the offline CBT desktop app."""
+    package_payload = request.data or {}
+    results = package_payload.get("results") or package_payload.get("items") or []
+    if not isinstance(results, list):
+        return Response({"success": False, "message": "results must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+
+    processed = []
+    for item in results:
+        payload = item.get("payload") if isinstance(item, dict) else None
+        if not isinstance(payload, dict):
+            processed.append({"success": False, "message": "Invalid result item."})
+            continue
+        try:
+            response_payload, response_status = _ingest_cbt_offline_result(request.user, payload)
+            processed.append({
+                "success": response_status < 400,
+                "status_code": response_status,
+                "data": response_payload,
+            })
+        except Exception as exc:
+            processed.append({"success": False, "message": str(exc)})
+
+    imported = sum(1 for item in processed if item.get("success"))
+    return Response({
+        "success": True,
+        "imported": imported,
+        "failed": len(processed) - imported,
+        "processed": processed,
+    })

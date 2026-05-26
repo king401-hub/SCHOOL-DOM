@@ -96,6 +96,10 @@ export function patchJson(endpoint, payload, options) {
   return apiRequest("PATCH", endpoint, payload, options);
 }
 
+export function deleteJson(endpoint, options) {
+  return apiRequest("DELETE", endpoint, null, options);
+}
+
 export async function replayOfflineQueue() {
   const queue = await readQueue();
   if (!queue.length) return { synced: 0, remaining: 0 };

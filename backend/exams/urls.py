@@ -6,6 +6,10 @@ app_name = 'exams'
 urlpatterns = [
     # Exam endpoints
     path('cbt-entry/', exam_views.StudentCbtEntryView.as_view(), name='student_cbt_entry'),
+    path('cbt/offline-sync/', exam_views.cbt_offline_sync_package, name='cbt_offline_sync_package'),
+    path('cbt/offline-results/', exam_views.cbt_offline_result_ingest, name='cbt_offline_result_ingest'),
+    path('cbt/package/export/', exam_views.cbt_exam_package_export, name='cbt_exam_package_export'),
+    path('cbt/package/results/import/', exam_views.cbt_results_package_import, name='cbt_results_package_import'),
     path('list/', exam_views.ExamListView.as_view(), name='exam_list'),
     path('<int:exam_id>/start/', exam_views.StartExamView.as_view(), name='start_exam'),
     

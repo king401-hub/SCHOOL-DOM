@@ -61,6 +61,52 @@ class AdminWallet(models.Model):
         return f"AdminWallet({code})"
 
 
+class FinanceLedgerLog(models.Model):
+    """Append-only audit ledger for school financial activity."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.SchoolTenant",
+        on_delete=models.PROTECT,
+        related_name="finance_ledger_logs",
+        null=True,
+        blank=True,
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="finance_ledger_logs",
+        null=True,
+        blank=True,
+    )
+    action = models.CharField(max_length=80)
+    description = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"))
+    currency = models.CharField(max_length=5, default="NGN")
+    reference = models.CharField(max_length=100, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "created_at"]),
+            models.Index(fields=["action"]),
+            models.Index(fields=["reference"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and FinanceLedgerLog.objects.filter(pk=self.pk).exists():
+            raise ValueError("Finance ledger logs are append-only and cannot be modified.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Finance ledger logs are append-only and cannot be deleted.")
+
+    def __str__(self):
+        return f"FinanceLedgerLog({self.action}: {self.amount} {self.currency})"
+
+
 class ActivationCreditPool(models.Model):
     """School-owned activation credits used only for student login access."""
 

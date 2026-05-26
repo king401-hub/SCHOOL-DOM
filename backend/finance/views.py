@@ -4,6 +4,7 @@ from hmac import compare_digest
 from datetime import datetime
 
 from django.conf import settings
+from django.db import OperationalError, ProgrammingError
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -23,6 +24,7 @@ from finance.models import (
     BankPayment,
     ClassFee,
     ExpenseRecord,
+    FinanceLedgerLog,
     SchoolFee,
     StudentActivationCredit,
     StudentPaymentReference,
@@ -35,6 +37,7 @@ from finance.serializers import (
     BankPaymentSerializer,
     ClassFeeSerializer,
     ExpenseRecordSerializer,
+    FinanceLedgerLogSerializer,
     SchoolFeeSerializer,
     StudentPaymentReferenceSerializer,
     TransactionSerializer,
@@ -68,10 +71,11 @@ from finance.services import (
     get_or_create_student_payment_reference,
     ingest_bank_payment,
     apply_bank_payment_to_student,
+    record_finance_activity,
     update_student_activation_alerts,
     verify_activation_credit_purchase,
 )
-from hr.models import PayrollRecord
+from hr.models import PayrollRecord, StaffProfile
 from tenants.models import Tenant
 from users.models import StudentProfile, User
 
@@ -300,6 +304,11 @@ def _admin_finance_snapshot(user):
     pool = get_or_create_activation_credit_pool(user.tenant)
     bank_payments = BankPayment.objects.select_related("student", "student__user", "payment_reference").filter(tenant=user.tenant)
     transaction_history = Transaction.objects.filter(admin_wallet__tenant=user.tenant).order_by("-created_at")[:100]
+    try:
+        finance_ledger_logs = FinanceLedgerLog.objects.select_related("actor").filter(tenant=user.tenant).order_by("-created_at")[:100]
+        finance_ledger_log_rows = FinanceLedgerLogSerializer(finance_ledger_logs, many=True).data
+    except (OperationalError, ProgrammingError):
+        finance_ledger_log_rows = []
     credit_purchase_history = [
         {
             "id": str(item.id),
@@ -334,6 +343,7 @@ def _admin_finance_snapshot(user):
         "class_fee_rows": class_fee_rows,
         "bank_payment_rows": BankPaymentSerializer(bank_payments[:100], many=True).data,
         "transaction_history": TransactionSerializer(transaction_history, many=True).data,
+        "finance_ledger_logs": finance_ledger_log_rows,
         "activation_credit_pool": ActivationCreditPoolSerializer(pool).data,
         "activation_credit_summary": {
             "price_per_credit": pool.price_per_credit,
@@ -597,6 +607,7 @@ def admin_overview(request):
             "class_fee_rows": finance_snapshot["class_fee_rows"],
             "bank_payment_rows": finance_snapshot["bank_payment_rows"],
             "transaction_history": finance_snapshot["transaction_history"],
+            "finance_ledger_logs": finance_snapshot["finance_ledger_logs"],
             "activation_credit_pool": finance_snapshot["activation_credit_pool"],
             "activation_credit_summary": finance_snapshot["activation_credit_summary"],
             "activation_credit_rows": finance_snapshot["activation_credit_rows"],
@@ -650,6 +661,13 @@ def admin_payment_account(request):
     admin_wallet.bank_account_number = bank_account_number
     admin_wallet.bank_code = bank_code
     admin_wallet.save(update_fields=["bank_account_name", "bank_account_number", "bank_code", "updated_at"])
+    record_finance_activity(
+        user.tenant,
+        user,
+        "payment_account_updated",
+        "Updated school fee receiving account.",
+        metadata={"bank_account_name": bank_account_name, "bank_account_number": bank_account_number, "bank_code": bank_code},
+    )
 
     return Response(
         {
@@ -691,9 +709,24 @@ def admin_class_fee_create(request):
             "created_by": user,
         },
     )
-    sync_class_fee_assignments(class_fee, actor=user)
+    assigned_count = sync_class_fee_assignments(class_fee, actor=user, notify_students=True)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "class_fee_saved",
+        f"Saved class fee '{class_fee.title}' for {_class_label(class_fee.school_class)}.",
+        amount=class_fee.amount,
+        currency=class_fee.currency,
+        reference=str(class_fee.id),
+    )
     return Response(
-        {"success": True, "class_fee": ClassFeeSerializer(class_fee).data, "finance": _admin_finance_snapshot(user)},
+        {
+            "success": True,
+            "class_fee": ClassFeeSerializer(class_fee).data,
+            "assigned_count": assigned_count,
+            "message": f"Bill sent to {assigned_count} student{'s' if assigned_count != 1 else ''} in {_class_label(school_class)}.",
+            "finance": _admin_finance_snapshot(user),
+        },
         status=status.HTTP_201_CREATED,
     )
 
@@ -713,6 +746,15 @@ def admin_class_fee_detail(request, fee_id):
     if request.method == "DELETE":
         class_fee.is_active = False
         class_fee.save(update_fields=["is_active", "updated_at"])
+        record_finance_activity(
+            user.tenant,
+            user,
+            "class_fee_deactivated",
+            f"Deactivated class fee '{class_fee.title}' for {_class_label(class_fee.school_class)}.",
+            amount=class_fee.amount,
+            currency=class_fee.currency,
+            reference=str(class_fee.id),
+        )
         return Response({"success": True, "message": "Class fee deactivated.", "finance": _admin_finance_snapshot(user)})
 
     update_fields = []
@@ -745,8 +787,28 @@ def admin_class_fee_detail(request, fee_id):
     if update_fields:
         update_fields.append("updated_at")
         class_fee.save(update_fields=sorted(set(update_fields)))
-        sync_class_fee_assignments(class_fee, actor=user)
-    return Response({"success": True, "class_fee": ClassFeeSerializer(class_fee).data, "finance": _admin_finance_snapshot(user)})
+        assigned_count = sync_class_fee_assignments(class_fee, actor=user, notify_students=True)
+        record_finance_activity(
+            user.tenant,
+            user,
+            "class_fee_updated",
+            f"Updated class fee '{class_fee.title}' for {_class_label(class_fee.school_class)}.",
+            amount=class_fee.amount,
+            currency=class_fee.currency,
+            reference=str(class_fee.id),
+            metadata={"updated_fields": sorted(set(update_fields))},
+        )
+    else:
+        assigned_count = sync_class_fee_assignments(class_fee, actor=user, notify_students=True)
+    return Response(
+        {
+            "success": True,
+            "class_fee": ClassFeeSerializer(class_fee).data,
+            "assigned_count": assigned_count,
+            "message": f"Bill sent to {assigned_count} student{'s' if assigned_count != 1 else ''} in {_class_label(class_fee.school_class)}.",
+            "finance": _admin_finance_snapshot(user),
+        }
+    )
 
 
 @api_view(["PATCH"])
@@ -799,6 +861,16 @@ def admin_school_fee_detail(request, fee_id):
         fee.save(update_fields=sorted(set(update_fields)))
         reconcile_fee_status(fee)
         fee.refresh_from_db()
+        record_finance_activity(
+            user.tenant,
+            user,
+            "student_fee_updated",
+            f"Updated fee '{fee.title}' for {fee.student.user.get_full_name() or fee.student.user.email}.",
+            amount=fee.amount,
+            currency=fee.currency,
+            reference=str(fee.id),
+            metadata={"updated_fields": sorted(set(update_fields))},
+        )
 
     return Response({"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)})
 
@@ -806,7 +878,7 @@ def admin_school_fee_detail(request, fee_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def admin_activation_credit_purchase(request):
-    """Add purchased activation tokens to the school pool at fixed N200 per token."""
+    """Add purchased activation tokens to the school pool at the configured token price."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
@@ -819,6 +891,15 @@ def admin_activation_credit_purchase(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "token_purchase_started",
+        f"Started purchase for {credits} activation tokens.",
+        amount=init_payload.get("amount") or Decimal("0.00"),
+        reference=init_payload.get("reference") or "",
+        metadata={"credits": credits, "bonus_credits": bonus_credits, "total_credits": credits + bonus_credits},
+    )
 
     return Response(
         {
@@ -888,6 +969,14 @@ def admin_activation_credit_verify(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "token_purchase_verified",
+        "Verified activation token purchase.",
+        reference=reference,
+        metadata={"available_tokens": pool.balance},
+    )
 
     return Response({"success": True, "pool": ActivationCreditPoolSerializer(pool).data})
 
@@ -914,6 +1003,15 @@ def admin_activation_credit_assign(request):
         )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "tokens_assigned",
+        f"Assigned activation tokens to {result['assigned']} student account(s).",
+        amount=result["assigned"] * months * result["pool"].price_per_credit,
+        reference=str(student_id or scope),
+        metadata={"scope": scope, "months": months, "assigned": result["assigned"]},
+    )
 
     return Response(
         {
@@ -922,6 +1020,38 @@ def admin_activation_credit_assign(request):
             "pool": ActivationCreditPoolSerializer(result["pool"]).data,
         }
     )
+
+
+@api_view(["POST", "PATCH"])
+@permission_classes([IsAuthenticated])
+def admin_activation_credit_price(request):
+    """Allow the platform super admin to update a school's activation token price."""
+    user = request.user
+    if user.role != "super_admin":
+        return Response({"success": False, "message": "Only the super admin can change token price."}, status=status.HTTP_403_FORBIDDEN)
+
+    raw_price = (
+        request.data.get("price_per_token")
+        or request.data.get("price_per_credit")
+        or request.data.get("price")
+        or request.data.get("amount")
+    )
+    try:
+        price = _parse_amount(raw_price)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    pool = get_or_create_activation_credit_pool(user.tenant)
+    pool.price_per_credit = price
+    pool.save(update_fields=["price_per_credit", "updated_at"])
+    record_finance_activity(
+        user.tenant,
+        user,
+        "token_price_updated",
+        f"Updated activation token price to {price}.",
+        amount=price,
+    )
+    return Response({"success": True, "pool": ActivationCreditPoolSerializer(pool).data, "finance": _admin_finance_snapshot(user)})
 
 
 @api_view(["POST"])
@@ -939,6 +1069,13 @@ def admin_activation_credit_settings(request):
     pool.auto_assign_enabled = _parse_bool(request.data.get("enabled"), default=pool.auto_assign_enabled)
     pool.auto_assign_scope = scope
     pool.save(update_fields=["auto_assign_enabled", "auto_assign_scope", "updated_at"])
+    record_finance_activity(
+        user.tenant,
+        user,
+        "token_auto_settings_updated",
+        "Updated activation token auto-assignment settings.",
+        metadata={"enabled": pool.auto_assign_enabled, "scope": pool.auto_assign_scope},
+    )
     return Response({"success": True, "pool": ActivationCreditPoolSerializer(pool).data})
 
 
@@ -963,6 +1100,14 @@ def admin_activation_credit_run_auto(request):
         )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "token_auto_assign_run",
+        f"Ran auto-assignment for {result['assigned']} student account(s).",
+        amount=result["assigned"] * result["pool"].price_per_credit,
+        metadata={"assigned": result["assigned"], "scope": pool.auto_assign_scope},
+    )
     return Response({"success": True, "assigned": result["assigned"], "pool": ActivationCreditPoolSerializer(result["pool"]).data})
 
 
@@ -991,6 +1136,16 @@ def admin_bank_payment_ingest(request):
                 actor=user,
             )
             processed.append({"created": created, "payment": BankPaymentSerializer(payment).data})
+            record_finance_activity(
+                user.tenant,
+                user,
+                "bank_payment_ingested",
+                f"{'Created' if created else 'Updated'} bank payment record.",
+                amount=payment.amount,
+                currency=payment.currency,
+                reference=payment.bank_reference,
+                metadata={"status": payment.status, "student_id": str(payment.student_id or "")},
+            )
         except Exception as exc:
             processed.append({"created": False, "error": str(exc), "raw": row})
 
@@ -1032,6 +1187,16 @@ def admin_bank_payment_recover(request, payment_id):
     payment.payment_reference = reference
     payment.save(update_fields=["payment_reference", "updated_at"])
     payment = apply_bank_payment_to_student(payment, student, actor=user)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "bank_payment_recovered",
+        f"Matched bank payment to {student.user.get_full_name() or student.user.email}.",
+        amount=payment.amount,
+        currency=payment.currency,
+        reference=payment.bank_reference,
+        metadata={"student_id": str(student.id), "status": payment.status},
+    )
     return Response({"success": True, "payment": BankPaymentSerializer(payment).data, "finance": _admin_finance_snapshot(user)})
 
 
@@ -1047,6 +1212,7 @@ def admin_expense_records(request):
         records = ExpenseRecord.objects.filter(tenant=user.tenant)
         finance_snapshot = _admin_finance_snapshot(user)
         payroll_records = PayrollRecord.objects.select_related("staff").filter(staff__tenant=user.tenant).order_by("-year", "-month")[:80]
+        staff_salary_total = StaffProfile.objects.filter(tenant=user.tenant).aggregate(total=Sum("base_salary"))["total"] or Decimal("0.00")
         unsettled_payroll = [
             item
             for item in payroll_records
@@ -1060,6 +1226,7 @@ def admin_expense_records(request):
                 "class_fee_rows": finance_snapshot["class_fee_rows"],
                 "salary_payment_summary": {
                     "records": len(payroll_records),
+                    "staff_salary_amount": staff_salary_total,
                     "unsettled_count": len(unsettled_payroll),
                     "unsettled_amount": unsettled_payroll_total,
                 },
@@ -1090,6 +1257,16 @@ def admin_expense_records(request):
     if not serializer.is_valid():
         return Response({"success": False, "message": "Invalid expense record.", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
     record = serializer.save(tenant=user.tenant, created_by=user, currency="NGN")
+    record_finance_activity(
+        user.tenant,
+        user,
+        "expense_record_created",
+        f"Created {record.record_type} record '{record.title}'.",
+        amount=record.amount,
+        currency=record.currency,
+        reference=str(record.id),
+        metadata={"status": record.status, "category": record.category},
+    )
     records = ExpenseRecord.objects.filter(tenant=user.tenant)
     return Response(
         {
@@ -1110,6 +1287,16 @@ def admin_expense_record_detail(request, record_id):
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     record = get_object_or_404(ExpenseRecord.objects.filter(tenant=user.tenant), id=record_id)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "expense_record_deleted",
+        f"Deleted {record.record_type} record '{record.title}'.",
+        amount=record.amount,
+        currency=record.currency,
+        reference=str(record.id),
+        metadata={"status": record.status, "category": record.category},
+    )
     record.delete()
     records = ExpenseRecord.objects.filter(tenant=user.tenant)
     return Response({"success": True, "records": ExpenseRecordSerializer(records, many=True).data})
@@ -1203,6 +1390,15 @@ def admin_adjust_wallet(request):
             )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "wallet_adjusted",
+        f"{direction.title()} adjustment for {student_profile.user.get_full_name() or student_profile.user.email}.",
+        amount=amount,
+        reference=reference,
+        metadata={"direction": direction, "student_id": str(student_profile.id), "note": note},
+    )
 
     return Response(
         {
@@ -1255,6 +1451,16 @@ def admin_assign_fee(request):
     )
     reconcile_fee_status(fee)
     fee.refresh_from_db()
+    record_finance_activity(
+        user.tenant,
+        user,
+        "manual_fee_assigned",
+        f"{'Created' if created else 'Updated'} manual fee '{fee.title}' for {student_profile.user.get_full_name() or student_profile.user.email}.",
+        amount=fee.amount,
+        currency=fee.currency,
+        reference=str(fee.id),
+        metadata={"student_id": str(student_profile.id), "due_date": str(fee.due_date)},
+    )
     return Response(
         {"success": True, "fee": SchoolFeeSerializer(fee).data, "finance": _admin_finance_snapshot(user)},
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -1310,6 +1516,16 @@ def admin_withdraw(request):
             "last_settled_at",
             "updated_at",
         ]
+    )
+    record_finance_activity(
+        user.tenant,
+        user,
+        "admin_withdrawal_requested",
+        "Requested withdrawal from admin wallet.",
+        amount=amount,
+        currency=admin_wallet.currency,
+        reference=reference,
+        metadata={"status": result.get("status"), "account_number": bank_account_number, "bank_code": bank_code},
     )
     return Response(
         {

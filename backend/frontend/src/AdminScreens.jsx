@@ -81,7 +81,7 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
             <div>
               <span>Student application</span>
               <strong>SchoolDom Student CBT</strong>
-              <small>Download the app here, copy it to each student computer, and open SchoolDom-Student-CBT.exe.</small>
+              <small>Download the app here, copy it to each student computer, and open SchoolDomCBT.exe.</small>
             </div>
             <CbtStatusPill tone="success">Real API backed</CbtStatusPill>
           </div>
@@ -651,7 +651,6 @@ function AdminFinanceScreen({
   onClassFeeSave,
   onClassFeeDelete,
   onStudentFeeSave,
-  onAdjustWallet,
   onPaymentAccountSave,
   onPurchaseCredits,
   onVerifyCredits,
@@ -660,7 +659,6 @@ function AdminFinanceScreen({
   onRunAutoCredits,
   onBankPaymentsIngest,
   onBankPaymentRecover,
-  onPaySalary,
 }) {
   const finance = data?.finance_overview || data || {};
   const adminWallet = finance?.admin_wallet || {};
@@ -674,7 +672,7 @@ function AdminFinanceScreen({
   const creditPurchaseHistory = finance?.activation_credit_purchase_history || [];
   const bankPaymentRows = finance?.bank_payment_rows || [];
   const transactionHistory = finance?.transaction_history || [];
-  const staffRows = data?.hr_snapshot?.staff || data?.staff || [];
+  const financeLedgerRows = finance?.finance_ledger_logs || [];
   const [withdrawForm, setWithdrawForm] = useState({
     amount: "",
     account_number: "",
@@ -701,24 +699,7 @@ function AdminFinanceScreen({
     auto_deduct: true,
   });
   const [editingStudentFeeId, setEditingStudentFeeId] = useState("");
-  const [adjustForm, setAdjustForm] = useState({
-    student_id: "",
-    amount: "",
-    direction: "credit",
-    note: "",
-  });
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
-  const [salaryPayForm, setSalaryPayForm] = useState({
-    staff_id: "",
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
-    amount_paid: "",
-    bank_code: "",
-    bank_name: "",
-    bank_account_name: "",
-    bank_account_number: "",
-    notes: "",
-  });
   const [recoveryForm, setRecoveryForm] = useState({});
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
@@ -729,10 +710,11 @@ function AdminFinanceScreen({
     enabled: false,
     scope: "all",
   });
-  const [mobileFinanceSection, setMobileFinanceSection] = useState("class-fees");
+  const [mobileFinanceSection, setMobileFinanceSection] = useState("student-payments");
   const [expandedFinanceTables, setExpandedFinanceTables] = useState({});
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
+  const tokenPurchaseRef = useRef(null);
   const financeCurrency = "NGN";
   const formatFinanceAmount = (value) =>
     `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, {
@@ -748,7 +730,6 @@ function AdminFinanceScreen({
   const tokenUnitPrice = Number(creditSummary.price_per_credit ?? creditPool.price_per_credit ?? 200);
   const bonusCreditCount = Math.floor(requestedCreditCount / 100) * 10;
   const totalCreditCount = requestedCreditCount + bonusCreditCount;
-  const selectedSalaryStaff = staffRows.find((item) => item.id === salaryPayForm.staff_id);
   const selectedStudentFee = studentFeeRows.find((fee) => fee.id === editingStudentFeeId);
   const visibleClassFees = expandedFinanceTables.classFees ? classFees : classFees.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleStudentFeeRows = expandedFinanceTables.studentFees ? studentFeeRows : studentFeeRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -778,6 +759,9 @@ function AdminFinanceScreen({
   const visibleCreditPurchaseHistory = expandedFinanceTables.creditHistory
     ? creditPurchaseHistory
     : creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleFinanceLedgerRows = expandedFinanceTables.financeLedger
+    ? financeLedgerRows
+    : financeLedgerRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const toggleFinanceTable = (tableKey) => {
     setExpandedFinanceTables((current) => ({
       ...current,
@@ -797,18 +781,8 @@ function AdminFinanceScreen({
       </div>
     );
   };
-
-  const handleSalaryStaffChange = (staffId) => {
-    const staff = staffRows.find((item) => item.id === staffId);
-    setSalaryPayForm((current) => ({
-      ...current,
-      staff_id: staffId,
-      amount_paid: staff?.base_salary || current.amount_paid || "",
-      bank_code: staff?.bank_code || "",
-      bank_name: staff?.bank_name || "",
-      bank_account_name: staff?.bank_account_name || staff?.name || "",
-      bank_account_number: staff?.bank_account_number || "",
-    }));
+  const scrollToTokenPurchase = () => {
+    tokenPurchaseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   useEffect(() => {
@@ -865,12 +839,12 @@ function AdminFinanceScreen({
     setFeedback("");
     setFormError("");
     try {
-      await onClassFeeSave({
+      const result = await onClassFeeSave({
         id: editingClassFeeId,
         ...classFeeForm,
         amount: Number(classFeeForm.amount),
       });
-      setFeedback(editingClassFeeId ? "Class fee updated." : "Class fee set and synced.");
+      setFeedback(result?.message || (editingClassFeeId ? "Class fee updated." : "Class fee set and synced."));
       setEditingClassFeeId("");
       setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" });
     } catch (err) {
@@ -935,22 +909,6 @@ function AdminFinanceScreen({
     }
   };
 
-  const handleAdjustSubmit = async (event) => {
-    event.preventDefault();
-    setFeedback("");
-    setFormError("");
-    try {
-      await onAdjustWallet({
-        ...adjustForm,
-        amount: Number(adjustForm.amount),
-      });
-      setFeedback("Wallet adjusted.");
-      setAdjustForm({ student_id: "", amount: "", direction: "credit", note: "" });
-    } catch (err) {
-      setFormError(err.message || "Unable to adjust wallet.");
-    }
-  };
-
   const handleCreditPurchaseSubmit = async (event) => {
     event.preventDefault();
     setFeedback("");
@@ -1003,7 +961,7 @@ function AdminFinanceScreen({
     setFormError("");
     try {
       if (creditAssignForm.scope === "student" && !creditAssignForm.student_id) {
-        setFormError("Select an inactive student before assigning credits.");
+        setFormError("Select an inactive student before assigning tokens.");
         return;
       }
       const result = await onAssignCredits({
@@ -1062,23 +1020,6 @@ function AdminFinanceScreen({
       setRecoveryForm((current) => ({ ...current, [paymentId]: { student_id: "", reference_code: "" } }));
     } catch (err) {
       setFormError(err.message || "Unable to recover payment.");
-    }
-  };
-
-  const handleSalaryPaySubmit = async (event) => {
-    event.preventDefault();
-    setFeedback("");
-    setFormError("");
-    try {
-      await onPaySalary({
-        ...salaryPayForm,
-        amount_paid: Number(salaryPayForm.amount_paid),
-        pay_with_flutterwave: true,
-      });
-      setFeedback("Salary payment sent via Flutterwave.");
-      setSalaryPayForm((current) => ({ ...current, amount_paid: "", notes: "" }));
-    } catch (err) {
-      setFormError(err.message || "Unable to pay salary.");
     }
   };
 
@@ -1160,21 +1101,24 @@ function AdminFinanceScreen({
                 <strong>{formatFinanceAmount(outstandingAmount)}</strong>
               </div>
             </article>
-            <article className="finance-summary-card tone-expected">
-              <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="money" className="inline-icon" />
-              </div>
-              <div>
-                <p>Credit Price</p>
-                <strong>{formatFinanceAmount(tokenUnitPrice)}</strong>
-              </div>
-            </article>
-            <article className="finance-summary-card tone-received">
+            <article
+              className="finance-summary-card tone-received dashboard-click-card"
+              role="button"
+              tabIndex="0"
+              onClick={scrollToTokenPurchase}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  scrollToTokenPurchase();
+                }
+              }}
+              title="Buy activation tokens"
+            >
               <div className="finance-summary-icon" aria-hidden="true">
                 <DashboardIcon name="check" className="inline-icon" />
               </div>
               <div>
-                <p>Available Credits</p>
+                <p>Available Tokens</p>
                 <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong>
               </div>
             </article>
@@ -1256,11 +1200,130 @@ function AdminFinanceScreen({
             </article>
           </div>
 
+          <div className="finance-workspace">
+            <article
+              className={`app-panel ${editingClassFeeId ? "edit-modal-card class-fee-edit-modal" : ""}`}
+              role={editingClassFeeId ? "dialog" : undefined}
+              aria-modal={editingClassFeeId ? "true" : undefined}
+              aria-labelledby="class-fee-form-title"
+            >
+              <div className="edit-modal-head">
+                <div>
+                  <h3 id="class-fee-form-title">{editingClassFeeId ? "Update Class Fee" : "Create Class Fee"}</h3>
+                  <p className="panel-sub">Create school-focused bills for each class. No personal finance categories are shown here.</p>
+                </div>
+                {editingClassFeeId ? (
+                  <button type="button" className="table-action" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>
+                    Close
+                  </button>
+                ) : null}
+              </div>
+              <form className="panel-form" onSubmit={handleClassFeeSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field full">Class<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">Select class</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
+                  <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
+                  <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? "Update class fee" : "Create class fee"}</button>
+                  {editingClassFeeId ? <button type="button" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
+                </div>
+              </form>
+            </article>
+
+          </div>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
+              <h3>Student Bank Payment History</h3>
+              <small>{bankPaymentRows.length} bank payment records</small>
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+                <tbody>{bankPaymentRows.length ? visibleBankPaymentRows.map((payment) => {
+                  const recovery = recoveryForm[payment.id] || {};
+                  const canRecover = ["unmatched", "pending"].includes(payment.status);
+                  return (
+                    <tr key={payment.id}>
+                      <td>{payment.student_name || "Unmatched"}<small>{payment.student_id || "No student linked"}</small></td>
+                      <td>{payment.reference_code || "-"}</td>
+                      <td>{payment.bank_reference || "-"}</td>
+                      <td>{payment.narration || "-"}</td>
+                      <td>{formatFinanceAmount(payment.amount)}</td>
+                      <td>{formatFinanceAmount(payment.applied_amount)}</td>
+                      <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
+                      <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                      <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                      <td>
+                        {canRecover ? (
+                          <div className="table-actions-inline">
+                            <input
+                              className="table-inline-input"
+                              value={recovery.reference_code || recovery.student_id || ""}
+                              onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { reference_code: event.target.value } }))}
+                              placeholder="Student ref"
+                              aria-label="Student payment reference"
+                            />
+                            <button type="button" className="table-action" onClick={() => handleRecoverPayment(payment.id)} disabled={!onBankPaymentRecover}>Match</button>
+                          </div>
+                        ) : (
+                          <span className="field-note">Matched</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                }) : <tr><td colSpan="10">No student bank payments found.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("bankPaymentHistory", bankPaymentRows.length)}
+            </div>
+          </article>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
+              <h3>Student Payment Records</h3>
+              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
+                <option value="student-payments">Student Payment Records</option>
+                <option value="student-fees">Student Fees</option>
+                <option value="class-fees">Class Fee Schedule</option>
+                <option value="transactions">Transaction History</option>
+              </select>
+            </div>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-payments" ? "active" : ""}`}>
+              <table className="data-table">
+                <thead><tr><th>Student</th><th>Class</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
+                <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("studentPayments", paymentRows.length)}
+            </div>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
+              <table className="data-table">
+                <thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Edit</th></tr></thead>
+                <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
+            </div>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
+              <table className="data-table">
+                <thead><tr><th>Class</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
+                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No class fees configured yet.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("classFees", classFees.length)}
+            </div>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "transactions" ? "active" : ""}`}>
+              <table className="data-table">
+                <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th></tr></thead>
+                <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.description || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td></tr>)) : <tr><td colSpan="4">No transactions yet.</td></tr>}</tbody>
+              </table>
+            </div>
+          </article>
+
           <section className="activation-credit-grid">
-            <article className="app-panel activation-credit-panel">
+            <article className="app-panel activation-credit-panel" ref={tokenPurchaseRef} style={{ order: 2 }}>
               <div className="panel-head">
-                <h3>Activation Credits</h3>
-                <small>Buy credits, verify payments, and activate student access from this finance page.</small>
+                <h3>Activation Tokens</h3>
+                <small>Buy tokens, verify payments, and activate student access from this finance page.</small>
               </div>
               <div className="activation-credit-summary">
                 <span>Balance <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong></span>
@@ -1270,12 +1333,12 @@ function AdminFinanceScreen({
               </div>
               <form className="panel-form" onSubmit={handleCreditPurchaseSubmit}>
                 <div className="panel-form-grid">
-                  <label className="panel-field">Credits to buy<input type="number" min="1" value={creditPurchaseForm.credits} onChange={(event) => setCreditPurchaseForm({ credits: event.target.value })} placeholder="100" /></label>
+                  <label className="panel-field">Tokens to buy<input type="number" min="1" value={creditPurchaseForm.credits} onChange={(event) => setCreditPurchaseForm({ credits: event.target.value })} placeholder="100" /></label>
                   <label className="panel-field">Estimated total<input value={formatFinanceAmount(Math.max(requestedCreditCount, 0) * tokenUnitPrice)} readOnly /></label>
-                  <label className="panel-field">Bonus credits<input value={bonusCreditCount ? `${bonusCreditCount} bonus` : "No bonus"} readOnly /></label>
+                  <label className="panel-field">Bonus tokens<input value={bonusCreditCount ? `${bonusCreditCount} bonus` : "No bonus"} readOnly /></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1}>Buy credits</button>
+                  <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1}>Buy tokens</button>
                   {creditPurchaseUrl ? <a className="table-action" href={creditPurchaseUrl} target="_blank" rel="noreferrer">Open checkout</a> : null}
                 </div>
               </form>
@@ -1285,9 +1348,9 @@ function AdminFinanceScreen({
               </form>
             </article>
 
-            <article className="app-panel activation-credit-panel">
+            <article className="app-panel activation-credit-panel" style={{ order: 1 }}>
               <div className="panel-head">
-                <h3>Assign Credits</h3>
+                <h3>Assign Tokens</h3>
                 <small>Activate all eligible students or students who have paid at least 50%.</small>
               </div>
               <form className="panel-form" onSubmit={handleCreditAssignSubmit}>
@@ -1305,7 +1368,7 @@ function AdminFinanceScreen({
                   <p className="form-hint">No inactive student matches that search.</p>
                 )}
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onAssignCredits}>Assign credits</button>
+                  <button type="submit" disabled={!onAssignCredits}>Assign tokens</button>
                   <button type="button" className="table-action" onClick={handleRunAutoCredits} disabled={!onRunAutoCredits}>Run auto assign</button>
                 </div>
               </form>
@@ -1315,7 +1378,7 @@ function AdminFinanceScreen({
                   <label className="panel-field">Auto scope<select value={creditSettingsForm.scope} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, scope: event.target.value }))}><option value="all">All inactive students</option><option value="paid_50">Paid 50% and above</option></select></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onCreditSettings}>Save credit settings</button>
+                  <button type="submit" disabled={!onCreditSettings}>Save token settings</button>
                 </div>
               </form>
             </article>
@@ -1323,96 +1386,44 @@ function AdminFinanceScreen({
 
           <article className="app-panel">
             <div className="mobile-section-head">
-              <h3>Credit Activity</h3>
+              <h3>Finance Ledger Log</h3>
+              <small>Append-only record of financial activity</small>
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Date</th><th>Action</th><th>Description</th><th>Amount</th><th>Reference</th><th>Actor</th></tr></thead>
+                <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDate(item.created_at)}</td>
+                    <td>{item.action}</td>
+                    <td>{item.description}</td>
+                    <td>{formatFinanceAmount(item.amount)}</td>
+                    <td>{item.reference || "-"}</td>
+                    <td>{item.actor_name || "System"}</td>
+                  </tr>
+                )) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("financeLedger", financeLedgerRows.length)}
+            </div>
+          </article>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
+              <h3>Token Activity</h3>
             </div>
             <div className="table-scroll">
               <table className="data-table">
                 <thead><tr><th>Student</th><th>Status</th><th>Assigned</th><th>Active Until</th><th>Inactive Since</th><th>Excluded</th></tr></thead>
-                <tbody>{creditRows.length ? visibleCreditRows.map((row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>)) : <tr><td colSpan="6">No activation credit records yet.</td></tr>}</tbody>
+                <tbody>{creditRows.length ? visibleCreditRows.map((row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>)) : <tr><td colSpan="6">No activation token records yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("activationAlerts", creditRows.length)}
             </div>
             <div className="table-scroll">
               <table className="data-table">
-                <thead><tr><th>Date</th><th>Reference</th><th>Credits</th><th>Amount</th><th>Status</th></tr></thead>
-                <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map((row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>)) : <tr><td colSpan="5">No credit purchases yet.</td></tr>}</tbody>
+                <thead><tr><th>Date</th><th>Reference</th><th>Tokens</th><th>Amount</th><th>Status</th></tr></thead>
+                <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map((row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>)) : <tr><td colSpan="5">No token purchases yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
-            </div>
-          </article>
-
-          <div className="finance-workspace">
-            <article className="app-panel">
-              <h3>{editingClassFeeId ? "Update Class Fee" : "Create Class Fee"}</h3>
-              <p className="panel-sub">Create school-focused bills for each class. No personal finance categories are shown here.</p>
-              <form className="panel-form" onSubmit={handleClassFeeSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field full">Class<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">Select class</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
-                  <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
-                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
-                  <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? "Update class fee" : "Create class fee"}</button>
-                  {editingClassFeeId ? <button type="button" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
-                </div>
-              </form>
-            </article>
-
-            <article className="app-panel">
-              <h3>Payroll Management</h3>
-              <p className="panel-sub">Prepare staff payroll requests from the school HR records linked to finance.</p>
-              <form className="panel-form" onSubmit={handleSalaryPaySubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field full">Staff<select value={salaryPayForm.staff_id} onChange={(event) => handleSalaryStaffChange(event.target.value)} required><option value="">Select staff</option>{staffRows.map((item) => (<option key={item.id} value={item.id}>{item.name} - {item.role || "Staff"}</option>))}</select></label>
-                  <label className="panel-field">Year<input type="number" value={salaryPayForm.year} onChange={(event) => setSalaryPayForm((current) => ({ ...current, year: event.target.value }))} /></label>
-                  <label className="panel-field">Month<input type="number" min="1" max="12" value={salaryPayForm.month} onChange={(event) => setSalaryPayForm((current) => ({ ...current, month: event.target.value }))} /></label>
-                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={salaryPayForm.amount_paid} onChange={(event) => setSalaryPayForm((current) => ({ ...current, amount_paid: event.target.value }))} placeholder={selectedSalaryStaff?.base_salary || "0.00"} /></label>
-                  <label className="panel-field full">Note<input value={salaryPayForm.notes} onChange={(event) => setSalaryPayForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Payroll note" /></label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onPaySalary || !salaryPayForm.staff_id}>Request payroll</button>
-                </div>
-              </form>
-            </article>
-          </div>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Student Payment Records</h3>
-              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
-                <option value="student-payments">Student Payment Records</option>
-                <option value="student-fees">Student Fee Editor</option>
-                <option value="class-fees">Class Fee Schedule</option>
-                <option value="transactions">Transaction History</option>
-              </select>
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-payments" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>Class</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
-                <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("studentPayments", paymentRows.length)}
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Class</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
-                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No class fees configured yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("classFees", classFees.length)}
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "transactions" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th></tr></thead>
-                <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.description || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td></tr>)) : <tr><td colSpan="4">No transactions yet.</td></tr>}</tbody>
-              </table>
             </div>
           </article>
         </>
@@ -2804,9 +2815,9 @@ function ReadOnlyPersonProfile({ person, title = "Profile", onClose, codeLabel =
   ].filter(([, value]) => value !== undefined && value !== null && value !== "");
 
   return (
-    <article className="app-panel record-detail-panel">
+    <article className="app-panel record-detail-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="readonly-profile-title">
       <div className="panel-head">
-        <h3>{title}</h3>
+        <h3 id="readonly-profile-title">{title}</h3>
         {onClose ? <button type="button" className="table-action" onClick={onClose}>Close</button> : null}
       </div>
       <dl className="record-detail-grid">
@@ -2835,7 +2846,6 @@ function AdminHRPayrollScreen({
   error,
   onRetry,
   onMarkAttendance,
-  onCreatePayroll,
   onCreateLeave,
   onReviewLeave,
   onCreateAdvance,
@@ -2847,43 +2857,18 @@ function AdminHRPayrollScreen({
   const attendance = data?.attendance || [];
   const leaves = data?.leaves || [];
   const advances = data?.advances || [];
+  const activity = data?.activity || [];
   const [attendanceForm, setAttendanceForm] = useState({ staff_id: "", qr_token: "", date: "", notes: "" });
-  const [payrollForm, setPayrollForm] = useState({
-    staff_id: "",
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
-    allowances: "",
-    deductions: "",
-    amount_paid: "",
-    pay_with_flutterwave: false,
-    bank_code: "",
-    bank_name: "",
-    bank_account_name: "",
-    bank_account_number: "",
-    notes: "",
-  });
   const [leaveForm, setLeaveForm] = useState({ staff_id: "", leave_type: "Annual", start_date: "", end_date: "", reason: "" });
   const [advanceForm, setAdvanceForm] = useState({ staff_id: "", amount: "", reason: "" });
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const staffOptions = staff.map((item) => ({ id: item.id, label: `${item.name} (${item.staff_code})` }));
   const formatMoney = (value) => `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString()}`;
-  const selectedPayrollStaff = staff.find((item) => item.id === payrollForm.staff_id);
-
-  const handlePayrollStaffChange = (staffId) => {
-    const nextStaff = staff.find((item) => item.id === staffId);
-    setPayrollForm((prev) => ({
-      ...prev,
-      staff_id: staffId,
-      amount_paid: prev.amount_paid || nextStaff?.base_salary || "",
-      bank_code: nextStaff?.bank_code || "",
-      bank_name: nextStaff?.bank_name || "",
-      bank_account_name: nextStaff?.bank_account_name || nextStaff?.name || "",
-      bank_account_number: nextStaff?.bank_account_number || "",
-    }));
-  };
+  const visibleActivity = activityExpanded ? activity : activity.slice(0, 3);
 
   const runAction = async (key, action, successMessage) => {
     setBusy(key);
@@ -2907,12 +2892,6 @@ function AdminHRPayrollScreen({
     if (result) setAttendanceForm((prev) => ({ ...prev, qr_token: "", notes: "" }));
   };
 
-  const handlePayrollSubmit = async (event) => {
-    event.preventDefault();
-    const result = await runAction("payroll", () => onCreatePayroll(payrollForm), "Payroll calculated.");
-    if (result) setPayrollForm((prev) => ({ ...prev, allowances: "", deductions: "", amount_paid: "", notes: "" }));
-  };
-
   const handleLeaveSubmit = async (event) => {
     event.preventDefault();
     const result = await runAction("leave", () => onCreateLeave(leaveForm), "Leave request created.");
@@ -2928,7 +2907,7 @@ function AdminHRPayrollScreen({
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>HR &amp; Payroll</h2>
+        <h2>HR Management</h2>
         <p>Manage staff records, payroll, attendance, leave, and salary advances.</p>
       </div>
 
@@ -2955,20 +2934,6 @@ function AdminHRPayrollScreen({
           </form>
         </article>
 
-        <article className="app-panel">
-          <div className="panel-head"><h3>Payroll calculator</h3><small>Monthly salary less advances and deductions.</small></div>
-          <form className="panel-form" onSubmit={handlePayrollSubmit}>
-            <div className="panel-form-grid">
-              <label className="panel-field">Staff<select value={payrollForm.staff_id} onChange={(e) => handlePayrollStaffChange(e.target.value)}><option value="">Select staff</option>{staffOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-              <label className="panel-field">Year<input type="number" value={payrollForm.year} onChange={(e) => setPayrollForm((p) => ({ ...p, year: e.target.value }))} /></label>
-              <label className="panel-field">Month<input type="number" min="1" max="12" value={payrollForm.month} onChange={(e) => setPayrollForm((p) => ({ ...p, month: e.target.value }))} /></label>
-              <label className="panel-field">Allowances<input type="number" value={payrollForm.allowances} onChange={(e) => setPayrollForm((p) => ({ ...p, allowances: e.target.value }))} /></label>
-              <label className="panel-field">Deductions<input type="number" value={payrollForm.deductions} onChange={(e) => setPayrollForm((p) => ({ ...p, deductions: e.target.value }))} /></label>
-              <label className="panel-field">Amount paid<input type="number" value={payrollForm.amount_paid} onChange={(e) => setPayrollForm((p) => ({ ...p, amount_paid: e.target.value }))} /></label>
-            </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "payroll" || !payrollForm.staff_id}>Calculate payroll</button></div>
-          </form>
-        </article>
       </section>
 
       <section className="panel-grid">
@@ -3037,6 +3002,42 @@ function AdminHRPayrollScreen({
         />
         <RecordList title="Absent records" rows={(data?.absences || []).slice(0, 8)} render={(item) => `${item.staff_name} - ${item.date} - ${item.notes || "Absent"}`} />
       </section>
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Activity log</h3>
+          <small>{activity.length} latest records</small>
+        </div>
+        {activity.length ? (
+          <>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Date</th><th>Staff</th><th>Action</th><th>Details</th><th>Actor</th></tr></thead>
+                <tbody>
+                  {visibleActivity.map((item) => (
+                    <tr key={item.id}>
+                      <td>{formatDate(item.created_at)}</td>
+                      <td>{item.staff_name || "-"}</td>
+                      <td>{item.action}</td>
+                      <td>{item.details || "-"}</td>
+                      <td>{item.actor || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {activity.length > 3 ? (
+              <div className="finance-table-actions">
+                <button type="button" className="pill-button ghost" onClick={() => setActivityExpanded((current) => !current)}>
+                  {activityExpanded ? "Show less" : `More (${activity.length - 3})`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <p className="panel-empty">No activity records yet.</p>
+        )}
+      </article>
     </section>
   );
 }
@@ -3283,7 +3284,7 @@ function AdminNonTeachingStaffScreen({
       <article className="app-panel">
         <div className="panel-head">
           <h3>Non-teaching staff register</h3>
-          <small>{nonTeachingStaff.length} non-teaching staff members</small>
+          <small>Click a staff name or View to open the profile.</small>
         </div>
         {nonTeachingStaff.length ? (
           <table className="data-table">
@@ -3292,7 +3293,7 @@ function AdminNonTeachingStaffScreen({
               {nonTeachingStaff.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <button type="button" className="record-list-button" onClick={() => handleSelectRecord("profile", item)}>
+                    <button type="button" className="record-list-button" onClick={() => handleSelectRecord("profile", item)} title="View staff profile">
                       {item.name}
                     </button>
                     <br /><small>{item.staff_code} - Non-teaching</small>
@@ -3304,7 +3305,10 @@ function AdminNonTeachingStaffScreen({
                   <td>{formatMoney(item.salary_balance)}</td>
                   <td>{item.attendance_rate}% - {item.absent_count} absent</td>
                   <td>
-                    <button type="button" className="table-action" onClick={() => handleEditStaff(item)}>Edit</button>
+                    <div className="table-actions-inline">
+                      <button type="button" className="table-action" onClick={() => handleSelectRecord("profile", item)}>View</button>
+                      <button type="button" className="table-action" onClick={() => handleEditStaff(item)}>Edit</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -3312,39 +3316,6 @@ function AdminNonTeachingStaffScreen({
           </table>
         ) : <p className="panel-empty">No non-teaching staff records yet.</p>}
       </article>
-
-      <section className="panel-grid">
-        <RecordList
-          title="Payroll history"
-          rows={nonTeachingPayroll.slice(0, 8)}
-          render={(item) => `${item.staff_name} - ${item.period} - ${formatMoney(item.net_salary)} - ${item.status}`}
-          onSelect={(item) => handleSelectRecord("payroll", item)}
-        />
-        <RecordList
-          title="Attendance history"
-          rows={nonTeachingAttendance.slice(0, 8)}
-          render={(item) => `${item.staff_name} - ${item.date} - ${item.status}`}
-          onSelect={(item) => handleSelectRecord("attendance", item)}
-        />
-        <RecordList
-          title="Leave history"
-          rows={nonTeachingLeaves.slice(0, 8)}
-          render={(item) => `${item.staff_name} - ${item.leave_type} - ${item.status}`}
-          onSelect={(item) => handleSelectRecord("leave", item)}
-        />
-        <RecordList
-          title="Advance requests"
-          rows={nonTeachingAdvances.slice(0, 8)}
-          render={(item) => `${item.staff_name} - ${formatMoney(item.amount)} - ${item.status}`}
-          onSelect={(item) => handleSelectRecord("advance", item)}
-        />
-        <RecordList
-          title="Absent records"
-          rows={nonTeachingAbsences.slice(0, 8)}
-          render={(item) => `${item.staff_name} - ${item.date} - ${item.notes || "Absent"}`}
-          onSelect={(item) => handleSelectRecord("absence", item)}
-        />
-      </section>
 
       {selectedRecord && selectedRecordType === "profile" ? (
         <ReadOnlyPersonProfile
@@ -3405,7 +3376,7 @@ function AdminHRActivityScreen({ data, loading, error, onRetry, onReviewLeave, o
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>HR Activity Records</h2>
+        <h2>HR Management</h2>
         <p>Audit HR actions and approve staffs leave and salary advance requests.</p>
       </div>
       <ScreenState loading={loading && !activity.length} error={error} onRetry={onRetry} />

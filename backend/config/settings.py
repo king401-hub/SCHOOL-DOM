@@ -281,6 +281,7 @@ else:
 FLUTTERWAVE_BASE_URL = os.getenv('FLUTTERWAVE_BASE_URL', 'https://api.flutterwave.com/v3')
 FLUTTERWAVE_CALLBACK_URL = os.getenv('FLUTTERWAVE_CALLBACK_URL', '')
 FLUTTERWAVE_WEBHOOK_SECRET_HASH = os.getenv('FLUTTERWAVE_WEBHOOK_SECRET_HASH', '')
+FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES = env_bool('FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES', True)
 
 # KudiSMS bulk SMS configuration. Schools may also set a Custom SMSConfiguration
 # in admin; that tenant-level configuration takes priority over these defaults.

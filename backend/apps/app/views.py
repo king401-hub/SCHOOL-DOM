@@ -10,7 +10,8 @@ from django.views.generic import TemplateView
 
 
 APK_FILENAME = "schooldom-app.apk"
-STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
+STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
+LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
 
 
 def app_apk_path():
@@ -27,7 +28,27 @@ def safe_server_slug(server_url):
 
 
 def student_cbt_app_path(server_url):
-    return Path(settings.MEDIA_ROOT) / "app" / "student-cbt" / safe_server_slug(server_url) / STUDENT_CBT_FILENAME
+    return Path(settings.MEDIA_ROOT) / "app" / "student-cbt" / safe_server_slug(server_url) / LEGACY_STUDENT_CBT_FILENAME
+
+
+def offline_cbt_installer_candidates():
+    release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-client" / "release"
+    media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
+    candidates = [
+        media_dir / STUDENT_CBT_FILENAME,
+        media_dir / "SchoolDom-CBT-Client-Setup.exe",
+    ]
+    if release_dir.exists():
+        candidates.extend(sorted(release_dir.glob("SchoolDom-CBT-Client-*-Setup.exe"), reverse=True))
+        candidates.extend(sorted(release_dir.glob("*.exe"), reverse=True))
+    return candidates
+
+
+def offline_cbt_installer_path():
+    for candidate in offline_cbt_installer_candidates():
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
 
 
 def request_origin(request):
@@ -193,8 +214,12 @@ def download_android_apk(request):
 
 
 def download_student_cbt_app(request):
-    server_url = frontend_server_url(request)
-    app_path = build_student_cbt_app(server_url)
+    app_path = offline_cbt_installer_path()
+    if not app_path:
+        raise Http404(
+            "SchoolDom CBT Client installer is not available yet. Build it with `cd schooldom-cbt-client && npm run dist`, "
+            "then copy the setup exe to media/app/student-cbt/SchoolDomCBT.exe."
+        )
     response = FileResponse(
         app_path.open("rb"),
         as_attachment=True,
