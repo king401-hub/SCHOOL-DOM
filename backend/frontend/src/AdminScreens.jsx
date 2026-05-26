@@ -34,8 +34,8 @@ function CbtStatusPill({ tone = "info", children }) {
 }
 
 function SchoolDomCbtDesktop({ exams = [], results = [] }) {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const studentAppDownloadUrl = `${origin}/app/download/student-cbt/`;
+  const studentAppDownloadUrl = `${API_BASE_URL}/app/download/student-cbt/`;
+  const [downloadNotice, setDownloadNotice] = useState(false);
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
   const openExams = publishedExams.filter((exam) => {
     const now = Date.now();
@@ -49,18 +49,31 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
     .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
     .slice(0, 6);
 
+  const handleStudentAppDownload = (event) => {
+    event.preventDefault();
+    setDownloadNotice(true);
+    const iframe = document.createElement("iframe");
+    iframe.title = "SchoolDom CBT download";
+    iframe.src = studentAppDownloadUrl;
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+    window.setTimeout(() => {
+      iframe.remove();
+    }, 30000);
+  };
+
   return (
     <section className="cbt-desktop-app">
       <header className="cbt-desktop-hero">
         <div>
           <p className="quiz-kicker">Desktop CBT deployment</p>
           <h2>Student CBT App</h2>
-          <p>Students write exams from the desktop client while this admin server remains the single source of exams, PIN checks, autosaves, submissions, and results.</p>
+          <p>Students write exams from the offline desktop client after the admin imports a CBT package or syncs published exams.</p>
         </div>
         <div className="cbt-hero-status">
-          <CbtStatusPill tone={origin ? "success" : "warning"}>{origin ? "Admin server online" : "Open the admin server"}</CbtStatusPill>
-          <strong>Ready to package</strong>
-          <small>The download embeds this admin server automatically.</small>
+          <CbtStatusPill tone="success">Offline ready</CbtStatusPill>
+          <strong>SchoolDomCBT.exe</strong>
+          <small>Install once, then import exam packages without running a server.</small>
         </div>
       </header>
 
@@ -74,8 +87,8 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
       <div className="cbt-admin-layout">
         <article className="app-panel cbt-server-panel">
           <div className="panel-head">
-            <h3>Admin local server</h3>
-            <small>Run Django and the frontend on the admin computer with LAN access enabled.</small>
+            <h3>Offline CBT installer</h3>
+            <small>Download the Windows CBT client and copy it to student computers.</small>
           </div>
           <div className="cbt-server-card">
             <div>
@@ -86,8 +99,8 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
             <CbtStatusPill tone="success">Real API backed</CbtStatusPill>
           </div>
           <div className="cbt-action-row">
-            <a className="cbt-download-button" href={studentAppDownloadUrl}>
-              Download Student CBT App (.exe)
+            <a className="cbt-download-button" href={studentAppDownloadUrl} onClick={handleStudentAppDownload}>
+              Download SchoolDomCBT.exe
             </a>
           </div>
           <div className="cbt-security-grid">
@@ -127,6 +140,24 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
           </div>
         </article>
       </div>
+      {downloadNotice ? (
+        <div className="cbt-download-modal" role="dialog" aria-modal="true" aria-labelledby="cbt-download-title">
+          <div className="cbt-download-card">
+            <div className="cbt-download-check" aria-hidden="true">
+              <span />
+            </div>
+            <p className="cbt-info-kicker">Download requested</p>
+            <h3 id="cbt-download-title">SchoolDomCBT.exe is starting</h3>
+            <p>The download should begin automatically. If it does not, use the direct download button below.</p>
+            <div className="cbt-download-actions">
+              <a href={studentAppDownloadUrl} className="cbt-download-button">
+                Download Again
+              </a>
+              <button type="button" onClick={() => setDownloadNotice(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

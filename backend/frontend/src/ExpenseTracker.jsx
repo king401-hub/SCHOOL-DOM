@@ -13,14 +13,11 @@ const EXPENSE_TAGS = [
 ];
 
 const DEFAULT_BILL_LINES = [
+  "TUITION FEES",
   "HOSTEL FEES",
-  "SCHOLARSHIP",
-  "STATIONARIES",
-  "OUTSTANDING BALANCE",
   "TRANSPORTATION",
   "UNIFORM",
-  "HOSPITAL BILLS",
-  "TUITION FEES",
+  "OUTSTANDING BALANCE",
 ];
 
 const createBillLines = () => DEFAULT_BILL_LINES.map((label) => ({ label, amount: "0.00" }));
@@ -114,7 +111,7 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
   const staffSalaryAmount = Number(salaryPaymentSummary.staff_salary_amount || 0);
   const unsettledPaymentsAmount = Number(salaryPaymentSummary.unsettled_amount || 0);
   const balanceAmount = schoolFeeStats.expected - staffSalaryAmount - unsettledPaymentsAmount;
-  const latestClassFees = classFees.slice(0, 4);
+  const latestClassFees = classFees.slice(0, 5);
 
   const categoryRows = useMemo(() => {
     const rows = new Map();
@@ -170,7 +167,7 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
       school_class: fee.school_class || "",
       due_date: fee.due_date || "",
     });
-    setBillLines([{ label: fee.title || "Bills", amount: fee.amount || "" }, ...createBillLines()]);
+    setBillLines([{ label: fee.title || "Bills", amount: fee.amount || "" }, ...createBillLines().slice(0, 4)]);
   };
 
   const updateBillLine = (index, field, value) => {
@@ -203,7 +200,7 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
         <head>
           <title>${escapeHtml(billNumber)} Bills</title>
           <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.bill{width:min(100%,760px);min-height:980px;margin:24px auto;background:#fff;padding:48px 54px;border:1px solid #d8e0ea}.brand{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:58px}.logo{width:74px;height:74px;border:1px solid #d8e0ea;display:grid;place-items:center;overflow:hidden;font-weight:900;color:#0f3d5e}.logo img{width:100%;height:100%;object-fit:contain}.school{text-align:right}.school h1{margin:0 0 8px;font-size:22px}.school p{margin:3px 0;color:#64748b;font-size:12px}.title{font-size:54px;letter-spacing:0;text-transform:uppercase;margin:0 0 28px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:34px;font-size:13px}.meta strong{display:inline-block;min-width:90px}table{width:100%;border-collapse:collapse;margin:20px 0 28px}th,td{border-bottom:1px dashed #9ca3af;padding:14px 10px;text-align:left}th{text-transform:uppercase;font-size:12px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:46px;font-size:22px;font-weight:900;margin-top:20px}.footer{border-top:1px dashed #9ca3af;margin-top:58px;padding-top:16px;text-align:center;color:#64748b;font-size:12px}@media print{body{background:#fff}.bill{margin:0 auto;border:none;min-height:100vh}}
+            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.bill{width:min(100%,900px);margin:14px auto;background:#fff;padding:32px 40px;border:1px solid #d8e0ea}.brand{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:30px}.logo{width:62px;height:62px;border:1px solid #d8e0ea;display:grid;place-items:center;overflow:hidden;font-weight:900;color:#0f3d5e}.logo img{width:100%;height:100%;object-fit:contain}.school{text-align:right}.school h1{margin:0 0 6px;font-size:20px}.school p{margin:2px 0;color:#64748b;font-size:11px}.title{font-size:42px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}.meta strong{display:inline-block;min-width:78px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:9px 10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.bill{width:100%;margin:0;border:none;padding:18px 22px}}
           </style>
         </head>
         <body>
