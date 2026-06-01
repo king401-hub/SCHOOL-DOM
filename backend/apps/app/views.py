@@ -3,13 +3,14 @@ from urllib.parse import urlsplit
 import subprocess
 
 from django.conf import settings
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.views.generic import TemplateView
 
 
 APK_FILENAME = "schooldom-app.apk"
+ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
 STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
 LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
 
@@ -49,6 +50,46 @@ def offline_cbt_installer_path():
         if candidate.exists() and candidate.is_file():
             return candidate
     return None
+
+
+def admin_app_installer_candidates():
+    release_dir = Path(settings.BASE_DIR) / "schooldom-admin-app" / "release"
+    media_dir = Path(settings.MEDIA_ROOT) / "app" / "admin"
+    candidates = [
+        media_dir / ADMIN_APP_FILENAME,
+        media_dir / "SchoolDom-Admin-Setup.exe",
+    ]
+    if release_dir.exists():
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-*-Setup.exe"), reverse=True))
+        candidates.extend(sorted(release_dir.glob("*.exe"), reverse=True))
+    return candidates
+
+
+def admin_app_installer_path():
+    for candidate in admin_app_installer_candidates():
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def offline_cbt_client_version():
+    package_path = Path(settings.BASE_DIR) / "schooldom-cbt-client" / "package.json"
+    try:
+        import json
+
+        return json.loads(package_path.read_text(encoding="utf-8")).get("version") or "0.1.0"
+    except (OSError, ValueError, TypeError):
+        return "0.1.0"
+
+
+def admin_app_version():
+    package_path = Path(settings.BASE_DIR) / "schooldom-admin-app" / "package.json"
+    try:
+        import json
+
+        return json.loads(package_path.read_text(encoding="utf-8")).get("version") or "0.1.0"
+    except (OSError, ValueError, TypeError):
+        return "0.1.0"
 
 
 def request_origin(request):
@@ -194,6 +235,7 @@ class AppDownloadView(TemplateView):
         context["apk_size_mb"] = round(apk_path.stat().st_size / (1024 * 1024), 1) if apk_path.exists() else None
         context["apk_download_url"] = reverse("app_apk_download")
         context["student_cbt_download_url"] = reverse("student_cbt_app_download")
+        context["admin_app_download_url"] = reverse("admin_app_download")
         context["app_version"] = "0.1.0"
         return context
 
@@ -228,6 +270,49 @@ def download_student_cbt_app(request):
     )
     response["Cache-Control"] = "no-store"
     return response
+
+
+def download_admin_app(request):
+    app_path = admin_app_installer_path()
+    if not app_path:
+        raise Http404(
+            "SchoolDom Admin installer is not available yet. Build it with `cd schooldom-admin-app && npm run dist`, "
+            "then copy the setup exe to media/app/admin/SchoolDomAdmin.exe."
+        )
+    response = FileResponse(
+        app_path.open("rb"),
+        as_attachment=True,
+        filename=ADMIN_APP_FILENAME,
+        content_type="application/vnd.microsoft.portable-executable",
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def admin_app_download_version(request):
+    app_path = admin_app_installer_path()
+    return JsonResponse(
+        {
+            "version": admin_app_version(),
+            "available": bool(app_path),
+            "download_url": request.build_absolute_uri(reverse("admin_app_download")),
+            "filename": ADMIN_APP_FILENAME,
+            "size_bytes": app_path.stat().st_size if app_path else 0,
+        }
+    )
+
+
+def student_cbt_app_version(request):
+    app_path = offline_cbt_installer_path()
+    download_url = request.build_absolute_uri(reverse("student_cbt_app_download"))
+    payload = {
+        "version": offline_cbt_client_version(),
+        "available": bool(app_path),
+        "download_url": download_url,
+        "filename": STUDENT_CBT_FILENAME,
+        "size_bytes": app_path.stat().st_size if app_path else 0,
+    }
+    return JsonResponse(payload)
 
 
 def redirect_student_cbt(request):

@@ -2422,6 +2422,85 @@ def dashboard_snapshot(request):
     )
 
 
+def _public_admin_app_school(request):
+    requested_code = str(request.GET.get("school_code") or "").strip()
+    if requested_code:
+      school = SchoolTenant.objects.filter(schema_name__iexact=requested_code, is_active=True).first()
+      if school:
+          return school
+
+    host = request.get_host().split(":", 1)[0].lower()
+    domain = Domain.objects.select_related("tenant").filter(domain__iexact=host).first()
+    if domain and domain.tenant and domain.tenant.is_active:
+        return domain.tenant
+
+    return SchoolTenant.objects.filter(is_active=True).order_by("id").first()
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def admin_desktop_bootstrap(request):
+    school = _public_admin_app_school(request)
+    now = timezone.now()
+    tenant_filter = {"tenant": school} if school else {}
+    user_filter = {"tenant": school} if school else {}
+
+    students_qs = User.objects.filter(role="student", **user_filter)
+    classes_qs = Class.objects.filter(**tenant_filter)
+    exams_qs = Exam.objects.filter(**tenant_filter)
+    attempts_qs = ExamAttempt.objects.filter(**tenant_filter)
+    banks_qs = QuestionBank.objects.filter(**tenant_filter)
+
+    school_payload = _school_payload(school, request) if school else {
+        "name": "SchoolDom",
+        "school_code": "",
+        "email": "",
+        "phone": "",
+        "address": "",
+        "logo": "",
+    }
+
+    return Response(
+        {
+            "success": True,
+            "school": school_payload,
+            "server": {
+                "online": True,
+                "host": request.get_host(),
+                "checked_at": now,
+            },
+            "downloads": {
+                "student_cbt": request.build_absolute_uri("/app/download/student-cbt/"),
+            },
+            "dashboard": {
+                "settings": {
+                    "name": school_payload.get("name") or "SchoolDom",
+                    "ip_address": request.get_host(),
+                    "refresh_interval": "30 sec",
+                },
+                "content": {
+                    "total": banks_qs.count() + Question.objects.filter(question_banks__in=banks_qs).distinct().count(),
+                },
+                "candidate": {
+                    "total": students_qs.count(),
+                    "class": classes_qs.count(),
+                },
+                "client": {
+                    "total": 1,
+                },
+                "test": {
+                    "total": exams_qs.count(),
+                    "licensed": exams_qs.filter(is_published=True).count(),
+                    "pending": attempts_qs.filter(is_submitted=False).count(),
+                    "ongoing": attempts_qs.filter(is_submitted=False, end_time__gte=now).count(),
+                    "submitted": attempts_qs.filter(is_submitted=True).count(),
+                    "batch_count": ResultBatch.objects.filter(**tenant_filter).count(),
+                },
+            },
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def student_dashboard(request):

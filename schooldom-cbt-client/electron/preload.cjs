@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 const channels = {
   invoke: new Set([
     "app:bootstrap",
+    "app:checkForUpdates",
+    "app:downloadUpdate",
     "admin:syncFromCloud",
     "admin:pushResults",
     "admin:cleanupCache",
@@ -31,6 +33,10 @@ function invoke(channel, payload) {
 
 contextBridge.exposeInMainWorld("schoolDomCbt", {
   bootstrap: () => invoke("app:bootstrap"),
+  updates: {
+    check: (payload) => invoke("app:checkForUpdates", payload),
+    download: (payload) => invoke("app:downloadUpdate", payload),
+  },
   admin: {
     syncFromCloud: (payload) => invoke("admin:syncFromCloud", payload),
     pushResults: (payload) => invoke("admin:pushResults", payload),

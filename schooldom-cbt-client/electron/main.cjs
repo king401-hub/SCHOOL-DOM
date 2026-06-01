@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
@@ -11,6 +11,57 @@ const isDev = !app.isPackaged;
 let mainWindow;
 
 const READABLE_EXTENSIONS = new Set([".json", ".txt", ".md", ".csv", ".docx"]);
+
+function normalizeCloudUrl(value) {
+  return String(value || DEFAULT_CLOUD_URL).trim().replace(/\/+$/, "") || DEFAULT_CLOUD_URL;
+}
+
+function compareVersions(left, right) {
+  const a = String(left || "0").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const b = String(right || "0").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if ((a[index] || 0) > (b[index] || 0)) return 1;
+    if ((a[index] || 0) < (b[index] || 0)) return -1;
+  }
+  return 0;
+}
+
+async function checkForDesktopUpdate(cloudUrl) {
+  const baseUrl = normalizeCloudUrl(cloudUrl);
+  const currentVersion = app.getVersion();
+  const fallbackDownloadUrl = `${baseUrl}/app/download/student-cbt/`;
+
+  let payload = {};
+  try {
+    const response = await fetch(`${baseUrl}/app/download/student-cbt/version/`, {
+      headers: { Accept: "application/json" },
+    });
+    payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || `Update check failed (${response.status}).`);
+    }
+  } catch (error) {
+    return {
+      currentVersion,
+      latestVersion: currentVersion,
+      updateAvailable: false,
+      downloadUrl: fallbackDownloadUrl,
+      error: error.message || "Could not check for updates.",
+    };
+  }
+
+  const latestVersion = String(payload.version || currentVersion);
+  return {
+    currentVersion,
+    latestVersion,
+    updateAvailable: compareVersions(latestVersion, currentVersion) > 0,
+    available: Boolean(payload.available),
+    downloadUrl: payload.download_url || fallbackDownloadUrl,
+    filename: payload.filename || "SchoolDomCBT.exe",
+    sizeBytes: Number(payload.size_bytes || 0),
+  };
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -51,9 +102,18 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle("app:bootstrap", () => ({
     appName: APP_NAME,
+    appVersion: app.getVersion(),
     cloudUrl: db.getSetting("cloudUrl") || DEFAULT_CLOUD_URL,
     snapshot: db.getAdminSnapshot(),
   }));
+  ipcMain.handle("app:checkForUpdates", async (_event, payload = {}) => checkForDesktopUpdate(payload.cloudUrl));
+  ipcMain.handle("app:downloadUpdate", async (_event, payload = {}) => {
+    const update = payload.downloadUrl
+      ? { downloadUrl: payload.downloadUrl }
+      : await checkForDesktopUpdate(payload.cloudUrl);
+    await shell.openExternal(update.downloadUrl || `${normalizeCloudUrl(payload.cloudUrl)}/app/download/student-cbt/`);
+    return { success: true, downloadUrl: update.downloadUrl };
+  });
 
   ipcMain.handle("admin:getSnapshot", () => db.getAdminSnapshot());
   ipcMain.handle("admin:getLogs", () => db.getActivityLogs());

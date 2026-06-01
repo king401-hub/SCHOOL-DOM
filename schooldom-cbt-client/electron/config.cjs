@@ -1,7 +1,7 @@
 const path = require("path");
 const { app } = require("electron");
 
-const APP_NAME = "SchoolDom CBT Client";
+const APP_NAME = "SchoolDom Student CBT";
 const DEFAULT_CLOUD_URL = process.env.SCHOOLDOM_CLOUD_URL || "https://schooldom.academy";
 
 function dataPath(...segments) {

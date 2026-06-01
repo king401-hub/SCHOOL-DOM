@@ -42,7 +42,7 @@ function CbtStatusPill({ tone = "info", children }) {
 }
 
 function SchoolDomCbtDesktop({ exams = [], results = [] }) {
-  const studentAppDownloadUrl = `${API_BASE_URL}/app/download/student-cbt/`;
+  const adminAppDownloadUrl = `${API_BASE_URL}/app/download/admin/`;
   const [downloadNotice, setDownloadNotice] = useState(false);
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
   const openExams = publishedExams.filter((exam) => {
@@ -55,12 +55,12 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
     .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
     .slice(0, 6);
 
-  const handleStudentAppDownload = (event) => {
+  const handleAdminAppDownload = (event) => {
     event.preventDefault();
     setDownloadNotice(true);
     const iframe = document.createElement("iframe");
-    iframe.title = "SchoolDom CBT download";
-    iframe.src = studentAppDownloadUrl;
+    iframe.title = "SchoolDom Admin download";
+    iframe.src = adminAppDownloadUrl;
     iframe.style.display = "none";
     document.body.appendChild(iframe);
     window.setTimeout(() => {
@@ -73,8 +73,8 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
       <header className="cbt-desktop-hero">
         <div>
           <p className="quiz-kicker">Desktop CBT deployment</p>
-          <h2>Student CBT App</h2>
-          <p>Students use this desktop client only to sign in, open assigned exams, and submit CBT answers.</p>
+          <h2>SchoolDom Admin App</h2>
+          <p>Install the admin app for school-branded CBT setup, then install the student exam app from inside it.</p>
         </div>
       </header>
 
@@ -86,28 +86,28 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
       <div className="cbt-admin-layout">
         <article className="app-panel cbt-server-panel">
           <div className="panel-head">
-            <h3>Student CBT installer</h3>
-            <small>Download the Windows CBT client and copy it to student computers.</small>
+            <h3>SchoolDom Admin installer</h3>
+            <small>Install this Windows admin app first, then install the student CBT app from inside it.</small>
           </div>
           <div className="cbt-server-card">
             <div>
-              <span>Student application</span>
-              <strong>SchoolDom Student CBT</strong>
-              <small>Download the app here, copy it to each student computer, and open SchoolDomCBT.exe for exams.</small>
+              <span>Admin application</span>
+              <strong>SchoolDom Admin</strong>
+              <small>Download the admin app here. Inside the app, use Install CBT App for student computers.</small>
             </div>
-            <CbtStatusPill tone="success">Student exams only</CbtStatusPill>
+            <CbtStatusPill tone="success">No JWT token needed</CbtStatusPill>
           </div>
           <div className="cbt-action-row">
-            <a className="cbt-download-button" href={studentAppDownloadUrl} onClick={handleStudentAppDownload}>
-              Download SchoolDomCBT.exe
+            <a className="cbt-download-button" href={adminAppDownloadUrl} onClick={handleAdminAppDownload}>
+              Download SchoolDomAdmin.exe
             </a>
           </div>
           <div className="cbt-security-grid">
             {[
-              ["Authentication", "Students sign in with their real SchoolDom account before exams load."],
-              ["Exam PINs", "PIN validation happens on the server before an attempt is created."],
-              ["Exam Writing", "The client is focused on answering CBT questions and submitting attempts."],
-              ["Monitoring", "Fullscreen exits, tab switches, and auto-submit reasons are recorded."],
+              ["School Branding", "The admin app shows the school name, details, and uploaded school logo."],
+              ["CBT Installer", "Admins install the student CBT app directly from inside the admin app."],
+              ["No Token Copying", "The admin app reads public school details from the configured SchoolDom server."],
+              ["Exam Writing", "Students still use the separate CBT app for exams only."],
             ].map(([title, detail]) => (
               <div key={title}>
                 <strong>{title}</strong>
@@ -146,10 +146,10 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
               <span />
             </div>
             <p className="cbt-info-kicker">Download requested</p>
-            <h3 id="cbt-download-title">SchoolDomCBT.exe is starting</h3>
+            <h3 id="cbt-download-title">SchoolDomAdmin.exe is starting</h3>
             <p>The download should begin automatically. If it does not, use the direct download button below.</p>
             <div className="cbt-download-actions">
-              <a href={studentAppDownloadUrl} className="cbt-download-button">
+              <a href={adminAppDownloadUrl} className="cbt-download-button">
                 Download Again
               </a>
               <button type="button" onClick={() => setDownloadNotice(false)}>Close</button>

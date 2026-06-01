@@ -1,21 +1,18 @@
 {
-  "name": "schooldom-cbt-client",
-  "version": "0.1.1",
+  "name": "schooldom-admin-app",
+  "version": "0.1.0",
   "private": true,
-  "description": "Offline-first CBT desktop client for SchoolDom.",
+  "description": "School-branded admin desktop app for installing and monitoring SchoolDom CBT.",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5174 && electron .\"",
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5175 && electron .\"",
     "build": "vite build",
     "start": "electron .",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.4.1",
-    "axios": "^1.7.9",
-    "sql.js": "^1.11.0",
     "vite": "^5.4.14",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -27,8 +24,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.schooldom.cbtclient",
-    "productName": "SchoolDom Student CBT",
+    "appId": "com.schooldom.admin",
+    "productName": "SchoolDom Admin",
     "directories": {
       "output": "release"
     },
@@ -39,17 +36,14 @@
       "package.json"
     ],
     "extraMetadata": {
-      "name": "schooldom-cbt-client"
+      "name": "schooldom-admin-app"
     },
-    "asarUnpack": [
-      "**/*.node"
-    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [
         "nsis"
       ],
-      "artifactName": "SchoolDom-Student-CBT-${version}-Setup.${ext}"
+      "artifactName": "SchoolDom-Admin-${version}-Setup.${ext}"
     },
     "nsis": {
       "oneClick": false,

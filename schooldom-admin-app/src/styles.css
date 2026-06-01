@@ -1,0 +1,285 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: #111827;
+  background: #eef4fb;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-width: 920px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  background: #3346a3;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 9px 16px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+input {
+  width: 100%;
+  border: 1px solid #d8dee9;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #111827;
+}
+
+label {
+  display: grid;
+  gap: 5px;
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.splash-screen {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: #3346a3;
+}
+
+.brand-mark {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #3346a3;
+  color: #fff;
+  font-weight: 950;
+  font-size: 24px;
+}
+
+.admin-shell {
+  min-height: 100vh;
+  background: #f7f9fc;
+}
+
+.topbar {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #3444a0;
+  color: #fff;
+  font-size: 14px;
+}
+
+.topbar span {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  background: #1d2f82;
+  font-size: 12px;
+}
+
+.topbar b {
+  display: inline-flex;
+  min-width: 38px;
+  justify-content: center;
+  border-radius: 999px;
+  background: #ff7a1a;
+  padding: 4px 8px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 22px 28px 34px;
+}
+
+.tile {
+  min-height: 148px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 2px;
+}
+
+.settings-tile {
+  background: #e8ecef;
+}
+
+.content-tile {
+  background: #e7f4e8;
+}
+
+.candidate-tile {
+  background: #e1eef9;
+}
+
+.test-tile {
+  background: #efe3f1;
+}
+
+.client-tile {
+  background: #fae7df;
+}
+
+.school-tile {
+  background: #f4e2ea;
+}
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+}
+
+.tile-head h2 {
+  margin: 0;
+  color: #3346a3;
+  font-size: 15px;
+}
+
+.tile-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-block;
+  border: 3px solid currentColor;
+  color: #3346a3;
+}
+
+.tile-icon.gear {
+  border-radius: 50%;
+}
+
+.tile-icon.content {
+  color: #42a65a;
+  box-shadow: 6px 6px 0 -2px #e7f4e8, 6px 6px 0 0 currentColor;
+}
+
+.tile-icon.candidate {
+  width: 20px;
+  height: 20px;
+  border-radius: 50% 50% 45% 45%;
+  color: #2674d8;
+}
+
+.tile-icon.test {
+  color: #8c2bb4;
+}
+
+.tile-icon.client {
+  color: #f0522f;
+  border-radius: 0;
+}
+
+.tile-icon.school {
+  color: #d21f6f;
+  border-radius: 50% 50% 45% 45%;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+  font-size: 13px;
+}
+
+.field-row span {
+  color: #111827;
+}
+
+.field-row strong {
+  min-width: 48px;
+  max-width: 340px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 4px 12px;
+  color: #374151;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-form {
+  display: grid;
+  gap: 10px;
+}
+
+.install-button {
+  justify-self: end;
+  align-self: end;
+  margin-top: 8px;
+  background: #f0522f;
+}
+
+.school-logo {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #fff;
+  color: #d21f6f;
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.school-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(680px, calc(100% - 40px));
+  transform: translateX(-50%);
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  padding: 12px 14px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
+}
+
+.toast.error {
+  background: #991b1b;
+}
+
+.toast button {
+  background: rgba(255, 255, 255, 0.16);
+}

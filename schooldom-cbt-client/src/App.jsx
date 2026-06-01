@@ -5,10 +5,15 @@ const NAIRA_SYMBOL = "\u20A6";
 
 const fallbackApi = {
   bootstrap: async () => ({
-    appName: "SchoolDom CBT Client",
+    appName: "SchoolDom Student CBT",
+    appVersion: "0.1.0",
     cloudUrl: "http://127.0.0.1:8000",
     snapshot: { exams: [], students: [], sessions: [], queueCount: 0, settings: {} },
   }),
+  updates: {
+    check: async () => ({ currentVersion: "0.1.0", latestVersion: "0.1.0", updateAvailable: false }),
+    download: async () => ({ success: true }),
+  },
 };
 
 function secondsLeft(endsAt) {
@@ -38,7 +43,8 @@ function normalizeQuestions(exam) {
 export default function App() {
   const bridge = api || fallbackApi;
   const [booting, setBooting] = useState(true);
-  const [mode, setMode] = useState("student");
+  const [appVersion, setAppVersion] = useState("");
+  const [updateState, setUpdateState] = useState({ checking: false, message: "", info: null });
   const [cloudUrl, setCloudUrl] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [fallbackPin, setFallbackPin] = useState("");
@@ -61,10 +67,11 @@ export default function App() {
       try {
         const boot = await bridge.bootstrap();
         if (!active) return;
+        setAppVersion(boot.appVersion || "");
         setCloudUrl(boot.cloudUrl || "");
         setSnapshot(boot.snapshot || {});
       } catch (bootError) {
-        setError(bootError.message || "Could not start SchoolDom CBT Client.");
+        setError(bootError.message || "Could not start SchoolDom Student CBT.");
       } finally {
         setTimeout(() => active && setBooting(false), 650);
       }
@@ -80,6 +87,43 @@ export default function App() {
     }, 5000);
     return () => clearInterval(interval);
   }, [refreshSnapshot]);
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdateState({ checking: true, message: "Checking for app updates...", info: null });
+    try {
+      const info = await bridge.updates.check({ cloudUrl });
+      setUpdateState({
+        checking: false,
+        info,
+        message: info.updateAvailable
+          ? `Version ${info.latestVersion} is ready to download.`
+          : info.error
+            ? info.error
+            : "This CBT app is already up to date.",
+      });
+    } catch (updateError) {
+      setUpdateState({ checking: false, info: null, message: updateError.message || "Could not check for updates." });
+    }
+  }, [bridge, cloudUrl]);
+
+  const downloadUpdate = useCallback(async () => {
+    const info = updateState.info || {};
+    setUpdateState((current) => ({ ...current, checking: true, message: "Opening the latest CBT installer..." }));
+    try {
+      await bridge.updates.download({ cloudUrl, downloadUrl: info.downloadUrl });
+      setUpdateState((current) => ({
+        ...current,
+        checking: false,
+        message: "The latest installer is opening. Close this app before running the installer.",
+      }));
+    } catch (updateError) {
+      setUpdateState((current) => ({
+        ...current,
+        checking: false,
+        message: updateError.message || "Could not open the update installer.",
+      }));
+    }
+  }, [bridge, cloudUrl, updateState.info]);
 
   async function syncFromCloud() {
     setError("");
@@ -183,56 +227,36 @@ export default function App() {
           <span>SD</span>
           <div>
             <strong>SchoolDom</strong>
-            <small>CBT Client</small>
+            <small>Student CBT{appVersion ? ` v${appVersion}` : ""}</small>
           </div>
         </div>
         <nav>
-          <button className={mode === "student" ? "active" : ""} onClick={() => setMode("student")}>Student Exam</button>
-          <button className={mode === "admin" ? "active" : ""} onClick={() => setMode("admin")}>Admin Sync</button>
-          <button className={mode === "status" ? "active" : ""} onClick={() => setMode("status")}>Sync Status</button>
+          <button className="active" type="button">Student Exam</button>
         </nav>
-        <SyncBadge queueCount={snapshot?.queueCount || 0} />
+        <DesktopUpdateCard
+          checking={updateState.checking}
+          message={updateState.message}
+          info={updateState.info}
+          onCheck={checkForUpdates}
+          onDownload={downloadUpdate}
+        />
       </aside>
 
       <section className="main-stage">
         {error ? <div className="error-banner">{error}<button onClick={() => setError("")}>Dismiss</button></div> : null}
-        {mode === "admin" ? (
-          <AdminDashboard
-            accessToken={accessToken}
-            cloudUrl={cloudUrl}
-            snapshot={snapshot}
-            syncMessage={syncMessage}
-            onAccessToken={setAccessToken}
-            onCloudUrl={setCloudUrl}
-            fallbackPin={fallbackPin}
-            onPushResults={pushResults}
-            onImportLocalExam={importLocalExam}
-            onImportPackage={importExamPackage}
-            onExportResults={exportResultsPackage}
-            onFallbackPin={setFallbackPin}
-            onRefresh={refreshSnapshot}
-            onSync={syncFromCloud}
-          />
-        ) : mode === "status" ? (
-          <SyncStatus snapshot={snapshot} onCleanup={async () => {
-            await api.admin.cleanupCache();
-            await refreshSnapshot();
-          }} />
-        ) : (
-          <StudentWorkspace
-            phase={phase}
-            setPhase={setPhase}
-            context={studentContext}
-            examPayload={examPayload}
-            onLogin={handleStudentLogin}
-            onExit={() => {
-              setStudentContext(null);
-              setExamPayload(null);
-              setPhase("login");
-              api?.window?.exitFullscreen?.();
-            }}
-          />
-        )}
+        <StudentWorkspace
+          phase={phase}
+          setPhase={setPhase}
+          context={studentContext}
+          examPayload={examPayload}
+          onLogin={handleStudentLogin}
+          onExit={() => {
+            setStudentContext(null);
+            setExamPayload(null);
+            setPhase("login");
+            api?.window?.exitFullscreen?.();
+          }}
+        />
       </section>
     </main>
   );
@@ -242,7 +266,7 @@ function SplashScreen() {
   return (
     <div className="splash-screen">
       <div className="splash-mark">SD</div>
-      <h1>SchoolDom CBT Client</h1>
+      <h1>SchoolDom Student CBT</h1>
       <p>Starting secure offline examination workspace...</p>
     </div>
   );
@@ -255,6 +279,23 @@ function SyncBadge({ queueCount }) {
     <div className={`sync-badge ${queueCount ? "pending" : online ? "online" : "offline"}`}>
       <strong>{label}</strong>
       <small>Offline desktop mode</small>
+    </div>
+  );
+}
+
+function DesktopUpdateCard({ checking, message, info, onCheck, onDownload }) {
+  return (
+    <div className="desktop-update-card">
+      <strong>App updates</strong>
+      <small>{message || "Check for the latest SchoolDom CBT desktop app."}</small>
+      <button type="button" onClick={onCheck} disabled={checking}>
+        {checking ? "Checking..." : "Check Update"}
+      </button>
+      {info?.updateAvailable ? (
+        <button type="button" className="primary-button" onClick={onDownload} disabled={checking || !info?.available}>
+          Download Update
+        </button>
+      ) : null}
     </div>
   );
 }
