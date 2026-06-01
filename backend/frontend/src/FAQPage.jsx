@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "./appConstants";
 
 function Logo() {
   return (
@@ -259,10 +260,10 @@ function FAQPage({ onNavigate }) {
       <section className="faq-help">
         <div className="faq-container">
           <h2>Didn't find your answer?</h2>
-          <p>Our support team is here to help. Contact us for personalized assistance.</p>
-          <button type="button" className="faq-contact-btn">
+          <p>Our support team is here to help. Contact us at {SUPPORT_EMAIL} for personalized assistance.</p>
+          <a href={SUPPORT_MAILTO} className="faq-contact-btn">
             Contact Support
-          </button>
+          </a>
         </div>
       </section>
 

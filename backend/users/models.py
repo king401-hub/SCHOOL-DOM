@@ -672,3 +672,47 @@ class DatabaseImportJob(models.Model):
 
     def __str__(self):
         return f"{self.get_import_type_display()} - {self.original_filename}"
+
+
+class SupportTicket(models.Model):
+    """School support request submitted from the admin settings page."""
+
+    CATEGORY_CHOICES = [
+        ("technical_issue", "Technical Issue"),
+        ("account_issue", "Account Issue"),
+        ("billing_issue", "Billing Issue"),
+        ("feature_request", "Feature Request"),
+        ("general_inquiry", "General Inquiry"),
+    ]
+    STATUS_CHOICES = [
+        ("open", "Open"),
+        ("in_progress", "In Progress"),
+        ("awaiting_response", "Awaiting Response"),
+        ("resolved", "Resolved"),
+        ("closed", "Closed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    school = models.ForeignKey("core.SchoolTenant", on_delete=models.CASCADE, related_name="support_tickets")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="support_tickets")
+    category = models.CharField(max_length=40, choices=CATEGORY_CHOICES)
+    subject = models.CharField(max_length=180)
+    description = models.TextField()
+    attachment = models.FileField(upload_to="support_tickets/%Y/%m/", null=True, blank=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="open")
+    requester_email = models.EmailField(blank=True)
+    support_notified_at = models.DateTimeField(null=True, blank=True)
+    requester_notified_at = models.DateTimeField(null=True, blank=True)
+    last_status_email_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["school", "status"]),
+            models.Index(fields=["school", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_category_display()} - {self.subject}"

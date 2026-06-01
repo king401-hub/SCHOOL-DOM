@@ -26,7 +26,7 @@ from finance.models import ActivationCreditPool, ActivationCreditTransaction, St
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, Notification
 from tenants.models import Tenant
-from users.models import StudentEnrollment, StudentProfile, TeacherProfile, User
+from users.models import StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
 from users.app_views import ID_CARD_SIGNING_SALT
 
 
@@ -1611,6 +1611,62 @@ class SchoolSettingsAPITests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.school.refresh_from_db()
         self.assertEqual(self.school.name, "Settings School")
+
+    @patch("users.app_views.send_mail", return_value=1)
+    def test_school_admin_can_submit_support_ticket(self, send_mail_mock):
+        self.client.force_authenticate(user=self.admin_user)
+        attachment = SimpleUploadedFile("error.txt", b"Traceback details", content_type="text/plain")
+
+        response = self.client.post(
+            "/api/app/support-tickets/",
+            data={
+                "category": "technical_issue",
+                "subject": "CBT page is not loading",
+                "description": "Students receive a blank CBT screen after signing in.",
+                "attachment": attachment,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        ticket = SupportTicket.objects.get()
+        self.assertEqual(ticket.school, self.school)
+        self.assertEqual(ticket.submitted_by, self.admin_user)
+        self.assertEqual(ticket.status, "open")
+        self.assertTrue(ticket.attachment.name)
+        send_mail_mock.assert_called_once()
+
+    def test_school_settings_includes_support_tickets(self):
+        SupportTicket.objects.create(
+            school=self.school,
+            submitted_by=self.admin_user,
+            category="billing_issue",
+            subject="Token balance question",
+            description="We need help reconciling our activation token balance.",
+            requester_email=self.admin_user.email,
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/school/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["support_tickets"]), 1)
+        self.assertEqual(response.data["support_tickets"][0]["status"], "open")
+
+    def test_non_admin_cannot_submit_support_ticket(self):
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.post(
+            "/api/app/support-tickets/",
+            data={
+                "category": "general_inquiry",
+                "subject": "Need help",
+                "description": "I need help with the platform.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
 
 
 class StudentsAPITests(TestCase):

@@ -1,12 +1,16 @@
 const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 const { APP_NAME, DEFAULT_CLOUD_URL } = require("./config.cjs");
 const db = require("./db.cjs");
+const { newId } = require("./security.cjs");
 const { pushPendingResults, syncFromCloud } = require("./syncService.cjs");
 
 const isDev = !app.isPackaged;
 let mainWindow;
+
+const READABLE_EXTENSIONS = new Set([".json", ".txt", ".md", ".csv", ".docx"]);
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -70,6 +74,23 @@ function registerIpc() {
     const payload = JSON.parse(raw);
     return db.importExamPackage(payload);
   });
+  ipcMain.handle("admin:importLocalExam", async (_event, payload = {}) => {
+    const mode = payload.mode === "folder" ? "folder" : "files";
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: mode === "folder" ? "Select folder with local CBT questions" : "Select local CBT question files",
+      properties: mode === "folder" ? ["openDirectory"] : ["openFile", "multiSelections"],
+      filters: mode === "folder" ? undefined : [
+        { name: "Supported Question Files", extensions: ["json", "txt", "md", "csv", "docx"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, canceled: true };
+    }
+    const filePaths = mode === "folder" ? collectFiles(result.filePaths[0]) : result.filePaths;
+    const exam = buildLocalExamFromFiles(filePaths, payload);
+    return db.saveLocalExam({ exam, students: parseLocalStudents(payload.studentsText) });
+  });
   ipcMain.handle("admin:exportResultsPackage", async () => {
     const payload = db.buildResultsPackage();
     const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
@@ -108,6 +129,251 @@ function registerIpc() {
     mainWindow?.setFullScreen(false);
     return { success: true };
   });
+}
+
+function collectFiles(folderPath) {
+  const files = [];
+  const stack = [folderPath];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile()) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+
+function parseLocalStudents(studentsText = "") {
+  return String(studentsText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [studentId, fullName, className] = line.split(",").map((part) => String(part || "").trim());
+      return {
+        id: studentId,
+        student_id: studentId,
+        full_name: fullName || studentId,
+        class_name: className || "",
+      };
+    });
+}
+
+function buildLocalExamFromFiles(filePaths, payload = {}) {
+  const sourceFiles = [];
+  const questions = [];
+  for (const filePath of filePaths) {
+    const stat = fs.statSync(filePath);
+    const extension = path.extname(filePath).toLowerCase();
+    const sourceFile = {
+      name: path.basename(filePath),
+      path: filePath,
+      extension: extension.replace(".", "") || "file",
+      size: stat.size,
+    };
+    sourceFiles.push(sourceFile);
+    const parsedQuestions = parseQuestionsFromFile(filePath, sourceFile);
+    questions.push(...parsedQuestions);
+  }
+  if (!questions.length && sourceFiles.length) {
+    questions.push(...sourceFiles.map((file, index) => ({
+      id: newId("local_q"),
+      number: index + 1,
+      type: "theory",
+      text: `Review the local exam material "${file.name}" and type your answer.`,
+      options: [],
+      marks: 1,
+      source_file: file,
+    })));
+  }
+  if (!questions.length) {
+    throw new Error("No supported local question files were found.");
+  }
+  return {
+    id: newId("local_exam"),
+    title: String(payload.title || "Local CBT Exam").trim(),
+    subject: String(payload.subject || "Local Subject").trim(),
+    duration_minutes: Number(payload.durationMinutes || 60),
+    duration_seconds: Math.max(60, Number(payload.durationMinutes || 60) * 60),
+    pin: String(payload.pin || "").trim(),
+    instructions: String(payload.instructions || "Answer all questions. This exam was created locally on this device."),
+    questions: questions.map((question, index) => ({ ...question, number: index + 1 })),
+    source_files: sourceFiles,
+  };
+}
+
+function parseQuestionsFromFile(filePath, sourceFile) {
+  const extension = path.extname(filePath).toLowerCase();
+  try {
+    if (extension === ".json") return parseJsonQuestions(fs.readFileSync(filePath, "utf8"), sourceFile);
+    if (extension === ".csv") return parseCsvQuestions(fs.readFileSync(filePath, "utf8"), sourceFile);
+    if (extension === ".txt" || extension === ".md") return parseTextQuestions(fs.readFileSync(filePath, "utf8"), sourceFile);
+    if (extension === ".docx") return parseTextQuestions(extractDocxText(filePath), sourceFile);
+  } catch (error) {
+    return [{
+      id: newId("local_q"),
+      type: "theory",
+      text: `The file "${sourceFile.name}" could not be parsed automatically. Admin note: ${error.message}`,
+      options: [],
+      marks: 1,
+      source_file: sourceFile,
+    }];
+  }
+  return [{
+    id: newId("local_q"),
+    type: "theory",
+    text: `Local exam material attached: ${sourceFile.name}`,
+    options: [],
+    marks: 1,
+    source_file: sourceFile,
+  }];
+}
+
+function parseJsonQuestions(raw, sourceFile) {
+  const payload = JSON.parse(raw);
+  const questions = payload.questions || payload.items || payload.question_rows || (Array.isArray(payload) ? payload : []);
+  return questions.map((question, index) => normalizeLocalQuestion(question, sourceFile, index));
+}
+
+function parseCsvQuestions(raw, sourceFile) {
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const headers = splitCsvLine(lines[0]).map((item) => item.toLowerCase().replace(/\s+/g, "_"));
+  return lines.slice(1).map((line, index) => {
+    const values = splitCsvLine(line);
+    const row = {};
+    headers.forEach((header, headerIndex) => {
+      row[header] = values[headerIndex] || "";
+    });
+    return normalizeLocalQuestion(row, sourceFile, index);
+  });
+}
+
+function splitCsvLine(line) {
+  const cells = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"' && line[index + 1] === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function parseTextQuestions(raw, sourceFile) {
+  const text = String(raw || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return [];
+  const blocks = text
+    .split(/\n\s*\n|(?:^|\n)\s*(?:Q(?:uestion)?\.?\s*)?\d+[\).:-]\s*/i)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 5);
+  const questionBlocks = blocks.length > 1 ? blocks : [text];
+  return questionBlocks.map((block, index) => parseQuestionBlock(block, sourceFile, index));
+}
+
+function parseQuestionBlock(block, sourceFile, index) {
+  const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+  const optionLines = lines.filter((line) => /^[A-D][\).:-]\s+/i.test(line));
+  const answerLine = lines.find((line) => /^answer\s*[:=-]/i.test(line));
+  const questionLines = lines.filter((line) => !/^[A-D][\).:-]\s+/i.test(line) && !/^answer\s*[:=-]/i.test(line));
+  if (optionLines.length >= 2) {
+    return {
+      id: newId("local_q"),
+      type: "multiple_choice",
+      text: questionLines.join(" "),
+      options: optionLines.map((line) => line.replace(/^[A-D][\).:-]\s+/i, "")),
+      answer: answerLine ? answerLine.replace(/^answer\s*[:=-]\s*/i, "") : "",
+      marks: 1,
+      source_file: sourceFile,
+    };
+  }
+  return {
+    id: newId("local_q"),
+    type: "theory",
+    text: questionLines.join(" ") || block,
+    options: [],
+    marks: 1,
+    source_file: sourceFile,
+    local_index: index + 1,
+  };
+}
+
+function normalizeLocalQuestion(question, sourceFile, index) {
+  const options = Array.isArray(question.options)
+    ? question.options
+    : String(question.options || question.choices || "")
+      .split(/[|;]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  return {
+    id: String(question.id || question.question_id || newId("local_q")),
+    type: String(question.type || question.question_type || (options.length ? "multiple_choice" : "theory")),
+    text: String(question.text || question.question || question.prompt || `Question ${index + 1}`),
+    options,
+    answer: question.answer || question.correct_answer || "",
+    marks: Number(question.marks || question.score || 1),
+    source_file: sourceFile,
+  };
+}
+
+function extractDocxText(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  const entries = unzipEntries(buffer);
+  const documentXml = entries["word/document.xml"];
+  if (!documentXml) return "";
+  return documentXml
+    .toString("utf8")
+    .replace(/<w:tab\/>/g, " ")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+function unzipEntries(buffer) {
+  const entries = {};
+  let offset = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (offset < 0) throw new Error("Invalid DOCX file.");
+  const centralDirectoryOffset = buffer.readUInt32LE(offset + 16);
+  let pointer = centralDirectoryOffset;
+  while (pointer < offset && buffer.readUInt32LE(pointer) === 0x02014b50) {
+    const method = buffer.readUInt16LE(pointer + 10);
+    const compressedSize = buffer.readUInt32LE(pointer + 20);
+    const fileNameLength = buffer.readUInt16LE(pointer + 28);
+    const extraLength = buffer.readUInt16LE(pointer + 30);
+    const commentLength = buffer.readUInt16LE(pointer + 32);
+    const localHeaderOffset = buffer.readUInt32LE(pointer + 42);
+    const fileName = buffer.subarray(pointer + 46, pointer + 46 + fileNameLength).toString("utf8");
+    const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+    if (method === 0) entries[fileName] = compressed;
+    if (method === 8) entries[fileName] = zlib.inflateRawSync(compressed);
+    pointer += 46 + fileNameLength + extraLength + commentLength;
+  }
+  return entries;
 }
 
 process.on("uncaughtException", (error) => {

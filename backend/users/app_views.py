@@ -12,6 +12,7 @@ from urllib.parse import quote
 import qrcode
 import requests
 from django.conf import settings
+from django.core.mail import send_mail
 from django.core import signing
 from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
@@ -48,7 +49,7 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
-from users.models import DatabaseImportJob, StudentEnrollment, StudentProfile, StudentTestimonial, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from users.models import DatabaseImportJob, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 
 try:
     from hr.models import StaffProfile
@@ -4736,6 +4737,7 @@ def school_settings(request):
                 "school": _school_payload(school, request),
                 "academic_year": _academic_year_payload(active_year),
                 "term": _term_payload(active_term),
+                "support_tickets": [_support_ticket_payload(item, request) for item in SupportTicket.objects.filter(school=school)[:8]],
                 "can_edit": True,
                 "renamed": name_changed,
                 "linked_code_counts": linked_code_counts or {},
@@ -4752,8 +4754,157 @@ def school_settings(request):
             "term": _term_payload(active_term),
             "academic_years": [_academic_year_payload(item) for item in _scope_to_user_tenant(AcademicYear.objects.all(), user)[:20]],
             "terms": [_term_payload(item) for item in _scope_to_user_tenant(Term.objects.select_related("academic_year"), user)[:20]],
+            "support_tickets": [_support_ticket_payload(item, request) for item in SupportTicket.objects.filter(school=school)[:8]],
             "can_edit": _can_manage_school_settings(user),
         }
+    )
+
+
+def _support_email():
+    return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "support@schooldom.academy").strip()
+
+
+def _support_ticket_payload(ticket, request=None):
+    attachment_url = ""
+    if ticket.attachment:
+        try:
+            attachment_url = ticket.attachment.url
+            if request:
+                attachment_url = request.build_absolute_uri(attachment_url)
+        except Exception:
+            attachment_url = ""
+    return {
+        "id": str(ticket.id),
+        "category": ticket.category,
+        "category_label": ticket.get_category_display(),
+        "subject": ticket.subject,
+        "description": ticket.description,
+        "status": ticket.status,
+        "status_label": ticket.get_status_display(),
+        "requester_email": ticket.requester_email,
+        "school": {
+            "id": str(ticket.school_id),
+            "name": getattr(ticket.school, "name", ""),
+            "school_code": getattr(ticket.school, "schema_name", ""),
+            "email": getattr(ticket.school, "email", ""),
+            "phone": getattr(ticket.school, "phone", ""),
+        },
+        "submitted_by": ticket.submitted_by.get_full_name() if ticket.submitted_by_id else "",
+        "submitted_by_email": ticket.submitted_by.email if ticket.submitted_by_id else "",
+        "attachment": attachment_url,
+        "created_at": ticket.created_at,
+        "updated_at": ticket.updated_at,
+    }
+
+
+def _send_support_ticket_email(ticket, kind="created"):
+    support_email = _support_email()
+    requester_email = ticket.requester_email or (ticket.submitted_by.email if ticket.submitted_by_id else "")
+    school = ticket.school
+    subject_prefix = "SchoolDom support ticket"
+    if kind == "status":
+        subject = f"{subject_prefix} update: {ticket.get_status_display()} - {ticket.subject}"
+        body = (
+            f"Your SchoolDom support ticket status is now {ticket.get_status_display()}.\n\n"
+            f"Ticket: {ticket.subject}\n"
+            f"Category: {ticket.get_category_display()}\n"
+            f"School: {school.name} ({school.schema_name})\n\n"
+            "We will continue tracking this request in your School Settings support center."
+        )
+        recipients = [requester_email] if requester_email else []
+    else:
+        subject = f"{subject_prefix}: {ticket.subject}"
+        body = (
+            "A new SchoolDom support ticket was submitted.\n\n"
+            f"School: {school.name}\n"
+            f"School code: {school.schema_name}\n"
+            f"School email: {school.email or '-'}\n"
+            f"School phone: {school.phone or '-'}\n"
+            f"Submitted by: {ticket.submitted_by.get_full_name() if ticket.submitted_by_id else '-'}\n"
+            f"Requester email: {requester_email or '-'}\n"
+            f"Category: {ticket.get_category_display()}\n"
+            f"Status: {ticket.get_status_display()}\n\n"
+            f"{ticket.description}"
+        )
+        recipients = [support_email]
+        if requester_email and requester_email.lower() != support_email.lower():
+            recipients.append(requester_email)
+
+    if not recipients:
+        return False
+
+    try:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, recipients, fail_silently=False)
+    except Exception:
+        return False
+    return True
+
+
+@api_view(["GET", "POST", "PATCH"])
+@permission_classes([IsAuthenticated])
+def support_tickets(request):
+    user = request.user
+    school = getattr(user, "tenant", None)
+    if not school:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can manage support tickets."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "GET":
+        tickets = SupportTicket.objects.filter(school=school)[:20]
+        return Response({"success": True, "tickets": [_support_ticket_payload(item, request) for item in tickets]})
+
+    if request.method == "PATCH":
+        ticket_id = request.data.get("id") or request.data.get("ticket_id")
+        ticket = get_object_or_404(SupportTicket, id=ticket_id, school=school)
+        next_status = str(request.data.get("status") or "").strip()
+        allowed_statuses = {value for value, _label in SupportTicket.STATUS_CHOICES}
+        if next_status not in allowed_statuses:
+            return Response({"success": False, "message": "Select a valid ticket status."}, status=status.HTTP_400_BAD_REQUEST)
+        status_changed = ticket.status != next_status
+        if status_changed:
+            ticket.status = next_status
+            ticket.save(update_fields=["status", "updated_at"])
+            if _send_support_ticket_email(ticket, kind="status"):
+                ticket.last_status_email_at = timezone.now()
+                ticket.save(update_fields=["last_status_email_at"])
+        return Response({"success": True, "message": "Support ticket updated.", "ticket": _support_ticket_payload(ticket, request)})
+
+    category = str(request.data.get("category") or "").strip()
+    allowed_categories = {value for value, _label in SupportTicket.CATEGORY_CHOICES}
+    if category not in allowed_categories:
+        return Response({"success": False, "message": "Select a support category."}, status=status.HTTP_400_BAD_REQUEST)
+
+    subject = str(request.data.get("subject") or "").strip()
+    description = str(request.data.get("description") or "").strip()
+    if len(subject) < 3:
+        return Response({"success": False, "message": "Enter a support ticket subject."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(description) < 10:
+        return Response({"success": False, "message": "Enter a brief description of the issue."}, status=status.HTTP_400_BAD_REQUEST)
+
+    ticket = SupportTicket.objects.create(
+        school=school,
+        submitted_by=user,
+        category=category,
+        subject=subject[:180],
+        description=description,
+        attachment=request.FILES.get("attachment"),
+        requester_email=str(request.data.get("requester_email") or user.email or school.email or "").strip(),
+    )
+    notified = _send_support_ticket_email(ticket, kind="created")
+    now = timezone.now()
+    if notified:
+        ticket.support_notified_at = now
+        ticket.requester_notified_at = now
+        ticket.save(update_fields=["support_notified_at", "requester_notified_at"])
+
+    return Response(
+        {
+            "success": True,
+            "message": "Support ticket submitted. Email notifications will be sent as the ticket is updated.",
+            "ticket": _support_ticket_payload(ticket, request),
+        },
+        status=status.HTTP_201_CREATED,
     )
 
 

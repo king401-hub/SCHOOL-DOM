@@ -10,6 +10,7 @@ const channels = {
     "admin:getLogs",
     "admin:saveOfflineSettings",
     "admin:importExamPackage",
+    "admin:importLocalExam",
     "admin:exportResultsPackage",
     "student:login",
     "student:getExam",
@@ -38,6 +39,7 @@ contextBridge.exposeInMainWorld("schoolDomCbt", {
     getLogs: () => invoke("admin:getLogs"),
     saveOfflineSettings: (payload) => invoke("admin:saveOfflineSettings", payload),
     importExamPackage: () => invoke("admin:importExamPackage"),
+    importLocalExam: (payload) => invoke("admin:importLocalExam", payload),
     exportResultsPackage: () => invoke("admin:exportResultsPackage"),
   },
   student: {

@@ -451,6 +451,14 @@ label {
   grid-template-rows: 1fr auto;
   gap: 18px;
   padding: 24px;
+  min-width: 0;
+}
+
+.question-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
 }
 
 .question-card {
@@ -459,6 +467,87 @@ label {
   border-radius: 8px;
   background: #ffffff;
   border: 1px solid #dbeafe;
+}
+
+.exam-calculator {
+  align-self: start;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #bfdbfe;
+  background: #ffffff;
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.08);
+}
+
+.calculator-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.calculator-head strong {
+  color: #0f172a;
+}
+
+.calculator-head small,
+.calculator-hint {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.calculator-display {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #0f172a;
+  font-size: 25px;
+  font-weight: 950;
+  word-break: break-all;
+}
+
+.calculator-error {
+  color: #b91c1c;
+  font-weight: 900;
+}
+
+.calculator-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.calculator-grid button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border-color: #dbeafe;
+  background: #f8fafc;
+}
+
+.calculator-grid button.operator {
+  border-color: #93c5fd;
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.calculator-grid button.utility {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.calculator-grid button.equals {
+  grid-column: span 4;
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
 }
 
 .question-card h1 {
@@ -557,5 +646,13 @@ label {
   .form-grid,
   .summary-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .question-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .exam-calculator {
+    align-self: stretch;
   }
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "./appConstants";
 
 function Logo() {
   return (
@@ -172,7 +173,7 @@ function PrivacyPolicyPage({ onNavigate }) {
                 <li><strong>Right to Withdraw Consent:</strong> You can withdraw consent for data processing at any time.</li>
               </ul>
               <p>
-                To exercise any of these rights, please contact us at privacy@schooldom.com with proof of identity.
+                To exercise any of these rights, please contact us at <a href={SUPPORT_MAILTO}>{SUPPORT_EMAIL}</a> with proof of identity.
               </p>
             </section>
 
@@ -246,9 +247,9 @@ function PrivacyPolicyPage({ onNavigate }) {
                 If you have questions about this Privacy Policy or our privacy practices, please contact us at:
               </p>
               <ul>
-                <li><strong>Email:</strong> privacy@schooldom.com</li>
+                <li><strong>Email:</strong> <a href={SUPPORT_MAILTO}>{SUPPORT_EMAIL}</a></li>
                 <li><strong>Mailing Address:</strong> SchoolDom Support, 123 Education Drive, Tech City, TC 12345</li>
-                <li><strong>Data Protection Officer:</strong> dpo@schooldom.com</li>
+                <li><strong>Data Protection Officer:</strong> <a href={SUPPORT_MAILTO}>{SUPPORT_EMAIL}</a></li>
               </ul>
               <p>
                 We will respond to your inquiry within 14 business days.

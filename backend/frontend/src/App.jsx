@@ -5653,6 +5653,34 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, onSessionUpdate, session]
     );
 
+  const handleSubmitSupportTicket = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/support-tickets/", payload);
+      if (result?.ticket) {
+        setScreenData((previous) => ({
+          ...previous,
+          "/settings": {
+            ...(previous["/settings"] || {}),
+            support_tickets: [
+              result.ticket,
+              ...((previous["/settings"]?.support_tickets || []).filter((item) => item.id !== result.ticket.id)),
+            ].slice(0, 8),
+          },
+        }));
+      }
+      addAdminNotification({
+        category: "System",
+        module: "Support Center",
+        action: `Submitted support ticket: ${payload.subject || "School support request"}.`,
+        status: "Open",
+        priority: "High",
+        tone: "info",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
   const handleUploadExamResults = useCallback(
     async (examId, file) => {
       const parsedId = Number(examId);
@@ -5815,6 +5843,11 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
 session?.schoolCode ||
     "School OS";
   const schoolBrand = resolveSchoolBrand(screenData["/settings"]?.school, screenData["/dashboard"]?.school, session?.school);
+
+  useEffect(() => {
+    window.schoolDomPWA?.setBrand?.(schoolBrand);
+  }, [schoolBrand.name, schoolBrand.logo]);
+
 const unreadNotificationsCount =
     Number(screenData["/messages"]?.summary?.unread_notifications ?? screenData["/dashboard"]?.metrics?.unread_notifications ?? 0) +
     Number(screenData["/messages"]?.summary?.unread_inbox ?? 0) +
@@ -6057,6 +6090,7 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onSave={handleSaveSettings}
+        onSubmitSupportTicket={handleSubmitSupportTicket}
         themePreference={themePreference}
         onThemeChange={onThemeChange}
           />
@@ -6500,6 +6534,10 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
   const formatLastUpdated = lastUpdated ? formatDate(lastUpdated) : null;
   const schoolBrand = resolveSchoolBrand(data?.school, session?.school);
 
+  useEffect(() => {
+    window.schoolDomPWA?.setBrand?.(schoolBrand);
+  }, [schoolBrand.name, schoolBrand.logo]);
+
   if (role === "student") {
     return (
 <main className="student-page">
@@ -6611,6 +6649,47 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
 
 export { StudentDashboard, StaffSelfServicePanel, TeacherDashboard, StudentWorkspace, TeacherWorkspace };
 
+function PwaUpdatePrompt() {
+  const [status, setStatus] = useState(() =>
+    typeof window !== "undefined" && window.schoolDomPWA
+      ? window.schoolDomPWA.getStatus()
+      : { updateAvailable: false }
+  );
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const handleStatus = (event) => {
+      setStatus((previous) => ({
+        ...previous,
+        ...(window.schoolDomPWA?.getStatus?.() || {}),
+        ...(event?.detail || {}),
+      }));
+    };
+    handleStatus();
+    window.addEventListener("schooldom-pwa-install-status", handleStatus);
+    return () => window.removeEventListener("schooldom-pwa-install-status", handleStatus);
+  }, []);
+
+  const handleUpdate = async () => {
+    setMessage("Updating...");
+    const result = await window.schoolDomPWA?.updateApp?.();
+    if (!result?.updated) {
+      setMessage("Reloading the latest version...");
+    }
+  };
+
+  if (!status.updateAvailable) {
+    return null;
+  }
+
+  return (
+    <div className="pwa-update-prompt" role="status" aria-live="polite">
+      <span>{message || "A new SchoolDom update is ready."}</span>
+      <button type="button" onClick={handleUpdate}>Update App</button>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(() => readStoredSession());
 const [currentPath, setCurrentPath] = useState(() => normalizePath(window.location.pathname || "/"));
@@ -6654,6 +6733,12 @@ useEffect(() => {
       window.localStorage.setItem(UI_THEME_KEY, themePreference);
     }
   }, [session, themePreference]);
+
+  useEffect(() => {
+    if (!session) return;
+    const schoolBrand = resolveSchoolBrand(session?.school);
+    window.schoolDomPWA?.setBrand?.(schoolBrand);
+  }, [session]);
 
 useEffect(() => {
   let hideTimer = 0;
@@ -6798,6 +6883,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   const withGlobalNotifications = useCallback(
     (content) => (
       <>
+        <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         <GlobalNotificationBell session={session} onNavigate={navigate} />
         {content}
@@ -6809,6 +6895,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   const withGlobalHome = useCallback(
     (content) => (
       <>
+        <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         {content}
       </>
@@ -6826,7 +6913,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
 
   if (!session) {
     if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
-      return <StudentCbtEntry onEntry={handleCbtEntry} />;
+      return (
+        <>
+          <PwaUpdatePrompt />
+          <StudentCbtEntry onEntry={handleCbtEntry} />
+        </>
+      );
     }
     if (currentPath === "/") {
       return withGlobalHome(<LandingPage onGetStarted={() => navigate("/signin")} />);
@@ -6850,7 +6942,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   const isAdmin = role === "school_admin" || role === "principal" || role === "super_admin" || role === "accountant";
 
   if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
-    return <StudentCbtEntry onEntry={handleCbtEntry} />;
+    return (
+      <>
+        <PwaUpdatePrompt />
+        <StudentCbtEntry onEntry={handleCbtEntry} />
+      </>
+    );
   }
 
   if (isTeacherAttendanceScanPath(currentPath)) {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "./appConstants";
 
 function Logo() {
   return (
@@ -245,14 +246,14 @@ function ResourceCenter({ onNavigate }) {
         <div className="rc-container">
           <div className="rc-support-content">
             <h2>Need Additional Help?</h2>
-            <p>Can't find what you're looking for? Our support team is here to help.</p>
+            <p>Can't find what you're looking for? Our support team is here to help at {SUPPORT_EMAIL}.</p>
             <div className="rc-support-actions">
-              <button type="button" className="rc-support-btn rc-support-btn-primary">
+              <a href={SUPPORT_MAILTO} className="rc-support-btn rc-support-btn-primary">
                 Contact Support
-              </button>
-              <button type="button" className="rc-support-btn rc-support-btn-secondary">
+              </a>
+              <a href={SUPPORT_MAILTO} className="rc-support-btn rc-support-btn-secondary">
                 Send Feedback
-              </button>
+              </a>
             </div>
           </div>
         </div>

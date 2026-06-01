@@ -2,6 +2,8 @@ export const SESSION_KEY = "schooldom.session";
 export const LEGACY_SESSION_KEY = "educonnect.session";
 export const UI_THEME_KEY = "schooldom.ui_theme";
 export const PENDING_AUTH_REDIRECT_KEY = "schooldom.pending_auth_redirect";
+export const SUPPORT_EMAIL = "support@schooldom.academy";
+export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 export const API_BASE_URL = (() => {
   const raw = import.meta.env.VITE_API_BASE_URL ?? "";
   if (!raw) return ""; // use relative calls like /api/...

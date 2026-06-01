@@ -8,6 +8,7 @@ urlpatterns = [
     path("student/dashboard/", app_views.student_dashboard, name="app_student_dashboard"),
     path("teacher/dashboard/", app_views.teacher_dashboard, name="app_teacher_dashboard"),
     path("school/settings/", app_views.school_settings, name="app_school_settings"),
+    path("support-tickets/", app_views.support_tickets, name="app_support_tickets"),
     path("database-imports/", app_views.database_imports, name="app_database_imports"),
     path("academic/planning/", app_views.lesson_planning, name="app_lesson_planning"),
     path("academic/notes/", app_views.teacher_notes, name="app_teacher_notes"),

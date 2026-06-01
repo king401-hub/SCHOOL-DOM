@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from "./appConstants";
 
 function Logo() {
   return (
@@ -18,6 +19,7 @@ function LandingPage({ onGetStarted }) {
           isInstalled: false,
           notificationPermission: "default",
           serviceWorkerSupported: false,
+          updateAvailable: false,
         }
   );
   const [installMessage, setInstallMessage] = useState("");
@@ -79,6 +81,18 @@ function LandingPage({ onGetStarted }) {
     }
 
     setPwaStatus(window.schoolDomPWA.getStatus());
+  };
+
+  const handleUpdateApp = async () => {
+    setInstallMessage("Updating SchoolDom...");
+    if (!window.schoolDomPWA?.updateApp) {
+      setInstallMessage("Close and reopen the app to finish updating.");
+      return;
+    }
+    const result = await window.schoolDomPWA.updateApp();
+    if (!result?.updated) {
+      setInstallMessage("Checking for the latest version. The app will reload if an update is ready.");
+    }
   };
 
   const installButtonText = pwaStatus.isInstalled
@@ -150,26 +164,29 @@ function LandingPage({ onGetStarted }) {
                 <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
+            {pwaStatus.updateAvailable ? (
+              <button type="button" className="btn btn-secondary" onClick={handleUpdateApp}>
+                Update App
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 12a8 8 0 0 1 13.7-5.7M20 12a8 8 0 0 1-13.7 5.7M17 3v4h-4M7 21v-4h4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ) : null}
           </div>
 
           <div className="mobile-app-panel" aria-live="polite">
             <div>
               <p className="mobile-app-kicker">SchoolDom Mobile App</p>
-              <h2>SchoolDom Mobile App</h2>
               <p>
-                Install the SchoolDom app for faster, smoother, and full mobile access to your school platform. Access your classes, CBT exams, assignments, attendance, results, finance records, messages, e-learning tools, and school activities anytime using the same account across both the website and mobile app.
+                Install SchoolDom for a focused student CBT experience. Students can open assigned exams, answer questions, and submit securely from their device.
               </p>
               <ul className="mobile-app-feature-list">
-                <li>Install SchoolDom directly on your device</li>
-                <li>Sync data in real time across web and mobile</li>
-                <li>Access CBT exams, quizzes, and classroom activities</li>
-                <li>Receive instant notifications and school alerts</li>
-                <li>Offline cache support for faster performance</li>
-                <li>Secure login with protected student and staff data</li>
-                <li>GPS-enabled attendance and location verification</li>
-                <li>Camera, file uploads, and media support</li>
-                <li>Optimized for students, teachers, parents, and administrators</li>
-                <li>Designed for Android.</li>
+                <li>Install SchoolDom directly on student devices</li>
+                <li>Open assigned CBT exams with secure student login</li>
+                <li>Answer objective and theory questions in the exam app</li>
+                <li>Submit attempts securely when the exam is complete</li>
+                <li>Use the school name and logo when installed from the school admin page</li>
+                <li>Designed for Android and supported desktop browsers</li>
               </ul>
             </div>
             {installMessage ? <p className="mobile-app-message">{installMessage}</p> : null}
@@ -244,7 +261,7 @@ function LandingPage({ onGetStarted }) {
           <div className="footer-section">
             <h4>Support</h4>
             <ul>
-              <li><a href="#">Contact</a></li>
+              <li><a href={SUPPORT_MAILTO}>{SUPPORT_EMAIL}</a></li>
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/faq">Help & FAQ</a></li>
             </ul>

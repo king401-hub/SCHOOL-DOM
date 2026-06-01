@@ -226,6 +226,50 @@ function importExamPackage(packagePayload = {}) {
   };
 }
 
+function saveLocalExam({ exam, students = [] } = {}) {
+  if (!exam || !Array.isArray(exam.questions) || !exam.questions.length) {
+    throw new Error("Local exam must include at least one question.");
+  }
+  const cleanedStudents = students
+    .map((student, index) => {
+      const studentId = String(student.student_id || student.id || "").trim();
+      if (!studentId) return null;
+      return {
+        id: String(student.id || studentId),
+        student_id: studentId,
+        full_name: String(student.full_name || student.name || `Local Student ${index + 1}`),
+        class_name: String(student.class_name || student.class || ""),
+        source: "local",
+      };
+    })
+    .filter(Boolean);
+
+  if (!cleanedStudents.length) {
+    throw new Error("Add at least one local student ID before creating the exam.");
+  }
+
+  const localExam = {
+    ...exam,
+    id: String(exam.id || newId("local_exam")),
+    source: "local",
+    created_at: now(),
+  };
+  const snapshot = saveSyncSnapshot({ exams: [localExam], students: cleanedStudents });
+  logActivity("", "local_exam_created", "Created CBT exam from local files.", {
+    examId: localExam.id,
+    title: localExam.title,
+    questions: localExam.questions.length,
+    students: cleanedStudents.length,
+    files: localExam.source_files?.length || 0,
+  });
+  return {
+    success: true,
+    imported: { exams: 1, students: cleanedStudents.length, questions: localExam.questions.length },
+    exam: { id: localExam.id, title: localExam.title },
+    snapshot,
+  };
+}
+
 function buildResultsPackage() {
   const results = getPendingSyncItems()
     .filter((item) => item.entity_type === "result")
@@ -429,6 +473,7 @@ module.exports = {
   markSyncSuccess,
   openDatabase,
   saveAnswers,
+  saveLocalExam,
   saveOfflineSettings,
   saveSyncSnapshot,
   buildResultsPackage,

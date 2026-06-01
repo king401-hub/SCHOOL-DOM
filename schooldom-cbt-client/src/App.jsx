@@ -124,6 +124,23 @@ export default function App() {
     }
   }
 
+  async function importLocalExam(payload) {
+    setError("");
+    setSyncMessage("Opening local question files...");
+    try {
+      const result = await api.admin.importLocalExam(payload);
+      if (result.canceled) {
+        setSyncMessage("");
+        return;
+      }
+      setSnapshot(result.snapshot);
+      setSyncMessage(`Created "${result.exam.title}" with ${result.imported.questions} question(s) for ${result.imported.students} student(s).`);
+    } catch (importError) {
+      setError(importError.message || "Could not create local CBT exam.");
+      setSyncMessage("");
+    }
+  }
+
   async function exportResultsPackage() {
     setError("");
     setSyncMessage("Preparing result package...");
@@ -189,6 +206,7 @@ export default function App() {
             onCloudUrl={setCloudUrl}
             fallbackPin={fallbackPin}
             onPushResults={pushResults}
+            onImportLocalExam={importLocalExam}
             onImportPackage={importExamPackage}
             onExportResults={exportResultsPackage}
             onFallbackPin={setFallbackPin}
@@ -242,11 +260,24 @@ function SyncBadge({ queueCount }) {
 }
 
 function AdminDashboard(props) {
-  const { accessToken, cloudUrl, fallbackPin, snapshot, syncMessage, onAccessToken, onCloudUrl, onExportResults, onFallbackPin, onImportPackage, onPushResults, onRefresh, onSync } = props;
+  const { accessToken, cloudUrl, fallbackPin, snapshot, syncMessage, onAccessToken, onCloudUrl, onExportResults, onFallbackPin, onImportLocalExam, onImportPackage, onPushResults, onRefresh, onSync } = props;
   const [lanName, setLanName] = useState(snapshot.settings?.lanName || "School CBT Room");
   const [lanInstructions, setLanInstructions] = useState(snapshot.settings?.lanInstructions || "Admin will set Wi-Fi, hotspot, or lab network access manually.");
+  const [localExam, setLocalExam] = useState({
+    title: "Local CBT Exam",
+    subject: "",
+    durationMinutes: "60",
+    pin: "",
+    instructions: "Answer all questions. This exam was prepared locally by the school.",
+    studentsText: "",
+  });
   const submitted = snapshot.sessions?.filter((item) => item.status === "submitted").length || 0;
   const inProgress = snapshot.sessions?.filter((item) => item.status === "in_progress").length || 0;
+  const updateLocalExam = (key, value) => setLocalExam((current) => ({ ...current, [key]: value }));
+  const createLocalExam = (mode) => {
+    if (!localExam.pin.trim()) return;
+    onImportLocalExam({ ...localExam, mode });
+  };
   useEffect(() => {
     setLanName(snapshot.settings?.lanName || "School CBT Room");
     setLanInstructions(snapshot.settings?.lanInstructions || "Admin will set Wi-Fi, hotspot, or lab network access manually.");
@@ -294,6 +325,45 @@ function AdminDashboard(props) {
           <button onClick={onPushResults}>Sync Pending Results</button>
         </div>
         {syncMessage ? <p className="success-text">{syncMessage}</p> : null}
+      </section>
+
+      <section className="panel local-exam-panel">
+        <div className="panel-head">
+          <h2>Create Local Exam</h2>
+          <span>Files or folder</span>
+        </div>
+        <div className="form-grid">
+          <label>
+            Exam Title
+            <input value={localExam.title} onChange={(event) => updateLocalExam("title", event.target.value)} placeholder="Example: JSS2 Mathematics Test" />
+          </label>
+          <label>
+            Subject
+            <input value={localExam.subject} onChange={(event) => updateLocalExam("subject", event.target.value)} placeholder="Example: Mathematics" />
+          </label>
+          <label>
+            Duration Minutes
+            <input value={localExam.durationMinutes} onChange={(event) => updateLocalExam("durationMinutes", event.target.value)} type="number" min="1" />
+          </label>
+          <label>
+            Exam PIN
+            <input value={localExam.pin} onChange={(event) => updateLocalExam("pin", event.target.value)} type="password" placeholder="Students enter this PIN" />
+          </label>
+        </div>
+        <label>
+          Local Students
+          <textarea value={localExam.studentsText} onChange={(event) => updateLocalExam("studentsText", event.target.value)} rows="4" placeholder={"One student per line: StudentID, Full Name, Class\nSD001, Ada Okafor, JSS2"} />
+        </label>
+        <label>
+          Instructions
+          <textarea value={localExam.instructions} onChange={(event) => updateLocalExam("instructions", event.target.value)} rows="3" />
+        </label>
+        <div className="button-row">
+          <button className="primary-button" disabled={!localExam.pin.trim()} onClick={() => createLocalExam("files")}>Add Question Files</button>
+          <button disabled={!localExam.pin.trim()} onClick={() => createLocalExam("folder")}>Add Question Folder</button>
+        </div>
+        {!localExam.pin.trim() ? <p className="muted compact-note">Enter an exam PIN before selecting files.</p> : null}
+        <p className="muted compact-note">Supports CBT JSON, CSV, TXT, MD, DOCX, plus folders. Other files are stored as local exam material.</p>
       </section>
 
       <div className="two-column">
@@ -460,10 +530,13 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
         <small>{answered} of {questions.length} answered</small>
       </aside>
       <section className="question-stage">
-        <div className="question-card">
-          <p>Question {question.number} - {question.type?.replaceAll("_", " ")}</p>
-          <h1>{question.text}</h1>
-          <AnswerControl question={question} value={answers[question.id] || ""} onChange={(value) => setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: value }))} />
+        <div className="question-workspace">
+          <div className="question-card">
+            <p>Question {question.number} - {question.type?.replaceAll("_", " ")}</p>
+            <h1>{question.text}</h1>
+            <AnswerControl question={question} value={answers[question.id] || ""} onChange={(value) => setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: value }))} />
+          </div>
+          <Calculator />
         </div>
         <div className="exam-actions">
           <button disabled={current === 0} onClick={() => setCurrent((value) => Math.max(0, value - 1))}>Previous</button>
@@ -471,6 +544,97 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function Calculator() {
+  const [display, setDisplay] = useState("0");
+  const [error, setError] = useState("");
+
+  const append = (value) => {
+    setError("");
+    setDisplay((current) => {
+      if (current === "Error") return value;
+      if (current === "0" && /[0-9.]/.test(value)) return value;
+      return `${current}${value}`;
+    });
+  };
+
+  const clear = () => {
+    setDisplay("0");
+    setError("");
+  };
+
+  const backspace = () => {
+    setError("");
+    setDisplay((current) => {
+      if (current.length <= 1 || current === "Error") return "0";
+      return current.slice(0, -1);
+    });
+  };
+
+  const calculate = () => {
+    try {
+      if (!/^[0-9+\-*/().%\s]+$/.test(display)) {
+        throw new Error("Invalid input");
+      }
+      const result = Function(`"use strict"; return (${display})`)();
+      if (!Number.isFinite(result)) {
+        throw new Error("Invalid result");
+      }
+      setDisplay(String(Number(result.toFixed(8))));
+      setError("");
+    } catch {
+      setDisplay("Error");
+      setError("Check the calculation");
+    }
+  };
+
+  const buttons = [
+    { label: "C", action: clear, kind: "utility" },
+    { label: "(", value: "(", kind: "utility" },
+    { label: ")", value: ")", kind: "utility" },
+    { label: "Back", action: backspace, kind: "utility" },
+    { label: "7", value: "7" },
+    { label: "8", value: "8" },
+    { label: "9", value: "9" },
+    { label: "/", value: "/", kind: "operator" },
+    { label: "4", value: "4" },
+    { label: "5", value: "5" },
+    { label: "6", value: "6" },
+    { label: "*", value: "*", kind: "operator" },
+    { label: "1", value: "1" },
+    { label: "2", value: "2" },
+    { label: "3", value: "3" },
+    { label: "-", value: "-", kind: "operator" },
+    { label: "0", value: "0" },
+    { label: ".", value: "." },
+    { label: "%", value: "%", kind: "operator" },
+    { label: "+", value: "+", kind: "operator" },
+    { label: "=", action: calculate, kind: "equals wide" }
+  ];
+
+  return (
+    <aside className="exam-calculator" aria-label="Calculator">
+      <div className="calculator-head">
+        <strong>Calculator</strong>
+        <small>Basic</small>
+      </div>
+      <div className="calculator-display" title={display}>{display}</div>
+      {error ? <small className="calculator-error">{error}</small> : <small className="calculator-hint">Use for simple arithmetic.</small>}
+      <div className="calculator-grid">
+        {buttons.map((button) => (
+          <button
+            key={button.label}
+            className={button.kind || ""}
+            onClick={() => (button.action ? button.action() : append(button.value))}
+            type="button"
+          >
+            {button.label}
+          </button>
+        ))}
+      </div>
+    </aside>
   );
 }
 

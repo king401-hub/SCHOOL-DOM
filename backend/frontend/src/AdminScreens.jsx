@@ -3,6 +3,7 @@ import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
   RECOMMENDED_SUBJECT_GROUPS,
+  SUPPORT_EMAIL,
 } from "./appConstants";
 import {
   MultiSelectBox,
@@ -28,6 +29,13 @@ const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
 const heatTone = (status) => (status === "strong" ? "strong" : status === "watch" ? "watch" : "weak");
 const formatAnalyticsAmount = (value) =>
   `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
 function CbtStatusPill({ tone = "info", children }) {
   return <span className={`cbt-status-pill tone-${tone}`}>{children}</span>;
@@ -43,8 +51,6 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
     const ends = new Date(exam.end_date || exam.endDate || 0).getTime();
     return starts <= now && (!ends || now <= ends);
   });
-  const submittedResults = results.filter((item) => item.attempt_id || item.id);
-  const autoSubmitted = results.filter((item) => item.auto_submitted || item.reason || item.warning_count);
   const recentExams = [...publishedExams]
     .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
     .slice(0, 6);
@@ -68,35 +74,28 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
         <div>
           <p className="quiz-kicker">Desktop CBT deployment</p>
           <h2>Student CBT App</h2>
-          <p>Students write exams from the offline desktop client after the admin imports a CBT package or syncs published exams.</p>
-        </div>
-        <div className="cbt-hero-status">
-          <CbtStatusPill tone="success">Offline ready</CbtStatusPill>
-          <strong>SchoolDomCBT.exe</strong>
-          <small>Install once, then import exam packages without running a server.</small>
+          <p>Students use this desktop client only to sign in, open assigned exams, and submit CBT answers.</p>
         </div>
       </header>
 
       <div className="metric-grid cbt-metric-grid">
-        <MetricCard label="Published Exams" value={publishedExams.length} trend="Available to eligible students" icon="exam" tone="violet" />
+        <MetricCard label="Exams Ready" value={publishedExams.length} trend="Available to eligible students" icon="exam" tone="violet" />
         <MetricCard label="Open Now" value={openExams.length} trend="Within scheduled exam time" icon="overview" tone="emerald" />
-        <MetricCard label="Submissions" value={submittedResults.length} trend="Real CBT result records" icon="results" tone="blue" />
-        <MetricCard label="Auto Submissions" value={autoSubmitted.length} trend="Timer or security triggered" icon="results" tone="amber" />
       </div>
 
       <div className="cbt-admin-layout">
         <article className="app-panel cbt-server-panel">
           <div className="panel-head">
-            <h3>Offline CBT installer</h3>
+            <h3>Student CBT installer</h3>
             <small>Download the Windows CBT client and copy it to student computers.</small>
           </div>
           <div className="cbt-server-card">
             <div>
               <span>Student application</span>
               <strong>SchoolDom Student CBT</strong>
-              <small>Download the app here, copy it to each student computer, and open SchoolDomCBT.exe.</small>
+              <small>Download the app here, copy it to each student computer, and open SchoolDomCBT.exe for exams.</small>
             </div>
-            <CbtStatusPill tone="success">Real API backed</CbtStatusPill>
+            <CbtStatusPill tone="success">Student exams only</CbtStatusPill>
           </div>
           <div className="cbt-action-row">
             <a className="cbt-download-button" href={studentAppDownloadUrl} onClick={handleStudentAppDownload}>
@@ -107,7 +106,7 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
             {[
               ["Authentication", "Students sign in with their real SchoolDom account before exams load."],
               ["Exam PINs", "PIN validation happens on the server before an attempt is created."],
-              ["Autosave", "Answers are saved to the server and cached locally for recovery."],
+              ["Exam Writing", "The client is focused on answering CBT questions and submitting attempts."],
               ["Monitoring", "Fullscreen exits, tab switches, and auto-submit reasons are recorded."],
             ].map(([title, detail]) => (
               <div key={title}>
@@ -1054,6 +1053,87 @@ function AdminFinanceScreen({
     }
   };
 
+  const openFinancePrintout = ({ title, reference, metaRows = [], tableRows = [], totalLabel = "Total", total = 0, footer = "" }) => {
+    const printWindow = window.open("", "_blank", "width=900,height=1100");
+    if (!printWindow) {
+      setFormError("Allow popups to print this document.");
+      return;
+    }
+    const metaMarkup = metaRows
+      .map(([label, value]) => `<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value || "-")}</div>`)
+      .join("");
+    const rowMarkup = tableRows
+      .map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`)
+      .join("");
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${escapeHtml(reference || title)}</title>
+          <style>
+            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea}.brand{display:flex;justify-content:space-between;gap:24px;margin-bottom:28px}.brand strong{font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
+          </style>
+        </head>
+        <body>
+          <main class="sheet">
+            <header class="brand">
+              <strong>SchoolDom Finance</strong>
+              <span>${escapeHtml(formatDate(new Date().toISOString().slice(0, 10)))}</span>
+            </header>
+            <h1 class="doc-title">${escapeHtml(title)}</h1>
+            <section class="meta">${metaMarkup}</section>
+            <table>
+              <thead><tr><th>Description</th><th>Amount</th></tr></thead>
+              <tbody>${rowMarkup}</tbody>
+            </table>
+            <div class="total"><span>${escapeHtml(totalLabel)}</span><span>${escapeHtml(formatFinanceAmount(total))}</span></div>
+            <p class="footer">${escapeHtml(footer || "Generated from SchoolDom Finance.")}</p>
+          </main>
+          <script>window.onload=function(){window.print();};</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handlePrintClassBill = (fee) => {
+    const reference = `BILL-${String(fee.id || Date.now()).slice(0, 8).toUpperCase()}`;
+    openFinancePrintout({
+      title: "Bill",
+      reference,
+      metaRows: [
+        ["Bill No", reference],
+        ["Class", fee.class_label],
+        ["Fee", fee.title],
+        ["Due Date", formatDate(fee.due_date)],
+        ["Students", fee.student_count || 0],
+        ["Status", fee.is_active === false ? "Inactive" : "Active"],
+      ],
+      tableRows: [[fee.title || "School fee", formatFinanceAmount(fee.amount)]],
+      totalLabel: "Expected Total",
+      total: fee.expected_amount ?? fee.amount,
+      footer: "Present this bill when making school-fee payments.",
+    });
+  };
+
+  const handlePrintTransactionReceipt = (item) => {
+    const reference = item.reference || item.bank_reference || item.id || `RCPT-${Date.now()}`;
+    openFinancePrintout({
+      title: "Receipt",
+      reference,
+      metaRows: [
+        ["Receipt No", reference],
+        ["Date", formatDate(item.created_at || item.matched_at || item.date)],
+        ["Status", item.status || "pending"],
+        ["Type", item.tx_type || item.type || "School finance transaction"],
+      ],
+      tableRows: [[item.narration || item.description || item.reference || "Payment received", formatFinanceAmount(item.amount || item.value)]],
+      totalLabel: "Amount Paid",
+      total: item.amount || item.value,
+      footer: "This receipt confirms the recorded finance transaction.",
+    });
+  };
+
   const classStats = classFees.map((fee) => {
     const expected = Number(fee.expected_amount || 0);
     const received = Number(fee.amount_received || 0);
@@ -1338,14 +1418,14 @@ function AdminFinanceScreen({
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
               <table className="data-table">
                 <thead><tr><th>Class</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
-                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No class fees configured yet.</td></tr>}</tbody>
+                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => handlePrintClassBill(fee)}>Bill</button><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No class fees configured yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("classFees", classFees.length)}
             </div>
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "transactions" ? "active" : ""}`}>
               <table className="data-table">
-                <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th></tr></thead>
-                <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.description || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td></tr>)) : <tr><td colSpan="4">No transactions yet.</td></tr>}</tbody>
+                <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th><th>Action</th></tr></thead>
+                <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td><td><button type="button" className="table-action" onClick={() => handlePrintTransactionReceipt(item)}>Receipt</button></td></tr>)) : <tr><td colSpan="5">No transactions yet.</td></tr>}</tbody>
               </table>
             </div>
           </article>
@@ -3535,15 +3615,6 @@ function genderDisplay(value) {
   return value || "-";
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -4630,7 +4701,155 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
   );
 }
 
-function AdminSettingsScreen({ data, loading, error, onRetry, onSave, themePreference, onThemeChange }) {
+const SUPPORT_TICKET_CATEGORIES = [
+  { value: "technical_issue", label: "Technical Issue" },
+  { value: "account_issue", label: "Account Issue" },
+  { value: "billing_issue", label: "Billing Issue" },
+  { value: "feature_request", label: "Feature Request" },
+  { value: "general_inquiry", label: "General Inquiry" },
+];
+
+function SupportCenterPanel({ school, tickets = [], canEdit, onSubmit }) {
+  const [form, setForm] = useState({
+    category: "technical_issue",
+    subject: "",
+    description: "",
+    attachment: null,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [formError, setFormError] = useState("");
+  const [localTickets, setLocalTickets] = useState([]);
+
+  useEffect(() => {
+    setLocalTickets(Array.isArray(tickets) ? tickets : []);
+  }, [tickets]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canEdit || submitting) return;
+    setSubmitting(true);
+    setFeedback("");
+    setFormError("");
+    try {
+      const result = await onSubmit?.({
+        ...form,
+        subject: form.subject.trim(),
+        description: form.description.trim(),
+      });
+      if (result?.ticket) {
+        setLocalTickets((current) => [result.ticket, ...current.filter((item) => item.id !== result.ticket.id)].slice(0, 8));
+      }
+      setForm({ category: "technical_issue", subject: "", description: "", attachment: null });
+      setFeedback(result?.message || "Support ticket submitted.");
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not submit support ticket.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <article className="app-panel settings-support-center">
+      <div className="settings-support-head">
+        <div>
+          <h3>SchoolDom Support Center</h3>
+          <p>Submit a ticket to {SUPPORT_EMAIL}; SchoolDom will track updates here and notify your school by email.</p>
+        </div>
+        <span className="status-pill published">{localTickets.length} tracked</span>
+      </div>
+
+      <div className="support-school-details">
+        <div><span>School</span><strong>{school.name || "-"}</strong></div>
+        <div><span>Code</span><strong>{school.school_code || "-"}</strong></div>
+        <div><span>Email</span><strong>{school.email || "-"}</strong></div>
+        <div><span>Phone</span><strong>{school.phone || "-"}</strong></div>
+      </div>
+
+      <form className="panel-form support-ticket-form" onSubmit={handleSubmit}>
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Category
+            <select
+              value={form.category}
+              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+              disabled={!canEdit || submitting}
+            >
+              {SUPPORT_TICKET_CATEGORIES.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="panel-field">
+            Subject
+            <input
+              value={form.subject}
+              onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
+              disabled={!canEdit || submitting}
+              placeholder="Brief summary"
+            />
+          </label>
+          <label className="panel-field full">
+            Description
+            <textarea
+              value={form.description}
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+              disabled={!canEdit || submitting}
+              placeholder="Tell us what happened, who is affected, and any steps you tried."
+            />
+          </label>
+          <label className="panel-field full">
+            Attachment
+            <input
+              type="file"
+              onChange={(event) => setForm((current) => ({ ...current, attachment: event.target.files?.[0] || null }))}
+              disabled={!canEdit || submitting}
+            />
+          </label>
+        </div>
+        {formError ? <p className="form-feedback error">{formError}</p> : null}
+        {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+        <div className="panel-form-actions">
+          <button type="submit" disabled={!canEdit || submitting}>
+            {submitting ? "Submitting..." : "Submit Ticket"}
+          </button>
+        </div>
+      </form>
+
+      <div className="support-ticket-list">
+        <h4>Ticket Status Tracking</h4>
+        {localTickets.length ? (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Category</th>
+                  <th>Status</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {localTickets.map((ticket) => (
+                  <tr key={ticket.id}>
+                    <td>{ticket.subject}</td>
+                    <td>{ticket.category_label || ticket.category}</td>
+                    <td><span className={`support-status ${ticket.status || "open"}`}>{ticket.status_label || ticket.status || "Open"}</span></td>
+                    <td>{formatDate(ticket.updated_at || ticket.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel-empty">No support tickets submitted yet.</p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSupportTicket, themePreference, onThemeChange }) {
   const school = data?.school || {};
   const canEdit = Boolean(data?.can_edit);
   const [name, setName] = useState("");
@@ -4717,6 +4936,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, themePrefe
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
 
       {data ? (
+        <>
         <article className="app-panel">
           <div className="theme-switcher">
             <p className="field-note">Interface Theme</p>
@@ -4803,6 +5023,13 @@ onClick={() => handleThemeSelect("light")}
                   </div>
                 </form>
           </article>
+          <SupportCenterPanel
+            school={school}
+            tickets={data.support_tickets || []}
+            canEdit={canEdit}
+            onSubmit={onSubmitSupportTicket}
+          />
+          </>
               ) : null}
     </section>
   );
