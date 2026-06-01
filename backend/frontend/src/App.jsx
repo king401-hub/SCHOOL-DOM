@@ -330,7 +330,7 @@ function StudentCbtEntry({ onEntry }) {
   return (
     <main className="student-cbt-entry-page">
       <section className="student-cbt-entry-card">
-        <SchoolBrand school={{ name: "SchoolDom CBT" }} subtitle="Student Exam App" compact />
+        <SchoolBrand school={{ name: "SchoolDom" }} subtitle="Student Exam App" compact />
         <form onSubmit={handleSubmit} className="student-cbt-entry-form">
           <label>
             Student ID
@@ -4915,20 +4915,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       setScreenError((prev) => ({ ...prev, [path]: "" }));
       try {
         let data = await requestJson(session, "GET", endpoint);
-        // For exams, also pull latest results if available.
-        if (path === "/exams") {
-          const examsData = data;
-          let resultsData = null;
-          try {
-            resultsData = await requestJson(session, "GET", "/api/app/exam-results/");
-          } catch (resultsError) {
-            // Optional endpoint; ignore failures to keep upload flow working.
-          }
-          data = {
-            ...examsData,
-            ...(resultsData || {}),
-          };
-        }
+        // /api/app/exams/ already includes submitted_results and auto_submitted_exams.
         if (path === "/finance") {
           try {
             const hrData = await requestJson(session, "GET", "/api/hr/overview/");

@@ -20,6 +20,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Q, Sum, Prefetch
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.text import slugify
@@ -30,6 +31,7 @@ from rest_framework import status
 from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference
 from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount
 from attendance.utils import get_frontend_base_url
+from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
 
 from academic.models import (
     AcademicYear,
@@ -5438,6 +5440,12 @@ def exams_snapshot(request):
                 "average_cbt_score": round(float(average_percentage), 1),
             },
             "exams": exam_rows,
+            "downloads": {
+                "admin_app": request.build_absolute_uri(reverse("admin_app_download")),
+                "student_cbt": request.build_absolute_uri(reverse("student_cbt_app_download")),
+                "admin_app_available": bool(admin_app_installer_path()),
+                "student_cbt_available": bool(offline_cbt_installer_path()),
+            },
             "submitted_results": [
                 {
                     "id": attempt.id,

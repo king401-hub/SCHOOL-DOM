@@ -9,7 +9,7 @@ let applyingUpdate = false;
 const defaultBrand = {
   name: "SchoolDom",
   shortName: "SchoolDom",
-  description: "SchoolDom student CBT app.",
+  description: "SchoolDom exam app.",
   icon: "/schooldom-favicon.jpeg",
 };
 
@@ -50,7 +50,7 @@ function normalizeBrand(brand = {}) {
   return {
     name,
     shortName: String(brand.shortName || brand.short_name || name).trim().slice(0, 24) || name.slice(0, 24),
-    description: `${name} student CBT app.`,
+    description: `${name} exam app.`,
     icon,
   };
 }
@@ -58,7 +58,7 @@ function normalizeBrand(brand = {}) {
 function buildManifest(brand) {
   const appOrigin = window.location.origin;
   return {
-    name: `${brand.name} Student CBT`,
+    name: brand.name,
     short_name: brand.shortName,
     description: brand.description,
     id: `${appOrigin}/`,
@@ -88,7 +88,7 @@ function buildManifest(brand) {
 }
 
 function updateDocumentBrand(brand) {
-  document.title = `${brand.name} Student CBT`;
+  document.title = brand.name;
   document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", brand.shortName);
   document.querySelector('link[rel="icon"]')?.setAttribute("href", brand.icon);
   document.querySelector('link[rel="shortcut icon"]')?.setAttribute("href", brand.icon);

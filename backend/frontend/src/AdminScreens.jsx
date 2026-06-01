@@ -41,8 +41,8 @@ function CbtStatusPill({ tone = "info", children }) {
   return <span className={`cbt-status-pill tone-${tone}`}>{children}</span>;
 }
 
-function SchoolDomCbtDesktop({ exams = [], results = [] }) {
-  const adminAppDownloadUrl = `${API_BASE_URL}/app/download/admin/`;
+function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
+  const adminAppDownloadUrl = downloads.admin_app || `${API_BASE_URL}/app/download/admin/`;
   const [downloadNotice, setDownloadNotice] = useState(false);
   const [downloadState, setDownloadState] = useState({ busy: false, error: "", message: "" });
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
@@ -66,7 +66,13 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
       });
       const contentType = response.headers.get("content-type") || "";
       if (!response.ok || contentType.includes("text/html")) {
-        throw new Error("The installer file is not available from this server yet.");
+        const responseText = await response.text().catch(() => "");
+        const serverMessage = responseText
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 220);
+        throw new Error(serverMessage || "SchoolDomAdmin.exe is not available on this server yet.");
       }
 
       const blob = await response.blob();
@@ -1801,7 +1807,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         </button>
       </div>
 
-      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} /> : null}
+      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} downloads={data?.downloads || {}} /> : null}
 
       {activeView === "builder" ? (
         <>
