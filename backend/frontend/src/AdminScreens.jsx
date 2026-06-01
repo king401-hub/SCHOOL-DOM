@@ -44,6 +44,7 @@ function CbtStatusPill({ tone = "info", children }) {
 function SchoolDomCbtDesktop({ exams = [], results = [] }) {
   const adminAppDownloadUrl = `${API_BASE_URL}/app/download/admin/`;
   const [downloadNotice, setDownloadNotice] = useState(false);
+  const [downloadState, setDownloadState] = useState({ busy: false, error: "", message: "" });
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
   const openExams = publishedExams.filter((exam) => {
     const now = Date.now();
@@ -55,17 +56,42 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
     .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
     .slice(0, 6);
 
+  const downloadAdminApp = async () => {
+    setDownloadNotice(true);
+    setDownloadState({ busy: true, error: "", message: "Preparing SchoolDomAdmin.exe..." });
+    try {
+      const response = await fetch(adminAppDownloadUrl, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok || contentType.includes("text/html")) {
+        throw new Error("The installer file is not available from this server yet.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "SchoolDomAdmin.exe";
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+      setDownloadState({ busy: false, error: "", message: "Download started. Check your browser downloads." });
+    } catch (downloadError) {
+      setDownloadState({
+        busy: false,
+        error: downloadError.message || "Could not download SchoolDomAdmin.exe.",
+        message: "",
+      });
+    }
+  };
+
   const handleAdminAppDownload = (event) => {
     event.preventDefault();
-    setDownloadNotice(true);
-    const iframe = document.createElement("iframe");
-    iframe.title = "SchoolDom Admin download";
-    iframe.src = adminAppDownloadUrl;
-    iframe.style.display = "none";
-    document.body.appendChild(iframe);
-    window.setTimeout(() => {
-      iframe.remove();
-    }, 30000);
+    downloadAdminApp();
   };
 
   return (
@@ -147,11 +173,11 @@ function SchoolDomCbtDesktop({ exams = [], results = [] }) {
             </div>
             <p className="cbt-info-kicker">Download requested</p>
             <h3 id="cbt-download-title">SchoolDomAdmin.exe is starting</h3>
-            <p>The download should begin automatically. If it does not, use the direct download button below.</p>
+            <p>{downloadState.error || downloadState.message || "The download should begin automatically."}</p>
             <div className="cbt-download-actions">
-              <a href={adminAppDownloadUrl} className="cbt-download-button">
-                Download Again
-              </a>
+              <button type="button" className="cbt-download-button" onClick={downloadAdminApp} disabled={downloadState.busy}>
+                {downloadState.busy ? "Downloading..." : "Download Again"}
+              </button>
               <button type="button" onClick={() => setDownloadNotice(false)}>Close</button>
             </div>
           </div>

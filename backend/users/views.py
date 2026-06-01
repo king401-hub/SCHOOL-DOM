@@ -2,7 +2,7 @@
 import logging
 import re
 from rest_framework import status
-from rest_framework.decorators import APIView, api_view, permission_classes
+from rest_framework.decorators import APIView, api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -292,6 +292,7 @@ def get_tokens_for_user(user):
     }
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def register(request):
     """
@@ -339,6 +340,7 @@ def register(request):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def create_school(request):
     """
@@ -406,6 +408,7 @@ def create_school(request):
     }, status=status.HTTP_409_CONFLICT)
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def login_view(request):
     """
@@ -514,6 +517,7 @@ def logout_view(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def verify_email(request):
     """
@@ -551,6 +555,7 @@ def verify_email(request):
     }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def resend_verification(request):
     """
@@ -607,6 +612,7 @@ def resend_verification(request):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def admin_verify_otp(request):
     email = str(request.data.get('email') or '').strip().lower()
@@ -671,6 +677,7 @@ def admin_verify_otp(request):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def admin_resend_otp(request):
     email = str(request.data.get('email') or '').strip().lower()
@@ -702,6 +709,7 @@ def admin_resend_otp(request):
     })
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def password_reset_request(request):
     """
@@ -755,6 +763,7 @@ def password_reset_request(request):
     }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def password_reset_confirm(request):
     """
