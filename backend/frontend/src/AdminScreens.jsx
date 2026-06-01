@@ -42,7 +42,7 @@ function CbtStatusPill({ tone = "info", children }) {
 }
 
 function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
-  const adminAppDownloadUrl = downloads.admin_app || `${API_BASE_URL}/app/download/admin/`;
+  const adminAppDownloadUrl = `${API_BASE_URL}/api/app/admin-desktop/download/`;
   const [downloadNotice, setDownloadNotice] = useState(false);
   const [downloadState, setDownloadState] = useState({ busy: false, error: "", message: "" });
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
@@ -66,13 +66,8 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
       });
       const contentType = response.headers.get("content-type") || "";
       if (!response.ok || contentType.includes("text/html")) {
-        const responseText = await response.text().catch(() => "");
-        const serverMessage = responseText
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 220);
-        throw new Error(serverMessage || "SchoolDomAdmin.exe is not available on this server yet.");
+        const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : null;
+        throw new Error(payload?.message || "SchoolDomAdmin.exe is not available on this server yet.");
       }
 
       const blob = await response.blob();

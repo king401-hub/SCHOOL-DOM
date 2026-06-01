@@ -24,7 +24,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.text import slugify
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -52,6 +52,7 @@ from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
 from users.models import DatabaseImportJob, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
 
 try:
     from hr.models import StaffProfile
@@ -2501,6 +2502,30 @@ def admin_desktop_bootstrap(request):
             },
         }
     )
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def admin_desktop_download(request):
+    app_path = admin_app_installer_path()
+    if not app_path:
+        return Response(
+            {
+                "success": False,
+                "message": "SchoolDom Admin installer is not available on this server yet.",
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    response = FileResponse(
+        app_path.open("rb"),
+        as_attachment=True,
+        filename=ADMIN_APP_FILENAME,
+        content_type="application/vnd.microsoft.portable-executable",
+    )
+    response["Cache-Control"] = "no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @api_view(["GET"])
