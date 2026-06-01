@@ -3,6 +3,13 @@
 .env.*
 !.env.example
 
+# Code signing secrets
+certs/
+*.pfx
+*.p12
+*.pem
+*.key
+
 # Database
 *.sqlite3
 *.db

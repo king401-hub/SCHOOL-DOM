@@ -84,7 +84,6 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
       webSecurity: true,
     },
   });
@@ -95,8 +94,18 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL("http://127.0.0.1:5175");
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
   }
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+    console.error("SchoolDom Admin failed to load", { errorCode, errorDescription, validatedUrl });
+  });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("SchoolDom Admin renderer stopped", details);
+  });
+  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    console.log("SchoolDom Admin renderer", { level, message, line, sourceId });
+  });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", (event, targetUrl) => {

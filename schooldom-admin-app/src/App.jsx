@@ -75,11 +75,17 @@ export default function App() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const settings = await bridge.settings();
-      if (!active) return;
-      setServerUrl(settings.serverUrl || "");
-      setSchoolCode(settings.schoolCode || "");
-      await loadDashboard({ serverUrl: settings.serverUrl || "", schoolCode: settings.schoolCode || "" });
+      try {
+        const settings = await bridge.settings();
+        if (!active) return;
+        setServerUrl(settings.serverUrl || "");
+        setSchoolCode(settings.schoolCode || "");
+        await loadDashboard({ serverUrl: settings.serverUrl || "", schoolCode: settings.schoolCode || "" });
+      } catch (settingsError) {
+        if (!active) return;
+        setError(settingsError.message || "Could not load app settings.");
+        setBooting(false);
+      }
     })();
     const interval = window.setInterval(() => loadDashboard().catch(() => null), 30000);
     return () => {
