@@ -84,6 +84,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       webSecurity: true,
     },
   });
@@ -94,7 +95,7 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL("http://127.0.0.1:5175");
   } else {
-    mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
