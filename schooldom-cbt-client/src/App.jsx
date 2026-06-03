@@ -40,6 +40,56 @@ function normalizeQuestions(exam) {
   }));
 }
 
+function normalizeLanServerUrl(value) {
+  const trimmed = String(value || "").trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
+async function lanRequest(serverUrl, path, options = {}) {
+  const response = await fetch(`${normalizeLanServerUrl(serverUrl)}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || `Admin server request failed (${response.status}).`);
+  return payload;
+}
+
+async function saveStudentAnswers(context, answers) {
+  if (context.lanServerUrl) {
+    return lanRequest(context.lanServerUrl, `/api/sessions/${encodeURIComponent(context.session.id)}/answers`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    });
+  }
+  return api.student.saveAnswers({ sessionId: context.session.id, answers });
+}
+
+async function submitStudentExam(context, answers, cause) {
+  if (context.lanServerUrl) {
+    return lanRequest(context.lanServerUrl, `/api/sessions/${encodeURIComponent(context.session.id)}/submit`, {
+      method: "POST",
+      body: JSON.stringify({ answers, cause }),
+    });
+  }
+  await api.student.saveAnswers({ sessionId: context.session.id, answers });
+  return api.student.submit({ sessionId: context.session.id, cause });
+}
+
+async function logStudentFocusLoss(context, reason) {
+  if (context.lanServerUrl) {
+    return lanRequest(context.lanServerUrl, `/api/sessions/${encodeURIComponent(context.session.id)}/focus-loss`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+  return api.student.focusLoss({ sessionId: context.session.id, reason });
+}
+
 export default function App() {
   const bridge = api || fallbackApi;
   const [booting, setBooting] = useState(true);
@@ -54,6 +104,7 @@ export default function App() {
   const [studentContext, setStudentContext] = useState(null);
   const [examPayload, setExamPayload] = useState(null);
   const [phase, setPhase] = useState("login");
+  const [lanServerUrl, setLanServerUrl] = useState(() => localStorage.getItem("schooldomLanServerUrl") || "");
 
   const refreshSnapshot = useCallback(async () => {
     if (!api) return;
@@ -203,6 +254,28 @@ export default function App() {
 
   async function handleStudentLogin(payload) {
     setError("");
+    const nextLanServerUrl = normalizeLanServerUrl(payload.lanServerUrl);
+    if (nextLanServerUrl) {
+      localStorage.setItem("schooldomLanServerUrl", nextLanServerUrl);
+      setLanServerUrl(nextLanServerUrl);
+      const result = await lanRequest(nextLanServerUrl, "/api/login", {
+        method: "POST",
+        body: JSON.stringify({ studentId: payload.studentId, pin: payload.pin }),
+      });
+      if (!result.success) {
+        setError(result.message || "Login failed.");
+        return;
+      }
+      const examResult = await lanRequest(nextLanServerUrl, `/api/exams/${encodeURIComponent(result.exam.id)}`);
+      if (!examResult.success) {
+        setError(examResult.message || "Could not open exam.");
+        return;
+      }
+      setStudentContext({ ...result, lanServerUrl: nextLanServerUrl });
+      setExamPayload(examResult.exam);
+      setPhase("instructions");
+      return;
+    }
     const result = await api.student.login(payload);
     if (!result.success) {
       setError(result.message || "Login failed.");
@@ -249,6 +322,8 @@ export default function App() {
           setPhase={setPhase}
           context={studentContext}
           examPayload={examPayload}
+          lanServerUrl={lanServerUrl}
+          onLanServerUrl={setLanServerUrl}
           onLogin={handleStudentLogin}
           onExit={() => {
             setStudentContext(null);
@@ -447,28 +522,33 @@ function AdminDashboard(props) {
   );
 }
 
-function StudentWorkspace({ phase, setPhase, context, examPayload, onLogin, onExit }) {
-  if (phase === "login") return <StudentLogin onLogin={onLogin} />;
+function StudentWorkspace({ phase, setPhase, context, examPayload, lanServerUrl, onLanServerUrl, onLogin, onExit }) {
+  if (phase === "login") return <StudentLogin lanServerUrl={lanServerUrl} onLanServerUrl={onLanServerUrl} onLogin={onLogin} />;
   if (phase === "instructions") return <Instructions context={context} onStart={() => setPhase("exam")} />;
   if (phase === "summary") return <Summary context={context} onExit={onExit} />;
   return <ExamInterface context={context} examPayload={examPayload} onSubmitted={() => setPhase("summary")} />;
 }
 
-function StudentLogin({ onLogin }) {
+function StudentLogin({ lanServerUrl, onLanServerUrl, onLogin }) {
   const [studentId, setStudentId] = useState("");
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
+  const [serverUrl, setServerUrl] = useState(lanServerUrl || "");
   return (
     <div className="login-screen">
       <section className="login-card">
         <p>Secure student login</p>
         <h1>Start CBT Exam</h1>
+        <label>Admin Server Address<input value={serverUrl} onChange={(event) => {
+          setServerUrl(event.target.value);
+          onLanServerUrl(event.target.value);
+        }} placeholder="Example: http://192.168.1.23:4785" /></label>
         <label>Student ID<input value={studentId} onChange={(event) => setStudentId(event.target.value)} autoFocus /></label>
         <label>Exam PIN<input value={pin} onChange={(event) => setPin(event.target.value)} type="password" /></label>
         <button className="primary-button" disabled={busy} onClick={async () => {
           setBusy(true);
           try {
-            await onLogin({ studentId, pin });
+            await onLogin({ studentId, pin, lanServerUrl: serverUrl });
           } finally {
             setBusy(false);
           }
@@ -510,11 +590,10 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
   answersRef.current = answers;
 
   const submit = useCallback(async (cause = "student_submit") => {
-    await api.student.saveAnswers({ sessionId: context.session.id, answers: answersRef.current });
-    await api.student.submit({ sessionId: context.session.id, cause });
-    await api.window.exitFullscreen();
+    await submitStudentExam(context, answersRef.current, cause);
+    await api?.window?.exitFullscreen?.();
     onSubmitted();
-  }, [context.session.id, onSubmitted]);
+  }, [context, onSubmitted]);
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -530,17 +609,17 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
 
   useEffect(() => {
     const saver = setInterval(() => {
-      api.student.saveAnswers({ sessionId: context.session.id, answers: answersRef.current }).catch(() => null);
+      saveStudentAnswers(context, answersRef.current).catch(() => null);
     }, 1000);
     return () => clearInterval(saver);
-  }, [context.session.id]);
+  }, [context]);
 
   useEffect(() => {
-    const onBlur = () => api.student.focusLoss({ sessionId: context.session.id, reason: "window_blur" }).catch(() => null);
+    const onBlur = () => logStudentFocusLoss(context, "window_blur").catch(() => null);
     const block = (event) => {
       if ((event.ctrlKey || event.metaKey) && ["r", "l", "n", "t", "w"].includes(event.key.toLowerCase())) {
         event.preventDefault();
-        api.student.focusLoss({ sessionId: context.session.id, reason: `blocked_shortcut_${event.key}` }).catch(() => null);
+        logStudentFocusLoss(context, `blocked_shortcut_${event.key}`).catch(() => null);
       }
     };
     window.addEventListener("blur", onBlur);
@@ -549,7 +628,7 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("keydown", block);
     };
-  }, [context.session.id]);
+  }, [context]);
 
   const question = questions[current] || {};
   const answered = Object.values(answers).filter((value) => String(value || "").trim()).length;

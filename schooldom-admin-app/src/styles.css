@@ -17,7 +17,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -36,13 +37,19 @@ button:disabled {
   opacity: 0.65;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   border: 1px solid #d8dee9;
-  border-radius: 999px;
+  border-radius: 12px;
   padding: 8px 12px;
   background: #fff;
   color: #111827;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.45;
 }
 
 label {
@@ -126,6 +133,19 @@ label {
   gap: 12px;
   padding: 18px;
   border-radius: 2px;
+}
+
+.lan-tile {
+  background: #e0f7f2;
+}
+
+.publish-tile {
+  grid-row: span 2;
+  background: #fff4d6;
+}
+
+.sessions-tile {
+  background: #eef2ff;
 }
 
 .settings-tile {
@@ -234,6 +254,24 @@ label {
   gap: 10px;
 }
 
+.publish-form {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .install-button {
   justify-self: end;
   align-self: end;
@@ -282,4 +320,24 @@ label {
 
 .toast button {
   background: rgba(255, 255, 255, 0.16);
+}
+
+.session-list {
+  display: grid;
+  gap: 8px;
+}
+
+.session-list div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.session-list p {
+  margin: 0;
+  color: #64748b;
 }

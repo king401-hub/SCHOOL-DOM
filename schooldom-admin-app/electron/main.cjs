@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { APP_NAME, DEFAULT_SERVER_URL, dataPath } = require("./config.cjs");
+const lanServer = require("./lanServer.cjs");
 
 const isDev = !app.isPackaged;
 let mainWindow;
@@ -143,6 +144,10 @@ function registerIpc() {
     }
     return { success: true, downloadUrl, filePath: targetPath };
   });
+  ipcMain.handle("lan:snapshot", () => lanServer.snapshot());
+  ipcMain.handle("lan:start", () => lanServer.startServer());
+  ipcMain.handle("lan:stop", () => lanServer.stopServer());
+  ipcMain.handle("lan:publishExam", (_event, payload = {}) => lanServer.publishExam(payload));
 }
 
 process.on("uncaughtException", (error) => {

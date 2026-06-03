@@ -21,6 +21,12 @@ const fallbackApi = {
   settings: async () => ({ serverUrl: "https://schooldom.academy", schoolCode: "" }),
   saveSettings: async (payload) => payload,
   openCbtInstaller: async () => ({ success: true }),
+  lan: {
+    snapshot: async () => ({ running: false, urls: [], exams: [], students: [], sessions: [] }),
+    start: async () => ({ running: true, urls: ["http://192.168.1.10:4785"], exams: [], students: [], sessions: [] }),
+    stop: async () => ({ running: false, urls: [], exams: [], students: [], sessions: [] }),
+    publishExam: async () => ({ running: true, urls: ["http://192.168.1.10:4785"], exams: [], students: [], sessions: [] }),
+  },
 };
 
 function initials(name) {
@@ -50,6 +56,16 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [installing, setInstalling] = useState(false);
+  const [lan, setLan] = useState({ running: false, urls: [], exams: [], students: [], sessions: [] });
+  const [examForm, setExamForm] = useState({
+    title: "Offline CBT Exam",
+    subject: "",
+    durationMinutes: "60",
+    pin: "",
+    studentsText: "",
+    instructions: "Answer all questions. Submit before the timer ends.",
+    questionsText: "Question 1\n\nQuestion 2",
+  });
 
   const loadDashboard = useCallback(
     async (options = {}) => {
@@ -88,9 +104,12 @@ export default function App() {
       }
     })();
     const interval = window.setInterval(() => loadDashboard().catch(() => null), 30000);
+    const lanInterval = window.setInterval(() => bridge.lan?.snapshot?.().then(setLan).catch(() => null), 3000);
+    bridge.lan?.start?.().then(setLan).catch(() => null);
     return () => {
       active = false;
       window.clearInterval(interval);
+      window.clearInterval(lanInterval);
     };
   }, []);
 
@@ -130,6 +149,31 @@ export default function App() {
     }
   };
 
+  const updateExamForm = (key, value) => setExamForm((current) => ({ ...current, [key]: value }));
+
+  const publishLanExam = async (event) => {
+    event.preventDefault();
+    setError("");
+    setNotice("Publishing exam to the local network...");
+    try {
+      const nextLan = await bridge.lan.publishExam(examForm);
+      setLan(nextLan);
+      setNotice("Exam published. Students can connect using the LAN address.");
+    } catch (publishError) {
+      setError(publishError.message || "Could not publish the offline exam.");
+    }
+  };
+
+  const startLan = async () => {
+    setLan(await bridge.lan.start());
+    setNotice("Offline exam room is online on this router.");
+  };
+
+  const stopLan = async () => {
+    setLan(await bridge.lan.stop());
+    setNotice("Offline exam room stopped.");
+  };
+
   if (booting) {
     return (
       <main className="splash-screen">
@@ -144,10 +188,60 @@ export default function App() {
     <main className="admin-shell">
       <header className="topbar">
         <strong>Home / Dashboard</strong>
-        <span>Server <b>{data?.server?.online && !error ? "On" : "Off"}</b></span>
+        <span>LAN <b>{lan.running ? "On" : "Off"}</b></span>
       </header>
 
       <section className="dashboard-grid">
+        <article className="tile lan-tile">
+          <TileHead icon="content" title="Offline Exam Room" />
+          <Field label="Status" value={lan.running ? "Running" : "Stopped"} />
+          <Field label="Student Address" value={lan.urls?.[0] || "Start room"} />
+          <Field label="Published Exams" value={lan.exams?.length || 0} />
+          <Field label="Students" value={lan.students?.length || 0} />
+          <Field label="Submissions" value={(lan.sessions || []).filter((session) => session.status === "submitted").length} />
+          <div className="button-row">
+            <button type="button" onClick={startLan}>Start Room</button>
+            <button type="button" onClick={stopLan}>Stop Room</button>
+          </div>
+        </article>
+
+        <article className="tile publish-tile">
+          <TileHead icon="test" title="Publish Offline Exam" />
+          <form onSubmit={publishLanExam} className="publish-form">
+            <div className="form-grid">
+              <label>
+                Exam Title
+                <input value={examForm.title} onChange={(event) => updateExamForm("title", event.target.value)} />
+              </label>
+              <label>
+                Subject
+                <input value={examForm.subject} onChange={(event) => updateExamForm("subject", event.target.value)} />
+              </label>
+              <label>
+                Duration Minutes
+                <input type="number" min="1" value={examForm.durationMinutes} onChange={(event) => updateExamForm("durationMinutes", event.target.value)} />
+              </label>
+              <label>
+                Exam PIN
+                <input type="password" value={examForm.pin} onChange={(event) => updateExamForm("pin", event.target.value)} />
+              </label>
+            </div>
+            <label>
+              Students
+              <textarea value={examForm.studentsText} onChange={(event) => updateExamForm("studentsText", event.target.value)} rows="4" placeholder={"One per line: StudentID, Full Name, Class\nSD001, Ada Okafor, JSS2"} />
+            </label>
+            <label>
+              Questions
+              <textarea value={examForm.questionsText} onChange={(event) => updateExamForm("questionsText", event.target.value)} rows="7" placeholder={"Separate theory questions with blank lines, or paste JSON questions."} />
+            </label>
+            <label>
+              Instructions
+              <textarea value={examForm.instructions} onChange={(event) => updateExamForm("instructions", event.target.value)} rows="3" />
+            </label>
+            <button type="submit" disabled={!examForm.pin.trim()}>Publish to Router</button>
+          </form>
+        </article>
+
         <article className="tile settings-tile">
           <TileHead icon="gear" title="Settings" />
           <form onSubmit={saveAndRefresh} className="settings-form">
@@ -190,6 +284,7 @@ export default function App() {
         <article className="tile client-tile">
           <TileHead icon="client" title="Client" />
           <Field label="Total" value={dashboard.client?.total ?? 1} />
+          <Field label="Install From" value="Admin App" />
           <button className="install-button" type="button" onClick={installCbt} disabled={installing}>
             {installing ? "Opening..." : "Install CBT App"}
           </button>
@@ -201,6 +296,19 @@ export default function App() {
             {school.logo ? <img src={school.logo} alt={`${school.name} logo`} /> : <span>{initials(school.name)}</span>}
           </div>
           {schoolDetails.map(([label, value]) => <Field key={label} label={label} value={value} />)}
+        </article>
+
+        <article className="tile sessions-tile">
+          <TileHead icon="candidate" title="Live Student Sessions" />
+          <div className="session-list">
+            {(lan.sessions || []).slice(0, 10).map((session) => (
+              <div key={session.id}>
+                <span>{session.student_id}</span>
+                <strong>{session.status}</strong>
+              </div>
+            ))}
+            {!lan.sessions?.length ? <p>No student sessions yet.</p> : null}
+          </div>
         </article>
       </section>
 
