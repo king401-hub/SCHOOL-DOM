@@ -2392,8 +2392,8 @@ body[data-dashboard-role="student"] .global-notification-button {
 }
 
 .settings-support-center {
-  justify-self: end;
-  width: min(100%, 760px);
+  justify-self: stretch;
+  width: 100%;
   display: grid;
   gap: 0.9rem;
 }

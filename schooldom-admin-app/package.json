@@ -1,6 +1,6 @@
 {
   "name": "schooldom-admin-app",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "School-branded admin desktop app for installing and monitoring SchoolDom CBT.",
   "main": "electron/main.cjs",

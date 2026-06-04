@@ -29,7 +29,7 @@ function storePath() {
 }
 
 function defaultStore() {
-  return { exams: [], students: [], sessions: [], updated_at: now() };
+  return { school: null, classes: [], token_summary: {}, exams: [], students: [], sessions: [], updated_at: now() };
 }
 
 function readStore() {
@@ -128,11 +128,52 @@ function saveStudent(payload = {}) {
   return snapshot();
 }
 
+function importSchoolSnapshot(payload = {}) {
+  const store = readStore();
+  const nextStudents = Array.isArray(payload.students) ? payload.students : [];
+  const nextExams = Array.isArray(payload.exams) ? payload.exams : [];
+  store.school = payload.school || store.school || null;
+  store.classes = Array.isArray(payload.classes) ? payload.classes : store.classes || [];
+  store.token_summary = payload.activation_tokens || store.token_summary || {};
+  if (nextStudents.length) {
+    store.students = nextStudents.map((student) => ({
+      id: String(student.id || student.student_id || ""),
+      student_id: String(student.student_id || student.admission_number || student.id || "").trim(),
+      full_name: String(student.full_name || student.name || student.email || "Student"),
+      class_name: String(student.class_name || ""),
+      email: String(student.email || ""),
+      phone: String(student.phone || ""),
+      profile_picture: String(student.profile_picture || ""),
+      is_active: student.is_active !== false,
+      activation: student.activation || {},
+      source: "schooldom",
+      updated_at: now(),
+    })).filter((student) => student.student_id);
+  }
+  if (nextExams.length) {
+    store.exams = nextExams.map((exam) => ({
+      id: String(exam.id || newId("web_exam")),
+      title: String(exam.title || "SchoolDom CBT Exam"),
+      subject: String(exam.subject || ""),
+      class_name: String(exam.class_name || "All classes"),
+      duration_seconds: Math.max(60, Number(exam.duration_seconds || Number(exam.duration_minutes || 60) * 60)),
+      pin_hash: String(exam.pin_hash || ""),
+      instructions: String(exam.instructions || "Answer all questions."),
+      questions: Array.isArray(exam.questions) ? exam.questions : [],
+      is_published: Boolean(exam.is_published),
+      active_pin_count: Number(exam.active_pin_count || 0),
+      source: "schooldom",
+      published_at: exam.start_date || now(),
+    }));
+  }
+  writeStore(store);
+  return snapshot();
+}
+
 function publishExam(payload = {}) {
   const questions = normalizeQuestions(payload.questionsText);
   if (!questions.length) throw new Error("Add at least one question before publishing.");
   const students = parseStudents(payload.studentsText);
-  if (!students.length) throw new Error("Add at least one student before publishing.");
   const exam = {
     id: newId("lan_exam"),
     title: String(payload.title || "Offline CBT Exam").trim(),
@@ -144,8 +185,12 @@ function publishExam(payload = {}) {
     published_at: now(),
   };
   const store = readStore();
+  const activeStudents = (store.students || []).filter((student) => student.is_active !== false);
+  if (!students.length && !activeStudents.length) throw new Error("Add at least one active student before publishing.");
   store.exams = [exam, ...store.exams.filter((item) => item.id !== exam.id)];
-  store.students = students;
+  if (students.length) {
+    store.students = students;
+  }
   writeStore(store);
   return snapshot();
 }
@@ -324,6 +369,7 @@ function startDiscovery() {
 }
 
 module.exports = {
+  importSchoolSnapshot,
   publishExam,
   saveStudent,
   snapshot,

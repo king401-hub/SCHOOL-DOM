@@ -28,7 +28,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference
+from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool
 from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount
 from attendance.utils import get_frontend_base_url
 from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
@@ -2445,14 +2445,101 @@ def _public_admin_app_school(request):
 def admin_desktop_bootstrap(request):
     school = _public_admin_app_school(request)
     now = timezone.now()
-    tenant_filter = {"tenant": school} if school else {}
+    legacy_tenant = None
+    if school:
+        legacy_tenant = (
+            Tenant.objects.filter(slug__iexact=school.schema_name).first()
+            or Tenant.objects.filter(name__iexact=school.name).first()
+        )
+    tenant_filter = {"tenant": legacy_tenant} if legacy_tenant else None
     user_filter = {"tenant": school} if school else {}
 
     students_qs = User.objects.filter(role="student", **user_filter)
-    classes_qs = Class.objects.filter(**tenant_filter)
-    exams_qs = Exam.objects.filter(**tenant_filter)
-    attempts_qs = ExamAttempt.objects.filter(**tenant_filter)
-    banks_qs = QuestionBank.objects.filter(**tenant_filter)
+    student_profiles_qs = (
+        StudentProfile.objects.select_related("user", "current_class", "activation_credit")
+        .filter(user__tenant=school if school else None)
+        if school
+        else StudentProfile.objects.none()
+    )
+    classes_qs = Class.objects.filter(**tenant_filter) if tenant_filter else Class.objects.none()
+    exams_qs = Exam.objects.filter(**tenant_filter).select_related("subject", "class_group", "exam_type").prefetch_related("questions") if tenant_filter else Exam.objects.none()
+    attempts_qs = ExamAttempt.objects.filter(**tenant_filter) if tenant_filter else ExamAttempt.objects.none()
+    banks_qs = QuestionBank.objects.filter(**tenant_filter) if tenant_filter else QuestionBank.objects.none()
+    token_pool = ActivationCreditPool.objects.filter(tenant=school).first() if school else None
+    active_year = AcademicYear.objects.filter(tenant=legacy_tenant, is_active=True).order_by("-start_date").first() if legacy_tenant else None
+    active_term = Term.objects.select_related("academic_year").filter(tenant=legacy_tenant, is_active=True).order_by("-start_date").first() if legacy_tenant else None
+    active_credit_count = 0
+    inactive_credit_count = 0
+    desktop_students = []
+    for profile in student_profiles_qs.order_by("user__first_name", "user__last_name", "student_id")[:500]:
+        credit = getattr(profile, "activation_credit", None)
+        has_login_credit = bool(getattr(credit, "has_login_credit", False))
+        is_active = bool(profile.user.is_active and has_login_credit)
+        if is_active:
+            active_credit_count += 1
+        else:
+            inactive_credit_count += 1
+        desktop_students.append(
+            {
+                "id": str(profile.id),
+                "user_id": str(profile.user_id),
+                "student_id": profile.student_id,
+                "admission_number": profile.admission_number or "",
+                "full_name": profile.user.get_full_name() or profile.user.email,
+                "email": profile.user.email,
+                "phone": profile.user.phone or "",
+                "class_id": profile.current_class_id,
+                "class_name": _class_label(profile.current_class) if profile.current_class else "Unassigned",
+                "profile_picture": _profile_picture_url(request, profile.user),
+                "is_active": is_active,
+                "user_is_active": profile.user.is_active,
+                "activation": {
+                    "has_login_credit": has_login_credit,
+                    "active_until": getattr(credit, "active_until", None),
+                    "credits_assigned": getattr(credit, "credits_assigned", 0) if credit else 0,
+                    "inactive_since": getattr(credit, "inactive_since", None),
+                    "excluded_from_auto_deductions": bool(getattr(credit, "is_excluded_from_auto_deductions", False)) if credit else False,
+                },
+            }
+        )
+
+    desktop_classes = [
+        {
+            "id": item.id,
+            "name": _class_label(item),
+            "section": getattr(item, "section", "") or "",
+        }
+        for item in classes_qs.order_by("name")[:200]
+    ]
+
+    desktop_exams = []
+    for exam in exams_qs.order_by("-created_at")[:100]:
+        desktop_exams.append(
+            {
+                "id": exam.id,
+                "title": exam.title,
+                "subject": exam.subject.name if exam.subject else "",
+                "subject_id": exam.subject_id,
+                "class_id": exam.class_group_id,
+                "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
+                "duration_minutes": exam.duration_minutes,
+                "instructions": exam.instructions,
+                "start_date": exam.start_date,
+                "end_date": exam.end_date,
+                "is_published": exam.is_published,
+                "active_pin_count": exam.pins.filter(is_active=True).count(),
+                "questions": [
+                    {
+                        "id": question.id,
+                        "text": question.text,
+                        "type": "multiple_choice" if question.question_type == "mcq" else question.question_type,
+                        "options": question.options or [],
+                        "marks": question.points,
+                    }
+                    for question in exam.questions.all()[:200]
+                ],
+            }
+        )
 
     school_payload = _school_payload(school, request) if school else {
         "name": "SchoolDom",
@@ -2475,6 +2562,8 @@ def admin_desktop_bootstrap(request):
             "downloads": {
                 "student_cbt": request.build_absolute_uri("/app/download/student-cbt/"),
             },
+            "academic_year": _academic_year_payload(active_year),
+            "term": _term_payload(active_term),
             "dashboard": {
                 "settings": {
                     "name": school_payload.get("name") or "SchoolDom",
@@ -2497,7 +2586,21 @@ def admin_desktop_bootstrap(request):
                     "pending": attempts_qs.filter(is_submitted=False).count(),
                     "ongoing": attempts_qs.filter(is_submitted=False, end_time__gte=now).count(),
                     "submitted": attempts_qs.filter(is_submitted=True).count(),
-                    "batch_count": ResultBatch.objects.filter(**tenant_filter).count(),
+                    "batch_count": ResultBatch.objects.filter(**tenant_filter).count() if tenant_filter else 0,
+                },
+            },
+            "local_data": {
+                "school": school_payload,
+                "classes": desktop_classes,
+                "students": desktop_students,
+                "exams": desktop_exams,
+                "activation_tokens": {
+                    "balance": token_pool.balance if token_pool else 0,
+                    "price_per_credit": str(token_pool.price_per_credit) if token_pool else "200.00",
+                    "currency": token_pool.currency if token_pool else school_payload.get("currency", "NGN"),
+                    "auto_assign_enabled": bool(token_pool.auto_assign_enabled) if token_pool else False,
+                    "active_students": active_credit_count,
+                    "inactive_students": inactive_credit_count,
                 },
             },
         }

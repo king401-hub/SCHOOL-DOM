@@ -1,6 +1,6 @@
 {
   "name": "schooldom-cbt-client",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Offline-first CBT desktop client for SchoolDom.",
   "main": "electron/main.cjs",

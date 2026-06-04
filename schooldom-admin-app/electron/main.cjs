@@ -49,25 +49,88 @@ async function downloadFile(url, targetPath) {
   return targetPath;
 }
 
+function dashboardFromLocal(localData = {}, serverUrl = "") {
+  const students = Array.isArray(localData.students) ? localData.students : [];
+  const classes = Array.isArray(localData.classes) ? localData.classes : [];
+  const exams = Array.isArray(localData.exams) ? localData.exams : [];
+  const tokens = localData.activation_tokens || {};
+  return {
+    settings: {
+      name: localData.school?.name || "SchoolDom",
+      ip_address: normalizeServerUrl(serverUrl),
+      refresh_interval: "Offline cache",
+    },
+    content: { total: exams.reduce((total, exam) => total + (exam.questions?.length || 0), 0) },
+    candidate: { total: students.length, class: classes.length },
+    client: { total: 1 },
+    test: {
+      total: exams.length,
+      licensed: exams.filter((exam) => exam.is_published).length,
+      pending: 0,
+      ongoing: 0,
+      submitted: 0,
+      batch_count: 0,
+    },
+    tokens,
+  };
+}
+
 async function bootstrap(payload = {}) {
   const saved = readSettings();
   const serverUrl = normalizeServerUrl(payload.serverUrl || saved.serverUrl);
   const schoolCode = String(payload.schoolCode || saved.schoolCode || "").trim();
   const query = schoolCode ? `?school_code=${encodeURIComponent(schoolCode)}` : "";
-  const data = await fetchJson(`${serverUrl}/api/app/admin-desktop/bootstrap/${query}`);
-  const nextSettings = {
-    ...saved,
-    serverUrl,
-    schoolCode: schoolCode || data?.school?.school_code || "",
-    school: data?.school || saved.school || null,
-  };
-  writeSettings(nextSettings);
-  return {
-    appName: APP_NAME,
-    appVersion: app.getVersion(),
-    serverUrl,
-    ...data,
-  };
+  try {
+    const data = await fetchJson(`${serverUrl}/api/app/admin-desktop/bootstrap/${query}`);
+    if (data?.local_data) {
+      lanServer.importSchoolSnapshot(data.local_data);
+    }
+    const nextSettings = {
+      ...saved,
+      serverUrl,
+      schoolCode: schoolCode || data?.school?.school_code || "",
+      school: data?.school || saved.school || null,
+      localData: data?.local_data || saved.localData || {},
+      desktopSettings: {
+        ...(saved.desktopSettings || {}),
+        schoolProfile: saved.desktopSettings?.schoolProfile || data?.school || {},
+        academicYear: saved.desktopSettings?.academicYear || data?.academic_year || null,
+        term: saved.desktopSettings?.term || data?.term || null,
+      },
+    };
+    writeSettings(nextSettings);
+    return {
+      appName: APP_NAME,
+      appVersion: app.getVersion(),
+      serverUrl,
+      desktop_settings: nextSettings.desktopSettings,
+      ...data,
+    };
+  } catch (error) {
+    const localData = saved.localData || {};
+    if (!Object.keys(localData).length && !saved.school) throw error;
+    const cachedLocalData = {
+      school: saved.school || localData.school || null,
+      classes: localData.classes || [],
+      students: localData.students || [],
+      exams: localData.exams || [],
+      activation_tokens: localData.activation_tokens || {},
+    };
+    lanServer.importSchoolSnapshot(cachedLocalData);
+    return {
+      appName: APP_NAME,
+      appVersion: app.getVersion(),
+      serverUrl,
+      success: true,
+      offline: true,
+      school: cachedLocalData.school || { name: "SchoolDom", school_code: schoolCode },
+      server: { online: false, host: serverUrl, error: error.message || "Offline" },
+      downloads: { student_cbt: `${serverUrl}/app/download/student-cbt/` },
+      dashboard: dashboardFromLocal(cachedLocalData, serverUrl),
+      local_data: cachedLocalData,
+      desktop_settings: saved.desktopSettings || {},
+    };
+  }
 }
 
 function createWindow() {
@@ -128,6 +191,10 @@ function registerIpc() {
       ...saved,
       serverUrl: normalizeServerUrl(payload.serverUrl),
       schoolCode: String(payload.schoolCode || "").trim(),
+      desktopSettings: {
+        ...(saved.desktopSettings || {}),
+        ...(payload.desktopSettings || {}),
+      },
     };
     writeSettings(next);
     return next;

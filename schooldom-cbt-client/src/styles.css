@@ -4,7 +4,10 @@
 
 :root {
   color: #0f172a;
-  background: #eff6ff;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.15), transparent 30%),
+    radial-gradient(circle at 92% 8%, rgba(124, 58, 237, 0.12), transparent 28%),
+    linear-gradient(180deg, #eef4fb 0%, #f8fbff 42%, #ffffff 100%);
   font-family: Inter, "Segoe UI", Arial, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -62,7 +65,10 @@ label {
   justify-items: center;
   gap: 12px;
   color: #1e3a8a;
-  background: radial-gradient(circle at top, #dbeafe, #ffffff 50%, #eff6ff);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.18), transparent 32%),
+    radial-gradient(circle at 92% 8%, rgba(124, 58, 237, 0.14), transparent 28%),
+    linear-gradient(180deg, #eef4fb 0%, #ffffff 100%);
 }
 
 .splash-mark,
@@ -73,7 +79,7 @@ label {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: #2563eb;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
   color: #fff;
   font-weight: 950;
   font-size: 24px;
@@ -101,7 +107,7 @@ label {
   flex-direction: column;
   gap: 28px;
   padding: 24px;
-  background: #0f2857;
+  background: linear-gradient(180deg, #07111f, #102033 55%, #0f172a);
   color: #e0f2fe;
 }
 
@@ -198,7 +204,9 @@ label {
 
 .main-stage {
   min-width: 0;
-  background: #eff6ff;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.13), transparent 30%),
+    linear-gradient(180deg, #eef4fb 0%, #f8fbff 42%, #ffffff 100%);
 }
 
 .screen {
@@ -245,7 +253,7 @@ label {
 }
 
 .primary-button {
-  background: #2563eb;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
   border-color: #2563eb;
   color: #ffffff;
 }
@@ -368,7 +376,10 @@ label {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: linear-gradient(135deg, #dbeafe 0%, #ffffff 50%, #eff6ff 100%);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.18), transparent 32%),
+    radial-gradient(circle at 92% 8%, rgba(124, 58, 237, 0.14), transparent 28%),
+    linear-gradient(180deg, #eef4fb 0%, #ffffff 100%);
 }
 
 .login-card {
@@ -435,7 +446,9 @@ label {
   display: grid;
   grid-template-columns: 270px 1fr;
   grid-template-rows: 74px 1fr;
-  background: #f8fafc;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(37, 99, 235, 0.12), transparent 30%),
+    linear-gradient(180deg, #eef4fb 0%, #f8fbff 42%, #ffffff 100%);
 }
 
 .exam-topbar {
@@ -603,7 +616,7 @@ label {
 
 .calculator-grid button.equals {
   grid-column: span 4;
-  background: #2563eb;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
   color: #ffffff;
   border-color: #2563eb;
 }
