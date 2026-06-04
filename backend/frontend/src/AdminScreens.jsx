@@ -44,7 +44,7 @@ function CbtStatusPill({ tone = "info", children }) {
 function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
   const adminAppDownloadUrl = `${API_BASE_URL}/api/app/admin-desktop/download/`;
   const [downloadNotice, setDownloadNotice] = useState(false);
-  const [downloadState, setDownloadState] = useState({ busy: false, error: "", message: "" });
+  const [downloadState, setDownloadState] = useState({ error: "", message: "" });
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
   const openExams = publishedExams.filter((exam) => {
     const now = Date.now();
@@ -56,38 +56,10 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
     .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
     .slice(0, 6);
 
-  const downloadAdminApp = async () => {
+  const downloadAdminApp = () => {
     setDownloadNotice(true);
-    setDownloadState({ busy: true, error: "", message: "Preparing SchoolDomAdmin.exe..." });
-    try {
-      const response = await fetch(adminAppDownloadUrl, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      const contentType = response.headers.get("content-type") || "";
-      if (!response.ok || contentType.includes("text/html")) {
-        const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : null;
-        throw new Error(payload?.message || "SchoolDomAdmin.exe is not available on this server yet.");
-      }
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = "SchoolDomAdmin.exe";
-      link.rel = "noopener";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
-      setDownloadState({ busy: false, error: "", message: "Download started. Check your browser downloads." });
-    } catch (downloadError) {
-      setDownloadState({
-        busy: false,
-        error: downloadError.message || "Could not download SchoolDomAdmin.exe.",
-        message: "",
-      });
-    }
+    setDownloadState({ error: "", message: "Download started. Check your browser downloads." });
+    window.location.assign(adminAppDownloadUrl);
   };
 
   const handleAdminAppDownload = (event) => {
@@ -176,8 +148,8 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
             <h3 id="cbt-download-title">SchoolDomAdmin.exe is starting</h3>
             <p>{downloadState.error || downloadState.message || "The download should begin automatically."}</p>
             <div className="cbt-download-actions">
-              <button type="button" className="cbt-download-button" onClick={downloadAdminApp} disabled={downloadState.busy}>
-                {downloadState.busy ? "Downloading..." : "Download Again"}
+              <button type="button" className="cbt-download-button" onClick={downloadAdminApp}>
+                Download Again
               </button>
               <button type="button" onClick={() => setDownloadNotice(false)}>Close</button>
             </div>

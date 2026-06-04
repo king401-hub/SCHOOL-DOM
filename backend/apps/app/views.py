@@ -269,6 +269,8 @@ def download_student_cbt_app(request):
         content_type="application/vnd.microsoft.portable-executable",
     )
     response["Cache-Control"] = "no-store"
+    response["Content-Length"] = app_path.stat().st_size
+    response["X-Accel-Buffering"] = "no"
     return response
 
 
@@ -286,6 +288,8 @@ def download_admin_app(request):
         content_type="application/vnd.microsoft.portable-executable",
     )
     response["Cache-Control"] = "no-store"
+    response["Content-Length"] = app_path.stat().st_size
+    response["X-Accel-Buffering"] = "no"
     return response
 
 
