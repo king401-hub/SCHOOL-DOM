@@ -148,6 +148,7 @@ function registerIpc() {
   ipcMain.handle("lan:start", () => lanServer.startServer());
   ipcMain.handle("lan:stop", () => lanServer.stopServer());
   ipcMain.handle("lan:publishExam", (_event, payload = {}) => lanServer.publishExam(payload));
+  ipcMain.handle("lan:saveStudent", (_event, payload = {}) => lanServer.saveStudent(payload));
 }
 
 process.on("uncaughtException", (error) => {

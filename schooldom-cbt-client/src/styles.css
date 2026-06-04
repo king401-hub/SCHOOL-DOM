@@ -378,6 +378,40 @@ label {
   gap: 16px;
 }
 
+.discovery-message {
+  color: #475569;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.room-list {
+  display: grid;
+  gap: 8px;
+}
+
+.room-list button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.room-list button strong,
+.room-list button span,
+.room-list button small {
+  display: block;
+}
+
+.room-list button span {
+  color: #1d4ed8;
+  font-size: 13px;
+}
+
+.room-list button small {
+  color: #64748b;
+}
+
 .instructions ul {
   display: grid;
   gap: 10px;

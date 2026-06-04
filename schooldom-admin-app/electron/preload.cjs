@@ -9,6 +9,7 @@ const allowedInvokeChannels = new Set([
   "lan:start",
   "lan:stop",
   "lan:publishExam",
+  "lan:saveStudent",
 ]);
 
 function invoke(channel, payload) {
@@ -28,5 +29,6 @@ contextBridge.exposeInMainWorld("schoolDomAdmin", {
     start: () => invoke("lan:start"),
     stop: () => invoke("lan:stop"),
     publishExam: (payload) => invoke("lan:publishExam", payload),
+    saveStudent: (payload) => invoke("lan:saveStudent", payload),
   },
 });

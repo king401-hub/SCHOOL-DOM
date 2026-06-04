@@ -26,6 +26,7 @@ const fallbackApi = {
     start: async () => ({ running: true, urls: ["http://192.168.1.10:4785"], exams: [], students: [], sessions: [] }),
     stop: async () => ({ running: false, urls: [], exams: [], students: [], sessions: [] }),
     publishExam: async () => ({ running: true, urls: ["http://192.168.1.10:4785"], exams: [], students: [], sessions: [] }),
+    saveStudent: async () => ({ running: true, urls: ["http://192.168.1.10:4785"], exams: [], students: [], sessions: [] }),
   },
 };
 
@@ -65,6 +66,13 @@ export default function App() {
     studentsText: "",
     instructions: "Answer all questions. Submit before the timer ends.",
     questionsText: "Question 1\n\nQuestion 2",
+  });
+  const [studentForm, setStudentForm] = useState({
+    student_id: "",
+    full_name: "",
+    class_name: "",
+    email: "",
+    is_active: true,
   });
 
   const loadDashboard = useCallback(
@@ -150,6 +158,7 @@ export default function App() {
   };
 
   const updateExamForm = (key, value) => setExamForm((current) => ({ ...current, [key]: value }));
+  const updateStudentForm = (key, value) => setStudentForm((current) => ({ ...current, [key]: value }));
 
   const publishLanExam = async (event) => {
     event.preventDefault();
@@ -172,6 +181,29 @@ export default function App() {
   const stopLan = async () => {
     setLan(await bridge.lan.stop());
     setNotice("Offline exam room stopped.");
+  };
+
+  const saveStudent = async (event) => {
+    event.preventDefault();
+    setError("");
+    try {
+      const nextLan = await bridge.lan.saveStudent(studentForm);
+      setLan(nextLan);
+      setStudentForm({ student_id: "", full_name: "", class_name: "", email: "", is_active: true });
+      setNotice("Student saved locally.");
+    } catch (studentError) {
+      setError(studentError.message || "Could not save student.");
+    }
+  };
+
+  const editStudent = (student) => {
+    setStudentForm({
+      student_id: student.student_id || "",
+      full_name: student.full_name || "",
+      class_name: student.class_name || "",
+      email: student.email || "",
+      is_active: student.is_active !== false,
+    });
   };
 
   if (booting) {
@@ -288,6 +320,44 @@ export default function App() {
           <button className="install-button" type="button" onClick={installCbt} disabled={installing}>
             {installing ? "Opening..." : "Install CBT App"}
           </button>
+        </article>
+
+        <article className="tile student-admin-tile">
+          <TileHead icon="candidate" title="Offline Students" />
+          <form onSubmit={saveStudent} className="publish-form">
+            <div className="form-grid">
+              <label>
+                Student ID
+                <input value={studentForm.student_id} onChange={(event) => updateStudentForm("student_id", event.target.value)} />
+              </label>
+              <label>
+                Full Name
+                <input value={studentForm.full_name} onChange={(event) => updateStudentForm("full_name", event.target.value)} />
+              </label>
+              <label>
+                Class
+                <input value={studentForm.class_name} onChange={(event) => updateStudentForm("class_name", event.target.value)} />
+              </label>
+              <label>
+                Email
+                <input value={studentForm.email} onChange={(event) => updateStudentForm("email", event.target.value)} />
+              </label>
+            </div>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={studentForm.is_active} onChange={(event) => updateStudentForm("is_active", event.target.checked)} />
+              Activated for CBT login
+            </label>
+            <button type="submit">Save Student</button>
+          </form>
+          <div className="session-list">
+            {(lan.students || []).slice(0, 10).map((student) => (
+              <button type="button" key={student.student_id} onClick={() => editStudent(student)}>
+                <span>{student.full_name || student.student_id}</span>
+                <strong>{student.is_active === false ? "Inactive" : "Active"}</strong>
+              </button>
+            ))}
+            {!lan.students?.length ? <p>No local students yet.</p> : null}
+          </div>
         </article>
 
         <article className="tile school-tile">

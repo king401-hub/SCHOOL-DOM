@@ -14,6 +14,7 @@ const fallbackApi = {
     check: async () => ({ currentVersion: "0.1.0", latestVersion: "0.1.0", updateAvailable: false }),
     download: async () => ({ success: true }),
   },
+  discoverRooms: async () => [],
 };
 
 function secondsLeft(endsAt) {
@@ -534,11 +535,50 @@ function StudentLogin({ lanServerUrl, onLanServerUrl, onLogin }) {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [serverUrl, setServerUrl] = useState(lanServerUrl || "");
+  const [discovering, setDiscovering] = useState(false);
+  const [rooms, setRooms] = useState([]);
+  const [discoveryMessage, setDiscoveryMessage] = useState("");
+
+  const chooseRoom = (room) => {
+    setServerUrl(room.url);
+    onLanServerUrl(room.url);
+    setDiscoveryMessage(`Connected to ${room.name || "SchoolDom Admin"} at ${room.url}`);
+  };
+
+  const findRooms = async () => {
+    setDiscovering(true);
+    setDiscoveryMessage("Searching this Wi-Fi for SchoolDom Admin...");
+    try {
+      const found = await (api?.discoverRooms ? api.discoverRooms() : fallbackApi.discoverRooms());
+      setRooms(found || []);
+      setDiscoveryMessage(found?.length ? "Select the admin room below." : "No admin room found. Check that Admin app is open and allowed through Windows Firewall.");
+    } catch (error) {
+      setDiscoveryMessage(error.message || "Could not search this network.");
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
   return (
     <div className="login-screen">
       <section className="login-card">
         <p>Secure student login</p>
         <h1>Start CBT Exam</h1>
+        <button type="button" onClick={findRooms} disabled={discovering}>
+          {discovering ? "Searching..." : "Find Admin Room"}
+        </button>
+        {discoveryMessage ? <small className="discovery-message">{discoveryMessage}</small> : null}
+        {rooms.length ? (
+          <div className="room-list">
+            {rooms.map((room) => (
+              <button type="button" key={room.url} onClick={() => chooseRoom(room)}>
+                <strong>{room.name || "SchoolDom Admin"}</strong>
+                <span>{room.url}</span>
+                <small>{room.exams || 0} exam(s), {room.students || 0} student(s)</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <label>Admin Server Address<input value={serverUrl} onChange={(event) => {
           setServerUrl(event.target.value);
           onLanServerUrl(event.target.value);

@@ -148,6 +148,10 @@ label {
   background: #eef2ff;
 }
 
+.student-admin-tile {
+  background: #ecfeff;
+}
+
 .settings-tile {
   background: #e8ecef;
 }
@@ -327,17 +331,32 @@ label {
   gap: 8px;
 }
 
+.session-list button,
 .session-list div {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+  border: 0;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.75);
   padding: 8px 10px;
+  color: #111827;
   font-size: 13px;
+  text-align: left;
 }
 
 .session-list p {
   margin: 0;
   color: #64748b;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
 }

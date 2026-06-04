@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const dgram = require("dgram");
 const fs = require("fs");
 const http = require("http");
 const os = require("os");
@@ -6,7 +7,10 @@ const path = require("path");
 const { dataPath } = require("./config.cjs");
 
 const PORT = 4785;
+const DISCOVERY_PORT = 4786;
+const DISCOVERY_QUERY = "SCHOOLDOM_CBT_DISCOVER";
 let server;
+let discoverySocket;
 
 function now() {
   return new Date().toISOString();
@@ -90,14 +94,38 @@ function parseStudents(text) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line, index) => {
-      const [studentId, fullName, className] = line.split(",").map((part) => String(part || "").trim());
+      const [studentId, fullName, className, status] = line.split(",").map((part) => String(part || "").trim());
       return {
         id: studentId || `STUDENT${index + 1}`,
         student_id: studentId || `STUDENT${index + 1}`,
         full_name: fullName || studentId || `Student ${index + 1}`,
         class_name: className || "",
+        is_active: !["inactive", "off", "false", "0", "no"].includes(String(status || "active").toLowerCase()),
       };
     });
+}
+
+function saveStudent(payload = {}) {
+  const studentId = String(payload.student_id || payload.studentId || "").trim();
+  if (!studentId) throw new Error("Student ID is required.");
+  const store = readStore();
+  const student = {
+    id: String(payload.id || studentId),
+    student_id: studentId,
+    full_name: String(payload.full_name || payload.fullName || studentId).trim(),
+    class_name: String(payload.class_name || payload.className || "").trim(),
+    email: String(payload.email || "").trim(),
+    is_active: payload.is_active !== false,
+    updated_at: now(),
+  };
+  const existingIndex = store.students.findIndex((item) => item.student_id.toLowerCase() === studentId.toLowerCase());
+  if (existingIndex >= 0) {
+    store.students[existingIndex] = { ...store.students[existingIndex], ...student };
+  } else {
+    store.students.push(student);
+  }
+  writeStore(store);
+  return snapshot();
 }
 
 function publishExam(payload = {}) {
@@ -130,6 +158,19 @@ function snapshot() {
     addresses: localAddresses(),
     urls: localAddresses().map((address) => `http://${address}:${PORT}`),
     running: Boolean(server?.listening),
+  };
+}
+
+function discoveryPayload() {
+  const snap = snapshot();
+  return {
+    type: "SCHOOLDOM_CBT_ADMIN",
+    name: "SchoolDom Admin",
+    port: PORT,
+    urls: snap.urls,
+    exams: snap.exams.length,
+    students: snap.students.length,
+    sessions: snap.sessions.length,
   };
 }
 
@@ -188,6 +229,7 @@ async function handleRequest(req, res) {
       const student = store.students.find((item) => item.student_id.toLowerCase() === String(body.studentId || "").trim().toLowerCase());
       const exam = store.exams.find((item) => item.pin_hash === sha256(body.pin));
       if (!student) return sendJson(res, 404, { success: false, message: "Student ID was not found on the admin server." });
+      if (student.is_active === false) return sendJson(res, 403, { success: false, message: "This student has not been activated by the admin." });
       if (!exam) return sendJson(res, 403, { success: false, message: "Invalid exam PIN." });
       let session = store.sessions.find((item) => item.exam_id === exam.id && item.student_id === student.student_id);
       if (!session) {
@@ -257,16 +299,33 @@ function startServer() {
   if (server?.listening) return snapshot();
   server = http.createServer(handleRequest);
   server.listen(PORT, "0.0.0.0");
+  startDiscovery();
   return snapshot();
 }
 
 function stopServer() {
   if (server?.listening) server.close();
+  if (discoverySocket) {
+    discoverySocket.close();
+    discoverySocket = null;
+  }
   return snapshot();
+}
+
+function startDiscovery() {
+  if (discoverySocket) return;
+  discoverySocket = dgram.createSocket("udp4");
+  discoverySocket.on("message", (message, remote) => {
+    if (String(message) !== DISCOVERY_QUERY) return;
+    const payload = Buffer.from(JSON.stringify(discoveryPayload()));
+    discoverySocket.send(payload, 0, payload.length, remote.port, remote.address);
+  });
+  discoverySocket.bind(DISCOVERY_PORT, "0.0.0.0");
 }
 
 module.exports = {
   publishExam,
+  saveStudent,
   snapshot,
   startServer,
   stopServer,

@@ -4,6 +4,7 @@ const channels = {
   invoke: new Set([
     "app:bootstrap",
     "app:checkForUpdates",
+    "app:discoverRooms",
     "app:downloadUpdate",
     "admin:syncFromCloud",
     "admin:pushResults",
@@ -37,6 +38,7 @@ contextBridge.exposeInMainWorld("schoolDomCbt", {
     check: (payload) => invoke("app:checkForUpdates", payload),
     download: (payload) => invoke("app:downloadUpdate", payload),
   },
+  discoverRooms: () => invoke("app:discoverRooms"),
   admin: {
     syncFromCloud: (payload) => invoke("admin:syncFromCloud", payload),
     pushResults: (payload) => invoke("admin:pushResults", payload),

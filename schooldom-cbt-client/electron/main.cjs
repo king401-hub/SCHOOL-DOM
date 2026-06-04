@@ -4,6 +4,7 @@ const path = require("path");
 const zlib = require("zlib");
 const { APP_NAME, DEFAULT_CLOUD_URL } = require("./config.cjs");
 const db = require("./db.cjs");
+const { discoverAdminRooms } = require("./discovery.cjs");
 const { newId } = require("./security.cjs");
 const { pushPendingResults, syncFromCloud } = require("./syncService.cjs");
 
@@ -107,6 +108,7 @@ function registerIpc() {
     snapshot: db.getAdminSnapshot(),
   }));
   ipcMain.handle("app:checkForUpdates", async (_event, payload = {}) => checkForDesktopUpdate(payload.cloudUrl));
+  ipcMain.handle("app:discoverRooms", async () => discoverAdminRooms());
   ipcMain.handle("app:downloadUpdate", async (_event, payload = {}) => {
     const update = payload.downloadUrl
       ? { downloadUrl: payload.downloadUrl }
