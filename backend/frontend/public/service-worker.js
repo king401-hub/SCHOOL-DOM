@@ -1,4 +1,4 @@
-const CACHE_VERSION = "schooldom-pwa-v2";
+const CACHE_VERSION = "schooldom-pwa-v3";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -62,7 +62,21 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/login")) {
-    event.respondWith(fetch(request));
+    event.respondWith(
+      fetch(request).catch(
+        () =>
+          new Response(
+            JSON.stringify({
+              success: false,
+              message: "Network error. Please check your connection.",
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            }
+          )
+      )
+    );
     return;
   }
 

@@ -80,7 +80,7 @@ function buildManifest(brand) {
       {
         name: "Student Exams",
         short_name: "Exams",
-        url: "/exams",
+        url: `${appOrigin}/exams`,
         icons: [{ src: brand.icon, sizes: "192x192" }],
       },
     ],

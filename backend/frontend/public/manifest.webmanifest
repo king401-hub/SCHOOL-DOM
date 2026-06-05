@@ -46,19 +46,19 @@
     {
       "name": "Sign in",
       "short_name": "Sign in",
-      "url": "/signin",
+      "url": "/signin/",
       "icons": [{ "src": "/schooldom-favicon.jpeg", "sizes": "192x192" }]
     },
     {
       "name": "Exams",
       "short_name": "Exams",
-      "url": "/exams",
+      "url": "/exams/",
       "icons": [{ "src": "/schooldom-favicon.jpeg", "sizes": "192x192" }]
     },
     {
       "name": "Messages",
       "short_name": "Messages",
-      "url": "/messages",
+      "url": "/messages/",
       "icons": [{ "src": "/schooldom-favicon.jpeg", "sizes": "192x192" }]
     }
   ]

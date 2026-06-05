@@ -507,16 +507,17 @@ function StudentDashboard({
   onNavigate,
   session,
 }) {
-  const attendance = data.attendance || {};
-  const school = resolveSchoolBrand(data.school, session?.school, session);
-  const prompts = data.question_prompts || [];
-  const results = data.recent_results || [];
-  const exams = data.upcoming_exams || [];
-  const subjects = data.subjects || [];
-  const dailyQuiz = data.daily_personal_quiz || {};
-  const fees = data.fees || [];
-  const paymentInstructions = data.payment_instructions || {};
-  const currentTerm = student.term || data.active_term?.name || "No active term";
+  const dashboardData = data || {};
+  const attendance = dashboardData.attendance || {};
+  const school = resolveSchoolBrand(dashboardData.school, session?.school, session);
+  const prompts = dashboardData.question_prompts || [];
+  const results = dashboardData.recent_results || [];
+  const exams = dashboardData.upcoming_exams || [];
+  const subjects = dashboardData.subjects || [];
+  const dailyQuiz = dashboardData.daily_personal_quiz || {};
+  const fees = dashboardData.fees || [];
+  const paymentInstructions = dashboardData.payment_instructions || {};
+  const currentTerm = student.term || dashboardData.active_term?.name || "No active term";
 
   const [reportCard, setReportCard] = useState(null);
   const [reportError, setReportError] = useState("");
@@ -586,7 +587,7 @@ function StudentDashboard({
     ["Second Guardian Relation", student.second_guardian_relation],
     ["Home Address", student.home_address],
   ];
-  const unreadInbox = Number(data.metrics?.unread_inbox ?? 0);
+  const unreadInbox = Number(dashboardData.metrics?.unread_inbox ?? 0);
 
   const fmtDate = (value) => {
     if (!value) {
@@ -6236,6 +6237,13 @@ const [error, setError] = useState("");
   const inflightRequestRef = useRef(null);
   const role = session?.user?.role;
 
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const isErrorPage = Boolean(error && !loading);
+    document.body.classList.toggle("dashboard-error-active", isErrorPage);
+    return () => document.body.classList.remove("dashboard-error-active");
+  }, [error, loading]);
+
   const pollIntervalMs = useMemo(() => {
     if (role === "student") {
       return STUDENT_POLL_INTERVAL_MS;
@@ -6533,10 +6541,29 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
             <h3>Loading dashboard...</h3>
           </div>
         ) : error ? (
-      <div className="state-panel frosted">
-<h3>Error</h3>
-        <p>{error}</p>
-              </div>
+      <section className="student-error-scene" aria-live="polite">
+        <div className="student-error-bubbles" aria-hidden="true">
+          <span className="student-error-bubble bubble-one" />
+          <span className="student-error-bubble bubble-two" />
+          <span className="student-error-bubble bubble-three" />
+          <span className="student-error-bubble bubble-four" />
+          <span className="student-error-bubble bubble-five" />
+          <span className="student-error-bubble bubble-six" />
+        </div>
+        <article className="student-error-card">
+          <div className="student-error-icon" aria-hidden="true">
+            <span />
+          </div>
+          <p className="topbar-kicker">Connection paused</p>
+          <h1>Error</h1>
+          <p>{error}</p>
+          <div className="student-error-actions">
+            <button type="button" className="student-primary-btn" onClick={loadDashboard} disabled={isRefreshing}>
+              {isRefreshing ? "Checking..." : "Try again"}
+            </button>
+          </div>
+        </article>
+      </section>
     ) : (
       <StudentWorkspace
         session={session}
