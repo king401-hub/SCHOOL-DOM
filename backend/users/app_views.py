@@ -2428,16 +2428,17 @@ def dashboard_snapshot(request):
 def _public_admin_app_school(request):
     requested_code = str(request.GET.get("school_code") or "").strip()
     if requested_code:
-      school = SchoolTenant.objects.filter(schema_name__iexact=requested_code, is_active=True).first()
-      if school:
-          return school
+        school = SchoolTenant.objects.filter(schema_name__iexact=requested_code, is_active=True).first()
+        if school:
+            return school
+        return None
 
     host = request.get_host().split(":", 1)[0].lower()
     domain = Domain.objects.select_related("tenant").filter(domain__iexact=host).first()
     if domain and domain.tenant and domain.tenant.is_active:
         return domain.tenant
 
-    return SchoolTenant.objects.filter(is_active=True).order_by("id").first()
+    return None
 
 
 @api_view(["GET"])
@@ -2449,19 +2450,24 @@ def admin_desktop_bootstrap(request):
     if school:
         legacy_tenant = (
             Tenant.objects.filter(slug__iexact=school.schema_name).first()
+            or Tenant.objects.filter(slug__iexact=slugify(school.schema_name)).first()
+            or Tenant.objects.filter(slug__iexact=slugify(school.name)).first()
             or Tenant.objects.filter(name__iexact=school.name).first()
         )
     tenant_filter = {"tenant": legacy_tenant} if legacy_tenant else None
-    user_filter = {"tenant": school} if school else {}
-
-    students_qs = User.objects.filter(role="student", **user_filter)
+    students_qs = User.objects.filter(role="student", tenant=school) if school else User.objects.none()
     student_profiles_qs = (
-        StudentProfile.objects.select_related("user", "current_class", "activation_credit")
+        StudentProfile.objects.select_related("user", "current_class", "current_term", "activation_credit")
         .filter(user__tenant=school if school else None)
         if school
         else StudentProfile.objects.none()
     )
-    classes_qs = Class.objects.filter(**tenant_filter) if tenant_filter else Class.objects.none()
+    student_class_ids = student_profiles_qs.exclude(current_class__isnull=True).values_list("current_class_id", flat=True)
+    classes_qs = (
+        Class.objects.filter(**tenant_filter)
+        if tenant_filter
+        else Class.objects.filter(id__in=student_class_ids)
+    ).distinct()
     exams_qs = Exam.objects.filter(**tenant_filter).select_related("subject", "class_group", "exam_type").prefetch_related("questions") if tenant_filter else Exam.objects.none()
     attempts_qs = ExamAttempt.objects.filter(**tenant_filter) if tenant_filter else ExamAttempt.objects.none()
     banks_qs = QuestionBank.objects.filter(**tenant_filter) if tenant_filter else QuestionBank.objects.none()
@@ -2471,7 +2477,7 @@ def admin_desktop_bootstrap(request):
     active_credit_count = 0
     inactive_credit_count = 0
     desktop_students = []
-    for profile in student_profiles_qs.order_by("user__first_name", "user__last_name", "student_id")[:500]:
+    for profile in student_profiles_qs.order_by("user__first_name", "user__last_name", "student_id"):
         credit = getattr(profile, "activation_credit", None)
         has_login_credit = bool(getattr(credit, "has_login_credit", False))
         is_active = bool(profile.user.is_active and has_login_credit)
@@ -2490,7 +2496,28 @@ def admin_desktop_bootstrap(request):
                 "phone": profile.user.phone or "",
                 "class_id": profile.current_class_id,
                 "class_name": _class_label(profile.current_class) if profile.current_class else "Unassigned",
+                "current_term_id": profile.current_term_id,
+                "current_term_name": profile.current_term.name if profile.current_term else "",
+                "admission_date": profile.admission_date,
                 "profile_picture": _profile_picture_url(request, profile.user),
+                "gender": profile.user.gender or "",
+                "date_of_birth": profile.user.date_of_birth,
+                "state_of_origin": profile.state_of_origin or "",
+                "local_government": profile.local_government or "",
+                "guardian_name": profile.guardian_name or "",
+                "guardian_phone": profile.guardian_phone or "",
+                "guardian_email": profile.guardian_email or "",
+                "guardian_relation": profile.guardian_relation or "",
+                "second_guardian_name": profile.second_guardian_name or "",
+                "second_guardian_phone": profile.second_guardian_phone or "",
+                "second_guardian_email": profile.second_guardian_email or "",
+                "second_guardian_relation": profile.second_guardian_relation or "",
+                "home_address": profile.home_address or "",
+                "blood_group": profile.blood_group or "",
+                "disability": profile.disability or "",
+                "student_type": profile.student_type or "",
+                "allergies": profile.allergies or "",
+                "medical_conditions": profile.medical_conditions or "",
                 "is_active": is_active,
                 "user_is_active": profile.user.is_active,
                 "activation": {
@@ -2507,9 +2534,10 @@ def admin_desktop_bootstrap(request):
         {
             "id": item.id,
             "name": _class_label(item),
+            "raw_name": item.name,
             "section": getattr(item, "section", "") or "",
         }
-        for item in classes_qs.order_by("name")[:200]
+        for item in classes_qs.order_by("name")
     ]
 
     desktop_exams = []
@@ -5678,10 +5706,13 @@ def _exam_pin_summary_for_user(exam, user):
         return {
             "pin_required": False,
             "active_pin_count": 0,
+            "active_pin_preview": "",
         }
+    active_pin = exam.pins.filter(is_active=True).order_by("-created_at").first()
     return {
-        "pin_required": exam.pins.filter(is_active=True).exists(),
+        "pin_required": bool(active_pin),
         "active_pin_count": exam.pins.filter(is_active=True).count(),
+        "active_pin_preview": active_pin.pin_preview if active_pin else "",
     }
 
 

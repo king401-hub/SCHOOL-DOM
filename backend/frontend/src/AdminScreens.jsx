@@ -41,8 +41,29 @@ function CbtStatusPill({ tone = "info", children }) {
   return <span className={`cbt-status-pill tone-${tone}`}>{children}</span>;
 }
 
-function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {} }) {
-  const adminAppDownloadUrl = `${API_BASE_URL}/api/app/admin-desktop/download/`;
+function EyeIcon({ closed = false }) {
+  return (
+    <svg className="inline-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {closed ? (
+        <>
+          <path d="M3 3l18 18" />
+          <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+          <path d="M9.9 5.2A8.5 8.5 0 0 1 12 5c5 0 8.5 4.5 9.5 7a12.3 12.3 0 0 1-2.6 3.8" />
+          <path d="M6.4 6.4A12.7 12.7 0 0 0 2.5 12c1 2.5 4.5 7 9.5 7 1.5 0 2.8-.4 4-1" />
+        </>
+      ) : (
+        <>
+          <path d="M2.5 12c1-2.5 4.5-7 9.5-7s8.5 4.5 9.5 7c-1 2.5-4.5 7-9.5 7s-8.5-4.5-9.5-7Z" />
+          <circle cx="12" cy="12" r="2.5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school = {}, session = null }) {
+  const schoolCode = school?.school_code || school?.schema_name || session?.user?.school_code || session?.user?.tenant?.schema_name || "";
+  const adminAppDownloadUrl = `${API_BASE_URL}/api/app/admin-desktop/download/${schoolCode ? `?school_code=${encodeURIComponent(schoolCode)}` : ""}`;
   const [downloadNotice, setDownloadNotice] = useState(false);
   const [downloadState, setDownloadState] = useState({ error: "", message: "" });
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
@@ -1569,6 +1590,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [deleteBusyId, setDeleteBusyId] = useState("");
   const [deleteFeedback, setDeleteFeedback] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [examPins, setExamPins] = useState({});
+  const [visiblePins, setVisiblePins] = useState({});
+  const [pinBusyId, setPinBusyId] = useState("");
+  const [pinFeedback, setPinFeedback] = useState("");
+  const [pinError, setPinError] = useState("");
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -1587,6 +1613,84 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     } finally {
       setLoadingExamId("");
     }
+  };
+
+  const generateExamPin = async (exam) => {
+    const examId = exam.id || exam.exam_id;
+    if (!examId) return;
+    setPinBusyId(String(examId));
+    setPinFeedback("");
+    setPinError("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/exams/pins/", {
+        exam_id: examId,
+        usage_policy: "reusable",
+        expires_at: exam.end_date || exam.endDate || "",
+      });
+      const plainPin = result.plain_pin || "";
+      setExamPins((previous) => ({
+        ...previous,
+        [examId]: {
+          plain: plainPin,
+          preview: result.pin?.pin_preview || plainPin.slice(-4),
+        },
+      }));
+      setVisiblePins((previous) => ({ ...previous, [examId]: false }));
+      setPinFeedback(`PIN generated for ${exam.title || exam.name || "exam"}.`);
+      onRetry?.();
+    } catch (pinGenerateError) {
+      setPinError(pinGenerateError.message || "Could not generate PIN.");
+    } finally {
+      setPinBusyId("");
+    }
+  };
+
+  const toggleExamPin = (examId) => {
+    setVisiblePins((previous) => ({ ...previous, [examId]: !previous[examId] }));
+  };
+
+  const renderExamPinCell = (exam) => {
+    const examId = exam.id || exam.exam_id;
+    const generated = examPins[examId];
+    const hasActivePin = Boolean(exam.pin_required || generated?.plain);
+    const preview = generated?.preview || exam.active_pin_preview || "";
+    const canReveal = Boolean(generated?.plain);
+    const isVisible = Boolean(visiblePins[examId] && canReveal);
+    const displayValue = isVisible
+      ? generated.plain
+      : hasActivePin
+        ? `${"\u2022".repeat(Math.max(1, 5 - String(preview).length))}${preview || ""}`
+        : "No PIN";
+
+    return (
+      <div className="exam-pin-cell">
+        <span className={`exam-pin-code ${hasActivePin ? "" : "empty"}`}>{displayValue}</span>
+        {hasActivePin ? (
+          <button
+            type="button"
+            className="exam-pin-eye"
+            onClick={() => toggleExamPin(examId)}
+            disabled={!canReveal}
+            title={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "Only newly generated PINs can be revealed"}
+            aria-label={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "PIN preview only"}
+          >
+            <EyeIcon closed={isVisible} />
+          </button>
+        ) : null}
+        {exam.is_published ? (
+          <button
+            type="button"
+            className={`table-action ${hasActivePin ? "active" : ""}`}
+            onClick={() => generateExamPin(exam)}
+            disabled={pinBusyId === String(examId)}
+          >
+            {pinBusyId === String(examId) ? "Generating..." : hasActivePin ? "New PIN" : "Generate"}
+          </button>
+        ) : (
+          <small>Publish first</small>
+        )}
+      </div>
+    );
   };
 
   const uniqueClasses = useMemo(() => {
@@ -1774,7 +1878,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         </button>
       </div>
 
-      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} downloads={data?.downloads || {}} /> : null}
+      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} downloads={data?.downloads || {}} school={data?.school || session?.school || {}} session={session} /> : null}
 
       {activeView === "builder" ? (
         <>
@@ -1797,6 +1901,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
               <small>Open an exam to publish it or update questions.</small>
             </div>
             {editError ? <p className="form-feedback error">{editError}</p> : null}
+            {pinError ? <p className="form-feedback error">{pinError}</p> : null}
+            {pinFeedback ? <p className="form-feedback success">{pinFeedback}</p> : null}
             {exams.length ? (
               <table className="data-table">
                 <thead>
@@ -1805,6 +1911,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                     <th>Class</th>
                     <th>Questions</th>
                     <th>Status</th>
+                    <th>PIN</th>
                     <th>Submissions</th>
                     <th>Action</th>
                   </tr>
@@ -1816,6 +1923,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                       <td>{exam.class_name || exam.class || "All classes"}</td>
                       <td>{exam.question_count ?? "-"}</td>
                       <td>{exam.is_published ? "Published" : "Draft"}</td>
+                      <td>{renderExamPinCell(exam)}</td>
                       <td>{exam.submissions ?? 0}</td>
                       <td>
                         <button

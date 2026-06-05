@@ -82,18 +82,25 @@ async function bootstrap(payload = {}) {
   const query = schoolCode ? `?school_code=${encodeURIComponent(schoolCode)}` : "";
   try {
     const data = await fetchJson(`${serverUrl}/api/app/admin-desktop/bootstrap/${query}`);
+    const fetchedSchoolCode = String(data?.school?.school_code || "").trim();
+    if (!fetchedSchoolCode) {
+      throw new Error("Enter your school code in Install & Settings, then refresh online to fetch this school's data.");
+    }
     if (data?.local_data) {
       lanServer.importSchoolSnapshot(data.local_data);
     }
+    const previousProfile = saved.desktopSettings?.schoolProfile || {};
+    const shouldKeepLocalProfile =
+      previousProfile?.school_code && previousProfile.school_code === fetchedSchoolCode && saved.desktopSettings?.schoolProfile;
     const nextSettings = {
       ...saved,
       serverUrl,
-      schoolCode: schoolCode || data?.school?.school_code || "",
+      schoolCode: fetchedSchoolCode,
       school: data?.school || saved.school || null,
       localData: data?.local_data || saved.localData || {},
       desktopSettings: {
         ...(saved.desktopSettings || {}),
-        schoolProfile: saved.desktopSettings?.schoolProfile || data?.school || {},
+        schoolProfile: shouldKeepLocalProfile ? previousProfile : data?.school || {},
         academicYear: saved.desktopSettings?.academicYear || data?.academic_year || null,
         term: saved.desktopSettings?.term || data?.term || null,
       },

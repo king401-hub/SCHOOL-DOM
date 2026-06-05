@@ -4933,6 +4933,70 @@ body[data-theme="dark"] .token-usage-toast {
   background: #ffe8e8;
 }
 
+.exam-pin-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 12rem;
+  flex-wrap: wrap;
+}
+
+.exam-pin-code {
+  display: inline-flex;
+  align-items: center;
+  min-width: 4.3rem;
+  min-height: 2rem;
+  border: 1px solid #cbd7e6;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #0f172a;
+  padding: 0.25rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.exam-pin-code.empty {
+  color: #64748b;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.exam-pin-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #cbd7e6;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.exam-pin-eye .inline-icon {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.exam-pin-eye:hover {
+  background: #edf3fb;
+}
+
+.exam-pin-eye:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .status-pill {
   display: inline-block;
   border-radius: 999px;
@@ -9524,6 +9588,21 @@ body[data-theme="dark"] .panel-form-actions button:hover,
 body[data-theme="dark"] .signout-button:hover,
 body[data-theme="dark"] .state-panel button:hover,
 body[data-theme="dark"] .quick-actions button:hover {
+  background: #17253d;
+}
+
+body[data-theme="dark"] .exam-pin-code,
+body[data-theme="dark"] .exam-pin-eye {
+  border-color: #334155;
+  background: #111b2e;
+  color: #e2e8f0;
+}
+
+body[data-theme="dark"] .exam-pin-code.empty {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .exam-pin-eye:hover {
   background: #17253d;
 }
 
