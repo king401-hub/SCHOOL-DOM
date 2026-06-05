@@ -28,6 +28,26 @@ function formatTime(totalSeconds) {
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
 }
 
+function integrityMessage(reason) {
+  const label = String(reason || "").replaceAll("_", " ");
+  if (reason === "print_screen_attempt") {
+    return "Attempted screenshot or screen recording was blocked. The exam is being submitted automatically.";
+  }
+  if (reason === "fullscreen_exit") {
+    return "Fullscreen mode was closed during the exam. The exam is being submitted automatically.";
+  }
+  if (reason === "blocked_context_menu") {
+    return "Right-click is disabled during the exam. Stay on the exam page.";
+  }
+  if (reason?.startsWith("blocked_shortcut")) {
+    return "A restricted keyboard shortcut was blocked. Stay on the exam page.";
+  }
+  if (reason === "window_blur" || reason === "page_hidden") {
+    return "The exam window lost focus. Return to the exam page immediately.";
+  }
+  return `${label || "Exam security"} was detected. Stay on the exam page.`;
+}
+
 function normalizeQuestions(exam) {
   const payload = exam?.payload || exam || {};
   const questions = payload.questions || payload.question_rows || payload.items || [];
@@ -35,8 +55,14 @@ function normalizeQuestions(exam) {
     id: String(question.id || question.question_id || index + 1),
     number: index + 1,
     text: question.text || question.question || question.prompt || `Question ${index + 1}`,
+    passage: question.passage || question.group_text || question.shared_passage || "",
+    section: question.section || question.section_name || payload.section || "Section 1",
     type: question.type || question.question_type || "multiple_choice",
-    options: question.options || question.choices || [],
+    options: Array.isArray(question.options)
+      ? question.options
+      : Array.isArray(question.choices)
+        ? question.choices
+        : Object.values(question.options || question.choices || {}).filter(Boolean),
     marks: question.marks || question.score || 1,
   }));
 }
@@ -626,14 +652,28 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState(context.session.answers || {});
   const [remaining, setRemaining] = useState(secondsLeft(context.session.ends_at));
+  const [securityWarning, setSecurityWarning] = useState(null);
+  const [activePanel, setActivePanel] = useState("questions");
   const answersRef = useRef(answers);
+  const submittedRef = useRef(false);
   answersRef.current = answers;
 
   const submit = useCallback(async (cause = "student_submit") => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     await submitStudentExam(context, answersRef.current, cause);
     await api?.window?.exitFullscreen?.();
     onSubmitted();
   }, [context, onSubmitted]);
+
+  const warnSecurity = useCallback((reason, autoSubmit = false) => {
+    const message = integrityMessage(reason);
+    setSecurityWarning({ reason, message, autoSubmit });
+    logStudentFocusLoss(context, reason).catch(() => null);
+    if (autoSubmit) {
+      window.setTimeout(() => submit(reason), 900);
+    }
+  }, [context, submit]);
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -655,54 +695,167 @@ function ExamInterface({ context, examPayload, onSubmitted }) {
   }, [context]);
 
   useEffect(() => {
-    const onBlur = () => logStudentFocusLoss(context, "window_blur").catch(() => null);
-    const block = (event) => {
-      if ((event.ctrlKey || event.metaKey) && ["r", "l", "n", "t", "w"].includes(event.key.toLowerCase())) {
+    api?.window?.enterFullscreen?.().catch(() => null);
+    document.documentElement.requestFullscreen?.().catch(() => null);
+    const onBlur = () => warnSecurity("window_blur", false);
+    const onVisibility = () => {
+      if (document.hidden) warnSecurity("page_hidden", false);
+    };
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && !submittedRef.current) {
+        warnSecurity("fullscreen_exit", true);
+      }
+    };
+    const onContextMenu = (event) => {
+      event.preventDefault();
+      warnSecurity("blocked_context_menu", false);
+    };
+    const onKeyDown = (event) => {
+      const key = String(event.key || "").toLowerCase();
+      const blockedCombo = event.ctrlKey || event.metaKey || event.altKey;
+      const blockedKeys = new Set(["printscreen", "f11", "f12", "escape"]);
+      const blockedLetters = new Set(["r", "l", "n", "t", "w", "p", "s", "u", "i", "j"]);
+      if (key === "printscreen") {
         event.preventDefault();
-        logStudentFocusLoss(context, `blocked_shortcut_${event.key}`).catch(() => null);
+        warnSecurity("print_screen_attempt", true);
+        return;
+      }
+      if (blockedKeys.has(key) || (blockedCombo && blockedLetters.has(key))) {
+        event.preventDefault();
+        warnSecurity(`blocked_shortcut_${key}`, key === "f11" || key === "escape");
       }
     };
     window.addEventListener("blur", onBlur);
-    window.addEventListener("keydown", block);
+    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("contextmenu", onContextMenu);
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("blur", onBlur);
-      window.removeEventListener("keydown", block);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [context]);
+  }, [warnSecurity]);
+
+  const updateAnswer = (questionId, value) => {
+    setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
+  };
+
+  const saveAndNext = async () => {
+    await saveStudentAnswers(context, answersRef.current).catch(() => null);
+    setCurrent((value) => Math.min(questions.length - 1, value + 1));
+    setActivePanel("questions");
+  };
 
   const question = questions[current] || {};
   const answered = Object.values(answers).filter((value) => String(value || "").trim()).length;
+  const unanswered = Math.max(0, questions.length - answered);
+  const studentInitials = initials(context.student.full_name || context.student.student_id);
+  const currentSection = question.section || "Section 1";
 
   return (
     <div className="exam-layout">
       <header className="exam-topbar">
-        <div><strong>{context.exam.title}</strong><span>{context.student.full_name}</span></div>
-        <div className={remaining < 300 ? "timer danger" : "timer"}>{formatTime(remaining)}</div>
-        <button onClick={() => submit("student_submit")}>Submit Exam</button>
-      </header>
-      <aside className="question-palette">
-        <strong>Questions</strong>
-        <div>
-          {questions.map((item, index) => (
-            <button key={item.id} className={`${index === current ? "active" : ""} ${answers[item.id] ? "answered" : ""}`} onClick={() => setCurrent(index)}>{item.number}</button>
-          ))}
+        <div className="exam-brand"><span className="exam-icon">CBT</span><strong>CBT</strong></div>
+        <h1>{context.exam.title}</h1>
+        <div className="exam-top-actions">
+          <div className={remaining < 300 ? "timer danger" : "timer"}><small>Time Left</small>{formatTime(remaining)}</div>
+          <button onClick={() => submit("student_submit")}>Submit Test</button>
         </div>
-        <small>{answered} of {questions.length} answered</small>
+      </header>
+      <aside className="exam-nav">
+        <small>Test Navigation</small>
+        <button className={activePanel === "instructions" ? "active" : ""} onClick={() => setActivePanel("instructions")}>Instructions</button>
+        <button className={activePanel === "questions" ? "active" : ""} onClick={() => setActivePanel("questions")}>Questions <span>{current + 1}/{questions.length}</span></button>
+        <button onClick={() => submit("student_submit")}>Submit Test</button>
       </aside>
       <section className="question-stage">
-        <div className="question-workspace">
-          <div className="question-card">
-            <p>Question {question.number} - {question.type?.replaceAll("_", " ")}</p>
-            <h1>{question.text}</h1>
-            <AnswerControl question={question} value={answers[question.id] || ""} onChange={(value) => setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: value }))} />
-          </div>
-          <Calculator />
+        {securityWarning ? (
+          <div className={`integrity-banner ${securityWarning.autoSubmit ? "danger" : ""}`}>{securityWarning.message}</div>
+        ) : null}
+        <div className="exam-content-grid">
+          <main className="exam-paper">
+            <div className="paper-meta">
+              <span>Section: <strong>{currentSection}</strong></span>
+              <span>Question {current + 1} of {questions.length}</span>
+            </div>
+            {activePanel === "instructions" ? (
+              <div className="question-card instruction-card">
+                <p>Instructions</p>
+                <h1>Read before you continue</h1>
+                <div className="instruction-box">{context.exam.instructions || "Answer all questions. Do not leave fullscreen mode during the examination."}</div>
+                <ul>
+                  <li>Answers are saved automatically while you work.</li>
+                  <li>Leaving fullscreen, screenshot attempts, and restricted shortcuts are logged.</li>
+                  <li>The exam submits automatically when the timer ends or security rules are broken.</li>
+                </ul>
+              </div>
+            ) : (
+              <>
+                {question.passage ? (
+                  <div className="passage-card">
+                    <strong>Passage</strong>
+                    <h2>Shared passage</h2>
+                    <p>{question.passage}</p>
+                  </div>
+                ) : null}
+                <div className="question-card">
+                  <p>Question {question.number} - {question.type?.replaceAll("_", " ")}</p>
+                  <h1>{question.text}</h1>
+                  <AnswerControl question={question} value={answers[question.id] || ""} onChange={(value) => updateAnswer(question.id, value)} />
+                </div>
+              </>
+            )}
+          </main>
+          <aside className="exam-side-panel">
+            <div className="student-card">
+              <div className="student-avatar">{studentInitials}</div>
+              <strong>{context.student.full_name}</strong>
+              <span>{context.student.student_id}</span>
+            </div>
+            <div className="question-palette">
+              <div className="palette-head"><strong>Questions</strong><span>+</span></div>
+              <div>
+                {questions.map((item, index) => (
+                  <button key={item.id} className={`${index === current ? "active" : ""} ${answers[item.id] ? "answered" : ""}`} onClick={() => {
+                    setCurrent(index);
+                    setActivePanel("questions");
+                  }}>{item.number}</button>
+                ))}
+              </div>
+              <ul className="legend-list">
+                <li><span className="answered-dot" /> Answered</li>
+                <li><span className="current-dot" /> Current</li>
+                <li><span className="unanswered-dot" /> Unanswered</li>
+              </ul>
+              <div className="question-totals">
+                <span>Total:<strong>{questions.length}</strong></span>
+                <span>Answered:<strong>{answered}</strong></span>
+                <span>Unanswered:<strong>{unanswered}</strong></span>
+              </div>
+            </div>
+            <Calculator />
+          </aside>
         </div>
         <div className="exam-actions">
           <button disabled={current === 0} onClick={() => setCurrent((value) => Math.max(0, value - 1))}>Previous</button>
-          <button className="primary-button" disabled={current >= questions.length - 1} onClick={() => setCurrent((value) => Math.min(questions.length - 1, value + 1))}>Next</button>
+          <button className="primary-button" disabled={current >= questions.length - 1} onClick={saveAndNext}>Save and Next</button>
         </div>
       </section>
+      {securityWarning ? (
+        <div className="integrity-overlay">
+          <div className="integrity-modal">
+            <p>Exam Integrity Warning</p>
+            <h2>Stay on the exam page</h2>
+            <span>{securityWarning.message}</span>
+            <button className="primary-button" disabled={securityWarning.autoSubmit} onClick={() => setSecurityWarning(null)}>
+              {securityWarning.autoSubmit ? "Submitting..." : "Continue Exam"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -735,7 +888,7 @@ function Calculator() {
 
   const calculate = () => {
     try {
-      if (!/^[0-9+\-*/().%\s]+$/.test(display)) {
+      if (!/^[0-9+\-*/().\s]+$/.test(display)) {
         throw new Error("Invalid input");
       }
       const result = Function(`"use strict"; return (${display})`)();
@@ -751,37 +904,27 @@ function Calculator() {
   };
 
   const buttons = [
-    { label: "C", action: clear, kind: "utility" },
-    { label: "(", value: "(", kind: "utility" },
-    { label: ")", value: ")", kind: "utility" },
-    { label: "Back", action: backspace, kind: "utility" },
-    { label: "7", value: "7" },
-    { label: "8", value: "8" },
-    { label: "9", value: "9" },
-    { label: "/", value: "/", kind: "operator" },
-    { label: "4", value: "4" },
-    { label: "5", value: "5" },
-    { label: "6", value: "6" },
-    { label: "*", value: "*", kind: "operator" },
     { label: "1", value: "1" },
     { label: "2", value: "2" },
     { label: "3", value: "3" },
+    { label: "+", value: "+", kind: "operator" },
+    { label: "4", value: "4" },
+    { label: "5", value: "5" },
+    { label: "6", value: "6" },
     { label: "-", value: "-", kind: "operator" },
+    { label: "7", value: "7" },
+    { label: "8", value: "8" },
+    { label: "9", value: "9" },
+    { label: "*", value: "*", kind: "operator" },
+    { label: "/", value: "/", kind: "operator" },
     { label: "0", value: "0" },
     { label: ".", value: "." },
-    { label: "%", value: "%", kind: "operator" },
-    { label: "+", value: "+", kind: "operator" },
-    { label: "=", action: calculate, kind: "equals wide" }
+    { label: "=", action: calculate, kind: "equals" }
   ];
 
   return (
     <aside className="exam-calculator" aria-label="Calculator">
-      <div className="calculator-head">
-        <strong>Calculator</strong>
-        <small>Basic</small>
-      </div>
       <div className="calculator-display" title={display}>{display}</div>
-      {error ? <small className="calculator-error">{error}</small> : <small className="calculator-hint">Use for simple arithmetic.</small>}
       <div className="calculator-grid">
         {buttons.map((button) => (
           <button
@@ -794,6 +937,8 @@ function Calculator() {
           </button>
         ))}
       </div>
+      <button className="calculator-clear" type="button" onClick={clear}>Clear All</button>
+      {error ? <small className="calculator-error">{error}</small> : null}
     </aside>
   );
 }

@@ -182,11 +182,13 @@ function registerIpc() {
   ipcMain.handle("student:focusLoss", (_event, payload = {}) => ({ success: true, session: db.logFocusLoss(payload) }));
 
   ipcMain.handle("window:enterFullscreen", () => {
+    mainWindow?.setContentProtection(true);
     mainWindow?.setFullScreen(true);
     mainWindow?.setAlwaysOnTop(true, "screen-saver");
     return { success: true };
   });
   ipcMain.handle("window:exitFullscreen", () => {
+    mainWindow?.setContentProtection(false);
     mainWindow?.setAlwaysOnTop(false);
     mainWindow?.setFullScreen(false);
     return { success: true };
