@@ -5312,10 +5312,10 @@ def database_imports(request):
         return Response({"success": False, "message": "Could not resolve your school for this import."}, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == "POST":
-        uploaded_file = request.FILES.get("file")
-        if not uploaded_file:
+        uploaded_files = request.FILES.getlist("file") or request.FILES.getlist("files")
+        if not uploaded_files:
             return Response(
-                {"success": False, "message": "Attach a CSV, Excel, JSON, SQL, ZIP, image, or document file."},
+                {"success": False, "message": "Attach one or more CSV, Excel, JSON, SQL, ZIP, image, or document files."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         import_type = str(request.data.get("import_type") or "full_school").strip()
@@ -5323,34 +5323,42 @@ def database_imports(request):
         if import_type not in allowed_types:
             return Response({"success": False, "message": "Select a valid import category."}, status=status.HTTP_400_BAD_REQUEST)
 
-        summary, errors = _summarize_database_import_upload(uploaded_file)
-        applied_students = []
-        if not errors and import_type in {"full_school", "students"}:
-            applied_students, apply_errors = _apply_student_image_database_import(user, school, uploaded_file, summary)
-            errors = [*errors, *apply_errors]
-        job = DatabaseImportJob.objects.create(
-            tenant=school,
-            uploaded_by=user,
-            import_type=import_type,
-            source_platform=str(request.data.get("source_platform") or "").strip(),
-            link_key=str(request.data.get("link_key") or "admission_number").strip(),
-            notes=str(request.data.get("notes") or "").strip(),
-            upload=uploaded_file,
-            original_filename=(uploaded_file.name or "migration-upload")[:255],
-            file_size=uploaded_file.size,
-            status="needs_review" if errors else "validated",
-            summary=summary,
-            errors=errors,
-        )
+        jobs = []
+        all_errors = []
+        applied_student_count = 0
+        for uploaded_file in uploaded_files:
+            summary, errors = _summarize_database_import_upload(uploaded_file)
+            applied_students = []
+            if not errors and import_type in {"full_school", "students"}:
+                applied_students, apply_errors = _apply_student_image_database_import(user, school, uploaded_file, summary)
+                errors = [*errors, *apply_errors]
+                applied_student_count += len(applied_students)
+            job = DatabaseImportJob.objects.create(
+                tenant=school,
+                uploaded_by=user,
+                import_type=import_type,
+                source_platform=str(request.data.get("source_platform") or "").strip(),
+                link_key=str(request.data.get("link_key") or "admission_number").strip(),
+                notes=str(request.data.get("notes") or "").strip(),
+                upload=uploaded_file,
+                original_filename=(uploaded_file.name or "migration-upload")[:255],
+                file_size=uploaded_file.size,
+                status="needs_review" if errors else "validated",
+                summary=summary,
+                errors=errors,
+            )
+            jobs.append(job)
+            all_errors.extend(errors)
         history = DatabaseImportJob.objects.filter(tenant=school).select_related("uploaded_by")
-        message = "Import uploaded and validated." if not errors else "Import uploaded but needs review."
-        if applied_students and not errors:
-            message = f"{len(applied_students)} student image import{'s' if len(applied_students) != 1 else ''} created or updated."
+        message = f"{len(jobs)} import file{'s' if len(jobs) != 1 else ''} uploaded and validated." if not all_errors else f"{len(jobs)} import file{'s' if len(jobs) != 1 else ''} uploaded; some need review."
+        if applied_student_count and not all_errors:
+            message = f"{applied_student_count} student image import{'s' if applied_student_count != 1 else ''} created or updated from {len(jobs)} file{'s' if len(jobs) != 1 else ''}."
         return Response(
             {
-                "success": not errors,
+                "success": not all_errors,
                 "message": message,
-                "job": _database_import_job_payload(job, request),
+                "job": _database_import_job_payload(jobs[0], request) if jobs else None,
+                "jobs": [_database_import_job_payload(item, request) for item in jobs],
                 "summary": _database_imports_summary(school),
                 "history": [_database_import_job_payload(item, request) for item in history[:20]],
             },

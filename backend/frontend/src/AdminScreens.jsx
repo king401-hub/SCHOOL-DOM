@@ -7067,7 +7067,7 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
     { value: "filename", label: "Filename convention" },
   ];
   const [form, setForm] = useState({ import_type: "full_school", link_key: "admission_number", notes: "" });
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -7075,17 +7075,17 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
 
   const submitImport = async (event) => {
     event.preventDefault();
-    if (!file) {
-      setUploadError("Choose a database export, spreadsheet, ZIP, image, or document file.");
+    if (!files.length) {
+      setUploadError("Choose database export files, images, documents, or a folder.");
       return;
     }
     setBusy(true);
     setFeedback("");
     setUploadError("");
     try {
-      const result = await onUpload?.({ ...form, file });
+      const result = await onUpload?.({ ...form, file: files });
       setFeedback(result?.message || "Import uploaded for validation.");
-      setFile(null);
+      setFiles([]);
       setForm((current) => ({ ...current, notes: "" }));
     } catch (actionError) {
       setUploadError(actionError.message || "Could not upload import.");
@@ -7097,12 +7097,13 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
   const acceptDrop = (event) => {
     event.preventDefault();
     setDragging(false);
-    const dropped = event.dataTransfer.files?.[0];
-    if (dropped) {
-      setFile(dropped);
+    const dropped = Array.from(event.dataTransfer.files || []);
+    if (dropped.length) {
+      setFiles(dropped);
       setUploadError("");
     }
   };
+  const selectedFileSize = files.reduce((total, item) => total + Number(item.size || 0), 0);
 
   return (
     <section className="screen-grid database-import-screen">
@@ -7136,9 +7137,29 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
               onDragLeave={() => setDragging(false)}
               onDrop={acceptDrop}
             >
-              <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-              <strong>{file ? file.name : "Drop a school export file here"}</strong>
-              <span>{file ? `${Math.ceil(file.size / 1024).toLocaleString()} KB selected` : "or click to browse from your device"}</span>
+              <div className="database-import-file-actions">
+                <label className="table-action file-action">
+                  Choose files
+                  <input type="file" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} />
+                </label>
+                <label className="table-action file-action">
+                  Choose folder
+                  <input
+                    type="file"
+                    multiple
+                    webkitdirectory=""
+                    directory=""
+                    onChange={(event) => setFiles(Array.from(event.target.files || []))}
+                  />
+                </label>
+              </div>
+              <strong>{files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Drop files or a folder here"}</strong>
+              <span>
+                {files.length
+                  ? `${Math.ceil(selectedFileSize / 1024).toLocaleString()} KB selected`
+                  : "or click to browse files/folders from your device"}
+              </span>
+              {files.length ? <small>{files.slice(0, 4).map((item) => item.webkitRelativePath || item.name).join(", ")}{files.length > 4 ? `, +${files.length - 4} more` : ""}</small> : null}
             </div>
 
             <div className="panel-form-grid">

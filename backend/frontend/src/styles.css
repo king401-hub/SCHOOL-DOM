@@ -12347,13 +12347,20 @@ body[data-theme="dark"] .scheme-plan-meta {
   transform: translateY(-1px);
 }
 
-.migration-dropzone input {
+.migration-dropzone > input {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+
+.database-import-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
 }
 
 .migration-dropzone strong {

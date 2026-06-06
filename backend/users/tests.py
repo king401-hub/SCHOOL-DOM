@@ -1760,6 +1760,31 @@ class StudentsAPITests(TestCase):
         self.assertTrue(bool(profile.user.profile_picture))
         self.assertTrue(profile.user.check_password("StudentPass123"))
 
+    def test_database_import_accepts_multiple_student_image_files(self):
+        image_content = (
+            b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+            b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00"
+            b"\x00\x02\x02D\x01\x00;"
+        )
+        first = SimpleUploadedFile("Mary Stone.gif", image_content, content_type="image/gif")
+        second = SimpleUploadedFile("Paul Green.gif", image_content, content_type="image/gif")
+
+        response = self.client.post(
+            "/api/app/database-imports/",
+            data={
+                "import_type": "students",
+                "link_key": "filename",
+                "file": [first, second],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"], response.data)
+        self.assertEqual(len(response.data["jobs"]), 2)
+        self.assertTrue(StudentProfile.objects.filter(user__first_name="Mary", user__last_name="Stone").exists())
+        self.assertTrue(StudentProfile.objects.filter(user__first_name="Paul", user__last_name="Green").exists())
+
     def test_update_student_profile_api_updates_user_and_profile(self):
         student_user = User.objects.create_user(
             email="update.student@student-upload.edu",
