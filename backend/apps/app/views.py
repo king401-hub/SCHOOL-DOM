@@ -13,6 +13,7 @@ APK_FILENAME = "schooldom-app.apk"
 ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
 STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
 LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
+MIN_DESKTOP_INSTALLER_SIZE = 5 * 1024 * 1024
 
 
 def app_apk_path():
@@ -47,7 +48,7 @@ def offline_cbt_installer_candidates():
 
 def offline_cbt_installer_path():
     for candidate in offline_cbt_installer_candidates():
-        if candidate.exists() and candidate.is_file():
+        if candidate.exists() and candidate.is_file() and candidate.stat().st_size >= MIN_DESKTOP_INSTALLER_SIZE:
             return candidate
     return None
 
@@ -67,7 +68,7 @@ def admin_app_installer_candidates():
 
 def admin_app_installer_path():
     for candidate in admin_app_installer_candidates():
-        if candidate.exists() and candidate.is_file():
+        if candidate.exists() and candidate.is_file() and candidate.stat().st_size >= MIN_DESKTOP_INSTALLER_SIZE:
             return candidate
     return None
 

@@ -2560,7 +2560,7 @@ def admin_desktop_bootstrap(request):
     )
     student_class_ids = student_profiles_qs.exclude(current_class__isnull=True).values_list("current_class_id", flat=True)
     classes_qs = (
-        Class.objects.filter(**tenant_filter)
+        Class.objects.filter(Q(**tenant_filter) | Q(id__in=student_class_ids))
         if tenant_filter
         else Class.objects.filter(id__in=student_class_ids)
     ).distinct()

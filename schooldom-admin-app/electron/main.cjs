@@ -97,11 +97,16 @@ async function postJson(url, payload = {}) {
 }
 
 async function downloadFile(url, targetPath) {
-  const response = await fetch(url);
+  const downloadUrl = new URL(url);
+  downloadUrl.searchParams.set("_", String(Date.now()));
+  const response = await fetch(downloadUrl.href, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Download failed (${response.status}).`);
   }
   const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length < 5 * 1024 * 1024) {
+    throw new Error("The CBT installer on the server is missing or corrupted. Upload SchoolDomCBT.exe again and retry.");
+  }
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, buffer);
   return targetPath;
