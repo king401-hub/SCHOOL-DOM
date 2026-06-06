@@ -200,6 +200,61 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["questions"][0]["prompt"], "Global math question available to every tenant")
 
+    def test_personal_quiz_uses_school_subject_code_pool(self):
+        coded_folder = PersonalQuizFolder.objects.create(
+            tenant=self.legacy_tenant,
+            name="School code math pool",
+            subject=None,
+            subject_code="MTH",
+            subject_name="",
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=coded_folder,
+            question_type="objective",
+            prompt="School math code question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+        self.legacy_tenant.personal_quiz_folders.filter(name="Math pool").delete()
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": self.subject.id, "question_count": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["questions"][0]["prompt"], "School math code question")
+
+    def test_personal_quiz_tops_up_small_question_pool(self):
+        self.legacy_tenant.personal_quiz_folders.filter(name="Math pool").delete()
+        small_folder = PersonalQuizFolder.objects.create(
+            tenant=self.legacy_tenant,
+            name="Small math pool",
+            subject=self.subject,
+            class_group=self.school_class,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=small_folder,
+            question_type="objective",
+            prompt="Only real math question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": self.subject.id, "question_count": 5},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 5)
+        prompts = [item["prompt"] for item in response.data["questions"]]
+        self.assertIn("Only real math question", prompts)
+
     def test_personal_quiz_uses_global_general_pool_when_subject_pool_missing(self):
         english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
         self.school_class.subjects.add(english)

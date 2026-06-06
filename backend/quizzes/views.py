@@ -550,50 +550,58 @@ def _auto_submit_if_expired(attempt):
 def _build_personal_questions(subject, class_group, count, tenant=None):
     subject_filters = Q(folder__subject=subject)
     if subject.code:
-        subject_filters |= Q(folder__tenant__isnull=True, folder__subject__isnull=True, folder__subject_code__iexact=subject.code)
-    subject_filters |= Q(folder__tenant__isnull=True, folder__subject__isnull=True, folder__subject_name__iexact=subject.name)
+        subject_filters |= Q(folder__subject__isnull=True, folder__subject_code__iexact=subject.code)
+    subject_filters |= Q(folder__subject__isnull=True, folder__subject_name__iexact=subject.name)
 
     available_folder_filter = Q(folder__tenant__isnull=True)
     if tenant:
         available_folder_filter |= Q(folder__tenant=tenant)
 
-    subject_pool = PersonalQuizFolderQuestion.objects.filter(
+    base_pool = PersonalQuizFolderQuestion.objects.filter(
         folder__is_active=True,
         is_active=True,
-    ).filter(available_folder_filter).filter(subject_filters)
-    if class_group:
-        subject_pool = subject_pool.filter(Q(folder__class_group=class_group) | Q(folder__class_group__isnull=True))
-    else:
-        subject_pool = subject_pool.filter(folder__class_group__isnull=True)
-    folder_questions = list(subject_pool.order_by("?")[:count])
+    ).filter(available_folder_filter)
 
-    if not folder_questions:
-        general_pool = PersonalQuizFolderQuestion.objects.filter(
-            folder__is_active=True,
-            is_active=True,
-        ).filter(available_folder_filter).filter(
+    def class_scoped(queryset):
+        if class_group:
+            return queryset.filter(Q(folder__class_group=class_group) | Q(folder__class_group__isnull=True))
+        return queryset.filter(folder__class_group__isnull=True)
+
+    def add_questions(queryset, selected):
+        remaining = count - len(selected)
+        if remaining <= 0:
+            return selected
+        selected_ids = [item.id for item in selected]
+        if selected_ids:
+            queryset = queryset.exclude(id__in=selected_ids)
+        return selected + list(class_scoped(queryset).order_by("?")[:remaining])
+
+    folder_questions = []
+    folder_questions = add_questions(base_pool.filter(subject_filters), folder_questions)
+    folder_questions = add_questions(
+        base_pool.filter(
             folder__subject__isnull=True,
             folder__subject_code="",
             folder__subject_name="",
-        )
-        if class_group:
-            general_pool = general_pool.filter(Q(folder__class_group=class_group) | Q(folder__class_group__isnull=True))
-        else:
-            general_pool = general_pool.filter(folder__class_group__isnull=True)
-        folder_questions = list(general_pool.order_by("?")[:count])
+        ),
+        folder_questions,
+    )
 
-    if not folder_questions:
-        folder_questions = list(
+    if len(folder_questions) < count:
+        folder_questions = add_questions(
             PersonalQuizFolderQuestion.objects.filter(
                 folder__is_active=True,
                 is_active=True,
                 folder__tenant__isnull=True,
                 folder__subject__isnull=True,
                 folder__class_group__isnull=True,
-            ).order_by("?")[:count]
+            ),
+            folder_questions,
         )
+
+    questions = []
     if folder_questions:
-        return [
+        questions = [
             PersonalQuizQuestion(
                 question_type=item.question_type,
                 prompt=item.prompt,
@@ -605,6 +613,8 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             )
             for index, item in enumerate(random.sample(folder_questions, len(folder_questions)))
         ]
+        if len(questions) >= count:
+            return questions
 
     subject_name = subject.name
     subject_code = subject.code or subject.name[:3].upper()
@@ -670,8 +680,8 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
         ),
     ]
 
-    questions = []
-    for index in range(count):
+    start_index = len(questions)
+    for index in range(start_index, count):
         question_type, prompt, options, correct_answer, explanation = templates[index % len(templates)]
         cycle = (index // len(templates)) + 1
         suffix = f" ({cycle})" if cycle > 1 else ""
