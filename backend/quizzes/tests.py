@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 from pathlib import Path
 import tempfile
@@ -9,6 +10,7 @@ from xml.sax.saxutils import escape
 
 from academic.models import Class, Subject
 from core.models import SchoolTenant
+from exams.models import Question as ExamQuestion, QuestionBank
 from tenants.models import Tenant
 from users.models import StudentProfile
 from .models import Choice, PersonalQuizAttempt, PersonalQuizFolder, PersonalQuizFolderQuestion, Question, Quiz, Submission
@@ -145,7 +147,7 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(repeat.status_code, 200)
         self.assertEqual(PersonalQuizAttempt.objects.count(), 1)
 
-    def test_personal_quiz_fallback_does_not_use_another_school_pool(self):
+    def test_personal_quiz_without_real_questions_does_not_use_dummy_fallback(self):
         other_tenant = Tenant.objects.create(name="Other Quiz School", slug="other_quiz_school")
         other_folder = PersonalQuizFolder.objects.create(
             tenant=other_tenant,
@@ -168,10 +170,9 @@ class DailyPersonalQuizTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 201)
-        prompts = [item["prompt"] for item in response.data["questions"]]
-        self.assertNotIn("Other tenant test question should not appear", prompts)
-        self.assertTrue(any("English" in prompt or "subject" in prompt.lower() for prompt in prompts))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("No real personal quiz questions are available for English", response.data["detail"])
+        self.assertEqual(PersonalQuizAttempt.objects.filter(subject=english).count(), 0)
 
     def test_personal_quiz_uses_global_subject_pool_across_tenants(self):
         global_folder = PersonalQuizFolder.objects.create(
@@ -227,7 +228,7 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["questions"][0]["prompt"], "School math code question")
 
-    def test_personal_quiz_tops_up_small_question_pool(self):
+    def test_personal_quiz_uses_small_question_pool_without_dummy_questions(self):
         self.legacy_tenant.personal_quiz_folders.filter(name="Math pool").delete()
         small_folder = PersonalQuizFolder.objects.create(
             tenant=self.legacy_tenant,
@@ -251,9 +252,89 @@ class DailyPersonalQuizTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["question_count"], 5)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["total_points"], 1)
         prompts = [item["prompt"] for item in response.data["questions"]]
-        self.assertIn("Only real math question", prompts)
+        self.assertEqual(prompts, ["Only real math question"])
+
+    def test_personal_quiz_uses_cbt_question_bank_when_personal_folder_is_missing(self):
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        self.school_class.subjects.add(english)
+        bank_question = ExamQuestion.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="Choose the correctly punctuated sentence.",
+            options=["Where are you going?", "Where are you going", "Where are you going!", "Where are you going,"],
+            correct_answer="A",
+            points=2,
+        )
+        bank = QuestionBank.objects.create(
+            tenant=self.legacy_tenant,
+            name="English CBT bank",
+            subject=english,
+            teacher=self.teacher,
+        )
+        bank.questions.add(bank_question)
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Choose the correctly punctuated sentence.")
+        attempt_question = PersonalQuizAttempt.objects.get(subject=english).questions.get()
+        self.assertEqual(attempt_question.correct_answer, "Where are you going?")
+
+    def test_personal_quiz_replaces_existing_dummy_attempt_with_real_questions(self):
+        attempt = PersonalQuizAttempt.objects.create(
+            tenant=self.legacy_tenant,
+            student=self.student,
+            subject=self.subject,
+            class_group=self.school_class,
+            title="Mathematics Daily Personal Quiz",
+            time_limit_minutes=15,
+            total_points=1,
+            daily_date=timezone.localdate(),
+            week_start=timezone.localdate(),
+            month_start=timezone.localdate().replace(day=1),
+        )
+        attempt.questions.create(
+            question_type="objective",
+            prompt="Which subject is this personal quiz focused on?",
+            options=["Mathematics", "General Studies"],
+            correct_answer="Mathematics",
+            order=1,
+            points=1,
+        )
+        self.legacy_tenant.personal_quiz_folders.filter(name="Math pool").delete()
+        real_question = ExamQuestion.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="What is 2 + 2?",
+            options=["3", "4", "5", "6"],
+            correct_answer="B",
+            points=1,
+        )
+        bank = QuestionBank.objects.create(
+            tenant=self.legacy_tenant,
+            name="Math CBT bank",
+            subject=self.subject,
+            teacher=self.teacher,
+        )
+        bank.questions.add(real_question)
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": self.subject.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["questions"][0]["prompt"], "What is 2 + 2?")
+        self.assertEqual(PersonalQuizAttempt.objects.filter(student=self.student, subject=self.subject).count(), 1)
 
     def test_personal_quiz_uses_global_general_pool_when_subject_pool_missing(self):
         english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")

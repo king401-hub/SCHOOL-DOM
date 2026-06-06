@@ -5877,9 +5877,11 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     session?.school_code ||
 session?.schoolCode ||
     "School OS";
-  const schoolBrand = resolveSchoolBrand(activeSchool, screenData["/settings"]?.school, screenData["/dashboard"]?.school, session?.school);
+  const schoolBrand = resolveSchoolBrand(activeSchool, screenData["/settings"]?.school, screenData["/dashboard"]?.school, session?.school, session);
 
   useEffect(() => {
+    document.title = schoolBrand.name;
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", schoolBrand.name);
     window.schoolDomPWA?.setBrand?.(schoolBrand);
   }, [schoolBrand.name, schoolBrand.logo]);
 
@@ -6576,9 +6578,11 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
   );
 
   const formatLastUpdated = lastUpdated ? formatDate(lastUpdated) : null;
-  const schoolBrand = resolveSchoolBrand(data?.school, session?.school);
+  const schoolBrand = resolveSchoolBrand(data?.school, session?.school, session);
 
   useEffect(() => {
+    document.title = schoolBrand.name;
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", schoolBrand.name);
     window.schoolDomPWA?.setBrand?.(schoolBrand);
   }, [schoolBrand.name, schoolBrand.logo]);
 
@@ -6799,7 +6803,9 @@ useEffect(() => {
 
   useEffect(() => {
     if (!session) return;
-    const schoolBrand = resolveSchoolBrand(session?.school);
+    const schoolBrand = resolveSchoolBrand(session?.school, session);
+    document.title = schoolBrand.name;
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", schoolBrand.name);
     window.schoolDomPWA?.setBrand?.(schoolBrand);
   }, [session]);
 

@@ -433,14 +433,26 @@ export function userInitials(user) {
 
 export function resolveSchoolBrand(...sources) {
   const school = sources.find((item) => item && Object.keys(item).length) || {};
-  const name = school.name || school.school_name || school.schoolName || school.school || school.institution_name || "SchoolDom";
+  const name =
+    school.name ||
+    school.school_name ||
+    school.schoolName ||
+    school.school ||
+    school.institution_name ||
+    school.institutionName ||
+    school.tenant?.name ||
+    school.user?.school_name ||
+    school.user?.schoolName ||
+    school.user?.school?.name ||
+    school.user?.tenant?.name ||
+    "SchoolDom";
   return {
     name,
-    code: school.school_code || school.schoolCode || "",
-    logo: school.logo || school.logo_url || school.logoUrl || school.school_logo || school.schoolLogo || school.logo_path || "",
-    address: school.address || school.school_address || school.schoolAddress || "",
-    phone: school.phone || school.phone_number || school.phoneNumber || school.school_phone || school.schoolPhone || "",
-    email: school.email || school.school_email || school.schoolEmail || "",
+    code: school.school_code || school.schoolCode || school.tenant?.schema_name || school.user?.school_code || school.user?.schoolCode || school.user?.tenant?.schema_name || "",
+    logo: school.logo || school.logo_url || school.logoUrl || school.school_logo || school.schoolLogo || school.logo_path || school.user?.school_logo || school.user?.schoolLogo || "",
+    address: school.address || school.school_address || school.schoolAddress || school.user?.school_address || school.user?.schoolAddress || "",
+    phone: school.phone || school.phone_number || school.phoneNumber || school.school_phone || school.schoolPhone || school.user?.school_phone || school.user?.schoolPhone || "",
+    email: school.email || school.school_email || school.schoolEmail || school.user?.school_email || school.user?.schoolEmail || "",
     initials: name
       .split(/\s+/)
       .filter(Boolean)

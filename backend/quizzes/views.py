@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academic.models import AcademicYear, GradeScale, Subject, Term
+from exams.models import Question as ExamQuestion
 from notifications.models import Notification
 from users.models import User, resolve_legacy_tenant_for_school
 from .models import (
@@ -38,6 +39,16 @@ from .serializers import (
 
 MAX_PERSONAL_QUESTIONS = 20
 DAILY_PERSONAL_TIME_LIMIT_MINUTES = 15
+PLACEHOLDER_PERSONAL_QUESTION_PREFIXES = (
+    "Which subject is this personal quiz focused on?",
+    "This quiz was generated for ",
+    "Fill in the blank: The selected subject is ____.",
+    "Which class is attached to this quiz attempt?",
+    "Students can create the questions in a personal quiz.",
+    "The code for ",
+    "What is the maximum number of questions allowed in a personal quiz?",
+    "Your quiz score is calculated instantly after submission.",
+)
 
 
 def _student_profile(user):
@@ -547,6 +558,70 @@ def _auto_submit_if_expired(attempt):
     return attempt
 
 
+def _is_placeholder_personal_question(question):
+    prompt = str(getattr(question, "prompt", "") or "").strip()
+    return any(prompt.startswith(prefix) for prefix in PLACEHOLDER_PERSONAL_QUESTION_PREFIXES)
+
+
+def _attempt_has_placeholder_questions(attempt):
+    questions = list(attempt.questions.all())
+    return bool(questions) and any(_is_placeholder_personal_question(question) for question in questions)
+
+
+def _coerce_options(value):
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            value = decoded
+        except (TypeError, ValueError):
+            value = []
+    if isinstance(value, dict):
+        value = list(value.values())
+    return [str(option).strip() for option in (value or []) if str(option).strip()]
+
+
+def _resolve_exam_correct_answer(options, correct_answer):
+    answer = str(correct_answer or "").strip()
+    if not answer:
+        return ""
+    if len(answer) == 1 and answer.upper() in "ABCDEFGH":
+        index = ord(answer.upper()) - ord("A")
+        if 0 <= index < len(options):
+            return options[index]
+    for option in options:
+        if _normalize_answer(option) == _normalize_answer(answer):
+            return option
+    return answer
+
+
+def _personal_question_from_exam_question(item, order):
+    prompt = str(item.text or "").strip()
+    question_type = PersonalQuizQuestion.FILL_BLANK
+    options = []
+    if item.question_type == "mcq":
+        question_type = PersonalQuizQuestion.OBJECTIVE
+        options = _coerce_options(item.options)
+    elif item.question_type == "true_false":
+        question_type = PersonalQuizQuestion.TRUE_FALSE
+        options = ["True", "False"]
+
+    correct_answer = _resolve_exam_correct_answer(options, item.correct_answer)
+    if not prompt or not correct_answer:
+        return None
+    if question_type == PersonalQuizQuestion.OBJECTIVE and len(options) < 2:
+        return None
+
+    return PersonalQuizQuestion(
+        question_type=question_type,
+        prompt=prompt,
+        options=_shuffle_options(options, correct_answer),
+        correct_answer=correct_answer,
+        explanation=str(item.explanation or "").strip(),
+        order=order,
+        points=item.points or 1,
+    )
+
+
 def _build_personal_questions(subject, class_group, count, tenant=None):
     subject_filters = Q(folder__subject=subject)
     if subject.code:
@@ -616,86 +691,23 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
         if len(questions) >= count:
             return questions
 
-    subject_name = subject.name
-    subject_code = subject.code or subject.name[:3].upper()
-    class_name = _class_label(class_group)
-    distractors = [class_name, "General Studies", "SchoolDom", subject_code]
-
-    templates = [
-        (
-            PersonalQuizQuestion.OBJECTIVE,
-            f"Which subject is this personal quiz focused on?",
-            [subject_name, *[item for item in distractors if item != subject_name]][:4],
-            subject_name,
-            f"This quiz was generated from your selected subject, {subject_name}.",
-        ),
-        (
-            PersonalQuizQuestion.TRUE_FALSE,
-            f"This quiz was generated for {class_name}.",
-            ["True", "False"],
-            "True",
-            "Personal quizzes use the class on your student profile.",
-        ),
-        (
-            PersonalQuizQuestion.FILL_BLANK,
-            "Fill in the blank: The selected subject is ____.",
-            [],
-            subject_name,
-            f"The selected subject is {subject_name}.",
-        ),
-        (
-            PersonalQuizQuestion.OBJECTIVE,
-            f"Which class is attached to this quiz attempt?",
-            [class_name, subject_name, "Admin Office", "All Classes"],
-            class_name,
-            "The attempt is generated from the class assigned to your profile.",
-        ),
-        (
-            PersonalQuizQuestion.TRUE_FALSE,
-            "Students can create the questions in a personal quiz.",
-            ["True", "False"],
-            "False",
-            "Personal quiz questions are generated automatically by the system.",
-        ),
-        (
-            PersonalQuizQuestion.FILL_BLANK,
-            f"The code for {subject_name} is ____.",
-            [],
-            subject_code,
-            f"{subject_name} is stored with the code {subject_code}.",
-        ),
-        (
-            PersonalQuizQuestion.OBJECTIVE,
-            "What is the maximum number of questions allowed in a personal quiz?",
-            ["10", "20", "30", "50"],
-            "20",
-            "SchoolDom limits generated personal quizzes to 20 questions.",
-        ),
-        (
-            PersonalQuizQuestion.TRUE_FALSE,
-            "Your quiz score is calculated instantly after submission.",
-            ["True", "False"],
-            "True",
-            "The system scores objective, true or false, and fill-in-the-blank answers immediately.",
-        ),
-    ]
-
-    start_index = len(questions)
-    for index in range(start_index, count):
-        question_type, prompt, options, correct_answer, explanation = templates[index % len(templates)]
-        cycle = (index // len(templates)) + 1
-        suffix = f" ({cycle})" if cycle > 1 else ""
-        questions.append(
-            PersonalQuizQuestion(
-                question_type=question_type,
-                prompt=f"{prompt}{suffix}",
-                options=_shuffle_options(options, correct_answer),
-                correct_answer=correct_answer,
-                explanation=explanation,
-                order=index + 1,
-                points=1,
-            )
+    if len(questions) < count:
+        exam_filter = Q(question_banks__subject=subject)
+        if tenant:
+            exam_filter &= Q(question_banks__tenant=tenant)
+        else:
+            exam_filter &= Q(question_banks__tenant__isnull=True)
+        exam_questions = list(
+            ExamQuestion.objects.filter(exam_filter)
+            .exclude(text="")
+            .distinct()
+            .order_by("?")[: count - len(questions)]
         )
+        for item in exam_questions:
+            question = _personal_question_from_exam_question(item, len(questions) + 1)
+            if question:
+                questions.append(question)
+
     return questions
 
 
@@ -1059,8 +1071,12 @@ class PersonalQuizGenerate(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
             if existing_attempt.questions.exists():
-                return Response(_personal_attempt_payload(existing_attempt, include_questions=True), status=status.HTTP_200_OK)
-            existing_attempt.delete()
+                if _attempt_has_placeholder_questions(existing_attempt):
+                    existing_attempt.delete()
+                else:
+                    return Response(_personal_attempt_payload(existing_attempt, include_questions=True), status=status.HTTP_200_OK)
+            else:
+                existing_attempt.delete()
 
         try:
             question_count = int(request.data.get("question_count", MAX_PERSONAL_QUESTIONS))
@@ -1068,6 +1084,19 @@ class PersonalQuizGenerate(APIView):
             question_count = MAX_PERSONAL_QUESTIONS
         question_count = max(1, min(question_count, MAX_PERSONAL_QUESTIONS))
 
+        questions = _build_personal_questions(subject, profile.current_class, question_count, legacy_tenant)
+        if not questions:
+            return Response(
+                {
+                    "detail": (
+                        f"No real personal quiz questions are available for {subject.name}. "
+                        "Please add questions to the Personal Quiz Folder or CBT question bank for this subject."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        today = _today()
         attempt = PersonalQuizAttempt.objects.create(
             tenant=legacy_tenant,
             student=request.user,
@@ -1077,12 +1106,11 @@ class PersonalQuizGenerate(APIView):
             term=_term_for_date(request.user, today),
             title=f"{subject.name} Daily Personal Quiz",
             time_limit_minutes=DAILY_PERSONAL_TIME_LIMIT_MINUTES,
-            total_points=question_count,
+            total_points=sum(question.points for question in questions),
             daily_date=today,
             week_start=_week_start(today),
             month_start=_month_start(today),
         )
-        questions = _build_personal_questions(subject, profile.current_class, question_count, legacy_tenant)
         for question in questions:
             question.attempt = attempt
         PersonalQuizQuestion.objects.bulk_create(questions)
