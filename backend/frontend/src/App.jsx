@@ -5869,13 +5869,15 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const data = screenData[activePath];
   const loading = Boolean(screenLoading[activePath]);
   const error = screenError[activePath] || "";
+  const activeSchool = data?.school || data?.local_data?.school || null;
   const schoolName =
+    activeSchool?.name ||
     screenData["/settings"]?.school?.name ||
     session?.schoolName ||
     session?.school_code ||
 session?.schoolCode ||
     "School OS";
-  const schoolBrand = resolveSchoolBrand(screenData["/settings"]?.school, screenData["/dashboard"]?.school, session?.school);
+  const schoolBrand = resolveSchoolBrand(activeSchool, screenData["/settings"]?.school, screenData["/dashboard"]?.school, session?.school);
 
   useEffect(() => {
     window.schoolDomPWA?.setBrand?.(schoolBrand);

@@ -12,6 +12,7 @@ from urllib.parse import quote
 import qrcode
 import requests
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.core import signing
 from django.core.files.storage import default_storage
@@ -360,6 +361,100 @@ def _summarize_database_import_upload(uploaded_file):
         }
     )
     return summary, list(summary.get("unsafe_entries") or [])
+
+
+STUDENT_IMAGE_IMPORT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _student_name_from_image_filename(filename):
+    base = os.path.splitext(os.path.basename(filename or ""))[0]
+    cleaned = re.sub(r"[_\-]+", " ", base)
+    cleaned = re.sub(r"\b(copy|passport|photo|image|student)\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    if not cleaned:
+        return "", ""
+    parts = [part.capitalize() for part in cleaned.split(" ") if part]
+    if len(parts) == 1:
+        return parts[0], "Student"
+    return " ".join(parts[:-1]), parts[-1]
+
+
+def _student_import_email(first_name, last_name, school, index=0):
+    school_slug = (slugify(getattr(school, "schema_name", "") or getattr(school, "name", "") or "school") or "school").replace("_", "-")
+    name_slug = slugify(f"{first_name} {last_name}") or f"student-{index + 1}"
+    email = f"{name_slug}@{school_slug}.imported.local"
+    suffix = 2
+    while User.objects.filter(email__iexact=email).exclude(role="student", tenant=school).exists():
+        email = f"{name_slug}-{suffix}@{school_slug}.imported.local"
+        suffix += 1
+    return email
+
+
+def _create_or_update_student_from_image(user, school, image_file, filename, index=0):
+    first_name, last_name = _student_name_from_image_filename(filename)
+    if not first_name:
+        raise ValueError(f"{filename or 'Image'} does not contain a readable student name.")
+    image_file.seek(0)
+    return _ensure_student_profile_for_tenant(
+        user=user,
+        email=_student_import_email(first_name, last_name, school, index),
+        first_name=first_name,
+        last_name=last_name,
+        guardian_name="Guardian",
+        guardian_phone="",
+        guardian_relation="Guardian",
+        profile_picture=image_file,
+        student_password="StudentPass123",
+        confirm_student_password="StudentPass123",
+    )
+
+
+def _apply_student_image_database_import(user, school, uploaded_file, summary):
+    filename = uploaded_file.name or ""
+    extension = os.path.splitext(filename)[1].lower()
+    imported = []
+    errors = []
+
+    if extension in STUDENT_IMAGE_IMPORT_EXTENSIONS:
+        try:
+            uploaded_file.seek(0)
+            content = ContentFile(uploaded_file.read(), name=os.path.basename(filename))
+            imported.append(_create_or_update_student_from_image(user, school, content, filename))
+        except Exception as exc:
+            errors.append(str(exc))
+        finally:
+            uploaded_file.seek(0)
+    elif extension == ".zip":
+        uploaded_file.seek(0)
+        with zipfile.ZipFile(uploaded_file) as archive:
+            image_members = [
+                item
+                for item in archive.infolist()
+                if not item.is_dir()
+                and os.path.splitext(item.filename)[1].lower() in STUDENT_IMAGE_IMPORT_EXTENSIONS
+                and not os.path.normpath(item.filename).replace("\\", "/").startswith("../")
+            ]
+            for index, item in enumerate(image_members):
+                try:
+                    content = ContentFile(archive.read(item), name=os.path.basename(item.filename))
+                    imported.append(_create_or_update_student_from_image(user, school, content, item.filename, index))
+                except Exception as exc:
+                    errors.append(f"{item.filename}: {exc}")
+        uploaded_file.seek(0)
+
+    if imported or errors:
+        summary["student_image_import"] = {
+            "created_or_updated": len(imported),
+            "students": [
+                {
+                    "student_id": profile.student_id,
+                    "name": profile.user.get_full_name(),
+                    "email": profile.user.email,
+                }
+                for profile in imported[:50]
+            ],
+        }
+    return imported, errors
 
 
 def _class_label(class_obj):
@@ -5181,6 +5276,10 @@ def database_imports(request):
             return Response({"success": False, "message": "Select a valid import category."}, status=status.HTTP_400_BAD_REQUEST)
 
         summary, errors = _summarize_database_import_upload(uploaded_file)
+        applied_students = []
+        if not errors and import_type in {"full_school", "students"}:
+            applied_students, apply_errors = _apply_student_image_database_import(user, school, uploaded_file, summary)
+            errors = [*errors, *apply_errors]
         job = DatabaseImportJob.objects.create(
             tenant=school,
             uploaded_by=user,
@@ -5196,10 +5295,13 @@ def database_imports(request):
             errors=errors,
         )
         history = DatabaseImportJob.objects.filter(tenant=school).select_related("uploaded_by")
+        message = "Import uploaded and validated." if not errors else "Import uploaded but needs review."
+        if applied_students and not errors:
+            message = f"{len(applied_students)} student image import{'s' if len(applied_students) != 1 else ''} created or updated."
         return Response(
             {
                 "success": not errors,
-                "message": "Import uploaded and validated." if not errors else "Import uploaded but needs review.",
+                "message": message,
                 "job": _database_import_job_payload(job, request),
                 "summary": _database_imports_summary(school),
                 "history": [_database_import_job_payload(item, request) for item in history[:20]],
@@ -5585,6 +5687,7 @@ def exams_snapshot(request):
     return Response(
         {
             "success": True,
+            "school": _school_payload(getattr(user, "tenant", None), request),
             "summary": {
                 "total_exams": exams.count(),
                 "published_exams": exams.filter(is_published=True).count(),

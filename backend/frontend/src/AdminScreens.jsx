@@ -62,7 +62,8 @@ function EyeIcon({ closed = false }) {
 }
 
 function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school = {}, session = null }) {
-  const schoolCode = school?.school_code || school?.schema_name || session?.user?.school_code || session?.user?.tenant?.schema_name || "";
+  const brand = resolveSchoolBrand(school, session?.school);
+  const schoolCode = brand.code || school?.school_code || school?.schema_name || session?.user?.school_code || session?.user?.tenant?.schema_name || "";
   const adminAppDownloadUrl = `${API_BASE_URL}/api/app/admin-desktop/download/${schoolCode ? `?school_code=${encodeURIComponent(schoolCode)}` : ""}`;
   const [downloadNotice, setDownloadNotice] = useState(false);
   const [downloadState, setDownloadState] = useState({ error: "", message: "" });
@@ -93,7 +94,7 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
       <header className="cbt-desktop-hero">
         <div>
           <p className="quiz-kicker">Desktop CBT deployment</p>
-          <h2>SchoolDom Admin App</h2>
+          <h2>{brand.name} Admin App</h2>
           <p>Install the admin app for school-branded CBT setup, then install the student exam app from inside it.</p>
         </div>
       </header>
@@ -106,27 +107,27 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
       <div className="cbt-admin-layout">
         <article className="app-panel cbt-server-panel">
           <div className="panel-head">
-            <h3>SchoolDom Admin installer</h3>
+            <h3>{brand.name} Admin installer</h3>
             <small>Install this Windows admin app first, then install the student CBT app from inside it.</small>
           </div>
           <div className="cbt-server-card">
             <div>
               <span>Admin application</span>
-              <strong>SchoolDom Admin</strong>
+              <strong>{brand.name} Admin</strong>
               <small>Download the admin app here. Inside the app, use Install CBT App for student computers.</small>
             </div>
             <CbtStatusPill tone="success">No JWT token needed</CbtStatusPill>
           </div>
           <div className="cbt-action-row">
             <a className="cbt-download-button" href={adminAppDownloadUrl} onClick={handleAdminAppDownload}>
-              Download SchoolDomAdmin.exe
+              Download Admin App
             </a>
           </div>
           <div className="cbt-security-grid">
             {[
               ["School Branding", "The admin app shows the school name, details, and uploaded school logo."],
               ["CBT Installer", "Admins install the student CBT app directly from inside the admin app."],
-              ["No Token Copying", "The admin app reads public school details from the configured SchoolDom server."],
+              ["No Token Copying", "The admin app reads public school details from the configured school server."],
               ["Exam Writing", "Students still use the separate CBT app for exams only."],
             ].map(([title, detail]) => (
               <div key={title}>
@@ -166,7 +167,7 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
               <span />
             </div>
             <p className="cbt-info-kicker">Download requested</p>
-            <h3 id="cbt-download-title">SchoolDomAdmin.exe is starting</h3>
+            <h3 id="cbt-download-title">{brand.name} Admin App is starting</h3>
             <p>{downloadState.error || downloadState.message || "The download should begin automatically."}</p>
             <div className="cbt-download-actions">
               <button type="button" className="cbt-download-button" onClick={downloadAdminApp}>
@@ -2054,7 +2055,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
 
       <div className="table-actions-inline">
         <button type="button" className={`table-action ${activeView === "desktop" ? "active" : ""}`} onClick={() => setActiveView("desktop")}>
-          SchoolDom CBT Desktop
+          CBT Desktop
         </button>
         <button type="button" className={`table-action ${activeView === "builder" ? "active" : ""}`} onClick={() => setActiveView("builder")}>
           Set Exam
@@ -2067,7 +2068,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         </button>
       </div>
 
-      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} downloads={data?.downloads || {}} school={data?.school || session?.school || {}} session={session} /> : null}
+      {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} downloads={data?.downloads || {}} school={broadsheetSchool} session={session} /> : null}
 
       {activeView === "builder" ? (
         <>
@@ -7040,7 +7041,7 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
     { value: "email", label: "Email address" },
     { value: "filename", label: "Filename convention" },
   ];
-  const [form, setForm] = useState({ import_type: "full_school", source_platform: "", link_key: "admission_number", notes: "" });
+  const [form, setForm] = useState({ import_type: "full_school", link_key: "admission_number", notes: "" });
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -7123,10 +7124,6 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
                 </select>
               </label>
               <label className="panel-field">
-                Source platform
-                <input value={form.source_platform} onChange={(event) => setForm((current) => ({ ...current, source_platform: event.target.value }))} placeholder="e.g. Legacy SIS, Moodle, Excel archive" />
-              </label>
-              <label className="panel-field">
                 Link images/documents by
                 <select value={form.link_key} onChange={(event) => setForm((current) => ({ ...current, link_key: event.target.value }))}>
                   {linkKeys.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -7169,7 +7166,6 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
                   <th>File</th>
                   <th>Category</th>
                   <th>Status</th>
-                  <th>Source</th>
                   <th>Detected</th>
                   <th>Uploaded</th>
                 </tr>
@@ -7180,10 +7176,10 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
                     <td>{job.original_filename}<br /><small>{Number(job.file_size || 0).toLocaleString()} bytes</small></td>
                     <td>{job.import_type_label || job.import_type}</td>
                     <td><span className={`student-status-pill status-${job.status === "validated" ? "present" : "unmarked"}`}>{job.status}</span></td>
-                    <td>{job.source_platform || "-"}</td>
                     <td>
                       {(job.summary?.format || "file").toUpperCase()}
                       {job.summary?.file_count ? <small>{job.summary.file_count} files in ZIP</small> : null}
+                      {job.summary?.student_image_import ? <small>{job.summary.student_image_import.created_or_updated || 0} student records created/updated</small> : null}
                       {job.errors?.length ? <small>{job.errors[0]}</small> : null}
                     </td>
                     <td>{formatDate(job.created_at)}</td>

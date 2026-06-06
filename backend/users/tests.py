@@ -1732,6 +1732,34 @@ class StudentsAPITests(TestCase):
         self.assertTrue(profile.user.profile_picture.storage.exists(profile.user.profile_picture.name))
         self.assertTrue(profile.user.check_password("StudentPass123"))
 
+    def test_database_import_image_creates_student_from_filename(self):
+        image_content = (
+            b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+            b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00"
+            b"\x00\x02\x02D\x01\x00;"
+        )
+        image = SimpleUploadedFile("Janet Jackson.gif", image_content, content_type="image/gif")
+
+        response = self.client.post(
+            "/api/app/database-imports/",
+            data={
+                "import_type": "students",
+                "link_key": "filename",
+                "file": image,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"], response.data)
+        self.assertIn("1 student image import", response.data["message"])
+
+        profile = StudentProfile.objects.get(user__email__iexact="janet-jackson@student-upload-school-20260306.imported.local")
+        self.assertEqual(profile.user.first_name, "Janet")
+        self.assertEqual(profile.user.last_name, "Jackson")
+        self.assertTrue(bool(profile.user.profile_picture))
+        self.assertTrue(profile.user.check_password("StudentPass123"))
+
     def test_update_student_profile_api_updates_user_and_profile(self):
         student_user = User.objects.create_user(
             email="update.student@student-upload.edu",
