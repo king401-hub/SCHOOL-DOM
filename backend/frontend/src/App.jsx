@@ -2066,7 +2066,8 @@ function StudentQuizPage({ session, onNavigate }) {
       setOptions(response || {});
       setTeacherQuizzes(publishedQuizzes || []);
       if (!selectedSubject && response?.subjects?.length) {
-        setSelectedSubject(String(response.subjects[0].id));
+        const firstAvailable = response.subjects.find((subject) => subject.today_status !== "unavailable") || response.subjects[0];
+        setSelectedSubject(String(firstAvailable.id));
       }
     } catch (loadError) {
       setError(loadError.message || "Could not load personal quiz data.");
@@ -2106,6 +2107,10 @@ function StudentQuizPage({ session, onNavigate }) {
     const subject = options.subjects?.find((item) => String(item.id) === String(subjectId));
     if (subject?.today_status === "completed") {
       setError("You have already completed this subject quiz today. It will reset tomorrow.");
+      return;
+    }
+    if (subject?.today_status === "unavailable" || Number(subject?.available_question_count || 0) <= 0) {
+      setError(`${subject?.name || "This subject"} has no personal quiz questions yet. Add questions to a matching Personal Quiz Folder or CBT question bank.`);
       return;
     }
     setGenerating(true);
@@ -2906,7 +2911,9 @@ function StudentQuizPage({ session, onNavigate }) {
             Subject
             <select value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)} disabled={loading || !options.subjects?.length}>
               {(options.subjects || []).map((subject) => (
-                <option key={subject.id} value={subject.id}>{subject.name} - {subject.today_status?.replace("_", " ") || "available"}</option>
+                <option key={subject.id} value={subject.id}>
+                  {subject.name} - {subject.today_status === "unavailable" ? "no questions yet" : subject.today_status?.replace("_", " ") || "available"}
+                </option>
               ))}
             </select>
           </label>
@@ -2925,18 +2932,20 @@ function StudentQuizPage({ session, onNavigate }) {
               <div key={subject.id} className={`daily-subject-row status-${subject.today_status || "available"}`}>
                 <div>
                   <strong>{subject.name}</strong>
-                  <small>{subject.code || "Subject"} - {(subject.today_status || "available").replace("_", " ")}</small>
+                  <small>
+                    {subject.code || "Subject"} - {subject.today_status === "unavailable" ? "no questions yet" : (subject.today_status || "available").replace("_", " ")}
+                  </small>
                 </div>
                 <button
                   type="button"
                   className="pill-button ghost"
-                  disabled={generating || subject.today_status === "completed"}
+                  disabled={generating || subject.today_status === "completed" || subject.today_status === "unavailable"}
                   onClick={() => {
                     setSelectedSubject(String(subject.id));
                     generateQuiz(subject.id);
                   }}
                 >
-                  {subject.today_status === "completed" ? "Done today" : subject.today_status === "in_progress" ? "Resume" : "Start"}
+                  {subject.today_status === "completed" ? "Done today" : subject.today_status === "in_progress" ? "Resume" : subject.today_status === "unavailable" ? "No questions" : "Start"}
                 </button>
               </div>
             )) : <p className="panel-empty">No registered subjects found for your class.</p>}

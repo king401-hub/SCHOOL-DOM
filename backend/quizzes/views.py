@@ -65,8 +65,16 @@ SUBJECT_PERSONAL_QUIZ_ALIASES = {
     "biology": {"Biology"},
     "chem": {"Chemistry"},
     "chemistry": {"Chemistry"},
+    "civ": {"Civic Education", "Civics"},
+    "civic": {"Civic Education", "Civics"},
+    "civics": {"Civic Education", "Civics"},
+    "civic education": {"Civic Education", "Civics"},
     "com": {"Commerce"},
     "commerce": {"Commerce"},
+    "comp": {"Computer Studies", "Computer Science", "ICT", "Information and Communication Technology"},
+    "computer": {"Computer Studies", "Computer Science", "ICT", "Information and Communication Technology"},
+    "computer studies": {"Computer Studies", "Computer Science", "ICT", "Information and Communication Technology"},
+    "computer science": {"Computer Studies", "Computer Science", "ICT", "Information and Communication Technology"},
     "crk": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
     "crs": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
     "christian religious knowledge": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
@@ -78,6 +86,10 @@ SUBJECT_PERSONAL_QUIZ_ALIASES = {
     "english language": {"English", "English Language"},
     "fine arts": {"Fine Arts", "Visual Arts", "Art"},
     "financial accounting": {"Accounting", "Financial Accounting"},
+    "fmath": {"Further Mathematics", "Further Maths"},
+    "further math": {"Further Mathematics", "Further Maths"},
+    "further maths": {"Further Mathematics", "Further Maths"},
+    "further mathematics": {"Further Mathematics", "Further Maths"},
     "geo": {"Geography"},
     "geography": {"Geography"},
     "government": {"Government"},
@@ -97,6 +109,13 @@ SUBJECT_PERSONAL_QUIZ_ALIASES = {
     "mathematics": {"Mathematics", "General Mathematics"},
     "general mathematics": {"Mathematics", "General Mathematics"},
     "music": {"Music"},
+    "mus": {"Music"},
+    "bus": {"Business Studies", "Business"},
+    "business": {"Business Studies", "Business"},
+    "business studies": {"Business Studies", "Business"},
+    "off": {"Office Practice"},
+    "office": {"Office Practice"},
+    "office practice": {"Office Practice"},
     "phy": {"Physics"},
     "physics": {"Physics"},
     "visual arts": {"Fine Arts", "Visual Arts", "Art"},
@@ -805,6 +824,10 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
     return questions
 
 
+def _personal_question_availability_count(subject, class_group, tenant=None):
+    return len(_build_personal_questions(subject, class_group, MAX_PERSONAL_QUESTIONS, tenant))
+
+
 class TeacherQuizListCreate(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1089,16 +1112,20 @@ class PersonalQuizOptions(APIView):
         subject_payload = []
         for subject in subjects:
             attempt = today_attempts.get(subject.id)
+            available_question_count = _personal_question_availability_count(subject, profile.current_class if profile else None, resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None)))
             status_label = "available"
             if attempt and attempt.is_submitted:
                 status_label = "completed"
             elif attempt:
                 status_label = "in_progress"
+            elif available_question_count <= 0:
+                status_label = "unavailable"
             subject_payload.append(
                 {
                     "id": subject.id,
                     "name": subject.name,
                     "code": subject.code,
+                    "available_question_count": available_question_count,
                     "today_status": status_label,
                     "today_attempt": _personal_attempt_payload(attempt) if attempt else None,
                 }
