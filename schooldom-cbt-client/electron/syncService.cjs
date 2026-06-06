@@ -71,6 +71,13 @@ async function syncFromCloud({ cloudUrl, accessToken, fallbackPin }) {
   return saveSyncSnapshot({
     exams,
     students: data.students || [],
+    packageMeta: {
+      package_id: data.package_id,
+      package_type: data.package_type,
+      package_version: data.package_version,
+      generated_at: data.generated_at,
+      source: "cloud_pull",
+    },
   });
 }
 
@@ -90,7 +97,9 @@ async function pushPendingResults({ cloudUrl, accessToken }) {
       await client.request({
         url: item.endpoint,
         method: item.method,
-        data: item.payload,
+        data: {
+          sync_envelope: item.sync_envelope,
+        },
       });
       markSyncSuccess(item.id, item.entity_id);
       synced += 1;

@@ -5,6 +5,7 @@ import ExamSidebar from "./ExamSidebar";
 import QuestionDisplay from "./QuestionDisplay";
 import StudentInfo from "./StudentInfo";
 import SubmitModal from "./SubmitModal";
+import SimpleCalculator from "./SimpleCalculator";
 import { emitSchoolDomDataMutation } from "../../AppShared";
 
 const CBT_CACHE_KEY = "schooldom.cbt_attempt_cache";
@@ -756,6 +757,11 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
                 </>
               )}
             </div>
+          </div>
+        ) : navSection === "calculator" ? (
+          <div className="exam-calculator-section">
+            <h2>Calculator</h2>
+            <SimpleCalculator />
           </div>
         ) : (
           <div className="exam-submit-section">

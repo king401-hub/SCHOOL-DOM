@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 from django.http import HttpResponse
@@ -1125,14 +1126,35 @@ def cbt_offline_sync_package(request):
             }
         )
 
+    student_rows = [_offline_student_payload(student) for student in student_queryset.order_by("last_name", "first_name", "email")]
+    generated_at = timezone.now()
+    package_id = hashlib.sha256(
+        json.dumps(
+            {
+                "tenant": str(getattr(getattr(request.user, "tenant", None), "id", "")),
+                "generated_at": generated_at.isoformat(),
+                "exams": [str(item["id"]) for item in exam_rows],
+                "students": [str(item.get("student_id") or item.get("id") or "") for item in student_rows],
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
     return Response(
         {
             "success": True,
             "package_type": "schooldom_cbt_exam_package",
             "package_version": 1,
-            "generated_at": timezone.now(),
+            "package_id": package_id,
+            "generated_at": generated_at,
+            "lifecycle": {
+                "stage": "pull",
+                "lock_required": True,
+                "push_endpoint": "/api/exams/cbt/offline-results/",
+                "portable_import_endpoint": "/api/exams/cbt/package/results/import/",
+            },
             "exams": exam_rows,
-            "students": [_offline_student_payload(student) for student in student_queryset.order_by("last_name", "first_name", "email")],
+            "students": student_rows,
         }
     )
 
@@ -1154,13 +1176,31 @@ def cbt_exam_package_export(request):
     return response
 
 
+def _unwrap_cbt_sync_payload(data):
+    envelope = (data.get("sync_envelope") or data.get("envelope")) if isinstance(data, dict) else None
+    if not isinstance(envelope, dict):
+        return data, {}
+    payload = envelope.get("payload") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    payload.setdefault("sync_id", envelope.get("sync_id") or "")
+    payload.setdefault("device_id", envelope.get("device_id") or "")
+    payload.setdefault("package_id", envelope.get("package_id") or "")
+    payload.setdefault("package_locked_at", envelope.get("package_locked_at") or "")
+    return payload, envelope
+
+
 def _ingest_cbt_offline_result(actor, payload):
+    payload, envelope = _unwrap_cbt_sync_payload(payload or {})
     exam_id = payload.get("exam_id")
     student_identifier = payload.get("student_id") or payload.get("admission_number") or payload.get("student")
     answers = payload.get("answers") or {}
     offline_session_id = str(payload.get("session_id") or payload.get("offline_attempt_id") or "").strip()
     started_at = parse_datetime(str(payload.get("started_at") or "")) or timezone.now()
     submitted_at = parse_datetime(str(payload.get("submitted_at") or "")) or timezone.now()
+    audit_logs = payload.get("audit_logs") or payload.get("activity_logs") or []
+    if not isinstance(audit_logs, list):
+        audit_logs = []
 
     if not exam_id:
         return {"success": False, "message": "exam_id is required."}, status.HTTP_400_BAD_REQUEST
@@ -1172,6 +1212,8 @@ def _ingest_cbt_offline_result(actor, payload):
         return {"success": False, "message": "Student was not found."}, status.HTTP_404_NOT_FOUND
 
     exam = get_object_or_404(_published_exam_queryset_for_user(actor), id=exam_id)
+    sync_device_id = str(payload.get("device_id") or envelope.get("device_id") or "").strip()
+    sync_package_id = str(payload.get("package_id") or envelope.get("package_id") or "").strip()
     if offline_session_id:
         existing = ExamAttempt.objects.filter(device_id=offline_session_id, student=student, exam=exam, is_submitted=True).first()
         if existing:
@@ -1213,13 +1255,15 @@ def _ingest_cbt_offline_result(actor, payload):
             "display": "Offline CBT submission",
             "details": "Submitted from SchoolDom CBT Client.",
             "warnings": payload.get("malpractice_log") or [],
-            "logs": payload.get("malpractice_log") or [],
+            "logs": audit_logs or payload.get("malpractice_log") or [],
         },
         submitted_at=submitted_at,
     )
     attempt.is_offline = True
     attempt.sync_status = "synced"
-    attempt.save(update_fields=["is_offline", "sync_status", "updated_at"])
+    if audit_logs and not attempt.auto_submit_activity_logs:
+        attempt.auto_submit_activity_logs = audit_logs
+    attempt.save(update_fields=["is_offline", "sync_status", "auto_submit_activity_logs", "updated_at"])
     score, total_points = _grade_attempt(attempt)
     return {
         "success": True,
@@ -1227,6 +1271,9 @@ def _ingest_cbt_offline_result(actor, payload):
         "score": score,
         "total_points": total_points,
         "percentage": attempt.percentage,
+        "sync_id": payload.get("sync_id") or envelope.get("sync_id") or "",
+        "device_id": sync_device_id,
+        "package_id": sync_package_id,
         "message": "Offline CBT result synced.",
     }, status.HTTP_201_CREATED
 
@@ -1253,7 +1300,10 @@ def cbt_results_package_import(request):
 
     processed = []
     for item in results:
-        payload = item.get("payload") if isinstance(item, dict) else None
+        if isinstance(item, dict) and isinstance(item.get("sync_envelope"), dict):
+            payload = {"sync_envelope": item.get("sync_envelope")}
+        else:
+            payload = item.get("payload") if isinstance(item, dict) else None
         if not isinstance(payload, dict):
             processed.append({"success": False, "message": "Invalid result item."})
             continue

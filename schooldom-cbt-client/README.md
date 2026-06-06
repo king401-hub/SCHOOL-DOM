@@ -32,6 +32,13 @@ Both require a JWT from an admin/teacher-style SchoolDom account.
 
 The desktop app does not start or require a local server. Once exams are synced into the local encrypted SQLite file, students can write directly on the desktop client without internet.
 
+## Pull, Lock, Track, Push Lifecycle
+
+1. **Pull** - Admin downloads or syncs `schooldom_cbt_exam_package` from the website.
+2. **Lock** - The desktop app stores the active `package_id`, lock time, device ID, exams, and students in encrypted SQLite.
+3. **Track** - Student sessions, answers, focus-loss events, submissions, and activity logs are written locally while offline.
+4. **Push** - Results are uploaded as `schooldom_cbt_result_sync` envelopes containing the package ID, device ID, sync ID, checksum, answers, grades input, and audit logs. The website still accepts old raw result payloads for compatibility.
+
 ## No-Server Package Workflow
 
 1. On a computer that can access SchoolDom, download `GET /api/exams/cbt/package/export/`.

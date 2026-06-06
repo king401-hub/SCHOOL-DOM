@@ -963,6 +963,7 @@
 
 /* Instructions Section */
 .exam-instructions,
+.exam-calculator-section,
 .exam-submit-section {
   flex: 1;
   padding: 32px;
@@ -974,10 +975,108 @@
 }
 
 .exam-instructions h2,
+.exam-calculator-section h2,
 .exam-submit-section h2 {
   font-size: 24px;
   color: #1f2937;
   margin-top: 0;
+}
+
+.exam-calculator-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.exam-calculator-section h2 {
+  width: min(100%, 420px);
+}
+
+.simple-calculator {
+  width: min(100%, 420px);
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 18px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.calculator-topline {
+  min-height: 20px;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  text-align: right;
+}
+
+.calculator-display {
+  display: block;
+  width: 100%;
+  min-height: 58px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 12px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calculator-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.calculator-key {
+  min-height: 52px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.calculator-key:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.calculator-key:active {
+  transform: translateY(1px);
+}
+
+.calculator-key.utility {
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 14px;
+}
+
+.calculator-key.operator,
+.calculator-key.equals {
+  border-color: #1e3a8a;
+  background: #1e3a8a;
+  color: #ffffff;
+}
+
+.calculator-key.operator:hover,
+.calculator-key.equals:hover {
+  background: #1e40af;
+}
+
+.calculator-key.zero {
+  grid-column: span 2;
 }
 
 .instructions-content {
@@ -1244,8 +1343,22 @@ body[data-theme="dark"] .exam-completed-card p {
   }
 
   .exam-instructions,
+  .exam-calculator-section,
   .exam-submit-section {
     padding: 20px;
     margin: 12px;
+  }
+
+  .simple-calculator {
+    padding: 14px;
+  }
+
+  .calculator-display {
+    min-height: 52px;
+    font-size: 24px;
+  }
+
+  .calculator-key {
+    min-height: 46px;
   }
 }

@@ -1,5 +1,6 @@
 const PWA_STATUS_EVENT = "schooldom-pwa-install-status";
 const PWA_BRAND_KEY = "schooldom.pwa_brand";
+const SERVICE_WORKER_ENABLED = import.meta.env.VITE_ENABLE_SERVICE_WORKER === "true";
 let deferredInstallPrompt = null;
 let currentManifestUrl = "";
 let serviceWorkerRegistration = null;
@@ -97,8 +98,12 @@ function updateDocumentBrand(brand) {
 
 function updateManifest(brandInput = {}) {
   const brand = normalizeBrand(brandInput);
-  const manifestLink = document.querySelector('link[rel="manifest"]');
-  if (!manifestLink) return brand;
+  let manifestLink = document.querySelector('link[rel="manifest"]');
+  if (!manifestLink) {
+    manifestLink = document.createElement("link");
+    manifestLink.setAttribute("rel", "manifest");
+    document.head.appendChild(manifestLink);
+  }
 
   const manifestBlob = new Blob([JSON.stringify(buildManifest(brand))], { type: "application/manifest+json" });
   const nextManifestUrl = URL.createObjectURL(manifestBlob);
@@ -123,6 +128,11 @@ function readStoredBrand() {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
     emitInstallStatus({ serviceWorkerReady: false });
+    return;
+  }
+
+  if (!SERVICE_WORKER_ENABLED) {
+    emitInstallStatus({ serviceWorkerReady: false, serviceWorkerDisabled: true });
     return;
   }
 
@@ -153,6 +163,36 @@ async function registerServiceWorker() {
   }
 }
 
+async function unregisterServiceWorkers() {
+  if (!("serviceWorker" in navigator)) {
+    emitInstallStatus({ serviceWorkerReady: false, serviceWorkerDisabled: true });
+    return;
+  }
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+
+    if ("caches" in window) {
+      const cacheKeys = await caches.keys();
+      await Promise.all(
+        cacheKeys
+          .filter((key) => key.startsWith("schooldom-pwa-"))
+          .map((key) => caches.delete(key))
+      );
+    }
+
+    emitInstallStatus({
+      serviceWorkerReady: false,
+      serviceWorkerDisabled: true,
+      unregisteredServiceWorkers: registrations.length,
+    });
+  } catch (error) {
+    console.warn("SchoolDom PWA service worker cleanup failed.", error);
+    emitInstallStatus({ serviceWorkerReady: false, serviceWorkerDisabled: true, error });
+  }
+}
+
 navigator.serviceWorker?.addEventListener?.("controllerchange", () => {
   if (applyingUpdate) {
     window.location.reload();
@@ -173,7 +213,10 @@ window.addEventListener("appinstalled", () => {
 window.schoolDomPWA = {
   PWA_STATUS_EVENT,
   setBrand(brandInput = {}) {
-    const brand = updateManifest(brandInput);
+    const brand = SERVICE_WORKER_ENABLED ? updateManifest(brandInput) : normalizeBrand(brandInput);
+    if (!SERVICE_WORKER_ENABLED) {
+      updateDocumentBrand(brand);
+    }
     window.localStorage.setItem(PWA_BRAND_KEY, JSON.stringify(brand));
     emitInstallStatus({ brand });
     return brand;
@@ -191,6 +234,9 @@ window.schoolDomPWA = {
   async updateApp() {
     if (!("serviceWorker" in navigator)) {
       return { updated: false, reason: "unsupported" };
+    }
+    if (!SERVICE_WORKER_ENABLED) {
+      return { updated: false, reason: "disabled" };
     }
 
     const registration = serviceWorkerRegistration || (await navigator.serviceWorker.ready);
@@ -214,6 +260,9 @@ window.schoolDomPWA = {
     return { updated: false, reason: "reloaded" };
   },
   async install() {
+    if (!SERVICE_WORKER_ENABLED) {
+      return { outcome: "disabled" };
+    }
     if (isStandaloneMode()) {
       return { outcome: "installed" };
     }
@@ -229,6 +278,9 @@ window.schoolDomPWA = {
     return choice;
   },
   async requestNotifications() {
+    if (!SERVICE_WORKER_ENABLED) {
+      return "disabled";
+    }
     if (!("Notification" in window)) {
       return "unsupported";
     }
@@ -273,9 +325,13 @@ window.schoolDomPWA = {
   },
 };
 
-updateManifest(readStoredBrand() || defaultBrand);
+if (SERVICE_WORKER_ENABLED) {
+  updateManifest(readStoredBrand() || defaultBrand);
+}
 
-if (document.readyState === "complete") {
+if (!SERVICE_WORKER_ENABLED) {
+  unregisterServiceWorkers();
+} else if (document.readyState === "complete") {
   registerServiceWorker();
 } else {
   window.addEventListener("load", registerServiceWorker, { once: true });

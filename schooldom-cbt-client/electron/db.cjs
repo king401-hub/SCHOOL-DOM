@@ -142,6 +142,18 @@ function setSetting(key, value) {
   );
 }
 
+function getOrCreateSetting(key, prefix) {
+  const existing = getSetting(key);
+  if (existing) return existing;
+  const value = newId(prefix);
+  setSetting(key, value);
+  return value;
+}
+
+function getDeviceId() {
+  return getOrCreateSetting("deviceId", "device");
+}
+
 function encrypted(value) {
   return encryptJson(value, encryptionSecret);
 }
@@ -150,7 +162,36 @@ function decrypted(value, fallback) {
   return decryptJson(value, encryptionSecret, fallback);
 }
 
-function saveSyncSnapshot({ exams = [], students = [] }) {
+function buildPackageId({ exams = [], students = [], packageMeta = {} }) {
+  if (packageMeta.package_id) return String(packageMeta.package_id);
+  return sha256(
+    JSON.stringify({
+      type: packageMeta.package_type || "schooldom_cbt_exam_package",
+      version: packageMeta.package_version || 1,
+      generated_at: packageMeta.generated_at || "",
+      exams: exams.map((exam) => String(exam.id || exam.exam_id)).sort(),
+      students: students.map((student) => String(student.student_id || student.admission_number || student.id)).sort(),
+    })
+  );
+}
+
+function lockActivePackage({ packageId, packageMeta = {}, exams = [], students = [] }) {
+  const lockedAt = now();
+  setSetting("activePackageId", packageId);
+  setSetting("packageLockedAt", lockedAt);
+  setSetting("packageGeneratedAt", packageMeta.generated_at || packageMeta.created_at || "");
+  setSetting("packageSource", packageMeta.source || packageMeta.package_type || "cloud");
+  logActivity("", "exam_package_locked", "Locked CBT package for offline exam delivery.", {
+    packageId,
+    exams: exams.length,
+    students: students.length,
+    generatedAt: packageMeta.generated_at || packageMeta.created_at || "",
+  });
+  return lockedAt;
+}
+
+function saveSyncSnapshot({ exams = [], students = [], packageMeta = {} }) {
+  const packageId = buildPackageId({ exams, students, packageMeta });
   transaction(() => {
     for (const student of students) {
       run(
@@ -204,6 +245,7 @@ function saveSyncSnapshot({ exams = [], students = [] }) {
     }
   });
   setSetting("lastSyncAt", now());
+  lockActivePackage({ packageId, packageMeta, exams, students });
   return getAdminSnapshot();
 }
 
@@ -213,7 +255,17 @@ function importExamPackage(packagePayload = {}) {
   if (!Array.isArray(exams) || !Array.isArray(students)) {
     throw new Error("Invalid CBT package. Expected exams and students arrays.");
   }
-  const snapshot = saveSyncSnapshot({ exams, students });
+  const snapshot = saveSyncSnapshot({
+    exams,
+    students,
+    packageMeta: {
+      package_id: packagePayload.package_id,
+      package_type: packagePayload.package_type,
+      package_version: packagePayload.package_version,
+      generated_at: packagePayload.generated_at || packagePayload.created_at || "",
+      source: "file_import",
+    },
+  });
   logActivity("", "exam_package_imported", "Imported offline CBT exam package.", {
     exams: exams.length,
     students: students.length,
@@ -254,7 +306,16 @@ function saveLocalExam({ exam, students = [] } = {}) {
     source: "local",
     created_at: now(),
   };
-  const snapshot = saveSyncSnapshot({ exams: [localExam], students: cleanedStudents });
+  const snapshot = saveSyncSnapshot({
+    exams: [localExam],
+    students: cleanedStudents,
+    packageMeta: {
+      package_id: localExam.id,
+      package_type: "schooldom_cbt_local_exam_package",
+      generated_at: localExam.created_at,
+      source: "local_exam",
+    },
+  });
   logActivity("", "local_exam_created", "Created CBT exam from local files.", {
     examId: localExam.id,
     title: localExam.title,
@@ -280,6 +341,7 @@ function buildResultsPackage() {
       last_error: item.last_error || "",
       created_at: item.created_at,
       payload: item.payload,
+      sync_envelope: item.sync_envelope,
     }));
   return {
     package_type: "schooldom_cbt_results",
@@ -288,6 +350,8 @@ function buildResultsPackage() {
     results,
     summary: {
       pending_results: results.length,
+      package_id: getSetting("activePackageId") || "",
+      device_id: getDeviceId(),
     },
   };
 }
@@ -358,8 +422,8 @@ function submitSession(sessionId, cause = "student_submit") {
   if (!session) return { success: false, message: "Exam session was not found." };
   if (session.status !== "submitted") {
     run("UPDATE sessions SET status = 'submitted', submitted_at = ?, sync_status = 'pending', updated_at = ? WHERE id = ?", [now(), now(), sessionId]);
-    queueResult(sessionId, cause);
     logActivity(sessionId, "session_submitted", "Exam was submitted locally.", { cause });
+    queueResult(sessionId, cause);
   }
   return { success: true, session: serializeSession(get("SELECT * FROM sessions WHERE id = ?", [sessionId])) };
 }
@@ -367,6 +431,7 @@ function submitSession(sessionId, cause = "student_submit") {
 function queueResult(sessionId, cause = "student_submit") {
   const session = serializeSession(get("SELECT * FROM sessions WHERE id = ?", [sessionId]));
   if (!session) return;
+  const auditLogs = getActivityLogsForSession(sessionId);
   const payload = {
     session_id: session.id,
     exam_id: session.exam_id,
@@ -376,6 +441,7 @@ function queueResult(sessionId, cause = "student_submit") {
     submitted_at: session.submitted_at,
     focus_loss_count: session.focus_loss_count,
     malpractice_log: session.malpractice_log,
+    audit_logs: auditLogs,
     cause,
   };
   run(
@@ -388,7 +454,42 @@ function getPendingSyncItems() {
   return all("SELECT * FROM sync_queue ORDER BY created_at ASC").map((row) => ({
     ...row,
     payload: decrypted(row.encrypted_payload, {}),
+  })).map((item) => ({
+    ...item,
+    sync_envelope: buildSyncEnvelope(item),
   }));
+}
+
+function buildSyncEnvelope(item) {
+  const packageId = getSetting("activePackageId") || "";
+  const packageLockedAt = getSetting("packageLockedAt") || "";
+  const payload = item.payload || {};
+  const auditLogs = Array.isArray(payload.audit_logs) ? payload.audit_logs : getActivityLogsForSession(item.entity_id);
+  const body = {
+    envelope_type: "schooldom_cbt_result_sync",
+    envelope_version: 1,
+    sync_id: item.id,
+    entity_type: item.entity_type,
+    entity_id: item.entity_id,
+    device_id: getDeviceId(),
+    package_id: packageId,
+    package_locked_at: packageLockedAt,
+    created_at: item.created_at,
+    attempts: item.attempts,
+    payload: {
+      ...payload,
+      audit_logs: auditLogs,
+    },
+  };
+  return {
+    ...body,
+    checksum: sha256(JSON.stringify({
+      sync_id: body.sync_id,
+      device_id: body.device_id,
+      package_id: body.package_id,
+      payload: body.payload,
+    })),
+  };
 }
 
 function markSyncSuccess(queueId, entityId) {
@@ -409,6 +510,11 @@ function getAdminSnapshot() {
     settings: {
       cloudUrl: getSetting("cloudUrl") || "",
       lastSyncAt: getSetting("lastSyncAt") || "",
+      activePackageId: getSetting("activePackageId") || "",
+      packageLockedAt: getSetting("packageLockedAt") || "",
+      packageGeneratedAt: getSetting("packageGeneratedAt") || "",
+      packageSource: getSetting("packageSource") || "",
+      deviceId: getDeviceId(),
       lanName: getSetting("lanName") || "School CBT Room",
       lanInstructions: getSetting("lanInstructions") || "Admin will set Wi-Fi, hotspot, or lab network access manually.",
     },
@@ -428,6 +534,19 @@ function saveOfflineSettings(settings = {}) {
 
 function getActivityLogs(limit = 100) {
   return all("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT ?", [limit]);
+}
+
+function getActivityLogsForSession(sessionId) {
+  return all("SELECT * FROM activity_logs WHERE session_id = ? ORDER BY created_at ASC", [sessionId]).map((row) => ({
+    ...row,
+    payload: (() => {
+      try {
+        return JSON.parse(row.payload || "{}");
+      } catch {
+        return {};
+      }
+    })(),
+  }));
 }
 
 function logActivity(sessionId, type, message, payload = {}) {
