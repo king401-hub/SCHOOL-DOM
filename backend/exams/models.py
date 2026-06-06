@@ -102,6 +102,7 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
     pin_digest = models.CharField(max_length=64, unique=True, db_index=True)
     pin_hash = models.CharField(max_length=128)
     pin_preview = models.CharField(max_length=8, blank=True, default="")
+    plain_pin = models.CharField(max_length=16, blank=True, default="")
     usage_policy = models.CharField(max_length=20, choices=USE_CHOICES, default=USE_ONE_TIME)
     expires_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
@@ -167,6 +168,7 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         self.pin_digest = self.digest_pin(normalized)
         self.pin_hash = make_password(normalized)
         self.pin_preview = normalized[-4:]
+        self.plain_pin = normalized
 
     def check_pin(self, plain_pin):
         return check_password(self.normalize_pin(plain_pin), self.pin_hash)

@@ -1565,7 +1565,7 @@ function AdminFinanceScreen({
 
 }
 
-function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, session, onCreateExam, onUpdateExam }) {
+function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, onDeleteExam, session, onCreateExam, onUpdateExam }) {
   const results = data?.exam_results || data?.submitted_results || data?.cbt_results || data?.results || [];
   const autoSubmissions = data?.auto_submitted_exams || data?.auto_submissions || [];
   const exams = data?.exams || data?.available_exams || [];
@@ -1584,6 +1584,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [classFilter, setClassFilter] = useState("all");
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [sortKey, setSortKey] = useState("score");
+  const [broadsheetExamId, setBroadsheetExamId] = useState("all");
+  const [broadsheetClassName, setBroadsheetClassName] = useState("all");
+  const [broadsheetType, setBroadsheetType] = useState("Terminal examination broadsheet");
   const [uploadExamId, setUploadExamId] = useState(exams[0]?.id || exams[0]?.exam_id || "");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState("");
@@ -1597,6 +1600,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [pinBusyId, setPinBusyId] = useState("");
   const [pinFeedback, setPinFeedback] = useState("");
   const [pinError, setPinError] = useState("");
+  const [deleteExamBusyId, setDeleteExamBusyId] = useState("");
+  const [deleteExamError, setDeleteExamError] = useState("");
+  const [deleteExamFeedback, setDeleteExamFeedback] = useState("");
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -1633,7 +1639,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       setExamPins((previous) => ({
         ...previous,
         [examId]: {
-          plain: plainPin,
+          plain: result.pin?.plain_pin || plainPin,
           preview: result.pin?.pin_preview || plainPin.slice(-4),
         },
       }));
@@ -1651,17 +1657,27 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     setVisiblePins((previous) => ({ ...previous, [examId]: !previous[examId] }));
   };
 
+  const handlePinEyeClick = (examId, canReveal) => {
+    if (!canReveal) {
+      setPinError("This PIN was created before full PIN viewing was enabled. Generate a new PIN once to make it viewable anytime.");
+      return;
+    }
+    setPinError("");
+    toggleExamPin(examId);
+  };
+
   const renderExamPinCell = (exam) => {
     const examId = exam.id || exam.exam_id;
     const generated = examPins[examId];
+    const revealablePin = generated?.plain || exam.active_pin_plain || exam.plain_pin || "";
     const hasActivePin = Boolean(exam.pin_required || generated?.plain);
     const preview = generated?.preview || exam.active_pin_preview || "";
-    const canReveal = Boolean(generated?.plain);
+    const canReveal = Boolean(revealablePin);
     const isVisible = Boolean(visiblePins[examId] && canReveal);
     const displayValue = isVisible
-      ? generated.plain
+      ? revealablePin
       : hasActivePin
-        ? "\u2022".repeat(Math.max(6, String(preview || generated?.plain || "").length || 6))
+        ? "\u2022".repeat(Math.max(6, String(preview || revealablePin || "").length || 6))
         : "No PIN";
 
     return (
@@ -1671,10 +1687,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           <button
             type="button"
             className="exam-pin-eye"
-            onClick={() => toggleExamPin(examId)}
-            disabled={!canReveal}
-            title={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "Only newly generated PINs can be revealed"}
-            aria-label={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "PIN preview only"}
+            onClick={() => handlePinEyeClick(examId, canReveal)}
+            title={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "Regenerate this old PIN once to view it anytime"}
+            aria-label={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "PIN cannot be revealed yet"}
           >
             <EyeIcon closed={isVisible} />
           </button>
@@ -1693,6 +1708,29 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         )}
       </div>
     );
+  };
+
+  const handleDeleteExam = async (exam) => {
+    const examId = exam.id || exam.exam_id;
+    if (!examId || !onDeleteExam) return;
+    const title = exam.title || exam.name || "this exam";
+    if (!window.confirm(`Delete ${title}? Students will no longer see this exam.`)) {
+      return;
+    }
+    setDeleteExamBusyId(String(examId));
+    setDeleteExamError("");
+    setDeleteExamFeedback("");
+    try {
+      const result = await onDeleteExam(examId);
+      setDeleteExamFeedback(result?.message || "Exam deleted.");
+      if (editingExam?.id === examId) {
+        setEditingExam(null);
+      }
+    } catch (deleteError) {
+      setDeleteExamError(deleteError.message || "Could not delete exam.");
+    } finally {
+      setDeleteExamBusyId("");
+    }
   };
 
   const uniqueClasses = useMemo(() => {
@@ -1776,6 +1814,141 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       .filter((value) => !Number.isNaN(value));
     return numeric.length ? Math.max(...numeric) : null;
   }, [results]);
+
+  const broadsheetData = useMemo(() => {
+    const selectedExam = String(broadsheetExamId || "all");
+    const selectedClass = String(broadsheetClassName || "all").toLowerCase();
+    const sourceRows = results.filter((row) => {
+      const rowExamId = String(row.exam_id || row.examId || "");
+      const rowClass = String(row.class_name || row.class || row.class_label || "").toLowerCase();
+      const matchesExam = selectedExam === "all" || rowExamId === selectedExam;
+      const matchesClass = selectedClass === "all" || rowClass === selectedClass;
+      return matchesExam && matchesClass;
+    });
+    const subjects = new Set();
+    const students = new Map();
+
+    const subjectScoreEntries = (row) => {
+      const breakdown = row.score_by_subject || row.correct_attempt_by_subject || row.attempt_by_subject;
+      if (breakdown && typeof breakdown === "object" && !Array.isArray(breakdown)) {
+        return Object.entries(breakdown).map(([subject, value]) => [subject, typeof value === "object" ? value.score ?? value.percentage ?? value.total ?? "" : value]);
+      }
+      const subject = row.subject || (Array.isArray(row.subjects) ? row.subjects[0] : "") || "Score";
+      return [[subject, row.score ?? row.obtained ?? row.percentage ?? ""]];
+    };
+
+    sourceRows.forEach((row) => {
+      const studentId = row.student_id || row.admission_number || row.reg_no || row.registration_no || row.student_email || row.student_name || "Unknown";
+      const key = String(studentId);
+      const className = row.class_name || row.class || row.class_label || "";
+      const department = row.department || row.stream || row.section || String(className).split("-").slice(1).join("-").trim() || "";
+      if (!students.has(key)) {
+        students.set(key, {
+          studentId,
+          name: row.student_name || row.name || "Student",
+          className,
+          department,
+          scores: {},
+        });
+      }
+      const student = students.get(key);
+      subjectScoreEntries(row).forEach(([subject, value]) => {
+        const label = String(subject || "Score").trim() || "Score";
+        subjects.add(label);
+        const numeric = Number(value);
+        student.scores[label] = Number.isFinite(numeric) ? numeric : value;
+      });
+    });
+
+    const subjectList = Array.from(subjects).sort((a, b) => a.localeCompare(b));
+    const rows = Array.from(students.values())
+      .map((student) => {
+        const total = subjectList.reduce((sum, subject) => {
+          const value = Number(student.scores[subject]);
+          return sum + (Number.isFinite(value) ? value : 0);
+        }, 0);
+        return { ...student, total };
+      })
+      .sort((a, b) => String(a.className).localeCompare(String(b.className)) || String(a.name).localeCompare(String(b.name)));
+
+    return { rows, subjects: subjectList };
+  }, [broadsheetClassName, broadsheetExamId, results]);
+
+  const broadsheetFileName = () => {
+    const selectedExam = exams.find((exam) => String(exam.id || exam.exam_id) === String(broadsheetExamId));
+    const examPart = selectedExam?.title || selectedExam?.name || (broadsheetExamId === "all" ? "all-exams" : "exam");
+    const classPart = broadsheetClassName === "all" ? "all-classes" : broadsheetClassName;
+    return `${String(examPart).replace(/[^a-z0-9]+/gi, "-")}-${String(classPart).replace(/[^a-z0-9]+/gi, "-")}-broadsheet`;
+  };
+
+  const openBroadsheet = () => {
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
+    if (!printWindow) {
+      setUploadError("Allow popups to open the broadsheet.");
+      return;
+    }
+    const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total"];
+    const rows = broadsheetData.rows.map((student) => [
+      student.studentId,
+      student.name,
+      student.className,
+      student.department || "-",
+      ...broadsheetData.subjects.map((subject) => student.scores[subject] ?? ""),
+      student.total,
+    ]);
+    const tableHead = headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
+    const tableRows = rows.length
+      ? rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${headers.length}">No result records found for this selection.</td></tr>`;
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${escapeHtml(broadsheetType || "Exam Broadsheet")}</title>
+          <style>
+            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:max-content;min-width:100%;padding:24px}.paper{background:#fff;border:1px solid #cbd5e1;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.12)}h1{margin:0 0 6px;font-size:24px;text-transform:uppercase}p{margin:0 0 18px;color:#475569}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #94a3b8;padding:8px 10px;text-align:left;white-space:nowrap}th{background:#e8f2fb;text-transform:uppercase;font-size:11px}td:last-child,th:last-child{font-weight:900;background:#f8fafc}.actions{margin:0 0 14px;display:flex;gap:10px}.actions button{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff}.actions{display:none}.sheet{padding:0}.paper{box-shadow:none;border:0}}
+          </style>
+        </head>
+        <body>
+          <main class="sheet">
+            <div class="paper">
+              <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
+              <h1>${escapeHtml(broadsheetType || "Exam Broadsheet")}</h1>
+              <p>${escapeHtml(broadsheetData.rows.length)} student${broadsheetData.rows.length === 1 ? "" : "s"} shown</p>
+              <table><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table>
+            </div>
+          </main>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const downloadBroadsheetCsv = () => {
+    const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total"];
+    const csvEscape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const lines = [
+      [broadsheetType || "Exam Broadsheet"],
+      headers,
+      ...broadsheetData.rows.map((student) => [
+        student.studentId,
+        student.name,
+        student.className,
+        student.department || "",
+        ...broadsheetData.subjects.map((subject) => student.scores[subject] ?? ""),
+        student.total,
+      ]),
+    ].map((row) => row.map(csvEscape).join(","));
+    const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${broadsheetFileName()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const handleUploadSubmit = async (event) => {
     event.preventDefault();
@@ -1912,6 +2085,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             {editError ? <p className="form-feedback error">{editError}</p> : null}
             {pinError ? <p className="form-feedback error">{pinError}</p> : null}
             {pinFeedback ? <p className="form-feedback success">{pinFeedback}</p> : null}
+            {deleteExamError ? <p className="form-feedback error">{deleteExamError}</p> : null}
+            {deleteExamFeedback ? <p className="form-feedback success">{deleteExamFeedback}</p> : null}
             {exams.length ? (
               <table className="data-table">
                 <thead>
@@ -1942,6 +2117,14 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                           onClick={() => handleEditExam(exam.id || exam.exam_id)}
                         >
                           {String(loadingExamId) === String(exam.id || exam.exam_id) ? "Opening..." : "Open"}
+                        </button>
+                        <button
+                          type="button"
+                          className="table-action danger"
+                          disabled={deleteExamBusyId === String(exam.id || exam.exam_id)}
+                          onClick={() => handleDeleteExam(exam)}
+                        >
+                          {deleteExamBusyId === String(exam.id || exam.exam_id) ? "Deleting..." : "Delete"}
                         </button>
                       </td>
                     </tr>
@@ -1977,16 +2160,16 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
 
       {activeView === "results" ? <article className="app-panel">
         <div className="panel-head">
-          <h3>Upload results file</h3>
-          <small>You can upload CSV, Excel, PDF, images, or a template file.</small>
+          <h3>Download result broadsheet</h3>
+          <small>Select an exam or class, add the broadsheet type, then open or download an Excel-friendly sheet.</small>
         </div>
-        <form className="panel-form" onSubmit={handleUploadSubmit}>
+        <div className="panel-form">
           <div className="panel-form-grid">
             <label className="panel-field">
               Exam
               {exams.length > 0 ? (
-                <select value={uploadExamId} onChange={(event) => setUploadExamId(event.target.value)}>
-                  <option value="">Select exam</option>
+                <select value={broadsheetExamId} onChange={(event) => setBroadsheetExamId(event.target.value)}>
+                  <option value="all">All exams</option>
                   {exams.map((exam) => (
                     <option key={exam.id || exam.exam_id} value={exam.id || exam.exam_id}>
                       {exam.title || exam.name || `Exam ${exam.id || exam.exam_id}`}
@@ -1995,26 +2178,45 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                 </select>
               ) : (
                 <input
-                  value={uploadExamId}
-                  onChange={(event) => setUploadExamId(event.target.value)}
-                  placeholder="Enter exam ID"
-                  required
+                  value={broadsheetExamId}
+                  onChange={(event) => setBroadsheetExamId(event.target.value)}
+                  placeholder="Enter exam ID or use all"
                 />
               )}
             </label>
+            <label className="panel-field">
+              Class
+              <select value={broadsheetClassName} onChange={(event) => setBroadsheetClassName(event.target.value)}>
+                <option value="all">All classes</option>
+                {uniqueClasses.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="panel-field full">
-              Results file
-              <input ref={fileInputRef} type="file" />
+              Broadsheet type / nature
+              <input
+                value={broadsheetType}
+                onChange={(event) => setBroadsheetType(event.target.value)}
+                placeholder="e.g. 1st Term Exam Broadsheet, Mock Exam, Entrance Exam"
+              />
             </label>
           </div>
           {uploadError ? <p className="form-feedback error">{uploadError}</p> : null}
-          {uploadFeedback ? <p className="form-feedback success">{uploadFeedback}</p> : null}
+          <p className="field-note">
+            {broadsheetData.rows.length} student{broadsheetData.rows.length === 1 ? "" : "s"} and {broadsheetData.subjects.length} subject column{broadsheetData.subjects.length === 1 ? "" : "s"} will be included.
+          </p>
           <div className="panel-form-actions">
-            <button type="submit" disabled={uploadBusy}>
-              {uploadBusy ? "Uploading..." : "Upload results"}
+            <button type="button" onClick={openBroadsheet}>
+              Open broadsheet
+            </button>
+            <button type="button" onClick={downloadBroadsheetCsv}>
+              Download result
             </button>
           </div>
-        </form>
+        </div>
       </article> : null}
 
       {activeView === "results" ? <article className="app-panel">

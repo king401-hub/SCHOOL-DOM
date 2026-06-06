@@ -5788,6 +5788,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleAdminDeleteExam = useCallback(
+    async (examId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/exams/${examId}/`);
+      addAdminNotification({
+        category: "Exams",
+        module: "CBT Exam Builder",
+        action: `Deleted exam ${examId}.`,
+        status: "Deleted",
+        priority: "High",
+        tone: "warning",
+      });
+      await Promise.all([loadScreen("/exams", true), loadScreen("/results", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleSearchReport = useCallback(
     async (studentId) => {
       const trimmed = String(studentId || "").trim();
@@ -6072,6 +6089,7 @@ const unreadNotificationsCount =
         onRetry={handleRetry}
         onUpload={handleUploadExamResults}
         onDeleteResult={handleDeleteExamResult}
+        onDeleteExam={handleAdminDeleteExam}
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}

@@ -148,6 +148,9 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   const [securityWarning, setSecurityWarning] = useState("");
   const [securityWarningOpen, setSecurityWarningOpen] = useState(false);
   const [fullscreenPrompt, setFullscreenPrompt] = useState(false);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
+  const [calculatorPosition, setCalculatorPosition] = useState({ x: 24, y: 92 });
+  const [calculatorDragging, setCalculatorDragging] = useState(false);
   const warningIssuedRef = useRef(false);
   const warningHistoryRef = useRef([]);
   const activityLogsRef = useRef([]);
@@ -157,6 +160,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   const violationCooldownRef = useRef(0);
   const offlineSinceRef = useRef(null);
   const connectionAutoSubmitTimerRef = useRef(null);
+  const calculatorDragRef = useRef({ pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 });
 
   useEffect(() => {
     completedRef.current = completed;
@@ -404,6 +408,38 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
       setSubmitting(false);
     }
   }, [attemptId, session]);
+
+  const beginCalculatorDrag = useCallback((event) => {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    calculatorDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: calculatorPosition.x,
+      originY: calculatorPosition.y,
+    };
+    setCalculatorDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [calculatorPosition.x, calculatorPosition.y]);
+
+  const moveCalculator = useCallback((event) => {
+    if (!calculatorDragging || calculatorDragRef.current.pointerId !== event.pointerId) return;
+    const nextX = calculatorDragRef.current.originX + event.clientX - calculatorDragRef.current.startX;
+    const nextY = calculatorDragRef.current.originY + event.clientY - calculatorDragRef.current.startY;
+    const maxX = Math.max(12, window.innerWidth - 340);
+    const maxY = Math.max(72, window.innerHeight - 430);
+    setCalculatorPosition({
+      x: Math.min(Math.max(12, nextX), maxX),
+      y: Math.min(Math.max(72, nextY), maxY),
+    });
+  }, [calculatorDragging]);
+
+  const endCalculatorDrag = useCallback((event) => {
+    if (calculatorDragRef.current.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    calculatorDragRef.current.pointerId = null;
+    setCalculatorDragging(false);
+  }, []);
 
   const handleSecurityViolation = useCallback(
     async (reason, reasonCode = null) => {
@@ -696,7 +732,28 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
         title={`${examData.title}${offlineMode ? " (Offline)" : ""}`}
         timeRemaining={timeRemaining}
         onSubmitClick={() => setShowSubmitModal(true)}
+        onCalculatorClick={() => setCalculatorOpen((current) => !current)}
       />
+      {calculatorOpen ? (
+        <div
+          className={`floating-calculator ${calculatorDragging ? "dragging" : ""}`}
+          style={{ left: calculatorPosition.x, top: calculatorPosition.y }}
+        >
+          <div
+            className="floating-calculator-title"
+            onPointerDown={beginCalculatorDrag}
+            onPointerMove={moveCalculator}
+            onPointerUp={endCalculatorDrag}
+            onPointerCancel={endCalculatorDrag}
+          >
+            <span>Calculator</span>
+            <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => setCalculatorOpen(false)} aria-label="Close calculator">
+              x
+            </button>
+          </div>
+          <SimpleCalculator />
+        </div>
+      ) : null}
 
         <div className="exam-container">
         <ExamSidebar
@@ -757,11 +814,6 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
                 </>
               )}
             </div>
-          </div>
-        ) : navSection === "calculator" ? (
-          <div className="exam-calculator-section">
-            <h2>Calculator</h2>
-            <SimpleCalculator />
           </div>
         ) : (
           <div className="exam-submit-section">
