@@ -4,6 +4,7 @@ const allowedInvokeChannels = new Set([
   "app:bootstrap",
   "app:settings",
   "app:saveSettings",
+  "app:submitSupportTicket",
   "app:openCbtInstaller",
   "lan:snapshot",
   "lan:start",
@@ -23,6 +24,7 @@ contextBridge.exposeInMainWorld("schoolDomAdmin", {
   bootstrap: (payload) => invoke("app:bootstrap", payload),
   settings: () => invoke("app:settings"),
   saveSettings: (payload) => invoke("app:saveSettings", payload),
+  submitSupportTicket: (payload) => invoke("app:submitSupportTicket", payload),
   openCbtInstaller: (payload) => invoke("app:openCbtInstaller", payload),
   lan: {
     snapshot: () => invoke("lan:snapshot"),

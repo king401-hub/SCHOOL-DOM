@@ -83,6 +83,19 @@ async function fetchJson(url) {
   return payload;
 }
 
+async function postJson(url, payload = {}) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || `Request failed (${response.status}).`);
+  }
+  return data;
+}
+
 async function downloadFile(url, targetPath) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -254,6 +267,15 @@ function registerIpc() {
     };
     writeSettings(next);
     return next;
+  });
+  ipcMain.handle("app:submitSupportTicket", async (_event, payload = {}) => {
+    const saved = readSettings();
+    const serverUrl = normalizeServerUrl(payload.serverUrl || saved.serverUrl);
+    const schoolCode = String(payload.schoolCode || saved.schoolCode || "").trim();
+    return postJson(`${serverUrl}/api/app/admin-desktop/support-tickets/`, {
+      ...payload,
+      school_code: schoolCode,
+    });
   });
   ipcMain.handle("app:openCbtInstaller", async (_event, payload = {}) => {
     const saved = readSettings();

@@ -2755,6 +2755,54 @@ def admin_desktop_download(request):
     return response
 
 
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def admin_desktop_support_tickets(request):
+    school_code = str(request.data.get("school_code") or request.data.get("schoolCode") or "").strip()
+    school = SchoolTenant.objects.filter(schema_name__iexact=school_code, is_active=True).first() if school_code else None
+    if not school:
+        return Response({"success": False, "message": "Select a valid school before sending support."}, status=status.HTTP_400_BAD_REQUEST)
+
+    category = str(request.data.get("category") or "technical_issue").strip()
+    allowed_categories = {value for value, _label in SupportTicket.CATEGORY_CHOICES}
+    if category not in allowed_categories:
+        category = "technical_issue"
+
+    subject = str(request.data.get("subject") or "").strip()
+    description = str(request.data.get("description") or request.data.get("message") or "").strip()
+    requester_email = str(request.data.get("requester_email") or request.data.get("email") or school.email or "").strip()
+    if len(subject) < 3:
+        return Response({"success": False, "message": "Enter a support ticket subject."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(description) < 10:
+        return Response({"success": False, "message": "Enter a brief description of the issue."}, status=status.HTTP_400_BAD_REQUEST)
+
+    ticket = SupportTicket.objects.create(
+        school=school,
+        submitted_by=None,
+        category=category,
+        subject=subject[:180],
+        description=description,
+        requester_email=requester_email,
+    )
+    notified = _send_support_ticket_email(ticket, kind="created")
+    if notified:
+        now = timezone.now()
+        ticket.support_notified_at = now
+        ticket.requester_notified_at = now
+        ticket.save(update_fields=["support_notified_at", "requester_notified_at"])
+
+    return Response(
+        {
+            "success": True,
+            "message": "Support ticket submitted.",
+            "notified": notified,
+            "ticket": _support_ticket_payload(ticket, request),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def student_dashboard(request):

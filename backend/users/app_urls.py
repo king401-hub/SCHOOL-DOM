@@ -6,6 +6,7 @@ urlpatterns = [
     path("dashboard/", app_views.dashboard_snapshot, name="app_dashboard_snapshot"),
     path("admin-desktop/bootstrap/", app_views.admin_desktop_bootstrap, name="app_admin_desktop_bootstrap"),
     path("admin-desktop/download/", app_views.admin_desktop_download, name="app_admin_desktop_download"),
+    path("admin-desktop/support-tickets/", app_views.admin_desktop_support_tickets, name="app_admin_desktop_support_tickets"),
     path("performance-heatmap/", app_views.performance_heatmap_snapshot, name="app_performance_heatmap"),
     path("student/dashboard/", app_views.student_dashboard, name="app_student_dashboard"),
     path("teacher/dashboard/", app_views.teacher_dashboard, name="app_teacher_dashboard"),

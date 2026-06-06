@@ -391,6 +391,35 @@ export default function App() {
     setNotice("Desktop settings saved.");
   };
 
+  const submitSupportTicket = async () => {
+    setError("");
+    setNotice("");
+    const subject = settingsForm.supportSubject.trim();
+    const description = settingsForm.supportMessage.trim();
+    if (subject.length < 3) {
+      setError("Enter a support ticket subject.");
+      return;
+    }
+    if (description.length < 10) {
+      setError("Enter a brief description of the issue.");
+      return;
+    }
+    try {
+      const result = await bridge.submitSupportTicket({
+        serverUrl,
+        schoolCode,
+        category: "technical_issue",
+        subject,
+        description,
+        requester_email: settingsForm.email.trim(),
+      });
+      setNotice(result?.message || "Support ticket submitted.");
+      setSettingsForm((current) => ({ ...current, supportSubject: "", supportMessage: "" }));
+    } catch (supportError) {
+      setError(supportError.message || "Could not submit support ticket.");
+    }
+  };
+
   const installCbt = async () => {
     setInstalling(true);
     setNotice("Downloading the CBT app installer...");
@@ -1206,6 +1235,7 @@ export default function App() {
                     Message
                     <textarea rows="3" value={settingsForm.supportMessage} onChange={(event) => updateSettingsForm("supportMessage", event.target.value)} />
                   </label>
+                  <button type="button" className="secondary-button" onClick={submitSupportTicket}>Send Support Ticket</button>
                 </div>
                 <button type="submit">Save Desktop Settings</button>
               </form>
