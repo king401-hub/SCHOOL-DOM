@@ -39,6 +39,8 @@ from .serializers import (
 
 MAX_PERSONAL_QUESTIONS = 20
 DAILY_PERSONAL_TIME_LIMIT_MINUTES = 15
+INBUILT_PERSONAL_QUIZ_TENANT_SLUGS = {"icon_tutor_8"}
+INBUILT_PERSONAL_QUIZ_FOLDER_SUFFIX = " Personal Quiz Pool"
 PLACEHOLDER_PERSONAL_QUESTION_PREFIXES = (
     "Which subject is this personal quiz focused on?",
     "This quiz was generated for ",
@@ -49,6 +51,56 @@ PLACEHOLDER_PERSONAL_QUESTION_PREFIXES = (
     "What is the maximum number of questions allowed in a personal quiz?",
     "Your quiz score is calculated instantly after submission.",
 )
+SUBJECT_PERSONAL_QUIZ_ALIASES = {
+    "acc": {"Accounting", "Financial Accounting"},
+    "accounting": {"Accounting", "Financial Accounting"},
+    "agric": {"Agricultural Science", "Agriculture"},
+    "agricultural science": {"Agricultural Science", "Agriculture"},
+    "agriculture": {"Agricultural Science", "Agriculture"},
+    "anh": {"Animal Husbandry"},
+    "animal husbandry": {"Animal Husbandry"},
+    "art": {"Fine Arts", "Visual Arts", "Art"},
+    "arts": {"Fine Arts", "Visual Arts", "Art"},
+    "bio": {"Biology"},
+    "biology": {"Biology"},
+    "chem": {"Chemistry"},
+    "chemistry": {"Chemistry"},
+    "com": {"Commerce"},
+    "commerce": {"Commerce"},
+    "crk": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
+    "crs": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
+    "christian religious knowledge": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
+    "christian religious studies": {"Christian Religious Studies", "Christian Religious Knowledge", "CRS"},
+    "eco": {"Economics"},
+    "economics": {"Economics"},
+    "eng": {"English", "English Language"},
+    "english": {"English", "English Language"},
+    "english language": {"English", "English Language"},
+    "fine arts": {"Fine Arts", "Visual Arts", "Art"},
+    "financial accounting": {"Accounting", "Financial Accounting"},
+    "geo": {"Geography"},
+    "geography": {"Geography"},
+    "government": {"Government"},
+    "gov": {"Government"},
+    "hist": {"History"},
+    "history": {"History"},
+    "irs": {"Islamic Religious Studies", "Islamic Religious Knowledge", "IRS"},
+    "islamic religious knowledge": {"Islamic Religious Studies", "Islamic Religious Knowledge", "IRS"},
+    "islamic religious studies": {"Islamic Religious Studies", "Islamic Religious Knowledge", "IRS"},
+    "lit": {"Literature", "Literature in English"},
+    "literature": {"Literature", "Literature in English"},
+    "literature in english": {"Literature", "Literature in English"},
+    "mth": {"Mathematics", "General Mathematics"},
+    "mat": {"Mathematics", "General Mathematics"},
+    "math": {"Mathematics", "General Mathematics"},
+    "maths": {"Mathematics", "General Mathematics"},
+    "mathematics": {"Mathematics", "General Mathematics"},
+    "general mathematics": {"Mathematics", "General Mathematics"},
+    "music": {"Music"},
+    "phy": {"Physics"},
+    "physics": {"Physics"},
+    "visual arts": {"Fine Arts", "Visual Arts", "Art"},
+}
 
 
 def _student_profile(user):
@@ -622,15 +674,37 @@ def _personal_question_from_exam_question(item, order):
     )
 
 
+def _subject_personal_quiz_terms(subject):
+    values = {
+        str(getattr(subject, "name", "") or "").strip(),
+        str(getattr(subject, "code", "") or "").strip(),
+    }
+    for value in list(values):
+        values.update(SUBJECT_PERSONAL_QUIZ_ALIASES.get(value.casefold(), set()))
+    return {value for value in values if value}
+
+
+def _inbuilt_personal_folder_filter():
+    return Q(
+        folder__tenant__slug__in=INBUILT_PERSONAL_QUIZ_TENANT_SLUGS,
+        folder__name__iendswith=INBUILT_PERSONAL_QUIZ_FOLDER_SUFFIX,
+    )
+
+
 def _build_personal_questions(subject, class_group, count, tenant=None):
+    subject_terms = _subject_personal_quiz_terms(subject)
     subject_filters = Q(folder__subject=subject)
-    if subject.code:
-        subject_filters |= Q(folder__subject__isnull=True, folder__subject_code__iexact=subject.code)
-    subject_filters |= Q(folder__subject__isnull=True, folder__subject_name__iexact=subject.name)
+    for term in subject_terms:
+        subject_filters |= Q(folder__subject__name__iexact=term)
+        subject_filters |= Q(folder__subject__code__iexact=term)
+        subject_filters |= Q(folder__subject__isnull=True, folder__subject_code__iexact=term)
+        subject_filters |= Q(folder__subject__isnull=True, folder__subject_name__iexact=term)
+        subject_filters |= Q(folder__subject__isnull=True, folder__name__iexact=f"{term}{INBUILT_PERSONAL_QUIZ_FOLDER_SUFFIX}")
 
     available_folder_filter = Q(folder__tenant__isnull=True)
     if tenant:
         available_folder_filter |= Q(folder__tenant=tenant)
+    available_folder_filter |= _inbuilt_personal_folder_filter()
 
     base_pool = PersonalQuizFolderQuestion.objects.filter(
         folder__is_active=True,

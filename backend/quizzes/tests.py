@@ -288,6 +288,113 @@ class DailyPersonalQuizTests(TestCase):
         attempt_question = PersonalQuizAttempt.objects.get(subject=english).questions.get()
         self.assertEqual(attempt_question.correct_answer, "Where are you going?")
 
+    def test_personal_quiz_uses_inbuilt_icon_tutor_pool_by_subject_alias(self):
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        self.school_class.subjects.add(english)
+        inbuilt_tenant = Tenant.objects.create(name="Icon Tutor", slug="icon_tutor_8")
+        inbuilt_subject = Subject.objects.create(tenant=inbuilt_tenant, name="English", code="ENG")
+        folder = PersonalQuizFolder.objects.create(
+            tenant=inbuilt_tenant,
+            name="English Personal Quiz Pool",
+            subject=inbuilt_subject,
+            class_group=None,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Inbuilt English question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Inbuilt English question")
+
+    def test_personal_quiz_uses_inbuilt_pool_for_any_tenant_subject_by_code(self):
+        biology = Subject.objects.create(tenant=self.legacy_tenant, name="Life Science", code="BIO")
+        self.school_class.subjects.add(biology)
+        inbuilt_tenant = Tenant.objects.create(name="Icon Tutor", slug="icon_tutor_8")
+        inbuilt_subject = Subject.objects.create(tenant=inbuilt_tenant, name="Biology", code="BIO")
+        folder = PersonalQuizFolder.objects.create(
+            tenant=inbuilt_tenant,
+            name="Biology Personal Quiz Pool",
+            subject=inbuilt_subject,
+            class_group=None,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Inbuilt Biology question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": biology.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Inbuilt Biology question")
+
+    def test_personal_quiz_uses_inbuilt_pool_for_common_subject_aliases(self):
+        local_tenant = Tenant.objects.create(name="Other School", slug="other_school")
+        school = SchoolTenant.objects.create(name="Other School", schema_name="other_school")
+        school_class = Class.objects.create(tenant=local_tenant, name="SS 2", section="Science")
+        student = User.objects.create_user(
+            email="other.student@quiz.test",
+            password="pass12345",
+            role="student",
+            tenant=school,
+        )
+        StudentProfile.objects.create(
+            user=student,
+            student_id="STDQZ002",
+            admission_number="ADM-QZ-002",
+            admission_date="2026-01-01",
+            current_class=school_class,
+        )
+        mathematics = Subject.objects.create(tenant=local_tenant, name="Mathematics", code="MTH")
+        school_class.subjects.add(mathematics)
+        inbuilt_tenant = Tenant.objects.create(name="Icon Tutor", slug="icon_tutor_8")
+        inbuilt_subject = Subject.objects.create(tenant=inbuilt_tenant, name="General Mathematics", code="MATH")
+        folder = PersonalQuizFolder.objects.create(
+            tenant=inbuilt_tenant,
+            name="General Mathematics Personal Quiz Pool",
+            subject=inbuilt_subject,
+            class_group=None,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Inbuilt Mathematics question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+        self.client.force_authenticate(user=student)
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": mathematics.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Inbuilt Mathematics question")
+
     def test_personal_quiz_replaces_existing_dummy_attempt_with_real_questions(self):
         attempt = PersonalQuizAttempt.objects.create(
             tenant=self.legacy_tenant,
