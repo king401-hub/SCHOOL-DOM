@@ -787,6 +787,17 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             folder_questions,
         )
 
+    if len(folder_questions) < count:
+        remaining = count - len(folder_questions)
+        selected_ids = [item.id for item in folder_questions]
+        shared_pool = PersonalQuizFolderQuestion.objects.filter(
+            folder__is_active=True,
+            is_active=True,
+        ).filter(subject_filters)
+        if selected_ids:
+            shared_pool = shared_pool.exclude(id__in=selected_ids)
+        folder_questions += list(shared_pool.order_by("?")[:remaining])
+
     questions = []
     if folder_questions:
         questions = [

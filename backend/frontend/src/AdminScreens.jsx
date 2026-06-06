@@ -78,9 +78,36 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
     .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
     .slice(0, 6);
 
+  const downloadAdminSeed = () => {
+    if (!schoolCode) return;
+    const seed = {
+      serverUrl: API_BASE_URL,
+      schoolCode,
+      school_code: schoolCode,
+      school: {
+        name: school?.name || session?.school?.name || "",
+        school_code: schoolCode,
+        logo: school?.logo || school?.logo_url || "",
+        email: school?.email || "",
+        phone: school?.phone || "",
+        address: school?.address || "",
+      },
+    };
+    const blob = new Blob([JSON.stringify(seed, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "SchoolDomAdmin.schooldom.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const downloadAdminApp = () => {
     setDownloadNotice(true);
     setDownloadState({ error: "", message: "Download started. Check your browser downloads." });
+    downloadAdminSeed();
     window.location.assign(adminAppDownloadUrl);
   };
 

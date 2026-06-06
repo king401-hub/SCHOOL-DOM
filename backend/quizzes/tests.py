@@ -408,6 +408,37 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(response.data["question_count"], 1)
         self.assertEqual(response.data["questions"][0]["prompt"], "Shared VPS English question")
 
+    def test_personal_quiz_uses_shared_class_scoped_pool_from_any_tenant(self):
+        history = Subject.objects.create(tenant=self.legacy_tenant, name="History", code="HIST")
+        self.school_class.subjects.add(history)
+        shared_tenant = Tenant.objects.create(name="Shared VPS Pool", slug="shared_vps_pool")
+        shared_subject = Subject.objects.create(tenant=shared_tenant, name="History", code="HIST")
+        shared_class = Class.objects.create(name="Shared Class", section="A", tenant=shared_tenant)
+        folder = PersonalQuizFolder.objects.create(
+            tenant=shared_tenant,
+            name="History Personal Quiz Pool",
+            subject=shared_subject,
+            class_group=shared_class,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Shared class-scoped History question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": history.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Shared class-scoped History question")
+
     def test_personal_quiz_uses_inbuilt_pool_for_any_tenant_subject_by_code(self):
         biology = Subject.objects.create(tenant=self.legacy_tenant, name="Life Science", code="BIO")
         self.school_class.subjects.add(biology)

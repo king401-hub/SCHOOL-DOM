@@ -267,7 +267,6 @@ export default function App() {
         setData(payload);
         setServerUrl(payload.serverUrl || options.serverUrl || serverUrl);
         setSchoolCode(payload.school?.school_code || options.schoolCode || schoolCode);
-        setNotice(`Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
       } catch (loadError) {
         setError(loadError.message || "Could not reach the SchoolDom server.");
       } finally {

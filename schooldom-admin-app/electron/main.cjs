@@ -15,11 +15,47 @@ function settingsPath() {
   return dataPath("settings.json");
 }
 
-function readSettings() {
+function readInstallSeed() {
   try {
-    return JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
+    const seedPath = path.join(app.getPath("downloads"), "SchoolDomAdmin.schooldom.json");
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    const schoolCode = String(seed.schoolCode || seed.school_code || "").trim();
+    if (!schoolCode) return {};
+    return {
+      serverUrl: seed.serverUrl || seed.server_url || "",
+      schoolCode,
+      school: seed.school || null,
+    };
   } catch {
     return {};
+  }
+}
+
+function readSettings() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
+    const seed = readInstallSeed();
+    if (!seed.schoolCode) return saved;
+    return {
+      ...saved,
+      serverUrl: seed.serverUrl || saved.serverUrl,
+      schoolCode: seed.schoolCode,
+      school: seed.school || saved.school,
+      desktopSettings: {
+        ...(saved.desktopSettings || {}),
+        ...(seed.school ? { schoolProfile: seed.school } : {}),
+      },
+    };
+  } catch {
+    const seed = readInstallSeed();
+    return seed.schoolCode
+      ? {
+          serverUrl: seed.serverUrl,
+          schoolCode: seed.schoolCode,
+          school: seed.school,
+          desktopSettings: seed.school ? { schoolProfile: seed.school } : {},
+        }
+      : {};
   }
 }
 
@@ -115,6 +151,10 @@ async function bootstrap(payload = {}) {
     };
   } catch (error) {
     const localData = saved.localData || {};
+    const cachedSchoolCode = String(saved.school?.school_code || localData.school?.school_code || "").trim();
+    if (!schoolCode || (cachedSchoolCode && cachedSchoolCode !== schoolCode)) {
+      throw error;
+    }
     if (!Object.keys(localData).length && !saved.school) throw error;
     const cachedLocalData = {
       school: saved.school || localData.school || null,
