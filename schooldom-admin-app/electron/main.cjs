@@ -17,7 +17,16 @@ function settingsPath() {
 
 function readInstallSeed() {
   try {
-    const seedPath = path.join(app.getPath("downloads"), "SchoolDomAdmin.schooldom.json");
+    const downloadsPath = app.getPath("downloads");
+    const seedPath = fs
+      .readdirSync(downloadsPath, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /^SchoolDomAdmin\.schooldom(?: \(\d+\))?\.json$/i.test(entry.name))
+      .map((entry) => {
+        const filePath = path.join(downloadsPath, entry.name);
+        return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
+      })
+      .sort((left, right) => right.mtimeMs - left.mtimeMs)[0]?.filePath;
+    if (!seedPath) return {};
     const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
     const schoolCode = String(seed.schoolCode || seed.school_code || "").trim();
     if (!schoolCode) return {};
