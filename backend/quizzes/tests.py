@@ -288,6 +288,36 @@ class DailyPersonalQuizTests(TestCase):
         attempt_question = PersonalQuizAttempt.objects.get(subject=english).questions.get()
         self.assertEqual(attempt_question.correct_answer, "Where are you going?")
 
+    def test_personal_quiz_uses_cbt_question_bank_by_subject_alias(self):
+        selected_subject = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        bank_subject = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+        self.school_class.subjects.add(selected_subject)
+        bank_question = ExamQuestion.objects.create(
+            tenant=self.legacy_tenant,
+            question_type="mcq",
+            text="Select the correct synonym for quick.",
+            options=["Fast", "Late", "Slow", "Weak"],
+            correct_answer="A",
+            points=1,
+        )
+        bank = QuestionBank.objects.create(
+            tenant=self.legacy_tenant,
+            name="English alias CBT bank",
+            subject=bank_subject,
+            teacher=self.teacher,
+        )
+        bank.questions.add(bank_question)
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": selected_subject.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Select the correct synonym for quick.")
+
     def test_personal_quiz_uses_inbuilt_icon_tutor_pool_by_subject_alias(self):
         english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
         self.school_class.subjects.add(english)

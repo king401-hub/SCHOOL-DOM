@@ -691,6 +691,15 @@ def _inbuilt_personal_folder_filter():
     )
 
 
+def _question_bank_subject_filter(subject):
+    subject_terms = _subject_personal_quiz_terms(subject)
+    filters = Q(question_banks__subject=subject)
+    for term in subject_terms:
+        filters |= Q(question_banks__subject__name__iexact=term)
+        filters |= Q(question_banks__subject__code__iexact=term)
+    return filters
+
+
 def _build_personal_questions(subject, class_group, count, tenant=None):
     subject_terms = _subject_personal_quiz_terms(subject)
     subject_filters = Q(folder__subject=subject)
@@ -766,7 +775,7 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             return questions
 
     if len(questions) < count:
-        exam_filter = Q(question_banks__subject=subject)
+        exam_filter = _question_bank_subject_filter(subject)
         if tenant:
             exam_filter &= Q(question_banks__tenant=tenant)
         else:
