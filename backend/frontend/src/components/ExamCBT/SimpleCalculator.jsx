@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const OPERATOR_LABELS = {
   add: "+",
@@ -92,6 +92,55 @@ const SimpleCalculator = () => {
     setPendingOperator(null);
     setWaitingForNumber(true);
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      const tagName = target?.tagName;
+      const isTyping =
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT" ||
+        target?.isContentEditable;
+
+      if (isTyping) return;
+
+      const key = event.key;
+      if (/^[0-9]$/.test(key)) {
+        event.preventDefault();
+        inputDigit(key);
+        return;
+      }
+      if (key === ".") {
+        event.preventDefault();
+        inputDecimal();
+        return;
+      }
+      if (key === "+" || key === "-" || key === "*" || key === "x" || key === "X" || key === "/") {
+        event.preventDefault();
+        const operatorMap = { "+": "add", "-": "subtract", "*": "multiply", x: "multiply", X: "multiply", "/": "divide" };
+        chooseOperator(operatorMap[key]);
+        return;
+      }
+      if (key === "Enter" || key === "=") {
+        event.preventDefault();
+        showResult();
+        return;
+      }
+      if (key === "Backspace") {
+        event.preventDefault();
+        backspace();
+        return;
+      }
+      if (key === "Delete" || key === "Escape" || key === "c" || key === "C") {
+        event.preventDefault();
+        clearAll();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [display, pendingOperator, storedValue, waitingForNumber]);
 
   return (
     <section className="simple-calculator" aria-label="Calculator">

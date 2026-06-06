@@ -1089,18 +1089,22 @@ function AdminFinanceScreen({
       .join("");
     const footerText = footer === "" ? "" : footer || "Generated from SchoolDom Finance.";
     const footerMarkup = footerText ? `<p class="footer">${escapeHtml(footerText)}</p>` : "";
+    const schoolLogoMarkup = schoolBrand.logo
+      ? `<img src="${escapeHtml(schoolBrand.logo)}" alt="${escapeHtml(schoolBrand.name)} logo" />`
+      : `<span>${escapeHtml(schoolBrand.initials || "S")}</span>`;
     printWindow.document.write(`
       <!doctype html>
       <html>
         <head>
           <title>${escapeHtml(reference || title)}</title>
           <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea}.brand{margin-bottom:28px}.brand strong{display:block;font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
+            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea}.brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}.brand-logo{width:56px;height:56px;border:1px solid #d8e0ea;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fff;color:#0f3d5e;font-weight:900}.brand-logo img{width:100%;height:100%;object-fit:contain}.brand strong{display:block;font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
           </style>
         </head>
         <body>
           <main class="sheet">
             <header class="brand">
+              <div class="brand-logo">${schoolLogoMarkup}</div>
               <strong>${escapeHtml(schoolBrand.name)}</strong>
             </header>
             <h1 class="doc-title">${escapeHtml(title)}</h1>
@@ -1575,6 +1579,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const name = `${subject?.name || ""}`.trim().toLowerCase();
     return !["PHY", "CHEM"].includes(code) && !["physics", "chemistry"].includes(name);
   });
+  const broadsheetSchool = resolveSchoolBrand(data?.school, session?.school, session?.user?.school);
 
   const [activeView, setActiveView] = useState("desktop");
   const [editingExam, setEditingExam] = useState(null);
@@ -1586,7 +1591,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [sortKey, setSortKey] = useState("score");
   const [broadsheetExamId, setBroadsheetExamId] = useState("all");
   const [broadsheetClassName, setBroadsheetClassName] = useState("all");
-  const [broadsheetType, setBroadsheetType] = useState("Terminal examination broadsheet");
+  const [broadsheetType, setBroadsheetType] = useState("Examination broadsheet");
   const [uploadExamId, setUploadExamId] = useState(exams[0]?.id || exams[0]?.exam_id || "");
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState("");
@@ -1906,13 +1911,14 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         <head>
           <title>${escapeHtml(broadsheetType || "Exam Broadsheet")}</title>
           <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:max-content;min-width:100%;padding:24px}.paper{background:#fff;border:1px solid #cbd5e1;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.12)}h1{margin:0 0 6px;font-size:24px;text-transform:uppercase}p{margin:0 0 18px;color:#475569}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #94a3b8;padding:8px 10px;text-align:left;white-space:nowrap}th{background:#e8f2fb;text-transform:uppercase;font-size:11px}td:last-child,th:last-child{font-weight:900;background:#f8fafc}.actions{margin:0 0 14px;display:flex;gap:10px}.actions button{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff}.actions{display:none}.sheet{padding:0}.paper{box-shadow:none;border:0}}
+            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:max-content;min-width:100%;padding:24px}.paper{background:#fff;border:1px solid #cbd5e1;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.12)}.school-name{margin:0 0 4px;font-size:18px;font-weight:900;text-transform:uppercase;color:#0f172a}h1{margin:0 0 6px;font-size:24px;text-transform:uppercase}p{margin:0 0 18px;color:#475569}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #94a3b8;padding:8px 10px;text-align:left;white-space:nowrap}th{background:#e8f2fb;text-transform:uppercase;font-size:11px}td:last-child,th:last-child{font-weight:900;background:#f8fafc}.actions{margin:0 0 14px;display:flex;gap:10px}.actions button{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff}.actions{display:none}.sheet{padding:0}.paper{box-shadow:none;border:0}}
           </style>
         </head>
         <body>
           <main class="sheet">
             <div class="paper">
               <div class="actions"><button onclick="window.print()">Print / Save PDF</button></div>
+              <div class="school-name">${escapeHtml(broadsheetSchool.name)}</div>
               <h1>${escapeHtml(broadsheetType || "Exam Broadsheet")}</h1>
               <p>${escapeHtml(broadsheetData.rows.length)} student${broadsheetData.rows.length === 1 ? "" : "s"} shown</p>
               <table><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table>
@@ -1928,6 +1934,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total"];
     const csvEscape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const lines = [
+      [broadsheetSchool.name],
       [broadsheetType || "Exam Broadsheet"],
       headers,
       ...broadsheetData.rows.map((student) => [
