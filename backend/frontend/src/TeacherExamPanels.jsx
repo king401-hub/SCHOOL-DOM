@@ -875,7 +875,13 @@ export function TeacherExamBuilder({
       }
       const result = isEditing ? await onUpdateExam(initialExam.id, requestPayload) : await onCreateExam(requestPayload);
       const savedExam = result?.exam || {};
-      if (canPublishExam && form.publishNow && savedExam.id) {
+      const hasExistingPin = Boolean(
+        savedExam.pin_required ||
+          Number(savedExam.active_pin_count || 0) > 0 ||
+          initialExam?.pin_required ||
+          Number(initialExam?.active_pin_count || 0) > 0
+      );
+      if (canPublishExam && form.publishNow && savedExam.id && !hasExistingPin) {
         const pinResult = await requestJson(session, "POST", "/api/app/exams/pins/", {
           exam_id: savedExam.id,
           usage_policy: "reusable",
@@ -889,7 +895,11 @@ export function TeacherExamBuilder({
         setCopyFeedback("");
         setFeedback("Exam published. Share the CBT PIN with eligible students.");
       } else {
-        setFeedback(result?.message || (canPublishExam ? "Exam saved." : "Exam sent to admin for publishing."));
+        setFeedback(
+          hasExistingPin && canPublishExam && form.publishNow
+            ? "Exam updated. Existing CBT PIN remains active."
+            : result?.message || (canPublishExam ? "Exam saved." : "Exam sent to admin for publishing.")
+        );
       }
     } catch (saveError) {
       setError(saveError.message || "Could not save exam.");

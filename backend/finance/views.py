@@ -123,7 +123,7 @@ def _school_payload(request, school):
     if not school:
         return {}
     try:
-        logo = request.build_absolute_uri(school.logo.url) if school.logo else ""
+        logo = request.build_absolute_uri(school.logo.url) if request and school.logo else school.logo.url if school.logo else ""
     except Exception:
         logo = ""
     return {
@@ -331,6 +331,7 @@ def _admin_finance_snapshot(user):
         .order_by("-created_at")[:100]
     ]
     return {
+        "school": _school_payload(None, user.tenant),
         "expected_fee_amount": expected_total,
         "amount_received": amount_received,
         "outstanding_balance": max(expected_total - amount_received, Decimal("0.00")),

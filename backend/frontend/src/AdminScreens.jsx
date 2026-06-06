@@ -694,6 +694,7 @@ function AdminPerformanceHeatmapScreen({ data = {}, loading, error, onRetry }) {
 
 function AdminFinanceScreen({
   data,
+  school,
   loading,
   error,
   onRetry,
@@ -711,7 +712,7 @@ function AdminFinanceScreen({
   onBankPaymentRecover,
 }) {
   const finance = data?.finance_overview || data || {};
-  const schoolBrand = resolveSchoolBrand(finance?.school, finance?.tenant, data?.school, data?.tenant);
+  const schoolBrand = resolveSchoolBrand(finance?.school, data?.school, school, finance?.tenant, data?.tenant);
   const adminWallet = finance?.admin_wallet || {};
   const classFees = finance?.class_fee_rows || [];
   const studentFeeRows = finance?.student_fee_rows || [];
@@ -1590,6 +1591,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [deleteBusyId, setDeleteBusyId] = useState("");
   const [deleteFeedback, setDeleteFeedback] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [pendingDeleteResult, setPendingDeleteResult] = useState(null);
   const [examPins, setExamPins] = useState({});
   const [visiblePins, setVisiblePins] = useState({});
   const [pinBusyId, setPinBusyId] = useState("");
@@ -1659,7 +1661,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const displayValue = isVisible
       ? generated.plain
       : hasActivePin
-        ? `${"\u2022".repeat(Math.max(1, 5 - String(preview).length))}${preview || ""}`
+        ? "\u2022".repeat(Math.max(6, String(preview || generated?.plain || "").length || 6))
         : "No PIN";
 
     return (
@@ -1803,23 +1805,30 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     }
   };
 
-  const handleDeleteResult = async (row) => {
+  const requestDeleteResult = (row) => {
     const attemptId = row.attempt_id || row.id;
     if (!attemptId) {
       setDeleteError("This result does not have a CBT attempt ID.");
       return;
     }
+    setDeleteError("");
+    setDeleteFeedback("");
+    setPendingDeleteResult(row);
+  };
+
+  const confirmDeleteResult = async () => {
+    const row = pendingDeleteResult;
+    if (!row) return;
+    const attemptId = row.attempt_id || row.id;
     const studentName = row.student_name || "this student";
     const examTitle = row.exam_title || row.exam || "this exam";
-    if (!window.confirm(`Delete ${studentName}'s result for ${examTitle}? The student will be able to retake the exam.`)) {
-      return;
-    }
     setDeleteBusyId(String(attemptId));
     setDeleteError("");
     setDeleteFeedback("");
     try {
       const result = await onDeleteResult?.(attemptId);
       setDeleteFeedback(result?.message || "Result deleted. The student can retake the exam.");
+      setPendingDeleteResult(null);
     } catch (actionError) {
       setDeleteError(actionError.message || "Could not delete result.");
     } finally {
@@ -2098,7 +2107,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                       <button
                         type="button"
                         className="table-action danger"
-                        onClick={() => handleDeleteResult(row)}
+                        onClick={() => requestDeleteResult(row)}
                         disabled={deleteBusyId === String(row.attempt_id || row.id)}
                       >
                         {deleteBusyId === String(row.attempt_id || row.id) ? "Deleting..." : "Delete"}
@@ -2113,6 +2122,43 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           <p className="panel-empty">{loading ? "Loading results..." : "No results match your filters."}</p>
         )}
       </article> : null}
+
+      {pendingDeleteResult ? (
+        <div className="result-delete-modal" role="dialog" aria-modal="true" aria-labelledby="result-delete-title">
+          <div className="result-delete-card">
+            <div className="result-delete-icon" aria-hidden="true">
+              <DashboardIcon name="exam" className="inline-icon" />
+            </div>
+            <p className="result-delete-kicker">Delete CBT result</p>
+            <h3 id="result-delete-title">
+              Delete {pendingDeleteResult.student_name || "this student's"} result?
+            </h3>
+            <p>
+              This will remove the result for <strong>{pendingDeleteResult.exam_title || pendingDeleteResult.exam || "this exam"}</strong>.
+              The student will be able to retake the exam.
+            </p>
+            {deleteError ? <p className="form-feedback error">{deleteError}</p> : null}
+            <div className="result-delete-actions">
+              <button
+                type="button"
+                className="table-action"
+                onClick={() => setPendingDeleteResult(null)}
+                disabled={deleteBusyId === String(pendingDeleteResult.attempt_id || pendingDeleteResult.id)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="table-action danger"
+                onClick={confirmDeleteResult}
+                disabled={deleteBusyId === String(pendingDeleteResult.attempt_id || pendingDeleteResult.id)}
+              >
+                {deleteBusyId === String(pendingDeleteResult.attempt_id || pendingDeleteResult.id) ? "Deleting..." : "Delete result"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {activeView === "auto-submissions" ? (
         <article className="app-panel">

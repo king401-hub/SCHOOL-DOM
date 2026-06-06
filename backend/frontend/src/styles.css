@@ -5234,6 +5234,76 @@ body[data-theme="dark"] .token-usage-toast {
   opacity: 0.55;
 }
 
+.result-delete-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(6px);
+}
+
+.result-delete-card {
+  width: min(100%, 460px);
+  border: 1px solid #fecaca;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #111827;
+  padding: 1.35rem;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.32);
+}
+
+.result-delete-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.75rem;
+  border-radius: 14px;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.result-delete-icon .inline-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.result-delete-kicker {
+  margin: 0 0 0.35rem;
+  color: #b91c1c;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.result-delete-card h3 {
+  margin: 0 0 0.55rem;
+  color: #0f172a;
+  font-size: 1.35rem;
+}
+
+.result-delete-card p:not(.result-delete-kicker):not(.form-feedback) {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.result-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 1.2rem;
+}
+
 .status-pill {
   display: inline-block;
   border-radius: 999px;

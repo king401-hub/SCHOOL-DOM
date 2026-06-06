@@ -4889,7 +4889,9 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(null);
   const messagesPollRef = useRef(null);
+  const adminPollRef = useRef(null);
   const MESSAGES_POLL_MS = 20000;
+  const ADMIN_ACTIVE_POLL_MS = 5000;
 
   useEffect(() => {
     if (currentPath !== activePath) {
@@ -4902,7 +4904,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   }, [session]);
 
   const loadScreen = useCallback(
-    async (path, force = false) => {
+    async (path, force = false, silent = false) => {
       const endpoint = ADMIN_ENDPOINTS[path];
       if (!endpoint) {
         return;
@@ -4912,7 +4914,9 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
         return;
       }
 
-      setScreenLoading((prev) => ({ ...prev, [path]: true }));
+      if (!silent || !screenData[path]) {
+        setScreenLoading((prev) => ({ ...prev, [path]: true }));
+      }
       setScreenError((prev) => ({ ...prev, [path]: "" }));
       try {
         let data = await requestJson(session, "GET", endpoint);
@@ -5027,7 +5031,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       clearInterval(messagesPollRef.current);
     }
     messagesPollRef.current = setInterval(() => {
-      loadScreen("/messages", true);
+      loadScreen("/messages", true, true);
     }, MESSAGES_POLL_MS);
     return () => {
       if (messagesPollRef.current) {
@@ -5035,6 +5039,30 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       }
     };
   }, [loadScreen]);
+
+  useEffect(() => {
+    if (adminPollRef.current) {
+      clearInterval(adminPollRef.current);
+    }
+    adminPollRef.current = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      const paths = new Set([activePath, "/dashboard"]);
+      if (activePath === "/results" || activePath === "/exams") {
+        paths.add("/results");
+        paths.add("/exams");
+      }
+      Promise.all(
+        Array.from(paths)
+          .filter((path) => ADMIN_ENDPOINTS[path])
+          .map((path) => loadScreen(path, true, true))
+      ).catch(() => null);
+    }, ADMIN_ACTIVE_POLL_MS);
+    return () => {
+      if (adminPollRef.current) {
+        clearInterval(adminPollRef.current);
+      }
+    };
+  }, [activePath, loadScreen]);
 
   const handleMarkMessageRead = useCallback(
     async (messageId, options = {}) => {
@@ -5866,6 +5894,7 @@ const unreadNotificationsCount =
     content = (
       <AdminFinanceScreen
         data={data}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         loading={loading}
         error={error}
         onRetry={handleRetry}
