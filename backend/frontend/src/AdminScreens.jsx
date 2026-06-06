@@ -711,6 +711,7 @@ function AdminFinanceScreen({
   onBankPaymentRecover,
 }) {
   const finance = data?.finance_overview || data || {};
+  const schoolBrand = resolveSchoolBrand(finance?.school, finance?.tenant, data?.school, data?.tenant);
   const adminWallet = finance?.admin_wallet || {};
   const classFees = finance?.class_fee_rows || [];
   const studentFeeRows = finance?.student_fee_rows || [];
@@ -1085,20 +1086,21 @@ function AdminFinanceScreen({
     const rowMarkup = tableRows
       .map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`)
       .join("");
+    const footerText = footer === "" ? "" : footer || "Generated from SchoolDom Finance.";
+    const footerMarkup = footerText ? `<p class="footer">${escapeHtml(footerText)}</p>` : "";
     printWindow.document.write(`
       <!doctype html>
       <html>
         <head>
           <title>${escapeHtml(reference || title)}</title>
           <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea}.brand{display:flex;justify-content:space-between;gap:24px;margin-bottom:28px}.brand strong{font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
+            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea}.brand{margin-bottom:28px}.brand strong{display:block;font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
           </style>
         </head>
         <body>
           <main class="sheet">
             <header class="brand">
-              <strong>SchoolDom Finance</strong>
-              <span>${escapeHtml(formatDate(new Date().toISOString().slice(0, 10)))}</span>
+              <strong>${escapeHtml(schoolBrand.name)}</strong>
             </header>
             <h1 class="doc-title">${escapeHtml(title)}</h1>
             <section class="meta">${metaMarkup}</section>
@@ -1107,7 +1109,7 @@ function AdminFinanceScreen({
               <tbody>${rowMarkup}</tbody>
             </table>
             <div class="total"><span>${escapeHtml(totalLabel)}</span><span>${escapeHtml(formatFinanceAmount(total))}</span></div>
-            <p class="footer">${escapeHtml(footer || "Generated from SchoolDom Finance.")}</p>
+            ${footerMarkup}
           </main>
           <script>window.onload=function(){window.print();};</script>
         </body>
@@ -1126,13 +1128,11 @@ function AdminFinanceScreen({
         ["Class", fee.class_label],
         ["Fee", fee.title],
         ["Due Date", formatDate(fee.due_date)],
-        ["Students", fee.student_count || 0],
-        ["Status", fee.is_active === false ? "Inactive" : "Active"],
       ],
       tableRows: [[fee.title || "School fee", formatFinanceAmount(fee.amount)]],
       totalLabel: "Expected Total",
       total: fee.expected_amount ?? fee.amount,
-      footer: "Present this bill when making school-fee payments.",
+      footer: "",
     });
   };
 
