@@ -13,7 +13,7 @@ from core.models import SchoolTenant
 from exams.models import Question as ExamQuestion, QuestionBank
 from tenants.models import Tenant
 from users.models import StudentProfile
-from .models import Choice, PersonalQuizAttempt, PersonalQuizFolder, PersonalQuizFolderQuestion, Question, Quiz, Submission
+from .models import Choice, PersonalQuizAttempt, PersonalQuizFolder, PersonalQuizFolderQuestion, PersonalQuizQuestion, Question, Quiz, Submission
 
 
 User = get_user_model()
@@ -146,6 +146,70 @@ class DailyPersonalQuizTests(TestCase):
         )
         self.assertEqual(repeat.status_code, 200)
         self.assertEqual(PersonalQuizAttempt.objects.count(), 1)
+
+    def test_personal_quiz_skips_set_topic_placeholder_questions(self):
+        self.legacy_tenant.personal_quiz_folders.filter(name="Math pool").delete()
+        folder = PersonalQuizFolder.objects.create(
+            tenant=self.legacy_tenant,
+            name="Math pool with placeholders",
+            subject=self.subject,
+            class_group=self.school_class,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Set a topic in math before starting.",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="What is 2 + 2?",
+            options=["2", "3", "4", "5"],
+            correct_answer="4",
+            order=2,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": self.subject.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        prompts = [item["prompt"] for item in response.data["questions"]]
+        self.assertEqual(prompts, ["What is 2 + 2?"])
+
+    def test_existing_set_topic_placeholder_attempt_is_replaced(self):
+        attempt = PersonalQuizAttempt.objects.create(
+            tenant=self.legacy_tenant,
+            student=self.student,
+            subject=self.subject,
+            class_group=self.school_class,
+            title="Mathematics Daily Personal Quiz",
+            daily_date=timezone.localdate(),
+        )
+        PersonalQuizQuestion.objects.create(
+            attempt=attempt,
+            question_type="objective",
+            prompt="Set a topic in math before starting.",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": self.subject.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        prompts = [item["prompt"] for item in response.data["questions"]]
+        self.assertNotIn("Set a topic in math before starting.", prompts)
+        self.assertEqual(PersonalQuizAttempt.objects.filter(student=self.student, subject=self.subject, daily_date=timezone.localdate()).count(), 1)
 
     def test_personal_quiz_without_real_questions_does_not_use_dummy_fallback(self):
         other_tenant = Tenant.objects.create(name="Other Quiz School", slug="other_quiz_school")

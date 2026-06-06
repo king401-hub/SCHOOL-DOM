@@ -5683,9 +5683,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
       setSelectedStudentId("");
       setEditError("");
       setEditSuccess("");
-      return;
     }
-    setEditForm(buildEditForm(current));
   }, [selectedStudentId, students]);
 
   return (

@@ -51,6 +51,14 @@ PLACEHOLDER_PERSONAL_QUESTION_PREFIXES = (
     "What is the maximum number of questions allowed in a personal quiz?",
     "Your quiz score is calculated instantly after submission.",
 )
+PLACEHOLDER_PERSONAL_QUESTION_SNIPPETS = (
+    "set a topic",
+    "select a topic",
+    "choose a topic",
+    "pick a topic",
+    "topic in math",
+    "topic in mathematics",
+)
 SUBJECT_PERSONAL_QUIZ_ALIASES = {
     "acc": {"Accounting", "Financial Accounting"},
     "accounting": {"Accounting", "Financial Accounting"},
@@ -631,7 +639,13 @@ def _auto_submit_if_expired(attempt):
 
 def _is_placeholder_personal_question(question):
     prompt = str(getattr(question, "prompt", "") or "").strip()
-    return any(prompt.startswith(prefix) for prefix in PLACEHOLDER_PERSONAL_QUESTION_PREFIXES)
+    normalized = prompt.casefold()
+    return any(prompt.startswith(prefix) for prefix in PLACEHOLDER_PERSONAL_QUESTION_PREFIXES) or any(snippet in normalized for snippet in PLACEHOLDER_PERSONAL_QUESTION_SNIPPETS)
+
+
+def _is_placeholder_prompt(prompt):
+    normalized = str(prompt or "").strip().casefold()
+    return any(str(prompt or "").strip().startswith(prefix) for prefix in PLACEHOLDER_PERSONAL_QUESTION_PREFIXES) or any(snippet in normalized for snippet in PLACEHOLDER_PERSONAL_QUESTION_SNIPPETS)
 
 
 def _attempt_has_placeholder_questions(attempt):
@@ -752,7 +766,9 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
         selected_ids = [item.id for item in selected]
         if selected_ids:
             queryset = queryset.exclude(id__in=selected_ids)
-        return selected + list(class_scoped(queryset).order_by("?")[:remaining])
+        candidates = list(class_scoped(queryset).order_by("?")[: max(remaining * 5, remaining)])
+        real_questions = [item for item in candidates if not _is_placeholder_prompt(item.prompt)]
+        return selected + real_questions[:remaining]
 
     folder_questions = []
     folder_questions = add_questions(base_pool.filter(subject_filters), folder_questions)
@@ -777,7 +793,7 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             folder_questions,
         )
 
-    if len(folder_questions) < count:
+    if not folder_questions:
         folder_questions = add_questions(
             PersonalQuizFolderQuestion.objects.filter(
                 folder__is_active=True,
@@ -787,7 +803,7 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             folder_questions,
         )
 
-    if len(folder_questions) < count:
+    if not folder_questions:
         remaining = count - len(folder_questions)
         selected_ids = [item.id for item in folder_questions]
         shared_pool = PersonalQuizFolderQuestion.objects.filter(
@@ -796,7 +812,8 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
         ).filter(subject_filters)
         if selected_ids:
             shared_pool = shared_pool.exclude(id__in=selected_ids)
-        folder_questions += list(shared_pool.order_by("?")[:remaining])
+        shared_candidates = list(shared_pool.order_by("?")[: max(remaining * 5, remaining)])
+        folder_questions += [item for item in shared_candidates if not _is_placeholder_prompt(item.prompt)][:remaining]
 
     questions = []
     if folder_questions:
@@ -825,9 +842,11 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             ExamQuestion.objects.filter(exam_filter)
             .exclude(text="")
             .distinct()
-            .order_by("?")[: count - len(questions)]
+            .order_by("?")[: max((count - len(questions)) * 5, count - len(questions))]
         )
         for item in exam_questions:
+            if _is_placeholder_prompt(item.text):
+                continue
             question = _personal_question_from_exam_question(item, len(questions) + 1)
             if question:
                 questions.append(question)
