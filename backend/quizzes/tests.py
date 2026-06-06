@@ -348,6 +348,66 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(response.data["question_count"], 1)
         self.assertEqual(response.data["questions"][0]["prompt"], "Inbuilt English question")
 
+    def test_personal_quiz_uses_legacy_icon_tutor_slug_pool(self):
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        self.school_class.subjects.add(english)
+        inbuilt_tenant = Tenant.objects.create(name="Icon Tutor", slug="icon_tutor")
+        inbuilt_subject = Subject.objects.create(tenant=inbuilt_tenant, name="English", code="ENG")
+        folder = PersonalQuizFolder.objects.create(
+            tenant=inbuilt_tenant,
+            name="English Personal Quiz Pool",
+            subject=inbuilt_subject,
+            class_group=None,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Legacy inbuilt English question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Legacy inbuilt English question")
+
+    def test_personal_quiz_uses_shared_pool_from_any_tenant(self):
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        self.school_class.subjects.add(english)
+        shared_tenant = Tenant.objects.create(name="Shared VPS Pool", slug="shared_vps_pool")
+        shared_subject = Subject.objects.create(tenant=shared_tenant, name="English", code="ENG")
+        folder = PersonalQuizFolder.objects.create(
+            tenant=shared_tenant,
+            name="English Personal Quiz Pool",
+            subject=shared_subject,
+            class_group=None,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=folder,
+            question_type="objective",
+            prompt="Shared VPS English question",
+            options=["A", "B", "C", "D"],
+            correct_answer="A",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 20},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["question_count"], 1)
+        self.assertEqual(response.data["questions"][0]["prompt"], "Shared VPS English question")
+
     def test_personal_quiz_uses_inbuilt_pool_for_any_tenant_subject_by_code(self):
         biology = Subject.objects.create(tenant=self.legacy_tenant, name="Life Science", code="BIO")
         self.school_class.subjects.add(biology)

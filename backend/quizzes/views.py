@@ -39,7 +39,7 @@ from .serializers import (
 
 MAX_PERSONAL_QUESTIONS = 20
 DAILY_PERSONAL_TIME_LIMIT_MINUTES = 15
-INBUILT_PERSONAL_QUIZ_TENANT_SLUGS = {"icon_tutor_8"}
+INBUILT_PERSONAL_QUIZ_TENANT_SLUGS = {"icon_tutor", "icon_tutor_8"}
 INBUILT_PERSONAL_QUIZ_FOLDER_SUFFIX = " Personal Quiz Pool"
 PLACEHOLDER_PERSONAL_QUESTION_PREFIXES = (
     "Which subject is this personal quiz focused on?",
@@ -685,8 +685,8 @@ def _subject_personal_quiz_terms(subject):
 
 
 def _inbuilt_personal_folder_filter():
-    return Q(
-        folder__tenant__slug__in=INBUILT_PERSONAL_QUIZ_TENANT_SLUGS,
+    return Q(folder__tenant__slug__in=INBUILT_PERSONAL_QUIZ_TENANT_SLUGS) | Q(
+        folder__tenant__slug__istartswith="icon_tutor",
         folder__name__iendswith=INBUILT_PERSONAL_QUIZ_FOLDER_SUFFIX,
     )
 
@@ -709,6 +709,7 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
         subject_filters |= Q(folder__subject__isnull=True, folder__subject_code__iexact=term)
         subject_filters |= Q(folder__subject__isnull=True, folder__subject_name__iexact=term)
         subject_filters |= Q(folder__subject__isnull=True, folder__name__iexact=f"{term}{INBUILT_PERSONAL_QUIZ_FOLDER_SUFFIX}")
+        subject_filters |= Q(folder__subject__isnull=True, folder__name__icontains=term)
 
     available_folder_filter = Q(folder__tenant__isnull=True)
     if tenant:
@@ -754,6 +755,16 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
                 folder__subject__isnull=True,
                 folder__class_group__isnull=True,
             ),
+            folder_questions,
+        )
+
+    if len(folder_questions) < count:
+        folder_questions = add_questions(
+            PersonalQuizFolderQuestion.objects.filter(
+                folder__is_active=True,
+                is_active=True,
+                folder__class_group__isnull=True,
+            ).filter(subject_filters),
             folder_questions,
         )
 
