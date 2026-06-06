@@ -21,6 +21,7 @@ const QuestionDisplay = ({
   const [localAnswer, setLocalAnswer] = useState(selectedAnswer);
   const [showFlagForm, setShowFlagForm] = useState(false);
   const [flagReason, setFlagReason] = useState("");
+  const [openImage, setOpenImage] = useState(null);
 
   useEffect(() => {
     setLocalAnswer(selectedAnswer);
@@ -52,6 +53,12 @@ const QuestionDisplay = ({
     return labels[index] || String.fromCharCode(65 + index);
   };
 
+  const renderClickableImage = (src, alt, className) => (
+    <button type="button" className="question-image-button" onClick={() => setOpenImage({ src, alt })} aria-label={`Open ${alt}`}>
+      <img src={src} alt={alt} className={className} />
+    </button>
+  );
+
   return (
     <div className="question-display">
       <div className="question-header">
@@ -70,13 +77,13 @@ const QuestionDisplay = ({
               <strong>{question.group.title || "Shared passage"}</strong>
             </div>
             {question.group.passage_text ? <div className="question-passage-text"><RichQuizText text={question.group.passage_text} /></div> : null}
-            {question.group.image ? <img src={question.group.image} alt={question.group.title || "Passage illustration"} className="question-passage-image" /> : null}
+            {question.group.image ? renderClickableImage(question.group.image, question.group.title || "Passage illustration", "question-passage-image") : null}
           </article>
         ) : null}
         <div className="question-text">
           <h2><RichQuizText text={question.text} /></h2>
           {question.image ? (
-            <img src={question.image} alt="Question" className="question-image" />
+            renderClickableImage(question.image, "Question", "question-image")
           ) : null}
         </div>
 
@@ -140,6 +147,14 @@ const QuestionDisplay = ({
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+      {openImage ? (
+        <div className="question-image-modal" role="dialog" aria-modal="true" aria-label={openImage.alt}>
+          <button type="button" className="question-image-modal-close" onClick={() => setOpenImage(null)}>
+            Close
+          </button>
+          <img src={openImage.src} alt={openImage.alt} />
         </div>
       ) : null}
     </div>

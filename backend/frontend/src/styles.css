@@ -5598,6 +5598,34 @@ body[data-theme="dark"] .token-usage-toast {
   text-decoration: none;
 }
 
+.message-attachment-list .message-image-attachment {
+  display: grid;
+  width: min(100%, 220px);
+  overflow: hidden;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0;
+}
+
+.message-image-attachment img {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  background: #e2e8f0;
+}
+
+.message-image-attachment span {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.45rem 0.55rem;
+  overflow: hidden;
+  color: #1d4ed8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message-attachment-list.pending span {
   border-color: #fed7aa;
   background: #fff7ed;

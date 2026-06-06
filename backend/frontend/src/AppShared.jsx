@@ -720,6 +720,42 @@ function attachmentLabel(file) {
   return file.name || file.filename || file.url || "Attachment";
 }
 
+function attachmentUrl(file) {
+  return file?.url || file?.preview_url || file?.previewUrl || "";
+}
+
+function isImageAttachment(file) {
+  const contentType = String(file?.content_type || file?.contentType || file?.type || "").toLowerCase();
+  const label = attachmentLabel(file).toLowerCase();
+  const url = attachmentUrl(file).toLowerCase().split("?")[0];
+  return contentType.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(label) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(url);
+}
+
+function MessageAttachment({ attachment, index }) {
+  const url = attachmentUrl(attachment);
+  const label = attachmentLabel(attachment);
+  const key = `${url || label}-${index}`;
+
+  if (url && isImageAttachment(attachment)) {
+    return (
+      <a key={key} className="message-image-attachment" href={url} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}>
+        <img src={url} alt={label} />
+        <span>{label}</span>
+      </a>
+    );
+  }
+
+  if (url) {
+    return (
+      <a key={key} href={url} target="_blank" rel="noreferrer">
+        {label}
+      </a>
+    );
+  }
+
+  return <span key={key}>{label}</span>;
+}
+
 function LegacyMessageInboxPanel({
   title = "Inbox",
   messages = [],
@@ -847,7 +883,16 @@ function LegacyMessageInboxPanel({
                 From: {item.from || item.from_name || "Unknown sender"} • {item.is_read ? "Read" : "Unread"}
               </span>
               {activeMessageId === item.id ? (
-                <p className="message-body">{item.body || "No content provided."}</p>
+                <>
+                  <p className="message-body">{item.body || "No content provided."}</p>
+                  {messageAttachments(item).length ? (
+                    <div className="message-attachment-list">
+                      {messageAttachments(item).map((attachment, index) => (
+                        <MessageAttachment key={`${attachmentUrl(attachment) || attachmentLabel(attachment)}-${index}`} attachment={attachment} index={index} />
+                      ))}
+                    </div>
+                  ) : null}
+                </>
               ) : null}
               <div className="table-actions-inline">
                 <button
@@ -1091,7 +1136,12 @@ export function MessageInboxPanel({
         from: "You",
         subject: composeForm.subject.trim(),
         body: composeForm.body.trim(),
-        attachments: composeAttachments.map((file) => ({ name: file.name, size: file.size, content_type: file.type })),
+        attachments: composeAttachments.map((file) => ({
+          name: file.name,
+          size: file.size,
+          content_type: file.type,
+          preview_url: file.type?.startsWith("image/") ? URL.createObjectURL(file) : "",
+        })),
         created_at: new Date().toISOString(),
         is_read: true,
       };
@@ -1227,13 +1277,7 @@ export function MessageInboxPanel({
                 {messageAttachments(message).length ? (
                   <div className="message-attachment-list">
                     {messageAttachments(message).map((attachment, index) => (
-                      attachment.url ? (
-                        <a key={`${attachment.url}-${index}`} href={attachment.url} target="_blank" rel="noreferrer">
-                          {attachmentLabel(attachment)}
-                        </a>
-                      ) : (
-                        <span key={`${attachmentLabel(attachment)}-${index}`}>{attachmentLabel(attachment)}</span>
-                      )
+                      <MessageAttachment key={`${attachmentUrl(attachment) || attachmentLabel(attachment)}-${index}`} attachment={attachment} index={index} />
                     ))}
                   </div>
                 ) : null}
