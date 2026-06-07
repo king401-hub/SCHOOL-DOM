@@ -173,6 +173,11 @@ class CreateSchoolSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
+    school_type = serializers.ChoiceField(
+        choices=(("k12", "K-12 school"), ("non_k12", "Non K-12 school")),
+        required=False,
+        default="k12",
+    )
 
     def validate_school_name(self, value):
         cleaned = value.strip()

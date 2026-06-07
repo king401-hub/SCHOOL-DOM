@@ -153,6 +153,7 @@ function Signin({ onAuthenticated, onBack }) {
   const [schoolName, setSchoolName] = useState("");
   const [preferredSchoolCode, setPreferredSchoolCode] = useState("");
   const [schoolEmail, setSchoolEmail] = useState("");
+  const [schoolType, setSchoolType] = useState("k12");
   const [isCreatingSchool, setIsCreatingSchool] = useState(false);
   const [schoolError, setSchoolError] = useState("");
   const [schoolSuccess, setSchoolSuccess] = useState("");
@@ -274,6 +275,7 @@ function Signin({ onAuthenticated, onBack }) {
         school_name: schoolName.trim(),
         school_code: preferredSchoolCode.trim(),
         email: schoolEmail.trim(),
+        school_type: schoolType,
       });
 
       if (!data.success || !data.school) {
@@ -290,6 +292,7 @@ function Signin({ onAuthenticated, onBack }) {
       setSchoolName("");
       setPreferredSchoolCode("");
       setSchoolEmail("");
+      setSchoolType("k12");
       setShowCreateSchool(false);
     } catch (requestError) {
       setSchoolError(requestError.message || "School creation failed.");
@@ -618,6 +621,19 @@ function Signin({ onAuthenticated, onBack }) {
           onChange={(event) => setSchoolEmail(event.target.value)}
           placeholder="office@school.edu"
         />
+      </div>
+
+      <label htmlFor="school-type">School term</label>
+      <div className="input-wrap">
+        <span className="input-icon">T</span>
+        <select
+          id="school-type"
+          value={schoolType}
+          onChange={(event) => setSchoolType(event.target.value)}
+        >
+          <option value="k12">K-12 school</option>
+          <option value="non_k12">Non K-12 school (tutorials, colleges, polytechnics)</option>
+        </select>
       </div>
 
       {schoolError ? <p className="error-text">{schoolError}</p> : null}

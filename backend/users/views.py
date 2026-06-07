@@ -395,6 +395,7 @@ def create_school(request):
                     'school_code': tenant.schema_name,
                     'domain': domain_name,
                     'free_credits': credit_pool.balance,
+                    'school_type': payload.get('school_type') or 'k12',
                 },
                 'requested_code': requested_code,
                 'conflict_resolved': tenant.schema_name != requested_code,
