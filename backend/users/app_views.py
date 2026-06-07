@@ -1243,13 +1243,12 @@ def _validate_student_password(student_password, confirm_student_password):
     return password
 
 
-def _duration_minutes_from_dates(start_date, end_date):
-    if not start_date or not end_date:
+def _positive_duration_minutes(value):
+    try:
+        duration = int(value)
+    except (TypeError, ValueError):
         return 0
-    seconds = (end_date - start_date).total_seconds()
-    if seconds <= 0:
-        return 0
-    return max(1, int(seconds // 60))
+    return duration if duration > 0 else 0
 
 
 def _ensure_student_profile_for_tenant(
@@ -6533,11 +6532,16 @@ def create_exam(request):
             {"success": False, "message": "Valid start_date and end_date are required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    if end_date <= start_date:
+        return Response(
+            {"success": False, "message": "Exam end date must be after start date."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    duration_minutes = _duration_minutes_from_dates(start_date, end_date)
+    duration_minutes = _positive_duration_minutes(request.data.get("duration_minutes"))
     if duration_minutes <= 0:
         return Response(
-            {"success": False, "message": "Exam end time must be after start time."},
+            {"success": False, "message": "Valid duration_minutes is required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -6689,6 +6693,16 @@ def exam_detail(request, exam_id):
         exam.end_date = end_date
         update_fields.append("end_date")
 
+    if "duration_minutes" in request.data:
+        duration_minutes = _positive_duration_minutes(request.data.get("duration_minutes"))
+        if duration_minutes <= 0:
+            return Response(
+                {"success": False, "message": "Valid duration_minutes is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        exam.duration_minutes = duration_minutes
+        update_fields.append("duration_minutes")
+
     if "class_id" in request.data:
         class_id = request.data.get("class_id")
         if class_id in (None, ""):
@@ -6759,14 +6773,11 @@ def exam_detail(request, exam_id):
 
     if update_fields:
         if "start_date" in update_fields or "end_date" in update_fields:
-            duration = _duration_minutes_from_dates(exam.start_date, exam.end_date)
-            if duration <= 0:
+            if not exam.start_date or not exam.end_date or exam.end_date <= exam.start_date:
                 return Response(
-                    {"success": False, "message": "Exam end time must be after start time."},
+                    {"success": False, "message": "Exam end date must be after start date."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            exam.duration_minutes = duration
-            update_fields.append("duration_minutes")
         exam.save(update_fields=list(dict.fromkeys(update_fields)))
 
     if "questions" in request.data:

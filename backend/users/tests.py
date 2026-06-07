@@ -1026,7 +1026,7 @@ class TeacherDashboardAPITests(TestCase):
     def test_teacher_can_create_test_for_all_classes(self):
         self.client.force_authenticate(user=self.teacher_user)
         start = timezone.now() + timedelta(days=4)
-        end = start + timedelta(minutes=45)
+        end = start + timedelta(hours=2)
 
         response = self.client.post(
             "/api/app/exams/create/",
@@ -1059,6 +1059,7 @@ class TeacherDashboardAPITests(TestCase):
         self.assertIsNone(created.class_group)
         self.assertIsNotNone(created.exam_type)
         self.assertEqual(created.exam_type.name.lower(), "test")
+        self.assertEqual(created.duration_minutes, 45)
 
         exams_response = self.client.get("/api/app/exams/")
         self.assertEqual(exams_response.status_code, 200)
@@ -1244,6 +1245,9 @@ class TeacherDashboardAPITests(TestCase):
             f"/api/app/exams/{exam.id}/",
             data={
                 "title": "Edited Algebra Exam",
+                "start_date": start.isoformat(),
+                "end_date": (start + timedelta(hours=3)).isoformat(),
+                "duration_minutes": 45,
                 "questions": [
                     {
                         "text": "Edited question?",
@@ -1263,6 +1267,7 @@ class TeacherDashboardAPITests(TestCase):
         self.assertFalse(exam.is_published)
         self.assertEqual(exam.questions.count(), 1)
         self.assertEqual(exam.questions.first().text, "Edited question?")
+        self.assertEqual(exam.duration_minutes, 45)
 
     def test_teacher_can_set_grade_scale_and_push_regraded_results(self):
         self.client.force_authenticate(user=self.teacher_user)

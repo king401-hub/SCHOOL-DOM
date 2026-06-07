@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDate, MetricCard, requestJson } from "./AppShared";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
@@ -624,9 +624,8 @@ export function TeacherExamBuilder({
     description: "",
     classId: "",
     subjectId: "",
-    examDate: "",
-    startTime: "10:00",
-    endTime: "12:00",
+    startDate: "",
+    endDate: "",
     duration: "120",
     instructions: "1. Read all questions carefully before answering.\n2. All questions are compulsory.\n3. Do not refresh or close the browser during the exam.\n4. Submit the exam before the time is over.",
     randomizeQuestions: true,
@@ -663,25 +662,22 @@ export function TeacherExamBuilder({
   ];
 
   const setField = (field, value) => setForm((previous) => ({ ...previous, [field]: value }));
-  const dateValue = (value) => {
+  const dateTimeLocalValue = (value) => {
     if (!value) return "";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
-    return `${date.getFullYear()}-${month}-${day}`;
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-${day}T${hours}:${minutes}`;
   };
-  const timeValue = (value) => {
+  const makeDateTime = (value) => {
     if (!value) return "";
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
-    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  };
-  const makeDateTime = (dateValue, timeValue) => {
-    if (!dateValue || !timeValue) return "";
-    const date = new Date(`${dateValue}T${timeValue}`);
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
   };
+  const manualDuration = Number(form.duration) || 0;
   const normalizeBankQuestion = (item) => {
     const options = [...(item.options || [])];
     while (options.length < 4) {
@@ -704,16 +700,6 @@ export function TeacherExamBuilder({
         questionImagePreview: item.image || "",
       };
   };
-  const calculatedDuration = useMemo(() => {
-    const start = form.examDate && form.startTime ? new Date(`${form.examDate}T${form.startTime}`) : null;
-    const end = form.examDate && form.endTime ? new Date(`${form.examDate}T${form.endTime}`) : null;
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return 0;
-    }
-    const minutes = Math.floor((end.getTime() - start.getTime()) / 60000);
-    return minutes > 0 ? minutes : 0;
-  }, [form.endTime, form.examDate, form.startTime]);
-
   const loadBankQuestions = useCallback(async () => {
     if (!session || !canUseCbtQuestionBank) {
       setBankQuestions([]);
@@ -751,9 +737,8 @@ export function TeacherExamBuilder({
       description: initialExam.description || "",
       classId: initialExam.class_id || "",
       subjectId: initialExam.subject_id || "",
-      examDate: dateValue(initialExam.start_date),
-      startTime: timeValue(initialExam.start_date),
-      endTime: timeValue(initialExam.end_date),
+      startDate: dateTimeLocalValue(initialExam.start_date),
+      endDate: dateTimeLocalValue(initialExam.end_date),
       duration: String(initialExam.duration_minutes || 60),
       instructions: initialExam.instructions || "",
       randomizeQuestions: Boolean(initialExam.shuffle_questions),
@@ -796,13 +781,20 @@ export function TeacherExamBuilder({
   const handleSaveExam = async () => {
     setError("");
     setFeedback("");
-    if (!form.title.trim() || !form.examDate || !form.startTime || !form.endTime) {
-      setError("Exam title, date, start time, and end time are required.");
+    if (!form.title.trim() || !form.startDate || !form.endDate) {
+      setError("Exam title, start date, and end date are required.");
       setActiveSection("details");
       return;
     }
-    if (calculatedDuration <= 0) {
-      setError("Exam end time must be after the start time.");
+    const startDate = new Date(form.startDate);
+    const endDate = new Date(form.endDate);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
+      setError("Exam end date must be after the start date.");
+      setActiveSection("details");
+      return;
+    }
+    if (manualDuration <= 0) {
+      setError("Exam duration must be greater than zero.");
       setActiveSection("details");
       return;
     }
@@ -844,9 +836,9 @@ export function TeacherExamBuilder({
         title: form.title.trim(),
         class_id: form.classId || "",
         subject_id: form.subjectId || "",
-        start_date: makeDateTime(form.examDate, form.startTime),
-        end_date: makeDateTime(form.examDate, form.endTime),
-        duration_minutes: calculatedDuration,
+        start_date: makeDateTime(form.startDate),
+        end_date: makeDateTime(form.endDate),
+        duration_minutes: manualDuration,
         assessment_type: "exam",
         instructions: form.instructions,
         shuffle_questions: form.randomizeQuestions,
@@ -1132,10 +1124,9 @@ export function TeacherExamBuilder({
               <label className="panel-field">Class / Course<select value={form.classId} onChange={(event) => setField("classId", event.target.value)}><option value="">All classes</option>{classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}</select></label>
               <label className="panel-field">Subject<select value={form.subjectId} onChange={(event) => setField("subjectId", event.target.value)}><option value="">General</option>{subjectOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               <label className="panel-field">Teacher<input value={teacherName || "Teacher"} readOnly /></label>
-              <label className="panel-field">Exam Date<input type="date" value={form.examDate} onChange={(event) => setField("examDate", event.target.value)} /></label>
-              <label className="panel-field">Start Time<input type="time" value={form.startTime} onChange={(event) => setField("startTime", event.target.value)} /></label>
-              <label className="panel-field">End Time<input type="time" value={form.endTime} onChange={(event) => setField("endTime", event.target.value)} /></label>
-              <label className="panel-field">Duration<input value={calculatedDuration ? `${calculatedDuration} minutes` : "Set start and end time"} readOnly /></label>
+              <label className="panel-field">Start Date<input type="datetime-local" value={form.startDate} onChange={(event) => setField("startDate", event.target.value)} /></label>
+              <label className="panel-field">End Date<input type="datetime-local" value={form.endDate} onChange={(event) => setField("endDate", event.target.value)} /></label>
+              <label className="panel-field">Exam Duration (minutes)<input type="number" min="1" value={form.duration} onChange={(event) => setField("duration", event.target.value)} /></label>
               <label className="panel-field full">Instructions for Students<textarea value={form.instructions} onChange={(event) => setField("instructions", event.target.value)} rows={6} /></label>
             </div>
           ) : null}
@@ -1391,7 +1382,7 @@ export function TeacherExamBuilder({
             <div className="exam-review-grid">
               <MetricCard label="Exam" value={form.title || "Untitled"} trend={form.code || "No code"} />
               <MetricCard label="Class" value={selectedClass?.label || selectedClass?.name || "All classes"} trend={selectedSubject?.name || "General"} />
-              <MetricCard label="Duration" value={`${calculatedDuration || 0} mins`} trend={`${form.startTime || "-"} to ${form.endTime || "-"}`} />
+              <MetricCard label="Duration" value={`${manualDuration || 0} mins`} trend={`${form.startDate || "-"} to ${form.endDate || "-"}`} />
               <MetricCard label="Questions" value={questions.length} trend={`${sections.length} sections`} />
               <article className="app-panel full">
                 <h3>Instructions</h3>
