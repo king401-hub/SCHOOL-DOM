@@ -5111,18 +5111,6 @@ def school_settings(request):
                     setattr(school, field, new_value)
                     update_fields.append(field)
 
-        if "school_type" in request.data:
-            school_type = str(request.data.get("school_type") or "").strip()
-            valid_school_types = {choice[0] for choice in SchoolTenant.SCHOOL_TYPE_CHOICES}
-            if school_type not in valid_school_types:
-                return Response(
-                    {"success": False, "message": "School type must be k12 or non_k12."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if getattr(school, "school_type", "k12") != school_type:
-                school.school_type = school_type
-                update_fields.append("school_type")
-
         logo_file = request.FILES.get("logo")
         if logo_file:
             school.logo = logo_file
