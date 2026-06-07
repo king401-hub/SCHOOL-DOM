@@ -5425,7 +5425,7 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
-function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate }) {
+function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const [form, setForm] = useState({
@@ -5496,6 +5496,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
   const [showCreateConfirmPassword, setShowCreateConfirmPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
+  const [deletingStudentId, setDeletingStudentId] = useState("");
   const createProfilePictureRef = useRef(null);
 
   const toDateInputValue = (value) => {
@@ -5671,6 +5672,29 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
       setEditError(actionError.message || "Could not update student.");
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteStudent = async (student) => {
+    if (!student?.id || !onDelete) {
+      return;
+    }
+    const label = student.name || student.email || "this student";
+    if (!window.confirm(`Delete ${label}? This will remove the student's account and profile.`)) {
+      return;
+    }
+    setDeletingStudentId(student.id);
+    setEditError("");
+    setFormError("");
+    try {
+      await onDelete(student.id);
+      if (selectedStudentId === student.id) {
+        setSelectedStudentId("");
+      }
+    } catch (deleteError) {
+      setFormError(deleteError.message || "Could not delete student.");
+    } finally {
+      setDeletingStudentId("");
     }
   };
 
@@ -5896,10 +5920,20 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                       <td>{item.student_id}</td>
                       <td>{item.class_name}</td>
                       <td>
-                        <button type="button" className="table-action" onClick={() => handleStartEdit(item)}>
-                  Edit
-                </button>
-              </td>
+                        <div className="table-actions-inline">
+                          <button type="button" className="table-action" onClick={() => handleStartEdit(item)}>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="table-action danger"
+                            onClick={() => handleDeleteStudent(item)}
+                            disabled={deletingStudentId === item.id}
+                          >
+                            {deletingStudentId === item.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

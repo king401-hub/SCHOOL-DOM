@@ -5625,6 +5625,27 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleDeleteStudent = useCallback(
+    async (studentId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/students/${studentId}/`);
+      addAdminNotification({
+        category: "Students",
+        module: "Profile Updates",
+        action: `Deleted student profile record ${studentId}.`,
+        status: "Deleted",
+        priority: "High",
+        tone: "warning",
+      });
+      await Promise.all([
+        loadScreen("/students", true),
+        loadScreen("/enrollments", true),
+        loadScreen("/dashboard", true),
+      ]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleUpdateTeacher = useCallback(
     async (teacherId, payload) => {
       const result = await requestJson(session, "PATCH", `/api/app/teachers/${teacherId}/`, payload);
@@ -6030,6 +6051,7 @@ const unreadNotificationsCount =
         onRetry={handleRetry}
         onCreate={handleCreateStudent}
         onUpdate={handleUpdateStudent}
+        onDelete={handleDeleteStudent}
       />
     );
   } else if (activePath === "/id-cards") {
