@@ -190,6 +190,8 @@ function AttendanceStatusPill({ status = "present" }) {
 }
 
 export function QRCodeManagement({ session }) {
+  const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
+  const audienceLabel = nonK12 ? "Teacher" : "Staff";
   const [qrCode, setQrCode] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -254,7 +256,7 @@ export function QRCodeManagement({ session }) {
         if (previous) URL.revokeObjectURL(previous);
         return nextPreview;
       });
-      setMessage("Staff attendance QR code is ready.");
+      setMessage(`${audienceLabel} attendance QR code is ready.`);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -275,7 +277,7 @@ export function QRCodeManagement({ session }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "staff_attendance_qr.png";
+      link.download = nonK12 ? "teacher_attendance_qr.png" : "staff_attendance_qr.png";
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -289,9 +291,11 @@ export function QRCodeManagement({ session }) {
 
   return (
     <article className="app-panel">
-      <h3>Staff QR Code</h3>
+      <h3>{audienceLabel} QR Code</h3>
       <p className="panel-empty">
-        A single static QR code is shared by teachers and admins and opens the attendance confirmation page.
+        {nonK12
+          ? "A single static QR code belongs to teachers and opens the teacher attendance confirmation page."
+          : "A single static QR code is shared by teachers and admins and opens the attendance confirmation page."}
       </p>
 
       {!session?.user?.id ? (
@@ -322,7 +326,7 @@ export function QRCodeManagement({ session }) {
 
           <div>
             <div className="metric-card" style={{ marginBottom: 14 }}>
-              <p className="metric-label">Staff Checked In Today</p>
+              <p className="metric-label">{audienceLabel}s Checked In Today</p>
               <p className="metric-value">{qrCode.today_attendance_count || 0}</p>
               <p className="metric-trend">{qrCode.is_active ? "QR active" : "QR inactive"}</p>
             </div>
@@ -340,6 +344,8 @@ export function QRCodeManagement({ session }) {
 }
 
 export function AttendanceDashboard({ session }) {
+  const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
+  const audienceLabel = nonK12 ? "Teacher" : "Staff";
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState({ date: "", total_present: 0 });
   const [loading, setLoading] = useState(true);
@@ -379,7 +385,7 @@ export function AttendanceDashboard({ session }) {
     <article className="app-panel">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <h3>Today&apos;s Staff Attendance</h3>
+          <h3>Today&apos;s {audienceLabel} Attendance</h3>
           <p className="panel-empty" style={{ margin: 0 }}>
             {summary.date || new Date().toISOString().slice(0, 10)} - {summary.total_present} checked in
           </p>
@@ -481,7 +487,8 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
   const [message, setMessage] = useState("");
   const [locationStatus, setLocationStatus] = useState("");
 
-  const canUseAttendance = ATTENDANCE_ROLES.has(session?.user?.role);
+  const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
+  const canUseAttendance = nonK12 ? session?.user?.role === "teacher" : ATTENDANCE_ROLES.has(session?.user?.role);
 
   const loadPage = useCallback(async () => {
     if (!token) {
@@ -561,8 +568,8 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
       <main className="signup-page dashboard-page">
         <section className="dashboard-shell">
           <article className="app-panel state-panel">
-            <h3>Staff Attendance Only</h3>
-            <p>This QR code can only be used by authenticated staff, teacher, or admin accounts.</p>
+            <h3>{nonK12 ? "Teacher Attendance Only" : "Staff Attendance Only"}</h3>
+            <p>{nonK12 ? "This QR code can only be used by authenticated teacher accounts." : "This QR code can only be used by authenticated staff, teacher, or admin accounts."}</p>
             <div className="panel-form-actions">
               <button type="button" onClick={() => onNavigate?.("/dashboard")}>
                 Back to Dashboard
@@ -656,6 +663,8 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
 export function AttendanceModule({ session }) {
   const [activeTab, setActiveTab] = useState("dashboard");
   const isAdmin = ADMIN_ROLES.has(session?.user?.role);
+  const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
+  const audienceLabel = nonK12 ? "Teacher" : "Staff";
 
   const tabs = useMemo(
     () => [
@@ -679,8 +688,8 @@ export function AttendanceModule({ session }) {
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>Staff Attendance</h2>
-        <p>Manage the shared QR code and monitor today&apos;s staff check-ins in real time.</p>
+        <h2>{audienceLabel} Attendance</h2>
+        <p>Manage the shared QR code and monitor today&apos;s {audienceLabel.toLowerCase()} check-ins in real time.</p>
       </div>
       <div className="segmented-control" style={{ justifyContent: "flex-start" }}>
         {tabs.map((tab) => (

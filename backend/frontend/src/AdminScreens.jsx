@@ -5246,6 +5246,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [schoolType, setSchoolType] = useState("k12");
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
@@ -5263,6 +5264,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     setEmail(school.email || "");
     setPhone(school.phone || "");
     setAddress(school.address || "");
+    setSchoolType(school.school_type || school.schoolType || "k12");
     setLogoPreview(school.logo || "");
     setLogoFile(null);
     setAcademicYearName(data?.academic_year?.name || "");
@@ -5271,7 +5273,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     setTermName(data?.term?.name || "");
     setTermStart((data?.term?.start_date || "").slice(0, 10));
     setTermEnd((data?.term?.end_date || "").slice(0, 10));
-  }, [data?.academic_year, data?.term, school.address, school.email, school.logo, school.name, school.phone]);
+  }, [data?.academic_year, data?.term, school.address, school.email, school.logo, school.name, school.phone, school.school_type, school.schoolType]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -5287,6 +5289,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
         email: email.trim(),
         phone: phone.trim(),
         address: address.trim(),
+        school_type: schoolType,
         logo: logoFile,
         academic_year_name: academicYearName.trim(),
         academic_year_start_date: academicYearStart,
@@ -5366,6 +5369,13 @@ onClick={() => handleThemeSelect("light")}
               <label className="panel-field">
                 School Code
                 <input value={school.school_code || ""} disabled />
+              </label>
+              <label className="panel-field">
+                School Type
+                <select value={schoolType} onChange={(event) => setSchoolType(event.target.value)} disabled={!canEdit || isSaving}>
+                  <option value="k12">K-12 school</option>
+                  <option value="non_k12">Non K-12 school (tutorials, colleges, polytechnics)</option>
+                </select>
               </label>
               <label className="panel-field">
                 Email

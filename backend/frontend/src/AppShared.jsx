@@ -453,6 +453,7 @@ export function resolveSchoolBrand(...sources) {
     address: school.address || school.school_address || school.schoolAddress || school.user?.school_address || school.user?.schoolAddress || "",
     phone: school.phone || school.phone_number || school.phoneNumber || school.school_phone || school.schoolPhone || school.user?.school_phone || school.user?.schoolPhone || "",
     email: school.email || school.school_email || school.schoolEmail || school.user?.school_email || school.user?.schoolEmail || "",
+    school_type: school.school_type || school.schoolType || school.type || school.user?.school_type || school.user?.schoolType || "k12",
     initials: name
       .split(/\s+/)
       .filter(Boolean)

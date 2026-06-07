@@ -712,6 +712,7 @@ def _school_payload(school, request=None):
         "id": school.id,
         "name": school.name,
         "school_code": school.schema_name,
+        "school_type": getattr(school, "school_type", "k12") or "k12",
         "email": school.email or "",
         "phone": school.phone or "",
         "address": school.address or "",
@@ -720,6 +721,11 @@ def _school_payload(school, request=None):
         "currency": school.currency,
         "timezone": school.timezone,
     }
+
+
+def _is_non_k12_school(user):
+    school = getattr(user, "tenant", None)
+    return bool(school and (getattr(school, "school_type", "k12") or "k12") == SchoolTenant.NON_K12)
 
 
 def _build_id_card_verify_url(request, token):
@@ -1010,6 +1016,7 @@ def _school_identity_payload(tenant, request=None):
     return {
         "name": getattr(tenant, "name", "") or "SchoolDom",
         "code": getattr(tenant, "school_code", "") or getattr(tenant, "schema_name", "") or "",
+        "school_type": getattr(tenant, "school_type", "k12") or "k12",
         "logo": logo_url,
     }
 
@@ -5028,6 +5035,18 @@ def school_settings(request):
                     setattr(school, field, new_value)
                     update_fields.append(field)
 
+        if "school_type" in request.data:
+            school_type = str(request.data.get("school_type") or "").strip()
+            valid_school_types = {choice[0] for choice in SchoolTenant.SCHOOL_TYPE_CHOICES}
+            if school_type not in valid_school_types:
+                return Response(
+                    {"success": False, "message": "School type must be k12 or non_k12."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if getattr(school, "school_type", "k12") != school_type:
+                school.school_type = school_type
+                update_fields.append("school_type")
+
         logo_file = request.FILES.get("logo")
         if logo_file:
             school.logo = logo_file
@@ -5629,6 +5648,7 @@ def lesson_planning(request):
     return Response(
         {
             "success": True,
+            "school": _school_payload(getattr(user, "tenant", None), request),
             "active_year": _academic_year_payload(active_year),
             "active_term": _term_payload(active_term),
             "progress": {
@@ -7064,6 +7084,11 @@ def teacher_class_students(request):
     user = request.user
     if user.role != "teacher":
         return Response({"success": False, "message": "Only teachers can view class students."}, status=status.HTTP_403_FORBIDDEN)
+    if _is_non_k12_school(user) and str(request.query_params.get("context") or "").strip().lower() != "results":
+        return Response(
+            {"success": False, "message": "Non K-12 schools use teacher QR attendance only."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     class_id = request.query_params.get("class_id")
     subject_id = request.query_params.get("subject_id")
     context = str(request.query_params.get("context") or "").strip().lower()
@@ -7144,6 +7169,11 @@ def teacher_mark_student_attendance(request):
     user = request.user
     if user.role != "teacher":
         return Response({"success": False, "message": "Only teachers can mark student attendance."}, status=status.HTTP_403_FORBIDDEN)
+    if _is_non_k12_school(user):
+        return Response(
+            {"success": False, "message": "Non K-12 schools use QR attendance only. Teachers cannot mark student attendance."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     student_code = str(
         request.data.get("student_id")
         or request.data.get("student_lookup")

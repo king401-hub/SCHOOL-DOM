@@ -260,6 +260,21 @@ def admin_redirect_url(user):
     }.get(user.role, '/dashboard/')
 
 
+def auth_school_payload(user):
+    school = getattr(user, "tenant", None)
+    if not school:
+        return {}
+    return {
+        "id": school.id,
+        "name": school.name,
+        "school_code": school.schema_name,
+        "school_type": getattr(school, "school_type", "k12") or "k12",
+        "email": school.email or "",
+        "phone": school.phone or "",
+        "address": school.address or "",
+    }
+
+
 def build_frontend_url(request, path, query=None):
     base_url = (getattr(settings, "FRONTEND_BASE_URL", "") or "").strip().rstrip("/")
     if not base_url:
@@ -368,6 +383,7 @@ def create_school(request):
                 tenant = SchoolTenant.objects.create(
                     name=payload['school_name'],
                     schema_name=schema_name,
+                    school_type=payload.get('school_type') or SchoolTenant.K12,
                     email=payload.get('email') or None,
                     phone=payload.get('phone') or None,
                     address=payload.get('address') or None,
@@ -395,7 +411,7 @@ def create_school(request):
                     'school_code': tenant.schema_name,
                     'domain': domain_name,
                     'free_credits': credit_pool.balance,
-                    'school_type': payload.get('school_type') or 'k12',
+                    'school_type': tenant.school_type,
                 },
                 'requested_code': requested_code,
                 'conflict_resolved': tenant.schema_name != requested_code,
@@ -451,6 +467,7 @@ def login_view(request):
                 'message': 'Enter the 6-digit OTP sent to your email to continue.',
                 'user': UserSerializer(user).data,
                 'school_code': user.tenant.schema_name if user.tenant else '',
+                'school': auth_school_payload(user),
                 **admin_otp_debug_payload(user),
             })
 
@@ -463,6 +480,7 @@ def login_view(request):
                 'message': 'Please verify your email address.',
                 'user': UserSerializer(user).data,
                 'school_code': user.tenant.schema_name if user.tenant else '',
+                'school': auth_school_payload(user),
                 **tokens
             })
         
@@ -471,6 +489,7 @@ def login_view(request):
             'message': 'Login successful',
             'user': UserSerializer(user).data,
             'school_code': user.tenant.schema_name if user.tenant else '',
+            'school': auth_school_payload(user),
             'redirect_url': admin_redirect_url(user),
             **tokens
         })
@@ -672,6 +691,7 @@ def admin_verify_otp(request):
         'message': 'Admin verification successful.',
         'user': UserSerializer(user).data,
         'school_code': user.tenant.schema_name if user.tenant else '',
+        'school': auth_school_payload(user),
         'redirect_url': admin_redirect_url(user),
         **tokens
     })

@@ -33,6 +33,9 @@ def is_attendance_admin(user):
 def can_mark_attendance(user):
     if not (user and user.is_authenticated):
         return False
+    tenant = getattr(user, 'tenant', None)
+    if tenant and (getattr(tenant, 'school_type', 'k12') or 'k12') == 'non_k12':
+        return user.role == 'teacher'
     if user.role in ATTENDANCE_USER_ROLES:
         return True
     try:

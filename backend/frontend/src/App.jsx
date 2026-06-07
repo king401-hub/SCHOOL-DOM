@@ -3046,6 +3046,20 @@ function QuizHub({ session, onNavigate }) {
   );
 }
 
+function schoolTypeFromSession(session, data = {}) {
+  return (
+    data?.school?.school_type ||
+    data?.school?.schoolType ||
+    session?.school?.school_type ||
+    session?.school?.schoolType ||
+    "k12"
+  );
+}
+
+function isNonK12School(session, data = {}) {
+  return schoolTypeFromSession(session, data) === "non_k12";
+}
+
 function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [planning, setPlanning] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -3053,6 +3067,9 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [noteForm, setNoteForm] = useState({ title: "Quick note", body: "", pinned: false });
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const nonK12 = isNonK12School(session, planning);
+  const planningTitle = nonK12 ? "Course Outline & Notepad" : "Lesson Plans & Notepad";
+  const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
 
   const loadPlanning = useCallback(async () => {
     setError("");
@@ -3092,11 +3109,11 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         subject_id: Number(form.subject_id),
         week_number: Number(form.week_number || 1),
       });
-      setFeedback("Lesson plan saved and aligned with the active term.");
+      setFeedback(`${planningItemLabel} saved and aligned with the active term.`);
       setForm((prev) => ({ ...prev, title: "", objectives: "", activities: "", resources: "", assessment: "", notes: "" }));
       await loadPlanning();
     } catch (saveError) {
-      setError(saveError.message || "Could not save lesson plan.");
+      setError(saveError.message || `Could not save ${planningItemLabel.toLowerCase()}.`);
     }
   };
 
@@ -3124,8 +3141,8 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         <header className="academic-page-hero">
           <div>
             <p className="quiz-kicker">Teacher workspace</p>
-            <h1>Lesson Plans & Notepad</h1>
-            <p>Create weekly scheme-of-work plans and keep quick academic notes.</p>
+            <h1>{planningTitle}</h1>
+            <p>{nonK12 ? "Create course outlines and keep quick academic notes." : "Create weekly scheme-of-work plans and keep quick academic notes."}</p>
           </div>
           <button type="button" className="pill-button ghost" onClick={() => onNavigate?.("/dashboard")}>
             Back to dashboard
@@ -3135,7 +3152,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     <article className="app-panel academic-planning-panel">
       <div className="panel-head">
         <div>
-          <h3>Lesson Plans & Notepad</h3>
+          <h3>{planningTitle}</h3>
           <small>{planning?.active_term?.name || "Active term"} - {planning?.active_year?.name || "Academic year"}</small>
         </div>
         <span className="pill">Week {planning?.progress?.latest_week || 0}</span>
@@ -3170,7 +3187,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
               </select>
             </label>
             <label className="panel-field full">
-              Topic / Scheme of work
+              {nonK12 ? "Course topic / outline" : "Topic / Scheme of work"}
               <input value={form.title} onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))} required />
             </label>
             <label className="panel-field full">
@@ -3182,7 +3199,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
               <textarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows="2" />
             </label>
           </div>
-          <div className="panel-form-actions"><button type="submit">Save lesson plan</button></div>
+          <div className="panel-form-actions"><button type="submit">Save {planningItemLabel.toLowerCase()}</button></div>
         </form>
         <form className="panel-form note-pad-form" onSubmit={handleNoteSubmit}>
           <label className="panel-field">
@@ -4444,12 +4461,13 @@ function TeacherWorkspace({
       : subjectOptions.filter((subject) => taughtNames.includes(subject.name.toLowerCase()));
   const teacherProfile = data?.profile || data?.teacher || {};
   const teacherName = teacherProfile.name || session?.user?.full_name || session?.user?.email || "Teacher";
+  const nonK12 = isNonK12School(session, data);
   const teacherTabs = [
     ["overview", "Home", "overview"],
     ["exam-builder", "Exams", "exam"],
     ["past-exams", "Exam History", "calendar"],
-    ["attendance", "Student Attendance", "attendance"],
-    ["planning", "Lesson Plans and Notepad", "planning"],
+    nonK12 ? ["attendance-info", "QR Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
+    ["planning", nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad", "planning"],
     ["class-messages", "Messages & Notifications", "message"],
     ["results", "Results", "results"],
     ["requests", "HR System", "requests"],
@@ -4527,6 +4545,15 @@ function TeacherWorkspace({
     }
     if (activeTab === "attendance") {
       return <TeacherSwipeAttendancePanel session={session} classOptions={classOptions} />;
+    }
+    if (activeTab === "attendance-info") {
+      return (
+        <article className="app-panel state-panel">
+          <h3>QR Attendance Only</h3>
+          <p>For non K-12 schools, attendance belongs to teachers and is recorded from the shared teacher QR code. Teachers do not mark student attendance.</p>
+          <p>Ask the admin to generate or print the QR code from the Attendance page, then scan it to clock in and clock out.</p>
+        </article>
+      );
     }
     if (activeTab === "planning") {
       return <TeacherPlanningPanel session={session} onNavigate={onNavigate} />;
