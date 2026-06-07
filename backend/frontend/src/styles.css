@@ -7191,6 +7191,42 @@ html {
   color: #6b7280;
 }
 
+.landing-hero-actions {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 3rem;
+}
+
+.landing-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 56px;
+  padding: 1rem 2rem;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+.landing-cta:hover {
+  box-shadow: 0 16px 32px rgba(59, 130, 246, 0.3);
+  transform: translateY(-2px);
+}
+
+.landing-cta svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
 .pwa-update-prompt {
   position: fixed;
   left: 50%;
@@ -9551,6 +9587,10 @@ background: radial-gradient(circle at 20% 50%, rgba(37, 99, 235, 0.15), transpar
 
   .hero-subtitle {
     font-size: 1rem;
+  }
+
+  .landing-cta {
+    width: 100%;
   }
 
   .hero-stats {

@@ -9,8 +9,14 @@ function Logo() {
   );
 }
 
-function LandingPage() {
+function LandingPage({ onGetStarted }) {
   const [theme, setTheme] = useState("dark");
+
+  const handleGetStarted = () => {
+    if (typeof onGetStarted === "function") {
+      onGetStarted();
+    }
+  };
 
   return (
     <div className={`landing-page ${theme === "light" ? "theme-light" : ""}`}>
@@ -56,6 +62,15 @@ function LandingPage() {
           <p className="hero-subtitle">
             A next-generation CBT platform designed for integrity, scaled with intelligence, and built to empower educators and students worldwide.
           </p>
+
+          <div className="landing-hero-actions">
+            <button type="button" className="landing-cta" onClick={handleGetStarted}>
+              Get Started for Free
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
 
           <div className="hero-stats">
             <div className="stat">
