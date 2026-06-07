@@ -47,6 +47,7 @@ from academic.models import (
     ResultBatch,
     StudentSubjectScore,
     StudentClassPromotion,
+    SchoolActivityCalendar,
     TeacherNote,
 )
 from core.models import SchoolTenant, Domain
@@ -499,6 +500,81 @@ def _term_payload(item):
         "is_active": item.is_active,
         "academic_year_id": item.academic_year_id,
     }
+
+
+def _activity_calendar_payload(item):
+    return {
+        "id": item.id,
+        "month": item.month,
+        "year": item.year,
+        "title": item.title,
+        "activity_date": item.activity_date,
+        "end_date": item.end_date,
+        "description": item.description,
+        "color": item.color,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+    }
+
+
+def _activity_calendar_items_from_request(request):
+    raw_items = request.data.get("activity_calendar")
+    if raw_items in (None, ""):
+        return None
+    if isinstance(raw_items, str):
+        try:
+            raw_items = json.loads(raw_items)
+        except json.JSONDecodeError:
+            raise ValueError("Activity calendar must be valid JSON.")
+    if not isinstance(raw_items, list):
+        raise ValueError("Activity calendar must be a list.")
+
+    normalized = []
+    for index, item in enumerate(raw_items, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"Activity {index} must be an object.")
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        try:
+            month = int(item.get("month") or 0)
+        except (TypeError, ValueError):
+            raise ValueError(f"Activity {index} month is invalid.")
+        if month < 1 or month > 12:
+            raise ValueError(f"Activity {index} month must be between 1 and 12.")
+        year = item.get("year")
+        if year in (None, ""):
+            year = None
+        else:
+            try:
+                year = int(year)
+            except (TypeError, ValueError):
+                raise ValueError(f"Activity {index} year is invalid.")
+            if year < 1900 or year > 2200:
+                raise ValueError(f"Activity {index} year must be between 1900 and 2200.")
+        activity_date = parse_date(str(item.get("activity_date") or "")) if item.get("activity_date") else None
+        end_date = parse_date(str(item.get("end_date") or "")) if item.get("end_date") else None
+        if item.get("activity_date") and not activity_date:
+            raise ValueError(f"Activity {index} date is invalid.")
+        if item.get("end_date") and not end_date:
+            raise ValueError(f"Activity {index} end date is invalid.")
+        if activity_date and end_date and end_date < activity_date:
+            raise ValueError(f"Activity {index} end date cannot be before the start date.")
+        color = str(item.get("color") or "#2563EB").strip()
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            color = "#2563EB"
+        normalized.append(
+            {
+                "month": month,
+                "year": year,
+                "title": title[:200],
+                "activity_date": activity_date,
+                "end_date": end_date,
+                "description": str(item.get("description") or "").strip(),
+                "color": color,
+            }
+        )
+    return normalized
 
 
 def _lesson_plan_payload(plan):
@@ -5086,6 +5162,34 @@ def school_settings(request):
 
                     linked_code_counts = _regenerate_school_linked_codes(school)
 
+        activity_items = None
+        if "activity_calendar" in request.data:
+            try:
+                activity_items = _activity_calendar_items_from_request(request)
+            except ValueError as exc:
+                return Response(
+                    {"success": False, "message": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            activity_tenant = _tenant_for_model(SchoolActivityCalendar, user)
+            if activity_tenant is None:
+                return Response(
+                    {"success": False, "message": "Could not resolve the school calendar tenant."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            with db_transaction.atomic():
+                SchoolActivityCalendar.objects.filter(tenant=activity_tenant).delete()
+                SchoolActivityCalendar.objects.bulk_create(
+                    [
+                        SchoolActivityCalendar(
+                            tenant=activity_tenant,
+                            created_by=user,
+                            **item,
+                        )
+                        for item in (activity_items or [])
+                    ]
+                )
+
         active_year = _active_academic_year(user)
         year_name = str(request.data.get("academic_year_name") or "").strip()
         year_start = request.data.get("academic_year_start_date")
@@ -5136,6 +5240,10 @@ def school_settings(request):
                 "school": _school_payload(school, request),
                 "academic_year": _academic_year_payload(active_year),
                 "term": _term_payload(active_term),
+                "activity_calendar": [
+                    _activity_calendar_payload(item)
+                    for item in _scope_to_user_tenant(SchoolActivityCalendar.objects.all(), user).order_by("year", "month", "activity_date", "title")[:300]
+                ],
                 "support_tickets": [_support_ticket_payload(item, request) for item in SupportTicket.objects.filter(school=school)[:8]],
                 "can_edit": True,
                 "renamed": name_changed,
@@ -5153,6 +5261,10 @@ def school_settings(request):
             "term": _term_payload(active_term),
             "academic_years": [_academic_year_payload(item) for item in _scope_to_user_tenant(AcademicYear.objects.all(), user)[:20]],
             "terms": [_term_payload(item) for item in _scope_to_user_tenant(Term.objects.select_related("academic_year"), user)[:20]],
+            "activity_calendar": [
+                _activity_calendar_payload(item)
+                for item in _scope_to_user_tenant(SchoolActivityCalendar.objects.all(), user).order_by("year", "month", "activity_date", "title")[:300]
+            ],
             "support_tickets": [_support_ticket_payload(item, request) for item in SupportTicket.objects.filter(school=school)[:8]],
             "can_edit": _can_manage_school_settings(user),
         }

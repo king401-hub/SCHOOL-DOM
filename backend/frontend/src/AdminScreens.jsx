@@ -24,6 +24,20 @@ import { TeacherExamBuilder } from "./TeacherExamPanels";
 
 const NAIRA_SYMBOL = "\u20A6";
 const FINANCE_TABLE_PREVIEW_COUNT = 3;
+const ACTIVITY_MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
 const heatTone = (status) => (status === "strong" ? "strong" : status === "watch" ? "watch" : "weak");
@@ -5255,6 +5269,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
   const [termName, setTermName] = useState("");
   const [termStart, setTermStart] = useState("");
   const [termEnd, setTermEnd] = useState("");
+  const [activityCalendar, setActivityCalendar] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -5273,7 +5288,46 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     setTermName(data?.term?.name || "");
     setTermStart((data?.term?.start_date || "").slice(0, 10));
     setTermEnd((data?.term?.end_date || "").slice(0, 10));
-  }, [data?.academic_year, data?.term, school.address, school.email, school.logo, school.name, school.phone, school.school_type, school.schoolType]);
+    setActivityCalendar(
+      (data?.activity_calendar || []).map((item) => ({
+        id: item.id || `activity-${Date.now()}-${Math.random()}`,
+        month: String(item.month || new Date().getMonth() + 1),
+        year: item.year ? String(item.year) : "",
+        title: item.title || "",
+        activity_date: (item.activity_date || "").slice(0, 10),
+        end_date: (item.end_date || "").slice(0, 10),
+        description: item.description || "",
+        color: item.color || "#2563EB",
+      }))
+    );
+  }, [data?.academic_year, data?.term, data?.activity_calendar, school.address, school.email, school.logo, school.name, school.phone, school.school_type, school.schoolType]);
+
+  const addActivity = () => {
+    const today = new Date();
+    setActivityCalendar((current) => [
+      ...current,
+      {
+        id: `new-${Date.now()}`,
+        month: String(today.getMonth() + 1),
+        year: String(today.getFullYear()),
+        title: "",
+        activity_date: "",
+        end_date: "",
+        description: "",
+        color: "#2563EB",
+      },
+    ]);
+  };
+
+  const updateActivity = (activityId, key, value) => {
+    setActivityCalendar((current) =>
+      current.map((item) => (item.id === activityId ? { ...item, [key]: value } : item))
+    );
+  };
+
+  const removeActivity = (activityId) => {
+    setActivityCalendar((current) => current.filter((item) => item.id !== activityId));
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -5297,6 +5351,19 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
         term_name: termName.trim(),
         term_start_date: termStart,
         term_end_date: termEnd,
+        activity_calendar: JSON.stringify(
+          activityCalendar
+            .filter((item) => item.title.trim())
+            .map((item) => ({
+              month: Number(item.month || 0),
+              year: item.year ? Number(item.year) : null,
+              title: item.title.trim(),
+              activity_date: item.activity_date || null,
+              end_date: item.end_date || null,
+              description: item.description.trim(),
+              color: item.color || "#2563EB",
+            }))
+        ),
       });
       setFeedback(result?.message || "School settings updated.");
     } catch (actionError) {
@@ -5413,6 +5480,65 @@ onClick={() => handleThemeSelect("light")}
                           Term End
                           <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} disabled={!canEdit || isSaving} />
                         </label>
+                      </div>
+                      <div className="settings-activity-calendar">
+                        <div className="panel-head">
+                          <div>
+                            <h3>Activities Calendar</h3>
+                            <small>Set monthly school activities for the academic calendar.</small>
+                          </div>
+                          <button type="button" className="table-action" onClick={addActivity} disabled={!canEdit || isSaving}>
+                            Add Activity
+                          </button>
+                        </div>
+                        {activityCalendar.length ? (
+                          <div className="activity-calendar-list">
+                            {activityCalendar.map((activity) => (
+                              <div key={activity.id} className="activity-calendar-row">
+                                <label className="panel-field">
+                                  Month
+                                  <select value={activity.month} onChange={(event) => updateActivity(activity.id, "month", event.target.value)} disabled={!canEdit || isSaving}>
+                                    {ACTIVITY_MONTHS.map((month, index) => (
+                                      <option key={month} value={index + 1}>{month}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="panel-field">
+                                  Year
+                                  <input type="number" min="1900" max="2200" value={activity.year} onChange={(event) => updateActivity(activity.id, "year", event.target.value)} placeholder="2026" disabled={!canEdit || isSaving} />
+                                </label>
+                                <label className="panel-field">
+                                  Start Date
+                                  <input type="date" value={activity.activity_date} onChange={(event) => updateActivity(activity.id, "activity_date", event.target.value)} disabled={!canEdit || isSaving} />
+                                </label>
+                                <label className="panel-field">
+                                  End Date
+                                  <input type="date" value={activity.end_date} onChange={(event) => updateActivity(activity.id, "end_date", event.target.value)} disabled={!canEdit || isSaving} />
+                                </label>
+                                <label className="panel-field full">
+                                  Activity Title
+                                  <input value={activity.title} onChange={(event) => updateActivity(activity.id, "title", event.target.value)} placeholder="Inter-house sports, matriculation, excursion..." disabled={!canEdit || isSaving} />
+                                </label>
+                                <label className="panel-field full">
+                                  Details
+                                  <textarea value={activity.description} onChange={(event) => updateActivity(activity.id, "description", event.target.value)} rows="2" disabled={!canEdit || isSaving} />
+                                </label>
+                                <label className="panel-field">
+                                  Color
+                                  <input type="color" value={activity.color} onChange={(event) => updateActivity(activity.id, "color", event.target.value)} disabled={!canEdit || isSaving} />
+                                </label>
+                                <div className="panel-field field-action">
+                                  <span>&nbsp;</span>
+                                  <button type="button" className="table-action danger" onClick={() => removeActivity(activity.id)} disabled={!canEdit || isSaving}>
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="panel-empty">No monthly activities have been added yet.</p>
+                        )}
                       </div>
                     {formError ? <p className="form-feedback error">{formError}</p> : null}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}

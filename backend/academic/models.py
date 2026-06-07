@@ -31,6 +31,33 @@ class AcademicYear(TenantAwareModel):
     def __str__(self):
         return self.name
 
+
+class SchoolActivityCalendar(TenantAwareModel, TimeStampedModel):
+    month = models.PositiveSmallIntegerField()
+    year = models.PositiveIntegerField(null=True, blank=True)
+    title = models.CharField(max_length=200)
+    activity_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    description = models.TextField(blank=True)
+    color = models.CharField(max_length=7, default="#2563EB")
+    created_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_school_activities",
+    )
+
+    class Meta:
+        ordering = ["year", "month", "activity_date", "title"]
+        indexes = [
+            models.Index(fields=["tenant", "year", "month"]),
+            models.Index(fields=["tenant", "activity_date"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} - {self.month}/{self.year or ''}"
+
 class Subject(TenantAwareModel, TimeStampedModel):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20)
