@@ -1,6 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Windows.Forms;
 
 namespace SchoolDom.Cbt.Win7
@@ -32,7 +35,7 @@ namespace SchoolDom.Cbt.Win7
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Palette.Background;
             Font = new Font("Segoe UI", 10);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleMode = AutoScaleMode.Font;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
             _root = new Panel { Dock = DockStyle.Fill };
@@ -77,21 +80,22 @@ namespace SchoolDom.Cbt.Win7
             });
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(82, 90, 560, 440);
+            var card = Card(82, 64, 590, 500);
             content.Controls.Add(card);
 
-            card.Controls.Add(TextLabel("Cloud Login", 32, 28, 22, true, 460, Palette.Text));
-            card.Controls.Add(TextLabel("Use an admin, principal, super admin, teacher, or accountant account with CBT sync permission.", 34, 68, 10, false, 485, Palette.Muted));
+            card.Controls.Add(TextLabel("Cloud Login", 34, 28, 20, true, 480, Palette.Text));
+            card.Controls.Add(TextLabel("Use an admin, principal, super admin, teacher, or accountant account with CBT sync permission.", 36, 76, 10, false, 500, Palette.Muted));
 
-            var url = Field(card, "Cloud URL", _store.State.CloudUrl ?? "https://schooldom.academy", 34, 124, false);
-            var email = Field(card, "Email", "", 34, 194, false);
-            var password = Field(card, "Password", "", 294, 194, true);
-            var schoolCode = Field(card, "School Code", "", 34, 264, false);
+            var url = Field(card, "Cloud URL", _store.State.CloudUrl ?? "https://schooldom.academy", 36, 148, false);
+            url.Width = 500;
+            var email = Field(card, "Email", "", 36, 228, false);
+            var password = Field(card, "Password", "", 306, 228, true);
+            var schoolCode = Field(card, "School Code", "", 36, 308, false);
 
-            _statusLabel = TextLabel("", 34, 380, 10, false, 490, Palette.Muted);
+            _statusLabel = TextLabel("", 36, 438, 10, false, 500, Palette.Muted);
             card.Controls.Add(_statusLabel);
 
-            var login = PrimaryButton("Login and Sync", 34, 324, 180);
+            var login = PrimaryButton("Login and Sync", 36, 382, 180);
             login.Click += (s, e) =>
             {
                 RunWithStatus("Signing in and pulling school data...", () =>
@@ -102,7 +106,7 @@ namespace SchoolDom.Cbt.Win7
             };
             card.Controls.Add(login);
 
-            var token = SecondaryButton("Use JWT Token", 226, 324, 160);
+            var token = SecondaryButton("Use JWT Token", 210, 382, 166);
             token.Click += (s, e) =>
             {
                 var accessToken = PromptDialog.Show("JWT Access Token", "Paste admin JWT access token.", true);
@@ -114,10 +118,6 @@ namespace SchoolDom.Cbt.Win7
                 }, ShowDashboard);
             };
             card.Controls.Add(token);
-
-            var offline = SecondaryButton("Offline Tools", 398, 324, 120);
-            offline.Click += (s, e) => ShowDashboard();
-            card.Controls.Add(offline);
 
             _root.Controls.Add(content);
             _root.Controls.Add(hero);
@@ -143,36 +143,17 @@ namespace SchoolDom.Cbt.Win7
             broadsheet.Click += ExportBroadsheet;
             sidebar.Controls.Add(broadsheet);
 
-            var lanStart = SideButton("Start LAN", 24, 294);
-            lanStart.Click += (s, e) =>
-            {
-                try
-                {
-                    MessageBox.Show(_lan.Start(), "LAN Server");
-                    ShowDashboard();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.Message, "LAN Server Failed");
-                }
-            };
-            sidebar.Controls.Add(lanStart);
-
-            var lanStop = SideButton("Stop LAN", 24, 348);
-            lanStop.Click += (s, e) =>
-            {
-                MessageBox.Show(_lan.Stop(), "LAN Server");
-                ShowDashboard();
-            };
-            sidebar.Controls.Add(lanStop);
-
-            var import = SideButton("Import JSON", 24, 402);
+            var import = SideButton("Import JSON", 24, 294);
             import.Click += ImportPackage;
             sidebar.Controls.Add(import);
 
-            var export = SideButton("Export Results", 24, 456);
+            var export = SideButton("Export Results", 24, 348);
             export.Click += ExportResults;
             sidebar.Controls.Add(export);
+
+            var installStudent = SideButton("Install Student App", 24, 402);
+            installStudent.Click += InstallStudentApp;
+            sidebar.Controls.Add(installStudent);
 
             var signOut = SideButton("Sign Out", 24, 610);
             signOut.Click += (s, e) =>
@@ -258,6 +239,9 @@ namespace SchoolDom.Cbt.Win7
             {
                 card.Controls.Add(TextLabel(exam.Title, 22, y, 10, true, 250, Palette.Text));
                 card.Controls.Add(TextLabel((exam.Subject ?? "") + "  " + Math.Max(1, exam.Questions.Count) + " question(s)", 22, y + 28, 9, false, 300, Palette.Muted));
+                var pin = MiniButton("New PIN", 244, y, 76);
+                pin.Click += (s, e) => GenerateExamPin(exam);
+                card.Controls.Add(pin);
                 var review = MiniButton("Review", 326, y, 84);
                 review.Click += (s, e) => ShowExamReview(exam);
                 card.Controls.Add(review);
@@ -296,12 +280,14 @@ namespace SchoolDom.Cbt.Win7
                 list.Columns.Add("Subject", 150);
                 list.Columns.Add("Class", 120);
                 list.Columns.Add("Questions", 80);
+                list.Columns.Add("PIN", 90);
                 foreach (var exam in _store.State.Exams.OrderBy(e => e.Title))
                 {
                     var item = new ListViewItem(exam.Title);
                     item.SubItems.Add(exam.Subject ?? "");
                     item.SubItems.Add(exam.ClassName ?? "");
                     item.SubItems.Add(exam.Questions.Count.ToString());
+                    item.SubItems.Add(string.IsNullOrWhiteSpace(exam.PinHash) ? "Missing" : "Ready");
                     item.Tag = exam;
                     list.Items.Add(item);
                 }
@@ -318,8 +304,17 @@ namespace SchoolDom.Cbt.Win7
                     ShowExamEditor((ExamRecord)list.SelectedItems[0].Tag);
                     form.Close();
                 };
+                var generatePin = SecondaryButton("Generate PIN", 154, 458, 140);
+                generatePin.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+                generatePin.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    GenerateExamPin((ExamRecord)list.SelectedItems[0].Tag);
+                    form.Close();
+                };
                 var panel = new Panel { Dock = DockStyle.Bottom, Height = 58 };
                 panel.Controls.Add(edit);
+                panel.Controls.Add(generatePin);
                 form.Controls.Add(list);
                 form.Controls.Add(panel);
                 form.ShowDialog(this);
@@ -433,6 +428,33 @@ namespace SchoolDom.Cbt.Win7
             }
         }
 
+        private void GenerateExamPin(ExamRecord exam)
+        {
+            if (exam == null) return;
+            if (MessageBox.Show("Generate a new PIN for " + exam.Title + "?\r\n\r\nThe old PIN will stop working on the website and on this LAN after the update.", "Generate New PIN", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                var data = _cloud.RegenerateExamPin(exam.Id);
+                var pin = JsonUtil.Text(data.ContainsKey("pin") ? data["pin"] : "");
+                var pinHash = JsonUtil.Text(data.ContainsKey("offline_pin_hash") ? data["offline_pin_hash"] : "");
+                if (string.IsNullOrWhiteSpace(pin) || string.IsNullOrWhiteSpace(pinHash))
+                {
+                    throw new InvalidOperationException("The website generated a PIN but did not return the offline PIN hash.");
+                }
+                exam.PinHash = pinHash;
+                _packages.SaveExam(exam);
+                Cursor = Cursors.Default;
+                MessageBox.Show("New PIN for " + exam.Title + ":\r\n\r\n" + pin + "\r\n\r\nGive this PIN to students for the LAN CBT app.", "New Exam PIN");
+                ShowDashboard();
+            }
+            catch (Exception ex)
+            {
+                Cursor = Cursors.Default;
+                MessageBox.Show(ex.Message, "PIN Generation Failed");
+            }
+        }
+
         private void RunWithStatus(string status, Func<string> action, Action onSuccess)
         {
             try
@@ -516,9 +538,66 @@ namespace SchoolDom.Cbt.Win7
             }
         }
 
+        private void InstallStudentApp(object sender, EventArgs e)
+        {
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                var bundledPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SchoolDomStudentCBT-Win7.exe");
+                var targetPath = bundledPath;
+                if (!IsValidInstaller(targetPath))
+                {
+                    var cloudUrl = _cloud.NormalizeCloudUrl(_store.State.CloudUrl);
+                    var downloadUrl = cloudUrl + "/app/download/student-cbt/win7/student/";
+                    var targetDir = Path.Combine(Path.GetTempPath(), "SchoolDom");
+                    Directory.CreateDirectory(targetDir);
+                    targetPath = Path.Combine(targetDir, "SchoolDomStudentCBT-Win7.exe");
+                    using (var client = new WebClient())
+                    {
+                        client.Headers["User-Agent"] = "SchoolDom-Admin-Sync-Win7";
+                        client.DownloadFile(downloadUrl, targetPath);
+                    }
+                    if (!IsValidInstaller(targetPath))
+                    {
+                        throw new InvalidOperationException("The downloaded student installer is not a valid Windows setup file. Rebuild or upload SchoolDomStudentCBT-Win7.exe on the website.");
+                    }
+                }
+                Cursor = Cursors.Default;
+                Process.Start(targetPath);
+                MessageBox.Show("Student CBT installer downloaded and started.", "Student App");
+            }
+            catch (Exception ex)
+            {
+                Cursor = Cursors.Default;
+                MessageBox.Show(ex.Message, "Student App Installer Failed");
+            }
+        }
+
+        private static bool IsValidInstaller(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return false;
+            var info = new FileInfo(path);
+            if (info.Length < 512 * 1024) return false;
+            using (var stream = File.OpenRead(path))
+            {
+                if (stream.Length < 2) return false;
+                return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
+            }
+        }
+
         private TextBox Field(Control parent, string label, string value, int left, int top, bool password)
         {
-            parent.Controls.Add(TextLabel(label, left, top - 22, 9, true, 220, Palette.Text));
+            var labelControl = new Label
+            {
+                Text = label,
+                Left = left,
+                Top = top - 30,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Palette.Text,
+                UseCompatibleTextRendering = true
+            };
+            parent.Controls.Add(labelControl);
             var box = new TextBox
             {
                 Left = left,
@@ -536,11 +615,11 @@ namespace SchoolDom.Cbt.Win7
 
         private Panel Metric(string label, string value, int left, int top, Color accent)
         {
-            var card = Card(left, top, 224, 84);
-            var bar = new Panel { Left = 0, Top = 0, Width = 5, Height = 84, BackColor = accent };
+            var card = Card(left, top, 224, 96);
+            var bar = new Panel { Left = 0, Top = 0, Width = 5, Height = 96, BackColor = accent };
             card.Controls.Add(bar);
-            card.Controls.Add(TextLabel(label, 20, 12, 9, true, 180, Palette.Muted));
-            card.Controls.Add(TextLabel(value, 20, 38, 20, true, 180, Palette.Text));
+            card.Controls.Add(TextLabel(label, 20, 14, 9, true, 180, Palette.Muted));
+            card.Controls.Add(TextLabel(value, 20, 44, 18, true, 180, Palette.Text));
             return card;
         }
 
@@ -579,17 +658,16 @@ namespace SchoolDom.Cbt.Win7
 
         private Label TextLabel(string text, int left, int top, int size, bool bold, int width, Color color)
         {
-            var lineCount = Math.Max(1, ((text ?? "").Length / Math.Max(18, width / 8)) + 1);
-            var height = Math.Max(size * 3 + 10, lineCount * (size + 12));
             return new Label
             {
                 Text = text,
                 Left = left,
                 Top = top,
-                Width = width,
-                Height = height,
+                AutoSize = true,
+                MaximumSize = new Size(width, 0),
                 Font = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular),
-                ForeColor = color
+                ForeColor = color,
+                UseCompatibleTextRendering = true
             };
         }
 

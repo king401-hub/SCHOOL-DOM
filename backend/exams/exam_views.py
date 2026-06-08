@@ -119,6 +119,13 @@ def _published_exam_queryset_for_user(user):
     return queryset.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant)).distinct()
 
 
+def _offline_pin_hash(pin):
+    plain_pin = ExamPin.normalize_pin(getattr(pin, "plain_pin", "") if pin else "")
+    if not plain_pin:
+        return ""
+    return hashlib.sha256(plain_pin.encode("utf-8")).hexdigest()
+
+
 def _question_queryset_for_exam(exam):
     direct = exam.questions.all()
     if direct.exists():
@@ -1121,8 +1128,7 @@ def cbt_offline_sync_package(request):
                 "instructions": exam.instructions,
                 "questions": questions,
                 "pin_preview": active_pin.pin_preview if active_pin else "",
-                # If future PIN generation stores a desktop-safe SHA-256 digest, expose it here as offline_pin_hash.
-                "offline_pin_hash": getattr(active_pin, "offline_pin_hash", "") if active_pin else "",
+                "offline_pin_hash": _offline_pin_hash(active_pin),
             }
         )
 
@@ -1162,6 +1168,66 @@ def cbt_offline_sync_package(request):
             "students": student_rows,
         }
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def cbt_regenerate_exam_pin(request, exam_id):
+    """Regenerate the active CBT PIN for one published exam and return the LAN-safe hash."""
+    if request.user.role not in {"school_admin", "principal", "super_admin", "teacher", "accountant"}:
+        return Response({"success": False, "message": "Admin or teacher access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
+    active_pins = exam.pins.select_for_update().filter(is_active=True)
+    previous_pin = active_pins.order_by("-created_at").first()
+    usage_policy = getattr(previous_pin, "usage_policy", ExamPin.USE_REUSABLE) if previous_pin else ExamPin.USE_REUSABLE
+    expires_at = getattr(previous_pin, "expires_at", None) if previous_pin else None
+
+    for pin in active_pins:
+        pin.is_active = False
+        pin.deactivated_at = timezone.now()
+        pin.deactivated_by = request.user
+        pin.last_regenerated_at = timezone.now()
+        pin.last_regenerated_by = request.user
+        pin.save(update_fields=["is_active", "deactivated_at", "deactivated_by", "last_regenerated_at", "last_regenerated_by", "updated_at"])
+
+    for _ in range(10):
+        plain_pin = ExamPin.generate_plain_pin()
+        new_pin = ExamPin(
+            exam=exam,
+            tenant=getattr(exam, "tenant", None) or getattr(request.user, "tenant", None),
+            usage_policy=usage_policy,
+            expires_at=expires_at,
+            is_active=True,
+            created_by=request.user,
+            last_regenerated_at=timezone.now(),
+            last_regenerated_by=request.user,
+        )
+        new_pin.set_pin(plain_pin)
+        if not ExamPin.objects.filter(pin_digest=new_pin.pin_digest).exists():
+            new_pin.save()
+            ExamPinUsage.objects.create(
+                pin=new_pin,
+                exam=exam,
+                tenant=getattr(exam, "tenant", None) or getattr(request.user, "tenant", None),
+                status=ExamPinUsage.STATUS_REGENERATED,
+                message="PIN regenerated from offline admin CBT app.",
+                ip_address=request.META.get("REMOTE_ADDR"),
+                user_agent=(request.META.get("HTTP_USER_AGENT") or "")[:255],
+            )
+            return Response(
+                {
+                    "success": True,
+                    "exam_id": exam.id,
+                    "pin": new_pin.plain_pin,
+                    "pin_preview": new_pin.pin_preview,
+                    "offline_pin_hash": _offline_pin_hash(new_pin),
+                    "message": "New CBT PIN generated.",
+                }
+            )
+
+    return Response({"success": False, "message": "Could not generate a unique PIN. Try again."}, status=status.HTTP_409_CONFLICT)
 
 
 @api_view(["GET"])

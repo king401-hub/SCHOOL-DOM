@@ -26,9 +26,6 @@ namespace SchoolDom.Cbt.Win7
             var exams = ToList(root.ContainsKey("exams") ? root["exams"] : null);
             if (exams.Count == 0 && root.ContainsKey("published_exams")) exams = ToList(root["published_exams"]);
             var students = ToList(root.ContainsKey("students") ? root["students"] : null);
-            if (exams.Count == 0) throw new InvalidOperationException("Package has no exams.");
-            if (students.Count == 0) throw new InvalidOperationException("Package has no students.");
-
             var fallbackHash = string.IsNullOrWhiteSpace(fallbackPin) ? "" : JsonUtil.Sha256(fallbackPin.Trim());
             _store.State.Exams.Clear();
             _store.State.Students.Clear();
@@ -84,6 +81,14 @@ namespace SchoolDom.Cbt.Win7
             }
 
             _store.Save();
+            if (_store.State.Exams.Count == 0 && _store.State.Students.Count == 0)
+            {
+                return "Signed in. No published exams or students were available to sync yet.";
+            }
+            if (_store.State.Exams.Count == 0)
+            {
+                return "Signed in and synced " + _store.State.Students.Count + " student(s). No published exams are available yet.";
+            }
             return "Imported " + _store.State.Exams.Count + " exam(s) and " + _store.State.Students.Count + " student(s).";
         }
 
@@ -122,6 +127,7 @@ namespace SchoolDom.Cbt.Win7
             existing.StartsAt = exam.StartsAt;
             existing.EndsAt = exam.EndsAt;
             existing.Instructions = exam.Instructions;
+            existing.PinHash = exam.PinHash;
             _store.Save();
         }
 

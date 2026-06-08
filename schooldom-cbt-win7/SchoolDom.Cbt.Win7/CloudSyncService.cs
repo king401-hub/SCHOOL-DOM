@@ -88,6 +88,23 @@ namespace SchoolDom.Cbt.Win7
             return "Uploaded results. Imported: " + imported + ". Failed: " + failed + ".";
         }
 
+        public Dictionary<string, object> RegenerateExamPin(string examId)
+        {
+            RequireToken();
+            if (string.IsNullOrWhiteSpace(examId))
+            {
+                throw new InvalidOperationException("Select an exam before generating a new PIN.");
+            }
+            var url = NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/exams/" + Uri.EscapeDataString(examId) + "/pin/regenerate/";
+            var response = Request("POST", url, "{}", _store.State.AccessToken);
+            var data = JsonUtil.DeserializeObject(response);
+            if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
+            {
+                throw new InvalidOperationException(data.ContainsKey("message") ? Convert.ToString(data["message"]) : "Could not generate exam PIN.");
+            }
+            return data;
+        }
+
         public void SaveToken(string cloudUrl, string accessToken)
         {
             _store.State.CloudUrl = NormalizeCloudUrl(cloudUrl);
@@ -142,13 +159,34 @@ namespace SchoolDom.Cbt.Win7
             catch (WebException ex)
             {
                 var message = ex.Message;
+                var statusCode = 0;
                 if (ex.Response != null)
                 {
+                    var httpResponse = ex.Response as HttpWebResponse;
+                    if (httpResponse != null) statusCode = (int)httpResponse.StatusCode;
                     using (var stream = ex.Response.GetResponseStream())
                     using (var reader = new StreamReader(stream ?? Stream.Null))
                     {
                         var details = reader.ReadToEnd();
-                        if (!string.IsNullOrWhiteSpace(details)) message = details;
+                        if (!string.IsNullOrWhiteSpace(details))
+                        {
+                            if (details.IndexOf("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                details.IndexOf("<html", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                if (statusCode == 404)
+                                {
+                                    message = "The website does not have this CBT PIN generation endpoint yet. Deploy the latest SchoolDom backend, then try again.";
+                                }
+                                else
+                                {
+                                    message = "The website returned an HTML error page instead of JSON. Status code: " + statusCode + ".";
+                                }
+                            }
+                            else
+                            {
+                                message = details;
+                            }
+                        }
                     }
                 }
                 throw new InvalidOperationException("Cloud request failed: " + message);

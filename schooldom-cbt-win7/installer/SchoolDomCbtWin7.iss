@@ -31,6 +31,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\SchoolDom.Cbt.Win7\bin\Release\SchoolDom.Cbt.Win7.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\media\app\student-cbt\SchoolDomStudentCBT-Win7.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\SchoolDom Admin Sync Win7"; Filename: "{app}\{#MyAppExeName}"
