@@ -32,6 +32,7 @@ from rest_framework import status
 from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool
 from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount
 from attendance.utils import get_frontend_base_url
+from attendance.models import AttendanceQRCode
 from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
 
 from academic.models import (
@@ -1573,6 +1574,25 @@ def _attendance_location_payload(request):
         "address": address[:2000],
         "device_info": device_info[:2000],
     }
+
+
+def _qr_token_from_request(request):
+    raw_value = (
+        request.data.get("qr_token")
+        or request.data.get("token")
+        or request.data.get("qr_url")
+        or request.data.get("value")
+        or ""
+    )
+    token = str(raw_value).strip()
+    if not token:
+        return ""
+
+    if "token=" in token:
+        token = token.split("token=", 1)[1].split("&", 1)[0]
+    if "/" in token:
+        token = token.rstrip("/").rsplit("/", 1)[-1]
+    return token.strip()
 
 
 def _subject_payload(subject):
@@ -3286,6 +3306,96 @@ def mark_attendance(request):
     return Response(
         {"success": False, "message": "Students cannot mark their own attendance. A teacher must mark attendance."},
         status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def student_qr_mark_attendance(request):
+    user = request.user
+    if user.role != "student":
+        return Response(
+            {"success": False, "message": "Only student accounts can scan student attendance QR codes."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    school = _resolve_school_tenant_for_user(user)
+    if not school:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not _is_non_k12_school(user):
+        return Response(
+            {"success": False, "message": "Student QR attendance is only enabled for non K-12 schools."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    token = _qr_token_from_request(request)
+    if not token:
+        return Response(
+            {"success": False, "message": "Scan a valid school attendance QR code."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    qr_code = AttendanceQRCode.verify_token(token)
+    if not qr_code or qr_code.tenant_id != school.id:
+        return Response(
+            {"success": False, "message": "This QR code does not belong to your school."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    student_profile = StudentProfile.objects.select_related("current_class").filter(user=user).first()
+    if not student_profile:
+        return Response(
+            {"success": False, "message": "Your student profile is not ready for attendance."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        location = _attendance_location_payload(request)
+    except ValueError as exc:
+        return Response(
+            {"success": False, "message": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    tenant_obj = _tenant_for_model(AttendanceRecord, user)
+    if not tenant_obj:
+        return Response(
+            {"success": False, "message": "Unable to resolve school attendance records."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    today = timezone.localdate()
+    with db_transaction.atomic():
+        attendance, created = AttendanceRecord.objects.update_or_create(
+            student=user,
+            date=today,
+            defaults={
+                "tenant": tenant_obj,
+                "class_group": student_profile.current_class,
+                "status": "present",
+                "noted_by": user,
+                "latitude": location["latitude"],
+                "longitude": location["longitude"],
+                "location_accuracy_meters": location["accuracy"],
+                "location_address": location["address"],
+                "device_info": location["device_info"],
+            },
+        )
+
+    return Response(
+        {
+            "success": True,
+            "message": "Attendance marked successfully." if created else "Attendance updated successfully.",
+            "attendance": {
+                "status": attendance.status,
+                "date": attendance.date,
+                "class_name": _class_label(attendance.class_group) if attendance.class_group else "Unassigned",
+                "noted_by": attendance.noted_by.get_full_name() if attendance.noted_by else None,
+            },
+        }
     )
 
 

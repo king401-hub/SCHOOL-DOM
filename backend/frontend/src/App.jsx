@@ -545,6 +545,183 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
   );
 }
 
+function StudentQrAttendanceScanner({ session, onRefresh, attendanceToday }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const frameRef = useRef(null);
+  const scanningRef = useRef(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [manualToken, setManualToken] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const stopCamera = useCallback(() => {
+    scanningRef.current = false;
+    if (frameRef.current) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  useEffect(() => stopCamera, [stopCamera]);
+
+  const markAttendance = useCallback(
+    async (rawToken) => {
+      const token = String(rawToken || "").trim();
+      if (!token) {
+        setError("Scan or enter the school attendance QR code.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      setFeedback("Requesting location...");
+      try {
+        const location = await getTeacherAttendanceLocationPayload();
+        setFeedback("Saving attendance...");
+        const result = await requestJson(session, "POST", "/api/app/attendance/student-qr-mark/", {
+          token,
+          location,
+        });
+        setFeedback(result.message || "Attendance marked successfully.");
+        setManualToken("");
+        stopCamera();
+        await onRefresh?.();
+      } catch (scanError) {
+        setFeedback("");
+        setError(scanError.message || "Could not mark attendance.");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [onRefresh, session, stopCamera],
+  );
+
+  const startCamera = async () => {
+    setError("");
+    setFeedback("");
+    if (!("BarcodeDetector" in window)) {
+      setError("This browser cannot scan QR codes directly. Paste the QR token below instead.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Camera access is not available on this device.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraActive(true);
+      setFeedback("Point the camera at the school attendance QR code.");
+      scanningRef.current = true;
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+
+      const scanFrame = async () => {
+        if (!scanningRef.current || !videoRef.current || submitting) return;
+        try {
+          const codes = await detector.detect(videoRef.current);
+          const value = codes?.[0]?.rawValue;
+          if (value) {
+            await markAttendance(value);
+            return;
+          }
+        } catch {
+          setError("The camera could not read the QR code. Try better light or paste the token below.");
+        }
+        frameRef.current = requestAnimationFrame(scanFrame);
+      };
+      frameRef.current = requestAnimationFrame(scanFrame);
+    } catch (cameraError) {
+      setError(cameraError?.message || "Allow camera access to scan the attendance QR code.");
+      stopCamera();
+    }
+  };
+
+  return (
+    <section className="student-panel">
+      <div className="student-panel-head">
+        <div>
+          <h3>QR Attendance</h3>
+          <p className="student-panel-sub">Scan the school attendance QR code to mark today&apos;s attendance.</p>
+        </div>
+        <span className={`student-status-pill status-${attendanceToday?.status || "unmarked"}`}>
+          {attendanceToday ? `Marked ${attendanceToday.status}` : "Not marked"}
+        </span>
+      </div>
+      <div className="quick-actions-grid">
+        <article className="quick-action-card featured" style={{ cursor: "default" }}>
+          <div className="quick-action-icon">QR</div>
+          <div className="quick-action-content">
+            <h4>Student self scan</h4>
+            <p>Only non K-12 schools can use student QR attendance.</p>
+          </div>
+        </article>
+        <div className="student-card tone-blue" style={{ minHeight: 180 }}>
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            style={{
+              width: "100%",
+              maxHeight: 220,
+              borderRadius: 14,
+              background: "#0f172a",
+              objectFit: "cover",
+              display: cameraActive ? "block" : "none",
+            }}
+          />
+          {!cameraActive ? (
+            <span className="student-card-detail">Camera preview will appear here after you start scanning.</span>
+          ) : null}
+        </div>
+      </div>
+      <div className="panel-form-actions">
+        <button type="button" className="student-primary-btn" onClick={startCamera} disabled={submitting || cameraActive}>
+          {cameraActive ? "Scanning..." : "Start scanner"}
+        </button>
+        {cameraActive ? (
+          <button type="button" className="student-link-btn" onClick={stopCamera} disabled={submitting}>
+            Stop camera
+          </button>
+        ) : null}
+      </div>
+      <label className="panel-field">
+        <span>QR token fallback</span>
+        <input
+          type="text"
+          value={manualToken}
+          onChange={(event) => setManualToken(event.target.value)}
+          placeholder="Paste scanned QR token or URL"
+          disabled={submitting}
+        />
+      </label>
+      <div className="panel-form-actions">
+        <button type="button" className="student-link-btn" onClick={() => markAttendance(manualToken)} disabled={submitting}>
+          {submitting ? "Saving..." : "Mark attendance"}
+        </button>
+      </div>
+      {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+      {error ? <p className="form-feedback error">{error}</p> : null}
+    </section>
+  );
+}
+
 function StudentDashboard({
   data = {},
   student = {},
@@ -564,6 +741,7 @@ function StudentDashboard({
   const dashboardData = data || {};
   const attendance = dashboardData.attendance || {};
   const school = resolveSchoolBrand(dashboardData.school, session?.school, session);
+  const nonK12School = isNonK12School(session, dashboardData);
   const prompts = dashboardData.question_prompts || [];
   const results = dashboardData.recent_results || [];
   const exams = dashboardData.upcoming_exams || [];
@@ -912,6 +1090,14 @@ function StudentDashboard({
             </article>
           ))}
         </section>
+
+        {nonK12School ? (
+          <StudentQrAttendanceScanner
+            session={session}
+            attendanceToday={attendance.today}
+            onRefresh={onRefresh}
+          />
+        ) : null}
 
         {paymentInstructions.reference_code ? (
           <section className="student-panel">
