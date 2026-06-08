@@ -124,8 +124,22 @@ namespace SchoolDom.Cbt.Win7
                         var parts = requestLine.Split(' ');
                         var method = parts.Length > 0 ? parts[0] : "";
                         var path = parts.Length > 1 ? parts[1].Split('?')[0] : "/";
+                        var contentLength = 0;
                         string line;
-                        while (!string.IsNullOrEmpty(line = reader.ReadLine())) { }
+                        while (!string.IsNullOrEmpty(line = reader.ReadLine()))
+                        {
+                            if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                int.TryParse(line.Substring("Content-Length:".Length).Trim(), out contentLength);
+                            }
+                        }
+                        var bodyText = "";
+                        if (contentLength > 0)
+                        {
+                            var buffer = new char[contentLength];
+                            var read = reader.Read(buffer, 0, contentLength);
+                            bodyText = new string(buffer, 0, read);
+                        }
 
                         if (method == "OPTIONS")
                         {
@@ -146,6 +160,32 @@ namespace SchoolDom.Cbt.Win7
                         else if (method == "GET" && path == "/api/students")
                         {
                             WriteJson(stream, 200, new Dictionary<string, object> { { "students", _store.State.Students } });
+                        }
+                        else if (method == "POST" && path == "/api/login")
+                        {
+                            WriteJson(stream, 200, Login(bodyText));
+                        }
+                        else if (method == "GET" && path.StartsWith("/api/exams/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var examId = Uri.UnescapeDataString(path.Substring("/api/exams/".Length));
+                            var exam = _store.State.Exams.FirstOrDefault(item => item.Id == examId);
+                            if (exam == null) WriteJson(stream, 404, new Dictionary<string, object> { { "success", false }, { "message", "Exam not found." } });
+                            else WriteJson(stream, 200, new Dictionary<string, object> { { "success", true }, { "exam", PublicExam(exam) }, { "payload", new Dictionary<string, object> { { "questions", exam.Questions } } } });
+                        }
+                        else if (method == "POST" && path.StartsWith("/api/sessions/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/answers", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var sessionId = Uri.UnescapeDataString(path.Substring("/api/sessions/".Length, path.Length - "/api/sessions/".Length - "/answers".Length));
+                            WriteJson(stream, 200, SaveAnswers(sessionId, bodyText));
+                        }
+                        else if (method == "POST" && path.StartsWith("/api/sessions/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/submit", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var sessionId = Uri.UnescapeDataString(path.Substring("/api/sessions/".Length, path.Length - "/api/sessions/".Length - "/submit".Length));
+                            WriteJson(stream, 200, SubmitSession(sessionId, bodyText));
+                        }
+                        else if (method == "POST" && path.StartsWith("/api/sessions/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/focus-loss", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var sessionId = Uri.UnescapeDataString(path.Substring("/api/sessions/".Length, path.Length - "/api/sessions/".Length - "/focus-loss".Length));
+                            WriteJson(stream, 200, LogFocusLoss(sessionId, bodyText));
                         }
                         else
                         {
@@ -178,6 +218,95 @@ namespace SchoolDom.Cbt.Win7
                 { "exams", _store.State.Exams.Count },
                 { "students", _store.State.Students.Count },
                 { "updated_at", JsonUtil.IsoNow() },
+            };
+        }
+
+        private Dictionary<string, object> Login(string bodyText)
+        {
+            var body = JsonUtil.DeserializeObject(bodyText);
+            var studentId = JsonUtil.Text(body.ContainsKey("studentId") ? body["studentId"] : body.ContainsKey("student_id") ? body["student_id"] : "").Trim();
+            var pin = JsonUtil.Text(body.ContainsKey("pin") ? body["pin"] : "").Trim();
+            var pinHash = JsonUtil.Sha256(pin);
+            var student = _store.State.Students.FirstOrDefault(item => string.Equals(item.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
+            if (student == null) return new Dictionary<string, object> { { "success", false }, { "message", "Student ID was not found on the admin LAN server." } };
+            var exam = _store.State.Exams.FirstOrDefault(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase));
+            if (exam == null) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
+            var session = _store.State.Sessions.FirstOrDefault(item => item.ExamId == exam.Id && string.Equals(item.StudentId, student.StudentId, StringComparison.OrdinalIgnoreCase));
+            if (session == null)
+            {
+                var started = DateTime.UtcNow;
+                session = new SessionRecord
+                {
+                    Id = "lan_session_" + Guid.NewGuid().ToString("N"),
+                    ExamId = exam.Id,
+                    StudentId = student.StudentId,
+                    Status = "in_progress",
+                    StartedAt = started.ToString("o"),
+                    EndsAt = started.AddSeconds(Math.Max(60, exam.DurationSeconds)).ToString("o"),
+                    SyncStatus = "pending"
+                };
+                session.AuditLogs.Add(new ActivityLogRecord { Type = "session_started", Message = "Student started exam on LAN.", CreatedAt = JsonUtil.IsoNow() });
+                _store.State.Sessions.Add(session);
+                _store.Save();
+            }
+            return new Dictionary<string, object> { { "success", true }, { "student", student }, { "exam", PublicExam(exam) }, { "session", session } };
+        }
+
+        private Dictionary<string, object> SaveAnswers(string sessionId, string bodyText)
+        {
+            var session = FindSession(sessionId);
+            if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
+            if (session.Status == "submitted") return new Dictionary<string, object> { { "success", true }, { "session", session } };
+            var body = JsonUtil.DeserializeObject(bodyText);
+            session.Answers = body.ContainsKey("answers") ? NormalizeAnswers(body["answers"]) : session.Answers;
+            _store.Save();
+            return new Dictionary<string, object> { { "success", true }, { "session", session } };
+        }
+
+        private Dictionary<string, object> SubmitSession(string sessionId, string bodyText)
+        {
+            var session = FindSession(sessionId);
+            if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
+            var body = JsonUtil.DeserializeObject(bodyText);
+            if (body.ContainsKey("answers")) session.Answers = NormalizeAnswers(body["answers"]);
+            session.Status = "submitted";
+            session.SubmittedAt = JsonUtil.IsoNow();
+            session.AuditLogs.Add(new ActivityLogRecord { Type = "session_submitted", Message = "Student submitted exam on LAN.", CreatedAt = JsonUtil.IsoNow() });
+            _store.Save();
+            return new Dictionary<string, object> { { "success", true }, { "session", session } };
+        }
+
+        private Dictionary<string, object> LogFocusLoss(string sessionId, string bodyText)
+        {
+            var session = FindSession(sessionId);
+            if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
+            session.FocusLossCount += 1;
+            session.AuditLogs.Add(new ActivityLogRecord { Type = "focus_loss", Message = "Student left CBT window.", CreatedAt = JsonUtil.IsoNow() });
+            _store.Save();
+            return new Dictionary<string, object> { { "success", true }, { "session", session } };
+        }
+
+        private SessionRecord FindSession(string sessionId)
+        {
+            return _store.State.Sessions.FirstOrDefault(item => item.Id == sessionId);
+        }
+
+        private static Dictionary<string, object> NormalizeAnswers(object value)
+        {
+            var raw = value as Dictionary<string, object>;
+            return raw ?? new Dictionary<string, object>();
+        }
+
+        private static Dictionary<string, object> PublicExam(ExamRecord exam)
+        {
+            return new Dictionary<string, object>
+            {
+                { "id", exam.Id },
+                { "title", exam.Title },
+                { "subject", exam.Subject },
+                { "class_name", exam.ClassName },
+                { "duration_seconds", exam.DurationSeconds },
+                { "instructions", exam.Instructions },
             };
         }
 

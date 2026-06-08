@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { requestJson } from "../AppShared";
 
 const ADMIN_ROLES = new Set(["school_admin", "principal", "super_admin"]);
 const ATTENDANCE_ROLES = new Set(["teacher", "staff", "school_admin", "principal", "super_admin"]);
@@ -478,6 +479,144 @@ export function AttendanceDashboard({ session }) {
   );
 }
 
+export function StudentAttendanceDashboard({ session }) {
+  const [records, setRecords] = useState([]);
+  const [summary, setSummary] = useState({ date: "", total_present: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [mapLocation, setMapLocation] = useState(null);
+
+  const loadToday = useCallback(async () => {
+    setError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/app/attendance/students/");
+      setRecords(result.records || []);
+      setSummary({ date: result.date, total_present: result.total_present || 0 });
+      setMapLocation((current) => {
+        if (!current) return current;
+        const stillExists = (result.records || []).some((record) => record.id === current.recordId);
+        return stillExists ? current : null;
+      });
+    } catch (requestError) {
+      setError(requestError.message || "Could not load student attendance.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadToday();
+  }, [loadToday]);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const intervalId = window.setInterval(loadToday, 15000);
+    return () => window.clearInterval(intervalId);
+  }, [autoRefresh, loadToday]);
+
+  return (
+    <article className="app-panel">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h3>Today&apos;s Student Attendance</h3>
+          <p className="panel-empty" style={{ margin: 0 }}>
+            {summary.date || new Date().toISOString().slice(0, 10)} - {summary.total_present} marked present
+          </p>
+        </div>
+        <div className="panel-form-actions" style={{ margin: 0 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
+            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+            Live refresh
+          </label>
+          <button type="button" onClick={loadToday} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+
+      {error ? <p className="form-feedback error">{error}</p> : null}
+
+      {loading ? (
+        <p className="panel-empty">Loading student attendance records...</p>
+      ) : records.length === 0 ? (
+        <p className="panel-empty" style={{ padding: "28px 0" }}>
+          No student has marked attendance today.
+        </p>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 18 }}>
+          <table className="student-table" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Email</th>
+                <th>Class</th>
+                <th>Status</th>
+                <th>Marked</th>
+                <th>Location</th>
+                <th>Device</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((record) => {
+                const hasLocation = record.latitude !== null && record.latitude !== undefined && record.longitude !== null && record.longitude !== undefined;
+                const location = hasLocation
+                  ? {
+                      recordId: record.id,
+                      teacher: record.student_name || "Student",
+                      latitude: formatCoordinate(record.latitude),
+                      longitude: formatCoordinate(record.longitude),
+                      address: record.address || `${record.latitude}, ${record.longitude}`,
+                      accuracy: record.accuracy,
+                      embedUrl: `https://www.google.com/maps?q=${encodeURIComponent(`${record.latitude},${record.longitude}`)}&output=embed`,
+                      mapUrl: `https://www.google.com/maps?q=${encodeURIComponent(`${record.latitude},${record.longitude}`)}`,
+                    }
+                  : null;
+                return (
+                  <tr key={record.id}>
+                    <td>{record.student_name || "Unknown student"}<small>{record.student_code || ""}</small></td>
+                    <td>{record.student_email || "-"}</td>
+                    <td>{record.class_name || "-"}</td>
+                    <td><AttendanceStatusPill status={record.status} /></td>
+                    <td>{formatDateTime(record.updated_at || record.created_at)}</td>
+                    <td>
+                      {location ? (
+                        <button type="button" className="link-button" onClick={() => setMapLocation(location)}>
+                          View map
+                        </button>
+                      ) : "-"}
+                    </td>
+                    <td><small>{record.device_info || "-"}</small></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {mapLocation ? (
+        <div className="modal-backdrop" onClick={() => setMapLocation(null)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 780 }}>
+            <div className="modal-head">
+              <div>
+                <h3>{mapLocation.teacher} location</h3>
+                <p>{mapLocation.address}</p>
+                {mapLocation.accuracy ? <small>Accuracy: {mapLocation.accuracy}m</small> : null}
+              </div>
+              <button type="button" className="table-action" onClick={() => setMapLocation(null)}>Close</button>
+            </div>
+            <iframe title="Student attendance location" src={mapLocation.embedUrl} style={{ width: "100%", height: 360, border: 0, borderRadius: 8 }} loading="lazy" />
+            <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
+              <a className="table-action" href={mapLocation.mapUrl} target="_blank" rel="noreferrer">Open in Google Maps</a>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
   const [qrDetails, setQrDetails] = useState(null);
   const [statusDetails, setStatusDetails] = useState(null);
@@ -669,7 +808,10 @@ export function AttendanceModule({ session }) {
   const tabs = useMemo(
     () =>
       nonK12
-        ? [{ id: "qr", label: "Student QR", render: () => <QRCodeManagement session={session} /> }]
+        ? [
+            { id: "qr", label: "Student QR", render: () => <QRCodeManagement session={session} /> },
+            { id: "students", label: "Student List", render: () => <StudentAttendanceDashboard session={session} /> },
+          ]
         : [
             { id: "dashboard", label: "Today", render: () => <AttendanceDashboard session={session} /> },
             { id: "qr", label: "QR Code", render: () => <QRCodeManagement session={session} /> },
@@ -678,7 +820,7 @@ export function AttendanceModule({ session }) {
   );
 
   useEffect(() => {
-    if (nonK12 && activeTab !== "qr") {
+    if (nonK12 && activeTab === "dashboard") {
       setActiveTab("qr");
     }
   }, [activeTab, nonK12]);

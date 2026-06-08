@@ -3399,6 +3399,75 @@ def student_qr_mark_attendance(request):
     )
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def student_attendance_list(request):
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response(
+            {"success": False, "message": "Only school administrators can view student attendance."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    school = _resolve_school_tenant_for_user(user)
+    if not school:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not _is_non_k12_school(user):
+        return Response(
+            {"success": False, "message": "Student QR attendance list is only enabled for non K-12 schools."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    date_raw = str(request.query_params.get("date") or "").strip()
+    attendance_date = parse_date(date_raw) if date_raw else timezone.localdate()
+    if not attendance_date:
+        return Response(
+            {"success": False, "message": "Attendance date is invalid."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    records = list(
+        _scope_to_user_tenant(
+            AttendanceRecord.objects.select_related("student", "class_group", "noted_by"),
+            user,
+        )
+        .filter(student__tenant=school, date=attendance_date)
+        .order_by("-updated_at", "student__first_name", "student__last_name")[:500]
+    )
+
+    return Response(
+        {
+            "success": True,
+            "date": attendance_date,
+            "total_present": sum(1 for item in records if item.status in {"present", "late"}),
+            "records": [
+                {
+                    "id": item.id,
+                    "student_id": str(item.student_id),
+                    "student_name": item.student.get_full_name() or item.student.email,
+                    "student_email": item.student.email,
+                    "student_code": getattr(item.student, "student_id", "") or "",
+                    "class_name": _class_label(item.class_group) if item.class_group else "Unassigned",
+                    "date": item.date,
+                    "status": item.status,
+                    "marked_by": item.noted_by.get_full_name() if item.noted_by else "Self scan",
+                    "latitude": item.latitude,
+                    "longitude": item.longitude,
+                    "accuracy": item.location_accuracy_meters,
+                    "address": item.location_address,
+                    "device_info": item.device_info,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
+                }
+                for item in records
+            ],
+        }
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_question_prompt(request):

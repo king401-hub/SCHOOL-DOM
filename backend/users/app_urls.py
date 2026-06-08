@@ -53,6 +53,7 @@ urlpatterns = [
     path("mobile/device/", app_views.register_mobile_device, name="app_register_mobile_device"),
     path("attendance/mark/", app_views.mark_attendance, name="app_mark_attendance"),
     path("attendance/student-qr-mark/", app_views.student_qr_mark_attendance, name="app_student_qr_mark_attendance"),
+    path("attendance/students/", app_views.student_attendance_list, name="app_student_attendance_list"),
     path("attendance/class-students/", app_views.teacher_class_students, name="app_teacher_class_students"),
     path("attendance/teacher-mark/", app_views.teacher_mark_student_attendance, name="app_teacher_mark_attendance"),
     path("questions/create/", app_views.create_question_prompt, name="app_create_question_prompt"),
