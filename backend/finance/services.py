@@ -27,9 +27,15 @@ from finance.models import (
 )
 
 
-ACTIVATION_CREDIT_PRICE = Decimal("200.00")
+K12_ACTIVATION_CREDIT_PRICE = Decimal("500.00")
+NON_K12_ACTIVATION_CREDIT_PRICE = Decimal("200.00")
+ACTIVATION_CREDIT_PRICE = NON_K12_ACTIVATION_CREDIT_PRICE
 ACTIVATION_CREDIT_BONUS_INTERVAL = 100
 ACTIVATION_CREDIT_BONUS_AMOUNT = 10
+K12_TOKEN_DURATION_MONTHS = 3
+K12_TOKEN_DURATION_DAYS = 15
+NON_K12_TOKEN_DURATION_MONTHS = 1
+NON_K12_TOKEN_DURATION_DAYS = 0
 
 
 def _as_decimal(value: object) -> Decimal:
@@ -132,11 +138,29 @@ def record_finance_activity(tenant, actor, action, description, amount=Decimal("
 
 
 def get_or_create_activation_credit_pool(tenant=None) -> ActivationCreditPool:
+    price = activation_credit_price_for_tenant(tenant)
     pool, _ = ActivationCreditPool.objects.get_or_create(
         tenant=tenant,
-        defaults={"price_per_credit": ACTIVATION_CREDIT_PRICE},
+        defaults={"price_per_credit": price},
     )
+    if pool.price_per_credit != price:
+        pool.price_per_credit = price
+        pool.save(update_fields=["price_per_credit", "updated_at"])
     return pool
+
+
+def is_non_k12_tenant(tenant) -> bool:
+    return bool(tenant and (getattr(tenant, "school_type", "k12") or "k12") == "non_k12")
+
+
+def activation_credit_price_for_tenant(tenant) -> Decimal:
+    return NON_K12_ACTIVATION_CREDIT_PRICE if is_non_k12_tenant(tenant) else K12_ACTIVATION_CREDIT_PRICE
+
+
+def activation_credit_duration_for_tenant(tenant):
+    if is_non_k12_tenant(tenant):
+        return NON_K12_TOKEN_DURATION_MONTHS, NON_K12_TOKEN_DURATION_DAYS
+    return K12_TOKEN_DURATION_MONTHS, K12_TOKEN_DURATION_DAYS
 
 
 def grant_school_registration_credits(tenant, credits=50, actor=None):
@@ -653,6 +677,15 @@ def _add_months(source_date, months):
     return source_date.replace(year=year, month=month, day=day)
 
 
+def _add_activation_token_duration(source_date, tenant, token_units):
+    token_units = int(token_units or 1)
+    duration_months, duration_days = activation_credit_duration_for_tenant(tenant)
+    next_date = _add_months(source_date, duration_months * token_units)
+    if duration_days:
+        next_date += timedelta(days=duration_days * token_units)
+    return next_date
+
+
 def _student_paid_ratio(student_profile):
     fees = SchoolFee.objects.filter(student=student_profile)
     expected = fees.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
@@ -684,9 +717,9 @@ def eligible_students_for_activation_credits(tenant, scope="all", include_exclud
 
 
 def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None, auto=False, student_id=None):
-    months = int(months or 1)
-    if months <= 0:
-        raise ValueError("months must be a positive number.")
+    token_units = int(months or 1)
+    if token_units <= 0:
+        raise ValueError("tokens must be a positive number.")
     if scope not in {"all", "paid_50", "student"}:
         raise ValueError("scope must be 'all', 'paid_50', or 'student'.")
 
@@ -712,7 +745,7 @@ def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None,
         students = [student]
     else:
         students = eligible_students_for_activation_credits(tenant, scope=scope, include_excluded=False)
-    credits_needed = len(students) * months
+    credits_needed = len(students) * token_units
     if credits_needed <= 0:
         return {"assigned": 0, "skipped": 0, "pool": pool}
     if pool.balance < credits_needed:
@@ -730,8 +763,8 @@ def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None,
         for student in students:
             credit = get_or_create_student_activation_credit(student)
             current_until = credit.active_until if credit.active_until and credit.active_until >= today else today
-            credit.active_until = _add_months(current_until, months)
-            credit.credits_assigned += months
+            credit.active_until = _add_activation_token_duration(current_until, tenant, token_units)
+            credit.credits_assigned += token_units
             credit.last_credit_assigned_at = timezone.now()
             credit.inactive_since = None
             credit.inactive_flagged_at = None
@@ -751,12 +784,19 @@ def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None,
                 pool=locked_pool,
                 student_credit=credit,
                 tx_type=tx_type,
-                credits=-months,
+                credits=-token_units,
                 price_per_credit=locked_pool.price_per_credit,
-                amount=locked_pool.price_per_credit * months,
+                amount=locked_pool.price_per_credit * token_units,
                 reference=generate_reference("CRA"),
                 narration="Monthly student account activation",
-                metadata={"scope": scope, "months": months, "student_id": str(student.id)},
+                metadata={
+                    "scope": scope,
+                    "months": token_units,
+                    "token_units": token_units,
+                    "duration_months_per_token": activation_credit_duration_for_tenant(tenant)[0],
+                    "duration_days_per_token": activation_credit_duration_for_tenant(tenant)[1],
+                    "student_id": str(student.id),
+                },
                 created_by=actor,
             )
 

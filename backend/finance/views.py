@@ -45,6 +45,7 @@ from finance.serializers import (
 )
 from finance.services import (
     activation_credit_bonus_for_purchase,
+    activation_credit_duration_for_tenant,
     credit_wallet,
     debit_wallet,
     ensure_student_wallet,
@@ -302,6 +303,7 @@ def _admin_finance_snapshot(user):
     ).data
 
     pool = get_or_create_activation_credit_pool(user.tenant)
+    token_duration_months, token_duration_days = activation_credit_duration_for_tenant(user.tenant)
     bank_payments = BankPayment.objects.select_related("student", "student__user", "payment_reference").filter(tenant=user.tenant)
     transaction_history = Transaction.objects.filter(admin_wallet__tenant=user.tenant).order_by("-created_at")[:100]
     try:
@@ -348,6 +350,8 @@ def _admin_finance_snapshot(user):
         "activation_credit_pool": ActivationCreditPoolSerializer(pool).data,
         "activation_credit_summary": {
             "price_per_credit": pool.price_per_credit,
+            "duration_months_per_token": token_duration_months,
+            "duration_days_per_token": token_duration_days,
             "available_credits": pool.balance,
             "active_students": active_credit_count,
             "inactive_students": inactive_credit_count,
@@ -1011,7 +1015,7 @@ def admin_activation_credit_assign(request):
         f"Assigned activation tokens to {result['assigned']} student account(s).",
         amount=result["assigned"] * months * result["pool"].price_per_credit,
         reference=str(student_id or scope),
-        metadata={"scope": scope, "months": months, "assigned": result["assigned"]},
+        metadata={"scope": scope, "token_units": months, "assigned": result["assigned"]},
     )
 
     return Response(
@@ -1026,33 +1030,17 @@ def admin_activation_credit_assign(request):
 @api_view(["POST", "PATCH"])
 @permission_classes([IsAuthenticated])
 def admin_activation_credit_price(request):
-    """Allow the platform super admin to update a school's activation token price."""
+    """Token price is fixed by school type and cannot be edited from the app."""
     user = request.user
-    if user.role != "super_admin":
-        return Response({"success": False, "message": "Only the super admin can change token price."}, status=status.HTTP_403_FORBIDDEN)
-
-    raw_price = (
-        request.data.get("price_per_token")
-        or request.data.get("price_per_credit")
-        or request.data.get("price")
-        or request.data.get("amount")
-    )
-    try:
-        price = _parse_amount(raw_price)
-    except ValueError as exc:
-        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
     pool = get_or_create_activation_credit_pool(user.tenant)
-    pool.price_per_credit = price
-    pool.save(update_fields=["price_per_credit", "updated_at"])
-    record_finance_activity(
-        user.tenant,
-        user,
-        "token_price_updated",
-        f"Updated activation token price to {price}.",
-        amount=price,
+    return Response(
+        {
+            "success": False,
+            "message": "Activation token price is fixed by school type and cannot be changed.",
+            "pool": ActivationCreditPoolSerializer(pool).data,
+        },
+        status=status.HTTP_400_BAD_REQUEST,
     )
-    return Response({"success": True, "pool": ActivationCreditPoolSerializer(pool).data, "finance": _admin_finance_snapshot(user)})
 
 
 @api_view(["POST"])

@@ -822,6 +822,9 @@ function AdminFinanceScreen({
   const outstandingPercent = expectedAmount > 0 ? Math.min(100, Math.round((outstandingAmount / expectedAmount) * 100)) : 0;
   const requestedCreditCount = Number(creditPurchaseForm.credits || 0);
   const tokenUnitPrice = Number(creditSummary.price_per_credit ?? creditPool.price_per_credit ?? 200);
+  const tokenDurationMonths = Number(creditSummary.duration_months_per_token ?? (schoolBrand.school_type === "non_k12" ? 1 : 3));
+  const tokenDurationDays = Number(creditSummary.duration_days_per_token ?? (schoolBrand.school_type === "non_k12" ? 0 : 15));
+  const tokenDurationText = `1 token = ${tokenDurationMonths} month${tokenDurationMonths === 1 ? "" : "s"}${tokenDurationDays ? ` ${tokenDurationDays} days` : ""}`;
   const bonusCreditCount = Math.floor(requestedCreditCount / 100) * 10;
   const totalCreditCount = requestedCreditCount + bonusCreditCount;
   const selectedStudentFee = studentFeeRows.find((fee) => fee.id === editingStudentFeeId);
@@ -1501,7 +1504,7 @@ function AdminFinanceScreen({
             <article className="app-panel activation-credit-panel" ref={tokenPurchaseRef} style={{ order: 2 }}>
               <div className="panel-head">
                 <h3>Activation Tokens</h3>
-                <small>Buy tokens, verify payments, and activate student access from this finance page.</small>
+                <small>Buy tokens, verify payments, and activate student access from this finance page. {tokenDurationText}.</small>
               </div>
               <div className="activation-credit-summary">
                 <span>Balance <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong></span>
@@ -1534,7 +1537,7 @@ function AdminFinanceScreen({
               <form className="panel-form" onSubmit={handleCreditAssignSubmit}>
                 <div className="panel-form-grid">
                   <label className="panel-field">Scope<select value={creditAssignForm.scope} onChange={(event) => setCreditAssignForm((current) => ({ ...current, scope: event.target.value, student_id: event.target.value === "student" ? current.student_id : "" }))}><option value="student">Selected inactive student</option><option value="all">All inactive students ({creditSummary.eligible_all || 0})</option><option value="paid_50">Paid 50% and above ({creditSummary.eligible_paid_50 || 0})</option></select></label>
-                  <label className="panel-field">Months<input type="number" min="1" value={creditAssignForm.months} onChange={(event) => setCreditAssignForm((current) => ({ ...current, months: event.target.value }))} /></label>
+                  <label className="panel-field">Tokens to assign<input type="number" min="1" value={creditAssignForm.months} onChange={(event) => setCreditAssignForm((current) => ({ ...current, months: event.target.value }))} /></label>
                   {creditAssignForm.scope === "student" && (
                     <>
                       <label className="panel-field">Search inactive student<input value={creditStudentSearch} onChange={(event) => setCreditStudentSearch(event.target.value)} placeholder="Name, email, or student ID" /></label>

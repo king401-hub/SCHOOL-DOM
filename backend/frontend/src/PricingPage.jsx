@@ -78,8 +78,8 @@ function PricingPage({ onNavigate }) {
 
               <div className="token-price-block">
                 <span>Activation token</span>
-                <strong>₦200/token.</strong>
-                <small>TOKEN EXPIRES MONTHLY</small>
+                <strong>K-12: N500/token. Non K-12: N200/token.</strong>
+                <small>K-12 tokens last 3 months 15 days. Non K-12 tokens last 1 month.</small>
               </div>
 
               <p className="pricing-charge-title">Additional document charges</p>

@@ -144,7 +144,7 @@ function FAQPage({ onNavigate }) {
       id: 22,
       category: "Fees & Billing",
       question: "What's the pricing model?",
-      answer: "SchoolDom uses one simple token-based pricing model. Each student activation token costs ₦200, and transcript, testimonial, and ID card generation each cost 1 token."
+      answer: "SchoolDom uses one simple token-based pricing model. K-12 student activation tokens cost N500 and last 3 months 15 days. Non K-12 activation tokens cost N200 and last 1 month. Transcript, testimonial, and ID card generation each cost 1 token."
     },
     {
       id: 23,
