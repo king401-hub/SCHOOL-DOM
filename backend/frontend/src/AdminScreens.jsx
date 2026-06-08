@@ -5272,6 +5272,18 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
   const [termStart, setTermStart] = useState("");
   const [termEnd, setTermEnd] = useState("");
   const [activityCalendar, setActivityCalendar] = useState([]);
+  const today = useMemo(() => new Date(), []);
+  const todayDateValue = useMemo(() => today.toISOString().slice(0, 10), [today]);
+  const [calendarMonth, setCalendarMonth] = useState(String(today.getMonth() + 1));
+  const [calendarYear, setCalendarYear] = useState(String(today.getFullYear()));
+  const [activityDraft, setActivityDraft] = useState({
+    title: "",
+    activity_date: todayDateValue,
+    end_date: "",
+    description: "",
+    color: "#2563EB",
+  });
+  const [activityToast, setActivityToast] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -5303,21 +5315,60 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     );
   }, [data?.academic_year, data?.term, data?.activity_calendar, school.address, school.email, school.logo, school.name, school.phone]);
 
+  useEffect(() => {
+    if (!activityToast) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setActivityToast(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [activityToast]);
+
+  const selectCalendarDate = (dateValue) => {
+    if (!dateValue) {
+      setActivityDraft((current) => ({ ...current, activity_date: "" }));
+      return;
+    }
+    const nextDate = new Date(`${dateValue}T00:00:00`);
+    setCalendarMonth(String(nextDate.getMonth() + 1));
+    setCalendarYear(String(nextDate.getFullYear()));
+    setActivityDraft((current) => ({ ...current, activity_date: dateValue }));
+  };
+
   const addActivity = () => {
-    const today = new Date();
+    const title = activityDraft.title.trim();
+    if (!title) {
+      setFormError("Add the activity title before adding it to the calendar.");
+      return;
+    }
+    if (activityDraft.activity_date && activityDraft.end_date && activityDraft.end_date < activityDraft.activity_date) {
+      setFormError("Activity end date cannot be before the start date.");
+      return;
+    }
+    const selectedDate = activityDraft.activity_date ? new Date(`${activityDraft.activity_date}T00:00:00`) : null;
+    const month = selectedDate ? selectedDate.getMonth() + 1 : Number(calendarMonth || today.getMonth() + 1);
+    const year = selectedDate ? selectedDate.getFullYear() : Number(calendarYear || today.getFullYear());
     setActivityCalendar((current) => [
       ...current,
       {
         id: `new-${Date.now()}`,
-        month: String(today.getMonth() + 1),
-        year: String(today.getFullYear()),
-        title: "",
-        activity_date: "",
-        end_date: "",
-        description: "",
-        color: "#2563EB",
+        month: String(month),
+        year: String(year),
+        title,
+        activity_date: activityDraft.activity_date,
+        end_date: activityDraft.end_date,
+        description: activityDraft.description,
+        color: activityDraft.color || "#2563EB",
       },
     ]);
+    setActivityToast({ title, date: activityDraft.activity_date });
+    setFeedback("");
+    setFormError("");
+    setActivityDraft((current) => ({
+      ...current,
+      title: "",
+      description: "",
+      end_date: "",
+    }));
   };
 
   const updateActivity = (activityId, key, value) => {
@@ -5329,6 +5380,34 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
   const removeActivity = (activityId) => {
     setActivityCalendar((current) => current.filter((item) => item.id !== activityId));
   };
+
+  const calendarDays = useMemo(() => {
+    const month = Number(calendarMonth || today.getMonth() + 1);
+    const year = Number(calendarYear || today.getFullYear());
+    const firstDate = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const leadingDays = firstDate.getDay();
+    const cells = [];
+    for (let index = 0; index < leadingDays; index += 1) {
+      cells.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const dateValue = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      cells.push({
+        day,
+        dateValue,
+        activities: activityCalendar.filter((item) => {
+          const itemMonth = Number(item.month || 0);
+          const itemYear = Number(item.year || year);
+          if (item.activity_date) {
+            return item.activity_date === dateValue;
+          }
+          return day === 1 && itemMonth === month && itemYear === year;
+        }),
+      });
+    }
+    return cells;
+  }, [activityCalendar, calendarMonth, calendarYear, today]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -5478,11 +5557,76 @@ onClick={() => handleThemeSelect("light")}
                         <div className="panel-head">
                           <div>
                             <h3>Activities Calendar</h3>
-                            <small>Set monthly school activities for the academic calendar.</small>
+                            <small>Select a date or month, add the title, then save settings when the calendar looks right.</small>
                           </div>
-                          <button type="button" className="table-action" onClick={addActivity} disabled={!canEdit || isSaving}>
-                            Add Activity
-                          </button>
+                        </div>
+                        <div className="activity-calendar-workspace">
+                          <section className="activity-calendar-board">
+                            <div className="activity-calendar-toolbar">
+                              <label className="panel-field">
+                                Month
+                                <select value={calendarMonth} onChange={(event) => setCalendarMonth(event.target.value)} disabled={!canEdit || isSaving}>
+                                  {ACTIVITY_MONTHS.map((month, index) => (
+                                    <option key={month} value={index + 1}>{month}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="panel-field">
+                                Year
+                                <input type="number" min="1900" max="2200" value={calendarYear} onChange={(event) => setCalendarYear(event.target.value)} disabled={!canEdit || isSaving} />
+                              </label>
+                            </div>
+                            <div className="activity-calendar-weekdays" aria-hidden="true">
+                              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}
+                            </div>
+                            <div className="activity-calendar-grid">
+                              {calendarDays.map((day, index) => (
+                                day ? (
+                                  <button
+                                    key={day.dateValue}
+                                    type="button"
+                                    className={`activity-calendar-day ${activityDraft.activity_date === day.dateValue ? "selected" : ""} ${day.activities.length ? "has-events" : ""}`}
+                                    onClick={() => selectCalendarDate(day.dateValue)}
+                                    disabled={!canEdit || isSaving}
+                                  >
+                                    <span>{day.day}</span>
+                                    {day.activities.slice(0, 2).map((item) => (
+                                      <small key={item.id} style={{ borderLeftColor: item.color || "#2563EB" }}>{item.title}</small>
+                                    ))}
+                                    {day.activities.length > 2 ? <em>+{day.activities.length - 2} more</em> : null}
+                                  </button>
+                                ) : (
+                                  <span key={`blank-${index}`} className="activity-calendar-day blank" />
+                                )
+                              ))}
+                            </div>
+                          </section>
+                          <section className="activity-calendar-composer">
+                            <h4>Create activity</h4>
+                            <label className="panel-field">
+                              Activity Date
+                              <input type="date" value={activityDraft.activity_date} onChange={(event) => selectCalendarDate(event.target.value)} disabled={!canEdit || isSaving} />
+                            </label>
+                            <label className="panel-field">
+                              End Date
+                              <input type="date" value={activityDraft.end_date} onChange={(event) => setActivityDraft((current) => ({ ...current, end_date: event.target.value }))} disabled={!canEdit || isSaving} />
+                            </label>
+                            <label className="panel-field">
+                              Activity Title
+                              <input value={activityDraft.title} onChange={(event) => setActivityDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Inter-house sports, matriculation, excursion..." disabled={!canEdit || isSaving} />
+                            </label>
+                            <label className="panel-field">
+                              Details
+                              <textarea value={activityDraft.description} onChange={(event) => setActivityDraft((current) => ({ ...current, description: event.target.value }))} rows="3" disabled={!canEdit || isSaving} />
+                            </label>
+                            <label className="panel-field">
+                              Color
+                              <input type="color" value={activityDraft.color} onChange={(event) => setActivityDraft((current) => ({ ...current, color: event.target.value }))} disabled={!canEdit || isSaving} />
+                            </label>
+                            <button type="button" className="table-action activity-calendar-add" onClick={addActivity} disabled={!canEdit || isSaving}>
+                              Add Activity
+                            </button>
+                          </section>
                         </div>
                         {activityCalendar.length ? (
                           <div className="activity-calendar-list">
@@ -5533,6 +5677,15 @@ onClick={() => handleThemeSelect("light")}
                           <p className="panel-empty">No monthly activities have been added yet.</p>
                         )}
                       </div>
+                      {activityToast ? (
+                        <div className="activity-add-toast" role="status" aria-live="polite">
+                          <div className="activity-add-mark" aria-hidden="true"></div>
+                          <div>
+                            <strong>Activity added</strong>
+                            <span>{activityToast.title}{activityToast.date ? ` - ${activityToast.date}` : ""}</span>
+                          </div>
+                        </div>
+                      ) : null}
                     {formError ? <p className="form-feedback error">{formError}</p> : null}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}
             <div className="panel-form-actions">
@@ -5626,6 +5779,8 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
   const [deletingStudentId, setDeletingStudentId] = useState("");
+  const [pendingDeleteStudent, setPendingDeleteStudent] = useState(null);
+  const [deleteSuccess, setDeleteSuccess] = useState(null);
   const createProfilePictureRef = useRef(null);
 
   const toDateInputValue = (value) => {
@@ -5804,28 +5959,48 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
     }
   };
 
-  const handleDeleteStudent = async (student) => {
+  const requestDeleteStudent = (student) => {
+    if (!student?.id || !onDelete) {
+      return;
+    }
+    setFormError("");
+    setEditError("");
+    setPendingDeleteStudent(student);
+  };
+
+  const confirmDeleteStudent = async () => {
+    const student = pendingDeleteStudent;
     if (!student?.id || !onDelete) {
       return;
     }
     const label = student.name || student.email || "this student";
-    if (!window.confirm(`Delete ${label}? This will remove the student's account and profile.`)) {
-      return;
-    }
     setDeletingStudentId(student.id);
     setEditError("");
     setFormError("");
     try {
-      await onDelete(student.id);
+      const result = await onDelete(student.id);
       if (selectedStudentId === student.id) {
         setSelectedStudentId("");
       }
+      setPendingDeleteStudent(null);
+      setDeleteSuccess({
+        name: label,
+        message: result?.message || `${label} has been deleted.`,
+      });
     } catch (deleteError) {
       setFormError(deleteError.message || "Could not delete student.");
     } finally {
       setDeletingStudentId("");
     }
   };
+
+  useEffect(() => {
+    if (!deleteSuccess) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setDeleteSuccess(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [deleteSuccess]);
 
   useEffect(() => {
     if (!selectedStudentId) {
@@ -6056,7 +6231,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                           <button
                             type="button"
                             className="table-action danger"
-                            onClick={() => handleDeleteStudent(item)}
+                            onClick={() => requestDeleteStudent(item)}
                             disabled={deletingStudentId === item.id}
                           >
                             {deletingStudentId === item.id ? "Deleting..." : "Delete"}
@@ -6071,6 +6246,54 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
               <p className="panel-empty">{searchTerm ? "No students match your filter." : "No students found."}</p>
             )}
           </article>
+
+          {pendingDeleteStudent ? (
+            <div className="student-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="student-delete-title">
+              <article className="student-delete-card">
+                <div className="student-delete-icon" aria-hidden="true">!</div>
+                <p className="student-delete-kicker">Delete student</p>
+                <h3 id="student-delete-title">
+                  Delete {pendingDeleteStudent.name || pendingDeleteStudent.email || "this student"}?
+                </h3>
+                <p>
+                  This will remove the student's account and profile. They will no longer be able to sign in or appear in
+                  your student directory.
+                </p>
+                <div className="student-delete-summary">
+                  <strong>{pendingDeleteStudent.name || "Student record"}</strong>
+                  <span>{pendingDeleteStudent.student_id || pendingDeleteStudent.email || "Account and profile"}</span>
+                </div>
+                <div className="student-delete-actions">
+                  <button
+                    type="button"
+                    className="table-action"
+                    onClick={() => setPendingDeleteStudent(null)}
+                    disabled={deletingStudentId === pendingDeleteStudent.id}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action danger student-delete-confirm"
+                    onClick={confirmDeleteStudent}
+                    disabled={deletingStudentId === pendingDeleteStudent.id}
+                  >
+                    {deletingStudentId === pendingDeleteStudent.id ? "Deleting..." : "Delete student"}
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {deleteSuccess ? (
+            <div className="student-delete-success" role="status" aria-live="polite">
+              <div className="student-delete-success-mark" aria-hidden="true"></div>
+              <div>
+                <strong>Student deleted</strong>
+                <span>{deleteSuccess.message}</span>
+              </div>
+            </div>
+          ) : null}
 
           {selectedStudentId ? (
             <article className="app-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-student-title">
