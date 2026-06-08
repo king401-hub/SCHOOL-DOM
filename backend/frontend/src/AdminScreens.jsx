@@ -5323,6 +5323,36 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     return () => window.clearTimeout(timer);
   }, [activityToast]);
 
+  const buildSettingsPayload = useCallback(
+    (calendarItems = activityCalendar) => ({
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      logo: logoFile,
+      academic_year_name: academicYearName.trim(),
+      academic_year_start_date: academicYearStart,
+      academic_year_end_date: academicYearEnd,
+      term_name: termName.trim(),
+      term_start_date: termStart,
+      term_end_date: termEnd,
+      activity_calendar: JSON.stringify(
+        calendarItems
+          .filter((item) => item.title.trim())
+          .map((item) => ({
+            month: Number(item.month || 0),
+            year: item.year ? Number(item.year) : null,
+            title: item.title.trim(),
+            activity_date: item.activity_date || null,
+            end_date: item.end_date || null,
+            description: item.description.trim(),
+            color: item.color || "#2563EB",
+          }))
+      ),
+    }),
+    [academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, email, logoFile, name, phone, termEnd, termName, termStart]
+  );
+
   const selectCalendarDate = (dateValue) => {
     if (!dateValue) {
       setActivityDraft((current) => ({ ...current, activity_date: "" }));
@@ -5334,7 +5364,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     setActivityDraft((current) => ({ ...current, activity_date: dateValue }));
   };
 
-  const addActivity = () => {
+  const addActivity = async () => {
     const title = activityDraft.title.trim();
     if (!title) {
       setFormError("Add the activity title before adding it to the calendar.");
@@ -5347,28 +5377,37 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     const selectedDate = activityDraft.activity_date ? new Date(`${activityDraft.activity_date}T00:00:00`) : null;
     const month = selectedDate ? selectedDate.getMonth() + 1 : Number(calendarMonth || today.getMonth() + 1);
     const year = selectedDate ? selectedDate.getFullYear() : Number(calendarYear || today.getFullYear());
-    setActivityCalendar((current) => [
-      ...current,
-      {
-        id: `new-${Date.now()}`,
-        month: String(month),
-        year: String(year),
-        title,
-        activity_date: activityDraft.activity_date,
-        end_date: activityDraft.end_date,
-        description: activityDraft.description,
-        color: activityDraft.color || "#2563EB",
-      },
-    ]);
-    setActivityToast({ title, date: activityDraft.activity_date });
+    const nextActivity = {
+      id: `new-${Date.now()}`,
+      month: String(month),
+      year: String(year),
+      title,
+      activity_date: activityDraft.activity_date,
+      end_date: activityDraft.end_date,
+      description: activityDraft.description,
+      color: activityDraft.color || "#2563EB",
+    };
+    const nextCalendar = [...activityCalendar, nextActivity];
+    setIsSaving(true);
     setFeedback("");
     setFormError("");
-    setActivityDraft((current) => ({
-      ...current,
-      title: "",
-      description: "",
-      end_date: "",
-    }));
+    setActivityCalendar(nextCalendar);
+    try {
+      const result = await onSave(buildSettingsPayload(nextCalendar));
+      setFeedback(result?.message || "School settings updated.");
+      setActivityToast({ title, date: activityDraft.activity_date });
+      setActivityDraft((current) => ({
+        ...current,
+        title: "",
+        description: "",
+        end_date: "",
+      }));
+    } catch (actionError) {
+      setActivityCalendar(activityCalendar);
+      setFormError(actionError.message || "Could not save activity.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const updateActivity = (activityId, key, value) => {
@@ -5418,32 +5457,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     setFeedback("");
     setFormError("");
     try {
-      const result = await onSave({
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        address: address.trim(),
-        logo: logoFile,
-        academic_year_name: academicYearName.trim(),
-        academic_year_start_date: academicYearStart,
-        academic_year_end_date: academicYearEnd,
-        term_name: termName.trim(),
-        term_start_date: termStart,
-        term_end_date: termEnd,
-        activity_calendar: JSON.stringify(
-          activityCalendar
-            .filter((item) => item.title.trim())
-            .map((item) => ({
-              month: Number(item.month || 0),
-              year: item.year ? Number(item.year) : null,
-              title: item.title.trim(),
-              activity_date: item.activity_date || null,
-              end_date: item.end_date || null,
-              description: item.description.trim(),
-              color: item.color || "#2563EB",
-            }))
-        ),
-      });
+      const result = await onSave(buildSettingsPayload());
       setFeedback(result?.message || "School settings updated.");
     } catch (actionError) {
       setFormError(actionError.message || "Could not update settings.");
