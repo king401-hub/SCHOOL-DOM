@@ -62,6 +62,14 @@ yarn-debug.log*
 yarn-error.log*
 mobile-app/.expo/
 
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.zip
+schooldom-cbt-win7/release/
+
 # Uploaded media
 media/
 

@@ -12,8 +12,10 @@ from django.views.generic import TemplateView
 APK_FILENAME = "schooldom-app.apk"
 ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
 STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
+STUDENT_CBT_WIN7_FILENAME = "SchoolDomCBT-Win7.exe"
 LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
 MIN_DESKTOP_INSTALLER_SIZE = 5 * 1024 * 1024
+MIN_WIN7_INSTALLER_SIZE = 32 * 1024
 
 
 def app_apk_path():
@@ -53,6 +55,26 @@ def offline_cbt_installer_path():
     return None
 
 
+def win7_cbt_installer_candidates():
+    release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-win7" / "release"
+    media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
+    candidates = [
+        media_dir / STUDENT_CBT_WIN7_FILENAME,
+        media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
+    ]
+    if release_dir.exists():
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
+    return candidates
+
+
+def win7_cbt_installer_path():
+    for candidate in win7_cbt_installer_candidates():
+        if candidate.exists() and candidate.is_file() and candidate.stat().st_size >= MIN_WIN7_INSTALLER_SIZE:
+            return candidate
+    return None
+
+
 def admin_app_installer_candidates():
     release_dir = Path(settings.BASE_DIR) / "schooldom-admin-app" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "admin"
@@ -79,6 +101,23 @@ def offline_cbt_client_version():
         import json
 
         return json.loads(package_path.read_text(encoding="utf-8")).get("version") or "0.1.0"
+    except (OSError, ValueError, TypeError):
+        return "0.1.0"
+
+
+def win7_cbt_client_version():
+    assembly_path = Path(settings.BASE_DIR) / "schooldom-cbt-win7" / "SchoolDom.Cbt.Win7" / "Properties" / "AssemblyInfo.cs"
+    try:
+        import re
+
+        text = assembly_path.read_text(encoding="utf-8")
+        match = re.search(r'AssemblyFileVersion\("([^"]+)"\)', text)
+        if not match:
+            return "0.1.0"
+        parts = match.group(1).split(".")
+        if len(parts) == 4 and parts[-1] == "0":
+            parts = parts[:-1]
+        return ".".join(parts) or "0.1.0"
     except (OSError, ValueError, TypeError):
         return "0.1.0"
 
@@ -275,6 +314,26 @@ def download_student_cbt_app(request):
     return response
 
 
+def download_student_cbt_win7_app(request):
+    app_path = win7_cbt_installer_path()
+    if not app_path:
+        raise Http404(
+            "SchoolDom CBT Win7 installer is not available yet. Build it with "
+            "`schooldom-cbt-win7/build-release.ps1`, then copy the setup exe to "
+            "media/app/student-cbt/SchoolDomCBT-Win7.exe."
+        )
+    response = FileResponse(
+        app_path.open("rb"),
+        as_attachment=True,
+        filename=STUDENT_CBT_WIN7_FILENAME if app_path.suffix.lower() == ".exe" else app_path.name,
+        content_type="application/vnd.microsoft.portable-executable" if app_path.suffix.lower() == ".exe" else "application/zip",
+    )
+    response["Cache-Control"] = "no-store"
+    response["Content-Length"] = app_path.stat().st_size
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
 def download_admin_app(request):
     app_path = admin_app_installer_path()
     if not app_path:
@@ -318,6 +377,20 @@ def student_cbt_app_version(request):
         "size_bytes": app_path.stat().st_size if app_path else 0,
     }
     return JsonResponse(payload)
+
+
+def student_cbt_win7_app_version(request):
+    app_path = win7_cbt_installer_path()
+    return JsonResponse(
+        {
+            "version": win7_cbt_client_version(),
+            "available": bool(app_path),
+            "download_url": request.build_absolute_uri(reverse("student_cbt_win7_app_download")),
+            "filename": STUDENT_CBT_WIN7_FILENAME if app_path and app_path.suffix.lower() == ".exe" else (app_path.name if app_path else STUDENT_CBT_WIN7_FILENAME),
+            "size_bytes": app_path.stat().st_size if app_path else 0,
+            "platform": "windows_7_sp1",
+        }
+    )
 
 
 def redirect_student_cbt(request):

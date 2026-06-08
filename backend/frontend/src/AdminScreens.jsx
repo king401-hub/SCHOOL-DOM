@@ -5284,6 +5284,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     color: "#2563EB",
   });
   const [activityToast, setActivityToast] = useState(null);
+  const [pendingActivityRemoval, setPendingActivityRemoval] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -5410,14 +5411,40 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     }
   };
 
-  const updateActivity = (activityId, key, value) => {
-    setActivityCalendar((current) =>
-      current.map((item) => (item.id === activityId ? { ...item, [key]: value } : item))
-    );
+  const displayActivityDate = (value) => {
+    if (!value) {
+      return "-";
+    }
+    try {
+      return new Date(`${value}T00:00:00`).toLocaleDateString([], {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return String(value);
+    }
   };
 
-  const removeActivity = (activityId) => {
-    setActivityCalendar((current) => current.filter((item) => item.id !== activityId));
+  const confirmRemoveActivity = async () => {
+    if (!pendingActivityRemoval) {
+      return;
+    }
+    const nextCalendar = activityCalendar.filter((item) => item.id !== pendingActivityRemoval.id);
+    setIsSaving(true);
+    setFeedback("");
+    setFormError("");
+    setActivityCalendar(nextCalendar);
+    try {
+      const result = await onSave(buildSettingsPayload(nextCalendar));
+      setFeedback(result?.message || "Activity removed.");
+      setPendingActivityRemoval(null);
+    } catch (actionError) {
+      setActivityCalendar(activityCalendar);
+      setFormError(actionError.message || "Could not remove activity.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const calendarDays = useMemo(() => {
@@ -5646,41 +5673,17 @@ onClick={() => handleThemeSelect("light")}
                           <div className="activity-calendar-list">
                             {activityCalendar.map((activity) => (
                               <div key={activity.id} className="activity-calendar-row">
-                                <label className="panel-field">
-                                  Month
-                                  <select value={activity.month} onChange={(event) => updateActivity(activity.id, "month", event.target.value)} disabled={!canEdit || isSaving}>
-                                    {ACTIVITY_MONTHS.map((month, index) => (
-                                      <option key={month} value={index + 1}>{month}</option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <label className="panel-field">
-                                  Year
-                                  <input type="number" min="1900" max="2200" value={activity.year} onChange={(event) => updateActivity(activity.id, "year", event.target.value)} placeholder="2026" disabled={!canEdit || isSaving} />
-                                </label>
-                                <label className="panel-field">
-                                  Start Date
-                                  <input type="date" value={activity.activity_date} onChange={(event) => updateActivity(activity.id, "activity_date", event.target.value)} disabled={!canEdit || isSaving} />
-                                </label>
-                                <label className="panel-field">
-                                  End Date
-                                  <input type="date" value={activity.end_date} onChange={(event) => updateActivity(activity.id, "end_date", event.target.value)} disabled={!canEdit || isSaving} />
-                                </label>
-                                <label className="panel-field full">
-                                  Activity Title
-                                  <input value={activity.title} onChange={(event) => updateActivity(activity.id, "title", event.target.value)} placeholder="Inter-house sports, matriculation, excursion..." disabled={!canEdit || isSaving} />
-                                </label>
-                                <label className="panel-field full">
-                                  Details
-                                  <textarea value={activity.description} onChange={(event) => updateActivity(activity.id, "description", event.target.value)} rows="2" disabled={!canEdit || isSaving} />
-                                </label>
-                                <label className="panel-field">
-                                  Color
-                                  <input type="color" value={activity.color} onChange={(event) => updateActivity(activity.id, "color", event.target.value)} disabled={!canEdit || isSaving} />
-                                </label>
-                                <div className="panel-field field-action">
-                                  <span>&nbsp;</span>
-                                  <button type="button" className="table-action danger" onClick={() => removeActivity(activity.id)} disabled={!canEdit || isSaving}>
+                                <div className="activity-row-accent" style={{ background: activity.color || "#2563EB" }} aria-hidden="true" />
+                                <div className="activity-row-main">
+                                  <h4>{activity.title}</h4>
+                                  <p>{activity.description || "No details added."}</p>
+                                  <div className="activity-row-dates">
+                                    <span>Start: {displayActivityDate(activity.activity_date)}</span>
+                                    <span>End: {displayActivityDate(activity.end_date)}</span>
+                                  </div>
+                                </div>
+                                <div className="activity-row-actions">
+                                  <button type="button" className="table-action danger" onClick={() => setPendingActivityRemoval(activity)} disabled={!canEdit || isSaving}>
                                     Remove
                                   </button>
                                 </div>
@@ -5698,6 +5701,29 @@ onClick={() => handleThemeSelect("light")}
                             <strong>Activity added</strong>
                             <span>{activityToast.title}{activityToast.date ? ` - ${activityToast.date}` : ""}</span>
                           </div>
+                        </div>
+                      ) : null}
+                      {pendingActivityRemoval ? (
+                        <div className="activity-remove-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-remove-title">
+                          <article className="activity-remove-card">
+                            <p className="activity-remove-kicker">Remove activity</p>
+                            <h3 id="activity-remove-title">Remove {pendingActivityRemoval.title}?</h3>
+                            <p>This will remove it from the school activities calendar and save the change immediately.</p>
+                            <div className="activity-remove-summary">
+                              <strong>{pendingActivityRemoval.title}</strong>
+                              <span>
+                                {displayActivityDate(pendingActivityRemoval.activity_date)} - {displayActivityDate(pendingActivityRemoval.end_date)}
+                              </span>
+                            </div>
+                            <div className="activity-remove-actions">
+                              <button type="button" className="table-action" onClick={() => setPendingActivityRemoval(null)} disabled={isSaving}>
+                                Cancel
+                              </button>
+                              <button type="button" className="table-action danger" onClick={confirmRemoveActivity} disabled={isSaving}>
+                                {isSaving ? "Removing..." : "Remove activity"}
+                              </button>
+                            </div>
+                          </article>
                         </div>
                       ) : null}
                     {formError ? <p className="form-feedback error">{formError}</p> : null}

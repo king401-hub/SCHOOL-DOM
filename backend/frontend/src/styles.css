@@ -7488,8 +7488,9 @@ html {
     grid-template-columns: 1fr;
   }
 
-  .activity-calendar-row .full {
-    grid-column: auto;
+  .activity-row-accent {
+    width: 100%;
+    min-height: 6px;
   }
 
   .activity-calendar-weekdays,
@@ -11274,20 +11275,123 @@ body[data-theme="light"] .quiz-progress span {
 
 .activity-calendar-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(130px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
   border: 1px solid #dbe7f6;
   border-radius: 12px;
   background: #ffffff;
-  padding: 0.85rem;
+  padding: 0.9rem;
 }
 
-.activity-calendar-row .full {
-  grid-column: span 2;
+.activity-row-accent {
+  width: 6px;
+  min-height: 86px;
+  border-radius: 999px;
 }
 
-.activity-calendar-row .field-action {
-  justify-content: end;
+.activity-row-main {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.activity-row-main h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.activity-row-main p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.activity-row-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.activity-row-dates span {
+  border: 1px solid #dbe7f6;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 0.28rem 0.55rem;
+}
+
+.activity-row-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.activity-remove-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 1280;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(6px);
+}
+
+.activity-remove-card {
+  width: min(100%, 460px);
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.34);
+  padding: 1.15rem;
+  animation: student-delete-pop 180ms ease-out;
+}
+
+.activity-remove-kicker {
+  margin: 0 0 0.35rem;
+  color: #b91c1c;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.activity-remove-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+}
+
+.activity-remove-card p {
+  margin: 0.75rem 0 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.activity-remove-summary {
+  display: grid;
+  gap: 0.2rem;
+  margin: 1rem 0 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.75rem;
+}
+
+.activity-remove-summary span {
+  color: #64748b;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.activity-remove-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.05rem;
 }
 
 .activity-add-toast {
@@ -11406,6 +11510,28 @@ body[data-theme="dark"] .activity-calendar-day small {
 
 body[data-theme="dark"] .activity-calendar-composer h4 {
   color: #e5e7eb;
+}
+
+body[data-theme="dark"] .activity-row-main h4,
+body[data-theme="dark"] .activity-remove-card h3 {
+  color: #e5e7eb;
+}
+
+body[data-theme="dark"] .activity-row-main p,
+body[data-theme="dark"] .activity-remove-card p {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .activity-row-dates span,
+body[data-theme="dark"] .activity-remove-summary {
+  background: #0f172a;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+body[data-theme="dark"] .activity-remove-card {
+  background: #111827;
+  border-color: #7f1d1d;
 }
 
 body[data-theme="dark"] .exam-builder-top h2,
