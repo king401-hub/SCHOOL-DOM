@@ -8,6 +8,7 @@ urlpatterns = [
     path('cbt-entry/', exam_views.StudentCbtEntryView.as_view(), name='student_cbt_entry'),
     path('cbt/offline-sync/', exam_views.cbt_offline_sync_package, name='cbt_offline_sync_package'),
     path('cbt/exams/<int:exam_id>/pin/regenerate/', exam_views.cbt_regenerate_exam_pin, name='cbt_regenerate_exam_pin'),
+    path('cbt/results/delete/', exam_views.cbt_delete_offline_result, name='cbt_delete_offline_result'),
     path('cbt/offline-results/', exam_views.cbt_offline_result_ingest, name='cbt_offline_result_ingest'),
     path('cbt/package/export/', exam_views.cbt_exam_package_export, name='cbt_exam_package_export'),
     path('cbt/package/results/import/', exam_views.cbt_results_package_import, name='cbt_results_package_import'),

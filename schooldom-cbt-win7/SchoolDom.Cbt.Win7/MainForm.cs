@@ -151,7 +151,11 @@ namespace SchoolDom.Cbt.Win7
             export.Click += ExportResults;
             sidebar.Controls.Add(export);
 
-            var installStudent = SideButton("Install Student App", 24, 402);
+            var results = SideButton("Manage Results", 24, 402);
+            results.Click += (s, e) => ShowResultList();
+            sidebar.Controls.Add(results);
+
+            var installStudent = SideButton("Install Student App", 24, 456);
             installStudent.Click += InstallStudentApp;
             sidebar.Controls.Add(installStudent);
 
@@ -341,6 +345,44 @@ namespace SchoolDom.Cbt.Win7
             }
         }
 
+        private void ShowResultList()
+        {
+            using (var form = ListForm("Submitted Results", 900, 560))
+            {
+                var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
+                list.Columns.Add("Student", 240);
+                list.Columns.Add("Student ID", 130);
+                list.Columns.Add("Exam", 260);
+                list.Columns.Add("Status", 100);
+                list.Columns.Add("Submitted", 180);
+                foreach (var session in _store.State.Sessions.OrderByDescending(s => s.SubmittedAt ?? s.StartedAt))
+                {
+                    var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
+                    var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
+                    var item = new ListViewItem(student == null ? session.StudentId : student.FullName);
+                    item.SubItems.Add(session.StudentId ?? "");
+                    item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
+                    item.SubItems.Add(session.Status ?? "");
+                    item.SubItems.Add(Display(session.SubmittedAt ?? session.StartedAt));
+                    item.Tag = session;
+                    list.Items.Add(item);
+                }
+                var delete = PrimaryButton("Delete / Allow Retake", 12, 458, 180);
+                delete.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+                delete.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    DeleteResult((SessionRecord)list.SelectedItems[0].Tag);
+                    form.Close();
+                };
+                var panel = new Panel { Dock = DockStyle.Bottom, Height = 58 };
+                panel.Controls.Add(delete);
+                form.Controls.Add(list);
+                form.Controls.Add(panel);
+                form.ShowDialog(this);
+            }
+        }
+
         private void ShowExamReview(ExamRecord exam)
         {
             using (var form = ListForm("Review: " + exam.Title, 860, 620))
@@ -452,6 +494,39 @@ namespace SchoolDom.Cbt.Win7
             {
                 Cursor = Cursors.Default;
                 MessageBox.Show(ex.Message, "PIN Generation Failed");
+            }
+        }
+
+        private void DeleteResult(SessionRecord session)
+        {
+            if (session == null) return;
+            var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
+            var title = exam == null ? session.ExamId : exam.Title;
+            if (MessageBox.Show("Delete this result and allow the student to retake?\r\n\r\n" + session.StudentId + "\r\n" + title, "Delete Result", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                try
+                {
+                    _cloud.DeleteResult(session.ExamId, session.StudentId, session.Id);
+                }
+                catch (Exception ex)
+                {
+                    if (MessageBox.Show("Cloud delete failed:\r\n\r\n" + ex.Message + "\r\n\r\nRemove the local result anyway?", "Cloud Delete Failed", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    {
+                        Cursor = Cursors.Default;
+                        return;
+                    }
+                }
+                var message = _packages.DeleteSession(session.Id);
+                Cursor = Cursors.Default;
+                MessageBox.Show(message, "Result Deleted");
+                ShowDashboard();
+            }
+            catch (Exception ex)
+            {
+                Cursor = Cursors.Default;
+                MessageBox.Show(ex.Message, "Delete Result Failed");
             }
         }
 

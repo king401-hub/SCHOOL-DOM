@@ -1230,6 +1230,44 @@ def cbt_regenerate_exam_pin(request, exam_id):
     return Response({"success": False, "message": "Could not generate a unique PIN. Try again."}, status=status.HTTP_409_CONFLICT)
 
 
+@api_view(["POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def cbt_delete_offline_result(request):
+    """Delete a CBT result so the student can retake the exam from the LAN client."""
+    if request.user.role not in {"school_admin", "principal", "super_admin", "teacher", "accountant"}:
+        return Response({"success": False, "message": "Admin or teacher access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    exam_id = request.data.get("exam_id")
+    student_identifier = request.data.get("student_id") or request.data.get("admission_number") or request.data.get("student")
+    offline_session_id = str(request.data.get("session_id") or request.data.get("offline_attempt_id") or "").strip()
+    if not exam_id or not student_identifier:
+        return Response({"success": False, "message": "exam_id and student_id are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    student = _find_student_by_identifier(student_identifier)
+    if not student:
+        return Response({"success": False, "message": "Student was not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
+    attempts = ExamAttempt.objects.filter(exam=exam, student=student)
+    if offline_session_id:
+        session_filter = Q(device_id=offline_session_id)
+        if offline_session_id.isdigit():
+            session_filter |= Q(id=int(offline_session_id))
+        attempts = attempts.filter(session_filter)
+    deleted_count = attempts.count()
+    attempts.delete()
+    return Response(
+        {
+            "success": True,
+            "deleted": deleted_count,
+            "exam_id": exam.id,
+            "student_id": student_identifier,
+            "message": "Result deleted. Student can retake the exam.",
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def cbt_exam_package_export(request):

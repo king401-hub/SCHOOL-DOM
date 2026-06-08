@@ -36,6 +36,11 @@ namespace SchoolDom.StudentCbt.Win7
             return Post("/api/login", new Dictionary<string, object> { { "studentId", studentId }, { "pin", pin } });
         }
 
+        public Dictionary<string, object> StartSession(string studentId, string examId)
+        {
+            return Post("/api/start-session", new Dictionary<string, object> { { "studentId", studentId }, { "examId", examId } });
+        }
+
         public Dictionary<string, object> ExamDetail(string examId)
         {
             return Get("/api/exams/" + Uri.EscapeDataString(examId));

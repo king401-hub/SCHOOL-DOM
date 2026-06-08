@@ -105,6 +105,24 @@ namespace SchoolDom.Cbt.Win7
             return data;
         }
 
+        public string DeleteResult(string examId, string studentId, string sessionId)
+        {
+            RequireToken();
+            var body = new Dictionary<string, object>
+            {
+                { "exam_id", examId ?? "" },
+                { "student_id", studentId ?? "" },
+                { "session_id", sessionId ?? "" }
+            };
+            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/results/delete/", JsonUtil.Serialize(body), _store.State.AccessToken);
+            var data = JsonUtil.DeserializeObject(response);
+            if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
+            {
+                throw new InvalidOperationException(data.ContainsKey("message") ? Convert.ToString(data["message"]) : "Could not delete result.");
+            }
+            return data.ContainsKey("message") ? Convert.ToString(data["message"]) : "Result deleted.";
+        }
+
         public void SaveToken(string cloudUrl, string accessToken)
         {
             _store.State.CloudUrl = NormalizeCloudUrl(cloudUrl);

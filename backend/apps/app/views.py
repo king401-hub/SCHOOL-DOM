@@ -11,7 +11,6 @@ from django.views.generic import TemplateView
 
 APK_FILENAME = "schooldom-app.apk"
 ADMIN_APP_FILENAME = "SchoolDomAdminSync-Win7.exe"
-LEGACY_ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
 STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
 STUDENT_CBT_WIN7_FILENAME = "SchoolDomAdminSync-Win7.exe"
 STUDENT_CBT_WIN7_CLIENT_FILENAME = "SchoolDomStudentCBT-Win7.exe"
@@ -103,7 +102,6 @@ def win7_student_cbt_installer_path():
 
 def admin_app_installer_candidates():
     win7_release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-win7" / "release"
-    release_dir = Path(settings.BASE_DIR) / "schooldom-admin-app" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "admin"
     win7_media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
     candidates = [
@@ -113,14 +111,6 @@ def admin_app_installer_candidates():
     ]
     if win7_release_dir.exists():
         candidates.extend(sorted(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
-    candidates.extend([
-        media_dir / LEGACY_ADMIN_APP_FILENAME,
-        media_dir / ADMIN_APP_FILENAME,
-        media_dir / "SchoolDom-Admin-Setup.exe",
-    ])
-    if release_dir.exists():
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-*-Setup.exe"), reverse=True))
-        candidates.extend(sorted(release_dir.glob("*.exe"), reverse=True))
     return candidates
 
 

@@ -165,6 +165,10 @@ namespace SchoolDom.Cbt.Win7
                         {
                             WriteJson(stream, 200, Login(bodyText));
                         }
+                        else if (method == "POST" && path == "/api/start-session")
+                        {
+                            WriteJson(stream, 200, StartSession(bodyText));
+                        }
                         else if (method == "GET" && path.StartsWith("/api/exams/", StringComparison.OrdinalIgnoreCase))
                         {
                             var examId = Uri.UnescapeDataString(path.Substring("/api/exams/".Length));
@@ -229,9 +233,35 @@ namespace SchoolDom.Cbt.Win7
             var pinHash = JsonUtil.Sha256(pin);
             var student = _store.State.Students.FirstOrDefault(item => string.Equals(item.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
             if (student == null) return new Dictionary<string, object> { { "success", false }, { "message", "Student ID was not found on the admin LAN server." } };
-            var exam = _store.State.Exams.FirstOrDefault(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase));
-            if (exam == null) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
+            var exams = _store.State.Exams.Where(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (!exams.Any()) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
+            if (exams.Count > 1)
+            {
+                return new Dictionary<string, object> { { "success", true }, { "student", student }, { "exams", exams.Select(PublicExam).ToList() } };
+            }
+            var exam = exams.First();
+            return StartSession(student, exam);
+        }
+
+        private Dictionary<string, object> StartSession(string bodyText)
+        {
+            var body = JsonUtil.DeserializeObject(bodyText);
+            var studentId = JsonUtil.Text(body.ContainsKey("studentId") ? body["studentId"] : body.ContainsKey("student_id") ? body["student_id"] : "").Trim();
+            var examId = JsonUtil.Text(body.ContainsKey("examId") ? body["examId"] : body.ContainsKey("exam_id") ? body["exam_id"] : "").Trim();
+            var student = _store.State.Students.FirstOrDefault(item => string.Equals(item.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
+            if (student == null) return new Dictionary<string, object> { { "success", false }, { "message", "Student ID was not found on the admin LAN server." } };
+            var exam = _store.State.Exams.FirstOrDefault(item => item.Id == examId);
+            if (exam == null) return new Dictionary<string, object> { { "success", false }, { "message", "Exam was not found on the admin LAN server." } };
+            return StartSession(student, exam);
+        }
+
+        private Dictionary<string, object> StartSession(StudentRecord student, ExamRecord exam)
+        {
             var session = _store.State.Sessions.FirstOrDefault(item => item.ExamId == exam.Id && string.Equals(item.StudentId, student.StudentId, StringComparison.OrdinalIgnoreCase));
+            if (session != null && session.Status == "submitted")
+            {
+                return new Dictionary<string, object> { { "success", false }, { "message", "This result has already been submitted. Ask the admin to delete the result before retaking." } };
+            }
             if (session == null)
             {
                 var started = DateTime.UtcNow;

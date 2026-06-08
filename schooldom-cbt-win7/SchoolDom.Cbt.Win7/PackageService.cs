@@ -131,6 +131,15 @@ namespace SchoolDom.Cbt.Win7
             _store.Save();
         }
 
+        public string DeleteSession(string sessionId)
+        {
+            var session = _store.State.Sessions.FirstOrDefault(s => s.Id == sessionId);
+            if (session == null) return "Result was already removed locally.";
+            _store.State.Sessions.Remove(session);
+            _store.Save();
+            return "Local result removed. Student can retake this exam on the LAN app.";
+        }
+
         private static string Csv(IEnumerable<string> values)
         {
             return string.Join(",", values.Select(value => "\"" + (value ?? "").Replace("\"", "\"\"") + "\""));
