@@ -10,445 +10,455 @@ namespace SchoolDom.Cbt.Win7
         private readonly LocalStore _store;
         private readonly PackageService _packages;
         private readonly CloudSyncService _cloud;
-        private readonly Timer _timer;
+        private readonly LanServerService _lan;
         private Panel _root;
-        private StudentRecord _activeStudent;
-        private ExamRecord _activeExam;
-        private SessionRecord _activeSession;
-        private int _questionIndex;
+        private Label _statusLabel;
 
         public MainForm()
         {
             _store = new LocalStore();
             _packages = new PackageService(_store);
             _cloud = new CloudSyncService(_store, _packages);
-            _timer = new Timer { Interval = 1000 };
-            _timer.Tick += TimerTick;
+            _lan = new LanServerService(_store);
 
-            Text = "SchoolDom Student CBT";
-            Width = 1180;
+            // Require a fresh cloud login each time the admin opens the app.
+            _store.State.AccessToken = "";
+            _store.Save();
+
+            Text = "SchoolDom Admin Sync Win7";
+            Width = 1280;
             Height = 760;
-            MinimumSize = new Size(980, 640);
+            MinimumSize = new Size(1120, 680);
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(246, 248, 252);
+            BackColor = Palette.Background;
             Font = new Font("Segoe UI", 10);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
             _root = new Panel { Dock = DockStyle.Fill };
             Controls.Add(_root);
-            FormClosing += MainFormClosing;
-            Deactivate += MainFormDeactivate;
-            ShowLogin();
+            ShowCloudLogin();
         }
 
-        private void Shell(string title, Action<Panel> body)
+        private void ShowCloudLogin()
         {
             _root.Controls.Clear();
-            var header = new Panel { Dock = DockStyle.Top, Height = 72, BackColor = Color.White };
-            var heading = new Label
-            {
-                Text = title,
-                Font = new Font("Segoe UI", 18, FontStyle.Bold),
-                ForeColor = Color.FromArgb(20, 31, 52),
-                Left = 24,
-                Top = 18,
-                Width = 520
-            };
-            var admin = HeaderButton("Admin", 760, ShowAdmin);
-            var login = HeaderButton("Student Login", 856, ShowLogin);
-            var exit = HeaderButton("Exit", 1010, Close);
-            header.Controls.Add(heading);
-            header.Controls.Add(admin);
-            header.Controls.Add(login);
-            header.Controls.Add(exit);
 
-            var content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(24), AutoScroll = true };
+            var hero = new Panel { Dock = DockStyle.Left, Width = 430, BackColor = Palette.Navy };
+            hero.Controls.Add(new Label
+            {
+                Text = "SchoolDom",
+                Left = 38,
+                Top = 46,
+                Width = 320,
+                Height = 40,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 22, FontStyle.Bold)
+            });
+            hero.Controls.Add(new Label
+            {
+                Text = "Admin Sync Console",
+                Left = 40,
+                Top = 92,
+                Width = 320,
+                Height = 28,
+                ForeColor = Palette.SoftText,
+                Font = new Font("Segoe UI", 12, FontStyle.Regular)
+            });
+            hero.Controls.Add(new Label
+            {
+                Text = "Cloud login is required on every launch. After login, the app automatically downloads published exams, students, and package metadata.",
+                Left = 40,
+                Top = 210,
+                Width = 340,
+                Height = 110,
+                ForeColor = Palette.SoftText,
+                Font = new Font("Segoe UI", 10, FontStyle.Regular)
+            });
+
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(82, 90, 560, 440);
+            content.Controls.Add(card);
+
+            card.Controls.Add(TextLabel("Cloud Login", 32, 28, 22, true, 460, Palette.Text));
+            card.Controls.Add(TextLabel("Use an admin, principal, super admin, teacher, or accountant account with CBT sync permission.", 34, 68, 10, false, 485, Palette.Muted));
+
+            var url = Field(card, "Cloud URL", _store.State.CloudUrl ?? "https://schooldom.academy", 34, 124, false);
+            var email = Field(card, "Email", "", 34, 194, false);
+            var password = Field(card, "Password", "", 294, 194, true);
+            var schoolCode = Field(card, "School Code", "", 34, 264, false);
+
+            _statusLabel = TextLabel("", 34, 380, 10, false, 490, Palette.Muted);
+            card.Controls.Add(_statusLabel);
+
+            var login = PrimaryButton("Login and Sync", 34, 324, 180);
+            login.Click += (s, e) =>
+            {
+                RunWithStatus("Signing in and pulling school data...", () =>
+                {
+                    _cloud.Login(url.Text, email.Text, password.Text, schoolCode.Text);
+                    return _cloud.PullPackage("");
+                }, ShowDashboard);
+            };
+            card.Controls.Add(login);
+
+            var token = SecondaryButton("Use JWT Token", 226, 324, 160);
+            token.Click += (s, e) =>
+            {
+                var accessToken = PromptDialog.Show("JWT Access Token", "Paste admin JWT access token.", true);
+                if (string.IsNullOrWhiteSpace(accessToken)) return;
+                RunWithStatus("Saving token and pulling school data...", () =>
+                {
+                    _cloud.SaveToken(url.Text, accessToken);
+                    return _cloud.PullPackage("");
+                }, ShowDashboard);
+            };
+            card.Controls.Add(token);
+
+            var offline = SecondaryButton("Offline Tools", 398, 324, 120);
+            offline.Click += (s, e) => ShowDashboard();
+            card.Controls.Add(offline);
+
             _root.Controls.Add(content);
-            _root.Controls.Add(header);
-            body(content);
+            _root.Controls.Add(hero);
         }
 
-        private Button HeaderButton(string text, int left, Action action)
-        {
-            var button = new Button
-            {
-                Text = text,
-                Left = left,
-                Top = 18,
-                Width = text.Length > 8 ? 140 : 84,
-                Height = 36,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(238, 243, 250)
-            };
-            button.FlatAppearance.BorderColor = Color.FromArgb(213, 222, 235);
-            button.Click += (s, e) => action();
-            return button;
-        }
-
-        private void ShowAdmin()
-        {
-            _timer.Stop();
-            TopMost = false;
-            FormBorderStyle = FormBorderStyle.Sizable;
-            WindowState = FormWindowState.Normal;
-            Shell("Admin Control", panel =>
-            {
-                var card = Card(24, 24, 720, 330);
-                panel.Controls.Add(card);
-
-                card.Controls.Add(Label("Offline package", 24, 22, 18, true, 500));
-                card.Controls.Add(Label("Import exams and students, then export completed results after the exam.", 24, 56, 10, false, 620));
-
-                var import = PrimaryButton("Import Package", 24, 98, 180);
-                import.Click += ImportPackage;
-                card.Controls.Add(import);
-
-                var export = PrimaryButton("Export Results", 214, 98, 180);
-                export.Click += ExportResults;
-                card.Controls.Add(export);
-
-                var cloudPull = PrimaryButton("Pull From Cloud", 404, 98, 180);
-                cloudPull.Click += PullFromCloud;
-                card.Controls.Add(cloudPull);
-
-                var cloudPush = PrimaryButton("Upload Results", 24, 150, 180);
-                cloudPush.Click += UploadResults;
-                card.Controls.Add(cloudPush);
-
-                var token = SecondaryButton("Set Token", 214, 150, 180);
-                token.Click += SetCloudToken;
-                card.Controls.Add(token);
-
-                var login = SecondaryButton("Cloud Login", 404, 150, 180);
-                login.Click += CloudLogin;
-                card.Controls.Add(login);
-
-                var stats = "Exams: " + _store.State.Exams.Count +
-                            "\r\nStudents: " + _store.State.Students.Count +
-                            "\r\nSessions: " + _store.State.Sessions.Count +
-                            "\r\nSubmitted: " + _store.State.Sessions.Count(s => s.Status == "submitted") +
-                            "\r\nCloud: " + (_store.State.CloudUrl ?? "") +
-                            "\r\nLast sync: " + (_store.State.LastSyncAt ?? "") +
-                            "\r\nPackage: " + (_store.State.ActivePackageId ?? "");
-                card.Controls.Add(Label(stats, 24, 210, 10, false, 660));
-
-                var note = Card(24, 380, 720, 150);
-                panel.Controls.Add(note);
-                note.Controls.Add(Label("Windows 7 note", 24, 22, 16, true, 500));
-                note.Controls.Add(Label("Package import/export remains the safest exam workflow. Direct online sync uses TLS 1.2 and may require Windows 7 SP1 updates and current root certificates.", 24, 58, 10, false, 650));
-            });
-        }
-
-        private void ShowLogin()
-        {
-            _timer.Stop();
-            Shell("Student Login", panel =>
-            {
-                var card = Card(24, 24, 560, 330);
-                panel.Controls.Add(card);
-                card.Controls.Add(Label("Start or resume exam", 24, 24, 18, true, 480));
-                card.Controls.Add(Label("Enter your Student ID and the exam PIN given by the school.", 24, 58, 10, false, 500));
-
-                var studentId = TextInput(24, 110, 360);
-                var pin = TextInput(24, 174, 360);
-                pin.UseSystemPasswordChar = true;
-                card.Controls.Add(Label("Student ID", 24, 88, 10, true, 200));
-                card.Controls.Add(studentId);
-                card.Controls.Add(Label("Exam PIN", 24, 152, 10, true, 200));
-                card.Controls.Add(pin);
-
-                var start = PrimaryButton("Start Exam", 24, 238, 150);
-                start.Click += (s, e) =>
-                {
-                    var student = _store.FindStudent(studentId.Text);
-                    if (student == null)
-                    {
-                        MessageBox.Show("Student ID was not found on this computer.", "Login failed");
-                        return;
-                    }
-                    var exam = _store.FindExamByPin(pin.Text);
-                    if (exam == null)
-                    {
-                        MessageBox.Show("Invalid exam PIN.", "Login failed");
-                        return;
-                    }
-                    _activeStudent = student;
-                    _activeExam = exam;
-                    _activeSession = _store.StartOrResumeSession(exam, student);
-                    if (_activeSession.Status == "submitted")
-                    {
-                        MessageBox.Show("This exam has already been submitted on this computer.", "Already submitted");
-                        return;
-                    }
-                    _questionIndex = 0;
-                    ShowExam();
-                };
-                card.Controls.Add(start);
-
-                var status = Card(620, 24, 360, 190);
-                panel.Controls.Add(status);
-                status.Controls.Add(Label("Loaded data", 24, 22, 16, true, 300));
-                status.Controls.Add(Label(_store.State.Exams.Count + " exam(s)\r\n" + _store.State.Students.Count + " student(s)\r\n" + _store.State.Sessions.Count(s => s.Status == "submitted") + " submitted result(s)", 24, 58, 10, false, 300));
-            });
-        }
-
-        private void ShowExam()
-        {
-            if (_activeExam == null || _activeStudent == null || _activeSession == null) return;
-            _timer.Start();
-            TopMost = true;
-            FormBorderStyle = FormBorderStyle.None;
-            WindowState = FormWindowState.Maximized;
-            ExamShell(_activeExam.Title, panel =>
-            {
-                var side = Card(24, 24, 240, 560);
-                var main = Card(288, 24, 780, 560);
-                panel.Controls.Add(side);
-                panel.Controls.Add(main);
-
-                side.Controls.Add(Label(_activeStudent.FullName, 18, 18, 13, true, 210));
-                side.Controls.Add(Label(_activeStudent.StudentId + "\r\n" + _activeExam.Subject, 18, 46, 9, false, 210));
-                side.Controls.Add(Label("Questions", 18, 96, 11, true, 210));
-
-                var y = 128;
-                for (var i = 0; i < _activeExam.Questions.Count; i++)
-                {
-                    var index = i;
-                    var btn = new Button
-                    {
-                        Text = (i + 1).ToString(),
-                        Left = 18 + (i % 5) * 42,
-                        Top = y + (i / 5) * 42,
-                        Width = 34,
-                        Height = 34,
-                        FlatStyle = FlatStyle.Flat,
-                        BackColor = _activeSession.Answers.ContainsKey(_activeExam.Questions[i].Id)
-                            ? Color.FromArgb(198, 232, 215)
-                            : Color.FromArgb(238, 243, 250)
-                    };
-                    if (i == _questionIndex) btn.BackColor = Color.FromArgb(24, 96, 180);
-                    btn.ForeColor = i == _questionIndex ? Color.White : Color.FromArgb(20, 31, 52);
-                    btn.Click += (s, e) => { SaveCurrentAnswer(main); _questionIndex = index; ShowExam(); };
-                    side.Controls.Add(btn);
-                }
-
-                var submit = PrimaryButton("Submit Exam", 18, 492, 200);
-                submit.Click += (s, e) => SubmitExam();
-                side.Controls.Add(submit);
-
-                RenderQuestion(main);
-            });
-        }
-
-        private void ExamShell(string title, Action<Panel> body)
+        private void ShowDashboard()
         {
             _root.Controls.Clear();
-            var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Color.FromArgb(20, 31, 52) };
-            var heading = new Label
-            {
-                Text = title,
-                Font = new Font("Segoe UI", 17, FontStyle.Bold),
-                ForeColor = Color.White,
-                Left = 24,
-                Top = 16,
-                Width = 720
-            };
-            var timer = new Label
-            {
-                Text = TimeRemainingText(),
-                Font = new Font("Segoe UI", 13, FontStyle.Bold),
-                ForeColor = Color.White,
-                Left = Width - 260,
-                Top = 20,
-                Width = 220
-            };
-            header.Controls.Add(heading);
-            header.Controls.Add(timer);
-            var content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(24), AutoScroll = true };
-            _root.Controls.Add(content);
-            _root.Controls.Add(header);
-            body(content);
-        }
 
-        private void RenderQuestion(Panel main)
-        {
-            main.Controls.Clear();
-            var question = _activeExam.Questions[_questionIndex];
-            main.Controls.Add(Label("Question " + (_questionIndex + 1) + " of " + _activeExam.Questions.Count, 24, 20, 11, true, 360));
-            main.Controls.Add(Label(TimeRemainingText(), 590, 20, 11, true, 160));
+            var sidebar = new Panel { Dock = DockStyle.Left, Width = 250, BackColor = Palette.Navy };
+            sidebar.Controls.Add(TextLabel("SchoolDom", 24, 28, 20, true, 200, Color.White));
+            sidebar.Controls.Add(TextLabel("Admin Sync", 26, 64, 10, false, 180, Palette.SoftText));
 
-            var top = 58;
-            if (question.Group != null && !string.IsNullOrWhiteSpace(question.Group.PassageText))
-            {
-                var passage = Label(question.Group.PassageText, 24, top, 10, false, 720);
-                passage.Height = 86;
-                passage.BackColor = Color.FromArgb(247, 250, 255);
-                passage.BorderStyle = BorderStyle.FixedSingle;
-                main.Controls.Add(passage);
-                top += 104;
-            }
+            var syncNow = SideButton("Sync Now", 24, 132);
+            syncNow.Click += (s, e) => RunWithStatus("Pulling latest school data...", () => _cloud.PullPackage(""), ShowDashboard);
+            sidebar.Controls.Add(syncNow);
 
-            var qText = Label(question.Text, 24, top, 13, true, 720);
-            qText.Height = 86;
-            main.Controls.Add(qText);
-            top += 100;
+            var upload = SideButton("Upload Results", 24, 186);
+            upload.Click += (s, e) => RunWithStatus("Uploading local results...", () => _cloud.UploadResults(), ShowDashboard);
+            sidebar.Controls.Add(upload);
 
-            if (question.Type == "essay" || question.Type == "theory" || question.Type == "fill_blank" || question.Type == "fill_in_the_blank")
+            var broadsheet = SideButton("Broadsheet", 24, 240);
+            broadsheet.Click += ExportBroadsheet;
+            sidebar.Controls.Add(broadsheet);
+
+            var lanStart = SideButton("Start LAN", 24, 294);
+            lanStart.Click += (s, e) =>
             {
-                var answer = new TextBox { Left = 24, Top = top, Width = 720, Height = 170, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer" };
-                object saved;
-                if (_activeSession.Answers.TryGetValue(question.Id, out saved)) answer.Text = Convert.ToString(saved);
-                main.Controls.Add(answer);
-            }
-            else
-            {
-                var options = question.Options.Count > 0 ? question.Options : new System.Collections.Generic.List<string> { "True", "False" };
-                for (var i = 0; i < options.Count; i++)
+                try
                 {
-                    var option = new RadioButton
-                    {
-                        Left = 30,
-                        Top = top + i * 46,
-                        Width = 700,
-                        Height = 36,
-                        Text = ((char)('A' + i)) + ". " + options[i],
-                        Tag = "answer:" + i,
-                        Font = new Font("Segoe UI", 11)
-                    };
-                    object saved;
-                    option.Checked = _activeSession.Answers.TryGetValue(question.Id, out saved) && Convert.ToString(saved) == Convert.ToString(i);
-                    option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
-                    main.Controls.Add(option);
+                    MessageBox.Show(_lan.Start(), "LAN Server");
+                    ShowDashboard();
                 }
-            }
-
-            var prev = SecondaryButton("Previous", 24, 492, 120);
-            prev.Enabled = _questionIndex > 0;
-            prev.Click += (s, e) => { SaveCurrentAnswer(main); _questionIndex--; ShowExam(); };
-            var next = PrimaryButton(_questionIndex == _activeExam.Questions.Count - 1 ? "Review" : "Next", 154, 492, 120);
-            next.Click += (s, e) =>
-            {
-                SaveCurrentAnswer(main);
-                if (_questionIndex < _activeExam.Questions.Count - 1) _questionIndex++;
-                ShowExam();
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "LAN Server Failed");
+                }
             };
-            main.Controls.Add(prev);
-            main.Controls.Add(next);
-        }
+            sidebar.Controls.Add(lanStart);
 
-        private void SaveCurrentAnswer(Control container)
-        {
-            if (_activeSession == null || _activeExam == null || _activeExam.Questions.Count == 0) return;
-            var question = _activeExam.Questions[_questionIndex];
-            SaveCurrentAnswerFromControls(container, question);
-            _store.Save();
-        }
-
-        private void SaveCurrentAnswerFromControls(Control container, QuestionRecord question)
-        {
-            foreach (Control control in container.Controls)
+            var lanStop = SideButton("Stop LAN", 24, 348);
+            lanStop.Click += (s, e) =>
             {
-                if (control.HasChildren) SaveCurrentAnswerFromControls(control, question);
-                if (control.Tag == null) continue;
-                var tag = Convert.ToString(control.Tag);
-                if (tag == "answer" && control is TextBox)
-                {
-                    var text = ((TextBox)control).Text;
-                    if (string.IsNullOrWhiteSpace(text)) _activeSession.Answers.Remove(question.Id);
-                    else _activeSession.Answers[question.Id] = text;
-                }
-                if (tag.StartsWith("answer:") && control is RadioButton && ((RadioButton)control).Checked)
-                {
-                    _activeSession.Answers[question.Id] = tag.Substring("answer:".Length);
-                }
-            }
-        }
+                MessageBox.Show(_lan.Stop(), "LAN Server");
+                ShowDashboard();
+            };
+            sidebar.Controls.Add(lanStop);
 
-        private void SubmitExam()
-        {
-            SaveCurrentAnswer(_root);
-            var answered = _activeSession.Answers.Count;
-            var total = _activeExam.Questions.Count;
-            var confirm = MessageBox.Show("You answered " + answered + " of " + total + " questions. Submit now?", "Submit exam", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (confirm != DialogResult.Yes) return;
-            _activeSession.Status = "submitted";
-            _activeSession.SubmittedAt = JsonUtil.IsoNow();
-            _activeSession.AuditLogs.Add(new ActivityLogRecord
-            {
-                Type = "session_submitted",
-                Message = "Exam was submitted locally.",
-                CreatedAt = JsonUtil.IsoNow()
-            });
-            _store.Save();
-            _timer.Stop();
-            MessageBox.Show("Submission saved on this computer. The admin can export results now.", "Saved");
-            ShowLogin();
-        }
+            var import = SideButton("Import JSON", 24, 402);
+            import.Click += ImportPackage;
+            sidebar.Controls.Add(import);
 
-        private void TimerTick(object sender, EventArgs e)
-        {
-            if (_activeSession == null || _activeSession.Status == "submitted") return;
-            SaveCurrentAnswer(_root);
-            DateTime ends;
-            if (DateTime.TryParse(_activeSession.EndsAt, out ends) && DateTime.UtcNow >= ends.ToUniversalTime())
+            var export = SideButton("Export Results", 24, 456);
+            export.Click += ExportResults;
+            sidebar.Controls.Add(export);
+
+            var signOut = SideButton("Sign Out", 24, 610);
+            signOut.Click += (s, e) =>
             {
-                _activeSession.Status = "submitted";
-                _activeSession.SubmittedAt = JsonUtil.IsoNow();
-                _activeSession.AuditLogs.Add(new ActivityLogRecord
-                {
-                    Type = "timer_elapsed",
-                    Message = "Exam auto-submitted when the timer reached zero.",
-                    CreatedAt = JsonUtil.IsoNow()
-                });
+                _store.State.AccessToken = "";
                 _store.Save();
-                _timer.Stop();
-                MessageBox.Show("Time is up. Your exam has been submitted.", "Time up");
-                ShowLogin();
-                return;
-            }
-            _store.Save();
-        }
+                ShowCloudLogin();
+            };
+            sidebar.Controls.Add(signOut);
 
-        private void MainFormDeactivate(object sender, EventArgs e)
-        {
-            if (_activeSession == null || _activeSession.Status == "submitted") return;
-            _activeSession.FocusLossCount += 1;
-            _activeSession.AuditLogs.Add(new ActivityLogRecord
-            {
-                Type = "focus_loss",
-                Message = "Student left the CBT window.",
-                CreatedAt = JsonUtil.IsoNow()
-            });
-            _store.Save();
-        }
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, AutoScroll = true };
+            content.Controls.Add(TextLabel(DisplaySchoolName(), 34, 18, 20, true, 600, Palette.Text));
+            content.Controls.Add(TextLabel("School data synced from SchoolDom cloud.", 36, 62, 10, false, 560, Palette.Muted));
 
-        private void MainFormClosing(object sender, FormClosingEventArgs e)
-        {
-            if (_activeSession != null && _activeSession.Status != "submitted")
+            var status = TextLabel("Cloud: " + (_store.State.CloudUrl ?? "") + "\r\nLast sync: " + Display(_store.State.LastSyncAt), 650, 26, 9, false, 330, Palette.Muted);
+            content.Controls.Add(status);
+
+            content.Controls.Add(Metric("Published Exams", _store.State.Exams.Count.ToString(), 34, 112, Palette.Blue));
+            content.Controls.Add(Metric("Students Cached", _store.State.Students.Count.ToString(), 290, 112, Palette.Green));
+            content.Controls.Add(Metric("Local Sessions", _store.State.Sessions.Count.ToString(), 546, 112, Palette.Gold));
+            content.Controls.Add(Metric("Submitted Results", _store.State.Sessions.Count(x => x.Status == "submitted").ToString(), 34, 202, Palette.Coral));
+            content.Controls.Add(Metric("LAN Server", _lan.IsRunning ? "On" : "Off", 290, 202, _lan.IsRunning ? Palette.Green : Palette.Coral));
+            content.Controls.Add(Metric("Package", string.IsNullOrWhiteSpace(_store.State.ActivePackageId) ? "None" : "Ready", 546, 202, Palette.Blue));
+
+            var lan = Card(34, 306, 760, 104);
+            lan.Controls.Add(TextLabel("Admin LAN Starter", 22, 14, 13, true, 260, Palette.Text));
+            var lanText = _lan.IsRunning ? _lan.SnapshotMessage() : "LAN server is stopped. Start it to share cached school data on this network.";
+            lan.Controls.Add(TextLabel(lanText, 22, 44, 9, false, 560, _lan.IsRunning ? Palette.Green : Palette.Muted));
+            var lanStartInline = MiniButton(_lan.IsRunning ? "Restart" : "Start", 600, 32, 76);
+            lanStartInline.Click += (s, e) =>
             {
-                SaveCurrentAnswer(_root);
-                var confirm = MessageBox.Show("An exam is still in progress. Closing will keep the saved session but should only be done by an invigilator. Close anyway?", "Exam in progress", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (confirm != DialogResult.Yes)
+                try
                 {
-                    e.Cancel = true;
-                    return;
+                    if (_lan.IsRunning) _lan.Stop();
+                    MessageBox.Show(_lan.Start(), "LAN Server");
+                    ShowDashboard();
                 }
-                _activeSession.AuditLogs.Add(new ActivityLogRecord
+                catch (Exception ex)
                 {
-                    Type = "forced_close",
-                    Message = "Application was closed before submission.",
-                    CreatedAt = JsonUtil.IsoNow()
-                });
-            }
-            _store.Save();
+                    MessageBox.Show(ex.Message, "LAN Server Failed");
+                }
+            };
+            lan.Controls.Add(lanStartInline);
+            var lanStopInline = MiniButton("Stop", 684, 32, 62);
+            lanStopInline.Enabled = _lan.IsRunning;
+            lanStopInline.Click += (s, e) =>
+            {
+                MessageBox.Show(_lan.Stop(), "LAN Server");
+                ShowDashboard();
+            };
+            lan.Controls.Add(lanStopInline);
+            content.Controls.Add(lan);
+
+            var exams = Card(34, 432, 500, 410);
+            exams.Controls.Add(TextLabel("Exams", 22, 18, 16, true, 240, Palette.Text));
+            var moreExams = MiniButton("More", 408, 18, 74);
+            moreExams.Click += (s, e) => ShowExamList();
+            exams.Controls.Add(moreExams);
+            FillExamList(exams);
+            content.Controls.Add(exams);
+
+            var students = Card(558, 432, 500, 410);
+            students.Controls.Add(TextLabel("Students", 22, 18, 16, true, 240, Palette.Text));
+            var moreStudents = MiniButton("More", 408, 18, 74);
+            moreStudents.Click += (s, e) => ShowStudentList();
+            students.Controls.Add(moreStudents);
+            FillStudentList(students);
+            content.Controls.Add(students);
+
+            var note = Card(34, 866, 1024, 96);
+            note.Controls.Add(TextLabel("Admin Sync Tools", 22, 16, 14, true, 940, Palette.Text));
+            note.Controls.Add(TextLabel("Use this console to sync school CBT data, review/edit imported exams, export broadsheets, and upload or export local result packages.", 22, 48, 10, false, 960, Palette.Muted));
+            content.Controls.Add(note);
+
+            _root.Controls.Add(content);
+            _root.Controls.Add(sidebar);
         }
 
-        private string TimeRemainingText()
+        private void FillExamList(Panel card)
         {
-            DateTime ends;
-            if (!DateTime.TryParse(_activeSession.EndsAt, out ends)) return "Timer unavailable";
-            var span = ends.ToUniversalTime() - DateTime.UtcNow;
-            if (span.TotalSeconds < 0) span = TimeSpan.Zero;
-            return "Time: " + ((int)span.TotalHours).ToString("00") + ":" + span.Minutes.ToString("00") + ":" + span.Seconds.ToString("00");
+            var y = 58;
+            foreach (var exam in _store.State.Exams.Take(5))
+            {
+                card.Controls.Add(TextLabel(exam.Title, 22, y, 10, true, 250, Palette.Text));
+                card.Controls.Add(TextLabel((exam.Subject ?? "") + "  " + Math.Max(1, exam.Questions.Count) + " question(s)", 22, y + 28, 9, false, 300, Palette.Muted));
+                var review = MiniButton("Review", 326, y, 84);
+                review.Click += (s, e) => ShowExamReview(exam);
+                card.Controls.Add(review);
+                var edit = MiniButton("Edit", 416, y, 64);
+                edit.Click += (s, e) => ShowExamEditor(exam);
+                card.Controls.Add(edit);
+                y += 74;
+            }
+            if (!_store.State.Exams.Any())
+            {
+                card.Controls.Add(TextLabel("No exams have been pulled yet.", 22, 64, 10, false, 430, Palette.Muted));
+            }
+        }
+
+        private void FillStudentList(Panel card)
+        {
+            var y = 58;
+            foreach (var student in _store.State.Students.Take(5))
+            {
+                card.Controls.Add(TextLabel(student.FullName, 22, y, 10, true, 440, Palette.Text));
+                card.Controls.Add(TextLabel(student.StudentId + "  " + (student.ClassName ?? ""), 22, y + 30, 9, false, 440, Palette.Muted));
+                y += 70;
+            }
+            if (!_store.State.Students.Any())
+            {
+                card.Controls.Add(TextLabel("No students have been pulled yet.", 22, 64, 10, false, 430, Palette.Muted));
+            }
+        }
+
+        private void ShowExamList()
+        {
+            using (var form = ListForm("All Exams", 760, 540))
+            {
+                var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
+                list.Columns.Add("Title", 250);
+                list.Columns.Add("Subject", 150);
+                list.Columns.Add("Class", 120);
+                list.Columns.Add("Questions", 80);
+                foreach (var exam in _store.State.Exams.OrderBy(e => e.Title))
+                {
+                    var item = new ListViewItem(exam.Title);
+                    item.SubItems.Add(exam.Subject ?? "");
+                    item.SubItems.Add(exam.ClassName ?? "");
+                    item.SubItems.Add(exam.Questions.Count.ToString());
+                    item.Tag = exam;
+                    list.Items.Add(item);
+                }
+                list.DoubleClick += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    ShowExamReview((ExamRecord)list.SelectedItems[0].Tag);
+                };
+                var edit = PrimaryButton("Edit Selected", 12, 458, 130);
+                edit.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+                edit.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    ShowExamEditor((ExamRecord)list.SelectedItems[0].Tag);
+                    form.Close();
+                };
+                var panel = new Panel { Dock = DockStyle.Bottom, Height = 58 };
+                panel.Controls.Add(edit);
+                form.Controls.Add(list);
+                form.Controls.Add(panel);
+                form.ShowDialog(this);
+            }
+        }
+
+        private void ShowStudentList()
+        {
+            using (var form = ListForm("All Students", 760, 540))
+            {
+                var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
+                list.Columns.Add("Name", 280);
+                list.Columns.Add("Student ID", 140);
+                list.Columns.Add("Class", 180);
+                foreach (var student in _store.State.Students.OrderBy(s => s.FullName))
+                {
+                    var item = new ListViewItem(student.FullName);
+                    item.SubItems.Add(student.StudentId ?? "");
+                    item.SubItems.Add(student.ClassName ?? "");
+                    list.Items.Add(item);
+                }
+                form.Controls.Add(list);
+                form.ShowDialog(this);
+            }
+        }
+
+        private void ShowExamReview(ExamRecord exam)
+        {
+            using (var form = ListForm("Review: " + exam.Title, 860, 620))
+            {
+                var text = new TextBox
+                {
+                    Dock = DockStyle.Fill,
+                    Multiline = true,
+                    ReadOnly = true,
+                    ScrollBars = ScrollBars.Vertical,
+                    Font = new Font("Consolas", 10),
+                    Text = BuildExamReviewText(exam)
+                };
+                form.Controls.Add(text);
+                form.ShowDialog(this);
+            }
+        }
+
+        private string BuildExamReviewText(ExamRecord exam)
+        {
+            var lines = new System.Text.StringBuilder();
+            lines.AppendLine(exam.Title);
+            lines.AppendLine("Subject: " + exam.Subject);
+            lines.AppendLine("Class: " + exam.ClassName);
+            lines.AppendLine("Duration: " + Math.Max(1, exam.DurationSeconds / 60) + " minutes");
+            lines.AppendLine();
+            lines.AppendLine("Instructions:");
+            lines.AppendLine(exam.Instructions ?? "");
+            lines.AppendLine();
+            for (var i = 0; i < exam.Questions.Count; i++)
+            {
+                var q = exam.Questions[i];
+                lines.AppendLine((i + 1) + ". " + q.Text);
+                for (var j = 0; j < q.Options.Count; j++)
+                {
+                    lines.AppendLine("   " + (char)('A' + j) + ". " + q.Options[j]);
+                }
+                lines.AppendLine();
+            }
+            return lines.ToString();
+        }
+
+        private void ShowExamEditor(ExamRecord exam)
+        {
+            using (var form = ListForm("Edit Exam", 560, 480))
+            {
+                var title = Field(form, "Title", exam.Title, 28, 64, false);
+                title.Width = 480;
+                var subject = Field(form, "Subject", exam.Subject, 28, 134, false);
+                var className = Field(form, "Class", exam.ClassName, 288, 134, false);
+                var duration = Field(form, "Duration Minutes", Math.Max(1, exam.DurationSeconds / 60).ToString(), 28, 204, false);
+                var instructionsLabel = TextLabel("Instructions", 28, 254, 9, true, 220, Palette.Text);
+                form.Controls.Add(instructionsLabel);
+                var instructions = new TextBox
+                {
+                    Left = 28,
+                    Top = 276,
+                    Width = 480,
+                    Height = 88,
+                    Multiline = true,
+                    ScrollBars = ScrollBars.Vertical,
+                    Text = exam.Instructions ?? ""
+                };
+                form.Controls.Add(instructions);
+                var save = PrimaryButton("Save Changes", 28, 390, 140);
+                save.Click += (s, e) =>
+                {
+                    int minutes;
+                    if (!int.TryParse(duration.Text, out minutes) || minutes < 1)
+                    {
+                        MessageBox.Show("Enter a valid duration in minutes.", "Edit Exam");
+                        return;
+                    }
+                    exam.Title = title.Text.Trim();
+                    exam.Subject = subject.Text.Trim();
+                    exam.ClassName = className.Text.Trim();
+                    exam.DurationSeconds = minutes * 60;
+                    exam.Instructions = instructions.Text;
+                    _packages.SaveExam(exam);
+                    form.Close();
+                    ShowDashboard();
+                };
+                form.Controls.Add(save);
+                form.ShowDialog(this);
+            }
+        }
+
+        private void RunWithStatus(string status, Func<string> action, Action onSuccess)
+        {
+            try
+            {
+                SetStatus(status, Palette.Muted);
+                Cursor = Cursors.WaitCursor;
+                var message = action();
+                Cursor = Cursors.Default;
+                SetStatus(message, Palette.Green);
+                MessageBox.Show(message, "SchoolDom Sync");
+                onSuccess();
+            }
+            catch (Exception ex)
+            {
+                Cursor = Cursors.Default;
+                SetStatus(ex.Message, Palette.Coral);
+                MessageBox.Show(ex.Message, "SchoolDom Sync Failed");
+            }
+        }
+
+        private void SetStatus(string text, Color color)
+        {
+            if (_statusLabel == null) return;
+            _statusLabel.Text = text;
+            _statusLabel.ForeColor = color;
+            _statusLabel.Refresh();
         }
 
         private void ImportPackage(object sender, EventArgs e)
@@ -457,11 +467,10 @@ namespace SchoolDom.Cbt.Win7
             {
                 dialog.Filter = "SchoolDom package (*.json)|*.json|All files (*.*)|*.*";
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                var pin = PromptDialog.Show("Exam PIN", "Enter fallback exam PIN for offline validation.", true);
                 try
                 {
-                    MessageBox.Show(_packages.ImportPackage(dialog.FileName, pin), "Import complete");
-                    ShowAdmin();
+                    MessageBox.Show(_packages.ImportPackage(dialog.FileName, ""), "Import complete");
+                    ShowDashboard();
                 }
                 catch (Exception ex)
                 {
@@ -480,7 +489,7 @@ namespace SchoolDom.Cbt.Win7
                 try
                 {
                     MessageBox.Show(_packages.ExportResults(dialog.FileName), "Export complete");
-                    ShowAdmin();
+                    ShowDashboard();
                 }
                 catch (Exception ex)
                 {
@@ -489,60 +498,70 @@ namespace SchoolDom.Cbt.Win7
             }
         }
 
-        private void SetCloudToken(object sender, EventArgs e)
+        private void ExportBroadsheet(object sender, EventArgs e)
         {
-            var url = PromptDialog.Show("Cloud URL", "SchoolDom cloud URL", false);
-            if (string.IsNullOrWhiteSpace(url)) url = _store.State.CloudUrl;
-            var token = PromptDialog.Show("JWT Access Token", "Paste admin JWT access token.", true);
-            if (string.IsNullOrWhiteSpace(token)) return;
-            _cloud.SaveToken(url, token);
-            MessageBox.Show("Cloud token saved locally.", "Cloud");
-            ShowAdmin();
-        }
-
-        private void CloudLogin(object sender, EventArgs e)
-        {
-            try
+            using (var dialog = new SaveFileDialog())
             {
-                var url = PromptDialog.Show("Cloud URL", "SchoolDom cloud URL", false);
-                if (string.IsNullOrWhiteSpace(url)) url = _store.State.CloudUrl;
-                var email = PromptDialog.Show("Admin Email", "Admin or teacher email", false);
-                var password = PromptDialog.Show("Password", "Password", true);
-                var schoolCode = PromptDialog.Show("School Code", "School code, if required", false);
-                MessageBox.Show(_cloud.Login(url, email, password, schoolCode), "Cloud");
-                ShowAdmin();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Cloud login failed");
+                dialog.Filter = "CSV broadsheet (*.csv)|*.csv";
+                dialog.FileName = "schooldom-broadsheet-" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".csv";
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    MessageBox.Show(_packages.ExportBroadsheet(dialog.FileName), "Broadsheet");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Broadsheet failed");
+                }
             }
         }
 
-        private void PullFromCloud(object sender, EventArgs e)
+        private TextBox Field(Control parent, string label, string value, int left, int top, bool password)
         {
-            try
+            parent.Controls.Add(TextLabel(label, left, top - 22, 9, true, 220, Palette.Text));
+            var box = new TextBox
             {
-                var pin = PromptDialog.Show("Exam PIN", "Enter fallback exam PIN for offline validation.", true);
-                MessageBox.Show(_cloud.PullPackage(pin), "Cloud pull complete");
-                ShowAdmin();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Cloud pull failed");
-            }
+                Left = left,
+                Top = top,
+                Width = 226,
+                Height = 34,
+                Text = value,
+                UseSystemPasswordChar = password,
+                Font = new Font("Segoe UI", 11),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            parent.Controls.Add(box);
+            return box;
         }
 
-        private void UploadResults(object sender, EventArgs e)
+        private Panel Metric(string label, string value, int left, int top, Color accent)
         {
-            try
+            var card = Card(left, top, 224, 84);
+            var bar = new Panel { Left = 0, Top = 0, Width = 5, Height = 84, BackColor = accent };
+            card.Controls.Add(bar);
+            card.Controls.Add(TextLabel(label, 20, 12, 9, true, 180, Palette.Muted));
+            card.Controls.Add(TextLabel(value, 20, 38, 20, true, 180, Palette.Text));
+            return card;
+        }
+
+        private Button SideButton(string text, int left, int top)
+        {
+            var button = new Button
             {
-                MessageBox.Show(_cloud.UploadResults(), "Cloud upload complete");
-                ShowAdmin();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Cloud upload failed");
-            }
+                Text = text,
+                Left = left,
+                Top = top,
+                Width = 198,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Palette.SideButton,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(14, 0, 0, 0)
+            };
+            button.FlatAppearance.BorderColor = Palette.SideButton;
+            return button;
         }
 
         private Panel Card(int left, int top, int width, int height)
@@ -558,29 +577,19 @@ namespace SchoolDom.Cbt.Win7
             };
         }
 
-        private Label Label(string text, int left, int top, int size, bool bold, int width)
+        private Label TextLabel(string text, int left, int top, int size, bool bold, int width, Color color)
         {
+            var lineCount = Math.Max(1, ((text ?? "").Length / Math.Max(18, width / 8)) + 1);
+            var height = Math.Max(size * 3 + 10, lineCount * (size + 12));
             return new Label
             {
                 Text = text,
                 Left = left,
                 Top = top,
                 Width = width,
-                Height = 26 + Math.Max(0, text.Length / 70) * 22,
+                Height = height,
                 Font = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular),
-                ForeColor = Color.FromArgb(20, 31, 52)
-            };
-        }
-
-        private TextBox TextInput(int left, int top, int width)
-        {
-            return new TextBox
-            {
-                Left = left,
-                Top = top,
-                Width = width,
-                Height = 34,
-                Font = new Font("Segoe UI", 12)
+                ForeColor = color
             };
         }
 
@@ -593,21 +602,69 @@ namespace SchoolDom.Cbt.Win7
                 Top = top,
                 Width = width,
                 Height = 42,
-                BackColor = Color.FromArgb(24, 96, 180),
+                BackColor = Palette.Blue,
                 ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold)
             };
-            button.FlatAppearance.BorderColor = Color.FromArgb(24, 96, 180);
+            button.FlatAppearance.BorderColor = Palette.Blue;
             return button;
         }
 
         private Button SecondaryButton(string text, int left, int top, int width)
         {
             var button = PrimaryButton(text, left, top, width);
-            button.BackColor = Color.FromArgb(238, 243, 250);
-            button.ForeColor = Color.FromArgb(20, 31, 52);
-            button.FlatAppearance.BorderColor = Color.FromArgb(213, 222, 235);
+            button.BackColor = Palette.LightButton;
+            button.ForeColor = Palette.Text;
+            button.FlatAppearance.BorderColor = Palette.Border;
             return button;
         }
+
+        private Button MiniButton(string text, int left, int top, int width)
+        {
+            var button = SecondaryButton(text, left, top, width);
+            button.Height = 28;
+            button.Font = new Font("Segoe UI", 8, FontStyle.Bold);
+            return button;
+        }
+
+        private Form ListForm(string title, int width, int height)
+        {
+            return new Form
+            {
+                Text = title,
+                Width = width,
+                Height = height,
+                StartPosition = FormStartPosition.CenterParent,
+                BackColor = Palette.Background,
+                Font = new Font("Segoe UI", 10)
+            };
+        }
+
+        private string Display(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "Not available" : value;
+        }
+
+        private string DisplaySchoolName()
+        {
+            return string.IsNullOrWhiteSpace(_store.State.SchoolName) ? "School Data Sync" : _store.State.SchoolName;
+        }
+    }
+
+    internal static class Palette
+    {
+        public static readonly Color Background = Color.FromArgb(244, 247, 251);
+        public static readonly Color Navy = Color.FromArgb(15, 32, 55);
+        public static readonly Color SideButton = Color.FromArgb(31, 55, 87);
+        public static readonly Color Text = Color.FromArgb(22, 34, 51);
+        public static readonly Color Muted = Color.FromArgb(96, 112, 132);
+        public static readonly Color SoftText = Color.FromArgb(196, 207, 221);
+        public static readonly Color Border = Color.FromArgb(214, 223, 235);
+        public static readonly Color LightButton = Color.FromArgb(235, 241, 248);
+        public static readonly Color Blue = Color.FromArgb(24, 96, 180);
+        public static readonly Color Green = Color.FromArgb(37, 137, 92);
+        public static readonly Color Gold = Color.FromArgb(184, 127, 33);
+        public static readonly Color Coral = Color.FromArgb(196, 74, 62);
     }
 }

@@ -12,6 +12,8 @@ namespace SchoolDom.Cbt.Win7
         public string CloudUrl { get; set; }
         public string AccessToken { get; set; }
         public string LastSyncAt { get; set; }
+        public string SchoolName { get; set; }
+        public string SchoolCode { get; set; }
         public List<StudentRecord> Students { get; set; }
         public List<ExamRecord> Exams { get; set; }
         public List<SessionRecord> Sessions { get; set; }

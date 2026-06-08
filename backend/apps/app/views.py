@@ -12,7 +12,7 @@ from django.views.generic import TemplateView
 APK_FILENAME = "schooldom-app.apk"
 ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
 STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
-STUDENT_CBT_WIN7_FILENAME = "SchoolDomCBT-Win7.exe"
+STUDENT_CBT_WIN7_FILENAME = "SchoolDomAdminSync-Win7.exe"
 LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
 MIN_DESKTOP_INSTALLER_SIZE = 5 * 1024 * 1024
 MIN_WIN7_INSTALLER_SIZE = 32 * 1024
@@ -60,9 +60,13 @@ def win7_cbt_installer_candidates():
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
     candidates = [
         media_dir / STUDENT_CBT_WIN7_FILENAME,
+        media_dir / "SchoolDomCBT-Win7.exe",
+        media_dir / "SchoolDom-Admin-Sync-Win7-Setup.exe",
         media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
     ]
     if release_dir.exists():
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip"), reverse=True))
         candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
         candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
     return candidates

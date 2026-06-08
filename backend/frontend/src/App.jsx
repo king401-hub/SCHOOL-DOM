@@ -879,7 +879,7 @@ function StudentDashboard({
       key: "attendance",
       label: "Attendance",
       value: attendancePercent ? `${attendancePercent}%` : "-",
-      detail: attendance.today ? `Today: ${attendance.today.status}` : "Waiting for teacher",
+      detail: attendance.today ? `Today: ${attendance.today.status}` : nonK12School ? "Scan QR to mark today" : "Awaiting school attendance",
       tone: "emerald",
     },
     {
@@ -947,6 +947,16 @@ function StudentDashboard({
             <DashboardIcon name="home" className="inline-icon" />
             <span>Dashboard</span>
           </button>
+          {nonK12School ? (
+            <button
+              className="student-nav-item"
+              type="button"
+              onClick={() => { go("/attendance"); setNavOpen(false); }}
+            >
+              <DashboardIcon name="attendance" className="inline-icon" />
+              <span>Attendance</span>
+            </button>
+          ) : null}
           <button
             className="student-nav-item"
             type="button"
@@ -1069,8 +1079,17 @@ function StudentDashboard({
           </div>
           <div className="student-hero-actions">
             <span className={`student-status-pill status-${attendance.today?.status || "unmarked"}`}>
-              {attendance.today ? `Marked ${attendance.today.status}` : "Attendance pending teacher"}
+              {attendance.today ? `Marked ${attendance.today.status}` : nonK12School ? "Scan QR attendance" : "Attendance not marked"}
             </span>
+            {nonK12School ? (
+              <button
+                type="button"
+                className="student-link-btn"
+                onClick={() => onNavigate?.("/attendance")}
+              >
+                Mark attendance
+              </button>
+            ) : null}
             <button
               type="button"
               className="student-primary-btn"
@@ -1090,14 +1109,6 @@ function StudentDashboard({
             </article>
           ))}
         </section>
-
-        {nonK12School ? (
-          <StudentQrAttendanceScanner
-            session={session}
-            attendanceToday={attendance.today}
-            onRefresh={onRefresh}
-          />
-        ) : null}
 
         {paymentInstructions.reference_code ? (
           <section className="student-panel">
@@ -1384,6 +1395,100 @@ function StudentDashboard({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function StudentAttendancePage({ session, onNavigate }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadAttendance = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/app/student/dashboard/");
+      setData(result || {});
+    } catch (loadError) {
+      setError(loadError.message || "Could not load attendance.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadAttendance();
+  }, [loadAttendance]);
+
+  const attendance = data?.attendance || {};
+  const school = resolveSchoolBrand(data?.school, session?.school, session);
+  const nonK12School = isNonK12School(session, data);
+  const history = attendance.history || [];
+
+  return (
+    <section className="student-standalone-page">
+      <header className="student-standalone-hero">
+        <div>
+          <p className="topbar-kicker">{school?.name || "SchoolDom"}</p>
+          <h1>Attendance</h1>
+          <p>{nonK12School ? "Scan your school QR code to mark your attendance." : "Your school marks attendance for you."}</p>
+        </div>
+        <button type="button" className="student-link-btn" onClick={() => onNavigate?.("/dashboard")}>
+          Back to dashboard
+        </button>
+      </header>
+
+      <ScreenState loading={loading && !data} error={error} onRetry={loadAttendance} />
+
+      {data ? (
+        nonK12School ? (
+          <>
+            <StudentQrAttendanceScanner
+              session={session}
+              attendanceToday={attendance.today}
+              onRefresh={loadAttendance}
+            />
+            <section className="student-panel">
+              <div className="student-panel-head">
+                <div>
+                  <h3>Attendance History</h3>
+                  <p className="student-panel-sub">Your latest attendance records.</p>
+                </div>
+              </div>
+              {history.length ? (
+                <table className="student-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Status</th>
+                      <th>Class</th>
+                      <th>Marked By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((record) => (
+                      <tr key={`${record.date}-${record.status}`}>
+                        <td>{formatDate(record.date)}</td>
+                        <td>{record.status || "-"}</td>
+                        <td>{record.class_name || "-"}</td>
+                        <td>{record.noted_by || "Self scan"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="panel-empty">No attendance history yet.</p>
+              )}
+            </section>
+          </>
+        ) : (
+          <article className="student-panel">
+            <h3>Attendance is managed by your school</h3>
+            <p className="student-panel-sub">K-12 attendance is marked by teachers or school staff.</p>
+          </article>
+        )
+      ) : null}
+    </section>
   );
 }
 
@@ -4710,7 +4815,7 @@ function TeacherWorkspace({
     ["overview", "Home", "overview"],
     ["exam-builder", "Exams", "exam"],
     ["past-exams", "Exam History", "calendar"],
-    nonK12 ? ["attendance-info", "QR Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
+    nonK12 ? ["attendance-info", "Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
     ["planning", nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad", "planning"],
     ["class-messages", "Messages & Notifications", "message"],
     ["results", "Results", "results"],
@@ -4793,9 +4898,9 @@ function TeacherWorkspace({
     if (activeTab === "attendance-info") {
       return (
         <article className="app-panel state-panel">
-          <h3>QR Attendance Only</h3>
-          <p>For non K-12 schools, attendance belongs to teachers and is recorded from the shared teacher QR code. Teachers do not mark student attendance.</p>
-          <p>Ask the admin to generate or print the QR code from the Attendance page, then scan it to clock in and clock out.</p>
+          <h3>Student Self Attendance</h3>
+          <p>For non K-12 schools, students mark attendance themselves from their Attendance page using the student QR scanner.</p>
+          <p>Admins generate or print the shared Student QR code from the admin Attendance page.</p>
         </article>
       );
     }
@@ -7381,6 +7486,15 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   if (currentPath === "/fees") {
     return withGlobalNotifications(
       <StudentFeesPage
+        session={session}
+        onNavigate={navigate}
+      />
+    );
+  }
+
+  if (currentPath === "/attendance" && role === "student") {
+    return withGlobalNotifications(
+      <StudentAttendancePage
         session={session}
         onNavigate={navigate}
       />

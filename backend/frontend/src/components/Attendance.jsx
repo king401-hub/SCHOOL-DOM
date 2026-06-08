@@ -191,7 +191,7 @@ function AttendanceStatusPill({ status = "present" }) {
 
 export function QRCodeManagement({ session }) {
   const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
-  const audienceLabel = nonK12 ? "Teacher" : "Staff";
+  const audienceLabel = nonK12 ? "Student" : "Staff";
   const [qrCode, setQrCode] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -277,7 +277,7 @@ export function QRCodeManagement({ session }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = nonK12 ? "teacher_attendance_qr.png" : "staff_attendance_qr.png";
+      link.download = nonK12 ? "student_attendance_qr.png" : "staff_attendance_qr.png";
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -294,7 +294,7 @@ export function QRCodeManagement({ session }) {
       <h3>{audienceLabel} QR Code</h3>
       <p className="panel-empty">
         {nonK12
-          ? "A single static QR code belongs to teachers and opens the teacher attendance confirmation page."
+          ? "A single static QR code belongs to students and is scanned from the student attendance page."
           : "A single static QR code is shared by teachers and admins and opens the attendance confirmation page."}
       </p>
 
@@ -309,7 +309,7 @@ export function QRCodeManagement({ session }) {
       {!loading && !qrCode ? (
         <div className="panel-form-actions">
           <button type="button" onClick={createQRCode} disabled={busy || !session?.user?.id}>
-            {busy ? "Creating..." : "Create Staff QR Code"}
+            {busy ? "Creating..." : nonK12 ? "Create Student QR Code" : "Create Staff QR Code"}
           </button>
         </div>
       ) : null}
@@ -318,7 +318,7 @@ export function QRCodeManagement({ session }) {
         <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 320px) 1fr", gap: 24, alignItems: "start" }}>
           <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 18, textAlign: "center" }}>
             {previewUrl ? (
-              <img src={previewUrl} alt="Staff attendance QR code" style={{ width: "100%", maxWidth: 280, aspectRatio: "1 / 1" }} />
+              <img src={previewUrl} alt={`${audienceLabel} attendance QR code`} style={{ width: "100%", maxWidth: 280, aspectRatio: "1 / 1" }} />
             ) : (
               <p style={{ color: "#111827" }}>QR preview unavailable</p>
             )}
@@ -326,9 +326,9 @@ export function QRCodeManagement({ session }) {
 
           <div>
             <div className="metric-card" style={{ marginBottom: 14 }}>
-              <p className="metric-label">{audienceLabel}s Checked In Today</p>
-              <p className="metric-value">{qrCode.today_attendance_count || 0}</p>
-              <p className="metric-trend">{qrCode.is_active ? "QR active" : "QR inactive"}</p>
+              <p className="metric-label">{nonK12 ? "Student QR Status" : `${audienceLabel}s Checked In Today`}</p>
+              <p className="metric-value">{nonK12 ? (qrCode.is_active ? "Ready" : "Off") : (qrCode.today_attendance_count || 0)}</p>
+              <p className="metric-trend">{nonK12 ? "Students scan this QR from their Attendance page" : (qrCode.is_active ? "QR active" : "QR inactive")}</p>
             </div>
 
             <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
@@ -345,7 +345,7 @@ export function QRCodeManagement({ session }) {
 
 export function AttendanceDashboard({ session }) {
   const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
-  const audienceLabel = nonK12 ? "Teacher" : "Staff";
+  const audienceLabel = nonK12 ? "Student" : "Staff";
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState({ date: "", total_present: 0 });
   const [loading, setLoading] = useState(true);
@@ -661,18 +661,27 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
 }
 
 export function AttendanceModule({ session }) {
-  const [activeTab, setActiveTab] = useState("dashboard");
   const isAdmin = ADMIN_ROLES.has(session?.user?.role);
   const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
-  const audienceLabel = nonK12 ? "Teacher" : "Staff";
+  const audienceLabel = nonK12 ? "Student" : "Staff";
+  const [activeTab, setActiveTab] = useState(nonK12 ? "qr" : "dashboard");
 
   const tabs = useMemo(
-    () => [
-      { id: "dashboard", label: "Today", render: () => <AttendanceDashboard session={session} /> },
-      { id: "qr", label: "QR Code", render: () => <QRCodeManagement session={session} /> },
-    ],
-    [session]
+    () =>
+      nonK12
+        ? [{ id: "qr", label: "Student QR", render: () => <QRCodeManagement session={session} /> }]
+        : [
+            { id: "dashboard", label: "Today", render: () => <AttendanceDashboard session={session} /> },
+            { id: "qr", label: "QR Code", render: () => <QRCodeManagement session={session} /> },
+          ],
+    [nonK12, session]
   );
+
+  useEffect(() => {
+    if (nonK12 && activeTab !== "qr") {
+      setActiveTab("qr");
+    }
+  }, [activeTab, nonK12]);
 
   if (!isAdmin) {
     return (
@@ -689,7 +698,11 @@ export function AttendanceModule({ session }) {
     <section className="screen-grid">
       <div className="screen-hero">
         <h2>{audienceLabel} Attendance</h2>
-        <p>Manage the shared QR code and monitor today&apos;s {audienceLabel.toLowerCase()} check-ins in real time.</p>
+        <p>
+          {nonK12
+            ? "Manage the shared student QR code. Students scan it from their own Attendance page."
+            : `Manage the shared QR code and monitor today's ${audienceLabel.toLowerCase()} check-ins in real time.`}
+        </p>
       </div>
       <div className="segmented-control" style={{ justifyContent: "flex-start" }}>
         {tabs.map((tab) => (

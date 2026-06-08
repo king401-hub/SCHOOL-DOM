@@ -1147,6 +1147,11 @@ def cbt_offline_sync_package(request):
             "package_version": 1,
             "package_id": package_id,
             "generated_at": generated_at,
+            "school": {
+                "id": str(getattr(getattr(request.user, "tenant", None), "id", "")),
+                "name": getattr(getattr(request.user, "tenant", None), "name", "") or "",
+                "school_code": getattr(getattr(request.user, "tenant", None), "schema_name", "") or "",
+            },
             "lifecycle": {
                 "stage": "pull",
                 "lock_required": True,

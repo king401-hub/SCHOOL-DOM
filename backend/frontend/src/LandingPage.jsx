@@ -21,6 +21,21 @@ function LandingPage({ onGetStarted }) {
       tag: "Core Engine",
       text: "Unified bio-data, academic histories, health notes, and parent communication logs in one click.",
       metric: "420,000+",
+      previewText: "Manage complete student records with profile timelines, contacts, classes, and digital ID readiness.",
+      search: "Type name, class, ID, or parent contact...",
+      rows: ["Fatima Yusuf Ahmed", "Aisha Al-Maktoum", "Zainab Danladi"],
+      rowStatus: "Active",
+      cardTitle: "Zainab Danladi",
+      cardMeta: "JSS1-Gold",
+      cardLabel: "Admission standard token",
+      cardValue: "#SD-28-1110",
+      visual: "barcode",
+      checks: [
+        "Comprehensive digital registration and profile timelines",
+        "Barcode and QR active standard student IDs",
+        "One-tap parent and emergency contact records",
+        "Unified disciplinary logs and health emergency notes",
+      ],
     },
     {
       id: "cbt",
@@ -29,6 +44,21 @@ function LandingPage({ onGetStarted }) {
       tag: "Popular",
       text: "Uncompromised, anti-cheat, high-capacity Computer Based Testing engine with robust reporting.",
       metric: "99.9%",
+      previewText: "Create, publish, monitor, and review secure CBT exams with offline desktop exam support.",
+      search: "Search exam title, class, subject, or PIN...",
+      rows: ["Mathematics Mock CBT", "English Language Test", "Basic Science Exam"],
+      rowStatus: "Ready",
+      cardTitle: "Mathematics Mock CBT",
+      cardMeta: "JSS2 - 45 mins",
+      cardLabel: "Integrity mode",
+      cardValue: "Fullscreen, screenshot guard, autosubmit",
+      visual: "progress",
+      checks: [
+        "Offline-ready student CBT desktop workflow",
+        "Exam PINs, question import, and timed sessions",
+        "Live submission tracking and result review",
+        "Security warnings and autosubmission reasons",
+      ],
     },
     {
       id: "attendance",
@@ -37,6 +67,21 @@ function LandingPage({ onGetStarted }) {
       tag: "Real-Time",
       text: "Automated biometric, card-tap, QR, and mobile sheet attendance with instant alerts.",
       metric: "Live",
+      previewText: "Track attendance across K-12 and non-K12 workflows with QR scanning, teacher logs, and status summaries.",
+      search: "Search class, teacher, student, or attendance date...",
+      rows: ["QR Attendance Room", "JSS1 Morning Roll", "Teacher Check-in"],
+      rowStatus: "Live",
+      cardTitle: "QR Attendance",
+      cardMeta: "Non-K12 student scan",
+      cardLabel: "Today",
+      cardValue: "Present 238 / Pending 19",
+      visual: "pulse",
+      checks: [
+        "Student QR attendance for non-K12 schools",
+        "Teacher-led class attendance for K-12 schools",
+        "GPS and device information on attendance marks",
+        "Instant present, late, absent, and pending summaries",
+      ],
     },
     {
       id: "finance",
@@ -45,6 +90,21 @@ function LandingPage({ onGetStarted }) {
       tag: "Financials",
       text: "Flexible customizable payment items, invoice dispatch, and graphical ledger dashboards.",
       metric: "Auto",
+      previewText: "Run school finance with wallets, fee balances, activation tokens, and payment tracking.",
+      search: "Search student, invoice, wallet, or payment reference...",
+      rows: ["Tuition Balance", "Activation Tokens", "Confirmed Transfers"],
+      rowStatus: "Synced",
+      cardTitle: "Fee Ledger",
+      cardMeta: "Auto reconciliation",
+      cardLabel: "Outstanding",
+      cardValue: "NGN 1,240,000",
+      visual: "bars",
+      checks: [
+        "Student wallet and school fee balance tracking",
+        "K-12 and non-K12 activation token pricing rules",
+        "Payment reference and bank instruction generation",
+        "Finance dashboards with transaction summaries",
+      ],
     },
     {
       id: "results",
@@ -53,6 +113,21 @@ function LandingPage({ onGetStarted }) {
       tag: "Insights",
       text: "Grade books, automated report cards, performance diagnostics, and parent-ready summaries.",
       metric: "360",
+      previewText: "Compile results, review batches, generate report cards, and monitor performance trends.",
+      search: "Search student, subject, class, or result batch...",
+      rows: ["First Term Report", "CBT Result Upload", "Performance Heatmap"],
+      rowStatus: "Reviewed",
+      cardTitle: "Report Summary",
+      cardMeta: "JSS1 Gold",
+      cardLabel: "Class Average",
+      cardValue: "78.4%",
+      visual: "score",
+      checks: [
+        "Teacher result entry and admin batch review",
+        "Automated report card generation",
+        "CBT result upload and attempt cleanup",
+        "Performance heatmaps and subject analytics",
+      ],
     },
   ];
   const selectedFeature = featureTabs.find((item) => item.id === activeFeature) || featureTabs[0];
@@ -160,32 +235,29 @@ function LandingPage({ onGetStarted }) {
             <div className="landing-sandbox-head">
               <div>
                 <h2>{selectedFeature.title} Sandbox</h2>
-                <p>
-                  SchoolDom gives each school a cohesive operating system for records, CBT, finance,
-                  attendance, messages, and performance visibility.
-                </p>
+                <p>{selectedFeature.previewText}</p>
               </div>
               <span>{selectedFeature.metric}</span>
             </div>
             <div className="landing-student-preview">
-              <div className="landing-preview-search">Type name, class, ID, or parent contact...</div>
+              <div className="landing-preview-search">{selectedFeature.search}</div>
               <div className="landing-preview-list">
-                {["Fatima Yusuf Ahmed", "Aisha Al-Maktoum", "Zainab Danladi"].map((name, index) => (
+                {selectedFeature.rows.map((name, index) => (
                   <button key={name} type="button" className={index === 2 ? "selected" : ""}>
                     <span>{name}</span>
-                    <strong>Active</strong>
+                    <strong>{selectedFeature.rowStatus}</strong>
                   </button>
                 ))}
               </div>
               <article className="landing-id-card">
-                <div className="landing-id-avatar">IMG</div>
+                <div className="landing-id-avatar">{selectedFeature.icon}</div>
                 <div>
-                  <h3>Zainab Danladi</h3>
-                  <p>JSS1-Gold</p>
+                  <h3>{selectedFeature.cardTitle}</h3>
+                  <p>{selectedFeature.cardMeta}</p>
                 </div>
-                <small>Admission standard token</small>
-                <strong>#SD-28-1110</strong>
-                <div className="landing-barcode" aria-hidden="true">
+                <small>{selectedFeature.cardLabel}</small>
+                <strong>{selectedFeature.cardValue}</strong>
+                <div className={`landing-preview-visual visual-${selectedFeature.visual}`} aria-hidden="true">
                   <span />
                   <span />
                   <span />
@@ -197,12 +269,7 @@ function LandingPage({ onGetStarted }) {
               </article>
             </div>
             <div className="landing-preview-checks">
-              {[
-                "Comprehensive digital registration and profile timelines",
-                "Barcode and QR active standard student IDs",
-                "One-tap parent and emergency contact records",
-                "Unified disciplinary logs and health emergency notes",
-              ].map((item) => (
+              {selectedFeature.checks.map((item) => (
                 <span key={item}>{item}</span>
               ))}
             </div>

@@ -1,24 +1,20 @@
-# SchoolDom CBT Win7 Client
+# SchoolDom Admin Sync Win7
 
-Windows 7-compatible offline CBT client for SchoolDom.
+Windows 7-compatible admin sync client for SchoolDom.
 
 This build targets `.NET Framework 4.8` and uses WinForms so it can run on
 Windows 7 SP1 after the .NET Framework runtime is installed.
 
-## Offline Package Workflow
+## Main Workflow
 
-1. Export a CBT package from SchoolDom:
-   `/api/exams/cbt/package/export/`
-2. Open this app as admin and choose **Import Package**.
-3. Enter the exam PIN fallback if the exported package does not include
-   `offline_pin_hash`.
-4. Students sign in with Student ID and PIN.
-5. Answers autosave locally.
-6. Admin exports results as a JSON package.
-7. Upload the package to SchoolDom:
-   `/api/exams/cbt/package/results/import/`
+1. Open the app.
+2. Cloud login is required on every launch.
+3. After login, the app automatically pulls published exams, students, and CBT
+   package metadata from SchoolDom.
+4. Admin can refresh the local data with **Sync Now**.
+5. Admin can upload/export any local result packages if needed.
 
-## Cloud Workflow
+## Cloud Sync
 
 Admin can also sync directly from the app:
 
@@ -28,18 +24,18 @@ Admin can also sync directly from the app:
 4. After exams are submitted, choose **Upload Results**.
 
 If the admin account requires OTP, sign in through the website and paste the JWT
-access token into **Set Token**. Direct cloud sync on Windows 7 requires SP1,
-TLS 1.2 support, and updated root certificates. Keep offline package
-import/export as the backup exam-day workflow.
+access token into **Use JWT Token**. Direct cloud sync on Windows 7 requires SP1,
+TLS 1.2 support, and updated root certificates.
 
-## Exam Room Behavior
+## Admin-only Mode
 
-- Student screen uses Student ID + PIN.
-- Exam mode switches to fullscreen borderless mode.
-- Answers autosave locally every second.
-- In-progress exams resume if the app/computer restarts.
-- Closing the app during an exam requires confirmation and writes an audit log.
-- Leaving the exam window increments the focus-loss counter.
+The student exam writing screen has been removed. This app is now for:
+
+- cloud login
+- automatic school data pull
+- local package inspection
+- JSON package import/export recovery
+- result upload/export when local result files exist
 
 ## Build
 
@@ -60,7 +56,7 @@ This writes a zip package to `release/`. If Inno Setup 6 is installed, it also
 builds:
 
 ```text
-release/SchoolDom-Student-CBT-Win7-0.1.0-Setup.exe
+release/SchoolDom-Admin-Sync-Win7-0.1.0-Setup.exe
 ```
 
 ## Website Download
@@ -68,7 +64,7 @@ release/SchoolDom-Student-CBT-Win7-0.1.0-Setup.exe
 Copy the Win7 installer to:
 
 ```text
-media/app/student-cbt/SchoolDomCBT-Win7.exe
+media/app/student-cbt/SchoolDomAdminSync-Win7.exe
 ```
 
 The backend exposes:

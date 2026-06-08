@@ -50,6 +50,16 @@ namespace SchoolDom.Cbt.Win7
             }
             _store.State.CloudUrl = NormalizeCloudUrl(cloudUrl);
             _store.State.AccessToken = Convert.ToString(data["access"]);
+            var school = data.ContainsKey("school") ? data["school"] as Dictionary<string, object> : null;
+            if (school != null)
+            {
+                _store.State.SchoolName = school.ContainsKey("name") ? Convert.ToString(school["name"]) : _store.State.SchoolName;
+                _store.State.SchoolCode = school.ContainsKey("school_code") ? Convert.ToString(school["school_code"]) : _store.State.SchoolCode;
+            }
+            if (data.ContainsKey("school_code") && string.IsNullOrWhiteSpace(_store.State.SchoolCode))
+            {
+                _store.State.SchoolCode = Convert.ToString(data["school_code"]);
+            }
             _store.Save();
             return "Signed in to SchoolDom cloud.";
         }
@@ -146,4 +156,3 @@ namespace SchoolDom.Cbt.Win7
         }
     }
 }
-

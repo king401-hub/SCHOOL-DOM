@@ -1,4 +1,4 @@
-#define MyAppName "SchoolDom Student CBT Win7"
+#define MyAppName "SchoolDom Admin Sync Win7"
 #ifndef AppVersion
 #define AppVersion "0.1.0"
 #endif
@@ -10,11 +10,12 @@ AppId={{D1C82680-29E7-47CF-80C6-B6561F861832}
 AppName={#MyAppName}
 AppVersion={#AppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\SchoolDom Student CBT Win7
-DefaultGroupName=SchoolDom Student CBT Win7
+DefaultDirName={autopf}\SchoolDom Admin Sync Win7
+DefaultGroupName=SchoolDom Admin Sync Win7
 DisableProgramGroupPage=yes
 OutputDir=..\release
-OutputBaseFilename=SchoolDom-Student-CBT-Win7-{#AppVersion}-Setup
+OutputBaseFilename=SchoolDom-Admin-Sync-Win7-{#AppVersion}-Setup
+SetupIconFile=..\SchoolDom.Cbt.Win7\Assets\schooldom.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -32,9 +33,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "..\SchoolDom.Cbt.Win7\bin\Release\SchoolDom.Cbt.Win7.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\SchoolDom Student CBT Win7"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\SchoolDom Student CBT Win7"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\SchoolDom Admin Sync Win7"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\SchoolDom Admin Sync Win7"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-

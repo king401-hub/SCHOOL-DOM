@@ -32,10 +32,15 @@ namespace SchoolDom.Cbt.Win7
             var fallbackHash = string.IsNullOrWhiteSpace(fallbackPin) ? "" : JsonUtil.Sha256(fallbackPin.Trim());
             _store.State.Exams.Clear();
             _store.State.Students.Clear();
-            _store.State.Sessions.Clear();
             _store.State.ActivePackageId = GetText(root, "package_id", JsonUtil.Sha256(json + JsonUtil.IsoNow()));
             _store.State.PackageGeneratedAt = GetText(root, "generated_at", "");
             _store.State.PackageLockedAt = JsonUtil.IsoNow();
+            var school = root.ContainsKey("school") ? root["school"] as Dictionary<string, object> : null;
+            if (school != null)
+            {
+                _store.State.SchoolName = FirstText(school, "name", "school_name");
+                _store.State.SchoolCode = FirstText(school, "school_code", "code");
+            }
 
             foreach (var studentObj in students)
             {
@@ -69,10 +74,6 @@ namespace SchoolDom.Cbt.Win7
                     PinHash = FirstText(row, "offline_pin_hash", "pin_sha256")
                 };
                 if (string.IsNullOrWhiteSpace(exam.PinHash)) exam.PinHash = fallbackHash;
-                if (string.IsNullOrWhiteSpace(exam.PinHash))
-                {
-                    throw new InvalidOperationException("This package does not include an offline PIN hash. Enter the published exam PIN during import.");
-                }
                 foreach (var questionObj in ToList(row.ContainsKey("questions") ? row["questions"] : null))
                 {
                     var q = questionObj as Dictionary<string, object>;
@@ -84,6 +85,49 @@ namespace SchoolDom.Cbt.Win7
 
             _store.Save();
             return "Imported " + _store.State.Exams.Count + " exam(s) and " + _store.State.Students.Count + " student(s).";
+        }
+
+        public string ExportBroadsheet(string path)
+        {
+            var lines = new List<string>();
+            var headers = new List<string> { "Student ID", "Full Name", "Class" };
+            headers.AddRange(_store.State.Exams.Select(e => e.Title + " Status"));
+            lines.Add(Csv(headers));
+
+            foreach (var student in _store.State.Students.OrderBy(s => s.FullName))
+            {
+                var row = new List<string> { student.StudentId, student.FullName, student.ClassName };
+                foreach (var exam in _store.State.Exams)
+                {
+                    var session = _store.State.Sessions.FirstOrDefault(s =>
+                        s.ExamId == exam.Id &&
+                        string.Equals(s.StudentId, student.StudentId, StringComparison.OrdinalIgnoreCase));
+                    row.Add(session == null ? "Not submitted" : (session.Status == "submitted" ? "Submitted" : "In progress"));
+                }
+                lines.Add(Csv(row));
+            }
+
+            File.WriteAllLines(path, lines.ToArray());
+            return "Broadsheet exported for " + _store.State.Students.Count + " student(s).";
+        }
+
+        public void SaveExam(ExamRecord exam)
+        {
+            var existing = _store.State.Exams.FirstOrDefault(e => e.Id == exam.Id);
+            if (existing == null) return;
+            existing.Title = exam.Title;
+            existing.Subject = exam.Subject;
+            existing.ClassName = exam.ClassName;
+            existing.DurationSeconds = exam.DurationSeconds;
+            existing.StartsAt = exam.StartsAt;
+            existing.EndsAt = exam.EndsAt;
+            existing.Instructions = exam.Instructions;
+            _store.Save();
+        }
+
+        private static string Csv(IEnumerable<string> values)
+        {
+            return string.Join(",", values.Select(value => "\"" + (value ?? "").Replace("\"", "\"\"") + "\""));
         }
 
         public string ExportResults(string path)

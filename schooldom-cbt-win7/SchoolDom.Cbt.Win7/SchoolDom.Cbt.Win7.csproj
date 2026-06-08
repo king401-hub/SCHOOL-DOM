@@ -12,6 +12,7 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <PlatformTarget>x86</PlatformTarget>
+    <ApplicationIcon>Assets\schooldom.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -44,6 +45,7 @@
     <Compile Include="AppModels.cs" />
     <Compile Include="CloudSyncService.cs" />
     <Compile Include="JsonUtil.cs" />
+    <Compile Include="LanServerService.cs" />
     <Compile Include="LocalStore.cs" />
     <Compile Include="MainForm.cs" />
     <Compile Include="PackageService.cs" />
@@ -53,6 +55,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <Content Include="Assets\schooldom.ico" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
