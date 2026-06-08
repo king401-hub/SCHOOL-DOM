@@ -10,9 +10,11 @@ from django.views.generic import TemplateView
 
 
 APK_FILENAME = "schooldom-app.apk"
-ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
+ADMIN_APP_FILENAME = "SchoolDomAdminSync-Win7.exe"
+LEGACY_ADMIN_APP_FILENAME = "SchoolDomAdmin.exe"
 STUDENT_CBT_FILENAME = "SchoolDomCBT.exe"
 STUDENT_CBT_WIN7_FILENAME = "SchoolDomAdminSync-Win7.exe"
+STUDENT_CBT_WIN7_CLIENT_FILENAME = "SchoolDomStudentCBT-Win7.exe"
 LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
 MIN_DESKTOP_INSTALLER_SIZE = 5 * 1024 * 1024
 MIN_WIN7_INSTALLER_SIZE = 32 * 1024
@@ -79,13 +81,43 @@ def win7_cbt_installer_path():
     return None
 
 
+def win7_student_cbt_installer_candidates():
+    release_dir = Path(settings.BASE_DIR) / "schooldom-student-cbt-win7" / "release"
+    media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
+    candidates = [
+        media_dir / STUDENT_CBT_WIN7_CLIENT_FILENAME,
+        media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
+    ]
+    if release_dir.exists():
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
+        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
+    return candidates
+
+
+def win7_student_cbt_installer_path():
+    for candidate in win7_student_cbt_installer_candidates():
+        if candidate.exists() and candidate.is_file() and candidate.stat().st_size >= MIN_WIN7_INSTALLER_SIZE:
+            return candidate
+    return None
+
+
 def admin_app_installer_candidates():
+    win7_release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-win7" / "release"
     release_dir = Path(settings.BASE_DIR) / "schooldom-admin-app" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "admin"
+    win7_media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
     candidates = [
         media_dir / ADMIN_APP_FILENAME,
-        media_dir / "SchoolDom-Admin-Setup.exe",
+        win7_media_dir / STUDENT_CBT_WIN7_FILENAME,
+        win7_media_dir / "SchoolDom-Admin-Sync-Win7-Setup.exe",
     ]
+    if win7_release_dir.exists():
+        candidates.extend(sorted(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
+    candidates.extend([
+        media_dir / LEGACY_ADMIN_APP_FILENAME,
+        media_dir / ADMIN_APP_FILENAME,
+        media_dir / "SchoolDom-Admin-Setup.exe",
+    ])
     if release_dir.exists():
         candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-*-Setup.exe"), reverse=True))
         candidates.extend(sorted(release_dir.glob("*.exe"), reverse=True))
@@ -94,7 +126,8 @@ def admin_app_installer_candidates():
 
 def admin_app_installer_path():
     for candidate in admin_app_installer_candidates():
-        if candidate.exists() and candidate.is_file() and candidate.stat().st_size >= MIN_DESKTOP_INSTALLER_SIZE:
+        minimum_size = MIN_WIN7_INSTALLER_SIZE if "Win7" in candidate.name or "AdminSync" in candidate.name else MIN_DESKTOP_INSTALLER_SIZE
+        if candidate.exists() and candidate.is_file() and candidate.stat().st_size >= minimum_size:
             return candidate
     return None
 
@@ -126,14 +159,25 @@ def win7_cbt_client_version():
         return "0.1.0"
 
 
-def admin_app_version():
-    package_path = Path(settings.BASE_DIR) / "schooldom-admin-app" / "package.json"
+def win7_student_cbt_client_version():
+    assembly_path = Path(settings.BASE_DIR) / "schooldom-student-cbt-win7" / "SchoolDom.StudentCbt.Win7" / "Properties" / "AssemblyInfo.cs"
     try:
-        import json
+        import re
 
-        return json.loads(package_path.read_text(encoding="utf-8")).get("version") or "0.1.0"
+        text = assembly_path.read_text(encoding="utf-8")
+        match = re.search(r'AssemblyFileVersion\("([^"]+)"\)', text)
+        if not match:
+            return "0.1.0"
+        parts = match.group(1).split(".")
+        if len(parts) == 4 and parts[-1] == "0":
+            parts = parts[:-1]
+        return ".".join(parts) or "0.1.0"
     except (OSError, ValueError, TypeError):
         return "0.1.0"
+
+
+def admin_app_version():
+    return win7_cbt_client_version()
 
 
 def request_origin(request):
@@ -338,12 +382,32 @@ def download_student_cbt_win7_app(request):
     return response
 
 
+def download_student_cbt_win7_student_app(request):
+    app_path = win7_student_cbt_installer_path()
+    if not app_path:
+        raise Http404(
+            "SchoolDom Student CBT Win7 installer is not available yet. Build it with "
+            "`schooldom-student-cbt-win7/build-release.ps1`, then copy the setup exe to "
+            "media/app/student-cbt/SchoolDomStudentCBT-Win7.exe."
+        )
+    response = FileResponse(
+        app_path.open("rb"),
+        as_attachment=True,
+        filename=STUDENT_CBT_WIN7_CLIENT_FILENAME if app_path.suffix.lower() == ".exe" else app_path.name,
+        content_type="application/vnd.microsoft.portable-executable" if app_path.suffix.lower() == ".exe" else "application/zip",
+    )
+    response["Cache-Control"] = "no-store"
+    response["Content-Length"] = app_path.stat().st_size
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
 def download_admin_app(request):
     app_path = admin_app_installer_path()
     if not app_path:
         raise Http404(
-            "SchoolDom Admin installer is not available yet. Build it with `cd schooldom-admin-app && npm run dist`, "
-            "then copy the setup exe to media/app/admin/SchoolDomAdmin.exe."
+            "SchoolDom Admin Sync Win7 installer is not available yet. Build it with `schooldom-cbt-win7/build-release.ps1`, "
+            "then copy the setup exe to media/app/admin/SchoolDomAdminSync-Win7.exe."
         )
     response = FileResponse(
         app_path.open("rb"),
@@ -393,6 +457,21 @@ def student_cbt_win7_app_version(request):
             "filename": STUDENT_CBT_WIN7_FILENAME if app_path and app_path.suffix.lower() == ".exe" else (app_path.name if app_path else STUDENT_CBT_WIN7_FILENAME),
             "size_bytes": app_path.stat().st_size if app_path else 0,
             "platform": "windows_7_sp1",
+        }
+    )
+
+
+def student_cbt_win7_student_app_version(request):
+    app_path = win7_student_cbt_installer_path()
+    return JsonResponse(
+        {
+            "version": win7_student_cbt_client_version(),
+            "available": bool(app_path),
+            "download_url": request.build_absolute_uri(reverse("student_cbt_win7_student_app_download")),
+            "filename": STUDENT_CBT_WIN7_CLIENT_FILENAME if app_path and app_path.suffix.lower() == ".exe" else (app_path.name if app_path else STUDENT_CBT_WIN7_CLIENT_FILENAME),
+            "size_bytes": app_path.stat().st_size if app_path else 0,
+            "platform": "windows_7_sp1",
+            "app": "student_cbt_lan_client",
         }
     )
 

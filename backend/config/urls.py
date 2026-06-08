@@ -23,7 +23,7 @@ from django.views.generic import RedirectView
 from django.views.generic import TemplateView
 from django.views.decorators.csrf import csrf_exempt
 from apps.auth.views import LoginView, LogoutView, RegisterView
-from apps.app.views import AppDownloadView, admin_app_download_version, download_admin_app, download_android_apk, download_student_cbt_app, download_student_cbt_win7_app, redirect_student_cbt, student_cbt_app_version, student_cbt_win7_app_version
+from apps.app.views import AppDownloadView, admin_app_download_version, download_admin_app, download_android_apk, download_student_cbt_app, download_student_cbt_win7_app, download_student_cbt_win7_student_app, redirect_student_cbt, student_cbt_app_version, student_cbt_win7_app_version, student_cbt_win7_student_app_version
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
@@ -53,6 +53,8 @@ urlpatterns = [
     path('app/download/student-cbt/version/', student_cbt_app_version, name='student_cbt_app_version'),
     path('app/download/student-cbt/win7/', download_student_cbt_win7_app, name='student_cbt_win7_app_download'),
     path('app/download/student-cbt/win7/version/', student_cbt_win7_app_version, name='student_cbt_win7_app_version'),
+    path('app/download/student-cbt/win7/student/', download_student_cbt_win7_student_app, name='student_cbt_win7_student_app_download'),
+    path('app/download/student-cbt/win7/student/version/', student_cbt_win7_student_app_version, name='student_cbt_win7_student_app_version'),
     path('student-cbt/', redirect_student_cbt, name='student_cbt_redirect'),
 ]
 
