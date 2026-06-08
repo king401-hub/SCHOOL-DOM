@@ -391,16 +391,82 @@ function RecordList({ title, rows = [], render, onSelect }) {
   );
 }
 
+function AutoGrowTextarea({ value, onChange, rows = 2, className = "", ...props }) {
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      {...props}
+      ref={textareaRef}
+      className={`auto-grow-textarea ${className}`.trim()}
+      value={value}
+      onChange={onChange}
+      rows={rows}
+    />
+  );
+}
+
+function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }) {
+  if (!plan) return null;
+  const sections = [
+    ["Objectives", plan.objectives],
+    ["Activities", plan.activities],
+    ["Resources", plan.resources],
+    ["Assessment", plan.assessment],
+    ["Teacher lesson plan", plan.notes],
+  ].filter(([, content]) => content);
+
+  return (
+    <div className="lesson-plan-dialog-backdrop" role="presentation" onClick={onClose}>
+      <article
+        className="lesson-plan-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lesson-plan-dialog-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="lesson-plan-dialog-head">
+          <div>
+            <p className="quiz-kicker">Week {plan.week_number}</p>
+            <h3 id="lesson-plan-dialog-title">{plan.title || title}</h3>
+            <small>
+              {[plan.subject, plan.class_name, plan.term, plan.academic_year].filter(Boolean).join(" - ")}
+            </small>
+          </div>
+          <button type="button" className="table-action ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="lesson-plan-dialog-meta">
+          <span>{plan.status || "planned"}</span>
+          <span>{plan.teacher ? `Teacher: ${plan.teacher}` : title}</span>
+        </div>
+        {sections.length ? (
+          <div className="lesson-plan-dialog-sections">
+            {sections.map(([label, content]) => (
+              <section key={label} className="scheme-plan-section">
+                <h5>{label}</h5>
+                <p>{content}</p>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <p className="panel-empty">No additional details have been added for this week.</p>
+        )}
+      </article>
+    </div>
+  );
+}
+
 function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
   const [planning, setPlanning] = useState(null);
   const [error, setError] = useState("");
-  const planSections = [
-    ["Description", "activities"],
-    ["Objectives", "objectives"],
-    ["Resources", "resources"],
-    ["Assessment", "assessment"],
-    ["Teacher lesson plan", "notes"],
-  ];
+  const [selectedPlan, setSelectedPlan] = useState(null);
 
   const loadPlanning = useCallback(async () => {
     setError("");
@@ -460,26 +526,13 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
           {Object.entries(grouped).map(([subject, subjectPlans]) => (
             <article key={subject} className="scheme-subject-card">
               <h4>{subject}</h4>
-              {subjectPlans.slice(0, 6).map((plan) => (
+              {subjectPlans.map((plan) => (
                 <article key={plan.id} className="scheme-week-detail">
-                  <div className="scheme-week-row">
+                  <button type="button" className="scheme-week-row scheme-week-button" onClick={() => setSelectedPlan(plan)}>
                     <span>Week {plan.week_number}</span>
                     <strong>{plan.title}</strong>
                     <small>{plan.status}</small>
-                  </div>
-                  <div className="scheme-plan-body">
-                    {planSections.map(([label, field]) => (
-                      plan[field] ? (
-                        <section key={field} className="scheme-plan-section">
-                          <h5>{label}</h5>
-                          <p>{plan[field]}</p>
-                        </section>
-                      ) : null
-                    ))}
-                    <p className="scheme-plan-meta">
-                      {plan.teacher ? `Teacher: ${plan.teacher}` : "Teacher lesson plan"}
-                    </p>
-                  </div>
+                  </button>
                 </article>
               ))}
             </article>
@@ -487,6 +540,7 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
         </div>
       )}
       </div>
+      <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} />
     </section>
   );
 }
@@ -3067,6 +3121,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [noteForm, setNoteForm] = useState({ title: "Quick note", body: "", pinned: false });
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState(null);
   const nonK12 = isNonK12School(session, planning);
   const planningTitle = nonK12 ? "Course Outline & Notepad" : "Lesson Plans & Notepad";
   const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
@@ -3196,7 +3251,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
             </label>
             <label className="panel-field full">
               Activities
-              <textarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows="2" />
+              <AutoGrowTextarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows={2} />
             </label>
           </div>
           <div className="panel-form-actions"><button type="submit">Save {planningItemLabel.toLowerCase()}</button></div>
@@ -3218,11 +3273,13 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         </form>
       </div>
       <div className="scheme-subject-grid">
-        {plans.slice(0, 6).map((plan) => (
+        {plans.map((plan) => (
           <article key={plan.id} className="scheme-subject-card">
-            <h4>Week {plan.week_number}: {plan.title}</h4>
-            <p>{plan.subject} - {plan.class_name}</p>
-            <small>{plan.status}</small>
+            <button type="button" className="scheme-plan-card-button" onClick={() => setSelectedPlan(plan)}>
+              <h4>Week {plan.week_number}: {plan.title}</h4>
+              <p>{plan.subject} - {plan.class_name}</p>
+              <small>{plan.status}</small>
+            </button>
           </article>
         ))}
         {notes.slice(0, 3).map((note) => (
@@ -3234,6 +3291,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         ))}
       </div>
     </article>
+    <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} title={planningItemLabel} />
     </section>
   );
 }

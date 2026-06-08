@@ -11636,6 +11636,23 @@ body[data-theme="dark"] .multi-select-option.checked {
   margin: 0 0 8px;
 }
 
+.scheme-plan-card-button {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.scheme-plan-card-button:focus-visible,
+.scheme-week-button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 3px;
+}
+
 .scheme-week-row {
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr) auto;
@@ -11643,6 +11660,23 @@ body[data-theme="dark"] .multi-select-option.checked {
   gap: 8px;
   border-top: 1px solid #e2e8f0;
   padding: 8px 0;
+}
+
+.scheme-week-button {
+  width: 100%;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.scheme-week-button:hover,
+.scheme-plan-card-button:hover {
+  color: #1d4ed8;
 }
 
 .scheme-week-row span,
@@ -11699,6 +11733,72 @@ body[data-theme="dark"] .multi-select-option.checked {
   min-height: 180px;
 }
 
+.auto-grow-textarea {
+  overflow: hidden;
+  resize: vertical;
+}
+
+.lesson-plan-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.lesson-plan-dialog {
+  width: min(720px, 100%);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  border: 1px solid var(--border, #dbe3ef);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  color: #0f172a;
+  padding: 20px;
+}
+
+.lesson-plan-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.lesson-plan-dialog-head h3 {
+  margin: 2px 0 4px;
+  font-size: clamp(1.3rem, 3vw, 2rem);
+}
+
+.lesson-plan-dialog-head small {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.lesson-plan-dialog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.lesson-plan-dialog-meta span {
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lesson-plan-dialog-sections {
+  display: grid;
+  gap: 14px;
+}
+
 body[data-theme="dark"] .scheme-subject-card {
   background: #0b1f44;
   border-color: rgba(147, 197, 253, 0.22);
@@ -11713,15 +11813,39 @@ body[data-theme="dark"] .scheme-week-detail {
   border-top-color: rgba(147, 197, 253, 0.16);
 }
 
+body[data-theme="dark"] .scheme-week-button:hover,
+body[data-theme="dark"] .scheme-plan-card-button:hover {
+  color: #bfdbfe;
+}
+
 body[data-theme="dark"] .scheme-plan-section h5,
 body[data-theme="dark"] .scheme-plan-section p,
 body[data-theme="dark"] .scheme-plan-meta {
   color: rgba(255, 255, 255, 0.82);
 }
 
+body[data-theme="dark"] .lesson-plan-dialog {
+  background: #0b1f44;
+  border-color: rgba(147, 197, 253, 0.22);
+  color: #ffffff;
+}
+
+body[data-theme="dark"] .lesson-plan-dialog-head small,
+body[data-theme="dark"] .lesson-plan-dialog-meta span {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+body[data-theme="dark"] .lesson-plan-dialog-meta span {
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
 @media (max-width: 760px) {
   .academic-planning-grid {
     grid-template-columns: 1fr;
+  }
+
+  .lesson-plan-dialog-head {
+    flex-direction: column;
   }
 
   .database-import-layout {
