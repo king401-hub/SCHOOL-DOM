@@ -13,6 +13,7 @@ namespace SchoolDom.StudentCbt.Win7
         private Panel _root;
         private Label _status;
         private Label _timeLabel;
+        private Panel _questionPanel;
         private Dictionary<string, object> _student;
         private Dictionary<string, object> _exam;
         private Dictionary<string, object> _session;
@@ -22,6 +23,7 @@ namespace SchoolDom.StudentCbt.Win7
         private int _current;
         private bool _examMode;
         private bool _submitting;
+        private bool _calculatorOpen;
 
         public MainForm()
         {
@@ -118,7 +120,12 @@ namespace SchoolDom.StudentCbt.Win7
                     }
                     _exam = login.ContainsKey("exam") ? login["exam"] as Dictionary<string, object> : choices.FirstOrDefault();
                     _session = login.ContainsKey("session") ? login["session"] as Dictionary<string, object> : null;
-                    if (_session == null && _exam != null) StartSelectedExam(_exam);
+                    if (_exam == null)
+                    {
+                        MessageBox.Show("No exam was returned for this Student ID and PIN.", "No exam");
+                        return;
+                    }
+                    if (_session == null) StartSelectedExam(_exam);
                     else ShowInstructions();
                 }
                 catch (Exception ex)
@@ -236,6 +243,7 @@ namespace SchoolDom.StudentCbt.Win7
         private void ShowExam()
         {
             _root.Controls.Clear();
+            _questionPanel = null;
             var header = new Panel { Dock = DockStyle.Top, Height = 70, BackColor = Palette.Navy };
             header.Controls.Add(Label(Value(_exam, "title", "Title"), 24, 16, 17, true, 620, Color.White));
             _timeLabel = Label(TimeText(), Width - 250, 22, 12, true, 210, Color.White);
@@ -266,7 +274,7 @@ namespace SchoolDom.StudentCbt.Win7
                     Width = 32,
                     Height = 32,
                     FlatStyle = FlatStyle.Flat,
-                    BackColor = _answers.ContainsKey(QuestionId(_questions[i])) ? Palette.GreenSoft : Palette.LightButton,
+                    BackColor = _answers.ContainsKey(QuestionId(_questions[i], i)) ? Palette.GreenSoft : Palette.LightButton,
                     ForeColor = Palette.Text
                 };
                 if (i == _current) { button.BackColor = Palette.Blue; button.ForeColor = Color.White; }
@@ -286,6 +294,7 @@ namespace SchoolDom.StudentCbt.Win7
 
         private void RenderQuestion(Panel main)
         {
+            _questionPanel = main;
             var question = _questions[_current];
             main.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 24, 20, 10, true, 260, Palette.Muted));
             var text = Label(Value(question, "text", "Text"), 24, 62, 13, true, 700, Palette.Text);
@@ -298,7 +307,7 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 var answer = new TextBox { Left = 24, Top = top, Width = 700, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer" };
                 object saved;
-                if (_answers.TryGetValue(QuestionId(question), out saved)) answer.Text = JsonUtil.Text(saved);
+                if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
                 main.Controls.Add(answer);
             }
             else
@@ -307,7 +316,7 @@ namespace SchoolDom.StudentCbt.Win7
                 {
                     var option = new RadioButton { Left = 30, Top = top + i * 46, Width = 680, Height = 36, Text = ((char)('A' + i)) + ". " + options[i], Tag = "answer:" + i, Font = new Font("Segoe UI", 11) };
                     object saved;
-                    option.Checked = _answers.TryGetValue(QuestionId(question), out saved) && JsonUtil.Text(saved) == i.ToString();
+                    option.Checked = _answers.TryGetValue(QuestionId(question, _current), out saved) && JsonUtil.Text(saved) == i.ToString();
                     option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
                     main.Controls.Add(option);
                 }
@@ -325,8 +334,8 @@ namespace SchoolDom.StudentCbt.Win7
         private void SaveCurrentAnswer(Control container)
         {
             if (!_examMode || _questions.Count == 0 || container == null) return;
-            var qid = QuestionId(_questions[_current]);
-            foreach (Control control in container.Controls)
+            var qid = QuestionId(_questions[_current], _current);
+            foreach (Control control in AllControls(container))
             {
                 if (control.Tag == null) continue;
                 var tag = JsonUtil.Text(control.Tag);
@@ -345,12 +354,16 @@ namespace SchoolDom.StudentCbt.Win7
         private void SubmitExam()
         {
             if (_submitting) return;
-            SaveCurrentAnswer(FindQuestionPanel());
+            SaveCurrentAnswer(_questionPanel);
             if (MessageBox.Show("Submit your exam now?", "Submit", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             _submitting = true;
             try
             {
-                _client.Submit(Value(_session, "id", "Id"), _answers);
+                var submitted = _client.Submit(Value(_session, "id", "Id"), _answers);
+                if (!Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false))
+                {
+                    throw new InvalidOperationException(JsonUtil.Text(submitted.ContainsKey("message") ? submitted["message"] : "The LAN server rejected the submission."));
+                }
                 _timer.Stop();
                 _examMode = false;
                 TopMost = false;
@@ -370,7 +383,7 @@ namespace SchoolDom.StudentCbt.Win7
             TopMost = true;
             if (FormBorderStyle != FormBorderStyle.None) FormBorderStyle = FormBorderStyle.None;
             if (WindowState != FormWindowState.Maximized) WindowState = FormWindowState.Maximized;
-            SaveCurrentAnswer(FindQuestionPanel());
+            SaveCurrentAnswer(_questionPanel);
             try { _client.SaveAnswers(Value(_session, "id", "Id"), _answers); } catch { }
             if (_timeLabel != null) _timeLabel.Text = TimeText();
             DateTime ends;
@@ -387,6 +400,7 @@ namespace SchoolDom.StudentCbt.Win7
         private void MainFormDeactivate(object sender, EventArgs e)
         {
             if (!_examMode || _session == null) return;
+            if (_calculatorOpen) return;
             try { _client.FocusLoss(Value(_session, "id", "Id")); } catch { }
             BeginInvoke(new Action(() =>
             {
@@ -416,7 +430,18 @@ namespace SchoolDom.StudentCbt.Win7
 
         private void ShowCalculator()
         {
+            _calculatorOpen = true;
             var form = new Form { Text = "Calculator", Width = 360, Height = 210, StartPosition = FormStartPosition.CenterParent, TopMost = true, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
+            form.FormClosed += (s, e) =>
+            {
+                _calculatorOpen = false;
+                if (_examMode)
+                {
+                    TopMost = true;
+                    WindowState = FormWindowState.Maximized;
+                    Activate();
+                }
+            };
             var input = new TextBox { Left = 16, Top = 16, Width = 310, Font = new Font("Segoe UI", 13) };
             var result = Label("", 16, 100, 12, true, 310, Palette.Text);
             var solve = PrimaryButton("Calculate", 16, 54, 110);
@@ -440,20 +465,13 @@ namespace SchoolDom.StudentCbt.Win7
             return "Time: " + ((int)span.TotalHours).ToString("00") + ":" + span.Minutes.ToString("00") + ":" + span.Seconds.ToString("00");
         }
 
-        private Panel FindQuestionPanel()
-        {
-            return _root == null ? null : FindPanelWithAnswer(_root);
-        }
-
-        private Panel FindPanelWithAnswer(Control parent)
+        private IEnumerable<Control> AllControls(Control parent)
         {
             foreach (Control control in parent.Controls)
             {
-                if (control.Tag != null && JsonUtil.Text(control.Tag).StartsWith("answer")) return parent as Panel;
-                var nested = FindPanelWithAnswer(control);
-                if (nested != null) return nested;
+                yield return control;
+                foreach (var nested in AllControls(control)) yield return nested;
             }
-            return null;
         }
 
         private static string Value(Dictionary<string, object> item, params string[] keys)
@@ -476,10 +494,10 @@ namespace SchoolDom.StudentCbt.Win7
             return null;
         }
 
-        private string QuestionId(Dictionary<string, object> q)
+        private string QuestionId(Dictionary<string, object> q, int index)
         {
             var id = Value(q, "id", "Id");
-            return string.IsNullOrWhiteSpace(id) ? _current.ToString() : id;
+            return string.IsNullOrWhiteSpace(id) ? "question_" + index : id;
         }
         private static string Initials(string name)
         {
