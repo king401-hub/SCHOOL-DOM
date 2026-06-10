@@ -1,53 +1,83 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
-function applyInlineFormat(textarea, value, before, after = before) {
-  const start = textarea?.selectionStart ?? String(value || "").length;
-  const end = textarea?.selectionEnd ?? start;
-  const current = String(value || "");
-  const selected = current.slice(start, end);
-  const next = `${current.slice(0, start)}${before}${selected || "text"}${after}${current.slice(end)}`;
-  const nextStart = start + before.length;
-  const nextEnd = nextStart + (selected || "text").length;
-  return { next, nextStart, nextEnd };
+function normalizeEditorHtml(html) {
+  return String(html || "")
+    .replace(/<div><br><\/div>/gi, "<br>")
+    .replace(/<div>/gi, "<br>")
+    .replace(/<\/div>/gi, "")
+    .replace(/<p>/gi, "")
+    .replace(/<\/p>/gi, "<br>")
+    .replace(/<b(\s[^>]*)?>/gi, "<strong>")
+    .replace(/<\/b>/gi, "</strong>")
+    .replace(/<i(\s[^>]*)?>/gi, "<em>")
+    .replace(/<\/i>/gi, "</em>")
+    .replace(/<span[^>]*style=\"[^\"]*font-weight:\s*(?:bold|700|800|900)[^\"]*\"[^>]*>/gi, "<strong>")
+    .replace(/<span[^>]*style=\"[^\"]*font-style:\s*italic[^\"]*\"[^>]*>/gi, "<em>")
+    .replace(/<span[^>]*style=\"[^\"]*text-decoration[^;]*underline[^\"]*\"[^>]*>/gi, "<u>")
+    .replace(/<\/span>/gi, "")
+    .replace(/<(?!\/?(?:strong|em|u|sub|sup|br)\b)[^>]+>/gi, "")
+    .replace(/(?:<br>\s*){4,}/gi, "<br><br><br>");
 }
 
 export default function FormattedTextarea({ value = "", onChange, className = "", rows = 3, ...props }) {
-  const textareaRef = useRef(null);
+  const editorRef = useRef(null);
 
   const emitChange = (nextValue) => {
     onChange?.({ target: { value: nextValue } });
   };
 
-  const format = (before, after = before) => {
-    const textarea = textareaRef.current;
-    const { next, nextStart, nextEnd } = applyInlineFormat(textarea, value, before, after);
-    emitChange(next);
-    window.requestAnimationFrame(() => {
-      textarea?.focus();
-      textarea?.setSelectionRange(nextStart, nextEnd);
-    });
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const nextHtml = normalizeEditorHtml(value);
+    if (editor.innerHTML !== nextHtml) {
+      editor.innerHTML = nextHtml;
+    }
+  }, [value]);
+
+  const syncValue = () => {
+    const editor = editorRef.current;
+    emitChange(normalizeEditorHtml(editor?.innerHTML || ""));
+  };
+
+  const format = (command) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, null);
+    syncValue();
+  };
+
+  const handlePaste = (event) => {
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    document.execCommand("insertText", false, text);
+    syncValue();
   };
 
   return (
     <div className="formatted-textarea">
       <div className="formatted-textarea-toolbar" aria-label="Text formatting controls">
-        <button type="button" onClick={() => format("**")} title="Bold selected text">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")} title="Bold selected text">
           <strong>B</strong>
         </button>
-        <button type="button" onClick={() => format("_")} title="Italic selected text">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("italic")} title="Italic selected text">
           <em>I</em>
         </button>
-        <button type="button" onClick={() => format("<u>", "</u>")} title="Underline selected text">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("underline")} title="Underline selected text">
           <span className="underline-format">U</span>
         </button>
       </div>
-      <textarea
+      <div
         {...props}
-        ref={textareaRef}
-        className={className}
-        value={value}
-        onChange={onChange}
-        rows={rows}
+        ref={editorRef}
+        className={`formatted-textarea-editor ${className}`.trim()}
+        contentEditable
+        data-placeholder={props.placeholder || ""}
+        onInput={syncValue}
+        onBlur={syncValue}
+        onPaste={handlePaste}
+        role="textbox"
+        aria-multiline="true"
+        style={{ minHeight: `${Math.max(Number(rows) || 3, 2) * 1.7}rem` }}
       />
     </div>
   );

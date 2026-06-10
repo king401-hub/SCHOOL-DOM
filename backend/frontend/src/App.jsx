@@ -454,7 +454,7 @@ function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }
             {sections.map(([label, content]) => (
               <section key={label} className="scheme-plan-section">
                 <h5>{label}</h5>
-                <p>{content}</p>
+                <p><RichQuizText text={content} /></p>
               </section>
             ))}
           </div>
@@ -2919,7 +2919,7 @@ function StudentQuizPage({ session, onNavigate }) {
                       <br />
                       Correct answer: <strong>{renderQuizText(question.correct_answer)}</strong>
                     </p>
-                    <small>{question.explanation}</small>
+                    <small>{renderQuizText(question.explanation)}</small>
                   </article>
                 ))}
           </section>
@@ -3581,7 +3581,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         {notes.slice(0, 3).map((note) => (
           <article key={note.id} className="scheme-subject-card note-card">
             <h4>{note.title}</h4>
-            <p>{note.body || "No note content."}</p>
+            <p><RichQuizText text={note.body || "No note content."} /></p>
             <small>{note.pinned ? "Pinned" : "Note"}</small>
           </article>
         ))}

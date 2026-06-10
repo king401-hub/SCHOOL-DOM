@@ -1,6 +1,6 @@
 import React from "react";
 
-const TOKEN_RE = /(<\/?(?:u|sub|sup|br)\s*\/?>)/gi;
+const TOKEN_RE = /(<\/?(?:strong|b|em|i|u|sub|sup|br)\s*\/?>)/gi;
 
 const MATH_REPLACEMENTS = [
   [/\\cup\b/g, " union "],
@@ -122,9 +122,9 @@ function renderTokens(tokens, startIndex = 0, closingTag = "") {
       continue;
     }
 
-    if (tag && ["u", "sub", "sup"].includes(tag)) {
+    if (tag && ["strong", "b", "em", "i", "u", "sub", "sup"].includes(tag)) {
       const rendered = renderTokens(tokens, index + 1, tag);
-      const TagName = tag;
+      const TagName = tag === "b" ? "strong" : tag === "i" ? "em" : tag;
       nodes.push(<TagName key={nodes.length}>{rendered.nodes}</TagName>);
       index = rendered.index;
       continue;
