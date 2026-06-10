@@ -5175,6 +5175,53 @@ body[data-theme="dark"] .token-usage-toast {
   border-color: #2563eb;
 }
 
+.formatted-textarea {
+  display: grid;
+  gap: 0;
+}
+
+.formatted-textarea-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-self: start;
+  border: 1px solid #cbd7e6;
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0;
+  background: #f8fafc;
+  padding: 0.3rem;
+}
+
+.formatted-textarea-toolbar button {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.formatted-textarea-toolbar button:hover,
+.formatted-textarea-toolbar button:focus-visible {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  outline: none;
+}
+
+.formatted-textarea textarea {
+  border-top-left-radius: 0;
+}
+
+.underline-format {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .teacher-results .student-picker-field {
   grid-column: span 2;
   grid-template-columns: minmax(180px, 0.55fr) minmax(260px, 1fr);
@@ -6815,6 +6862,22 @@ body[data-theme="dark"] .support-school-details span {
 body[data-theme="dark"] .support-school-details div {
   border-color: #334155;
   background: #111c2f;
+}
+
+body[data-theme="dark"] .formatted-textarea-toolbar {
+  background: #111827;
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .formatted-textarea-toolbar button {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+body[data-theme="dark"] .formatted-textarea-toolbar button:hover,
+body[data-theme="dark"] .formatted-textarea-toolbar button:focus-visible {
+  border-color: #60a5fa;
+  color: #bfdbfe;
 }
 
 body[data-theme="dark"] .data-table th,
@@ -12688,7 +12751,7 @@ body[data-theme="dark"] .multi-select-option.checked {
 
 .scheme-week-row {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr) auto;
+  grid-template-columns: 70px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   border-top: 1px solid #e2e8f0;
@@ -12697,18 +12760,21 @@ body[data-theme="dark"] .multi-select-option.checked {
 
 .scheme-week-button {
   width: 100%;
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: transparent;
   color: inherit;
   cursor: pointer;
   font: inherit;
+  padding: 0.5rem;
   text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .scheme-week-button:hover,
 .scheme-plan-card-button:hover {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.18);
   color: #1d4ed8;
 }
 
@@ -12717,6 +12783,18 @@ body[data-theme="dark"] .multi-select-option.checked {
   color: #64748b;
   font-weight: 700;
   font-size: 0.78rem;
+}
+
+.scheme-week-row em {
+  justify-self: end;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+  padding: 0.22rem 0.5rem;
+  white-space: nowrap;
 }
 
 .scheme-week-detail {
@@ -12873,6 +12951,16 @@ body[data-theme="dark"] .lesson-plan-dialog-meta span {
 }
 
 @media (max-width: 760px) {
+  .scheme-week-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .scheme-week-row strong,
+  .scheme-week-row em {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
   .academic-planning-grid {
     grid-template-columns: 1fr;
   }

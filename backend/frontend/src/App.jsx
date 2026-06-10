@@ -9,6 +9,7 @@ import { AttendanceModule, TeacherQRCodeAttendancePage } from "./components/Atte
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
+import FormattedTextarea from "./components/FormattedTextarea";
 import RichQuizText from "./components/RichQuizText";
 import {
   SESSION_KEY,
@@ -416,6 +417,7 @@ function AutoGrowTextarea({ value, onChange, rows = 2, className = "", ...props 
 function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }) {
   if (!plan) return null;
   const sections = [
+    ["Summary", plan.description || plan.body || plan.content],
     ["Objectives", plan.objectives],
     ["Activities", plan.activities],
     ["Resources", plan.resources],
@@ -445,6 +447,7 @@ function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }
         <div className="lesson-plan-dialog-meta">
           <span>{plan.status || "planned"}</span>
           <span>{plan.teacher ? `Teacher: ${plan.teacher}` : title}</span>
+          {plan.updated_at ? <span>Updated: {formatDate(plan.updated_at)}</span> : null}
         </div>
         {sections.length ? (
           <div className="lesson-plan-dialog-sections">
@@ -532,6 +535,7 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
                     <span>Week {plan.week_number}</span>
                     <strong>{plan.title}</strong>
                     <small>{plan.status}</small>
+                    <em>View full details</em>
                   </button>
                 </article>
               ))}
@@ -2247,7 +2251,7 @@ function TeacherQuizPage({ session, onNavigate }) {
           </label>
           <label className="quiz-field">
             <span>Description</span>
-            <textarea
+            <FormattedTextarea
               value={builder.description}
               onChange={(event) => setBuilder((prev) => ({ ...prev, description: event.target.value }))}
               placeholder="Add context for students..."
@@ -2272,12 +2276,13 @@ function TeacherQuizPage({ session, onNavigate }) {
               <div className="quiz-question-head">
                 <div>
                   <p className="quiz-kicker">Question {qIndex + 1}</p>
-                  <input
+                  <FormattedTextarea
                     value={question.text}
                     onChange={(event) => updateQuestion(qIndex, { text: event.target.value })}
                     placeholder="Ask a question..."
+                    rows={2}
                   />
-                  <textarea
+                  <FormattedTextarea
                     value={question.explanation}
                     onChange={(event) => updateQuestion(qIndex, { explanation: event.target.value })}
                     placeholder="Answer / explanation shown after submission"
@@ -3538,11 +3543,11 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
             </label>
             <label className="panel-field full">
               Objectives
-              <textarea value={form.objectives} onChange={(event) => setForm((prev) => ({ ...prev, objectives: event.target.value }))} rows="2" />
+              <FormattedTextarea value={form.objectives} onChange={(event) => setForm((prev) => ({ ...prev, objectives: event.target.value }))} rows={2} />
             </label>
             <label className="panel-field full">
               Activities
-              <AutoGrowTextarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows={2} />
+              <FormattedTextarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows={2} />
             </label>
           </div>
           <div className="panel-form-actions"><button type="submit">Save {planningItemLabel.toLowerCase()}</button></div>
@@ -3554,7 +3559,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
           </label>
           <label className="panel-field full">
             Digital notepad
-            <textarea value={noteForm.body} onChange={(event) => setNoteForm((prev) => ({ ...prev, body: event.target.value }))} rows="8" placeholder="Write lesson ideas, reminders, or quick academic notes..." />
+            <FormattedTextarea value={noteForm.body} onChange={(event) => setNoteForm((prev) => ({ ...prev, body: event.target.value }))} rows={8} placeholder="Write lesson ideas, reminders, or quick academic notes..." />
           </label>
           <label className="panel-field checkbox-field">
             <input type="checkbox" checked={noteForm.pinned} onChange={(event) => setNoteForm((prev) => ({ ...prev, pinned: event.target.checked }))} />
@@ -4619,7 +4624,7 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
               ))}
               <label className="panel-field full">
                 Remarks
-                <textarea value={form.remarks} onChange={(event) => setForm((prev) => ({ ...prev, remarks: event.target.value }))} />
+                <FormattedTextarea value={form.remarks} onChange={(event) => setForm((prev) => ({ ...prev, remarks: event.target.value }))} />
               </label>
             </div>
             {error ? <p className="form-feedback error">{error}</p> : null}

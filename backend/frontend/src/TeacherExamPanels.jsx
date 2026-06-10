@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import FormattedTextarea from "./components/FormattedTextarea";
 import { formatDate, MetricCard, requestJson } from "./AppShared";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
@@ -519,7 +520,7 @@ export function TeacherExamManager({
           </label>
           <label className="panel-field full">
             Description
-            <textarea
+            <FormattedTextarea
               value={questionForm.description}
               onChange={(event) => setQuestionForm((prev) => ({ ...prev, description: event.target.value }))}
             />
@@ -1230,7 +1231,7 @@ export function TeacherExamBuilder({
                 <div key={question.id} className="exam-builder-question">
                   {question.sourceLabel ? <div className="cbt-question-source">From {question.sourceLabel}</div> : null}
                   <div className="exam-builder-row">
-                    <label className="panel-field full">Question {index + 1}<textarea value={question.text} onChange={(event) => updateQuestion(question.id, { text: event.target.value })} rows={3} /></label>
+                    <label className="panel-field full">Question {index + 1}<FormattedTextarea value={question.text} onChange={(event) => updateQuestion(question.id, { text: event.target.value })} rows={3} /></label>
                     <label className="panel-field">Type<input value="Objective MCQ" readOnly /></label>
                     <label className="panel-field">Marks<input type="number" min="1" value={question.marks} onChange={(event) => updateQuestion(question.id, { marks: event.target.value })} /></label>
                   </div>
@@ -1295,7 +1296,7 @@ export function TeacherExamBuilder({
                         </div>
                         <label className="panel-field full">
                           Passage / shared prompt
-                          <textarea
+                          <FormattedTextarea
                             value={question.group?.passage_text || ""}
                             onChange={(event) => updateQuestionGroup(question.id, { passage_text: event.target.value })}
                             rows={4}
@@ -1352,7 +1353,7 @@ export function TeacherExamBuilder({
                     </label>
                     <label className="panel-field full">
                       Teacher note / explanation
-                      <textarea
+                      <FormattedTextarea
                         value={question.explanation}
                         onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
                         rows={2}
