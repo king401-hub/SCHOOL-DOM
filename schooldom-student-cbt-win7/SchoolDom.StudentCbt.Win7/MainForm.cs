@@ -13,6 +13,7 @@ namespace SchoolDom.StudentCbt.Win7
         private Panel _root;
         private Label _status;
         private Label _timeLabel;
+        private Label _lanLabel;
         private Panel _questionPanel;
         private Dictionary<string, object> _student;
         private Dictionary<string, object> _exam;
@@ -25,6 +26,9 @@ namespace SchoolDom.StudentCbt.Win7
         private bool _submitting;
         private bool _calculatorOpen;
         private bool _dialogOpen;
+        private DateTime? _offlineSince;
+        private bool _pendingAutoSubmit;
+        private int _lastSaveSecond = -1;
 
         public MainForm()
         {
@@ -234,6 +238,9 @@ namespace SchoolDom.StudentCbt.Win7
         {
             _examMode = true;
             _current = 0;
+            _offlineSince = null;
+            _pendingAutoSubmit = false;
+            _lastSaveSecond = -1;
             TopMost = true;
             FormBorderStyle = FormBorderStyle.None;
             WindowState = FormWindowState.Maximized;
@@ -245,26 +252,37 @@ namespace SchoolDom.StudentCbt.Win7
         {
             _root.Controls.Clear();
             _questionPanel = null;
-            var header = new Panel { Dock = DockStyle.Top, Height = 70, BackColor = Palette.Navy };
-            header.Controls.Add(Label(Value(_exam, "title", "Title"), 24, 16, 17, true, 620, Color.White));
-            _timeLabel = Label(TimeText(), Width - 250, 22, 12, true, 210, Color.White);
+            var header = new Panel { Dock = DockStyle.Top, Height = 82, BackColor = Palette.Navy };
+            var headerWidth = Math.Max(960, ClientSize.Width);
+            header.Controls.Add(Label(Value(_exam, "title", "Title"), 22, 14, 16, true, Math.Max(320, headerWidth - 760), Color.White));
+            header.Controls.Add(CreateStudentBadge(Math.Max(350, headerWidth - 610), 12, true));
+            var calcTop = SecondaryButton("Calculator", Math.Max(610, headerWidth - 350), 20, 126);
+            calcTop.Click += (s, e) => ShowCalculator();
+            header.Controls.Add(calcTop);
+            _lanLabel = Label("LAN: Connected", Math.Max(748, headerWidth - 210), 18, 9, true, 190, Palette.GreenSoft);
+            header.Controls.Add(_lanLabel);
+            _timeLabel = Label(TimeText(), Math.Max(748, headerWidth - 210), 42, 11, true, 200, Color.White);
             header.Controls.Add(_timeLabel);
             _root.Controls.Add(header);
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var side = Card(24, 24, 230, 580);
-            var main = Card(278, 24, 760, 580);
+            var availableWidth = Math.Max(960, ClientSize.Width);
+            var availableHeight = Math.Max(620, ClientSize.Height - header.Height);
+            var sideWidth = 230;
+            var gap = 24;
+            var mainWidth = Math.Min(820, availableWidth - sideWidth - gap - 96);
+            var cardHeight = Math.Max(520, availableHeight - 64);
+            var totalWidth = sideWidth + gap + mainWidth;
+            var left = Math.Max(24, (availableWidth - totalWidth) / 2);
+            var top = 24;
+            var side = Card(left, top, sideWidth, cardHeight);
+            var main = Card(left + sideWidth + gap, top, mainWidth, cardHeight);
             content.Controls.Add(side);
             content.Controls.Add(main);
             _root.Controls.Add(content);
 
-            var initials = Initials(Value(_student, "full_name", "FullName"));
-            var avatar = new Label { Text = initials, Left = 18, Top = 16, Width = 46, Height = 46, BackColor = Palette.Blue, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 12, FontStyle.Bold) };
-            side.Controls.Add(avatar);
-            side.Controls.Add(Label(Value(_student, "full_name", "FullName"), 74, 14, 10, true, 140, Palette.Text));
-            side.Controls.Add(Label(Value(_student, "student_id", "StudentId"), 74, 44, 9, false, 140, Palette.Muted));
-            side.Controls.Add(Label("Questions", 18, 92, 10, true, 190, Palette.Text));
-            var questionNav = new Panel { Left = 18, Top = 126, Width = 194, Height = 300, AutoScroll = true, BorderStyle = BorderStyle.None };
+            side.Controls.Add(Label("Questions", 18, 18, 11, true, 190, Palette.Text));
+            var questionNav = new Panel { Left = 18, Top = 56, Width = 194, Height = Math.Max(300, cardHeight - 150), AutoScroll = true, BorderStyle = BorderStyle.None };
             for (var i = 0; i < _questions.Count; i++)
             {
                 var index = i;
@@ -287,10 +305,7 @@ namespace SchoolDom.StudentCbt.Win7
             }
             side.Controls.Add(questionNav);
 
-            var calc = SecondaryButton("Calculator", 18, 442, 190);
-            calc.Click += (s, e) => ShowCalculator();
-            side.Controls.Add(calc);
-            var submit = PrimaryButton("Submit Exam", 18, 496, 190);
+            var submit = PrimaryButton("Submit Exam", 18, cardHeight - 66, 190);
             submit.Click += (s, e) => SubmitExam();
             side.Controls.Add(submit);
 
@@ -301,8 +316,9 @@ namespace SchoolDom.StudentCbt.Win7
         {
             _questionPanel = main;
             var question = _questions[_current];
-            main.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 24, 20, 10, true, 260, Palette.Muted));
-            var text = Label(Value(question, "text", "Text"), 24, 62, 13, true, 700, Palette.Text);
+            var innerWidth = main.Width - 64;
+            main.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
+            var text = Label(Value(question, "text", "Text"), 32, 70, 14, true, innerWidth, Palette.Text);
             main.Controls.Add(text);
             var top = Math.Max(160, text.Top + text.Height + 20);
             var type = Value(question, "type", "Type").ToLowerInvariant();
@@ -310,7 +326,7 @@ namespace SchoolDom.StudentCbt.Win7
 
             if (type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any())
             {
-                var answer = new TextBox { Left = 24, Top = top, Width = 700, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer" };
+                var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer" };
                 object saved;
                 if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
                 main.Controls.Add(answer);
@@ -319,7 +335,7 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 for (var i = 0; i < options.Count; i++)
                 {
-                    var option = new RadioButton { Left = 30, Top = top + i * 46, Width = 680, Height = 36, Text = ((char)('A' + i)) + ". " + options[i], Tag = "answer:" + i, Font = new Font("Segoe UI", 11) };
+                    var option = new RadioButton { Left = 38, Top = top + i * 48, Width = innerWidth - 8, Height = 40, Text = ((char)('A' + i)) + ". " + options[i], Tag = "answer:" + i, Font = new Font("Segoe UI", 12) };
                     object saved;
                     option.Checked = _answers.TryGetValue(QuestionId(question, _current), out saved) && JsonUtil.Text(saved) == i.ToString();
                     option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
@@ -327,11 +343,12 @@ namespace SchoolDom.StudentCbt.Win7
                 }
             }
 
-            var prev = SecondaryButton("Previous", 24, 510, 120);
+            var buttonTop = main.Height - 68;
+            var prev = SecondaryButton("Previous", 32, buttonTop, 120);
             prev.Enabled = _current > 0;
             prev.Click += (s, e) => { SaveCurrentAnswer(main); _current--; ShowExam(); };
             main.Controls.Add(prev);
-            var next = PrimaryButton(_current == _questions.Count - 1 ? "Review" : "Next", 156, 510, 120);
+            var next = PrimaryButton(_current == _questions.Count - 1 ? "Review" : "Next", main.Width - 164, buttonTop, 120);
             next.Click += (s, e) => { SaveCurrentAnswer(main); if (_current < _questions.Count - 1) _current++; ShowExam(); };
             main.Controls.Add(next);
         }
@@ -372,13 +389,7 @@ namespace SchoolDom.StudentCbt.Win7
                 {
                     throw new InvalidOperationException(JsonUtil.Text(submitted.ContainsKey("message") ? submitted["message"] : "The LAN server rejected the submission."));
                 }
-                _timer.Stop();
-                _examMode = false;
-                TopMost = false;
-                _dialogOpen = true;
-                MessageBox.Show(this, "Exam submitted successfully.", "Submitted");
-                _dialogOpen = false;
-                ShowConnect();
+                FinishSubmitted("Exam submitted successfully.", "Submitted");
             }
             catch (Exception ex)
             {
@@ -396,17 +407,101 @@ namespace SchoolDom.StudentCbt.Win7
             if (FormBorderStyle != FormBorderStyle.None) FormBorderStyle = FormBorderStyle.None;
             if (WindowState != FormWindowState.Maximized) WindowState = FormWindowState.Maximized;
             SaveCurrentAnswer(_questionPanel);
-            try { _client.SaveAnswers(Value(_session, "id", "Id"), _answers); } catch { }
+            var now = DateTime.UtcNow;
+            if (_lastSaveSecond != now.Second)
+            {
+                _lastSaveSecond = now.Second;
+                try
+                {
+                    var saved = _client.SaveAnswers(Value(_session, "id", "Id"), _answers);
+                    if (saved.ContainsKey("session")) _session = saved["session"] as Dictionary<string, object> ?? _session;
+                    MarkLanConnected();
+                }
+                catch
+                {
+                    MarkLanDisconnected(now);
+                }
+            }
             if (_timeLabel != null) _timeLabel.Text = TimeText();
             DateTime ends;
             if (DateTime.TryParse(Value(_session, "ends_at", "EndsAt"), out ends) && DateTime.UtcNow >= ends.ToUniversalTime())
             {
-                _client.Submit(Value(_session, "id", "Id"), _answers);
-                _timer.Stop();
-                _examMode = false;
-                MessageBox.Show("Time is up. Your exam has been submitted.", "Time up");
-                ShowConnect();
+                AutoSubmit("Time is up. Your exam has been submitted.", "Time up");
+                return;
             }
+            if (_offlineSince.HasValue && (now - _offlineSince.Value).TotalSeconds >= 15)
+            {
+                _pendingAutoSubmit = true;
+                UpdateLanLabel("LAN: Disconnected - submitting when available", Palette.Coral);
+                try
+                {
+                    var submitted = _client.Submit(Value(_session, "id", "Id"), _answers);
+                    if (Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false))
+                    {
+                        FinishSubmitted("LAN was lost for 15 seconds. The exam has been submitted.", "Connection lost");
+                    }
+                }
+                catch
+                {
+                    UpdateLanLabel("LAN: Waiting to reconnect", Palette.Coral);
+                }
+            }
+        }
+
+        private void AutoSubmit(string message, string title)
+        {
+            try
+            {
+                var submitted = _client.Submit(Value(_session, "id", "Id"), _answers);
+                if (Convert.ToBoolean(submitted.ContainsKey("success") ? submitted["success"] : false))
+                {
+                    FinishSubmitted(message, title);
+                    return;
+                }
+            }
+            catch
+            {
+                MarkLanDisconnected(DateTime.UtcNow);
+                _pendingAutoSubmit = true;
+                UpdateLanLabel("LAN: Time up - submitting when available", Palette.Coral);
+            }
+        }
+
+        private void FinishSubmitted(string message, string title)
+        {
+            _timer.Stop();
+            _examMode = false;
+            _pendingAutoSubmit = false;
+            _offlineSince = null;
+            TopMost = false;
+            _dialogOpen = true;
+            MessageBox.Show(this, message, title);
+            _dialogOpen = false;
+            ShowConnect();
+        }
+
+        private void MarkLanConnected()
+        {
+            if (_offlineSince.HasValue && !_pendingAutoSubmit) UpdateLanLabel("LAN: Reconnected", Palette.GreenSoft);
+            else if (!_pendingAutoSubmit) UpdateLanLabel("LAN: Connected", Palette.GreenSoft);
+            else UpdateLanLabel("LAN: Reconnected - exam resumed", Palette.GreenSoft);
+            _pendingAutoSubmit = false;
+            _offlineSince = null;
+        }
+
+        private void MarkLanDisconnected(DateTime now)
+        {
+            if (!_offlineSince.HasValue) _offlineSince = now;
+            var elapsed = Math.Min(15, (int)(now - _offlineSince.Value).TotalSeconds);
+            UpdateLanLabel("LAN: Offline " + elapsed + "s", Palette.Coral);
+        }
+
+        private void UpdateLanLabel(string text, Color color)
+        {
+            if (_lanLabel == null) return;
+            _lanLabel.Text = text;
+            _lanLabel.ForeColor = color;
+            _lanLabel.Refresh();
         }
 
         private void MainFormDeactivate(object sender, EventArgs e)
@@ -513,6 +608,63 @@ namespace SchoolDom.StudentCbt.Win7
             var span = ends.ToUniversalTime() - DateTime.UtcNow;
             if (span.TotalSeconds < 0) span = TimeSpan.Zero;
             return "Time: " + ((int)span.TotalHours).ToString("00") + ":" + span.Minutes.ToString("00") + ":" + span.Seconds.ToString("00");
+        }
+
+        private Control CreateStudentBadge(int left, int top, bool dark)
+        {
+            var panel = new Panel { Left = left, Top = top, Width = 250, Height = 58, BackColor = dark ? Palette.Navy : Color.White };
+            panel.Controls.Add(CreateProfileControl(0, 4, 48));
+            var name = Label(DisplayStudentName(), 58, 2, 10, true, 188, dark ? Color.White : Palette.Text);
+            var id = Label(DisplayStudentId(), 58, 28, 9, false, 188, dark ? Palette.SoftText : Palette.Muted);
+            panel.Controls.Add(name);
+            panel.Controls.Add(id);
+            return panel;
+        }
+
+        private Control CreateProfileControl(int left, int top, int size)
+        {
+            var photoUrl = Value(_student, "profile_picture", "ProfilePicture", "profile_picture_url", "PhotoUrl");
+            if (photoUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || photoUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                var box = new PictureBox
+                {
+                    Left = left,
+                    Top = top,
+                    Width = size,
+                    Height = size,
+                    BackColor = Palette.LightButton,
+                    SizeMode = PictureBoxSizeMode.Zoom
+                };
+                try { box.LoadAsync(photoUrl); return box; } catch { }
+            }
+            return new Label
+            {
+                Text = Initials(DisplayStudentName()),
+                Left = left,
+                Top = top,
+                Width = size,
+                Height = size,
+                BackColor = Palette.Blue,
+                ForeColor = Color.White,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 12, FontStyle.Bold)
+            };
+        }
+
+        private string DisplayStudentName()
+        {
+            var name = Value(_student, "full_name", "FullName", "name", "Name", "email", "Email");
+            if (!string.IsNullOrWhiteSpace(name)) return name;
+            var first = Value(_student, "first_name", "FirstName");
+            var last = Value(_student, "last_name", "LastName");
+            name = (first + " " + last).Trim();
+            return string.IsNullOrWhiteSpace(name) ? DisplayStudentId() : name;
+        }
+
+        private string DisplayStudentId()
+        {
+            var id = Value(_student, "student_id", "StudentId", "admission_number", "AdmissionNumber", "id", "Id");
+            return string.IsNullOrWhiteSpace(id) ? _studentId : id;
         }
 
         private IEnumerable<Control> AllControls(Control parent)

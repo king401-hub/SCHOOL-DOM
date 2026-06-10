@@ -49,8 +49,9 @@ namespace SchoolDom.Cbt.Win7
                 {
                     Id = FirstText(row, "id", "student_id"),
                     StudentId = studentId,
-                    FullName = FirstText(row, "full_name", "name", "email"),
-                    ClassName = FirstText(row, "class_name", "class_label")
+                    FullName = FirstText(row, "full_name", "name", "display_name", "email", "student_id"),
+                    ClassName = FirstText(row, "class_name", "class_label"),
+                    ProfilePicture = FirstText(row, "profile_picture", "profile_picture_url", "photo", "photo_url")
                 });
             }
 

@@ -46,6 +46,11 @@ namespace SchoolDom.StudentCbt.Win7
             return Get("/api/exams/" + Uri.EscapeDataString(examId));
         }
 
+        public Dictionary<string, object> Health()
+        {
+            return Get("/health");
+        }
+
         public Dictionary<string, object> SaveAnswers(string sessionId, Dictionary<string, object> answers)
         {
             return Post("/api/sessions/" + Uri.EscapeDataString(sessionId) + "/answers", new Dictionary<string, object> { { "answers", answers } });
@@ -65,7 +70,8 @@ namespace SchoolDom.StudentCbt.Win7
         {
             var request = (HttpWebRequest)WebRequest.Create(BaseUrl + path);
             request.Method = "GET";
-            request.Timeout = 15000;
+            request.Timeout = 4000;
+            request.ReadWriteTimeout = 4000;
             return ReadResponse(request);
         }
 
@@ -73,7 +79,8 @@ namespace SchoolDom.StudentCbt.Win7
         {
             var request = (HttpWebRequest)WebRequest.Create(BaseUrl + path);
             request.Method = "POST";
-            request.Timeout = 15000;
+            request.Timeout = 4000;
+            request.ReadWriteTimeout = 4000;
             request.ContentType = "application/json";
             var bytes = Encoding.UTF8.GetBytes(JsonUtil.Serialize(body));
             using (var stream = request.GetRequestStream()) stream.Write(bytes, 0, bytes.Length);

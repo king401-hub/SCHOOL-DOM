@@ -43,6 +43,12 @@ def _tokens_for_cbt_student(user):
 
 def _student_session_payload(user):
     profile = getattr(user, "student_profile", None)
+    profile_picture = ""
+    if getattr(user, "profile_picture", None):
+        try:
+            profile_picture = user.profile_picture.url
+        except Exception:
+            profile_picture = ""
     return {
         "id": str(user.id),
         "email": user.email,
@@ -53,6 +59,7 @@ def _student_session_payload(user):
         "student_id": getattr(profile, "student_id", "") or "",
         "admission_number": getattr(profile, "admission_number", "") or "",
         "class_name": str(getattr(profile, "current_class", "") or ""),
+        "profile_picture": profile_picture,
         "is_active": user.is_active,
     }
 
@@ -173,8 +180,16 @@ def _offline_question_payload(question, request=None):
     return payload
 
 
-def _offline_student_payload(user):
+def _offline_student_payload(user, request=None):
     profile = getattr(user, "student_profile", None)
+    profile_picture = ""
+    if getattr(user, "profile_picture", None):
+        try:
+            profile_picture = user.profile_picture.url
+            if request is not None:
+                profile_picture = request.build_absolute_uri(profile_picture)
+        except Exception:
+            profile_picture = ""
     return {
         "id": str(user.id),
         "student_id": getattr(profile, "student_id", "") or getattr(profile, "admission_number", "") or user.email,
@@ -182,6 +197,7 @@ def _offline_student_payload(user):
         "full_name": user.get_full_name() or user.email,
         "email": user.email,
         "class_name": str(getattr(profile, "current_class", "") or ""),
+        "profile_picture": profile_picture,
     }
 
 
@@ -1132,7 +1148,7 @@ def cbt_offline_sync_package(request):
             }
         )
 
-    student_rows = [_offline_student_payload(student) for student in student_queryset.order_by("last_name", "first_name", "email")]
+    student_rows = [_offline_student_payload(student, request=request) for student in student_queryset.order_by("last_name", "first_name", "email")]
     generated_at = timezone.now()
     package_id = hashlib.sha256(
         json.dumps(
