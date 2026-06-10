@@ -24,6 +24,7 @@ namespace SchoolDom.StudentCbt.Win7
         private bool _examMode;
         private bool _submitting;
         private bool _calculatorOpen;
+        private bool _dialogOpen;
 
         public MainForm()
         {
@@ -263,29 +264,33 @@ namespace SchoolDom.StudentCbt.Win7
             side.Controls.Add(Label(Value(_student, "full_name", "FullName"), 74, 14, 10, true, 140, Palette.Text));
             side.Controls.Add(Label(Value(_student, "student_id", "StudentId"), 74, 44, 9, false, 140, Palette.Muted));
             side.Controls.Add(Label("Questions", 18, 92, 10, true, 190, Palette.Text));
+            var questionNav = new Panel { Left = 18, Top = 126, Width = 194, Height = 300, AutoScroll = true, BorderStyle = BorderStyle.None };
             for (var i = 0; i < _questions.Count; i++)
             {
                 var index = i;
                 var button = new Button
                 {
                     Text = (i + 1).ToString(),
-                    Left = 18 + (i % 5) * 40,
-                    Top = 126 + (i / 5) * 40,
-                    Width = 32,
-                    Height = 32,
+                    Left = (i % 4) * 45,
+                    Top = (i / 4) * 40,
+                    Width = 40,
+                    Height = 34,
                     FlatStyle = FlatStyle.Flat,
                     BackColor = _answers.ContainsKey(QuestionId(_questions[i], i)) ? Palette.GreenSoft : Palette.LightButton,
-                    ForeColor = Palette.Text
+                    ForeColor = Palette.Text,
+                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    TextAlign = ContentAlignment.MiddleCenter
                 };
                 if (i == _current) { button.BackColor = Palette.Blue; button.ForeColor = Color.White; }
                 button.Click += (s, e) => { SaveCurrentAnswer(main); _current = index; ShowExam(); };
-                side.Controls.Add(button);
+                questionNav.Controls.Add(button);
             }
+            side.Controls.Add(questionNav);
 
-            var calc = SecondaryButton("Calculator", 18, 460, 190);
+            var calc = SecondaryButton("Calculator", 18, 442, 190);
             calc.Click += (s, e) => ShowCalculator();
             side.Controls.Add(calc);
-            var submit = PrimaryButton("Submit Exam", 18, 514, 190);
+            var submit = PrimaryButton("Submit Exam", 18, 496, 190);
             submit.Click += (s, e) => SubmitExam();
             side.Controls.Add(submit);
 
@@ -355,7 +360,10 @@ namespace SchoolDom.StudentCbt.Win7
         {
             if (_submitting) return;
             SaveCurrentAnswer(_questionPanel);
-            if (MessageBox.Show("Submit your exam now?", "Submit", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            _dialogOpen = true;
+            var confirm = MessageBox.Show(this, "Submit your exam now?", "Submit", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            _dialogOpen = false;
+            if (confirm != DialogResult.Yes) return;
             _submitting = true;
             try
             {
@@ -367,13 +375,17 @@ namespace SchoolDom.StudentCbt.Win7
                 _timer.Stop();
                 _examMode = false;
                 TopMost = false;
-                MessageBox.Show("Exam submitted successfully.", "Submitted");
+                _dialogOpen = true;
+                MessageBox.Show(this, "Exam submitted successfully.", "Submitted");
+                _dialogOpen = false;
                 ShowConnect();
             }
             catch (Exception ex)
             {
                 _submitting = false;
-                MessageBox.Show(ex.Message, "Submit failed");
+                _dialogOpen = true;
+                MessageBox.Show(this, ex.Message, "Submit failed");
+                _dialogOpen = false;
             }
         }
 
@@ -400,7 +412,7 @@ namespace SchoolDom.StudentCbt.Win7
         private void MainFormDeactivate(object sender, EventArgs e)
         {
             if (!_examMode || _session == null) return;
-            if (_calculatorOpen) return;
+            if (_calculatorOpen || _dialogOpen) return;
             try { _client.FocusLoss(Value(_session, "id", "Id")); } catch { }
             BeginInvoke(new Action(() =>
             {
@@ -425,13 +437,15 @@ namespace SchoolDom.StudentCbt.Win7
         {
             if (!_examMode) return;
             e.Cancel = true;
-            MessageBox.Show("Exam is still running. Submit the exam before closing this app.", "Exam running", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            _dialogOpen = true;
+            MessageBox.Show(this, "Exam is still running. Submit the exam before closing this app.", "Exam running", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            _dialogOpen = false;
         }
 
         private void ShowCalculator()
         {
             _calculatorOpen = true;
-            var form = new Form { Text = "Calculator", Width = 360, Height = 210, StartPosition = FormStartPosition.CenterParent, TopMost = true, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
+            var form = new Form { Text = "Calculator", Width = 360, Height = 430, StartPosition = FormStartPosition.CenterParent, TopMost = true, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = Palette.Background, Font = new Font("Segoe UI", 10) };
             form.FormClosed += (s, e) =>
             {
                 _calculatorOpen = false;
@@ -442,17 +456,53 @@ namespace SchoolDom.StudentCbt.Win7
                     Activate();
                 }
             };
-            var input = new TextBox { Left = 16, Top = 16, Width = 310, Font = new Font("Segoe UI", 13) };
-            var result = Label("", 16, 100, 12, true, 310, Palette.Text);
-            var solve = PrimaryButton("Calculate", 16, 54, 110);
-            var clear = SecondaryButton("Clear", 138, 54, 80);
-            clear.Click += (s, e) => { input.Text = ""; result.Text = ""; };
-            solve.Click += (s, e) =>
+            var input = new TextBox { Left = 16, Top = 16, Width = 310, Height = 34, Font = new Font("Segoe UI", 13), TextAlign = HorizontalAlignment.Right };
+            var result = Label("", 16, 58, 12, true, 310, Palette.Text);
+            form.Controls.Add(input);
+            form.Controls.Add(result);
+
+            string[,] keys =
             {
-                try { result.Text = Convert.ToString(new System.Data.DataTable().Compute(input.Text, "")); }
-                catch { result.Text = "Invalid"; }
+                { "7", "8", "9", "/" },
+                { "4", "5", "6", "*" },
+                { "1", "2", "3", "-" },
+                { "0", ".", "(", ")" },
+                { "C", "Del", "+", "=" }
             };
-            form.Controls.Add(input); form.Controls.Add(solve); form.Controls.Add(clear); form.Controls.Add(result);
+            for (var row = 0; row < 5; row++)
+            {
+                for (var col = 0; col < 4; col++)
+                {
+                    var key = keys[row, col];
+                    var button = key == "=" ? PrimaryButton(key, 16 + col * 78, 96 + row * 54, 70) : SecondaryButton(key, 16 + col * 78, 96 + row * 54, 70);
+                    button.Height = 44;
+                    button.Font = new Font("Segoe UI", 12, FontStyle.Bold);
+                    button.Click += (s, e) =>
+                    {
+                        var value = ((Button)s).Text;
+                        if (value == "C")
+                        {
+                            input.Text = "";
+                            result.Text = "";
+                        }
+                        else if (value == "Del")
+                        {
+                            if (input.Text.Length > 0) input.Text = input.Text.Substring(0, input.Text.Length - 1);
+                        }
+                        else if (value == "=")
+                        {
+                            try { result.Text = Convert.ToString(new System.Data.DataTable().Compute(input.Text, "")); }
+                            catch { result.Text = "Invalid expression"; }
+                        }
+                        else
+                        {
+                            input.Text += value;
+                            input.SelectionStart = input.Text.Length;
+                        }
+                    };
+                    form.Controls.Add(button);
+                }
+            }
             form.Show(this);
         }
 
