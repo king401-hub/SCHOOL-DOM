@@ -3078,6 +3078,14 @@ body[data-dashboard-role="student"] .global-notification-button {
   color: #4b5563;
 }
 
+.brand-motto {
+  margin-top: 2px;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 800;
+  color: #2563eb;
+}
+
 .teacher-header {
   display: flex;
   justify-content: space-between;
@@ -14879,6 +14887,65 @@ body[data-theme="dark"] .activation-credit-summary span {
   opacity: 0.55;
 }
 
+.cbt-notepad {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 1.05rem;
+  padding: 0.9rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+}
+
+.cbt-notepad strong,
+.cbt-notepad small {
+  display: block;
+}
+
+.cbt-notepad strong {
+  font-size: 0.95rem;
+}
+
+.cbt-notepad small {
+  margin-top: 0.12rem;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.cbt-notepad textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 0.7rem;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.cbt-notepad button {
+  width: auto;
+  min-height: 0;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 0.55rem 0.75rem;
+  text-transform: none;
+  font-size: 0.82rem;
+}
+
+.cbt-notepad button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .cbt-flag-modal {
   position: fixed;
   inset: 0;
@@ -15352,6 +15419,11 @@ body[data-theme="dark"] .form-feedback.error {
     padding: 0;
   }
 
+  .cbt-notepad {
+    grid-column: 1 / -1;
+    margin: 1rem;
+  }
+
   .cbt-leftnav button.cbt-leftnav-flag {
     margin-top: 0;
   }
@@ -15396,6 +15468,10 @@ body[data-theme="dark"] .form-feedback.error {
 
   .cbt-leftnav {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .cbt-notepad textarea {
+    min-height: 96px;
   }
 
   .cbt-question-panel,
@@ -16181,6 +16257,19 @@ body[data-theme="dark"] .heat-bar-track {
   margin-top: 0.08rem;
 }
 
+.id-card-motto {
+  display: block;
+  color: var(--id-card-teal);
+  font-size: 0.5rem;
+  font-style: italic;
+  font-weight: 800;
+  margin-top: 0.06rem;
+}
+
+.id-card-back-head .id-card-motto {
+  color: #a7f3d0;
+}
+
 .id-card-front-body {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
@@ -16947,6 +17036,15 @@ body[data-theme="dark"] .heat-bar-track {
   margin: 5px 0 0;
   color: #475569;
   font-family: "Manrope", Arial, sans-serif;
+}
+
+.official-doc-motto {
+  margin: 5px 0 0;
+  color: #0f3d5e;
+  font-family: "Manrope", Arial, sans-serif;
+  font-size: 0.9rem;
+  font-style: italic;
+  font-weight: 800;
 }
 
 .official-doc-title {

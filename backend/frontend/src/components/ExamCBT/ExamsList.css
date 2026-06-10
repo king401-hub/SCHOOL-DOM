@@ -83,6 +83,14 @@
   background: rgba(34, 197, 94, 0.24);
 }
 
+.exam-status.in-progress {
+  background: rgba(245, 158, 11, 0.28);
+}
+
+.exam-status.submitted {
+  background: rgba(20, 184, 166, 0.28);
+}
+
 .exam-status.scheduled {
   background: rgba(59, 130, 246, 0.26);
 }
@@ -159,6 +167,10 @@
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+}
+
+.btn-view-result {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
 }
 
 .no-exams {

@@ -2,7 +2,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SchoolDom.Cbt.Win7
 {
@@ -17,7 +20,31 @@ namespace SchoolDom.Cbt.Win7
 
         public string ImportPackage(string path, string fallbackPin)
         {
-            return ImportPackageJson(File.ReadAllText(path), fallbackPin);
+            return ImportPackageJson(ReadTextSmart(path), fallbackPin);
+        }
+
+        public string ImportExamFile(string path, string fallbackPin)
+        {
+            var extension = Path.GetExtension(path ?? "").ToLowerInvariant();
+            if (extension == ".json")
+            {
+                var json = ReadTextSmart(path);
+                var root = JsonUtil.DeserializeObject(json);
+                if (root.ContainsKey("package_type") || root.ContainsKey("exams") || root.ContainsKey("published_exams"))
+                {
+                    return ImportPackageJson(json, fallbackPin);
+                }
+                var exam = ExamFromJson(root, Path.GetFileNameWithoutExtension(path), fallbackPin);
+                AddExam(exam);
+                return "Imported exam: " + exam.Title + ".";
+            }
+
+            var text = extension == ".docx" ? ReadDocxText(path) : ReadTextSmart(path);
+            var imported = extension == ".csv"
+                ? ExamFromCsv(text, Path.GetFileNameWithoutExtension(path), fallbackPin)
+                : ExamFromText(text, Path.GetFileNameWithoutExtension(path), fallbackPin);
+            AddExam(imported);
+            return "Imported exam: " + imported.Title + ".";
         }
 
         public string ImportPackageJson(string json, string fallbackPin)
@@ -129,6 +156,17 @@ namespace SchoolDom.Cbt.Win7
             existing.EndsAt = exam.EndsAt;
             existing.Instructions = exam.Instructions;
             existing.PinHash = exam.PinHash;
+            existing.Questions = exam.Questions ?? new List<QuestionRecord>();
+            _store.Save();
+        }
+
+        public void AddExam(ExamRecord exam)
+        {
+            if (exam == null) return;
+            if (string.IsNullOrWhiteSpace(exam.Id)) exam.Id = "local_exam_" + Guid.NewGuid().ToString("N");
+            if (exam.Questions == null) exam.Questions = new List<QuestionRecord>();
+            _store.State.Exams.RemoveAll(e => e.Id == exam.Id);
+            _store.State.Exams.Add(exam);
             _store.Save();
         }
 
@@ -250,7 +288,8 @@ namespace SchoolDom.Cbt.Win7
                 Id = FirstText(q, "id"),
                 Text = FirstText(q, "text"),
                 Type = FirstText(q, "type", "question_type"),
-                Points = JsonUtil.Double(q.ContainsKey("points") ? q["points"] : null, JsonUtil.Double(q.ContainsKey("marks") ? q["marks"] : null, 1))
+                Points = JsonUtil.Double(q.ContainsKey("points") ? q["points"] : null, JsonUtil.Double(q.ContainsKey("marks") ? q["marks"] : null, 1)),
+                CorrectAnswer = FirstText(q, "correct_answer")
             };
             foreach (var item in ToList(q.ContainsKey("options") ? q["options"] : null))
             {
@@ -279,6 +318,260 @@ namespace SchoolDom.Cbt.Win7
                 };
             }
             return question;
+        }
+
+        private static ExamRecord ExamFromJson(Dictionary<string, object> root, string fallbackTitle, string fallbackPin)
+        {
+            var exam = new ExamRecord
+            {
+                Id = FirstText(root, "id", "exam_id"),
+                Title = FirstText(root, "title", "name"),
+                Subject = FirstText(root, "subject", "subject_name"),
+                ClassName = FirstText(root, "class_name", "class_label"),
+                DurationSeconds = JsonUtil.Int(root.ContainsKey("duration_seconds") ? root["duration_seconds"] : null, JsonUtil.Int(root.ContainsKey("duration_minutes") ? root["duration_minutes"] : null, 60) * 60),
+                StartsAt = JsonUtil.IsoNow(),
+                EndsAt = DateTime.UtcNow.AddDays(30).ToString("o"),
+                Instructions = FirstText(root, "instructions"),
+                PinHash = FirstText(root, "offline_pin_hash", "pin_sha256")
+            };
+            if (string.IsNullOrWhiteSpace(exam.Id)) exam.Id = "imported_exam_" + Guid.NewGuid().ToString("N");
+            if (string.IsNullOrWhiteSpace(exam.Title)) exam.Title = fallbackTitle;
+            if (string.IsNullOrWhiteSpace(exam.PinHash) && !string.IsNullOrWhiteSpace(fallbackPin)) exam.PinHash = JsonUtil.Sha256(fallbackPin.Trim());
+            foreach (var questionObj in ToList(root.ContainsKey("questions") ? root["questions"] : null))
+            {
+                var q = questionObj as Dictionary<string, object>;
+                if (q != null) exam.Questions.Add(ParseQuestion(q));
+            }
+            ValidateImportedExam(exam);
+            return exam;
+        }
+
+        private static ExamRecord ExamFromCsv(string text, string fallbackTitle, string fallbackPin)
+        {
+            var exam = NewImportedExam(fallbackTitle, fallbackPin);
+            var rows = Regex.Split(text ?? "", "\r\n|\n|\r").Where(line => !string.IsNullOrWhiteSpace(line)).ToList();
+            if (rows.Count == 0) throw new InvalidOperationException("This CSV file is empty.");
+            var start = LooksLikeHeader(rows[0]) ? 1 : 0;
+            for (var i = start; i < rows.Count; i++)
+            {
+                var cols = SplitCsvLine(rows[i]);
+                if (cols.Count < 3) continue;
+                var options = cols.Skip(1).Take(Math.Min(4, cols.Count - 2)).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+                var answer = cols.Count >= 6 ? cols[5] : cols.Last();
+                var marksText = cols.Count >= 7 ? cols[6] : "";
+                exam.Questions.Add(BuildQuestion(cols[0], options, answer, marksText));
+            }
+            ValidateImportedExam(exam);
+            return exam;
+        }
+
+        private static ExamRecord ExamFromText(string text, string fallbackTitle, string fallbackPin)
+        {
+            var exam = NewImportedExam(fallbackTitle, fallbackPin);
+            var currentText = "";
+            var options = new List<string>();
+            var answer = "";
+            var marks = "1";
+            Action flush = () =>
+            {
+                if (string.IsNullOrWhiteSpace(currentText)) return;
+                exam.Questions.Add(BuildQuestion(currentText, options, answer, marks));
+                currentText = "";
+                options = new List<string>();
+                answer = "";
+                marks = "1";
+            };
+
+            foreach (var raw in Regex.Split(text ?? "", "\r\n|\n|\r"))
+            {
+                var line = NormalizeWhitespace(raw);
+                if (line.Length == 0) continue;
+                if (line.StartsWith("Title:", StringComparison.OrdinalIgnoreCase)) { exam.Title = line.Substring(6).Trim(); continue; }
+                if (line.StartsWith("Subject:", StringComparison.OrdinalIgnoreCase)) { exam.Subject = line.Substring(8).Trim(); continue; }
+                if (line.StartsWith("Class:", StringComparison.OrdinalIgnoreCase)) { exam.ClassName = line.Substring(6).Trim(); continue; }
+                if (line.StartsWith("Duration:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var value = Regex.Match(line, @"\d+").Value;
+                    int minutes;
+                    if (int.TryParse(value, out minutes) && minutes > 0) exam.DurationSeconds = minutes * 60;
+                    continue;
+                }
+                if (line.StartsWith("Instructions:", StringComparison.OrdinalIgnoreCase)) { exam.Instructions = line.Substring(13).Trim(); continue; }
+                if (line.StartsWith("PIN:", StringComparison.OrdinalIgnoreCase)) { exam.PinHash = JsonUtil.Sha256(line.Substring(4).Trim()); continue; }
+
+                var optionMatch = Regex.Match(line, @"^([A-Da-d])[\)\.\-:]\s*(.+)$");
+                if (optionMatch.Success)
+                {
+                    options.Add(optionMatch.Groups[2].Value.Trim());
+                    continue;
+                }
+                if (line.StartsWith("Answer:", StringComparison.OrdinalIgnoreCase) || line.StartsWith("Correct:", StringComparison.OrdinalIgnoreCase))
+                {
+                    answer = line.Substring(line.IndexOf(':') + 1).Trim();
+                    continue;
+                }
+                if (line.StartsWith("Marks:", StringComparison.OrdinalIgnoreCase) || line.StartsWith("Mark:", StringComparison.OrdinalIgnoreCase) || line.StartsWith("Points:", StringComparison.OrdinalIgnoreCase))
+                {
+                    marks = line.Substring(line.IndexOf(':') + 1).Trim();
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"^(\d+[\)\.]|Q\d*[\)\.\-:]?)\s+", RegexOptions.IgnoreCase))
+                {
+                    flush();
+                    currentText = Regex.Replace(line, @"^(\d+[\)\.]|Q\d*[\)\.\-:]?)\s+", "", RegexOptions.IgnoreCase).Trim();
+                }
+                else if (currentText.Length == 0)
+                {
+                    currentText = line;
+                }
+                else
+                {
+                    currentText += " " + line;
+                }
+            }
+            flush();
+            ValidateImportedExam(exam);
+            return exam;
+        }
+
+        private static ExamRecord NewImportedExam(string fallbackTitle, string fallbackPin)
+        {
+            return new ExamRecord
+            {
+                Id = "imported_exam_" + Guid.NewGuid().ToString("N"),
+                Title = string.IsNullOrWhiteSpace(fallbackTitle) ? "Imported Exam" : fallbackTitle,
+                DurationSeconds = 3600,
+                StartsAt = JsonUtil.IsoNow(),
+                EndsAt = DateTime.UtcNow.AddDays(30).ToString("o"),
+                PinHash = string.IsNullOrWhiteSpace(fallbackPin) ? "" : JsonUtil.Sha256(fallbackPin.Trim())
+            };
+        }
+
+        private static QuestionRecord BuildQuestion(string text, List<string> options, string answer, string marksText)
+        {
+            double marks;
+            if (!double.TryParse(Regex.Match(marksText ?? "", @"\d+(\.\d+)?").Value, out marks) || marks <= 0) marks = 1;
+            var cleanOptions = (options ?? new List<string>()).Select(NormalizeWhitespace).Where(x => x.Length > 0).ToList();
+            var correct = ResolveCorrectAnswer(cleanOptions, answer);
+            return new QuestionRecord
+            {
+                Id = "imported_question_" + Guid.NewGuid().ToString("N"),
+                Text = NormalizeWhitespace(text),
+                Type = cleanOptions.Count > 0 ? "mcq" : "essay",
+                Points = marks,
+                CorrectAnswer = correct,
+                Options = cleanOptions
+            };
+        }
+
+        private static string ResolveCorrectAnswer(List<string> options, string answer)
+        {
+            var value = NormalizeWhitespace(answer);
+            if (options == null || options.Count == 0) return value;
+            var letter = value.Length > 0 ? char.ToUpperInvariant(value[0]) : '\0';
+            if (letter >= 'A' && letter <= 'D')
+            {
+                var index = letter - 'A';
+                if (index >= 0 && index < options.Count) return options[index];
+            }
+            var match = options.FirstOrDefault(o => string.Equals(o, value, StringComparison.OrdinalIgnoreCase));
+            return string.IsNullOrWhiteSpace(match) ? options[0] : match;
+        }
+
+        private static void ValidateImportedExam(ExamRecord exam)
+        {
+            if (string.IsNullOrWhiteSpace(exam.Title)) exam.Title = "Imported Exam";
+            if (exam.DurationSeconds <= 0) exam.DurationSeconds = 3600;
+            if (exam.Questions == null || exam.Questions.Count == 0)
+            {
+                throw new InvalidOperationException("No questions were found. Use numbered questions and A-D options, or import a SchoolDom JSON package.");
+            }
+            foreach (var question in exam.Questions)
+            {
+                if (question.Options == null) question.Options = new List<string>();
+                question.Text = NormalizeWhitespace(question.Text);
+                if (string.IsNullOrWhiteSpace(question.Text)) question.Text = "Question";
+                if (question.Points <= 0) question.Points = 1;
+                if (question.Options.Count > 0 && string.IsNullOrWhiteSpace(question.CorrectAnswer)) question.CorrectAnswer = question.Options[0];
+            }
+        }
+
+        private static string ReadDocxText(string path)
+        {
+            using (var archive = ZipFile.OpenRead(path))
+            {
+                var entry = archive.GetEntry("word/document.xml");
+                if (entry == null) throw new InvalidOperationException("Could not read the Word document body.");
+                using (var stream = entry.Open())
+                using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+                {
+                    var xml = reader.ReadToEnd();
+                    xml = Regex.Replace(xml, @"</w:p>", "\n", RegexOptions.IgnoreCase);
+                    xml = Regex.Replace(xml, @"<[^>]+>", " ");
+                    return DecodeXmlEntities(xml);
+                }
+            }
+        }
+
+        private static string ReadTextSmart(string path)
+        {
+            var bytes = File.ReadAllBytes(path);
+            foreach (var encoding in new[] { new UTF8Encoding(false, true), Encoding.Unicode, Encoding.BigEndianUnicode, Encoding.Default })
+            {
+                try { return encoding.GetString(bytes); }
+                catch (DecoderFallbackException) { }
+            }
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        private static string DecodeXmlEntities(string value)
+        {
+            return (value ?? "")
+                .Replace("&lt;", "<")
+                .Replace("&gt;", ">")
+                .Replace("&amp;", "&")
+                .Replace("&quot;", "\"")
+                .Replace("&apos;", "'");
+        }
+
+        private static string NormalizeWhitespace(string value)
+        {
+            return Regex.Replace((value ?? "").Replace('\u00A0', ' '), @"\s+", " ").Trim();
+        }
+
+        private static bool LooksLikeHeader(string line)
+        {
+            var lower = (line ?? "").ToLowerInvariant();
+            return lower.Contains("question") || lower.Contains("option") || lower.Contains("answer") || lower.Contains("mark");
+        }
+
+        private static List<string> SplitCsvLine(string line)
+        {
+            var values = new List<string>();
+            var current = new StringBuilder();
+            var quoted = false;
+            for (var i = 0; i < (line ?? "").Length; i++)
+            {
+                var ch = line[i];
+                if (ch == '"')
+                {
+                    if (quoted && i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        current.Append('"');
+                        i++;
+                    }
+                    else quoted = !quoted;
+                }
+                else if (ch == ',' && !quoted)
+                {
+                    values.Add(current.ToString().Trim());
+                    current.Length = 0;
+                }
+                else current.Append(ch);
+            }
+            values.Add(current.ToString().Trim());
+            return values;
         }
 
         private static string GetText(Dictionary<string, object> row, string key, string fallback)

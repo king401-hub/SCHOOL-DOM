@@ -105,6 +105,57 @@ namespace SchoolDom.Cbt.Win7
             return data;
         }
 
+        public Dictionary<string, object> CreateExam(ExamRecord exam, bool publish)
+        {
+            RequireToken();
+            if (exam == null) throw new InvalidOperationException("Create the exam before sending it to cloud.");
+            var start = DateTime.UtcNow;
+            var end = start.AddDays(30);
+            DateTime parsedStart;
+            DateTime parsedEnd;
+            if (DateTime.TryParse(exam.StartsAt, out parsedStart)) start = parsedStart.ToUniversalTime();
+            if (DateTime.TryParse(exam.EndsAt, out parsedEnd)) end = parsedEnd.ToUniversalTime();
+            if (end <= start) end = start.AddDays(30);
+
+            var questions = new List<object>();
+            foreach (var question in exam.Questions)
+            {
+                var options = question.Options ?? new List<string>();
+                var correct = question.CorrectAnswer;
+                if (string.IsNullOrWhiteSpace(correct) && options.Count > 0) correct = options[0];
+                questions.Add(new Dictionary<string, object>
+                {
+                    { "text", question.Text ?? "" },
+                    { "options", options },
+                    { "correct_answer", correct ?? "" },
+                    { "points", Math.Max(1, (int)Math.Round(question.Points <= 0 ? 1 : question.Points)) },
+                    { "explanation", "" }
+                });
+            }
+
+            var body = new Dictionary<string, object>
+            {
+                { "title", exam.Title ?? "" },
+                { "duration_minutes", Math.Max(1, exam.DurationSeconds / 60) },
+                { "start_date", start.ToString("o") },
+                { "end_date", end.ToString("o") },
+                { "instructions", exam.Instructions ?? "" },
+                { "assessment_type", "exam" },
+                { "is_published", publish },
+                { "shuffle_questions", false },
+                { "school_code", _store.State.SchoolCode ?? "" },
+                { "questions", questions }
+            };
+
+            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/app/exams/create/", JsonUtil.Serialize(body), _store.State.AccessToken);
+            var data = JsonUtil.DeserializeObject(response);
+            if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
+            {
+                throw new InvalidOperationException(data.ContainsKey("message") ? Convert.ToString(data["message"]) : "Could not create exam on cloud.");
+            }
+            return data;
+        }
+
         public string DeleteResult(string examId, string studentId, string sessionId)
         {
             RequireToken();

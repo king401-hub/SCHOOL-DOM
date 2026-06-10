@@ -73,6 +73,16 @@ const ExamsList = ({ session, onNavigate }) => {
     const startDate = new Date(exam.start_date);
     const endDate = new Date(exam.end_date);
 
+    if (exam.is_submitted || exam.is_completed || exam.submitted_attempt_id) {
+      return {
+        label: "Submitted",
+        action: "Submitted",
+        canStart: false,
+        canViewResult: Boolean(exam.submitted_attempt_id),
+        className: "submitted",
+      };
+    }
+
     if (currentTime < startDate) {
       return {
         label: "Scheduled",
@@ -92,10 +102,10 @@ const ExamsList = ({ session, onNavigate }) => {
     }
 
     return {
-      label: "Open now",
-      action: "Start Exam",
+      label: exam.active_attempt_id ? "In progress" : "Open now",
+      action: exam.active_attempt_id ? "Resume Exam" : "Start Exam",
       canStart: true,
-      className: "open",
+      className: exam.active_attempt_id ? "in-progress" : "open",
     };
   };
 
@@ -213,13 +223,22 @@ const ExamsList = ({ session, onNavigate }) => {
                   </div>
 
                   <div className="exam-card-footer">
-                    <button
-                      className="btn-start-exam"
-                      onClick={() => requestStartExam(exam)}
-                      disabled={!examState.canStart || starting === exam.id}
-                    >
-                      {starting === exam.id ? "Starting..." : examState.action}
-                    </button>
+                    {examState.canViewResult ? (
+                      <button
+                        className="btn-start-exam btn-view-result"
+                        onClick={() => onNavigate?.(`/exam-result/${exam.submitted_attempt_id}/`)}
+                      >
+                        View Result
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-start-exam"
+                        onClick={() => requestStartExam(exam)}
+                        disabled={!examState.canStart || starting === exam.id}
+                      >
+                        {starting === exam.id ? "Starting..." : examState.action}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

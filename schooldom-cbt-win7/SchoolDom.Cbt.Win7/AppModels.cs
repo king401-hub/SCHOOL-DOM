@@ -62,6 +62,7 @@ namespace SchoolDom.Cbt.Win7
         public string Text { get; set; }
         public string Type { get; set; }
         public double Points { get; set; }
+        public string CorrectAnswer { get; set; }
         public List<string> Options { get; set; }
         public QuestionGroupRecord Group { get; set; }
 

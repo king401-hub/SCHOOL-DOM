@@ -450,6 +450,7 @@ export function resolveSchoolBrand(...sources) {
     name,
     code: school.school_code || school.schoolCode || school.tenant?.schema_name || school.user?.school_code || school.user?.schoolCode || school.user?.tenant?.schema_name || "",
     logo: school.logo || school.logo_url || school.logoUrl || school.school_logo || school.schoolLogo || school.logo_path || school.user?.school_logo || school.user?.schoolLogo || "",
+    motto: school.motto || school.tagline || school.school_motto || school.schoolMotto || school.school_tagline || school.schoolTagline || school.user?.motto || school.user?.tagline || "",
     address: school.address || school.school_address || school.schoolAddress || school.user?.school_address || school.user?.schoolAddress || "",
     phone: school.phone || school.phone_number || school.phoneNumber || school.school_phone || school.schoolPhone || school.user?.school_phone || school.user?.schoolPhone || "",
     email: school.email || school.school_email || school.schoolEmail || school.user?.school_email || school.user?.schoolEmail || "",
@@ -474,6 +475,7 @@ export function SchoolBrand({ school, subtitle = "", compact = false }) {
       <div>
         <div className="brand-title-primary">{brand.name}</div>
         {subtitle ? <div className="brand-sub">{subtitle}</div> : null}
+        {brand.motto ? <div className="brand-motto">{brand.motto}</div> : null}
       </div>
     </div>
   );

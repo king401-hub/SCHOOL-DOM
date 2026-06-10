@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -143,7 +144,7 @@ namespace SchoolDom.Cbt.Win7
             broadsheet.Click += ExportBroadsheet;
             sidebar.Controls.Add(broadsheet);
 
-            var import = SideButton("Import JSON", 24, 294);
+            var import = SideButton("Import Exam", 24, 294);
             import.Click += ImportPackage;
             sidebar.Controls.Add(import);
 
@@ -155,7 +156,11 @@ namespace SchoolDom.Cbt.Win7
             results.Click += (s, e) => ShowResultList();
             sidebar.Controls.Add(results);
 
-            var installStudent = SideButton("Install Student App", 24, 456);
+            var createExam = SideButton("Create Exam", 24, 456);
+            createExam.Click += (s, e) => ShowCreateExam();
+            sidebar.Controls.Add(createExam);
+
+            var installStudent = SideButton("Install Student App", 24, 510);
             installStudent.Click += InstallStudentApp;
             sidebar.Controls.Add(installStudent);
 
@@ -211,7 +216,12 @@ namespace SchoolDom.Cbt.Win7
             lan.Controls.Add(lanStopInline);
             content.Controls.Add(lan);
 
-            var exams = Card(34, 432, 500, 410);
+            var submittedResults = Card(34, 432, 1024, 230);
+            submittedResults.Controls.Add(TextLabel("Submitted Results", 22, 14, 16, true, 300, Palette.Text));
+            FillSubmittedResults(submittedResults);
+            content.Controls.Add(submittedResults);
+
+            var exams = Card(34, 686, 500, 410);
             exams.Controls.Add(TextLabel("Exams", 22, 18, 16, true, 240, Palette.Text));
             var moreExams = MiniButton("More", 408, 18, 74);
             moreExams.Click += (s, e) => ShowExamList();
@@ -219,7 +229,7 @@ namespace SchoolDom.Cbt.Win7
             FillExamList(exams);
             content.Controls.Add(exams);
 
-            var students = Card(558, 432, 500, 410);
+            var students = Card(558, 686, 500, 410);
             students.Controls.Add(TextLabel("Students", 22, 18, 16, true, 240, Palette.Text));
             var moreStudents = MiniButton("More", 408, 18, 74);
             moreStudents.Click += (s, e) => ShowStudentList();
@@ -227,7 +237,7 @@ namespace SchoolDom.Cbt.Win7
             FillStudentList(students);
             content.Controls.Add(students);
 
-            var note = Card(34, 866, 1024, 96);
+            var note = Card(34, 1120, 1024, 96);
             note.Controls.Add(TextLabel("Admin Sync Tools", 22, 16, 14, true, 940, Palette.Text));
             note.Controls.Add(TextLabel("Use this console to sync school CBT data, review/edit imported exams, export broadsheets, and upload or export local result packages.", 22, 48, 10, false, 960, Palette.Muted));
             content.Controls.Add(note);
@@ -272,6 +282,62 @@ namespace SchoolDom.Cbt.Win7
             if (!_store.State.Students.Any())
             {
                 card.Controls.Add(TextLabel("No students have been pulled yet.", 22, 64, 10, false, 430, Palette.Muted));
+            }
+        }
+
+        private void FillSubmittedResults(Panel card)
+        {
+            var submitted = _store.State.Sessions
+                .Where(s => string.Equals(s.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(s => s.SubmittedAt ?? s.StartedAt)
+                .ToList();
+            var list = new ListView
+            {
+                Left = 22,
+                Top = 54,
+                Width = 790,
+                Height = 150,
+                View = View.Details,
+                FullRowSelect = true,
+                HideSelection = false
+            };
+            list.Columns.Add("Student", 210);
+            list.Columns.Add("Student ID", 110);
+            list.Columns.Add("Exam", 240);
+            list.Columns.Add("Submitted", 180);
+            foreach (var session in submitted)
+            {
+                var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
+                var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
+                var item = new ListViewItem(student == null ? session.StudentId : student.FullName);
+                item.SubItems.Add(session.StudentId ?? "");
+                item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
+                item.SubItems.Add(Display(session.SubmittedAt ?? session.StartedAt));
+                item.Tag = session;
+                list.Items.Add(item);
+            }
+            card.Controls.Add(list);
+
+            var delete = PrimaryButton("Delete / Retake", 836, 70, 150);
+            delete.Enabled = submitted.Any();
+            delete.Click += (s, e) =>
+            {
+                if (list.SelectedItems.Count == 0)
+                {
+                    MessageBox.Show("Select a submitted result first.", "Delete Result");
+                    return;
+                }
+                DeleteResult((SessionRecord)list.SelectedItems[0].Tag);
+            };
+            card.Controls.Add(delete);
+
+            var more = SecondaryButton("Manage All", 836, 124, 150);
+            more.Click += (s, e) => ShowResultList();
+            card.Controls.Add(more);
+
+            if (!submitted.Any())
+            {
+                card.Controls.Add(TextLabel("No submitted results yet. Submitted exams will appear here immediately.", 22, 84, 10, false, 500, Palette.Muted));
             }
         }
 
@@ -325,6 +391,233 @@ namespace SchoolDom.Cbt.Win7
             }
         }
 
+        private void ShowCreateExam()
+        {
+            using (var form = ListForm("Create Exam", 980, 680))
+            {
+                var left = 104;
+                var title = Field(form, "Title", "", left, 62, false);
+                title.Width = 340;
+                var subject = Field(form, "Subject", "", left + 364, 62, false);
+                subject.Width = 180;
+                var className = Field(form, "Class", "", left + 572, 62, false);
+                className.Width = 170;
+                var duration = Field(form, "Duration Minutes", "60", left, 132, false);
+                var pin = Field(form, "LAN PIN", "", left + 250, 132, false);
+                var publish = new CheckBox { Left = left + 500, Top = 136, Width = 240, Height = 28, Text = "Create and publish on cloud", Checked = true, Font = new Font("Segoe UI", 10) };
+                form.Controls.Add(publish);
+                form.Controls.Add(TextLabel("Instructions", left, 182, 9, true, 220, Palette.Text));
+                var instructions = new TextBox { Left = left, Top = 206, Width = 742, Height = 72, Multiline = true, ScrollBars = ScrollBars.Vertical, Font = MathFont(11) };
+                form.Controls.Add(instructions);
+
+                var questions = new List<QuestionRecord>();
+                form.Controls.Add(TextLabel("Questions", left, 300, 12, true, 220, Palette.Text));
+                var list = new ListView { Left = left, Top = 334, Width = 742, Height = 188, View = View.Details, FullRowSelect = true, HideSelection = false, Font = MathFont(10) };
+                list.Columns.Add("#", 44);
+                list.Columns.Add("Question", 420);
+                list.Columns.Add("Options", 90);
+                list.Columns.Add("Correct", 170);
+                form.Controls.Add(list);
+
+                Action refreshQuestions = () =>
+                {
+                    list.Items.Clear();
+                    for (var i = 0; i < questions.Count; i++)
+                    {
+                        var q = questions[i];
+                        var item = new ListViewItem((i + 1).ToString());
+                        item.SubItems.Add(q.Text ?? "");
+                        item.SubItems.Add((q.Options == null ? 0 : q.Options.Count).ToString());
+                        item.SubItems.Add(q.CorrectAnswer ?? "");
+                        item.Tag = q;
+                        list.Items.Add(item);
+                    }
+                };
+
+                var add = SecondaryButton("Add Question", left, 538, 130);
+                add.Click += (s, e) =>
+                {
+                    var question = PromptQuestion(null);
+                    if (question == null) return;
+                    questions.Add(question);
+                    refreshQuestions();
+                };
+                form.Controls.Add(add);
+
+                var edit = SecondaryButton("Edit", left + 142, 538, 80);
+                edit.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    var index = list.SelectedItems[0].Index;
+                    var updated = PromptQuestion(questions[index]);
+                    if (updated == null) return;
+                    questions[index] = updated;
+                    refreshQuestions();
+                };
+                form.Controls.Add(edit);
+
+                var remove = SecondaryButton("Remove", left + 232, 538, 90);
+                remove.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    questions.RemoveAt(list.SelectedItems[0].Index);
+                    refreshQuestions();
+                };
+                form.Controls.Add(remove);
+
+                var save = PrimaryButton("Save Exam", left + 612, 538, 130);
+                save.Click += (s, e) =>
+                {
+                    int minutes;
+                    if (title.Text.Trim().Length < 3)
+                    {
+                        MessageBox.Show("Enter an exam title.", "Create Exam");
+                        return;
+                    }
+                    if (!int.TryParse(duration.Text.Trim(), out minutes) || minutes < 1)
+                    {
+                        MessageBox.Show("Enter a valid duration in minutes.", "Create Exam");
+                        return;
+                    }
+                    if (questions.Count == 0)
+                    {
+                        MessageBox.Show("Add at least one question.", "Create Exam");
+                        return;
+                    }
+                    if (!publish.Checked && string.IsNullOrWhiteSpace(pin.Text))
+                    {
+                        MessageBox.Show("Enter a LAN PIN for local-only exams.", "Create Exam");
+                        return;
+                    }
+
+                    var started = DateTime.UtcNow;
+                    var exam = new ExamRecord
+                    {
+                        Id = "local_exam_" + Guid.NewGuid().ToString("N"),
+                        Title = title.Text.Trim(),
+                        Subject = subject.Text.Trim(),
+                        ClassName = className.Text.Trim(),
+                        DurationSeconds = minutes * 60,
+                        StartsAt = started.ToString("o"),
+                        EndsAt = started.AddDays(30).ToString("o"),
+                        Instructions = instructions.Text.Trim(),
+                        PinHash = string.IsNullOrWhiteSpace(pin.Text) ? "" : JsonUtil.Sha256(pin.Text.Trim()),
+                        Questions = questions
+                    };
+
+                    try
+                    {
+                        Cursor = Cursors.WaitCursor;
+                        var cloudPin = "";
+                        if (publish.Checked)
+                        {
+                            var created = _cloud.CreateExam(exam, true);
+                            var cloudExam = created.ContainsKey("exam") ? created["exam"] as Dictionary<string, object> : null;
+                            var cloudExamId = cloudExam == null ? "" : JsonUtil.Text(cloudExam.ContainsKey("id") ? cloudExam["id"] : "");
+                            if (!string.IsNullOrWhiteSpace(cloudExamId)) exam.Id = cloudExamId;
+                            var pinData = _cloud.RegenerateExamPin(exam.Id);
+                            cloudPin = JsonUtil.Text(pinData.ContainsKey("pin") ? pinData["pin"] : "");
+                            var pinHash = JsonUtil.Text(pinData.ContainsKey("offline_pin_hash") ? pinData["offline_pin_hash"] : "");
+                            if (!string.IsNullOrWhiteSpace(pinHash)) exam.PinHash = pinHash;
+                        }
+                        else if (string.IsNullOrWhiteSpace(exam.PinHash))
+                        {
+                            throw new InvalidOperationException("Enter a LAN PIN before saving this exam.");
+                        }
+
+                        _packages.AddExam(exam);
+                        Cursor = Cursors.Default;
+                        var message = "Exam saved and ready for LAN CBT.";
+                        if (!string.IsNullOrWhiteSpace(cloudPin)) message += "\r\n\r\nCloud PIN: " + cloudPin;
+                        else if (!string.IsNullOrWhiteSpace(pin.Text)) message += "\r\n\r\nLAN PIN: " + pin.Text.Trim();
+                        MessageBox.Show(message, "Exam Created");
+                        form.Close();
+                        ShowDashboard();
+                    }
+                    catch (Exception ex)
+                    {
+                        Cursor = Cursors.Default;
+                        MessageBox.Show(ex.Message, "Create Exam Failed");
+                    }
+                };
+                form.Controls.Add(save);
+                form.ShowDialog(this);
+            }
+        }
+
+        private QuestionRecord PromptQuestion(QuestionRecord existing)
+        {
+            using (var form = ListForm(existing == null ? "Add Question" : "Edit Question", 620, 520))
+            {
+                var existingOptions = existing == null || existing.Options == null ? new List<string>() : existing.Options;
+                form.Controls.Add(TextLabel("Question", 28, 24, 9, true, 220, Palette.Text));
+                var text = new TextBox { Left = 28, Top = 48, Width = 540, Height = 78, Multiline = true, ScrollBars = ScrollBars.Vertical, Text = existing == null ? "" : existing.Text ?? "", Font = MathFont(11) };
+                form.Controls.Add(text);
+                var optionA = Field(form, "Option A", existingOptions.Count > 0 ? existingOptions[0] : "", 28, 172, false);
+                optionA.Width = 250;
+                optionA.Font = MathFont(11);
+                var optionB = Field(form, "Option B", existingOptions.Count > 1 ? existingOptions[1] : "", 318, 172, false);
+                optionB.Width = 250;
+                optionB.Font = MathFont(11);
+                var optionC = Field(form, "Option C", existingOptions.Count > 2 ? existingOptions[2] : "", 28, 248, false);
+                optionC.Width = 250;
+                optionC.Font = MathFont(11);
+                var optionD = Field(form, "Option D", existingOptions.Count > 3 ? existingOptions[3] : "", 318, 248, false);
+                optionD.Width = 250;
+                optionD.Font = MathFont(11);
+                form.Controls.Add(TextLabel("Correct Answer", 28, 310, 9, true, 220, Palette.Text));
+                var correct = new ComboBox { Left = 28, Top = 334, Width = 250, Height = 32, DropDownStyle = ComboBoxStyle.DropDownList };
+                correct.Items.AddRange(new object[] { "A", "B", "C", "D" });
+                correct.SelectedIndex = 0;
+                if (existing != null)
+                {
+                    var index = existingOptions.FindIndex(o => string.Equals(o, existing.CorrectAnswer, StringComparison.OrdinalIgnoreCase));
+                    if (index >= 0 && index < correct.Items.Count) correct.SelectedIndex = index;
+                }
+                form.Controls.Add(correct);
+                var marks = Field(form, "Marks", existing == null ? "1" : Math.Max(1, existing.Points).ToString(), 318, 334, false);
+                marks.Width = 90;
+
+                QuestionRecord result = null;
+                var save = PrimaryButton("Save Question", 28, 420, 140);
+                save.Click += (s, e) =>
+                {
+                    var options = new List<string>();
+                    foreach (var box in new[] { optionA, optionB, optionC, optionD })
+                    {
+                        if (!string.IsNullOrWhiteSpace(box.Text)) options.Add(box.Text.Trim());
+                    }
+                    double pointValue;
+                    if (text.Text.Trim().Length < 3)
+                    {
+                        MessageBox.Show("Enter the question text.", "Question");
+                        return;
+                    }
+                    if (options.Count < 2)
+                    {
+                        MessageBox.Show("Enter at least two options.", "Question");
+                        return;
+                    }
+                    if (!double.TryParse(marks.Text.Trim(), out pointValue) || pointValue <= 0) pointValue = 1;
+                    var selected = correct.SelectedIndex;
+                    if (selected >= options.Count) selected = 0;
+                    result = new QuestionRecord
+                    {
+                        Id = existing == null || string.IsNullOrWhiteSpace(existing.Id) ? "local_question_" + Guid.NewGuid().ToString("N") : existing.Id,
+                        Text = text.Text.Trim(),
+                        Type = "mcq",
+                        Points = pointValue,
+                        Options = options,
+                        CorrectAnswer = options[selected]
+                    };
+                    form.Close();
+                };
+                form.Controls.Add(save);
+                form.ShowDialog(this);
+                return result;
+            }
+        }
+
         private void ShowStudentList()
         {
             using (var form = ListForm("All Students", 760, 540))
@@ -355,7 +648,7 @@ namespace SchoolDom.Cbt.Win7
                 list.Columns.Add("Exam", 260);
                 list.Columns.Add("Status", 100);
                 list.Columns.Add("Submitted", 180);
-                foreach (var session in _store.State.Sessions.OrderByDescending(s => s.SubmittedAt ?? s.StartedAt))
+                foreach (var session in _store.State.Sessions.Where(s => string.Equals(s.Status, "submitted", StringComparison.OrdinalIgnoreCase)).OrderByDescending(s => s.SubmittedAt ?? s.StartedAt))
                 {
                     var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
                     var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
@@ -393,7 +686,7 @@ namespace SchoolDom.Cbt.Win7
                     Multiline = true,
                     ReadOnly = true,
                     ScrollBars = ScrollBars.Vertical,
-                    Font = new Font("Consolas", 10),
+                    Font = MathFont(10),
                     Text = BuildExamReviewText(exam)
                 };
                 form.Controls.Add(text);
@@ -416,9 +709,10 @@ namespace SchoolDom.Cbt.Win7
             {
                 var q = exam.Questions[i];
                 lines.AppendLine((i + 1) + ". " + q.Text);
-                for (var j = 0; j < q.Options.Count; j++)
+                var options = q.Options ?? new System.Collections.Generic.List<string>();
+                for (var j = 0; j < options.Count; j++)
                 {
-                    lines.AppendLine("   " + (char)('A' + j) + ". " + q.Options[j]);
+                    lines.AppendLine("   " + (char)('A' + j) + ". " + options[j]);
                 }
                 lines.AppendLine();
             }
@@ -562,16 +856,17 @@ namespace SchoolDom.Cbt.Win7
         {
             using (var dialog = new OpenFileDialog())
             {
-                dialog.Filter = "SchoolDom package (*.json)|*.json|All files (*.*)|*.*";
+                dialog.Filter = "Exam files (*.json;*.csv;*.txt;*.docx)|*.json;*.csv;*.txt;*.docx|JSON (*.json)|*.json|CSV (*.csv)|*.csv|Text (*.txt)|*.txt|Word document (*.docx)|*.docx|All files (*.*)|*.*";
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
-                    MessageBox.Show(_packages.ImportPackage(dialog.FileName, ""), "Import complete");
+                    var fallbackPin = PromptDialog.Show("LAN PIN", "Optional: enter a LAN PIN for this imported exam if the file does not include one.", true);
+                    MessageBox.Show(_packages.ImportExamFile(dialog.FileName, fallbackPin), "Import Exam");
                     ShowDashboard();
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(ex.Message, "Import failed");
+                    MessageBox.Show(ex.Message, "Import Exam Failed");
                 }
             }
         }
@@ -779,6 +1074,12 @@ namespace SchoolDom.Cbt.Win7
             button.Height = 28;
             button.Font = new Font("Segoe UI", 8, FontStyle.Bold);
             return button;
+        }
+
+        private Font MathFont(float size)
+        {
+            try { return new Font("Cambria Math", size, FontStyle.Regular); }
+            catch { return new Font("Segoe UI Symbol", size, FontStyle.Regular); }
         }
 
         private Form ListForm(string title, int width, int height)

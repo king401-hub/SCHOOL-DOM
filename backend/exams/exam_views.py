@@ -496,8 +496,33 @@ class ExamListView(APIView):
         elif enrolled_exam_ids:
             exams = exams.filter(Q(class_group__isnull=True) | Q(id__in=enrolled_exam_ids))
         
-        serializer = ExamSerializer(exams.distinct().order_by("start_date"), many=True)
-        return Response(serializer.data)
+        exam_list = list(exams.distinct().order_by("start_date"))
+        attempts_by_exam = {}
+        if exam_list:
+            for attempt in ExamAttempt.objects.filter(
+                exam_id__in=[exam.id for exam in exam_list],
+                student=request.user,
+            ).order_by("-created_at"):
+                attempts_by_exam.setdefault(attempt.exam_id, []).append(attempt)
+
+        serializer = ExamSerializer(exam_list, many=True)
+        payload = []
+        for exam_data in serializer.data:
+            exam_attempts = attempts_by_exam.get(exam_data["id"], [])
+            submitted_attempt = next((attempt for attempt in exam_attempts if attempt.is_submitted or attempt.is_completed), None)
+            active_attempt = next((attempt for attempt in exam_attempts if not attempt.is_submitted), None)
+            exam_data = dict(exam_data)
+            exam_data.update(
+                {
+                    "is_submitted": bool(submitted_attempt),
+                    "is_completed": bool(submitted_attempt and submitted_attempt.is_completed),
+                    "submitted_attempt_id": submitted_attempt.id if submitted_attempt else None,
+                    "submitted_at": submitted_attempt.end_time if submitted_attempt else None,
+                    "active_attempt_id": active_attempt.id if active_attempt else None,
+                }
+            )
+            payload.append(exam_data)
+        return Response(payload)
 
 
 class StudentCbtEntryView(APIView):

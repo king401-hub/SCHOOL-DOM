@@ -909,7 +909,7 @@ function StudentDashboard({
     },
     {
       key: "daily-quiz",
-      label: "Daily Quiz",
+      label: "Daily Assessment",
       value: `${dailyQuiz.completed_today ?? 0}/${dailyQuiz.total_subjects ?? subjects.length}`,
       detail: `Streak: ${dailyQuiz.streak_days || 0} day${Number(dailyQuiz.streak_days || 0) === 1 ? "" : "s"}`,
       tone: "indigo",
@@ -975,7 +975,7 @@ function StudentDashboard({
             onClick={() => { go("/quizzes"); setNavOpen(false); }}
           >
             <DashboardIcon name="exam" className="inline-icon" />
-            <span>Quizzes</span>
+            <span>Assessment</span>
           </button>
           <button
             className="student-nav-item"
@@ -1176,8 +1176,8 @@ function StudentDashboard({
             >
               <div className="quick-action-icon">Q</div>
               <div className="quick-action-content">
-                <h4>Take Quiz</h4>
-                <p>Access available quizzes and assessments</p>
+                <h4>Assessment</h4>
+                <p>Access teacher assessments and personal quiz practice</p>
               </div>
             </button>
             <button
@@ -1561,7 +1561,7 @@ function StudentFeesPage({
           </button>
           <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
             <span className="student-nav-icon" aria-hidden="true">Q</span>
-            <span>Quizzes</span>
+            <span>Assessment</span>
           </button>
           <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/messages"); setNavOpen(false); }}>
             <span className="student-nav-icon" aria-hidden="true">M</span>
@@ -1712,6 +1712,8 @@ function recipientClassKey(item = {}) {
 function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "") {
   const viewerRole = String(viewer?.role || "").toLowerCase();
   const viewerClass = String(viewer?.class_id || viewer?.class_name || viewer?.class_group || fallbackClass || "").toLowerCase();
+  const schoolType = String(viewer?.school_type || viewer?.schoolType || viewer?.tenant?.school_type || viewer?.tenant?.schoolType || "").toLowerCase();
+  const isNonK12Student = viewerRole === "student" && schoolType === "non_k12";
   return recipients.filter((item) => {
     const role = normalizeRecipientRole(item);
     const isAdmin = ["admin", "school_admin", "principal", "super_admin"].includes(role) || (!role && item?.email);
@@ -1720,7 +1722,7 @@ function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "
     if (["school_admin", "principal", "super_admin"].includes(viewerRole)) return true;
     if (viewerRole === "teacher") return isAdmin || isStudent;
     if (viewerRole === "student") {
-      return isAdmin || isTeacher;
+      return isAdmin || isTeacher || (isNonK12Student && isStudent);
     }
     if (["staff", "accountant"].includes(viewerRole)) {
       return true;
@@ -1736,7 +1738,7 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
   const [navOpen, setNavOpen] = useState(false);
   const availableRecipients = filterRecipientsForRole(
     messageData?.recipients || messageData?.admin_contacts || [],
-    session?.user,
+    { ...(session?.user || {}), school_type: session?.school?.school_type || session?.school?.schoolType },
     messageData?.student?.class_name || data?.student?.class_name
   );
   const recipientOptions = availableRecipients.map((item) => ({
@@ -1801,7 +1803,7 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
               </button>
               <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
                 <span className="student-nav-icon" aria-hidden="true">Q</span>
-                <span>Quizzes</span>
+                <span>Assessment</span>
               </button>
             </>
           ) : null}
@@ -1904,7 +1906,7 @@ function StudentResultsPage({ session, data, onNavigate }) {
           </button>
           <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
             <span className="student-nav-icon" aria-hidden="true">Q</span>
-            <span>Quizzes</span>
+            <span>Assessment</span>
           </button>
           <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/messages"); setNavOpen(false); }}>
             <span className="student-nav-icon" aria-hidden="true">M</span>
@@ -2216,7 +2218,7 @@ function TeacherQuizPage({ session, onNavigate }) {
       <form className="quiz-builder" onSubmit={handleCreate}>
         <div className="quiz-builder-head">
           <div>
-            <p className="quiz-kicker">New quiz</p>
+            <p className="quiz-kicker">New assessment</p>
             <h3>Compose questions & options</h3>
           </div>
           <div className="quiz-switches">
@@ -2333,20 +2335,20 @@ function TeacherQuizPage({ session, onNavigate }) {
         {error ? <p className="form-feedback error">{error}</p> : null}
         <div className="quiz-submit-row">
           <button className="pill-button" type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Save quiz"}
+            {saving ? "Saving..." : "Save assessment"}
           </button>
         </div>
       </form>
 
       <section className="quiz-list-section">
         <div className="quiz-list-head">
-          <h3>Quizzes</h3>
+          <h3>Assessments</h3>
           <span className="pill muted">{quizzes.length} total</span>
         </div>
         {loading ? (
-          <p className="panel-empty">Loading quizzes...</p>
+          <p className="panel-empty">Loading assessments...</p>
         ) : quizzes.length === 0 ? (
-          <p className="panel-empty">No quizzes yet. Create one above.</p>
+          <p className="panel-empty">No assessments yet. Create one above.</p>
         ) : (
           <div className="quiz-grid">
             {quizzes.map((quiz) => (
@@ -2387,6 +2389,7 @@ function StudentQuizPage({ session, onNavigate }) {
   const [quizSource, setQuizSource] = useState("personal");
   const [teacherQuizzes, setTeacherQuizzes] = useState([]);
   const [answers, setAnswers] = useState({});
+  const [assessmentNote, setAssessmentNote] = useState("");
   const [result, setResult] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -2404,6 +2407,26 @@ function StudentQuizPage({ session, onNavigate }) {
   const [showAllPersonalHistory, setShowAllPersonalHistory] = useState(false);
   const [screenSecurityWarning, setScreenSecurityWarning] = useState("");
   const flagFeedbackTimerRef = useRef(null);
+  const assessmentNoteKey = useMemo(
+    () => `schooldom.assessment.notepad.${session?.user?.id || session?.user?.email || "student"}`,
+    [session?.user?.email, session?.user?.id]
+  );
+
+  useEffect(() => {
+    try {
+      setAssessmentNote(window.localStorage.getItem(assessmentNoteKey) || "");
+    } catch {
+      setAssessmentNote("");
+    }
+  }, [assessmentNoteKey]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(assessmentNoteKey, assessmentNote);
+    } catch {
+      // Local storage can be disabled in some browsers.
+    }
+  }, [assessmentNote, assessmentNoteKey]);
 
   const loadPersonalQuizData = useCallback(async () => {
     setLoading(true);
@@ -2420,7 +2443,7 @@ function StudentQuizPage({ session, onNavigate }) {
         setSelectedSubject(String(firstAvailable.id));
       }
     } catch (loadError) {
-      setError(loadError.message || "Could not load personal quiz data.");
+      setError(loadError.message || "Could not load assessment data.");
     } finally {
       setLoading(false);
     }
@@ -2548,7 +2571,7 @@ function StudentQuizPage({ session, onNavigate }) {
       return undefined;
     }
 
-    const warnCaptureBlocked = (message = "Screenshots, screen recording, printing, and copying are disabled during this quiz.") => {
+    const warnCaptureBlocked = (message = "Screenshots, screen recording, printing, and copying are disabled during this assessment.") => {
       setScreenSecurityWarning(message);
     };
     const clearClipboard = () => {
@@ -2574,12 +2597,12 @@ function StudentQuizPage({ session, onNavigate }) {
       if (isRestricted) {
         event.preventDefault();
         if (isPrintScreen) clearClipboard();
-        warnCaptureBlocked(isPrintScreen ? "Screenshot capture is disabled during this quiz." : undefined);
+        warnCaptureBlocked(isPrintScreen ? "Screenshot capture is disabled during this assessment." : undefined);
       }
     };
     const blockPrint = (event) => {
       event.preventDefault();
-      warnCaptureBlocked("Printing is disabled during this quiz.");
+      warnCaptureBlocked("Printing is disabled during this assessment.");
     };
 
     document.addEventListener("contextmenu", blockInteraction);
@@ -2844,6 +2867,42 @@ function StudentQuizPage({ session, onNavigate }) {
     );
   };
 
+  const teacherAssessmentsSection = (
+    <section className="quiz-list-section teacher-quiz-section teacher-assessment-priority">
+      <div className="quiz-list-head">
+        <div>
+          <p className="quiz-kicker">Teacher Assessment</p>
+          <h3>Teacher&apos;s Tests</h3>
+        </div>
+        <span className="pill muted">{teacherQuizzes.length} available</span>
+      </div>
+      {teacherQuizzes.length === 0 ? (
+        <p className="panel-empty">No teacher-published assessments are available yet.</p>
+      ) : (
+        <div className="quiz-grid">
+          {teacherQuizzes.map((quiz) => (
+            <article key={quiz.id} className="quiz-card teacher-quiz-card">
+              <div className="quiz-card-head">
+                <div>
+                  <p className="quiz-kicker">{quiz.allow_multiple_attempts ? "Multiple attempts" : "Single attempt"}</p>
+                  <h4>{quiz.title}</h4>
+                  <small>{quiz.description || "Teacher assessment"}</small>
+                </div>
+                <button type="button" className="pill-button ghost" onClick={() => startTeacherQuiz(quiz.id)}>
+                  Start
+                </button>
+              </div>
+              <div className="quiz-card-meta">
+                <span>{quiz.questions?.length || 0} questions</span>
+                <span>{quiz.time_limit_minutes ? `${quiz.time_limit_minutes} mins` : "No timer"}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
   if (activeQuiz) {
     const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
     const questionTitle = activeQuiz.title || "Personal Quiz";
@@ -2857,9 +2916,9 @@ function StudentQuizPage({ session, onNavigate }) {
         <section className="personal-score-page">
           <header className="personal-score-hero">
             <div>
-              <p className="quiz-kicker">Quiz completed</p>
+          <p className="quiz-kicker">Assessment completed</p>
               <h1>Your Score</h1>
-              <p>{result.subject || activeQuiz.subject || "Teacher Quiz"} - {result.class_group || activeQuiz.class_group || "Assessment"}</p>
+              <p>{result.subject || activeQuiz.subject || "Teacher Assessment"} - {result.class_group || activeQuiz.class_group || "Assessment"}</p>
             </div>
             <div className="personal-score-ring">
               <strong>{resultPercentage || 0}%</strong>
@@ -2934,7 +2993,7 @@ function StudentQuizPage({ session, onNavigate }) {
             <span className="cbt-monitor-icon" aria-hidden="true">
               <span />
             </span>
-            <strong>QUIZZES</strong>
+            <strong>ASSESSMENT</strong>
           </div>
           <h1>{questionTitle}</h1>
           <div className="cbt-top-actions">
@@ -2957,7 +3016,7 @@ function StudentQuizPage({ session, onNavigate }) {
 
         <div className="cbt-shell">
           <aside className="cbt-leftnav">
-            <p>Test Navigation</p>
+            <p>Assessment Navigation</p>
             <button type="button" onClick={() => setInstructionsOpen(true)}>
               <span aria-hidden="true">I</span>
               Instructions
@@ -2982,6 +3041,21 @@ function StudentQuizPage({ session, onNavigate }) {
               <span aria-hidden="true">B</span>
               Back to List
             </button>
+            <section className="cbt-notepad">
+              <div>
+                <strong>Notepad</strong>
+                <small>Private scratch notes</small>
+              </div>
+              <textarea
+                value={assessmentNote}
+                onChange={(event) => setAssessmentNote(event.target.value)}
+                placeholder="Write rough work or reminders here..."
+                aria-label="Assessment notepad"
+              />
+              <button type="button" onClick={() => setAssessmentNote("")} disabled={!assessmentNote.trim()}>
+                Clear Notes
+              </button>
+            </section>
             <button
               type="button"
               className="cbt-leftnav-flag"
@@ -3019,7 +3093,7 @@ function StudentQuizPage({ session, onNavigate }) {
               {currentQuestion ? (
                 <>
                   <h2>{renderQuizText(currentQuestion.prompt || currentQuestion.text)}</h2>
-                  <p className="personal-question-type">{quizSource === "teacher" ? "teacher quiz" : currentQuestion.question_type?.replace("_", " ")}</p>
+                  <p className="personal-question-type">{quizSource === "teacher" ? "teacher assessment" : currentQuestion.question_type?.replace("_", " ")}</p>
                   {renderQuestionInput(currentQuestion, currentAnswer)}
                   <button
                     type="button"
@@ -3058,7 +3132,7 @@ function StudentQuizPage({ session, onNavigate }) {
                 onClick={() => handleSubmit(false)}
                 disabled={loading || totalQuestions === 0}
               >
-                {loading ? "Submitting..." : "Submit Test"}
+                {loading ? "Submitting..." : "Submit Assessment"}
               </button>
             </footer>
           </main>
@@ -3109,11 +3183,11 @@ function StudentQuizPage({ session, onNavigate }) {
         {instructionsOpen ? (
           <div className="cbt-info-modal" role="dialog" aria-modal="true" aria-labelledby="cbt-instructions-title">
             <div className="cbt-info-card">
-              <p className="cbt-info-kicker">Test instructions</p>
+              <p className="cbt-info-kicker">Assessment instructions</p>
               <h3 id="cbt-instructions-title">Before you continue</h3>
               <p>{activeQuiz.description || "Read each question carefully before answering."}</p>
               <button type="button" onClick={() => setInstructionsOpen(false)}>
-                Continue Test
+                Continue Assessment
               </button>
             </div>
           </div>
@@ -3126,9 +3200,9 @@ function StudentQuizPage({ session, onNavigate }) {
     <section className="quiz-layout personal-quiz-layout">
       <header className="quiz-hero personal-quiz-hero">
         <div>
-          <p className="quiz-kicker">Daily Personal Quiz</p>
-          <h1>Private daily practice</h1>
-          <p>Optional subject quizzes from your registered subjects. Each subject opens once per day with a fixed 15-minute timer.</p>
+          <p className="quiz-kicker">Assessments</p>
+          <h1>Teacher assessments and personal quiz</h1>
+          <p>Teacher&apos;s tests are shown first. Your personal quiz stays underneath for private daily practice.</p>
         </div>
         <div className="quiz-actions">
           <button type="button" className="pill-button ghost" onClick={() => onNavigate?.("/dashboard")}>
@@ -3138,6 +3212,8 @@ function StudentQuizPage({ session, onNavigate }) {
       </header>
 
       {error ? <p className="form-feedback error">{error}</p> : null}
+
+      {teacherAssessmentsSection}
 
       <section className="personal-stats-grid">
         {[
@@ -3303,40 +3379,6 @@ function StudentQuizPage({ session, onNavigate }) {
         </article>
       </section>
 
-      <section className="quiz-list-section teacher-quiz-section">
-        <div className="quiz-list-head">
-          <div>
-            <p className="quiz-kicker">Class Test</p>
-            <h3>Available Tests.</h3>
-          </div>
-          <span className="pill muted">{teacherQuizzes.length} available</span>
-        </div>
-        {teacherQuizzes.length === 0 ? (
-          <p className="panel-empty">No teacher-published tests are available yet.</p>
-        ) : (
-          <div className="quiz-grid">
-            {teacherQuizzes.map((quiz) => (
-              <article key={quiz.id} className="quiz-card teacher-quiz-card">
-                <div className="quiz-card-head">
-                  <div>
-                    <p className="quiz-kicker">{quiz.allow_multiple_attempts ? "Multiple attempts" : "Single attempt"}</p>
-                    <h4>{quiz.title}</h4>
-                    <small>{quiz.description || "Teacher assessment"}</small>
-                  </div>
-                  <button type="button" className="pill-button ghost" onClick={() => startTeacherQuiz(quiz.id)}>
-                    Start
-                  </button>
-                </div>
-                <div className="quiz-card-meta">
-                  <span>{quiz.questions?.length || 0} questions</span>
-                  <span>{quiz.time_limit_minutes ? `${quiz.time_limit_minutes} mins` : "No timer"}</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
       <section className="quiz-list-section personal-history-section">
         <div className="quiz-list-head">
           <div>
@@ -3346,7 +3388,7 @@ function StudentQuizPage({ session, onNavigate }) {
           <span className="pill muted">{visiblePersonalHistory.length} of {history.length} shown</span>
         </div>
         {loading ? (
-          <p className="panel-empty">Loading quiz history...</p>
+          <p className="panel-empty">Loading assessment history...</p>
         ) : history.length === 0 ? (
           <p className="panel-empty">No personal quiz attempts yet.</p>
         ) : (

@@ -793,6 +793,8 @@ def _school_payload(school, request=None):
         "email": school.email or "",
         "phone": school.phone or "",
         "address": school.address or "",
+        "motto": getattr(school, "motto", "") or "",
+        "tagline": getattr(school, "motto", "") or "",
         "logo": _media_url(request, school.logo),
         "favicon": _media_url(request, school.favicon),
         "currency": school.currency,
@@ -1797,7 +1799,10 @@ def _message_recipient_queryset_for_user(user):
     base = User.objects.filter(tenant=user.tenant, is_active=True).exclude(id=user.id)
     role = getattr(user, "role", "")
     if role == "student":
-        return base.filter(role__in=["teacher", "school_admin", "principal", "super_admin"])
+        allowed_roles = ["teacher", "school_admin", "principal", "super_admin"]
+        if _is_non_k12_school(user):
+            allowed_roles.append("student")
+        return base.filter(role__in=allowed_roles)
     if role == "teacher":
         student_user_ids = StudentProfile.objects.filter(
             user__tenant=user.tenant,
@@ -5289,6 +5294,13 @@ def school_settings(request):
                 if getattr(school, field) != new_value:
                     setattr(school, field, new_value)
                     update_fields.append(field)
+
+        raw_motto = request.data.get("motto", request.data.get("tagline", None))
+        if raw_motto is not None:
+            new_motto = str(raw_motto or "").strip()
+            if getattr(school, "motto", "") != new_motto:
+                school.motto = new_motto
+                update_fields.append("motto")
 
         logo_file = request.FILES.get("logo")
         if logo_file:

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -194,10 +195,16 @@ namespace SchoolDom.StudentCbt.Win7
             var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Palette.Navy };
             header.Controls.Add(Label(Value(_exam, "title", "Title"), 28, 18, 18, true, 620, Color.White));
             header.Controls.Add(Label("Read the instructions before starting.", 30, 52, 10, false, 520, Palette.SoftText));
-            _root.Controls.Add(header);
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(60, 40, 780, 440);
+            var card = Card(0, 0, 780, 440);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = 54;
+            };
+            content.Resize += (s, e) => centerCard();
+            centerCard();
             card.Controls.Add(Label("Instructions", 28, 24, 16, true, 680, Palette.Text));
             var instructions = new TextBox
             {
@@ -219,6 +226,7 @@ namespace SchoolDom.StudentCbt.Win7
             card.Controls.Add(start);
             content.Controls.Add(card);
             _root.Controls.Add(content);
+            _root.Controls.Add(header);
         }
 
         private void LoadExamDetail()
@@ -254,9 +262,8 @@ namespace SchoolDom.StudentCbt.Win7
             _questionPanel = null;
             var header = new Panel { Dock = DockStyle.Top, Height = 82, BackColor = Palette.Navy };
             var headerWidth = Math.Max(960, ClientSize.Width);
-            header.Controls.Add(Label(Value(_exam, "title", "Title"), 22, 14, 16, true, Math.Max(320, headerWidth - 760), Color.White));
-            header.Controls.Add(CreateStudentBadge(Math.Max(350, headerWidth - 610), 12, true));
-            var calcTop = SecondaryButton("Calculator", Math.Max(610, headerWidth - 350), 20, 126);
+            header.Controls.Add(Label(Value(_exam, "title", "Title"), 22, 14, 16, true, Math.Max(420, headerWidth - 560), Color.White));
+            var calcTop = SecondaryButton("Calculator", Math.Max(520, headerWidth - 350), 20, 126);
             calcTop.Click += (s, e) => ShowCalculator();
             header.Controls.Add(calcTop);
             _lanLabel = Label("LAN: Connected", Math.Max(748, headerWidth - 210), 18, 9, true, 190, Palette.GreenSoft);
@@ -268,7 +275,7 @@ namespace SchoolDom.StudentCbt.Win7
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
             var availableWidth = Math.Max(960, ClientSize.Width);
             var availableHeight = Math.Max(620, ClientSize.Height - header.Height);
-            var sideWidth = 230;
+            var sideWidth = 286;
             var gap = 24;
             var mainWidth = Math.Min(820, availableWidth - sideWidth - gap - 96);
             var cardHeight = Math.Max(520, availableHeight - 64);
@@ -281,16 +288,17 @@ namespace SchoolDom.StudentCbt.Win7
             content.Controls.Add(main);
             _root.Controls.Add(content);
 
-            side.Controls.Add(Label("Questions", 18, 18, 11, true, 190, Palette.Text));
-            var questionNav = new Panel { Left = 18, Top = 56, Width = 194, Height = Math.Max(300, cardHeight - 150), AutoScroll = true, BorderStyle = BorderStyle.None };
+            side.Controls.Add(CreateLargeStudentBadge(18, 42));
+            side.Controls.Add(Label("Questions", 18, 190, 11, true, 230, Palette.Text));
+            var questionNav = new Panel { Left = 18, Top = 228, Width = 242, Height = Math.Max(230, cardHeight - 332), AutoScroll = true, BorderStyle = BorderStyle.None };
             for (var i = 0; i < _questions.Count; i++)
             {
                 var index = i;
                 var button = new Button
                 {
                     Text = (i + 1).ToString(),
-                    Left = (i % 4) * 45,
-                    Top = (i / 4) * 40,
+                    Left = (i % 5) * 46,
+                    Top = (i / 5) * 40,
                     Width = 40,
                     Height = 34,
                     FlatStyle = FlatStyle.Flat,
@@ -305,7 +313,7 @@ namespace SchoolDom.StudentCbt.Win7
             }
             side.Controls.Add(questionNav);
 
-            var submit = PrimaryButton("Submit Exam", 18, cardHeight - 66, 190);
+            var submit = PrimaryButton("Submit Exam", 18, cardHeight - 66, 242);
             submit.Click += (s, e) => SubmitExam();
             side.Controls.Add(submit);
 
@@ -319,6 +327,7 @@ namespace SchoolDom.StudentCbt.Win7
             var innerWidth = main.Width - 64;
             main.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
             var text = Label(Value(question, "text", "Text"), 32, 70, 14, true, innerWidth, Palette.Text);
+            text.Font = MathFont(14);
             main.Controls.Add(text);
             var top = Math.Max(160, text.Top + text.Height + 20);
             var type = Value(question, "type", "Type").ToLowerInvariant();
@@ -326,7 +335,7 @@ namespace SchoolDom.StudentCbt.Win7
 
             if (type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any())
             {
-                var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer" };
+                var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer", Font = MathFont(12) };
                 object saved;
                 if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
                 main.Controls.Add(answer);
@@ -335,7 +344,7 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 for (var i = 0; i < options.Count; i++)
                 {
-                    var option = new RadioButton { Left = 38, Top = top + i * 48, Width = innerWidth - 8, Height = 40, Text = ((char)('A' + i)) + ". " + options[i], Tag = "answer:" + i, Font = new Font("Segoe UI", 12) };
+                    var option = new RadioButton { Left = 38, Top = top + i * 48, Width = innerWidth - 8, Height = 40, Text = ((char)('A' + i)) + ". " + options[i], Tag = "answer:" + i, Font = MathFont(12) };
                     object saved;
                     option.Checked = _answers.TryGetValue(QuestionId(question, _current), out saved) && JsonUtil.Text(saved) == i.ToString();
                     option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
@@ -621,6 +630,20 @@ namespace SchoolDom.StudentCbt.Win7
             return panel;
         }
 
+        private Control CreateLargeStudentBadge(int left, int top)
+        {
+            var panel = new Panel { Left = left, Top = top, Width = 242, Height = 136, BackColor = Color.White };
+            panel.Controls.Add(CreateProfileControl(0, 0, 88));
+            panel.Controls.Add(Label(DisplayStudentName(), 102, 6, 12, true, 132, Palette.Text));
+            panel.Controls.Add(Label(DisplayStudentId(), 102, 54, 10, true, 132, Palette.Blue));
+            var className = Value(_student, "class_name", "ClassName", "class_label", "ClassLabel");
+            if (!string.IsNullOrWhiteSpace(className))
+            {
+                panel.Controls.Add(Label(className, 0, 102, 9, false, 232, Palette.Muted));
+            }
+            return panel;
+        }
+
         private Control CreateProfileControl(int left, int top, int size)
         {
             var photoUrl = Value(_student, "profile_picture", "ProfilePicture", "profile_picture_url", "PhotoUrl");
@@ -635,9 +658,10 @@ namespace SchoolDom.StudentCbt.Win7
                     BackColor = Palette.LightButton,
                     SizeMode = PictureBoxSizeMode.Zoom
                 };
+                MakeCircle(box);
                 try { box.LoadAsync(photoUrl); return box; } catch { }
             }
-            return new Label
+            var badge = new Label
             {
                 Text = Initials(DisplayStudentName()),
                 Left = left,
@@ -649,6 +673,15 @@ namespace SchoolDom.StudentCbt.Win7
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 12, FontStyle.Bold)
             };
+            MakeCircle(badge);
+            return badge;
+        }
+
+        private void MakeCircle(Control control)
+        {
+            var path = new GraphicsPath();
+            path.AddEllipse(0, 0, control.Width - 1, control.Height - 1);
+            control.Region = new Region(path);
         }
 
         private string DisplayStudentName()
@@ -712,6 +745,7 @@ namespace SchoolDom.StudentCbt.Win7
         private Panel Card(int left, int top, int width, int height) { return new Panel { Left = left, Top = top, Width = width, Height = height, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle }; }
         private TextBox Field(Control parent, string label, string value, int left, int top, bool password) { parent.Controls.Add(Label(label, left, top - 30, 9, true, 220, Palette.Text)); var box = new TextBox { Left = left, Top = top, Width = 226, Height = 34, Text = value, UseSystemPasswordChar = password, Font = new Font("Segoe UI", 11) }; parent.Controls.Add(box); return box; }
         private Label Label(string text, int left, int top, int size, bool bold, int width, Color color) { return new Label { Text = text, Left = left, Top = top, AutoSize = true, MaximumSize = new Size(width, 0), Font = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular), ForeColor = color, UseCompatibleTextRendering = true }; }
+        private Font MathFont(float size) { try { return new Font("Cambria Math", size, FontStyle.Regular); } catch { return new Font("Segoe UI Symbol", size, FontStyle.Regular); } }
         private Button PrimaryButton(string text, int left, int top, int width) { var b = new Button { Text = text, Left = left, Top = top, Width = width, Height = 42, BackColor = Palette.Blue, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold) }; b.FlatAppearance.BorderColor = Palette.Blue; return b; }
         private Button SecondaryButton(string text, int left, int top, int width) { var b = PrimaryButton(text, left, top, width); b.BackColor = Palette.LightButton; b.ForeColor = Palette.Text; b.FlatAppearance.BorderColor = Palette.Border; return b; }
     }

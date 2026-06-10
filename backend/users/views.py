@@ -272,6 +272,8 @@ def auth_school_payload(user):
         "email": school.email or "",
         "phone": school.phone or "",
         "address": school.address or "",
+        "motto": getattr(school, "motto", "") or "",
+        "tagline": getattr(school, "motto", "") or "",
     }
 
 
