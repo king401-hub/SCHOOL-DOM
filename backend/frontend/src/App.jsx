@@ -4,6 +4,7 @@ import LandingPage from "./LandingPage";
 import ResourceCenter from "./ResourceCenter";
 import FAQPage from "./FAQPage";
 import PrivacyPolicyPage from "./PrivacyPolicyPage";
+import TermsConditionsPage from "./TermsConditionsPage";
 import PricingPage from "./PricingPage";
 import { AttendanceModule, TeacherQRCodeAttendancePage } from "./components/Attendance";
 import ExamCBT from "./components/ExamCBT/ExamCBT";
@@ -7530,6 +7531,9 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
     }
     if (currentPath === "/privacy") {
       return withGlobalHome(<PrivacyPolicyPage onNavigate={navigate} />);
+    }
+    if (currentPath === "/terms") {
+      return withGlobalHome(<TermsConditionsPage onNavigate={navigate} />);
     }
     return withGlobalHome(<Signin onAuthenticated={handleAuthenticated} onBack={() => navigate("/")} />);
   }

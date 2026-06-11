@@ -2030,6 +2030,17 @@ h1 {
   flex: 0 0 auto;
 }
 
+.terms-checkbox a {
+  color: #2563eb;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.terms-checkbox a:hover {
+  color: #1d4ed8;
+}
+
 .signup-button {
   margin-top: 0.8rem;
   border: 0;
