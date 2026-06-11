@@ -1,4 +1,5 @@
 import csv
+import base64
 import io
 import json
 import os
@@ -7,7 +8,7 @@ import uuid
 import zipfile
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 import qrcode
 import requests
@@ -1171,6 +1172,8 @@ def _school_identity_payload(tenant, request=None):
         "code": getattr(tenant, "school_code", "") or getattr(tenant, "schema_name", "") or "",
         "school_type": getattr(tenant, "school_type", "k12") or "k12",
         "logo": logo_url,
+        "motto": getattr(tenant, "motto", "") or getattr(tenant, "tagline", "") or "",
+        "tagline": getattr(tenant, "tagline", "") or getattr(tenant, "motto", "") or "",
     }
 
 
@@ -1671,6 +1674,53 @@ def _qr_token_from_request(request):
     if "/" in token:
         token = token.rstrip("/").rsplit("/", 1)[-1]
     return token.strip()
+
+
+def _id_card_token_from_value(value):
+    token = str(value or "").strip()
+    if not token:
+        return ""
+    if "token=" in token:
+        parsed = urlparse(token)
+        query_token = parse_qs(parsed.query).get("token", [""])[0]
+        if query_token:
+            return query_token.strip()
+        return token.split("token=", 1)[1].split("&", 1)[0].strip()
+    return token.rstrip("/").rsplit("/", 1)[-1].strip() if "/" in token else token
+
+
+def _id_card_token_from_request(request):
+    return _id_card_token_from_value(
+        request.data.get("id_card_token")
+        or request.data.get("qr_token")
+        or request.data.get("token")
+        or request.data.get("qr_url")
+        or request.data.get("value")
+        or ""
+    )
+
+
+def _id_card_qr_data_url(request, tenant, person):
+    payload = {
+        "tenant_id": str(tenant.id),
+        "person_type": person["person_type"],
+        "person_id": person["id"],
+        "unique_id": person["unique_id"],
+    }
+    token = signing.dumps(payload, salt=ID_CARD_SIGNING_SALT, compress=True)
+    verify_url = _build_id_card_verify_url(request, token)
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=3)
+    qr.add_data(verify_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#08111f", back_color="white")
+    image_io = io.BytesIO()
+    image.save(image_io, "PNG")
+    encoded = base64.b64encode(image_io.getvalue()).decode("ascii")
+    return {
+        "token": token,
+        "verify_url": verify_url,
+        "qr_data_url": f"data:image/png;base64,{encoded}",
+    }
 
 
 def _subject_payload(subject):
@@ -3132,6 +3182,15 @@ def student_dashboard(request):
             _school_fee_payload(fee)
             for fee in SchoolFee.objects.filter(student=student_profile).order_by("due_date")[:12]
         ]
+    id_card_generated_at = student_profile.id_card_generated_at if student_profile else None
+    id_card_viewed_at = student_profile.id_card_viewed_at if student_profile else None
+    id_card_is_new = bool(
+        id_card_generated_at
+        and (
+            not id_card_viewed_at
+            or id_card_generated_at > id_card_viewed_at
+        )
+    )
 
     upcoming_exams = []
     for exam in upcoming_exams_qs.order_by("start_date")[:8]:
@@ -3305,6 +3364,13 @@ def student_dashboard(request):
                 "available_results": results_qs.count(),
                 "attendance_marked_today": bool(attendance_today),
                 "subjects_offered": len(subjects),
+                "new_id_card": id_card_is_new,
+            },
+            "id_card": {
+                "available": bool(student_profile),
+                "is_new": id_card_is_new,
+                "generated_at": id_card_generated_at,
+                "viewed_at": id_card_viewed_at,
             },
             "upcoming_exams": upcoming_exams,
             "subjects": subjects,
@@ -5046,14 +5112,8 @@ def id_card_qr_code(request):
                 status=status.HTTP_402_PAYMENT_REQUIRED,
             )
 
-    payload = {
-        "tenant_id": str(user.tenant_id),
-        "person_type": person["person_type"],
-        "person_id": person["id"],
-        "unique_id": person["unique_id"],
-    }
-    token = signing.dumps(payload, salt=ID_CARD_SIGNING_SALT, compress=True)
-    verify_url = _build_id_card_verify_url(request, token)
+    qr_payload = _id_card_qr_data_url(request, user.tenant, person)
+    verify_url = qr_payload["verify_url"]
 
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=3)
     qr.add_data(verify_url)
@@ -5065,6 +5125,8 @@ def id_card_qr_code(request):
     response = FileResponse(image_io, content_type="image/png")
     response["Content-Disposition"] = f'inline; filename="{person["unique_id"]}_id_card_qr.png"'
     if is_download:
+        if person["person_type"] == "student":
+            StudentProfile.objects.filter(id=person["id"], user__tenant=user.tenant).update(id_card_generated_at=timezone.now())
         response["X-Token-Used"] = "1" if token_charged else "0"
         response["X-Token-Message"] = "1 token used to generate ID card." if token_charged else "ID card generated. No token used because this student's ID card was already generated."
     return response
@@ -5130,6 +5192,163 @@ def id_card_verify(request):
             "message": "ID card verified." if is_active else "ID card belongs to this school, but the profile is inactive.",
             "school": _school_identity_payload(tenant, request=request),
             "person": _public_id_card_verification_person(person),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def student_my_id_card(request):
+    user = request.user
+    if user.role != "student":
+        return Response(
+            {"success": False, "message": "Only student accounts can view their ID card."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if not user.tenant:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    student_profile = StudentProfile.objects.select_related("user", "current_class").filter(user=user).first()
+    if not student_profile:
+        return Response(
+            {"success": False, "message": "Your student profile is not ready."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    if not student_profile.id_card_generated_at:
+        return Response(
+            {
+                "success": True,
+                "available": False,
+                "was_new": False,
+                "school": _school_identity_payload(user.tenant, request=request),
+                "message": "Your school admin has not generated your ID card yet.",
+            }
+        )
+
+    person = _id_card_student_payload(student_profile, request=request)
+    qr_payload = _id_card_qr_data_url(request, user.tenant, person)
+    was_new = bool(
+        student_profile.id_card_generated_at
+        and (
+            not student_profile.id_card_viewed_at
+            or student_profile.id_card_generated_at > student_profile.id_card_viewed_at
+        )
+    )
+    if was_new:
+        student_profile.id_card_viewed_at = timezone.now()
+        student_profile.save(update_fields=["id_card_viewed_at", "updated_at"])
+
+    return Response(
+        {
+            "success": True,
+            "available": True,
+            "was_new": was_new,
+            "school": _school_identity_payload(user.tenant, request=request),
+            "person": person,
+            **qr_payload,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def id_card_scan_attendance(request):
+    user = request.user
+    if user.role not in {"teacher", *ADMIN_ROLES}:
+        return Response(
+            {"success": False, "message": "Only teachers and school administrators can scan student ID cards for attendance."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    school = _resolve_school_tenant_for_user(user)
+    if not school:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    token = _id_card_token_from_request(request)
+    if not token:
+        return Response(
+            {"success": False, "message": "Scan a valid student ID card QR code."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        payload = signing.loads(token, salt=ID_CARD_SIGNING_SALT, max_age=60 * 60 * 24 * 365 * 10)
+    except SignatureExpired:
+        return Response({"success": False, "message": "This ID card QR code has expired."}, status=status.HTTP_400_BAD_REQUEST)
+    except BadSignature:
+        return Response({"success": False, "message": "Invalid ID card QR code."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if str(payload.get("tenant_id") or "") != str(school.id):
+        return Response(
+            {"success": False, "message": "This ID card does not belong to your school."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    if str(payload.get("person_type") or "").lower() != "student":
+        return Response(
+            {"success": False, "message": "Only student ID cards can be used for student attendance."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    student_profile = StudentProfile.objects.select_related("user", "current_class").filter(
+        id=payload.get("person_id"),
+        user__tenant=school,
+    ).first()
+    if (
+        not student_profile
+        or str(student_profile.student_id or "") != str(payload.get("unique_id") or "")
+        or not student_profile.user.is_active
+    ):
+        return Response(
+            {"success": False, "message": "Student ID card could not be verified as active."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if user.role == "teacher" and not _is_non_k12_school(user):
+        assigned_class_ids = set(_teacher_assigned_classes(user).values_list("id", flat=True))
+        if not student_profile.current_class_id or student_profile.current_class_id not in assigned_class_ids:
+            return Response(
+                {"success": False, "message": "You can only scan attendance for students in your assigned classes."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    try:
+        location = _attendance_location_payload(request)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    attendance_date = parse_date(str(request.data.get("date") or "")) or timezone.localdate()
+    tenant_obj = _tenant_for_model(AttendanceRecord, user)
+    attendance, created = AttendanceRecord.objects.update_or_create(
+        student=student_profile.user,
+        date=attendance_date,
+        defaults={
+            "status": "present",
+            "class_group": student_profile.current_class,
+            "noted_by": user,
+            "tenant": tenant_obj,
+            "latitude": location["latitude"],
+            "longitude": location["longitude"],
+            "location_accuracy_meters": location["accuracy"],
+            "location_address": location["address"],
+            "device_info": location["device_info"],
+        },
+    )
+    return Response(
+        {
+            "success": True,
+            "message": f"{student_profile.user.get_full_name() or student_profile.student_id} marked present from ID card.",
+            "created": created,
+            "attendance": {
+                "id": str(attendance.id),
+                "student_id": student_profile.student_id,
+                "student_name": student_profile.user.get_full_name(),
+                "class_name": _class_label(attendance.class_group) if attendance.class_group else "Unassigned",
+                "date": attendance.date,
+                "status": attendance.status,
+            },
         }
     )
 

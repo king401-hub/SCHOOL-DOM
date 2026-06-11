@@ -6,7 +6,7 @@ import FAQPage from "./FAQPage";
 import PrivacyPolicyPage from "./PrivacyPolicyPage";
 import TermsConditionsPage from "./TermsConditionsPage";
 import PricingPage from "./PricingPage";
-import { AttendanceModule, TeacherQRCodeAttendancePage } from "./components/Attendance";
+import { AttendanceModule, IdCardAttendanceScanner, StudentQrAttendanceScanner, TeacherQRCodeAttendancePage } from "./components/Attendance";
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
@@ -88,6 +88,7 @@ const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
 
 const IdCardVerificationPage = lazyAdminScreen("IdCardVerificationPage");
+const StudentIdCardPreview = lazyAdminScreen("IdCardPreview");
 const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
@@ -554,183 +555,6 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
   );
 }
 
-function StudentQrAttendanceScanner({ session, onRefresh, attendanceToday }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const frameRef = useRef(null);
-  const scanningRef = useRef(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [manualToken, setManualToken] = useState("");
-  const [feedback, setFeedback] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const stopCamera = useCallback(() => {
-    scanningRef.current = false;
-    if (frameRef.current) {
-      cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setCameraActive(false);
-  }, []);
-
-  useEffect(() => stopCamera, [stopCamera]);
-
-  const markAttendance = useCallback(
-    async (rawToken) => {
-      const token = String(rawToken || "").trim();
-      if (!token) {
-        setError("Scan or enter the school attendance QR code.");
-        return;
-      }
-      setSubmitting(true);
-      setError("");
-      setFeedback("Requesting location...");
-      try {
-        const location = await getTeacherAttendanceLocationPayload();
-        setFeedback("Saving attendance...");
-        const result = await requestJson(session, "POST", "/api/app/attendance/student-qr-mark/", {
-          token,
-          location,
-        });
-        setFeedback(result.message || "Attendance marked successfully.");
-        setManualToken("");
-        stopCamera();
-        await onRefresh?.();
-      } catch (scanError) {
-        setFeedback("");
-        setError(scanError.message || "Could not mark attendance.");
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [onRefresh, session, stopCamera],
-  );
-
-  const startCamera = async () => {
-    setError("");
-    setFeedback("");
-    if (!("BarcodeDetector" in window)) {
-      setError("This browser cannot scan QR codes directly. Paste the QR token below instead.");
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError("Camera access is not available on this device.");
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setCameraActive(true);
-      setFeedback("Point the camera at the school attendance QR code.");
-      scanningRef.current = true;
-      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-
-      const scanFrame = async () => {
-        if (!scanningRef.current || !videoRef.current || submitting) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          const value = codes?.[0]?.rawValue;
-          if (value) {
-            await markAttendance(value);
-            return;
-          }
-        } catch {
-          setError("The camera could not read the QR code. Try better light or paste the token below.");
-        }
-        frameRef.current = requestAnimationFrame(scanFrame);
-      };
-      frameRef.current = requestAnimationFrame(scanFrame);
-    } catch (cameraError) {
-      setError(cameraError?.message || "Allow camera access to scan the attendance QR code.");
-      stopCamera();
-    }
-  };
-
-  return (
-    <section className="student-panel">
-      <div className="student-panel-head">
-        <div>
-          <h3>QR Attendance</h3>
-          <p className="student-panel-sub">Scan the school attendance QR code to mark today&apos;s attendance.</p>
-        </div>
-        <span className={`student-status-pill status-${attendanceToday?.status || "unmarked"}`}>
-          {attendanceToday ? `Marked ${attendanceToday.status}` : "Not marked"}
-        </span>
-      </div>
-      <div className="quick-actions-grid">
-        <article className="quick-action-card featured" style={{ cursor: "default" }}>
-          <div className="quick-action-icon">QR</div>
-          <div className="quick-action-content">
-            <h4>Student self scan</h4>
-            <p>Only non K-12 schools can use student QR attendance.</p>
-          </div>
-        </article>
-        <div className="student-card tone-blue" style={{ minHeight: 180 }}>
-          <video
-            ref={videoRef}
-            muted
-            playsInline
-            style={{
-              width: "100%",
-              maxHeight: 220,
-              borderRadius: 14,
-              background: "#0f172a",
-              objectFit: "cover",
-              display: cameraActive ? "block" : "none",
-            }}
-          />
-          {!cameraActive ? (
-            <span className="student-card-detail">Camera preview will appear here after you start scanning.</span>
-          ) : null}
-        </div>
-      </div>
-      <div className="panel-form-actions">
-        <button type="button" className="student-primary-btn" onClick={startCamera} disabled={submitting || cameraActive}>
-          {cameraActive ? "Scanning..." : "Start scanner"}
-        </button>
-        {cameraActive ? (
-          <button type="button" className="student-link-btn" onClick={stopCamera} disabled={submitting}>
-            Stop camera
-          </button>
-        ) : null}
-      </div>
-      <label className="panel-field">
-        <span>QR token fallback</span>
-        <input
-          type="text"
-          value={manualToken}
-          onChange={(event) => setManualToken(event.target.value)}
-          placeholder="Paste scanned QR token or URL"
-          disabled={submitting}
-        />
-      </label>
-      <div className="panel-form-actions">
-        <button type="button" className="student-link-btn" onClick={() => markAttendance(manualToken)} disabled={submitting}>
-          {submitting ? "Saving..." : "Mark attendance"}
-        </button>
-      </div>
-      {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-      {error ? <p className="form-feedback error">{error}</p> : null}
-    </section>
-  );
-}
-
 function StudentDashboard({
   data = {},
   student = {},
@@ -758,6 +582,7 @@ function StudentDashboard({
   const subjects = dashboardData.subjects || [];
   const dailyQuiz = dashboardData.daily_personal_quiz || {};
   const fees = dashboardData.fees || [];
+  const idCard = dashboardData.id_card || {};
   const paymentInstructions = dashboardData.payment_instructions || {};
   const currentTerm = student.term || dashboardData.active_term?.name || "No active term";
 
@@ -990,6 +815,15 @@ function StudentDashboard({
           <button
             className="student-nav-item"
             type="button"
+            onClick={() => { go("/id-card"); setNavOpen(false); }}
+          >
+            <DashboardIcon name="id" className="inline-icon" />
+            <span>ID Card</span>
+            {idCard.is_new ? <strong className="student-pill notification-badge">New</strong> : null}
+          </button>
+          <button
+            className="student-nav-item"
+            type="button"
             onClick={() => { go("/quizzes"); setNavOpen(false); }}
           >
             <DashboardIcon name="exam" className="inline-icon" />
@@ -1208,6 +1042,17 @@ function StudentDashboard({
               <div className="quick-action-content">
                 <h4>Check Results</h4>
                 <p>View your exam scores and grades</p>
+              </div>
+            </button>
+            <button
+              className={`quick-action-card ${idCard.is_new ? "featured" : ""}`}
+              type="button"
+              onClick={() => go("/id-card")}
+            >
+              <div className="quick-action-icon">ID</div>
+              <div className="quick-action-content">
+                <h4>ID Card {idCard.is_new ? <span className="student-pill notification-badge">New</span> : null}</h4>
+                <p>View and flip your SchoolDom student ID card</p>
               </div>
             </button>
             <button
@@ -1510,6 +1355,61 @@ function StudentAttendancePage({ session, onNavigate }) {
             <p className="student-panel-sub">K-12 attendance is marked by teachers or school staff.</p>
           </article>
         )
+      ) : null}
+    </section>
+  );
+}
+
+function StudentIdCardPage({ session, onNavigate }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadCard = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/app/id-cards/my/");
+      setData(result || {});
+    } catch (loadError) {
+      setError(loadError.message || "Could not load your ID card.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadCard();
+  }, [loadCard]);
+
+  const school = resolveSchoolBrand(data?.school, session?.school, session);
+
+  return (
+    <section className="student-standalone-page student-id-card-page">
+      <header className="student-standalone-hero">
+        <div>
+          <p className="topbar-kicker">{school?.name || "SchoolDom"}</p>
+          <h1>Student ID Card</h1>
+          <p>View your official student ID card. Printing is managed by the school admin.</p>
+        </div>
+        <button type="button" className="student-link-btn" onClick={() => onNavigate?.("/dashboard")}>
+          Back to dashboard
+        </button>
+      </header>
+
+      <ScreenState loading={loading && !data} error={error} onRetry={loadCard} />
+
+      {data?.was_new ? <p className="form-feedback success">New ID card opened. The dashboard notice has been cleared.</p> : null}
+
+      {data?.person ? (
+        <Suspense fallback={<ScreenState loading />}>
+          <StudentIdCardPreview person={data.person} school={school} qrDataUrl={data.qr_data_url} />
+        </Suspense>
+      ) : !loading && !error ? (
+        <article className="student-panel">
+          <h3>No ID card yet</h3>
+          <p className="student-panel-sub">{data?.message || "Your school admin has not generated your ID card yet."}</p>
+        </article>
       ) : null}
     </section>
   );
@@ -4974,15 +4874,23 @@ function TeacherWorkspace({
       );
     }
     if (activeTab === "attendance") {
-      return <TeacherSwipeAttendancePanel session={session} classOptions={classOptions} />;
+      return (
+        <section className="screen-grid">
+          <TeacherSwipeAttendancePanel session={session} classOptions={classOptions} />
+          <IdCardAttendanceScanner session={session} />
+        </section>
+      );
     }
     if (activeTab === "attendance-info") {
       return (
-        <article className="app-panel state-panel">
-          <h3>Student Self Attendance</h3>
-          <p>For non K-12 schools, students mark attendance themselves from their Attendance page using the student QR scanner.</p>
-          <p>Admins generate or print the shared Student QR code from the admin Attendance page.</p>
-        </article>
+        <section className="screen-grid">
+          <article className="app-panel state-panel">
+            <h3>Student Self Attendance</h3>
+            <p>For non K-12 schools, students can mark attendance themselves from their Attendance page using the student QR scanner.</p>
+            <p>Teachers can also scan the QR code on the back of a student's SchoolDom ID card to verify the student and mark attendance.</p>
+          </article>
+          <IdCardAttendanceScanner session={session} />
+        </section>
       );
     }
     if (activeTab === "planning") {
@@ -7658,6 +7566,15 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   if (currentPath === "/attendance" && role === "student") {
     return withGlobalNotifications(
       <StudentAttendancePage
+        session={session}
+        onNavigate={navigate}
+      />
+    );
+  }
+
+  if (currentPath === "/id-card" && role === "student") {
+    return withGlobalNotifications(
+      <StudentIdCardPage
         session={session}
         onNavigate={navigate}
       />

@@ -4077,7 +4077,7 @@ function blobToDataUrl(blob) {
   });
 }
 
-function IdCardPreview({ person, school, qrDataUrl }) {
+export function IdCardPreview({ person, school, qrDataUrl }) {
   const brand = resolveSchoolBrand(school);
   const [isFlipped, setIsFlipped] = useState(false);
   if (!person) {

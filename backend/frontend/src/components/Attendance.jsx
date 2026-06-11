@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { requestJson } from "../AppShared";
 
 const ADMIN_ROLES = new Set(["school_admin", "principal", "super_admin"]);
@@ -187,6 +187,230 @@ function AttendanceStatusPill({ status = "present" }) {
     >
       {statusLabel(status)}
     </span>
+  );
+}
+
+function QrScannerPanel({
+  title,
+  subtitle,
+  tokenLabel = "QR token fallback",
+  placeholder = "Paste scanned QR token or URL",
+  submitLabel = "Submit scan",
+  scanningLabel = "Point the camera at the QR code.",
+  onScan,
+  disabled = false,
+  statusPill = null,
+}) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const frameRef = useRef(null);
+  const scanningRef = useRef(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [manualToken, setManualToken] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const stopCamera = useCallback(() => {
+    scanningRef.current = false;
+    if (frameRef.current) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  useEffect(() => stopCamera, [stopCamera]);
+
+  const submitToken = useCallback(
+    async (rawToken) => {
+      const token = String(rawToken || "").trim();
+      if (!token) {
+        setError("Scan or paste a valid QR code.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      setFeedback("Requesting location...");
+      try {
+        const location = await getAttendanceLocationPayload();
+        setFeedback("Saving scan...");
+        const result = await onScan(token, location);
+        setFeedback(result?.message || "Scan saved successfully.");
+        setManualToken("");
+        stopCamera();
+      } catch (scanError) {
+        setFeedback("");
+        setError(scanError.message || "Could not complete scan.");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [onScan, stopCamera]
+  );
+
+  const startCamera = async () => {
+    setError("");
+    setFeedback("");
+    if (!("BarcodeDetector" in window)) {
+      setError("This browser cannot scan QR codes directly. Paste the QR token or URL below instead.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Camera access is not available on this device.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraActive(true);
+      setFeedback(scanningLabel);
+      scanningRef.current = true;
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+
+      const scanFrame = async () => {
+        if (!scanningRef.current || !videoRef.current || submitting) return;
+        try {
+          const codes = await detector.detect(videoRef.current);
+          const value = codes?.[0]?.rawValue;
+          if (value) {
+            await submitToken(value);
+            return;
+          }
+        } catch {
+          setError("The camera could not read the QR code. Try better light or paste the token below.");
+        }
+        frameRef.current = requestAnimationFrame(scanFrame);
+      };
+      frameRef.current = requestAnimationFrame(scanFrame);
+    } catch (cameraError) {
+      setError(cameraError?.message || "Allow camera access to scan the QR code.");
+      stopCamera();
+    }
+  };
+
+  return (
+    <section className="qr-scanner-panel">
+      <div className="student-panel-head">
+        <div>
+          <h3>{title}</h3>
+          {subtitle ? <p className="student-panel-sub">{subtitle}</p> : null}
+        </div>
+        {statusPill}
+      </div>
+      <div className="qr-scanner-grid">
+        <div className="qr-camera-card">
+          <video ref={videoRef} muted playsInline className={cameraActive ? "is-active" : ""} />
+          {!cameraActive ? <span>Camera preview appears here.</span> : null}
+        </div>
+        <div className="qr-scanner-copy">
+          <strong>{cameraActive ? "Scanning..." : "Ready to scan"}</strong>
+          <p>{scanningLabel}</p>
+          <div className="panel-form-actions">
+            <button type="button" onClick={startCamera} disabled={disabled || submitting || cameraActive}>
+              {cameraActive ? "Scanning..." : "Start scanner"}
+            </button>
+            {cameraActive ? (
+              <button type="button" className="table-action" onClick={stopCamera} disabled={submitting}>
+                Stop camera
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <label className="panel-field">
+        <span>{tokenLabel}</span>
+        <input
+          type="text"
+          value={manualToken}
+          onChange={(event) => setManualToken(event.target.value)}
+          placeholder={placeholder}
+          disabled={disabled || submitting}
+        />
+      </label>
+      <div className="panel-form-actions">
+        <button type="button" className="table-action" onClick={() => submitToken(manualToken)} disabled={disabled || submitting}>
+          {submitting ? "Saving..." : submitLabel}
+        </button>
+      </div>
+      {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+      {error ? <p className="form-feedback error">{error}</p> : null}
+    </section>
+  );
+}
+
+export function StudentQrAttendanceScanner({ session, onRefresh, attendanceToday }) {
+  const handleScan = useCallback(
+    async (token, location) => {
+      const result = await requestJson(session, "POST", "/api/app/attendance/student-qr-mark/", {
+        token,
+        location,
+      });
+      await onRefresh?.();
+      return result;
+    },
+    [onRefresh, session]
+  );
+
+  return (
+    <article className="student-panel">
+      <QrScannerPanel
+        title="QR Attendance"
+        subtitle="Scan the school attendance QR code to mark today's attendance."
+        tokenLabel="QR token fallback"
+        submitLabel="Mark attendance"
+        scanningLabel="Point the camera at the school attendance QR code."
+        onScan={handleScan}
+        statusPill={
+          <span className={`student-status-pill status-${attendanceToday?.status || "unmarked"}`}>
+            {attendanceToday ? `Marked ${attendanceToday.status}` : "Not marked"}
+          </span>
+        }
+      />
+    </article>
+  );
+}
+
+export function IdCardAttendanceScanner({ session, onMarked, title = "Scan Student ID Card", subtitle = "Scan the QR code on the back of a student's ID card to verify it and mark attendance." }) {
+  const handleScan = useCallback(
+    async (token, location) => {
+      const result = await requestJson(session, "POST", "/api/app/id-cards/scan-attendance/", {
+        token,
+        location,
+      });
+      await onMarked?.(result);
+      return result;
+    },
+    [onMarked, session]
+  );
+
+  return (
+    <article className="app-panel">
+      <QrScannerPanel
+        title={title}
+        subtitle={subtitle}
+        tokenLabel="ID card QR fallback"
+        placeholder="Paste student ID card QR URL or token"
+        submitLabel="Verify & mark present"
+        scanningLabel="Point the camera at the QR code on the back of the student ID card."
+        onScan={handleScan}
+      />
+    </article>
   );
 }
 
@@ -810,11 +1034,13 @@ export function AttendanceModule({ session }) {
       nonK12
         ? [
             { id: "qr", label: "Student QR", render: () => <QRCodeManagement session={session} /> },
+            { id: "scan", label: "Scan ID Card", render: () => <IdCardAttendanceScanner session={session} /> },
             { id: "students", label: "Student List", render: () => <StudentAttendanceDashboard session={session} /> },
           ]
         : [
             { id: "dashboard", label: "Today", render: () => <AttendanceDashboard session={session} /> },
             { id: "qr", label: "QR Code", render: () => <QRCodeManagement session={session} /> },
+            { id: "scan", label: "Scan ID Card", render: () => <IdCardAttendanceScanner session={session} /> },
           ],
     [nonK12, session]
   );

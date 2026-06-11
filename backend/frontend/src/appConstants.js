@@ -84,6 +84,7 @@ export const ADMIN_ENDPOINTS = {
 export const STUDENT_ROUTES = [
   { path: "/dashboard", label: "Dashboard" },
   { path: "/attendance", label: "Attendance" },
+  { path: "/id-card", label: "ID Card" },
   { path: "/fees", label: "School Fees" },
   { path: "/exams", label: "Exams" },
   { path: "/quizzes", label: "Quizzes" },

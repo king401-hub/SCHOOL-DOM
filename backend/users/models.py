@@ -302,6 +302,8 @@ class StudentProfile(models.Model):
     # Documents
     birth_certificate = models.FileField(upload_to='students/documents/', null=True, blank=True)
     previous_school_report = models.FileField(upload_to='students/documents/', null=True, blank=True)
+    id_card_generated_at = models.DateTimeField(null=True, blank=True)
+    id_card_viewed_at = models.DateTimeField(null=True, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
