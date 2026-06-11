@@ -5027,11 +5027,20 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
                 Student
                 <select value={selectedStudent?.id || ""} onChange={(event) => setSelectedStudentId(event.target.value)}>
                   {(mode === "testimonial" ? eligibleStudents : students).map((student) => (
-                    <option key={student.id} value={student.id}>
-                      {student.name} - {student.class_name} - {student.admission_number || student.student_id}
+                    <option
+                      key={student.id}
+                      value={student.id}
+                      title={`${student.name} - ${student.class_name || "Class not set"} - ${student.student_id || student.admission_number || ""}`}
+                    >
+                      {student.name} - {student.student_id || student.admission_number || "No ID"}
                     </option>
                   ))}
                 </select>
+                {selectedStudent ? (
+                  <small className="field-note">
+                    {selectedStudent.class_name || "Class not set"} - {selectedStudent.student_id || selectedStudent.admission_number || "No ID"}
+                  </small>
+                ) : null}
               </label>
               {mode === "testimonial" ? (
                 <form className="panel-form testimonial-editor" onSubmit={handleSave}>

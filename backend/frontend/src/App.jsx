@@ -801,6 +801,7 @@ function StudentDashboard({
   const formatFeeAmount = (value) => `${feeCurrency}${Number(value || 0).toLocaleString()}`;
 
   const studentName = student.name || "Student";
+  const schoolMotto = school.motto || school.tagline || "";
   const profilePicture = student.profile_picture;
   const initials = userInitials({ full_name: studentName });
   const activityRole = student.extra_curricular_activity_title || "";
@@ -1097,6 +1098,7 @@ function StudentDashboard({
               {groupLabels.singular}: {student.class_name || groupLabels.unassigned} - Term: {currentTerm} - Today:{" "}
               {todayLabel}
             </p>
+            {schoolMotto ? <p className="dashboard-school-motto">{schoolMotto}</p> : null}
           </div>
           <div className="student-hero-actions">
             <span className={`student-status-pill status-${attendance.today?.status || "unmarked"}`}>
@@ -4035,6 +4037,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
   const teacherInitials = userInitials({ full_name: teacherName });
   const [profileOpen, setProfileOpen] = useState(false);
   const school = resolveSchoolBrand(data.school, session?.school, session);
+  const schoolMotto = school.motto || school.tagline || "";
   const examResults =
     data.exam_results || data.results || data.recent_results || data.pending_submissions || [];
   const cbtResults = data.cbt_results || data.submitted_results || examResults || [];
@@ -4080,6 +4083,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
           <p className="topbar-kicker">Welcome back</p>
           <h2>{teacherName}</h2>
           <p>{teacherProfile.specialization || "Teacher workspace"}</p>
+          {schoolMotto ? <p className="dashboard-school-motto">{schoolMotto}</p> : null}
           <small>
             {teacherProfile.email || ""} {teacherProfile.employee_id ? `- ${teacherProfile.employee_id}` : ""}{" "}
             {assignedSubjects.length ? `- ${assignedSubjects.map((s) => s.name).join(", ")}` : ""}
@@ -4621,13 +4625,24 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                 >
                   <option value="">{studentLoading ? "Loading students..." : studentSearch ? "Select matching student" : "Select student"}</option>
                   {filteredStudentOptions.map((student) => (
-                    <option key={student.id || student.student_id} value={student.student_id}>
-                      {student.name} - {student.student_id} - {student.email || "No email"} - {student.class_name}
+                    <option
+                      key={student.id || student.student_id}
+                      value={student.student_id}
+                      title={`${student.name} - ${student.student_id} - ${student.email || "No email"} - ${student.class_name || ""}`}
+                    >
+                      {student.name} - {student.student_id}
                     </option>
                   ))}
                   {!studentLoading && studentSearch && filteredStudentOptions.length === 0 ? <option value="" disabled>No matching students</option> : null}
                 </select>
-                <small className="field-note">Students are available when you teach the selected subject.</small>
+                <small className="field-note">
+                  {form.student_id
+                    ? (() => {
+                        const selected = studentOptions.find((student) => student.student_id === form.student_id);
+                        return selected ? `${selected.class_name || "Class not set"} - ${selected.email || "No email"}` : "Selected student";
+                      })()
+                    : "Students are available when you teach the selected subject."}
+                </small>
               </label>
               <label className="panel-field compact-subject-field">
                 Subject

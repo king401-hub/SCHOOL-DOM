@@ -944,6 +944,15 @@ body.dashboard-error-active .global-notification-shell {
   font-weight: 600;
 }
 
+.dashboard-school-motto {
+  margin: 0.45rem 0 0;
+  color: inherit;
+  opacity: 0.82;
+  font-size: 0.95rem;
+  font-style: italic;
+  font-weight: 800;
+}
+
 .student-hero-actions {
   display: flex;
   align-items: center;
@@ -3968,6 +3977,11 @@ body[data-dashboard-role="student"] .student-main-topbar {
   white-space: nowrap;
 }
 
+.teacher-header-copy .dashboard-school-motto {
+  color: #bfdbfe;
+  white-space: normal;
+}
+
 .teacher-header-actions {
   display: inline-flex;
   align-items: center;
@@ -5287,6 +5301,9 @@ body[data-theme="dark"] .token-usage-toast {
 .teacher-results .student-picker-field > .student-picker-search,
 .teacher-results .student-picker-field > .student-picker-select {
   min-height: 38px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .teacher-results .student-picker-field > .field-note {
