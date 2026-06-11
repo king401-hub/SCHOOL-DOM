@@ -5902,7 +5902,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
   const [deletingStudentId, setDeletingStudentId] = useState("");
   const [pendingDeleteStudent, setPendingDeleteStudent] = useState(null);
   const [deleteSuccess, setDeleteSuccess] = useState(null);
-  const [activityTitleForm, setActivityTitleForm] = useState({ name: "", sort_order: "" });
+  const [activityTitleForm, setActivityTitleForm] = useState({ name: "", star_rating: "1" });
   const [editingActivityTitleId, setEditingActivityTitleId] = useState("");
   const [activityTitleBusyId, setActivityTitleBusyId] = useState("");
   const [activityTitleError, setActivityTitleError] = useState("");
@@ -6110,12 +6110,12 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
     try {
       const payload = {
         name,
-        sort_order: activityTitleForm.sort_order,
+        star_rating: activityTitleForm.star_rating,
         is_active: true,
       };
       const result = await onActivityTitleSave(editingActivityTitleId, payload);
       setActivityTitleSuccess(result?.message || "Title saved.");
-      setActivityTitleForm({ name: "", sort_order: "" });
+      setActivityTitleForm({ name: "", star_rating: "1" });
       setEditingActivityTitleId("");
     } catch (actionError) {
       setActivityTitleError(actionError.message || "Could not save title.");
@@ -6126,7 +6126,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
 
   const handleEditActivityTitle = (title) => {
     setEditingActivityTitleId(title.id);
-    setActivityTitleForm({ name: title.name || "", sort_order: title.sort_order ?? "" });
+    setActivityTitleForm({ name: title.name || "", star_rating: String(title.star_rating ?? "1") });
     setActivityTitleError("");
     setActivityTitleSuccess("");
   };
@@ -6221,74 +6221,6 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
 
       {data ? (
         <>
-      <article className="app-panel">
-        <h3>Student Activity Titles</h3>
-        <form className="panel-form" onSubmit={handleActivityTitleSubmit}>
-          <div className="panel-form-grid">
-            <label className="panel-field">
-              Title Name
-              <input
-                value={activityTitleForm.name}
-                onChange={(event) => setActivityTitleForm((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder="Prefect, Class Monitor"
-              />
-            </label>
-            <label className="panel-field">
-              Order
-              <input
-                type="number"
-                value={activityTitleForm.sort_order}
-                onChange={(event) => setActivityTitleForm((prev) => ({ ...prev, sort_order: event.target.value }))}
-                placeholder="10"
-              />
-            </label>
-          </div>
-          {activityTitleError ? <p className="form-feedback error">{activityTitleError}</p> : null}
-          {activityTitleSuccess ? <p className="form-feedback success">{activityTitleSuccess}</p> : null}
-          <div className="panel-form-actions">
-            <button type="submit" disabled={Boolean(activityTitleBusyId)}>
-              {activityTitleBusyId === "new" || activityTitleBusyId === editingActivityTitleId ? "Saving..." : editingActivityTitleId ? "Rename Title" : "Add Title"}
-            </button>
-            {editingActivityTitleId ? (
-              <button type="button" className="table-action" onClick={() => {
-                setEditingActivityTitleId("");
-                setActivityTitleForm({ name: "", sort_order: "" });
-              }}>
-                Cancel
-              </button>
-            ) : null}
-          </div>
-        </form>
-        {activityTitles.length > 0 ? (
-          <div className="teacher-class-chip-list">
-            {activityTitles.map((title) => (
-              <button
-                key={title.id}
-                type="button"
-                className={title.is_active ? "" : "muted"}
-                onClick={() => handleEditActivityTitle(title)}
-                title={`${title.is_active ? "Active" : "Inactive"} - ${title.student_count || 0} student(s)`}
-              >
-                {title.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {editingActivityTitleId ? (
-          <div className="panel-form-actions">
-            {activityTitles.find((item) => item.id === editingActivityTitleId)?.is_active ? (
-              <button type="button" className="table-action" onClick={() => handleDeactivateActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
-                Deactivate
-              </button>
-            ) : (
-              <button type="button" className="table-action" onClick={() => handleToggleActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
-                Activate
-              </button>
-            )}
-          </div>
-        ) : null}
-      </article>
-
       <article className="app-panel">
         <h3>Admissions</h3>
         <form className="panel-form" onSubmit={handleSubmit}>
@@ -6416,7 +6348,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     <option value="">No title</option>
                     {activeActivityTitles.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name}
+                        {item.name} - {item.star_label || `${item.star_rating || 0} stars`}
                       </option>
                     ))}
                   </select>
@@ -6456,6 +6388,77 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
 </button>
           </div>
         </form>
+      </article>
+
+      <article className="app-panel">
+        <h3>Student Activity Titles</h3>
+        <form className="panel-form" onSubmit={handleActivityTitleSubmit}>
+          <div className="panel-form-grid">
+            <label className="panel-field">
+              Title Name
+              <input
+                value={activityTitleForm.name}
+                onChange={(event) => setActivityTitleForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Prefect, Class Monitor"
+              />
+            </label>
+            <label className="panel-field">
+              Stars
+              <input
+                type="number"
+                min="0.5"
+                max="5"
+                step="0.5"
+                value={activityTitleForm.star_rating}
+                onChange={(event) => setActivityTitleForm((prev) => ({ ...prev, star_rating: event.target.value }))}
+                placeholder="1"
+              />
+            </label>
+          </div>
+          {activityTitleError ? <p className="form-feedback error">{activityTitleError}</p> : null}
+          {activityTitleSuccess ? <p className="form-feedback success">{activityTitleSuccess}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={Boolean(activityTitleBusyId)}>
+              {activityTitleBusyId === "new" || activityTitleBusyId === editingActivityTitleId ? "Saving..." : editingActivityTitleId ? "Rename Title" : "Add Title"}
+            </button>
+            {editingActivityTitleId ? (
+              <button type="button" className="table-action" onClick={() => {
+                setEditingActivityTitleId("");
+                setActivityTitleForm({ name: "", star_rating: "1" });
+              }}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </form>
+        {activityTitles.length > 0 ? (
+          <div className="teacher-class-chip-list">
+            {activityTitles.map((title) => (
+              <button
+                key={title.id}
+                type="button"
+                className={title.is_active ? "" : "muted"}
+                onClick={() => handleEditActivityTitle(title)}
+                title={`${title.is_active ? "Active" : "Inactive"} - ${title.student_count || 0} student(s)`}
+              >
+                {title.name} - {title.star_label || `${title.star_rating || 0} stars`}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {editingActivityTitleId ? (
+          <div className="panel-form-actions">
+            {activityTitles.find((item) => item.id === editingActivityTitleId)?.is_active ? (
+              <button type="button" className="table-action" onClick={() => handleDeactivateActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
+                Deactivate
+              </button>
+            ) : (
+              <button type="button" className="table-action" onClick={() => handleToggleActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
+                Activate
+              </button>
+            )}
+          </div>
+        ) : null}
       </article>
 
       <article className="app-panel">
@@ -6500,7 +6503,11 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                       <td>{item.email}</td>
                       <td>{item.student_id}</td>
                       <td>{item.class_name}</td>
-                      <td>{item.extra_curricular_activity_title || "None"}</td>
+                      <td>
+                        {item.extra_curricular_activity_title
+                          ? `${item.extra_curricular_activity_title} - ${item.extra_curricular_activity_star_label || `${item.extra_curricular_activity_stars || 0} stars`}`
+                          : "None"}
+                      </td>
                       <td>
                         <div className="table-actions-inline">
                           <button type="button" className="table-action" onClick={() => handleStartEdit(item)}>
@@ -6699,7 +6706,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     <option value="">No title</option>
                     {activeActivityTitles.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name}
+                        {item.name} - {item.star_label || `${item.star_rating || 0} stars`}
                       </option>
                     ))}
                     {editForm.extra_curricular_activity_title_id && !activeActivityTitles.some((item) => item.id === editForm.extra_curricular_activity_title_id) ? (

@@ -133,6 +133,7 @@ function Signin({ onAuthenticated, onBack }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [phone, setPhone] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -222,7 +223,8 @@ function Signin({ onAuthenticated, onBack }) {
       lastName.trim().length === 0 ||
       signupEmail.trim().length === 0 ||
       signupPassword.length === 0 ||
-      confirmPassword.length === 0
+      confirmPassword.length === 0 ||
+      !termsAccepted
     ) {
       return false;
     }
@@ -232,7 +234,7 @@ function Signin({ onAuthenticated, onBack }) {
     }
 
     return true;
-  }, [confirmPassword, firstName, lastName, signupEmail, signupPassword]);
+  }, [confirmPassword, firstName, lastName, signupEmail, signupPassword, termsAccepted]);
 
   const canCreateSchool = useMemo(() => schoolName.trim().length >= 3, [schoolName]);
   const canRequestReset = useMemo(() => forgotEmail.trim().length > 0, [forgotEmail]);
@@ -419,6 +421,10 @@ function Signin({ onAuthenticated, onBack }) {
     setIsSubmitting(true);
 
     try {
+      if (!termsAccepted) {
+        throw new Error("Accept the terms and conditions before signing up.");
+      }
+
       const payload = {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -428,6 +434,7 @@ function Signin({ onAuthenticated, onBack }) {
         role: DEFAULT_SIGNUP_ROLE,
         phone: phone.trim(),
         school_code: schoolCode.trim(),
+        terms_accepted: termsAccepted,
       };
 
       const data = await postAuth("/api/auth/register/", payload);
@@ -456,6 +463,7 @@ function Signin({ onAuthenticated, onBack }) {
       setShowConfirmPassword(false);
       setSignupPassword("");
       setConfirmPassword("");
+      setTermsAccepted(false);
     } catch (requestError) {
       setError(requestError.message || "Sign up failed.");
     } finally {
@@ -1065,6 +1073,17 @@ function Signin({ onAuthenticated, onBack }) {
 
                     {schoolCreationPanel}
                     {schoolSuccess ? <p className="success-text">{schoolSuccess}</p> : null}
+
+                    <label className="terms-checkbox" htmlFor="terms-accepted">
+                      <input
+                        id="terms-accepted"
+                        type="checkbox"
+                        checked={termsAccepted}
+                        onChange={(event) => setTermsAccepted(event.target.checked)}
+                        required
+                      />
+                      <span>I agree to the SchoolDom terms and conditions.</span>
+                    </label>
 
                     {error ? <p className="error-text">{error}</p> : null}
                     {successMessage ? <p className="success-text">{successMessage}</p> : null}

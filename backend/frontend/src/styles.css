@@ -2011,6 +2011,25 @@ h1 {
   font-size: 0.92rem;
 }
 
+.signup-form label.terms-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+  color: var(--help-color);
+  font-size: 0.92rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.terms-checkbox input {
+  width: 17px;
+  height: 17px;
+  margin-top: 0.12rem;
+  accent-color: var(--button-bg);
+  flex: 0 0 auto;
+}
+
 .signup-button {
   margin-top: 0.8rem;
   border: 0;

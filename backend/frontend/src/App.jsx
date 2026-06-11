@@ -799,6 +799,9 @@ function StudentDashboard({
   const studentName = student.name || "Student";
   const profilePicture = student.profile_picture;
   const initials = userInitials({ full_name: studentName });
+  const activityRole = student.extra_curricular_activity_title || "";
+  const activityStars = student.extra_curricular_activity_star_label || (student.extra_curricular_activity_stars ? `${student.extra_curricular_activity_stars} stars` : "");
+  const activityRoleLabel = activityRole ? `${activityRole}${activityStars ? ` - ${activityStars}` : ""}` : "";
   const profileRows = [
     ["Full Name", studentName],
     ["Student ID", student.student_id || student.admission_number],
@@ -813,6 +816,8 @@ function StudentDashboard({
     ["State of Origin", student.state_of_origin],
     ["Local Government", student.local_government],
     ["Student Type", student.student_type],
+    ["Activity Role", activityRole],
+    ["Activity Stars", activityStars],
     ["Blood Group", student.blood_group],
     ["Disability", student.disability],
     ["Guardian Name", student.guardian_name],
@@ -910,6 +915,13 @@ function StudentDashboard({
       tone: "blue",
     },
     {
+      key: "activity-role",
+      label: "Activity Role",
+      value: activityRole || "None",
+      detail: activityStars || "No stars assigned",
+      tone: "gold",
+    },
+    {
       key: "daily-quiz",
       label: "Daily Assessment",
       value: `${dailyQuiz.completed_today ?? 0}/${dailyQuiz.total_subjects ?? subjects.length}`,
@@ -942,7 +954,7 @@ function StudentDashboard({
         <div className="student-sidebar-head">
           <span>Student Workspace</span>
           <strong>{studentName}</strong>
-          <small>{student.class_name || "Unassigned"} - {school?.name || "SchoolDom"}</small>
+          <small>{student.class_name || "Unassigned"} - {activityRoleLabel || school?.name || "SchoolDom"}</small>
         </div>
         <nav className="student-nav">
           <button

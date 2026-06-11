@@ -39,6 +39,7 @@ class RegisterSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=17, required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
     school_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    terms_accepted = serializers.BooleanField(write_only=True, required=True)
     
     # Role specific fields
     student_id = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -76,6 +77,11 @@ class RegisterSerializer(serializers.Serializer):
         if data['password'] != data['confirm_password']:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
 
+        if not data.get('terms_accepted'):
+            raise serializers.ValidationError(
+                {"terms_accepted": "You must accept the terms and conditions to sign up."}
+            )
+
         if data['role'] in SCHOOL_SCOPED_ROLES and not data.get('school_code'):
             raise serializers.ValidationError(
                 {"school_code": "School code is required for school-scoped accounts."}
@@ -102,6 +108,7 @@ class RegisterSerializer(serializers.Serializer):
         """Create user and profile"""
         # Remove confirmation and extra fields
         validated_data.pop('confirm_password')
+        validated_data.pop('terms_accepted', None)
         school_code = validated_data.pop('school_code', None)
         
         # Get role specific fields

@@ -861,9 +861,12 @@ def _ensure_default_student_activity_titles(tenant):
 
 
 def _student_activity_title_payload(title):
+    star_rating = Decimal(str(getattr(title, "star_rating", 0) or 0))
     return {
         "id": str(title.id),
         "name": title.name,
+        "star_rating": float(star_rating),
+        "star_label": f"{star_rating.normalize()} star{'s' if star_rating != Decimal('1') else ''}",
         "is_active": title.is_active,
         "sort_order": title.sort_order,
         "student_count": getattr(title, "student_count", 0),
@@ -880,6 +883,19 @@ def _student_activity_title_queryset(user, include_inactive=True):
     return qs.order_by("sort_order", "name")
 
 
+def _normalize_student_activity_stars(value):
+    try:
+        stars = Decimal(str(value if value not in (None, "") else "1"))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("Stars must be a number between 0.5 and 5.")
+    if stars < Decimal("0.5") or stars > Decimal("5"):
+        raise ValueError("Stars must be between 0.5 and 5.")
+    doubled = stars * 2
+    if doubled != doubled.to_integral_value():
+        raise ValueError("Stars must increase in half-star steps.")
+    return stars.quantize(Decimal("0.1"))
+
+
 def _resolve_student_activity_title(user, raw_title_id, require_active=True):
     if raw_title_id in (None, ""):
         return None
@@ -890,6 +906,7 @@ def _resolve_student_activity_title(user, raw_title_id, require_active=True):
 def _student_payload(student_profile, request=None):
     student_user = student_profile.user
     activity_title = getattr(student_profile, "extra_curricular_activity_title", None)
+    activity_stars = Decimal(str(getattr(activity_title, "star_rating", 0) or 0)) if activity_title else Decimal("0")
     return {
         "id": str(student_profile.id),
         "user_id": str(student_user.id),
@@ -911,6 +928,8 @@ def _student_payload(student_profile, request=None):
         "student_type": student_profile.student_type,
         "extra_curricular_activity_title_id": str(activity_title.id) if activity_title else "",
         "extra_curricular_activity_title": activity_title.name if activity_title else "",
+        "extra_curricular_activity_stars": float(activity_stars) if activity_title else None,
+        "extra_curricular_activity_star_label": f"{activity_stars.normalize()} star{'s' if activity_stars != Decimal('1') else ''}" if activity_title else "",
         "home_address": student_profile.home_address,
         "guardian_name": student_profile.guardian_name,
         "guardian_phone": student_profile.guardian_phone,
@@ -2987,7 +3006,7 @@ def student_dashboard(request):
         )
 
     now = timezone.now()
-    student_profile = StudentProfile.objects.select_related("current_class").filter(user=user).first()
+    student_profile = StudentProfile.objects.select_related("current_class", "extra_curricular_activity_title").filter(user=user).first()
     active_term = _active_term(user)
 
     upcoming_exams_qs = _scope_to_user_tenant(
@@ -3270,6 +3289,9 @@ def student_dashboard(request):
                 "second_guardian_email": student_profile.second_guardian_email if student_profile else "",
                 "second_guardian_relation": student_profile.second_guardian_relation if student_profile else "",
                 "student_type": student_profile.student_type if student_profile else "",
+                "extra_curricular_activity_title": student_profile.extra_curricular_activity_title.name if student_profile and student_profile.extra_curricular_activity_title else "",
+                "extra_curricular_activity_stars": float(student_profile.extra_curricular_activity_title.star_rating) if student_profile and student_profile.extra_curricular_activity_title else None,
+                "extra_curricular_activity_star_label": _student_activity_title_payload(student_profile.extra_curricular_activity_title)["star_label"] if student_profile and student_profile.extra_curricular_activity_title else "",
                 "blood_group": student_profile.blood_group if student_profile else "",
                 "disability": student_profile.disability if student_profile else "",
                 "home_address": student_profile.home_address if student_profile else "",
@@ -3969,19 +3991,25 @@ def student_activity_titles(request):
             sort_order = int(sort_order_raw) if sort_order_raw not in (None, "") else 0
         except (TypeError, ValueError):
             return Response({"success": False, "message": "sort_order must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            star_rating = _normalize_student_activity_stars(request.data.get("star_rating"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         existing = StudentActivityTitle.objects.filter(tenant=user.tenant, name__iexact=name).first()
         if existing:
             existing.name = name
+            existing.star_rating = star_rating
             existing.is_active = True
             if sort_order:
                 existing.sort_order = sort_order
-            existing.save(update_fields=["name", "is_active", "sort_order", "updated_at"])
+            existing.save(update_fields=["name", "star_rating", "is_active", "sort_order", "updated_at"])
             title = existing
             message = "Student activity title reactivated."
         else:
             title = StudentActivityTitle.objects.create(
                 tenant=user.tenant,
                 name=name,
+                star_rating=star_rating,
                 sort_order=sort_order,
                 is_active=_to_bool(request.data.get("is_active"), default=True),
             )
@@ -4030,6 +4058,14 @@ def student_activity_title_detail(request, title_id):
         if title.sort_order != sort_order:
             title.sort_order = sort_order
             update_fields.append("sort_order")
+    if "star_rating" in request.data:
+        try:
+            star_rating = _normalize_student_activity_stars(request.data.get("star_rating"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if title.star_rating != star_rating:
+            title.star_rating = star_rating
+            update_fields.append("star_rating")
     if "is_active" in request.data:
         is_active = _to_bool(request.data.get("is_active"), default=title.is_active)
         if title.is_active != is_active:

@@ -3,7 +3,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.utils.translation import gettext_lazy as _
 import uuid
 import secrets
@@ -226,6 +226,12 @@ class StudentActivityTitle(models.Model):
         related_name='student_activity_titles',
     )
     name = models.CharField(max_length=120)
+    star_rating = models.DecimalField(
+        max_digits=2,
+        decimal_places=1,
+        default=1,
+        validators=[MinValueValidator(0.5), MaxValueValidator(5)],
+    )
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
