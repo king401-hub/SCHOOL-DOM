@@ -6,6 +6,11 @@ using System.Text;
 
 namespace SchoolDom.Cbt.Win7
 {
+    public class CloudAuthExpiredException : InvalidOperationException
+    {
+        public CloudAuthExpiredException(string message) : base(message) { }
+    }
+
     public class CloudSyncService
     {
         private readonly LocalStore _store;
@@ -258,8 +263,21 @@ namespace SchoolDom.Cbt.Win7
                         }
                     }
                 }
+                if (statusCode == 401 || IsExpiredTokenMessage(message))
+                {
+                    throw new CloudAuthExpiredException("Your saved cloud login has expired. Please sign in again, then try the action once more.");
+                }
                 throw new InvalidOperationException("Cloud request failed: " + message);
             }
+        }
+
+        private static bool IsExpiredTokenMessage(string message)
+        {
+            var value = (message ?? "").ToLowerInvariant();
+            return value.IndexOf("token_not_valid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   value.IndexOf("token is expired", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   value.IndexOf("given token not valid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   value.IndexOf("access token", StringComparison.OrdinalIgnoreCase) >= 0 && value.IndexOf("expired", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

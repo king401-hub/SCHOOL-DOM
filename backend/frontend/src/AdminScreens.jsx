@@ -5307,6 +5307,8 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [studentRules, setStudentRules] = useState("");
+  const [staffRules, setStaffRules] = useState("");
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
@@ -5339,6 +5341,8 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     setEmail(school.email || "");
     setPhone(school.phone || "");
     setAddress(school.address || "");
+    setStudentRules((current) => school.student_rules || school.studentRules || current || "");
+    setStaffRules((current) => school.staff_rules || school.staffRules || current || "");
     setLogoPreview(school.logo || "");
     setLogoFile(null);
     setAcademicYearName(data?.academic_year?.name || "");
@@ -5359,7 +5363,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
         color: item.color || "#2563EB",
       }))
     );
-  }, [data?.academic_year, data?.term, data?.activity_calendar, school.address, school.email, school.logo, school.motto, school.name, school.phone, school.tagline]);
+  }, [data?.academic_year, data?.term, data?.activity_calendar, school.address, school.email, school.logo, school.motto, school.name, school.phone, school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline]);
 
   useEffect(() => {
     if (!activityToast) {
@@ -5377,6 +5381,8 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
       email: email.trim(),
       phone: phone.trim(),
       address: address.trim(),
+      student_rules: studentRules.trim(),
+      staff_rules: staffRules.trim(),
       logo: logoFile,
       academic_year_name: academicYearName.trim(),
       academic_year_start_date: academicYearStart,
@@ -5398,7 +5404,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
           }))
       ),
     }),
-    [academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, email, logoFile, motto, name, phone, termEnd, termName, termStart]
+    [academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, email, logoFile, motto, name, phone, staffRules, studentRules, termEnd, termName, termStart]
   );
 
   const selectCalendarDate = (dateValue) => {
@@ -5620,6 +5626,26 @@ onClick={() => handleThemeSelect("light")}
                           Address
                           <textarea value={address} onChange={(event) => setAddress(event.target.value)} disabled={!canEdit || isSaving} />
                         </label>
+                        <label className="panel-field full">
+                          Student Rules & Regulations
+                          <textarea
+                            value={studentRules}
+                            onChange={(event) => setStudentRules(event.target.value)}
+                            placeholder="Write the rules and regulations students must follow."
+                            rows="6"
+                            disabled={!canEdit || isSaving}
+                          />
+                        </label>
+                        <label className="panel-field full">
+                          Staff Rules & Regulations
+                          <textarea
+                            value={staffRules}
+                            onChange={(event) => setStaffRules(event.target.value)}
+                            placeholder="Write the rules and regulations staff must follow."
+                            rows="6"
+                            disabled={!canEdit || isSaving}
+                          />
+                        </label>
                         <label className="panel-field">
                           Academic Year
                           <input value={academicYearName} onChange={(event) => setAcademicYearName(event.target.value)} placeholder="2026/2027" disabled={!canEdit || isSaving} />
@@ -5798,9 +5824,11 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
-function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
+function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
+  const activityTitles = data?.options?.student_activity_titles || [];
+  const activeActivityTitles = activityTitles.filter((item) => item.is_active);
   const [form, setForm] = useState({
     student_email: "",
     first_name: "",
@@ -5826,6 +5854,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
     medical_records: "",
     blood_group: "",
     student_type: "",
+    extra_curricular_activity_title_id: "",
     home_address: "",
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -5857,6 +5886,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
     medical_records: "",
     blood_group: "",
     student_type: "",
+    extra_curricular_activity_title_id: "",
     home_address: "",
     is_active: true,
     student_password: "",
@@ -5872,6 +5902,11 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
   const [deletingStudentId, setDeletingStudentId] = useState("");
   const [pendingDeleteStudent, setPendingDeleteStudent] = useState(null);
   const [deleteSuccess, setDeleteSuccess] = useState(null);
+  const [activityTitleForm, setActivityTitleForm] = useState({ name: "", sort_order: "" });
+  const [editingActivityTitleId, setEditingActivityTitleId] = useState("");
+  const [activityTitleBusyId, setActivityTitleBusyId] = useState("");
+  const [activityTitleError, setActivityTitleError] = useState("");
+  const [activityTitleSuccess, setActivityTitleSuccess] = useState("");
   const createProfilePictureRef = useRef(null);
 
   const toDateInputValue = (value) => {
@@ -5905,6 +5940,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
     medical_records: student?.medical_records || "",
     blood_group: student?.blood_group || "",
     student_type: student?.student_type || "",
+    extra_curricular_activity_title_id: student?.extra_curricular_activity_title_id || "",
     home_address: student?.home_address || "",
     is_active: Boolean(student?.is_active),
     student_password: "",
@@ -5968,6 +6004,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
         medical_records: "",
         blood_group: "",
         student_type: "",
+        extra_curricular_activity_title_id: "",
         home_address: "",
       });
       setShowCreatePassword(false);
@@ -6028,6 +6065,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
         medical_records: editForm.medical_records.trim(),
         blood_group: editForm.blood_group,
         student_type: editForm.student_type.trim(),
+        extra_curricular_activity_title_id: editForm.extra_curricular_activity_title_id,
         home_address: editForm.home_address.trim(),
         is_active: editForm.is_active,
       };
@@ -6057,6 +6095,74 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
     setFormError("");
     setEditError("");
     setPendingDeleteStudent(student);
+  };
+
+  const handleActivityTitleSubmit = async (event) => {
+    event.preventDefault();
+    const name = activityTitleForm.name.trim();
+    if (!name || !onActivityTitleSave) {
+      setActivityTitleError("Enter a title name.");
+      return;
+    }
+    setActivityTitleError("");
+    setActivityTitleSuccess("");
+    setActivityTitleBusyId(editingActivityTitleId || "new");
+    try {
+      const payload = {
+        name,
+        sort_order: activityTitleForm.sort_order,
+        is_active: true,
+      };
+      const result = await onActivityTitleSave(editingActivityTitleId, payload);
+      setActivityTitleSuccess(result?.message || "Title saved.");
+      setActivityTitleForm({ name: "", sort_order: "" });
+      setEditingActivityTitleId("");
+    } catch (actionError) {
+      setActivityTitleError(actionError.message || "Could not save title.");
+    } finally {
+      setActivityTitleBusyId("");
+    }
+  };
+
+  const handleEditActivityTitle = (title) => {
+    setEditingActivityTitleId(title.id);
+    setActivityTitleForm({ name: title.name || "", sort_order: title.sort_order ?? "" });
+    setActivityTitleError("");
+    setActivityTitleSuccess("");
+  };
+
+  const handleToggleActivityTitle = async (title) => {
+    if (!title?.id || !onActivityTitleSave) {
+      return;
+    }
+    setActivityTitleBusyId(title.id);
+    setActivityTitleError("");
+    setActivityTitleSuccess("");
+    try {
+      const result = await onActivityTitleSave(title.id, { is_active: !title.is_active });
+      setActivityTitleSuccess(result?.message || "Title updated.");
+    } catch (actionError) {
+      setActivityTitleError(actionError.message || "Could not update title.");
+    } finally {
+      setActivityTitleBusyId("");
+    }
+  };
+
+  const handleDeactivateActivityTitle = async (title) => {
+    if (!title?.id || !onActivityTitleDeactivate) {
+      return;
+    }
+    setActivityTitleBusyId(title.id);
+    setActivityTitleError("");
+    setActivityTitleSuccess("");
+    try {
+      const result = await onActivityTitleDeactivate(title.id);
+      setActivityTitleSuccess(result?.message || "Title deactivated.");
+    } catch (actionError) {
+      setActivityTitleError(actionError.message || "Could not deactivate title.");
+    } finally {
+      setActivityTitleBusyId("");
+    }
   };
 
   const confirmDeleteStudent = async () => {
@@ -6115,6 +6221,74 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
 
       {data ? (
         <>
+      <article className="app-panel">
+        <h3>Student Activity Titles</h3>
+        <form className="panel-form" onSubmit={handleActivityTitleSubmit}>
+          <div className="panel-form-grid">
+            <label className="panel-field">
+              Title Name
+              <input
+                value={activityTitleForm.name}
+                onChange={(event) => setActivityTitleForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Prefect, Class Monitor"
+              />
+            </label>
+            <label className="panel-field">
+              Order
+              <input
+                type="number"
+                value={activityTitleForm.sort_order}
+                onChange={(event) => setActivityTitleForm((prev) => ({ ...prev, sort_order: event.target.value }))}
+                placeholder="10"
+              />
+            </label>
+          </div>
+          {activityTitleError ? <p className="form-feedback error">{activityTitleError}</p> : null}
+          {activityTitleSuccess ? <p className="form-feedback success">{activityTitleSuccess}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={Boolean(activityTitleBusyId)}>
+              {activityTitleBusyId === "new" || activityTitleBusyId === editingActivityTitleId ? "Saving..." : editingActivityTitleId ? "Rename Title" : "Add Title"}
+            </button>
+            {editingActivityTitleId ? (
+              <button type="button" className="table-action" onClick={() => {
+                setEditingActivityTitleId("");
+                setActivityTitleForm({ name: "", sort_order: "" });
+              }}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </form>
+        {activityTitles.length > 0 ? (
+          <div className="teacher-class-chip-list">
+            {activityTitles.map((title) => (
+              <button
+                key={title.id}
+                type="button"
+                className={title.is_active ? "" : "muted"}
+                onClick={() => handleEditActivityTitle(title)}
+                title={`${title.is_active ? "Active" : "Inactive"} - ${title.student_count || 0} student(s)`}
+              >
+                {title.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {editingActivityTitleId ? (
+          <div className="panel-form-actions">
+            {activityTitles.find((item) => item.id === editingActivityTitleId)?.is_active ? (
+              <button type="button" className="table-action" onClick={() => handleDeactivateActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
+                Deactivate
+              </button>
+            ) : (
+              <button type="button" className="table-action" onClick={() => handleToggleActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
+                Activate
+              </button>
+            )}
+          </div>
+        ) : null}
+      </article>
+
       <article className="app-panel">
         <h3>Admissions</h3>
         <form className="panel-form" onSubmit={handleSubmit}>
@@ -6236,6 +6410,17 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                   Student Type
                   <input value={form.student_type} onChange={(event) => setForm((prev) => ({ ...prev, student_type: event.target.value }))} placeholder="e.g., Regular, Scholarship, Transfer" />
                 </label>
+                <label className="panel-field">
+                  Activity Title
+                  <select value={form.extra_curricular_activity_title_id} onChange={(event) => setForm((prev) => ({ ...prev, extra_curricular_activity_title_id: event.target.value }))}>
+                    <option value="">No title</option>
+                    {activeActivityTitles.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="panel-field full">
                   Medical Records
                   <textarea value={form.medical_records} onChange={(event) => setForm((prev) => ({ ...prev, medical_records: event.target.value }))} placeholder="Any medical conditions, allergies, or special medical needs" rows="3" />
@@ -6304,6 +6489,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     <th>Email</th>
                     <th>Student ID</th>
                     <th>Class</th>
+                    <th>Activity Title</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -6314,6 +6500,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                       <td>{item.email}</td>
                       <td>{item.student_id}</td>
                       <td>{item.class_name}</td>
+                      <td>{item.extra_curricular_activity_title || "None"}</td>
                       <td>
                         <div className="table-actions-inline">
                           <button type="button" className="table-action" onClick={() => handleStartEdit(item)}>
@@ -6505,6 +6692,20 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                 <label className="panel-field">
                   Student Type
                   <input value={editForm.student_type} onChange={(event) => setEditForm((prev) => ({ ...prev, student_type: event.target.value }))} placeholder="e.g., Regular, Scholarship, Transfer" />
+                </label>
+                <label className="panel-field">
+                  Activity Title
+                  <select value={editForm.extra_curricular_activity_title_id} onChange={(event) => setEditForm((prev) => ({ ...prev, extra_curricular_activity_title_id: event.target.value }))}>
+                    <option value="">No title</option>
+                    {activeActivityTitles.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                    {editForm.extra_curricular_activity_title_id && !activeActivityTitles.some((item) => item.id === editForm.extra_curricular_activity_title_id) ? (
+                      <option value={editForm.extra_curricular_activity_title_id}>Inactive title</option>
+                    ) : null}
+                  </select>
                 </label>
                 <label className="panel-field full">
                   Medical Records

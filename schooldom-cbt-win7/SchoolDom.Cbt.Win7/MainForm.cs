@@ -306,7 +306,7 @@ namespace SchoolDom.Cbt.Win7
             {
                 var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
                 var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
-                var item = new ListViewItem(student == null ? session.StudentId : student.FullName);
+                var item = new ListViewItem(DisplayStudentName(session, student));
                 item.SubItems.Add(session.StudentId ?? "");
                 item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
                 item.SubItems.Add(Display(session.SubmittedAt ?? session.StartedAt));
@@ -409,12 +409,8 @@ namespace SchoolDom.Cbt.Win7
                 form.Controls.Add(instructions);
 
                 var questions = new List<QuestionRecord>();
-                form.Controls.Add(TextLabel("Questions", left, 300, 12, true, 220, Palette.Text));
-                var list = new ListView { Left = left, Top = 334, Width = 742, Height = 188, View = View.Details, FullRowSelect = true, HideSelection = false, Font = MathFont(10) };
-                list.Columns.Add("#", 44);
-                list.Columns.Add("Question", 420);
-                list.Columns.Add("Options", 90);
-                list.Columns.Add("Correct", 170);
+                form.Controls.Add(TextLabel("Questions", left, 292, 11, true, 220, Palette.Text));
+                var list = CompactQuestionList(left, 320, 742, 150);
                 form.Controls.Add(list);
 
                 Action refreshQuestions = () =>
@@ -432,7 +428,7 @@ namespace SchoolDom.Cbt.Win7
                     }
                 };
 
-                var add = SecondaryButton("Add Question", left, 538, 130);
+                var add = SecondaryButton("Add Question", left, 490, 130);
                 add.Click += (s, e) =>
                 {
                     var question = PromptQuestion(null);
@@ -442,7 +438,7 @@ namespace SchoolDom.Cbt.Win7
                 };
                 form.Controls.Add(add);
 
-                var edit = SecondaryButton("Edit", left + 142, 538, 80);
+                var edit = SecondaryButton("Edit", left + 142, 490, 80);
                 edit.Click += (s, e) =>
                 {
                     if (list.SelectedItems.Count == 0) return;
@@ -454,7 +450,7 @@ namespace SchoolDom.Cbt.Win7
                 };
                 form.Controls.Add(edit);
 
-                var remove = SecondaryButton("Remove", left + 232, 538, 90);
+                var remove = SecondaryButton("Remove", left + 232, 490, 90);
                 remove.Click += (s, e) =>
                 {
                     if (list.SelectedItems.Count == 0) return;
@@ -463,7 +459,7 @@ namespace SchoolDom.Cbt.Win7
                 };
                 form.Controls.Add(remove);
 
-                var save = PrimaryButton("Save Exam", left + 612, 538, 130);
+                var save = PrimaryButton("Save Exam", left + 612, 490, 130);
                 save.Click += (s, e) =>
                 {
                     int minutes;
@@ -536,6 +532,12 @@ namespace SchoolDom.Cbt.Win7
                         MessageBox.Show(message, "Exam Created");
                         form.Close();
                         ShowDashboard();
+                    }
+                    catch (CloudAuthExpiredException ex)
+                    {
+                        Cursor = Cursors.Default;
+                        form.Close();
+                        HandleCloudAuthExpired(ex);
                     }
                     catch (Exception ex)
                     {
@@ -655,7 +657,7 @@ namespace SchoolDom.Cbt.Win7
                 {
                     var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
                     var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
-                    var item = new ListViewItem(student == null ? session.StudentId : student.FullName);
+                    var item = new ListViewItem(DisplayStudentName(session, student));
                     item.SubItems.Add(session.StudentId ?? "");
                     item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
                     item.SubItems.Add(session.Status ?? "");
@@ -759,12 +761,8 @@ namespace SchoolDom.Cbt.Win7
                 };
                 form.Controls.Add(instructions);
                 var questions = (exam.Questions ?? new List<QuestionRecord>()).ToList();
-                form.Controls.Add(TextLabel("Questions", left, 300, 12, true, 220, Palette.Text));
-                var list = new ListView { Left = left, Top = 334, Width = 742, Height = 188, View = View.Details, FullRowSelect = true, HideSelection = false, Font = MathFont(10) };
-                list.Columns.Add("#", 44);
-                list.Columns.Add("Question", 420);
-                list.Columns.Add("Options", 90);
-                list.Columns.Add("Correct", 170);
+                form.Controls.Add(TextLabel("Questions", left, 292, 11, true, 220, Palette.Text));
+                var list = CompactQuestionList(left, 320, 742, 150);
                 Action refreshQuestions = () =>
                 {
                     list.Items.Clear();
@@ -781,10 +779,10 @@ namespace SchoolDom.Cbt.Win7
                 };
                 refreshQuestions();
                 form.Controls.Add(list);
-                var add = SecondaryButton("Add Question", left, 538, 130);
+                var add = SecondaryButton("Add Question", left, 490, 130);
                 add.Click += (s, e) => { var q = PromptQuestion(null); if (q != null) { questions.Add(q); refreshQuestions(); } };
                 form.Controls.Add(add);
-                var edit = SecondaryButton("Edit", left + 142, 538, 80);
+                var edit = SecondaryButton("Edit", left + 142, 490, 80);
                 edit.Click += (s, e) =>
                 {
                     if (list.SelectedItems.Count == 0) return;
@@ -793,10 +791,10 @@ namespace SchoolDom.Cbt.Win7
                     if (q != null) { questions[index] = q; refreshQuestions(); }
                 };
                 form.Controls.Add(edit);
-                var remove = SecondaryButton("Remove", left + 232, 538, 90);
+                var remove = SecondaryButton("Remove", left + 232, 490, 90);
                 remove.Click += (s, e) => { if (list.SelectedItems.Count > 0) { questions.RemoveAt(list.SelectedItems[0].Index); refreshQuestions(); } };
                 form.Controls.Add(remove);
-                var save = PrimaryButton("Save Changes", left + 602, 538, 140);
+                var save = PrimaryButton("Save Changes", left + 602, 490, 140);
                 save.Click += (s, e) =>
                 {
                     int minutes;
@@ -840,6 +838,11 @@ namespace SchoolDom.Cbt.Win7
                 MessageBox.Show("New PIN for " + exam.Title + ":\r\n\r\n" + pin + "\r\n\r\nGive this PIN to students for the LAN CBT app.", "New Exam PIN");
                 ShowDashboard();
             }
+            catch (CloudAuthExpiredException ex)
+            {
+                Cursor = Cursors.Default;
+                HandleCloudAuthExpired(ex);
+            }
             catch (Exception ex)
             {
                 Cursor = Cursors.Default;
@@ -859,6 +862,12 @@ namespace SchoolDom.Cbt.Win7
                 try
                 {
                     _cloud.DeleteResult(session.ExamId, session.StudentId, session.Id);
+                }
+                catch (CloudAuthExpiredException ex)
+                {
+                    Cursor = Cursors.Default;
+                    HandleCloudAuthExpired(ex);
+                    return;
                 }
                 catch (Exception ex)
                 {
@@ -892,12 +901,26 @@ namespace SchoolDom.Cbt.Win7
                 MessageBox.Show(message, "SchoolDom Sync");
                 onSuccess();
             }
+            catch (CloudAuthExpiredException ex)
+            {
+                Cursor = Cursors.Default;
+                HandleCloudAuthExpired(ex);
+            }
             catch (Exception ex)
             {
                 Cursor = Cursors.Default;
                 SetStatus(ex.Message, Palette.Coral);
                 MessageBox.Show(ex.Message, "SchoolDom Sync Failed");
             }
+        }
+
+        private void HandleCloudAuthExpired(CloudAuthExpiredException ex)
+        {
+            _store.State.AccessToken = "";
+            _store.Save();
+            SetStatus(ex.Message, Palette.Coral);
+            MessageBox.Show(ex.Message, "Cloud Login Expired");
+            ShowCloudLogin();
         }
 
         private void SetStatus(string text, Color color)
@@ -1037,6 +1060,28 @@ namespace SchoolDom.Cbt.Win7
             };
             parent.Controls.Add(box);
             return box;
+        }
+
+        private ListView CompactQuestionList(int left, int top, int width, int height)
+        {
+            var list = new ListView
+            {
+                Left = left,
+                Top = top,
+                Width = width,
+                Height = height,
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                HideSelection = false,
+                Font = new Font("Segoe UI", 9),
+                SmallImageList = new ImageList { ImageSize = new Size(1, 18) }
+            };
+            list.Columns.Add("#", 36);
+            list.Columns.Add("Question", 420);
+            list.Columns.Add("Options", 70);
+            list.Columns.Add("Correct", 190);
+            return list;
         }
 
         private void ApplyNumbersOnly(TextBox box)
@@ -1190,6 +1235,21 @@ namespace SchoolDom.Cbt.Win7
         private string Display(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? "Not available" : value;
+        }
+
+        private string DisplayStudentName(SessionRecord session, StudentRecord student)
+        {
+            var studentId = session == null ? "" : session.StudentId;
+            var name = session == null ? "" : session.StudentName;
+            if (LooksLikeStudentId(name, studentId)) name = "";
+            if (string.IsNullOrWhiteSpace(name) && student != null) name = student.FullName;
+            if (LooksLikeStudentId(name, studentId)) name = "";
+            return string.IsNullOrWhiteSpace(name) ? (studentId ?? "") : name.Trim();
+        }
+
+        private static bool LooksLikeStudentId(string value, string studentId)
+        {
+            return !string.IsNullOrWhiteSpace(value) && string.Equals(value.Trim(), (studentId ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         private string DisplaySchoolName()

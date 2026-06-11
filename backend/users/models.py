@@ -215,6 +215,34 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.last_login_ip = ip
         self.save(update_fields=['last_login_ip'])
 
+class StudentActivityTitle(models.Model):
+    """
+    Tenant-controlled student activity or leadership titles for admissions.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        'core.SchoolTenant',
+        on_delete=models.CASCADE,
+        related_name='student_activity_titles',
+    )
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('student activity title')
+        verbose_name_plural = _('student activity titles')
+        ordering = ['sort_order', 'name']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'name'], name='unique_student_activity_title_per_school'),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class StudentProfile(models.Model):
     """
     Extended profile for students
@@ -249,6 +277,13 @@ class StudentProfile(models.Model):
     blood_group = models.CharField(max_length=5, blank=True)
     disability = models.CharField(max_length=20, blank=True, default="no")
     student_type = models.CharField(max_length=120, blank=True)
+    extra_curricular_activity_title = models.ForeignKey(
+        StudentActivityTitle,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='students',
+    )
     home_address = models.TextField(blank=True)
     allergies = models.TextField(blank=True)
     medical_conditions = models.TextField(blank=True)

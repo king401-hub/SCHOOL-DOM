@@ -54,7 +54,7 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
-from users.models import DatabaseImportJob, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from users.models import DatabaseImportJob, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
 
 try:
@@ -75,6 +75,13 @@ ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
 ID_CARD_SIGNING_SALT = "schooldom.id-card.verify"
 ADMIN_EXAM_HIDDEN_SUBJECT_CODES = {"PHY", "CHEM"}
 ADMIN_EXAM_HIDDEN_SUBJECT_NAMES = {"physics", "chemistry"}
+DEFAULT_STUDENT_ACTIVITY_TITLES = [
+    "Prefect",
+    "Class Monitor",
+    "Assistant Class Monitor",
+    "Sports Captain",
+    "Club Leader",
+]
 
 
 def _resolve_school_tenant_for_user(user, school_code=""):
@@ -795,6 +802,8 @@ def _school_payload(school, request=None):
         "address": school.address or "",
         "motto": getattr(school, "motto", "") or "",
         "tagline": getattr(school, "motto", "") or "",
+        "student_rules": getattr(school, "student_rules", "") or "",
+        "staff_rules": getattr(school, "staff_rules", "") or "",
         "logo": _media_url(request, school.logo),
         "favicon": _media_url(request, school.favicon),
         "currency": school.currency,
@@ -835,8 +844,52 @@ def _enrollment_payload(enrollment, request=None):
     }
 
 
+def _ensure_default_student_activity_titles(tenant):
+    if not tenant:
+        return
+    existing = set(
+        StudentActivityTitle.objects.filter(tenant=tenant)
+        .values_list("name", flat=True)
+    )
+    for index, name in enumerate(DEFAULT_STUDENT_ACTIVITY_TITLES, start=1):
+        if name not in existing:
+            StudentActivityTitle.objects.get_or_create(
+                tenant=tenant,
+                name=name,
+                defaults={"sort_order": index * 10, "is_active": True},
+            )
+
+
+def _student_activity_title_payload(title):
+    return {
+        "id": str(title.id),
+        "name": title.name,
+        "is_active": title.is_active,
+        "sort_order": title.sort_order,
+        "student_count": getattr(title, "student_count", 0),
+        "created_at": title.created_at,
+        "updated_at": title.updated_at,
+    }
+
+
+def _student_activity_title_queryset(user, include_inactive=True):
+    _ensure_default_student_activity_titles(getattr(user, "tenant", None))
+    qs = StudentActivityTitle.objects.filter(tenant=user.tenant)
+    if not include_inactive:
+        qs = qs.filter(is_active=True)
+    return qs.order_by("sort_order", "name")
+
+
+def _resolve_student_activity_title(user, raw_title_id, require_active=True):
+    if raw_title_id in (None, ""):
+        return None
+    qs = _student_activity_title_queryset(user, include_inactive=not require_active)
+    return get_object_or_404(qs, id=raw_title_id)
+
+
 def _student_payload(student_profile, request=None):
     student_user = student_profile.user
+    activity_title = getattr(student_profile, "extra_curricular_activity_title", None)
     return {
         "id": str(student_profile.id),
         "user_id": str(student_user.id),
@@ -856,6 +909,8 @@ def _student_payload(student_profile, request=None):
         "medical_records": student_profile.medical_conditions,
         "blood_group": student_profile.blood_group,
         "student_type": student_profile.student_type,
+        "extra_curricular_activity_title_id": str(activity_title.id) if activity_title else "",
+        "extra_curricular_activity_title": activity_title.name if activity_title else "",
         "home_address": student_profile.home_address,
         "guardian_name": student_profile.guardian_name,
         "guardian_phone": student_profile.guardian_phone,
@@ -1356,6 +1411,7 @@ def _ensure_student_profile_for_tenant(
     medical_records="",
     blood_group="",
     student_type="",
+    extra_curricular_activity_title=None,
     home_address="",
     profile_picture=None,
     student_password=None,
@@ -1432,6 +1488,7 @@ def _ensure_student_profile_for_tenant(
         medical_conditions=medical_records or "",
         blood_group=blood_group or "",
         student_type=student_type or "",
+        extra_curricular_activity_title=extra_curricular_activity_title,
         home_address=home_address or "",
     )
 
@@ -3850,11 +3907,12 @@ def teacher_dashboard(request):
 def students_snapshot(request):
     user = request.user
     students = (
-        StudentProfile.objects.select_related("user", "current_class")
+        StudentProfile.objects.select_related("user", "current_class", "extra_curricular_activity_title")
         .filter(user__tenant=user.tenant)
         .order_by("-created_at")
     )
     classes_qs = _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")
+    activity_titles_qs = _student_activity_title_queryset(user, include_inactive=True).annotate(student_count=Count("students"))
 
     total = students.count()
     with_guardian_phone = students.exclude(guardian_phone="").count()
@@ -3878,9 +3936,109 @@ def students_snapshot(request):
                     }
                     for class_obj in classes_qs[:100]
                 ],
+                "student_activity_titles": [
+                    _student_activity_title_payload(title)
+                    for title in activity_titles_qs[:100]
+                ],
             },
         }
     )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def student_activity_titles(request):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only administrators can manage student activity titles."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if not user.tenant:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "POST":
+        name = str(request.data.get("name") or "").strip()
+        if not name:
+            return Response({"success": False, "message": "Title name is required."}, status=status.HTTP_400_BAD_REQUEST)
+        sort_order_raw = request.data.get("sort_order")
+        try:
+            sort_order = int(sort_order_raw) if sort_order_raw not in (None, "") else 0
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "sort_order must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+        existing = StudentActivityTitle.objects.filter(tenant=user.tenant, name__iexact=name).first()
+        if existing:
+            existing.name = name
+            existing.is_active = True
+            if sort_order:
+                existing.sort_order = sort_order
+            existing.save(update_fields=["name", "is_active", "sort_order", "updated_at"])
+            title = existing
+            message = "Student activity title reactivated."
+        else:
+            title = StudentActivityTitle.objects.create(
+                tenant=user.tenant,
+                name=name,
+                sort_order=sort_order,
+                is_active=_to_bool(request.data.get("is_active"), default=True),
+            )
+            message = "Student activity title created."
+        return Response(
+            {"success": True, "message": message, "title": _student_activity_title_payload(title)},
+            status=status.HTTP_201_CREATED,
+        )
+
+    titles = _student_activity_title_queryset(user, include_inactive=True).annotate(student_count=Count("students"))
+    return Response({"success": True, "titles": [_student_activity_title_payload(title) for title in titles[:100]]})
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def student_activity_title_detail(request, title_id):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only administrators can manage student activity titles."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    title = get_object_or_404(StudentActivityTitle.objects.filter(tenant=user.tenant), id=title_id)
+
+    if request.method == "DELETE":
+        title.is_active = False
+        title.save(update_fields=["is_active", "updated_at"])
+        return Response({"success": True, "message": "Student activity title deactivated.", "title": _student_activity_title_payload(title)})
+
+    update_fields = []
+    if "name" in request.data:
+        name = str(request.data.get("name") or "").strip()
+        if not name:
+            return Response({"success": False, "message": "Title name cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        duplicate = StudentActivityTitle.objects.filter(tenant=user.tenant, name__iexact=name).exclude(id=title.id).exists()
+        if duplicate:
+            return Response({"success": False, "message": "A title with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if title.name != name:
+            title.name = name
+            update_fields.append("name")
+    if "sort_order" in request.data:
+        try:
+            sort_order = int(request.data.get("sort_order") or 0)
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "sort_order must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+        if title.sort_order != sort_order:
+            title.sort_order = sort_order
+            update_fields.append("sort_order")
+    if "is_active" in request.data:
+        is_active = _to_bool(request.data.get("is_active"), default=title.is_active)
+        if title.is_active != is_active:
+            title.is_active = is_active
+            update_fields.append("is_active")
+
+    if update_fields:
+        title.save(update_fields=[*update_fields, "updated_at"])
+    return Response({"success": True, "message": "Student activity title updated.", "title": _student_activity_title_payload(title)})
 
 
 @api_view(["GET"])
@@ -4156,6 +4314,7 @@ def create_student(request):
     medical_records = str(request.data.get("medical_records", "")).strip()
     blood_group = str(request.data.get("blood_group", "")).strip()
     student_type = str(request.data.get("student_type", "")).strip()
+    extra_curricular_activity_title_id = request.data.get("extra_curricular_activity_title_id")
     home_address = str(request.data.get("home_address", "")).strip()
     date_of_birth_raw = str(request.data.get("date_of_birth", "")).strip()
     if gender and gender not in {"M", "F", "O", "N"}:
@@ -4169,6 +4328,7 @@ def create_student(request):
     class_id = request.data.get("class_id")
     admission_date_raw = str(request.data.get("admission_date", "")).strip()
     try:
+        extra_curricular_activity_title = _resolve_student_activity_title(user, extra_curricular_activity_title_id)
         student_profile = _ensure_student_profile_for_tenant(
             user=user,
             email=student_email,
@@ -4188,6 +4348,7 @@ def create_student(request):
             medical_records=medical_records,
             blood_group=blood_group,
             student_type=student_type,
+            extra_curricular_activity_title=extra_curricular_activity_title,
             home_address=home_address,
             profile_picture=profile_picture,
             student_password=student_password,
@@ -4267,6 +4428,12 @@ def create_student(request):
             setattr(student_profile, field, value)
             profile_update_fields.append(field)
 
+    if extra_curricular_activity_title_id not in (None, ""):
+        extra_curricular_activity_title = _resolve_student_activity_title(user, extra_curricular_activity_title_id)
+        if student_profile.extra_curricular_activity_title_id != extra_curricular_activity_title.id:
+            student_profile.extra_curricular_activity_title = extra_curricular_activity_title
+            profile_update_fields.append("extra_curricular_activity_title")
+
     if class_id not in (None, ""):
         assigned_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=class_id)
         if student_profile.current_class_id != assigned_class.id:
@@ -4303,7 +4470,7 @@ def create_student(request):
 def student_detail(request, student_id):
     user = request.user
     student_profile = get_object_or_404(
-        StudentProfile.objects.select_related("user", "current_class").filter(user__tenant=user.tenant),
+        StudentProfile.objects.select_related("user", "current_class", "extra_curricular_activity_title").filter(user__tenant=user.tenant),
         id=student_id,
     )
     student_user = student_profile.user
@@ -4451,6 +4618,18 @@ def student_detail(request, student_id):
             if getattr(student_profile, model_field) != next_value:
                 setattr(student_profile, model_field, next_value)
                 profile_update_fields.append(model_field)
+
+    if "extra_curricular_activity_title_id" in request.data:
+        raw_title_id = request.data.get("extra_curricular_activity_title_id")
+        if raw_title_id in (None, ""):
+            if student_profile.extra_curricular_activity_title_id is not None:
+                student_profile.extra_curricular_activity_title = None
+                profile_update_fields.append("extra_curricular_activity_title")
+        else:
+            activity_title = _resolve_student_activity_title(user, raw_title_id)
+            if student_profile.extra_curricular_activity_title_id != activity_title.id:
+                student_profile.extra_curricular_activity_title = activity_title
+                profile_update_fields.append("extra_curricular_activity_title")
 
     if "class_id" in request.data:
         raw_class_id = request.data.get("class_id")
@@ -5304,6 +5483,13 @@ def school_settings(request):
             if getattr(school, "motto", "") != new_motto:
                 school.motto = new_motto
                 update_fields.append("motto")
+
+        for field in ("student_rules", "staff_rules"):
+            if field in request.data:
+                new_value = str(request.data.get(field) or "").strip()
+                if getattr(school, field, "") != new_value:
+                    setattr(school, field, new_value)
+                    update_fields.append(field)
 
         logo_file = request.FILES.get("logo")
         if logo_file:

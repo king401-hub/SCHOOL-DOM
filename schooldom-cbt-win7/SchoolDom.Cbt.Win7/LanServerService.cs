@@ -270,6 +270,7 @@ namespace SchoolDom.Cbt.Win7
                     Id = "lan_session_" + Guid.NewGuid().ToString("N"),
                     ExamId = exam.Id,
                     StudentId = student.StudentId,
+                    StudentName = student.FullName,
                     Status = "in_progress",
                     StartedAt = started.ToString("o"),
                     EndsAt = started.AddSeconds(Math.Max(60, exam.DurationSeconds)).ToString("o"),
@@ -277,6 +278,11 @@ namespace SchoolDom.Cbt.Win7
                 };
                 session.AuditLogs.Add(new ActivityLogRecord { Type = "session_started", Message = "Student started exam on LAN.", CreatedAt = JsonUtil.IsoNow() });
                 _store.State.Sessions.Add(session);
+                _store.Save();
+            }
+            else if (string.IsNullOrWhiteSpace(session.StudentName) || string.Equals(session.StudentName, session.StudentId, StringComparison.OrdinalIgnoreCase))
+            {
+                session.StudentName = student.FullName;
                 _store.Save();
             }
             return new Dictionary<string, object> { { "success", true }, { "student", student }, { "exam", PublicExam(exam) }, { "session", session } };

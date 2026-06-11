@@ -84,6 +84,7 @@ namespace SchoolDom.Cbt.Win7
         public string Id { get; set; }
         public string ExamId { get; set; }
         public string StudentId { get; set; }
+        public string StudentName { get; set; }
         public string Status { get; set; }
         public string StartedAt { get; set; }
         public string EndsAt { get; set; }

@@ -20,6 +20,8 @@ class SchoolTenant(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     motto = models.CharField(max_length=255, blank=True, default="")
+    student_rules = models.TextField(blank=True, default="")
+    staff_rules = models.TextField(blank=True, default="")
     
     # Branding
     logo = models.ImageField(upload_to='school_logos/', null=True, blank=True)

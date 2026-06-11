@@ -5546,6 +5546,42 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
     );
 
+  const handleSaveStudentActivityTitle = useCallback(
+    async (titleId, payload) => {
+      const method = titleId ? "PATCH" : "POST";
+      const endpoint = titleId ? `/api/app/students/activity-titles/${titleId}/` : "/api/app/students/activity-titles/";
+      const result = await requestJson(session, method, endpoint, payload);
+      addAdminNotification({
+        category: "Students",
+        module: "Admission Settings",
+        action: `Saved student activity title ${payload?.name || result?.title?.name || "record"}.`,
+        status: "Success",
+        priority: "Low",
+        tone: "success",
+      });
+      await loadScreen("/students", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleDeactivateStudentActivityTitle = useCallback(
+    async (titleId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/students/activity-titles/${titleId}/`);
+      addAdminNotification({
+        category: "Students",
+        module: "Admission Settings",
+        action: "Deactivated a student activity title.",
+        status: "Updated",
+        priority: "Low",
+        tone: "warning",
+      });
+      await loadScreen("/students", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleCreateTeacher = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/teachers/create/", payload);
@@ -6480,6 +6516,8 @@ const unreadNotificationsCount =
         onCreate={handleCreateStudent}
         onUpdate={handleUpdateStudent}
         onDelete={handleDeleteStudent}
+        onActivityTitleSave={handleSaveStudentActivityTitle}
+        onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
       />
     );
   } else if (activePath === "/id-cards") {

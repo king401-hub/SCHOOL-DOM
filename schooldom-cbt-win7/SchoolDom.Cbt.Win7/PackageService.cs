@@ -77,7 +77,7 @@ namespace SchoolDom.Cbt.Win7
                 {
                     Id = FirstText(row, "id", "student_id"),
                     StudentId = studentId,
-                    FullName = FirstText(row, "full_name", "name", "display_name", "email", "student_id"),
+                    FullName = StudentNameFromRow(row, studentId),
                     ClassName = FirstText(row, "class_name", "class_label"),
                     ProfilePicture = FirstText(row, "profile_picture", "profile_picture_url", "photo", "photo_url"),
                     ProfilePictureData = FirstText(row, "profile_picture_data", "photo_data")
@@ -256,6 +256,7 @@ namespace SchoolDom.Cbt.Win7
                 { "session_id", session.Id },
                 { "exam_id", session.ExamId },
                 { "student_id", session.StudentId },
+                { "student_name", session.StudentName ?? "" },
                 { "answers", session.Answers },
                 { "started_at", session.StartedAt },
                 { "submitted_at", session.SubmittedAt },
@@ -618,6 +619,23 @@ namespace SchoolDom.Cbt.Win7
                 }
             }
             return "";
+        }
+
+        private static string StudentNameFromRow(Dictionary<string, object> row, string studentId)
+        {
+            var name = FirstText(row, "full_name", "student_name", "name", "display_name");
+            if (LooksLikeStudentId(name, studentId)) name = "";
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = (FirstText(row, "first_name", "firstname", "given_name") + " " + FirstText(row, "last_name", "lastname", "surname", "family_name")).Trim();
+            }
+            if (LooksLikeStudentId(name, studentId)) name = "";
+            return string.IsNullOrWhiteSpace(name) ? studentId : name;
+        }
+
+        private static bool LooksLikeStudentId(string value, string studentId)
+        {
+            return !string.IsNullOrWhiteSpace(value) && string.Equals(value.Trim(), (studentId ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<object> ToList(object value)
