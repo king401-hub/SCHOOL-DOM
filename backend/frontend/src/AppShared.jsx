@@ -465,6 +465,30 @@ export function resolveSchoolBrand(...sources) {
   };
 }
 
+export function academicGroupLabels(...sources) {
+  const brand = resolveSchoolBrand(...sources);
+  const isNonK12 = String(brand.school_type || "k12").toLowerCase() === "non_k12";
+  return isNonK12
+    ? {
+        singular: "Department / Faculty",
+        plural: "Departments & Faculties",
+        shortPlural: "Departments",
+        select: "Select department / faculty",
+        unassigned: "Unassigned department",
+        fee: "Department / Faculty Fee",
+        feePlural: "Department / Faculty Fees",
+      }
+    : {
+        singular: "Class",
+        plural: "Classes",
+        shortPlural: "Classes",
+        select: "Select class",
+        unassigned: "Unassigned",
+        fee: "Class Fee",
+        feePlural: "Class Fees",
+      };
+}
+
 export function SchoolBrand({ school, subtitle = "", compact = false }) {
   const brand = resolveSchoolBrand(school);
   return (

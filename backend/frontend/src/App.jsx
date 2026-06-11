@@ -66,6 +66,7 @@ import {
   ThemeModeIcon,
   DashboardIcon,
   MetricCard,
+  academicGroupLabels,
   ScreenState,
   OFFLINE_DRAFTS_KEY,
   OFFLINE_EXAM_CREATE_QUEUE_KEY,
@@ -748,6 +749,7 @@ function StudentDashboard({
   const attendance = dashboardData.attendance || {};
   const school = resolveSchoolBrand(dashboardData.school, session?.school, session);
   const nonK12School = isNonK12School(session, dashboardData);
+  const groupLabels = academicGroupLabels(school);
   const prompts = dashboardData.question_prompts || [];
   const results = dashboardData.recent_results || [];
   const exams = dashboardData.upcoming_exams || [];
@@ -806,7 +808,7 @@ function StudentDashboard({
     ["Full Name", studentName],
     ["Student ID", student.student_id || student.admission_number],
     ["Admission Number", student.admission_number || student.student_id],
-    ["Class", student.class_name],
+    [groupLabels.singular, student.class_name],
     ["Term", currentTerm],
     ["Email", student.email],
     ["Phone", student.phone],
@@ -954,7 +956,7 @@ function StudentDashboard({
         <div className="student-sidebar-head">
           <span>Student Workspace</span>
           <strong>{studentName}</strong>
-          <small>{student.class_name || "Unassigned"} - {activityRoleLabel || school?.name || "SchoolDom"}</small>
+          <small>{student.class_name || groupLabels.unassigned} - {activityRoleLabel || school?.name || "SchoolDom"}</small>
         </div>
         <nav className="student-nav">
           <button
@@ -1091,7 +1093,7 @@ function StudentDashboard({
               {studentName}
             </h1>
             <p className="student-hero-meta">
-              Grade: {student.class_name || "Unassigned"} - Term: {currentTerm} - Today:{" "}
+              {groupLabels.singular}: {student.class_name || groupLabels.unassigned} - Term: {currentTerm} - Today:{" "}
               {todayLabel}
             </p>
           </div>
@@ -1244,7 +1246,7 @@ function StudentDashboard({
           <div className="student-panel-head">
             <div>
               <h3>Subjects Offered</h3>
-              <p className="student-panel-sub">Subjects linked to your class, exams, or recorded scores.</p>
+                <p className="student-panel-sub">Subjects linked to your {groupLabels.singular.toLowerCase()}, exams, or recorded scores.</p>
             </div>
             <div className="student-panel-actions">
               <span className="student-pill">{subjects.length} total</span>
@@ -1308,7 +1310,7 @@ function StudentDashboard({
               <div>
                 <h3>Report card</h3>
                 <p className="student-panel-sub">
-                  {reportCard?.student?.class_name || student.class_name || "Your class"}  - {" "}
+                  {reportCard?.student?.class_name || student.class_name || `Your ${groupLabels.singular.toLowerCase()}`}  - {" "}
                   {reportCard?.student?.student_id || student.student_id || "ID not set"}
                 </p>
               </div>
@@ -1395,7 +1397,7 @@ function StudentDashboard({
               <div>
                 <p className="topbar-kicker">Read-only profile</p>
                 <h3>{studentName}</h3>
-                <small>{student.class_name || "Unassigned"} - {school?.name || "SchoolDom"}</small>
+                <small>{student.class_name || groupLabels.unassigned} - {school?.name || "SchoolDom"}</small>
               </div>
               <button type="button" className="student-profile-close" onClick={() => setProfileOpen(false)} aria-label="Close profile">
                 x
@@ -6384,6 +6386,19 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
 session?.schoolCode ||
     "School OS";
   const schoolBrand = resolveSchoolBrand(activeSchool, screenData["/settings"]?.school, screenData["/dashboard"]?.school, session?.school, session);
+  const adminGroupLabels = academicGroupLabels(schoolBrand);
+  const displayRoutes = useMemo(
+    () =>
+      visibleRoutes.map((route) => ({
+        ...route,
+        label: route.path === "/classes" ? adminGroupLabels.plural : route.label,
+        children: route.children?.map((child) => ({
+          ...child,
+          label: child.path === "/classes" ? adminGroupLabels.plural : child.label,
+        })),
+      })),
+    [adminGroupLabels.plural, visibleRoutes]
+  );
 
   useEffect(() => {
     document.title = schoolBrand.name;
@@ -6530,6 +6545,7 @@ const unreadNotificationsCount =
         onDelete={handleDeleteStudent}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
       />
     );
   } else if (activePath === "/id-cards") {
@@ -6567,6 +6583,7 @@ const unreadNotificationsCount =
         onCreate={handleCreateTeacher}
         onUpdate={handleUpdateTeacher}
         onDelete={handleDeleteTeacher}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
       />
     );
   } else if (activePath === "/enrollments") {
@@ -6591,6 +6608,7 @@ const unreadNotificationsCount =
         onBulkPromotion={handleBulkClassPromotion}
         onCreateSubject={handleCreateSubject}
         onDeleteSubject={handleDeleteSubject}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
       />
     );
   } else if (activePath === "/exams") {
@@ -6653,7 +6671,7 @@ const unreadNotificationsCount =
         </div>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {visibleRoutes.map((route) => {
+          {displayRoutes.map((route) => {
             if (route.children) {
               const isOpen = dropdownOpen === route.path;
               return (
@@ -6719,10 +6737,10 @@ const unreadNotificationsCount =
           <div>
             <p className="topbar-kicker">Protected Workspace</p>
             <h2>{(() => {
-              const route = visibleRoutes.find((item) => item.path === activePath);
+              const route = displayRoutes.find((item) => item.path === activePath);
               if (route) return route.label;
               // Check child routes
-              for (const parentRoute of visibleRoutes) {
+              for (const parentRoute of displayRoutes) {
                 if (parentRoute.children) {
                   const childRoute = parentRoute.children.find((child) => child.path === activePath);
                   if (childRoute) return childRoute.label;

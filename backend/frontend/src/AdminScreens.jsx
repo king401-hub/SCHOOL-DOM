@@ -12,6 +12,7 @@ import {
   userDisplayName,
   userInitials,
   resolveSchoolBrand,
+  academicGroupLabels,
   SchoolBrand,
   roleLabel,
   DashboardIcon,
@@ -755,6 +756,7 @@ function AdminFinanceScreen({
 }) {
   const finance = data?.finance_overview || data || {};
   const schoolBrand = resolveSchoolBrand(finance?.school, data?.school, school, finance?.tenant, data?.tenant);
+  const groupLabels = academicGroupLabels(schoolBrand);
   const adminWallet = finance?.admin_wallet || {};
   const classFees = finance?.class_fee_rows || [];
   const studentFeeRows = finance?.student_fee_rows || [];
@@ -1175,7 +1177,7 @@ function AdminFinanceScreen({
       reference,
       metaRows: [
         ["Bill No", reference],
-        ["Class", fee.class_label],
+        [groupLabels.singular, fee.class_label],
         ["Fee", fee.title],
         ["Due Date", formatDate(fee.due_date)],
       ],
@@ -1363,7 +1365,7 @@ function AdminFinanceScreen({
 
             <article className="app-panel">
               <div className="panel-head">
-                <h3>Class Finance Statistics</h3>
+                <h3>{groupLabels.singular} Finance Statistics</h3>
                 <small>{classFees.length} fee schedules</small>
               </div>
               <div className="class-finance-stat-list">
@@ -1376,7 +1378,7 @@ function AdminFinanceScreen({
                     <div className="class-finance-meter"><i style={{ width: `${fee.collectionRate}%` }} /></div>
                     <small>{fee.collectionRate}% collected</small>
                   </div>
-                )) : <p className="panel-empty">No class fee statistics yet.</p>}
+                )) : <p className="panel-empty">No {groupLabels.fee.toLowerCase()} statistics yet.</p>}
               </div>
             </article>
           </div>
@@ -1390,8 +1392,8 @@ function AdminFinanceScreen({
             >
               <div className="edit-modal-head">
                 <div>
-                  <h3 id="class-fee-form-title">{editingClassFeeId ? "Update Class Fee" : "Create Class Fee"}</h3>
-                  <p className="panel-sub">Create school-focused bills for each class. No personal finance categories are shown here.</p>
+                  <h3 id="class-fee-form-title">{editingClassFeeId ? `Update ${groupLabels.fee}` : `Create ${groupLabels.fee}`}</h3>
+                  <p className="panel-sub">Create school-focused bills for each {groupLabels.singular.toLowerCase()}. No personal finance categories are shown here.</p>
                 </div>
                 {editingClassFeeId ? (
                   <button type="button" className="table-action" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>
@@ -1401,13 +1403,13 @@ function AdminFinanceScreen({
               </div>
               <form className="panel-form" onSubmit={handleClassFeeSubmit}>
                 <div className="panel-form-grid">
-                  <label className="panel-field full">Class<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">Select class</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
+                  <label className="panel-field full">{groupLabels.singular}<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">{groupLabels.select}</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
                   <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
                   <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
                   <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? "Update class fee" : "Create class fee"}</button>
+                  <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? `Update ${groupLabels.fee.toLowerCase()}` : `Create ${groupLabels.fee.toLowerCase()}`}</button>
                   {editingClassFeeId ? <button type="button" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
                 </div>
               </form>
@@ -1467,28 +1469,28 @@ function AdminFinanceScreen({
               <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
                 <option value="student-payments">Student Payment Records</option>
                 <option value="student-fees">Student Fees</option>
-                <option value="class-fees">Class Fee Schedule</option>
+                <option value="class-fees">{groupLabels.fee} Schedule</option>
                 <option value="transactions">Transaction History</option>
               </select>
             </div>
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-payments" ? "active" : ""}`}>
               <table className="data-table">
-                <thead><tr><th>Student</th><th>Class</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
+                <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
                 <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("studentPayments", paymentRows.length)}
             </div>
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
               <table className="data-table">
-                <thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Edit</th></tr></thead>
+                <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Edit</th></tr></thead>
                 <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
             </div>
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
               <table className="data-table">
-                <thead><tr><th>Class</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
-                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => handlePrintClassBill(fee)}>Bill</button><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No class fees configured yet.</td></tr>}</tbody>
+                <thead><tr><th>{groupLabels.singular}</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
+                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => handlePrintClassBill(fee)}>Bill</button><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("classFees", classFees.length)}
             </div>
@@ -2777,11 +2779,12 @@ function AdminTableScreen({ title, description, loading, error, onRetry, columns
   );
 }
 
-function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate, onBulkPromotion, onCreateSubject, onDeleteSubject }) {
+function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onBulkPromotion, onCreateSubject, onDeleteSubject }) {
   const classes = data?.classes || [];
   const subjects = data?.subjects || [];
   const terms = data?.terms || [];
   const promotionHistory = data?.promotion_history || [];
+  const groupLabels = academicGroupLabels(data?.school, school);
   const [name, setName] = useState("");
   const [section, setSection] = useState("");
   const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
@@ -2821,7 +2824,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
     setFormError("");
     setFormSuccess("");
     if (!name.trim()) {
-      setFormError("Class/Department name is required.");
+      setFormError(`${groupLabels.singular} name is required.`);
       return;
     }
     setBusy(true);
@@ -2834,7 +2837,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
       setSelectedSubjectIds([]);
       setEditingClass(null);
     } catch (actionError) {
-      setFormError(actionError.message || "Could not save class.");
+      setFormError(actionError.message || `Could not save ${groupLabels.singular.toLowerCase()}.`);
     } finally {
       setBusy(false);
     }
@@ -2994,7 +2997,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>Classes &amp; Departments</h2>
+        <h2>{groupLabels.plural}</h2>
         <p>Create or list academic groups.</p>
       </div>
 
@@ -3007,21 +3010,21 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
         aria-labelledby={editingClass ? "edit-class-title" : undefined}
       >
         <div className="panel-head">
-          <h3 id={editingClass ? "edit-class-title" : undefined}>{editingClass ? "Edit class/department" : "Create class/department"}</h3>
+          <h3 id={editingClass ? "edit-class-title" : undefined}>{editingClass ? `Edit ${groupLabels.singular.toLowerCase()}` : `Create ${groupLabels.singular.toLowerCase()}`}</h3>
           {editingClass ? <button type="button" className="table-action" onClick={handleCancelEdit} disabled={busy}>Close</button> : null}
           <small>
-            {editingClass ? `Updating ${editingClass.label || editingClass.name}.` : "Name is required; section is optional (e.g., Department or Stream)."}
+            {editingClass ? `Updating ${editingClass.label || editingClass.name}.` : `Name is required; ${groupLabels.singular === "Class" ? "section" : "faculty"} is optional.`}
           </small>
         </div>
         <form className="panel-form" onSubmit={handleSubmit}>
           <div className="panel-form-grid">
             <label className="panel-field">
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Grade 10 or Science Dept" />
+              {groupLabels.singular === "Class" ? "Name" : "Department"}
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={groupLabels.singular === "Class" ? "e.g., Grade 10 or Science Dept" : "e.g., Computer Science"} />
             </label>
             <label className="panel-field">
-              Section / Department
-              <input value={section} onChange={(e) => setSection(e.target.value)} placeholder="e.g., Blue, Science" />
+              {groupLabels.singular === "Class" ? "Section / Department" : "Faculty"}
+              <input value={section} onChange={(e) => setSection(e.target.value)} placeholder={groupLabels.singular === "Class" ? "e.g., Blue, Science" : "e.g., Faculty of Science"} />
             </label>
             <label className="panel-field full">
               Subjects
@@ -3033,7 +3036,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
                 emptyText="Add subjects below before assigning them."
               />
               <small className="field-note">
-                {subjects.length ? "Tick every subject that belongs to this class or department." : "Add subjects below before assigning them."}
+                {subjects.length ? `Tick every subject that belongs to this ${groupLabels.singular.toLowerCase()}.` : "Add subjects below before assigning them."}
               </small>
             </label>
           </div>
@@ -3054,8 +3057,8 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
 
       <article className="app-panel">
         <div className="panel-head">
-          <h3>Bulk class promotion</h3>
-          <small>Preview and promote students in one controlled batch.</small>
+          <h3>Bulk {groupLabels.singular.toLowerCase()} promotion</h3>
+          <small>Preview and promote or transfer students in one controlled batch.</small>
         </div>
         <form className="panel-form" onSubmit={handlePromotionPreview}>
           <div className="panel-form-grid">
@@ -3069,7 +3072,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
                   setPromotionConfirmed(false);
                 }}
               >
-                <option value="class">Class</option>
+                <option value="class">{groupLabels.singular}</option>
                 <option value="department">Department</option>
                 <option value="level">Academic level</option>
                 <option value="session">Academic session</option>
@@ -3077,9 +3080,9 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
             </label>
             {promotionForm.scope === "class" ? (
               <label className="panel-field">
-                From Class
+                From {groupLabels.singular}
                 <select value={promotionForm.source_class_id} onChange={(event) => setPromotionForm((prev) => ({ ...prev, source_class_id: event.target.value }))}>
-                  <option value="">Select class</option>
+                  <option value="">{groupLabels.select}</option>
                   {classes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </label>
@@ -3188,7 +3191,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
 
       <article className="app-panel">
         <div className="panel-head">
-          <h3>Existing classes/departments</h3>
+          <h3>Existing {groupLabels.plural.toLowerCase()}</h3>
           <small>Total: {classes.length}</small>
         </div>
         {classes.length ? (
@@ -3196,7 +3199,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Section/Department</th>
+                <th>{groupLabels.singular === "Class" ? "Section/Department" : "Faculty"}</th>
                 <th>Subjects</th>
                 <th>Students</th>
                 <th>Actions</th>
@@ -3223,7 +3226,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
             </tbody>
           </table>
         ) : (
-          <p className="panel-empty">No classes found.</p>
+          <p className="panel-empty">No {groupLabels.shortPlural.toLowerCase()} found.</p>
         )}
       </article>
 
@@ -5824,9 +5827,10 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
-function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
+  const groupLabels = academicGroupLabels(data?.school, school);
   const activityTitles = data?.options?.student_activity_titles || [];
   const activeActivityTitles = activityTitles.filter((item) => item.is_active);
   const [form, setForm] = useState({
@@ -6299,9 +6303,9 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                   />
             </label>
             <label className="panel-field">
-              Class
+              {groupLabels.singular}
               <select value={form.class_id} onChange={(event) => setForm((prev) => ({ ...prev, class_id: event.target.value }))}>
-                    <option value="">Unassigned</option>
+                    <option value="">{groupLabels.unassigned}</option>
                     {classes.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.label}
@@ -6474,7 +6478,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
               </button>
               {showFilters ? (
                 <label className="panel-field full search-field">
-                  Search by student ID, name, class, or email
+                  Search by student ID, name, {groupLabels.singular.toLowerCase()}, or email
                   <input
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
@@ -6491,7 +6495,7 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     <th>Name</th>
                     <th>Email</th>
                     <th>Student ID</th>
-                    <th>Class</th>
+                <th>{groupLabels.singular}</th>
                     <th>Activity Title</th>
                     <th>Actions</th>
                   </tr>
@@ -6657,9 +6661,9 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     <input value={editForm.second_guardian_relation} onChange={(event) => setEditForm((prev) => ({ ...prev, second_guardian_relation: event.target.value }))} />
                   </label>
                   <label className="panel-field">
-                    Class
+                    {groupLabels.singular}
                     <select value={editForm.class_id} onChange={(event) => setEditForm((prev) => ({ ...prev, class_id: event.target.value }))}>
-                      <option value="">Unassigned</option>
+                      <option value="">{groupLabels.unassigned}</option>
                       {classes.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.label}
@@ -6780,11 +6784,12 @@ function AdminStudentsScreen({ data, loading, error, onRetry, onCreate, onUpdate
   );
 }
 
-function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
+function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
   const teachers = data?.teachers || [];
   const employmentTypes = data?.options?.employment_types || [];
   const subjectOptions = data?.options?.subjects || [];
   const classOptions = data?.options?.classes || [];
+  const groupLabels = academicGroupLabels(data?.school, school);
   const [form, setForm] = useState({
     teacher_email: "",
     first_name: "",
@@ -7209,15 +7214,15 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
                   <small className="field-note">Tick all subjects this teacher handles.</small>
                 </label>
                 <label className="panel-field full">
-                  Classes (optional)
+                  {groupLabels.plural} (optional)
                   <MultiSelectBox
                     options={classOptions}
                     selected={form.classes}
                     onChange={(values) => setForm((prev) => ({ ...prev, classes: values }))}
                     labelForOption={(item) => item.label || `${item.name}${item.section ? ` - ${item.section}` : ""}`}
-                    emptyText="No classes available."
+                    emptyText={`No ${groupLabels.shortPlural.toLowerCase()} available.`}
                   />
-                  <small className="field-note">Optional. Tick every class assigned to this teacher.</small>
+                  <small className="field-note">Optional. Tick every {groupLabels.singular.toLowerCase()} assigned to this teacher.</small>
                 </label>
                 <label className="panel-field">
                   Experience (years)
@@ -7276,7 +7281,7 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
                 <th>Specialization</th>
                 <th>Monthly Salary</th>
                 <th>Subjects</th>
-                <th>Classes</th>
+                <th>{groupLabels.plural}</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -7449,15 +7454,15 @@ function AdminTeachersScreen({ data, loading, error, onRetry, onCreate, onUpdate
                     <small className="field-note">Comma or line separated; shown on teacher profile.</small>
                   </label>
                   <label className="panel-field full">
-                    Classes (optional)
+                    {groupLabels.plural} (optional)
                     <MultiSelectBox
                       options={classOptions}
                       selected={editForm.classes}
                       onChange={(values) => setEditForm((prev) => ({ ...prev, classes: values }))}
                       labelForOption={(item) => item.label || `${item.name}${item.section ? ` - ${item.section}` : ""}`}
-                      emptyText="No classes available."
+                      emptyText={`No ${groupLabels.shortPlural.toLowerCase()} available.`}
                     />
-                    <small className="field-note">Optional. Leave empty if the teacher is not tied to a class.</small>
+                    <small className="field-note">Optional. Leave empty if the teacher is not tied to a {groupLabels.singular.toLowerCase()}.</small>
                   </label>
                   <label className="panel-field">
                     Experience (years)
