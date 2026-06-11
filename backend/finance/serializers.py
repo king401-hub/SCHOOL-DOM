@@ -254,6 +254,12 @@ class AdminWalletSerializer(serializers.ModelSerializer):
             "bank_account_number",
             "bank_name",
             "bank_code",
+            "kuda_virtual_account_number",
+            "kuda_virtual_account_name",
+            "kuda_virtual_account_bank_name",
+            "kuda_virtual_account_reference",
+            "kuda_virtual_account_status",
+            "kuda_virtual_account_metadata",
             "transactions",
         ]
 

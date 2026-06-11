@@ -4,11 +4,18 @@ from finance import views
 
 urlpatterns = [
     path("flutterwave/webhook/", views.flutterwave_webhook, name="flutterwave_webhook"),
+    path("kuda/webhook/", views.kuda_webhook, name="kuda_webhook"),
+    path("whatsapp/webhook/", views.whatsapp_business_webhook, name="whatsapp_business_webhook"),
+    path("whatsapp/balance-preview/", views.whatsapp_balance_preview, name="whatsapp_balance_preview"),
+    path("whatsapp/reminders/run/", views.admin_whatsapp_fee_reminders, name="admin_whatsapp_fee_reminders"),
+    path("bank-credit/webhook/", views.bank_credit_webhook, name="bank_credit_webhook"),
+    path("pay/<str:student_ref>/", views.payment_fallback_page, name="payment_fallback_page"),
     path("wallet/", views.wallet_summary, name="wallet_summary"),
     path("wallet/fund/", views.wallet_fund, name="wallet_fund"),
     path("wallet/verify/", views.wallet_verify, name="wallet_verify"),
     path("admin/overview/", views.admin_overview, name="admin_overview"),
     path("admin/payment-account/", views.admin_payment_account, name="admin_payment_account"),
+    path("admin/kuda-virtual-account/", views.admin_kuda_virtual_account, name="admin_kuda_virtual_account"),
     path("admin/class-fees/", views.admin_class_fee_create, name="admin_class_fee_create"),
     path("admin/class-fees/<uuid:fee_id>/", views.admin_class_fee_detail, name="admin_class_fee_detail"),
     path("admin/fees/<uuid:fee_id>/", views.admin_school_fee_detail, name="admin_school_fee_detail"),

@@ -5295,7 +5295,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
 
   useEffect(() => {
     setName(school.name || "");
-    setMotto(school.motto || school.tagline || "");
+    setMotto((current) => school.motto || school.tagline || current || "");
     setEmail(school.email || "");
     setPhone(school.phone || "");
     setAddress(school.address || "");
@@ -5333,6 +5333,7 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     (calendarItems = activityCalendar) => ({
       name: name.trim(),
       motto: motto.trim(),
+      tagline: motto.trim(),
       email: email.trim(),
       phone: phone.trim(),
       address: address.trim(),

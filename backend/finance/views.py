@@ -2,6 +2,7 @@
 from decimal import Decimal
 from hmac import compare_digest
 from datetime import datetime
+from html import escape
 
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError
@@ -13,7 +14,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from academic.models import Class
@@ -50,6 +51,7 @@ from finance.services import (
     debit_wallet,
     ensure_student_wallet,
     add_activation_credits_to_pool,
+    active_payment_provider,
     assign_monthly_activation_credits,
     eligible_students_for_activation_credits,
     ensure_monthly_credit_reminder,
@@ -58,7 +60,7 @@ from finance.services import (
     get_or_create_activation_credit_pool,
     get_or_create_student_activation_credit,
     initialize_activation_credit_purchase,
-    initialize_flutterwave_transaction,
+    initialize_payment_transaction,
     initiate_admin_withdrawal,
     process_due_fees,
     fee_paid_amount,
@@ -67,12 +69,19 @@ from finance.services import (
     sync_student_class_fees,
     sync_tenant_class_fees,
     run_configured_monthly_auto_assignment,
-    complete_flutterwave_reference,
+    complete_payment_reference,
     complete_wallet_funding,
     get_or_create_student_payment_reference,
+    generate_bank_links,
     ingest_bank_payment,
     apply_bank_payment_to_student,
+    parent_balance_payload,
+    provision_kuda_admin_virtual_account,
     record_finance_activity,
+    receipt_message_for_payment,
+    send_fee_reminders,
+    send_parent_balance_response,
+    send_whatsapp_message,
     update_student_activation_alerts,
     verify_activation_credit_purchase,
 )
@@ -136,6 +145,204 @@ def _school_payload(request, school):
         "address": school.address or "",
         "logo": logo,
     }
+
+
+def _extract_whatsapp_messages(payload):
+    messages = []
+    for entry in payload.get("entry", []) or []:
+        for change in entry.get("changes", []) or []:
+            value = change.get("value", {}) or {}
+            messages.extend(value.get("messages", []) or [])
+    return messages
+
+
+def _bank_webhook_authorized(request):
+    secret = getattr(settings, "SCHOOLDOM_BANK_WEBHOOK_SECRET", "")
+    if not secret:
+        return True
+    supplied = (
+        request.headers.get("X-SchoolDom-Signature")
+        or request.headers.get("X-Webhook-Secret")
+        or request.headers.get("Authorization", "").replace("Bearer ", "", 1)
+    )
+    return compare_digest(str(supplied or ""), str(secret))
+
+
+def _first_present(data, names, default=""):
+    for name in names:
+        value = data.get(name)
+        if value not in (None, ""):
+            return value
+    return default
+
+
+@api_view(["GET", "POST"])
+@permission_classes([AllowAny])
+def whatsapp_business_webhook(request):
+    """Central SchoolDom WhatsApp webhook for parent balance checks."""
+    if request.method == "GET":
+        verify_token = getattr(settings, "WHATSAPP_BUSINESS_VERIFY_TOKEN", "")
+        mode = request.query_params.get("hub.mode")
+        token = request.query_params.get("hub.verify_token")
+        challenge = request.query_params.get("hub.challenge", "")
+        if mode == "subscribe" and verify_token and compare_digest(token or "", verify_token):
+            return HttpResponse(challenge)
+        return Response({"success": False, "message": "Verification failed."}, status=status.HTTP_403_FORBIDDEN)
+
+    processed = []
+    for message in _extract_whatsapp_messages(request.data):
+        from_phone = message.get("from", "")
+        text = ((message.get("text") or {}).get("body") or "").strip().lower()
+        if not from_phone:
+            continue
+        if text == "stop":
+            processed.append({"from": from_phone, "action": "stop_ignored"})
+            continue
+        if "balance" in text or text in {"bal", "fees", "fee"}:
+            try:
+                rows = send_parent_balance_response(from_phone)
+                processed.append({"from": from_phone, "action": "balance", "children": len(rows)})
+            except Exception as exc:
+                processed.append({"from": from_phone, "action": "balance", "error": str(exc)})
+        else:
+            try:
+                send_whatsapp_message(from_phone, "SchoolDom: reply BALANCE to see your children and instant bank payment links.")
+                processed.append({"from": from_phone, "action": "help"})
+            except Exception as exc:
+                processed.append({"from": from_phone, "action": "help", "error": str(exc)})
+    return Response({"success": True, "processed": processed})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def whatsapp_balance_preview(request):
+    """Preview generated parent balance rows without sending WhatsApp messages."""
+    parent_phone = request.data.get("parent_phone") or request.data.get("phone") or ""
+    return Response({"success": True, "children": parent_balance_payload(parent_phone)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_whatsapp_fee_reminders(request):
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    limit = request.data.get("limit")
+    sent = send_fee_reminders(limit=limit)
+    return Response({"success": True, "sent_count": len(sent), "sent": sent})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def bank_credit_webhook(request):
+    """Receive NIBSS/Paystack/Moniepoint credit events and auto-match by narration."""
+    if not _bank_webhook_authorized(request):
+        return Response({"success": False, "message": "Unauthorized webhook."}, status=status.HTTP_403_FORBIDDEN)
+
+    payload = request.data.get("data") if isinstance(request.data.get("data"), dict) else request.data
+    amount = _first_present(payload, ["amount", "paid_amount", "credit_amount"])
+    narration = _first_present(payload, ["narration", "description", "remark", "reference_narration"])
+    bank_reference = _first_present(payload, ["bank_reference", "reference", "transaction_reference", "session_id", "id"])
+    currency = _first_present(payload, ["currency"], "NGN")
+    account_number = str(_first_present(payload, ["account_number", "destination_account", "settlement_account"])).strip()
+
+    tenant = None
+    if account_number:
+        wallet = AdminWallet.objects.select_related("tenant").filter(bank_account_number=account_number).first()
+        tenant = wallet.tenant if wallet else None
+    if not bank_reference:
+        return Response({"success": False, "message": "bank_reference/reference is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        payment, created = ingest_bank_payment(
+            tenant=tenant,
+            amount=amount,
+            narration=narration,
+            bank_reference=bank_reference,
+            currency=currency or "NGN",
+            metadata={"provider_payload": payload},
+            actor=None,
+        )
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
+        phone = payment.student.guardian_phone or payment.student.second_guardian_phone
+        if phone:
+            try:
+                send_whatsapp_message(phone, receipt_message_for_payment(payment))
+            except Exception:
+                pass
+    return Response({"success": True, "created": created, "payment": BankPaymentSerializer(payment).data})
+
+
+def payment_fallback_page(request, student_ref):
+    reference = get_object_or_404(
+        StudentPaymentReference.objects.select_related("student", "student__user", "student__user__tenant", "student__current_class"),
+        code__iexact=student_ref,
+        is_active=True,
+    )
+    payment = generate_bank_links(reference.tenant, reference.student)
+    context = payment["context"]
+    amount = context["amount_for_link"]
+    account_number = context["account_number"]
+    ussd = f"*737*2*{amount}*{account_number}#" if amount and account_number else ""
+    bank_links = "".join(
+        f'<a class="button" href="{escape(link["url"], quote=True)}">{escape(link["label"])}</a>'
+        for link in payment["links"]
+        if link["bank_name"] != "All Banks"
+    )
+    school_name = escape(context["school_name"])
+    student_name = escape(context["student_name"])
+    amount_display = escape(context["amount_display"])
+    bank_name = escape(context["bank_name"] or "School bank")
+    account_name = escape(context["account_name"])
+    account_number_html = escape(account_number)
+    narration = escape(context["narration"])
+    ussd_html = escape(ussd)
+    html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SchoolDom Payment</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 0; background: #f6f8fb; color: #111827; }}
+    main {{ max-width: 560px; margin: 32px auto; background: #fff; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px; }}
+    h1 {{ font-size: 24px; margin: 0 0 16px; }}
+    dl {{ display: grid; grid-template-columns: 140px 1fr; gap: 12px; }}
+    dt {{ color: #6b7280; }}
+    dd {{ margin: 0; font-weight: 700; }}
+    .button {{ display: block; padding: 12px 14px; margin-top: 10px; background: #0f766e; color: #fff; text-decoration: none; border-radius: 6px; text-align: center; }}
+    button {{ padding: 8px 10px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; }}
+    .copy {{ display: flex; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 12px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{school_name} Payment</h1>
+    <dl>
+      <dt>Student</dt><dd>{student_name}</dd>
+      <dt>Amount</dt><dd>{amount_display}</dd>
+      <dt>Bank</dt><dd>{bank_name}</dd>
+      <dt>Account name</dt><dd id="accountName">{account_name}</dd>
+      <dt>Account number</dt><dd id="accountNumber">{account_number_html}</dd>
+      <dt>Narration</dt><dd id="narration">{narration}</dd>
+      <dt>USSD</dt><dd id="ussd">{ussd_html}</dd>
+    </dl>
+    {bank_links}
+    <div class="copy"><span>Account number</span><button onclick="copyText('accountNumber')">Copy</button></div>
+    <div class="copy"><span>Narration</span><button onclick="copyText('narration')">Copy</button></div>
+    <div class="copy"><span>USSD</span><button onclick="copyText('ussd')">Copy</button></div>
+  </main>
+  <script>
+    function copyText(id) {{
+      navigator.clipboard.writeText(document.getElementById(id).innerText);
+    }}
+  </script>
+</body>
+</html>"""
+    return HttpResponse(html)
 
 
 def _classes_for_user(user):
@@ -433,7 +640,7 @@ def wallet_summary(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def wallet_fund(request):
-    """Initialize Flutterwave school-fee payment for a student."""
+    """Initialize school-fee payment for a student."""
     user = request.user
     if user.role != "student":
         return Response({"success": False, "message": "Only students can fund this wallet."}, status=status.HTTP_403_FORBIDDEN)
@@ -445,6 +652,7 @@ def wallet_fund(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     reference = generate_reference("PAY")
+    provider = active_payment_provider()
     tx = Transaction.objects.create(
         wallet=wallet,
         amount=amount,
@@ -452,14 +660,14 @@ def wallet_fund(request):
         tx_type=Transaction.FUNDING,
         status=Transaction.STATUS_PENDING,
         reference=reference,
-        provider="flutterwave",
-        narration="School fee payment via Flutterwave",
+        provider=provider,
+        narration=f"School fee payment via {provider.title()}",
         created_by=user,
         metadata={"requested_amount": float(amount)},
     )
 
     try:
-        init_payload = initialize_flutterwave_transaction(
+        init_payload = initialize_payment_transaction(
             user=user,
             amount=amount,
             reference=reference,
@@ -474,7 +682,13 @@ def wallet_fund(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    tx.metadata.update({"access_code": init_payload.get("access_code")})
+    tx.metadata.update(
+        {
+            "access_code": init_payload.get("access_code"),
+            "bank_transfer": init_payload.get("bank_transfer") or {},
+            "provider": provider,
+        }
+    )
     tx.save(update_fields=["metadata", "updated_at"])
 
     return Response(
@@ -484,7 +698,9 @@ def wallet_fund(request):
             "link": init_payload.get("link") or init_payload.get("authorization_url"),
             "reference": reference,
             "access_code": init_payload.get("access_code"),
-            "message": "Flutterwave checkout initialized for school fee payment.",
+            "bank_transfer": init_payload.get("bank_transfer") or {},
+            "provider": provider,
+            "message": f"{provider.title()} payment initialized for school fee payment.",
         },
         status=status.HTTP_201_CREATED,
     )
@@ -679,6 +895,38 @@ def admin_payment_account(request):
             "success": True,
             "admin_wallet": AdminWalletSerializer(admin_wallet).data,
             "message": "School fee receiving account saved.",
+        }
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def admin_kuda_virtual_account(request):
+    """Create or return the Kuda virtual account for the current school admin wallet."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    admin_wallet = get_or_create_admin_wallet(user.tenant)
+    if request.method == "POST":
+        try:
+            admin_wallet = provision_kuda_admin_virtual_account(admin_wallet, actor=user)
+        except Exception as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        message = "Kuda virtual account is ready for school fee collections."
+    else:
+        message = "Kuda virtual account loaded." if admin_wallet.kuda_virtual_account_number else "No Kuda virtual account has been created for this school yet."
+    return Response(
+        {
+            "success": True,
+            "admin_wallet": AdminWalletSerializer(admin_wallet).data,
+            "virtual_account": {
+                "bank_name": admin_wallet.kuda_virtual_account_bank_name,
+                "account_name": admin_wallet.kuda_virtual_account_name,
+                "account_number": admin_wallet.kuda_virtual_account_number,
+                "reference": admin_wallet.kuda_virtual_account_reference,
+                "status": admin_wallet.kuda_virtual_account_status,
+            },
+            "message": message,
         }
     )
 
@@ -917,7 +1165,7 @@ def admin_activation_credit_purchase(request):
             "credits": credits,
             "bonus_credits": bonus_credits,
             "total_credits": credits + bonus_credits,
-            "message": f"Flutterwave checkout initialized for {credits} activation tokens plus {bonus_credits} free bonus tokens.",
+            "message": f"{active_payment_provider().title()} payment initialized for {credits} activation tokens plus {bonus_credits} free bonus tokens.",
         },
         status=status.HTTP_201_CREATED,
     )
@@ -947,7 +1195,56 @@ def flutterwave_webhook(request):
         return Response({"success": False, "message": "Missing payment reference."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        result = complete_flutterwave_reference(reference)
+        result = complete_payment_reference(reference)
+    except ValueError as exc:
+        return Response({"success": True, "message": str(exc)})
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({"success": True, "message": "Payment completed.", **result})
+
+
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def kuda_webhook(request):
+    """Complete successful Kuda payments as soon as Kuda notifies us."""
+    configured_secret = getattr(settings, "KUDA_WEBHOOK_SECRET", "")
+    received_secret = (
+        request.headers.get("X-Kuda-Signature")
+        or request.headers.get("X-Webhook-Secret")
+        or request.headers.get("Authorization", "").replace("Bearer ", "", 1)
+    )
+    if configured_secret and not compare_digest(received_secret or "", configured_secret):
+        return Response({"success": False, "message": "Invalid webhook signature."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    payload = request.data or {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    reference = str(
+        data.get("reference")
+        or data.get("transactionReference")
+        or data.get("paymentReference")
+        or data.get("session_id")
+        or data.get("id")
+        or ""
+    ).strip()
+    provider_status = str(data.get("status") or data.get("transactionStatus") or data.get("state") or "").lower()
+
+    if provider_status and provider_status not in {"success", "successful", "completed", "complete", "paid"}:
+        return Response({"success": True, "message": "Payment is not successful yet."})
+    if not reference:
+        return Response({"success": False, "message": "Missing payment reference."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        result = complete_payment_reference(
+            reference,
+            verification={
+                **data,
+                "status": "successful",
+                "provider": "kuda",
+                "amount": data.get("amount") or data.get("Amount") or data.get("paid_amount") or 0,
+            },
+        )
     except ValueError as exc:
         return Response({"success": True, "message": str(exc)})
     except Exception as exc:
@@ -1522,6 +1819,6 @@ def admin_withdraw(request):
             "status": result.get("status"),
             "admin_wallet": AdminWalletSerializer(admin_wallet).data,
             "reference": reference,
-            "message": "Withdrawal sent to the school account via Flutterwave.",
+            "message": f"Withdrawal sent to the school account via {active_payment_provider().title()}.",
         }
     )

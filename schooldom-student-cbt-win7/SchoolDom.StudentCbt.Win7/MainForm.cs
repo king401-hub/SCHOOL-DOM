@@ -327,7 +327,7 @@ namespace SchoolDom.StudentCbt.Win7
             var innerWidth = main.Width - 64;
             main.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
             var text = Label(Value(question, "text", "Text"), 32, 70, 14, true, innerWidth, Palette.Text);
-            text.Font = MathFont(14);
+            text.Font = ReadableExamFont(14, true);
             main.Controls.Add(text);
             var top = Math.Max(160, text.Top + text.Height + 20);
             var type = Value(question, "type", "Type").ToLowerInvariant();
@@ -335,7 +335,7 @@ namespace SchoolDom.StudentCbt.Win7
 
             if (type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any())
             {
-                var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer", Font = MathFont(12) };
+                var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer", Font = ReadableExamFont(12, false), ForeColor = Palette.Text, BackColor = Color.White };
                 object saved;
                 if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
                 main.Controls.Add(answer);
@@ -344,7 +344,20 @@ namespace SchoolDom.StudentCbt.Win7
             {
                 for (var i = 0; i < options.Count; i++)
                 {
-                    var option = new RadioButton { Left = 38, Top = top + i * 48, Width = innerWidth - 8, Height = 40, Text = ((char)('A' + i)) + ". " + options[i], Tag = "answer:" + i, Font = MathFont(12) };
+                    var option = new RadioButton
+                    {
+                        Left = 38,
+                        Top = top + i * 50,
+                        Width = innerWidth - 8,
+                        Height = 42,
+                        Text = ((char)('A' + i)) + ". " + options[i],
+                        Tag = "answer:" + i,
+                        Font = ReadableExamFont(12, false),
+                        ForeColor = Palette.Text,
+                        BackColor = Color.White,
+                        UseCompatibleTextRendering = true,
+                        Enabled = true
+                    };
                     object saved;
                     option.Checked = _answers.TryGetValue(QuestionId(question, _current), out saved) && JsonUtil.Text(saved) == i.ToString();
                     option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
@@ -549,7 +562,7 @@ namespace SchoolDom.StudentCbt.Win7
         private void ShowCalculator()
         {
             _calculatorOpen = true;
-            var form = new Form { Text = "Calculator", Width = 360, Height = 430, StartPosition = FormStartPosition.CenterParent, TopMost = true, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = Palette.Background, Font = new Font("Segoe UI", 10) };
+            var form = new Form { Text = "Calculator", Width = 360, Height = 430, StartPosition = FormStartPosition.CenterParent, TopMost = true, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = Palette.Background, Font = new Font("Segoe UI", 10), KeyPreview = true };
             form.FormClosed += (s, e) =>
             {
                 _calculatorOpen = false;
@@ -561,7 +574,7 @@ namespace SchoolDom.StudentCbt.Win7
                 }
             };
             var input = new TextBox { Left = 16, Top = 16, Width = 310, Height = 34, Font = new Font("Segoe UI", 13), TextAlign = HorizontalAlignment.Right };
-            var result = Label("", 16, 58, 12, true, 310, Palette.Text);
+            var result = Label("", 16, 58, 12, true, 310, Palette.Blue);
             form.Controls.Add(input);
             form.Controls.Add(result);
 
@@ -578,12 +591,14 @@ namespace SchoolDom.StudentCbt.Win7
                 for (var col = 0; col < 4; col++)
                 {
                     var key = keys[row, col];
-                    var button = key == "=" ? PrimaryButton(key, 16 + col * 78, 96 + row * 54, 70) : SecondaryButton(key, 16 + col * 78, 96 + row * 54, 70);
+                    var displayKey = key == "/" ? "÷" : key == "*" ? "×" : key;
+                    var button = key == "=" ? PrimaryButton(displayKey, 16 + col * 78, 96 + row * 54, 70) : SecondaryButton(displayKey, 16 + col * 78, 96 + row * 54, 70);
+                    button.Tag = key;
                     button.Height = 44;
                     button.Font = new Font("Segoe UI", 12, FontStyle.Bold);
                     button.Click += (s, e) =>
                     {
-                        var value = ((Button)s).Text;
+                        var value = JsonUtil.Text(((Button)s).Tag);
                         if (value == "C")
                         {
                             input.Text = "";
@@ -595,7 +610,13 @@ namespace SchoolDom.StudentCbt.Win7
                         }
                         else if (value == "=")
                         {
-                            try { result.Text = Convert.ToString(new System.Data.DataTable().Compute(input.Text, "")); }
+                            try
+                            {
+                                var answer = Convert.ToString(new System.Data.DataTable().Compute(NormalizeExpression(input.Text), ""));
+                                result.Text = "= " + answer;
+                                input.Text = answer;
+                                input.SelectionStart = input.Text.Length;
+                            }
                             catch { result.Text = "Invalid expression"; }
                         }
                         else
@@ -607,7 +628,20 @@ namespace SchoolDom.StudentCbt.Win7
                     form.Controls.Add(button);
                 }
             }
-            form.Show(this);
+            form.Shown += (s, e) =>
+            {
+                form.Activate();
+                input.Focus();
+            };
+            form.ShowDialog(this);
+        }
+
+        private string NormalizeExpression(string expression)
+        {
+            return (expression ?? "")
+                .Replace("×", "*")
+                .Replace("÷", "/")
+                .Replace("−", "-");
         }
 
         private string TimeText()
@@ -746,6 +780,7 @@ namespace SchoolDom.StudentCbt.Win7
         private TextBox Field(Control parent, string label, string value, int left, int top, bool password) { parent.Controls.Add(Label(label, left, top - 30, 9, true, 220, Palette.Text)); var box = new TextBox { Left = left, Top = top, Width = 226, Height = 34, Text = value, UseSystemPasswordChar = password, Font = new Font("Segoe UI", 11) }; parent.Controls.Add(box); return box; }
         private Label Label(string text, int left, int top, int size, bool bold, int width, Color color) { return new Label { Text = text, Left = left, Top = top, AutoSize = true, MaximumSize = new Size(width, 0), Font = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular), ForeColor = color, UseCompatibleTextRendering = true }; }
         private Font MathFont(float size) { try { return new Font("Cambria Math", size, FontStyle.Regular); } catch { return new Font("Segoe UI Symbol", size, FontStyle.Regular); } }
+        private Font ReadableExamFont(float size, bool bold) { return new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular); }
         private Button PrimaryButton(string text, int left, int top, int width) { var b = new Button { Text = text, Left = left, Top = top, Width = width, Height = 42, BackColor = Palette.Blue, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold) }; b.FlatAppearance.BorderColor = Palette.Blue; return b; }
         private Button SecondaryButton(string text, int left, int top, int width) { var b = PrimaryButton(text, left, top, width); b.BackColor = Palette.LightButton; b.ForeColor = Palette.Text; b.FlatAppearance.BorderColor = Palette.Border; return b; }
     }

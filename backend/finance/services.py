@@ -3,18 +3,21 @@ from decimal import Decimal
 from datetime import timedelta
 from typing import Optional
 import uuid
+import re
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import F, Q, Sum
 from django.utils import timezone
 
 from finance.models import (
     ActivationCreditPool,
     ActivationCreditTransaction,
     AdminWallet,
+    BankLink,
     BankPayment,
     ClassFee,
     DocumentGenerationCreditTransaction,
@@ -36,6 +39,19 @@ K12_TOKEN_DURATION_MONTHS = 3
 K12_TOKEN_DURATION_DAYS = 15
 NON_K12_TOKEN_DURATION_MONTHS = 1
 NON_K12_TOKEN_DURATION_DAYS = 0
+SCHOOLDOM_PAY_BASE_URL = "https://pay.schoolom.ng"
+DEFAULT_BANK_LINK_TEMPLATES = {
+    "gtbank": "gtbank://pay?account={{account_number}}&amount={{amount}}&narration={{narration}}",
+    "guaranty trust bank": "gtbank://pay?account={{account_number}}&amount={{amount}}&narration={{narration}}",
+    "zenith": "zenith://transfer?to={{account_number}}&amt={{amount}}&desc={{student_name}}",
+    "zenith bank": "zenith://transfer?to={{account_number}}&amt={{amount}}&desc={{student_name}}",
+    "uba": "uba://payment?acct={{account_number}}&amt={{amount}}&ref={{student_ref}}",
+    "united bank for africa": "uba://payment?acct={{account_number}}&amt={{amount}}&ref={{student_ref}}",
+    "access": "access://transfer?to={{account_number}}&amt={{amount}}&ref={{student_ref}}",
+    "access bank": "access://transfer?to={{account_number}}&amt={{amount}}&ref={{student_ref}}",
+    "firstbank": "firstbank://transfer?account={{account_number}}&amount={{amount}}&narration={{narration}}",
+    "first bank": "firstbank://transfer?account={{account_number}}&amount={{amount}}&narration={{narration}}",
+}
 
 
 def _as_decimal(value: object) -> Decimal:
@@ -43,6 +59,33 @@ def _as_decimal(value: object) -> Decimal:
         return Decimal(str(value)).quantize(Decimal("0.01"))
     except Exception:
         raise ValueError("Amount must be a number with up to two decimal places.")
+
+
+def _digits(value: object) -> str:
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def normalize_phone_number(value: object) -> str:
+    digits = _digits(value)
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 11 and digits.startswith("0"):
+        return "234" + digits[1:]
+    if len(digits) == 10:
+        return "234" + digits
+    return digits
+
+
+def _money_for_link(amount: Decimal) -> str:
+    amount = _as_decimal(amount)
+    if amount == amount.to_integral_value():
+        return str(int(amount))
+    return format(amount, "f")
+
+
+def _format_naira(amount: Decimal) -> str:
+    amount = _as_decimal(amount)
+    return f"NGN {amount:,.2f}"
 
 
 def generate_reference(prefix: str = "EDU") -> str:
@@ -109,6 +152,161 @@ def _flutterwave_json(response):
     except ValueError:
         response.raise_for_status()
         return {}
+
+
+def active_payment_provider():
+    provider = str(getattr(settings, "PAYMENT_PROVIDER", "flutterwave") or "flutterwave").strip().lower()
+    return provider if provider in {"flutterwave", "kuda"} else "flutterwave"
+
+
+def _provider_success_status(value):
+    return str(value or "").strip().lower() in {"success", "successful", "completed", "complete", "paid"}
+
+
+def _kuda_headers():
+    headers = {"Content-Type": "application/json"}
+    api_key = getattr(settings, "KUDA_API_KEY", "")
+    client_id = getattr(settings, "KUDA_CLIENT_ID", "")
+    client_secret = getattr(settings, "KUDA_CLIENT_SECRET", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if client_id:
+        headers["X-Client-Id"] = client_id
+    if client_secret:
+        headers["X-Client-Secret"] = client_secret
+    return headers
+
+
+def _kuda_base_url():
+    base_url = getattr(settings, "KUDA_BASE_URL", "")
+    if not base_url:
+        raise RuntimeError("KUDA_BASE_URL is not configured.")
+    return base_url.rstrip("/")
+
+
+def _kuda_json(response):
+    try:
+        data = response.json()
+    except ValueError:
+        response.raise_for_status()
+        return {}
+    if response.status_code >= 400:
+        raise RuntimeError(data.get("message") or data.get("error") or "Kuda request failed.")
+    return data
+
+
+def _kuda_collection_account():
+    account_number = getattr(settings, "KUDA_COLLECTION_ACCOUNT_NUMBER", "")
+    if not account_number:
+        raise RuntimeError("KUDA_COLLECTION_ACCOUNT_NUMBER is not configured.")
+    return {
+        "bank_name": getattr(settings, "KUDA_COLLECTION_BANK_NAME", "Kuda Microfinance Bank"),
+        "account_name": getattr(settings, "KUDA_COLLECTION_ACCOUNT_NAME", "SchoolDom"),
+        "account_number": account_number,
+    }
+
+
+def _kuda_account_from_response(data):
+    payload = data.get("data") if isinstance(data.get("data"), dict) else data
+    return {
+        "account_number": str(
+            payload.get("account_number")
+            or payload.get("accountNumber")
+            or payload.get("virtualAccountNumber")
+            or payload.get("nuban")
+            or ""
+        ).strip(),
+        "account_name": str(
+            payload.get("account_name")
+            or payload.get("accountName")
+            or payload.get("virtualAccountName")
+            or payload.get("name")
+            or ""
+        ).strip(),
+        "bank_name": str(
+            payload.get("bank_name")
+            or payload.get("bankName")
+            or payload.get("bank")
+            or getattr(settings, "KUDA_COLLECTION_BANK_NAME", "Kuda Microfinance Bank")
+        ).strip(),
+        "reference": str(
+            payload.get("reference")
+            or payload.get("trackingReference")
+            or payload.get("accountReference")
+            or payload.get("id")
+            or ""
+        ).strip(),
+        "status": str(payload.get("status") or payload.get("state") or "active").strip(),
+        "raw": payload,
+    }
+
+
+def provision_kuda_admin_virtual_account(admin_wallet: AdminWallet, actor=None):
+    """Create or return the Kuda virtual account assigned to a school admin wallet."""
+    if admin_wallet.kuda_virtual_account_number:
+        return admin_wallet
+    if not admin_wallet.tenant_id:
+        raise ValueError("A school tenant is required before creating a Kuda virtual account.")
+
+    tenant = admin_wallet.tenant
+    reference = f"SCH-{tenant.schema_name}-{admin_wallet.id}".upper()
+    payload = {
+        "reference": reference,
+        "account_name": f"{tenant.name} Fees",
+        "customer": {
+            "name": tenant.name,
+            "email": tenant.email or "",
+            "phone": tenant.phone or "",
+        },
+        "metadata": {
+            "tenant_id": str(tenant.id),
+            "school_code": tenant.schema_name,
+            "purpose": "school_fee_collection",
+        },
+    }
+    response = requests.post(
+        f"{_kuda_base_url()}/{getattr(settings, 'KUDA_VIRTUAL_ACCOUNT_ENDPOINT', '/virtual-accounts').lstrip('/')}",
+        json=payload,
+        headers=_kuda_headers(),
+        timeout=getattr(settings, "KUDA_REQUEST_TIMEOUT", 25),
+    )
+    data = _kuda_json(response)
+    account = _kuda_account_from_response(data)
+    if not account["account_number"]:
+        raise RuntimeError("Kuda did not return a virtual account number.")
+
+    admin_wallet.kuda_virtual_account_number = account["account_number"]
+    admin_wallet.kuda_virtual_account_name = account["account_name"] or payload["account_name"]
+    admin_wallet.kuda_virtual_account_bank_name = account["bank_name"]
+    admin_wallet.kuda_virtual_account_reference = account["reference"] or reference
+    admin_wallet.kuda_virtual_account_status = account["status"]
+    admin_wallet.kuda_virtual_account_metadata = account["raw"]
+    admin_wallet.bank_account_number = admin_wallet.kuda_virtual_account_number
+    admin_wallet.bank_account_name = admin_wallet.kuda_virtual_account_name
+    admin_wallet.bank_code = admin_wallet.kuda_virtual_account_bank_name
+    admin_wallet.save(
+        update_fields=[
+            "kuda_virtual_account_number",
+            "kuda_virtual_account_name",
+            "kuda_virtual_account_bank_name",
+            "kuda_virtual_account_reference",
+            "kuda_virtual_account_status",
+            "kuda_virtual_account_metadata",
+            "bank_account_number",
+            "bank_account_name",
+            "bank_code",
+            "updated_at",
+        ]
+    )
+    record_finance_activity(
+        tenant,
+        actor,
+        "kuda_virtual_account_created",
+        "Created Kuda school fee collection account.",
+        reference=admin_wallet.kuda_virtual_account_reference,
+        metadata={"account_number": admin_wallet.kuda_virtual_account_number},
+    )
+    return admin_wallet
 
 
 def get_or_create_admin_wallet(tenant=None) -> AdminWallet:
@@ -294,6 +492,103 @@ def verify_flutterwave_transaction(reference: str):
     return transaction_data
 
 
+def _kuda_school_collection_account(user, actor=None):
+    admin_wallet = get_or_create_admin_wallet(getattr(user, "tenant", None))
+    if admin_wallet.kuda_virtual_account_number:
+        return {
+            "bank_name": admin_wallet.kuda_virtual_account_bank_name or "Kuda Microfinance Bank",
+            "account_name": admin_wallet.kuda_virtual_account_name,
+            "account_number": admin_wallet.kuda_virtual_account_number,
+        }
+    if active_payment_provider() == "kuda" and getattr(settings, "KUDA_BASE_URL", ""):
+        admin_wallet = provision_kuda_admin_virtual_account(admin_wallet, actor=actor or user)
+        return {
+            "bank_name": admin_wallet.kuda_virtual_account_bank_name or "Kuda Microfinance Bank",
+            "account_name": admin_wallet.kuda_virtual_account_name,
+            "account_number": admin_wallet.kuda_virtual_account_number,
+        }
+    if admin_wallet.bank_account_number:
+        return {
+            "bank_name": admin_wallet.bank_code or "School bank",
+            "account_name": admin_wallet.bank_account_name,
+            "account_number": admin_wallet.bank_account_number,
+        }
+    return _kuda_collection_account()
+
+
+def initialize_kuda_transaction(user, amount: Decimal, reference: str, metadata=None, callback_url=""):
+    user_name = user.email
+    if hasattr(user, "get_full_name") and callable(user.get_full_name):
+        user_name = user.get_full_name() or user.email
+    account = _kuda_school_collection_account(user, actor=user)
+    amount = _as_decimal(amount)
+    narration = f"SCH/KUDA/{reference}"
+    return {
+        "provider": "kuda",
+        "status": "pending_bank_transfer",
+        "reference": reference,
+        "authorization_url": "",
+        "link": "",
+        "access_code": "",
+        "amount": str(amount),
+        "currency": "NGN",
+        "customer": {"email": user.email, "name": user_name},
+        "metadata": metadata or {},
+        "bank_transfer": {
+            **account,
+            "amount": str(amount),
+            "narration": narration,
+            "reference": reference,
+            "instructions": "Transfer the exact amount to this Kuda collection account and use the narration/reference shown.",
+        },
+    }
+
+
+def verify_kuda_transaction(reference: str):
+    endpoint = getattr(settings, "KUDA_TRANSACTION_VERIFY_ENDPOINT", "/transactions/{reference}")
+    endpoint = endpoint.replace("{reference}", quote(str(reference), safe=""))
+    response = requests.get(
+        f"{_kuda_base_url()}/{endpoint.lstrip('/')}",
+        headers=_kuda_headers(),
+        timeout=getattr(settings, "KUDA_REQUEST_TIMEOUT", 25),
+    )
+    data = _kuda_json(response)
+    transaction_data = data.get("data") if isinstance(data.get("data"), dict) else data
+    status_value = transaction_data.get("status") or transaction_data.get("transactionStatus") or transaction_data.get("state")
+    if not _provider_success_status(status_value):
+        raise RuntimeError("Kuda payment was not successful.")
+    return {
+        **transaction_data,
+        "status": "successful",
+        "amount": transaction_data.get("amount") or transaction_data.get("Amount") or transaction_data.get("paid_amount") or 0,
+        "provider": "kuda",
+    }
+
+
+def _payment_provider_for_reference(reference):
+    reference = str(reference or "").strip()
+    tx = Transaction.objects.filter(reference=reference).only("provider").first()
+    if tx:
+        return tx.provider or active_payment_provider()
+    credit_tx = ActivationCreditTransaction.objects.filter(reference=reference).only("provider").first()
+    if credit_tx:
+        return credit_tx.provider or active_payment_provider()
+    return active_payment_provider()
+
+
+def initialize_payment_transaction(user, amount: Decimal, reference: str, metadata=None, callback_url=""):
+    if active_payment_provider() == "kuda":
+        return initialize_kuda_transaction(user, amount, reference, metadata=metadata, callback_url=callback_url)
+    return initialize_flutterwave_transaction(user, amount, reference, metadata=metadata, callback_url=callback_url)
+
+
+def verify_payment_transaction(reference: str):
+    provider = _payment_provider_for_reference(reference)
+    if provider == "kuda":
+        return verify_kuda_transaction(reference)
+    return verify_flutterwave_transaction(reference)
+
+
 def initialize_activation_credit_purchase(tenant, credits, actor):
     credits = int(credits or 0)
     if credits <= 0:
@@ -311,7 +606,8 @@ def initialize_activation_credit_purchase(tenant, credits, actor):
         price_per_credit=pool.price_per_credit,
         amount=amount,
         reference=reference,
-        narration="Activation token purchase via Flutterwave",
+        narration=f"Activation token purchase via {active_payment_provider().title()}",
+        provider=active_payment_provider(),
         metadata={
             "tenant_id": str(tenant.id) if tenant else "",
             "credits": credits,
@@ -322,7 +618,7 @@ def initialize_activation_credit_purchase(tenant, credits, actor):
         },
         created_by=actor,
     )
-    init_payload = initialize_flutterwave_transaction(
+    init_payload = initialize_payment_transaction(
         user=actor,
         amount=amount,
         reference=reference,
@@ -350,14 +646,14 @@ def initialize_activation_credit_purchase(tenant, credits, actor):
     return {"pool": pool, "reference": reference, "amount": amount, **init_payload}
 
 
-def verify_activation_credit_purchase(reference, actor=None):
+def verify_activation_credit_purchase(reference, actor=None, verification: Optional[dict] = None):
     tx = ActivationCreditTransaction.objects.select_related("pool").get(reference=reference)
     if tx.tx_type != ActivationCreditTransaction.PURCHASE:
         raise ValueError("Invalid activation token purchase reference.")
     if tx.status == ActivationCreditTransaction.STATUS_SUCCESS:
         return tx.pool
 
-    verification = verify_flutterwave_transaction(reference)
+    verification = verification or verify_payment_transaction(reference)
     status_value = str(verification.get("status") or "").lower()
     amount_major = Decimal(str(verification.get("amount") or 0))
     if status_value != "successful":
@@ -537,7 +833,7 @@ def _has_complete_admin_bank_account(admin_wallet: AdminWallet) -> bool:
 
 
 def settle_flutterwave_school_fee_payment(tx: Transaction, actor=None):
-    """Transfer a verified Flutterwave school-fee payment to the school's saved bank account."""
+    """Transfer a verified checkout school-fee payment to the school's saved bank account."""
     if not getattr(settings, "FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES", True):
         return None
     if tx.tx_type != Transaction.FUNDING or tx.status != Transaction.STATUS_SUCCESS:
@@ -614,7 +910,7 @@ def settle_flutterwave_school_fee_payment(tx: Transaction, actor=None):
 
 
 def complete_wallet_funding(reference: str, actor=None, verification: Optional[dict] = None):
-    """Verify Flutterwave student payment and move funds to the admin wallet once."""
+    """Verify student payment and move funds to the admin wallet once."""
     tx = Transaction.objects.select_related("wallet", "wallet__user").get(reference=reference)
     if tx.tx_type != Transaction.FUNDING:
         raise ValueError("Invalid school fee payment reference.")
@@ -624,7 +920,7 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
             settle_flutterwave_school_fee_payment(tx, actor=actor or tx.wallet.user)
         return tx.wallet
 
-    verification = verification or verify_flutterwave_transaction(reference)
+    verification = verification or verify_payment_transaction(reference)
     status_value = str(verification.get("status") or "").lower()
     amount_major = Decimal(str(verification.get("amount") or 0))
     if status_value != "successful":
@@ -655,16 +951,21 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
 
 def complete_flutterwave_reference(reference: str):
     """Complete any known Flutterwave payment reference from a trusted webhook."""
+    return complete_payment_reference(reference)
+
+
+def complete_payment_reference(reference: str, verification: Optional[dict] = None):
+    """Complete any known payment reference from a trusted provider webhook."""
     reference = str(reference or "").strip()
     if not reference:
         raise ValueError("reference is required.")
 
-    verification = verify_flutterwave_transaction(reference)
+    verification = verification or verify_payment_transaction(reference)
     if Transaction.objects.filter(reference=reference).exists():
         wallet = complete_wallet_funding(reference, verification=verification)
         return {"kind": "wallet", "wallet_id": str(wallet.id)}
     if ActivationCreditTransaction.objects.filter(reference=reference).exists():
-        pool = verify_activation_credit_purchase(reference)
+        pool = verify_activation_credit_purchase(reference, verification=verification)
         return {"kind": "activation_credits", "pool_id": str(pool.id)}
     raise ValueError("Unknown payment reference.")
 
@@ -1119,6 +1420,252 @@ def outstanding_amount_for_student(student_profile):
     return max(expected - paid, Decimal("0.00"))
 
 
+def school_payment_context(student_profile, amount=None):
+    tenant = getattr(student_profile.user, "tenant", None)
+    admin_wallet = get_or_create_admin_wallet(tenant)
+    payment_ref = get_or_create_student_payment_reference(student_profile)
+    balance = _as_decimal(amount if amount is not None else outstanding_amount_for_student(student_profile))
+    class_obj = getattr(student_profile, "current_class", None)
+    class_name = getattr(class_obj, "name", "") or ""
+    school_code = getattr(tenant, "schema_name", "") or "SCHOOLDOM"
+    student_name = student_profile.user.get_full_name() or student_profile.user.email
+    narration = f"SCH/{school_code.upper()}/{payment_ref.code}"
+    return {
+        "tenant": tenant,
+        "admin_wallet": admin_wallet,
+        "student_ref": payment_ref.code,
+        "student_name": student_name,
+        "class": class_name,
+        "school_name": getattr(tenant, "name", "") or "SchoolDom",
+        "school_code": school_code.upper(),
+        "account_number": admin_wallet.bank_account_number or "",
+        "account_name": admin_wallet.bank_account_name or "",
+        "bank_name": admin_wallet.bank_code or "",
+        "amount": balance,
+        "amount_for_link": _money_for_link(balance),
+        "amount_display": _format_naira(balance),
+        "narration": narration,
+    }
+
+
+def _template_value(context, key):
+    value = context.get(key, "")
+    if isinstance(value, Decimal):
+        value = _money_for_link(value)
+    return quote(str(value), safe="")
+
+
+def _render_bank_template(template, context):
+    rendered = str(template or "")
+    replacements = {
+        "account_number": context["account_number"],
+        "amount": context["amount_for_link"],
+        "balance": context["amount_for_link"],
+        "narration": context["narration"],
+        "school_code": context["school_code"],
+        "student_ref": context["student_ref"],
+        "student_name": context["student_name"],
+        "class": context["class"],
+        "account_name": context["account_name"],
+        "school_name": context["school_name"],
+    }
+    for key in replacements:
+        rendered = rendered.replace("{{" + key + "}}", _template_value(replacements, key))
+        rendered = rendered.replace("{{ " + key + " }}", _template_value(replacements, key))
+    return rendered
+
+
+def bank_link_template_for(bank_name):
+    normalized = str(bank_name or "").strip().lower()
+    if not normalized:
+        return ""
+    configured = BankLink.objects.filter(bank_name__iexact=bank_name, is_active=True).first()
+    if configured:
+        return configured.deep_link_template
+    return DEFAULT_BANK_LINK_TEMPLATES.get(normalized, "")
+
+
+def pay_fallback_url(student_ref):
+    base_url = getattr(settings, "SCHOOLDOM_PAY_BASE_URL", SCHOOLDOM_PAY_BASE_URL).rstrip("/")
+    return f"{base_url}/{quote(str(student_ref), safe='')}"
+
+
+def generate_bank_links(school, student_profile, amount=None, extra_banks=None):
+    context = school_payment_context(student_profile, amount=amount)
+    primary_bank = context["bank_name"]
+    bank_names = []
+    if primary_bank:
+        bank_names.append(primary_bank)
+    bank_names.extend(extra_banks or ["GTBank", "Zenith", "Access"])
+
+    links = []
+    seen = set()
+    for bank_name in bank_names:
+        key = str(bank_name or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        template = bank_link_template_for(bank_name)
+        if not template:
+            continue
+        links.append(
+            {
+                "bank_name": str(bank_name).strip(),
+                "label": f"Pay with {str(bank_name).strip()}",
+                "url": _render_bank_template(template, context),
+            }
+        )
+
+    links.append(
+        {
+            "bank_name": "All Banks",
+            "label": "Other banks",
+            "url": pay_fallback_url(context["student_ref"]),
+        }
+    )
+    return {
+        "student": student_profile,
+        "school": school,
+        "context": context,
+        "links": links,
+    }
+
+
+def students_for_parent_phone(parent_phone):
+    normalized = normalize_phone_number(parent_phone)
+    if not normalized:
+        return StudentProfile.objects.none()
+    candidates = {normalized}
+    if normalized.startswith("234") and len(normalized) > 3:
+        candidates.add("0" + normalized[3:])
+        candidates.add("+" + normalized)
+    return (
+        StudentProfile.objects.select_related("user", "user__tenant", "current_class")
+        .filter(
+            Q(guardian_phone__in=candidates)
+            | Q(second_guardian_phone__in=candidates)
+            | Q(user__phone__in=candidates)
+        )
+        .order_by("user__tenant__name", "user__last_name", "user__first_name")
+    )
+
+
+def parent_balance_payload(parent_phone):
+    rows = []
+    for student in students_for_parent_phone(parent_phone):
+        balance = outstanding_amount_for_student(student)
+        if balance <= 0:
+            continue
+        payment = generate_bank_links(getattr(student.user, "tenant", None), student, amount=balance)
+        rows.append(
+            {
+                "student_id": str(student.id),
+                "student_ref": payment["context"]["student_ref"],
+                "student_name": payment["context"]["student_name"],
+                "school_name": payment["context"]["school_name"],
+                "class": payment["context"]["class"],
+                "balance": payment["context"]["amount"],
+                "balance_display": payment["context"]["amount_display"],
+                "account_number": payment["context"]["account_number"],
+                "account_name": payment["context"]["account_name"],
+                "school_bank": payment["context"]["bank_name"],
+                "narration": payment["context"]["narration"],
+                "links": payment["links"],
+            }
+        )
+    return rows
+
+
+def _whatsapp_headers():
+    token = getattr(settings, "WHATSAPP_BUSINESS_ACCESS_TOKEN", "")
+    if token.lower().startswith("bearer "):
+        auth = token
+    else:
+        auth = f"Bearer {token}"
+    return {"Authorization": auth, "Content-Type": "application/json"}
+
+
+def send_whatsapp_message(to_phone, text):
+    phone_number_id = getattr(settings, "WHATSAPP_BUSINESS_PHONE_NUMBER_ID", "")
+    if not phone_number_id:
+        raise RuntimeError("WHATSAPP_BUSINESS_PHONE_NUMBER_ID is not configured.")
+    if not getattr(settings, "WHATSAPP_BUSINESS_ACCESS_TOKEN", ""):
+        raise RuntimeError("WHATSAPP_BUSINESS_ACCESS_TOKEN is not configured.")
+    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": normalize_phone_number(to_phone),
+        "type": "text",
+        "text": {"preview_url": True, "body": text},
+    }
+    response = requests.post(url, headers=_whatsapp_headers(), json=payload, timeout=20)
+    response.raise_for_status()
+    return response.json()
+
+
+def build_balance_message(row):
+    link_lines = [f"{link['label']}: {link['url']}" for link in row["links"][:4]]
+    return "\n".join(
+        [
+            f"{row['student_name']} - {row['school_name']}: {row['balance_display']} due",
+            f"Account: {row['account_name']} {row['account_number']}",
+            f"Narration: {row['narration']}",
+            "Tap your bank to pay:",
+            *link_lines,
+        ]
+    )
+
+
+def send_parent_balance_response(parent_phone):
+    rows = parent_balance_payload(parent_phone)
+    if not rows:
+        send_whatsapp_message(parent_phone, "SchoolDom: no unpaid school fee balance found for this WhatsApp number.")
+        return rows
+    for row in rows:
+        send_whatsapp_message(parent_phone, build_balance_message(row))
+    return rows
+
+
+def send_fee_reminders(limit=None):
+    fees = (
+        SchoolFee.objects.select_related("student", "student__user", "student__user__tenant", "student__current_class")
+        .exclude(status=SchoolFee.STATUS_PAID)
+        .order_by("due_date", "created_at")
+    )
+    if limit:
+        fees = fees[: int(limit)]
+    sent = []
+    seen_students = set()
+    for fee in fees:
+        student = fee.student
+        if student.id in seen_students:
+            continue
+        seen_students.add(student.id)
+        balance = outstanding_amount_for_student(student)
+        if balance <= 0:
+            continue
+        row = parent_balance_payload(student.guardian_phone or student.second_guardian_phone)
+        row = next((item for item in row if item["student_id"] == str(student.id)), None)
+        if not row:
+            continue
+        message = "SchoolDom Alert\n" + build_balance_message(row) + "\nReply STOP to opt out."
+        send_whatsapp_message(student.guardian_phone or student.second_guardian_phone, message)
+        sent.append(row)
+    return sent
+
+
+def receipt_message_for_payment(payment):
+    student = payment.student
+    school = payment.tenant
+    student_name = student.user.get_full_name() or student.user.email if student else "student"
+    school_name = getattr(school, "name", "") or "SchoolDom"
+    return (
+        f"Payment confirmed! {_format_naira(payment.applied_amount or payment.amount)} received for "
+        f"{student_name} at {school_name}. Auto-matched via bank transfer."
+    )
+
+
 def _match_payment_reference_from_narration(tenant, narration):
     narration_upper = str(narration or "").upper()
     refs = StudentPaymentReference.objects.select_related("student", "student__user").filter(is_active=True)
@@ -1395,8 +1942,9 @@ def process_due_fees(student_profile, actor=None, due_only=True):
 
 
 def initiate_admin_withdrawal(admin_wallet: AdminWallet, amount: Decimal, reference: str, bank_payload: dict, actor=None):
-    """Reserve balance and kick off a Flutterwave transfer. Caller handles response messaging."""
+    """Reserve balance and kick off a provider transfer. Caller handles response messaging."""
     amount = _as_decimal(amount)
+    provider = active_payment_provider()
 
     with transaction.atomic():
         locked = AdminWallet.objects.select_for_update().get(pk=admin_wallet.pk)
@@ -1412,28 +1960,48 @@ def initiate_admin_withdrawal(admin_wallet: AdminWallet, amount: Decimal, refere
             status=Transaction.STATUS_PENDING,
             reference=reference,
             narration="Admin wallet withdrawal",
-            metadata={"bank": bank_payload, "provider": "flutterwave"},
+            metadata={"bank": bank_payload, "provider": provider},
             created_by=actor,
         )
 
     try:
-        transfer_payload = {
-            "account_bank": bank_payload.get("bank_code"),
-            "account_number": bank_payload.get("account_number"),
-            "amount": str(amount),
-            "narration": f"Admin withdrawal - {reference}",
-            "currency": locked.currency or "NGN",
-            "reference": reference,
-        }
-        transfer_resp = requests.post(
-            f"{_flutterwave_base_url()}/transfers",
-            json=transfer_payload,
-            headers=_flutterwave_headers(),
-            timeout=25,
-        )
-        transfer_data = _flutterwave_json(transfer_resp)
-        if transfer_data.get("status") != "success":
-            raise RuntimeError(transfer_data.get("message") or "Transfer failed to start.")
+        if provider == "kuda":
+            transfer_payload = {
+                "reference": reference,
+                "amount": str(amount),
+                "currency": locked.currency or "NGN",
+                "narration": f"Admin withdrawal - {reference}",
+                "beneficiary": {
+                    "account_number": bank_payload.get("account_number"),
+                    "bank_code": bank_payload.get("bank_code"),
+                    "account_name": bank_payload.get("account_name"),
+                },
+            }
+            transfer_resp = requests.post(
+                f"{_kuda_base_url()}/{getattr(settings, 'KUDA_TRANSFER_ENDPOINT', '/transfers').lstrip('/')}",
+                json=transfer_payload,
+                headers=_kuda_headers(),
+                timeout=getattr(settings, "KUDA_REQUEST_TIMEOUT", 25),
+            )
+            transfer_data = _kuda_json(transfer_resp)
+        else:
+            transfer_payload = {
+                "account_bank": bank_payload.get("bank_code"),
+                "account_number": bank_payload.get("account_number"),
+                "amount": str(amount),
+                "narration": f"Admin withdrawal - {reference}",
+                "currency": locked.currency or "NGN",
+                "reference": reference,
+            }
+            transfer_resp = requests.post(
+                f"{_flutterwave_base_url()}/transfers",
+                json=transfer_payload,
+                headers=_flutterwave_headers(),
+                timeout=25,
+            )
+            transfer_data = _flutterwave_json(transfer_resp)
+            if transfer_data.get("status") != "success":
+                raise RuntimeError(transfer_data.get("message") or "Transfer failed to start.")
     except Exception as exc:
         # Roll back balance and mark failure
         with transaction.atomic():
@@ -1448,7 +2016,7 @@ def initiate_admin_withdrawal(admin_wallet: AdminWallet, amount: Decimal, refere
 
     Transaction.objects.filter(reference=reference).update(
         status=Transaction.STATUS_SUCCESS,
-        metadata={"bank": bank_payload, "provider": "flutterwave", "transfer": transfer_data.get("data") or {}},
+        metadata={"bank": bank_payload, "provider": provider, "transfer": transfer_data.get("data") or transfer_data},
     )
     return {"status": "successful"}
 

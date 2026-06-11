@@ -47,6 +47,12 @@ class AdminWallet(models.Model):
     bank_account_name = models.CharField(max_length=150, blank=True)
     bank_account_number = models.CharField(max_length=20, blank=True)
     bank_code = models.CharField(max_length=20, blank=True)
+    kuda_virtual_account_number = models.CharField(max_length=20, blank=True)
+    kuda_virtual_account_name = models.CharField(max_length=150, blank=True)
+    kuda_virtual_account_bank_name = models.CharField(max_length=80, blank=True, default="Kuda Microfinance Bank")
+    kuda_virtual_account_reference = models.CharField(max_length=100, blank=True)
+    kuda_virtual_account_status = models.CharField(max_length=30, blank=True)
+    kuda_virtual_account_metadata = models.JSONField(default=dict, blank=True)
     last_settled_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -508,6 +514,28 @@ class BankPayment(models.Model):
 
     def __str__(self):
         return f"{self.bank_reference} • {self.status} • {self.amount}"
+
+
+class BankLink(models.Model):
+    """Bank app URI template used to prefill parent transfers."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bank_name = models.CharField(max_length=80, unique=True)
+    deep_link_template = models.CharField(max_length=500)
+    nuban_format = models.CharField(max_length=120, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["bank_name"]
+        indexes = [
+            models.Index(fields=["bank_name", "is_active"]),
+        ]
+
+    def __str__(self):
+        return self.bank_name
+
 
 class ExpenseRecord(models.Model):
     """School-owned bills, expenses, and receipts tracked by authenticated admins."""

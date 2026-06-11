@@ -1846,6 +1846,7 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
             title="Your Messages"
             messages={messages}
             recipientOptions={recipientOptions}
+            sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
             onComposeSubmit={handleComposeMessage}
             onMarkRead={handleMarkRead}
             onDelete={handleDelete}
@@ -3879,6 +3880,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
         title="Staff Messages"
         messages={messageData?.inbox || []}
         recipientOptions={staffRecipientOptions}
+        sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
         onComposeSubmit={handleStaffMessageSend}
         onMarkRead={handleStaffMessageRead}
         onDelete={handleStaffMessageDelete}
@@ -4962,6 +4964,7 @@ function TeacherWorkspace({
             title="Messages & Notifications"
             messages={inbox}
             recipientOptions={recipientOptions}
+            sessionScope={`${session?.school?.id || session?.school?.school_code || data?.school?.id || data?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
             onComposeSubmit={handleCompose}
             onMarkRead={onMarkMessageRead}
             onDelete={onDeleteMessage}

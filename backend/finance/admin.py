@@ -4,6 +4,7 @@ from finance.models import (
     ActivationCreditPool,
     ActivationCreditTransaction,
     AdminWallet,
+    BankLink,
     ClassFee,
     ExpenseRecord,
     FinanceLedgerLog,
@@ -60,6 +61,13 @@ class ExpenseRecordAdmin(admin.ModelAdmin):
 @admin.register(AdminWallet)
 class AdminWalletAdmin(admin.ModelAdmin):
     list_display = ("tenant", "balance", "currency", "updated_at")
+
+
+@admin.register(BankLink)
+class BankLinkAdmin(admin.ModelAdmin):
+    list_display = ("bank_name", "is_active", "updated_at")
+    list_filter = ("is_active",)
+    search_fields = ("bank_name", "deep_link_template")
 
 
 @admin.register(FinanceLedgerLog)

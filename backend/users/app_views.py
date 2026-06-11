@@ -1984,6 +1984,8 @@ def _message_payload(message, request=None, viewer=None):
         "to_name": message.recipient.get_full_name(),
         "to_email": message.recipient.email,
         "to_role": message.recipient.role,
+        "tenant_id": getattr(message, "tenant_id", None),
+        "school_id": getattr(message, "tenant_id", None),
         "direction": "outgoing" if outgoing else "incoming",
         "subject": message.subject or "",
         "body": message.body,
@@ -3861,6 +3863,7 @@ def students_snapshot(request):
     return Response(
         {
             "success": True,
+            "school": _school_payload(user.tenant, request),
             "summary": {
                 "total_students": total,
                 "with_guardian_phone": with_guardian_phone,
@@ -6631,6 +6634,7 @@ def messages_snapshot(request):
                     "name": item.get_full_name(),
                     "email": item.email,
                     "role": item.role,
+                    "school_id": getattr(item, "tenant_id", None),
                     "profile_picture": _profile_picture_url(request, item),
                 }
                 for item in recipients[:100]

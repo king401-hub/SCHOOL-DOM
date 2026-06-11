@@ -703,19 +703,24 @@ export function queueOfflineExamCreate(payload) {
   writeOfflineExamCreateQueue(queue);
 }
 
-function readLocalSentMessages() {
+function localSentMessagesKey(scope = "") {
+  const normalized = String(scope || "").trim();
+  return normalized ? `${LOCAL_SENT_MESSAGES_KEY}.${normalized}` : LOCAL_SENT_MESSAGES_KEY;
+}
+
+function readLocalSentMessages(scope = "") {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(window.localStorage.getItem(LOCAL_SENT_MESSAGES_KEY) || "[]");
+    return JSON.parse(window.localStorage.getItem(localSentMessagesKey(scope)) || "[]");
   } catch {
-    window.localStorage.removeItem(LOCAL_SENT_MESSAGES_KEY);
+    window.localStorage.removeItem(localSentMessagesKey(scope));
     return [];
   }
 }
 
-function writeLocalSentMessages(messages) {
+function writeLocalSentMessages(messages, scope = "") {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_SENT_MESSAGES_KEY, JSON.stringify(messages.slice(0, 200)));
+  window.localStorage.setItem(localSentMessagesKey(scope), JSON.stringify(messages.slice(0, 200)));
 }
 
 function messageSubject(message = {}) {
@@ -994,6 +999,7 @@ export function MessageInboxPanel({
   title = "Messages",
   messages = [],
   recipientOptions = [],
+  sessionScope = "",
   onComposeSubmit,
   onMarkRead,
   onDelete,
@@ -1008,9 +1014,14 @@ export function MessageInboxPanel({
   const [composeError, setComposeError] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const [actionBusyId, setActionBusyId] = useState("");
-  const [localSentMessages, setLocalSentMessages] = useState(() => readLocalSentMessages());
+  const localMessageScope = String(sessionScope || "default");
+  const [localSentMessages, setLocalSentMessages] = useState(() => readLocalSentMessages(localMessageScope));
   const [composeAttachments, setComposeAttachments] = useState([]);
   const attachmentInputRef = useRef(null);
+
+  useEffect(() => {
+    setLocalSentMessages(readLocalSentMessages(localMessageScope));
+  }, [localMessageScope]);
 
   useEffect(() => {
     if (!onRefresh || !refreshIntervalMs) return undefined;
@@ -1041,6 +1052,7 @@ export function MessageInboxPanel({
 
   const conversationThreads = useMemo(() => {
     const threadMap = new Map();
+    const allowedContactEmails = new Set(recipientOptions.map((contact) => String(contact.value || "").toLowerCase()).filter(Boolean));
     const upsertThread = (key, seed = {}) => {
       if (!threadMap.has(key)) {
         threadMap.set(key, {
@@ -1067,7 +1079,13 @@ export function MessageInboxPanel({
       });
     });
 
-    [...messages, ...localSentMessages].forEach((message) => {
+    [
+      ...messages,
+      ...localSentMessages.filter((message) => {
+        const email = String(message.to_email || message.from_email || message.sender_email || "").toLowerCase();
+        return !email || allowedContactEmails.has(email);
+      }),
+    ].forEach((message) => {
       const isOutgoing = message.direction === "outgoing";
       const email = isOutgoing ? message.to_email || "" : message.from_email || message.sender_email || "";
       const key = email ? `contact:${email}` : `sender:${message.from || message.from_name || message.id}`;
@@ -1146,6 +1164,7 @@ export function MessageInboxPanel({
         id: `local-sent-${Date.now()}`,
         direction: "outgoing",
         local: true,
+        local_scope: localMessageScope,
         to_email: composeForm.recipient,
         to_name: selectedRecipient?.label || composerRecipient?.label || composeForm.recipient,
         from: "You",
@@ -1162,7 +1181,7 @@ export function MessageInboxPanel({
       };
       setLocalSentMessages((previous) => {
         const next = [sentMessage, ...previous].slice(0, 200);
-        writeLocalSentMessages(next);
+        writeLocalSentMessages(next, localMessageScope);
         return next;
       });
       setComposeFeedback("Message sent.");
@@ -1201,7 +1220,7 @@ export function MessageInboxPanel({
     if (String(messageId).startsWith("local-sent-")) {
       setLocalSentMessages((previous) => {
         const next = previous.filter((item) => item.id !== messageId);
-        writeLocalSentMessages(next);
+        writeLocalSentMessages(next, localMessageScope);
         return next;
       });
       return;
