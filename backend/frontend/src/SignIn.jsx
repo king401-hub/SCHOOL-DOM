@@ -112,7 +112,7 @@ async function postAuth(path, payload) {
 }
 
 function Signin({ onAuthenticated, onBack }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
   const [mode, setMode] = useState(() => {
     const path = window.location.pathname;
     const token = new URLSearchParams(window.location.search).get("token");

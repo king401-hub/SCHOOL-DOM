@@ -9,7 +9,7 @@ function Logo() {
 }
 
 function PricingPage({ onNavigate }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
   const goToSignup = () => onNavigate?.("/signin");
   const features = [
     "School admin dashboard",

@@ -10,7 +10,7 @@ function Logo() {
 }
 
 function FAQPage({ onNavigate }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
   const [expandedId, setExpandedId] = useState(null);
 
   const faqs = [

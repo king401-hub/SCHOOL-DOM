@@ -10,7 +10,7 @@ function Logo() {
 }
 
 function ResourceCenter({ onNavigate }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
   const resources = [

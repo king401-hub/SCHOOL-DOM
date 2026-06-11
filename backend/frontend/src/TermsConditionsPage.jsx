@@ -10,7 +10,7 @@ function Logo() {
 }
 
 function TermsConditionsPage({ onNavigate }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
 
   const goHome = () => {
     if (typeof onNavigate === "function") {

@@ -10,7 +10,7 @@ function Logo() {
 }
 
 function PrivacyPolicyPage({ onNavigate }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
 
   return (
     <div className={`privacy-page ${theme === "light" ? "theme-light" : ""}`}>

@@ -7321,12 +7321,9 @@ useEffect(() => {
     document.body.removeAttribute("data-dashboard-role");
     return;
     }
-    const effectiveTheme = session.user?.role === "student" ? "dark" : themePreference;
-    document.body.setAttribute("data-theme", effectiveTheme);
+    document.body.setAttribute("data-theme", themePreference);
     document.body.setAttribute("data-dashboard-role", session.user?.role || "");
-    if (session.user?.role !== "student") {
-      window.localStorage.setItem(UI_THEME_KEY, themePreference);
-    }
+    window.localStorage.setItem(UI_THEME_KEY, themePreference);
   }, [session, themePreference]);
 
   useEffect(() => {

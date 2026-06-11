@@ -149,7 +149,7 @@ export function readStoredTheme() {
   if (raw === "dark" || raw === "light") {
     return raw;
   }
-  return "dark";
+  return "light";
 }
 
 export async function refreshAccessToken(session) {

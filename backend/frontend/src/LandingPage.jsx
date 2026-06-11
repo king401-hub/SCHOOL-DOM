@@ -10,7 +10,7 @@ function Logo() {
 }
 
 function LandingPage({ onGetStarted }) {
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("light");
   const [activeFeature, setActiveFeature] = useState("students");
 
   const featureTabs = [
