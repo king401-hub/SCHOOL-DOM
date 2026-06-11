@@ -458,7 +458,7 @@ function AdminDashboard(props) {
           </label>
           <label>
             Offline Exam PIN
-            <input value={fallbackPin} onChange={(event) => onFallbackPin(event.target.value)} placeholder="Optional fallback PIN for this synced package" type="password" />
+            <input value={fallbackPin} onChange={(event) => onFallbackPin(event.target.value.replace(/\D/g, ""))} placeholder="Optional fallback PIN for this synced package" type="password" inputMode="numeric" pattern="[0-9]*" />
           </label>
         </div>
         <div className="button-row">
@@ -490,7 +490,7 @@ function AdminDashboard(props) {
           </label>
           <label>
             Exam PIN
-            <input value={localExam.pin} onChange={(event) => updateLocalExam("pin", event.target.value)} type="password" placeholder="Students enter this PIN" />
+            <input value={localExam.pin} onChange={(event) => updateLocalExam("pin", event.target.value.replace(/\D/g, ""))} type="password" inputMode="numeric" pattern="[0-9]*" placeholder="Students enter this PIN" />
           </label>
         </div>
         <label>
@@ -610,7 +610,7 @@ function StudentLogin({ lanServerUrl, onLanServerUrl, onLogin }) {
           onLanServerUrl(event.target.value);
         }} placeholder="Example: http://192.168.1.23:4785" /></label>
         <label>Student ID<input value={studentId} onChange={(event) => setStudentId(event.target.value)} autoFocus /></label>
-        <label>Exam PIN<input value={pin} onChange={(event) => setPin(event.target.value)} type="password" /></label>
+        <label>Exam PIN<input value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))} type="password" inputMode="numeric" pattern="[0-9]*" /></label>
         <button className="primary-button" disabled={busy} onClick={async () => {
           setBusy(true);
           try {

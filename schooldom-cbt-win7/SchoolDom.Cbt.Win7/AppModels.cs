@@ -35,6 +35,7 @@ namespace SchoolDom.Cbt.Win7
         public string FullName { get; set; }
         public string ClassName { get; set; }
         public string ProfilePicture { get; set; }
+        public string ProfilePictureData { get; set; }
     }
 
     public class ExamRecord

@@ -947,7 +947,7 @@ def refresh_token(request):
                 if not student_has_login_credit(user):
                     return Response({
                         'success': False,
-                        'message': 'Your student account is inactive because monthly activation credits are missing.'
+                        'message': 'Account inactive. Contact admin.'
                     }, status=status.HTTP_401_UNAUTHORIZED)
         # Access access_token to trigger rotation if enabled
         access_token = str(token.access_token)

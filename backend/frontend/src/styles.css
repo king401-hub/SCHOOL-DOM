@@ -12595,6 +12595,14 @@ body[data-theme="light"] .quiz-choice {
   margin-bottom: 10px;
 }
 
+.subject-stream-head > div {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .subject-stream-head h4 {
   margin: 0;
 }
@@ -12603,6 +12611,22 @@ body[data-theme="light"] .quiz-choice {
   color: var(--muted, #64748b);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.subject-select-all {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.subject-select-all:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .subject-chip-grid {

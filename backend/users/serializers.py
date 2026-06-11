@@ -282,7 +282,7 @@ class LoginSerializer(serializers.Serializer):
                         update_student_activation_alerts(user.tenant)
                     if not student_has_login_credit(user):
                         raise serializers.ValidationError({
-                            'error': 'Your student account is inactive because monthly activation credits are missing. Please contact your school admin to restore credits.'
+                            'error': 'Account inactive. Contact admin.'
                         })
                 
                 # Reset login attempts on successful login

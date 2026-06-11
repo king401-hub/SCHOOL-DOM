@@ -24,7 +24,7 @@ export const MESSAGE_POLL_INTERVAL_MS = 10 * 1000;
 export const TEACHER_ATTENDANCE_PREFIX = "/attendance/scan/";
 export const ADMIN_ROUTES = [
   { path: "/dashboard", label: "Dashboard" },
-  { path: "/performance-heatmap", label: "Performance Heatmap" },
+  { path: "/performance-heatmap", label: "Performance Analytics" },
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
   { path: "/attendance", label: "Attendance" },

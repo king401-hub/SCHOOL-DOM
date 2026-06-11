@@ -90,6 +90,7 @@ TENANT_APPS = [
     'academic',
     'notifications',
     'finance',
+    'fee_collections',
     'hr',
     'quizzes',
     'analytics',
@@ -122,6 +123,7 @@ if USE_SQLITE_FOR_DEV:
         'exams',
         'notifications',
         'finance',
+        'fee_collections',
         'hr',
         'quizzes',
         'attendance',
@@ -281,10 +283,14 @@ else:
     FLUTTERWAVE_SECRET_KEY = os.getenv('FLUTTERWAVE_SECRET_KEY_LIVE') or os.getenv('FLUTTERWAVE_SECRET_KEY')
     FLUTTERWAVE_PUBLIC_KEY = os.getenv('FLUTTERWAVE_PUBLIC_KEY_LIVE') or os.getenv('FLUTTERWAVE_PUBLIC_KEY')
 
-FLUTTERWAVE_BASE_URL = os.getenv('FLUTTERWAVE_BASE_URL', 'https://api.flutterwave.com/v3')
+FLUTTERWAVE_BASE_URL = os.getenv('FLUTTERWAVE_BASE_URL', 'https://developersandbox-api.flutterwave.com')
 FLUTTERWAVE_CALLBACK_URL = os.getenv('FLUTTERWAVE_CALLBACK_URL', '')
 FLUTTERWAVE_WEBHOOK_SECRET_HASH = os.getenv('FLUTTERWAVE_WEBHOOK_SECRET_HASH', '')
 FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES = env_bool('FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES', True)
+FLUTTERWAVE_CUSTOMER_ENDPOINT = os.getenv('FLUTTERWAVE_CUSTOMER_ENDPOINT', '/customers')
+FLUTTERWAVE_VIRTUAL_ACCOUNT_ENDPOINT = os.getenv('FLUTTERWAVE_VIRTUAL_ACCOUNT_ENDPOINT', '/virtual-accounts')
+FLUTTERWAVE_REQUEST_TIMEOUT = env_int('FLUTTERWAVE_REQUEST_TIMEOUT', 25)
+FLUTTERWAVE_SCENARIO_KEY = os.getenv('FLUTTERWAVE_SCENARIO_KEY', '')
 
 # Kuda
 KUDA_BASE_URL = os.getenv('KUDA_BASE_URL', '').rstrip('/')
@@ -351,3 +357,16 @@ OFFLINE_EXAM_EXPIRY_DAYS = 30
 FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'https://schooldom.academy')
 FRONTEND_DEV_PORT = os.getenv('FRONTEND_DEV_PORT', '5173')
 NGROK_PUBLIC_URL = os.getenv('NGROK_PUBLIC_URL', '')
+
+# Celery / Redis
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = env_int('CELERY_TASK_TIME_LIMIT', 30 * 60)
+CELERY_BEAT_SCHEDULE = {
+    'schooldom-daily-fee-settlement': {
+        'task': 'fee_collections.tasks.run_collection_settlement_cycle',
+        'schedule': 60 * 60 * 24,
+    },
+}

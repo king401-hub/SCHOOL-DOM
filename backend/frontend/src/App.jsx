@@ -350,10 +350,12 @@ function StudentCbtEntry({ onEntry }) {
             <input
               value={examPin}
               onChange={(event) => {
-                setExamPin(event.target.value.toUpperCase());
+                setExamPin(event.target.value.replace(/\D/g, ""));
                 setError("");
               }}
               autoComplete="one-time-code"
+              inputMode="numeric"
+              pattern="[0-9]*"
             />
           </label>
           {error ? <p className="form-feedback error">{error}</p> : null}

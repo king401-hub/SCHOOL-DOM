@@ -259,11 +259,13 @@ const ExamsList = ({ session, onNavigate }) => {
             <input
               value={examPin}
               onChange={(event) => {
-                setExamPin(event.target.value.toUpperCase());
+                setExamPin(event.target.value.replace(/\D/g, ""));
                 setPinError("");
               }}
               placeholder="Exam PIN"
               autoComplete="one-time-code"
+              inputMode="numeric"
+              pattern="[0-9]*"
               autoFocus
               required
             />

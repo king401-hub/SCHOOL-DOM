@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -79,6 +80,7 @@ namespace SchoolDom.StudentCbt.Win7
             server.Width = 500;
             var studentId = Field(card, "Student ID", "", 36, 230, false);
             var pin = Field(card, "Exam PIN", "", 306, 230, true);
+            ApplyNumbersOnly(pin);
             _status = Label("", 36, 346, 10, false, 490, Palette.Muted);
             card.Controls.Add(_status);
 
@@ -266,9 +268,8 @@ namespace SchoolDom.StudentCbt.Win7
             var calcTop = SecondaryButton("Calculator", Math.Max(520, headerWidth - 350), 20, 126);
             calcTop.Click += (s, e) => ShowCalculator();
             header.Controls.Add(calcTop);
-            _lanLabel = Label("LAN: Connected", Math.Max(748, headerWidth - 210), 18, 9, true, 190, Palette.GreenSoft);
-            header.Controls.Add(_lanLabel);
-            _timeLabel = Label(TimeText(), Math.Max(748, headerWidth - 210), 42, 11, true, 200, Color.White);
+            _lanLabel = null;
+            _timeLabel = Label(TimeText(), Math.Max(748, headerWidth - 210), 28, 12, true, 200, Color.White);
             header.Controls.Add(_timeLabel);
             _root.Controls.Add(header);
 
@@ -324,11 +325,16 @@ namespace SchoolDom.StudentCbt.Win7
         {
             _questionPanel = main;
             var question = _questions[_current];
-            var innerWidth = main.Width - 64;
-            main.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
+            var body = new Panel { Left = 0, Top = 0, Width = main.Width, Height = main.Height - 82, AutoScroll = true, BackColor = Color.White };
+            var footer = new Panel { Left = 0, Top = main.Height - 82, Width = main.Width, Height = 80, BackColor = Color.White };
+            main.Controls.Add(body);
+            main.Controls.Add(footer);
+
+            var innerWidth = main.Width - 84;
+            body.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
             var text = Label(Value(question, "text", "Text"), 32, 70, 14, true, innerWidth, Palette.Text);
             text.Font = ReadableExamFont(14, true);
-            main.Controls.Add(text);
+            body.Controls.Add(text);
             var top = Math.Max(160, text.Top + text.Height + 20);
             var type = Value(question, "type", "Type").ToLowerInvariant();
             var options = JsonUtil.List(Raw(question, "options", "Options")).Select(JsonUtil.Text).Where(x => x.Length > 0).ToList();
@@ -338,18 +344,19 @@ namespace SchoolDom.StudentCbt.Win7
                 var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer", Font = ReadableExamFont(12, false), ForeColor = Palette.Text, BackColor = Color.White };
                 object saved;
                 if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
-                main.Controls.Add(answer);
+                body.Controls.Add(answer);
             }
             else
             {
                 for (var i = 0; i < options.Count; i++)
                 {
+                    var optionTop = top + i * 56;
                     var option = new RadioButton
                     {
                         Left = 38,
-                        Top = top + i * 50,
+                        Top = optionTop,
                         Width = innerWidth - 8,
-                        Height = 42,
+                        Height = 54,
                         Text = ((char)('A' + i)) + ". " + options[i],
                         Tag = "answer:" + i,
                         Font = ReadableExamFont(12, false),
@@ -361,18 +368,17 @@ namespace SchoolDom.StudentCbt.Win7
                     object saved;
                     option.Checked = _answers.TryGetValue(QuestionId(question, _current), out saved) && JsonUtil.Text(saved) == i.ToString();
                     option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
-                    main.Controls.Add(option);
+                    body.Controls.Add(option);
                 }
             }
 
-            var buttonTop = main.Height - 68;
-            var prev = SecondaryButton("Previous", 32, buttonTop, 120);
+            var prev = SecondaryButton("Previous", 32, 18, 120);
             prev.Enabled = _current > 0;
             prev.Click += (s, e) => { SaveCurrentAnswer(main); _current--; ShowExam(); };
-            main.Controls.Add(prev);
-            var next = PrimaryButton(_current == _questions.Count - 1 ? "Review" : "Next", main.Width - 164, buttonTop, 120);
+            footer.Controls.Add(prev);
+            var next = PrimaryButton(_current == _questions.Count - 1 ? "Review" : "Next", main.Width - 164, 18, 120);
             next.Click += (s, e) => { SaveCurrentAnswer(main); if (_current < _questions.Count - 1) _current++; ShowExam(); };
-            main.Controls.Add(next);
+            footer.Controls.Add(next);
         }
 
         private void SaveCurrentAnswer(Control container)
@@ -680,6 +686,21 @@ namespace SchoolDom.StudentCbt.Win7
 
         private Control CreateProfileControl(int left, int top, int size)
         {
+            var photoData = Value(_student, "profile_picture_data", "ProfilePictureData", "photo_data", "PhotoData");
+            if (photoData.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+            {
+                var dataBox = new PictureBox
+                {
+                    Left = left,
+                    Top = top,
+                    Width = size,
+                    Height = size,
+                    BackColor = Palette.LightButton,
+                    SizeMode = PictureBoxSizeMode.Zoom
+                };
+                MakeCircle(dataBox);
+                try { dataBox.Image = ImageFromDataUrl(photoData); return dataBox; } catch { }
+            }
             var photoUrl = Value(_student, "profile_picture", "ProfilePicture", "profile_picture_url", "PhotoUrl");
             if (photoUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || photoUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
@@ -709,6 +730,17 @@ namespace SchoolDom.StudentCbt.Win7
             };
             MakeCircle(badge);
             return badge;
+        }
+
+        private Image ImageFromDataUrl(string dataUrl)
+        {
+            var comma = (dataUrl ?? "").IndexOf(',');
+            if (comma < 0) throw new InvalidOperationException("Invalid image data.");
+            var bytes = Convert.FromBase64String(dataUrl.Substring(comma + 1));
+            using (var stream = new MemoryStream(bytes))
+            {
+                return Image.FromStream(stream);
+            }
         }
 
         private void MakeCircle(Control control)
@@ -778,6 +810,25 @@ namespace SchoolDom.StudentCbt.Win7
         private void SetStatus(string text, Color color) { if (_status != null) { _status.Text = text; _status.ForeColor = color; _status.Refresh(); } }
         private Panel Card(int left, int top, int width, int height) { return new Panel { Left = left, Top = top, Width = width, Height = height, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle }; }
         private TextBox Field(Control parent, string label, string value, int left, int top, bool password) { parent.Controls.Add(Label(label, left, top - 30, 9, true, 220, Palette.Text)); var box = new TextBox { Left = left, Top = top, Width = 226, Height = 34, Text = value, UseSystemPasswordChar = password, Font = new Font("Segoe UI", 11) }; parent.Controls.Add(box); return box; }
+        private void ApplyNumbersOnly(TextBox box)
+        {
+            box.KeyPress += (sender, args) =>
+            {
+                if (!char.IsControl(args.KeyChar) && !char.IsDigit(args.KeyChar)) args.Handled = true;
+            };
+            box.TextChanged += (sender, args) =>
+            {
+                var clean = "";
+                foreach (char c in box.Text)
+                {
+                    if (char.IsDigit(c)) clean += c;
+                }
+                if (clean == box.Text) return;
+                var selectionStart = box.SelectionStart;
+                box.Text = clean;
+                box.SelectionStart = selectionStart > box.Text.Length ? box.Text.Length : selectionStart;
+            };
+        }
         private Label Label(string text, int left, int top, int size, bool bold, int width, Color color) { return new Label { Text = text, Left = left, Top = top, AutoSize = true, MaximumSize = new Size(width, 0), Font = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular), ForeColor = color, UseCompatibleTextRendering = true }; }
         private Font MathFont(float size) { try { return new Font("Cambria Math", size, FontStyle.Regular); } catch { return new Font("Segoe UI Symbol", size, FontStyle.Regular); } }
         private Font ReadableExamFont(float size, bool bold) { return new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular); }

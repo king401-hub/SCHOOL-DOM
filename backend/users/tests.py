@@ -1067,7 +1067,7 @@ class TeacherDashboardAPITests(TestCase):
         self.assertGreaterEqual(exams_response.data["summary"]["tests_count"], 1)
         self.assertIn("assessment_type", exams_response.data["exams"][0])
 
-    def test_only_admin_can_generate_cbt_pin_and_pin_is_five_alphanumeric_chars(self):
+    def test_only_admin_can_generate_cbt_pin_and_pin_is_numeric(self):
         exam = Exam.objects.filter(teacher=self.teacher_user).first()
 
         self.client.force_authenticate(user=self.teacher_user)
@@ -1088,7 +1088,7 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(admin_response.status_code, 201)
         self.assertTrue(admin_response.data["success"])
         plain_pin = admin_response.data["plain_pin"]
-        self.assertRegex(plain_pin, r"^(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5}$")
+        self.assertRegex(plain_pin, r"^\d{6}$")
 
     def test_teacher_exam_list_does_not_expose_pin_status(self):
         exam = Exam.objects.filter(teacher=self.teacher_user).first()

@@ -709,7 +709,7 @@ export default function App() {
               </label>
               <label>
                 Exam PIN
-                <input type="password" value={examForm.pin} onChange={(event) => updateExamForm("pin", event.target.value)} />
+                <input type="password" inputMode="numeric" pattern="[0-9]*" value={examForm.pin} onChange={(event) => updateExamForm("pin", event.target.value.replace(/\D/g, ""))} />
               </label>
             </div>
             <label>
@@ -1022,7 +1022,7 @@ export default function App() {
                       <div className="form-grid three">
                         <label>
                           Exam PIN
-                          <input type="password" value={examForm.pin} onChange={(event) => updateExamForm("pin", event.target.value)} />
+                          <input type="password" inputMode="numeric" pattern="[0-9]*" value={examForm.pin} onChange={(event) => updateExamForm("pin", event.target.value.replace(/\D/g, ""))} />
                         </label>
                         <label>
                           Students

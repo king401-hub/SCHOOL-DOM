@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -78,8 +79,14 @@ namespace SchoolDom.Cbt.Win7
                     StudentId = studentId,
                     FullName = FirstText(row, "full_name", "name", "display_name", "email", "student_id"),
                     ClassName = FirstText(row, "class_name", "class_label"),
-                    ProfilePicture = FirstText(row, "profile_picture", "profile_picture_url", "photo", "photo_url")
+                    ProfilePicture = FirstText(row, "profile_picture", "profile_picture_url", "photo", "photo_url"),
+                    ProfilePictureData = FirstText(row, "profile_picture_data", "photo_data")
                 });
+                var cached = _store.State.Students[_store.State.Students.Count - 1];
+                if (string.IsNullOrWhiteSpace(cached.ProfilePictureData))
+                {
+                    cached.ProfilePictureData = DownloadImageDataUrl(cached.ProfilePicture);
+                }
             }
 
             foreach (var examObj in exams)
@@ -572,6 +579,27 @@ namespace SchoolDom.Cbt.Win7
             }
             values.Add(current.ToString().Trim());
             return values;
+        }
+
+        private static string DownloadImageDataUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return "";
+            if (url.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)) return url;
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return "";
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                using (var client = new WebClient())
+                {
+                    client.Headers["User-Agent"] = "SchoolDom-Admin-Sync-Win7";
+                    var bytes = client.DownloadData(url);
+                    if (bytes == null || bytes.Length == 0 || bytes.Length > 512 * 1024) return "";
+                    var lower = url.ToLowerInvariant();
+                    var mime = lower.EndsWith(".png") ? "image/png" : lower.EndsWith(".gif") ? "image/gif" : "image/jpeg";
+                    return "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
+                }
+            }
+            catch { return ""; }
         }
 
         private static string GetText(Dictionary<string, object> row, string key, string fallback)

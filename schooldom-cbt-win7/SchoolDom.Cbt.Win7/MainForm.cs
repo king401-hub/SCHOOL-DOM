@@ -25,10 +25,6 @@ namespace SchoolDom.Cbt.Win7
             _cloud = new CloudSyncService(_store, _packages);
             _lan = new LanServerService(_store);
 
-            // Require a fresh cloud login each time the admin opens the app.
-            _store.State.AccessToken = "";
-            _store.Save();
-
             Text = "SchoolDom Admin Sync Win7";
             Width = 1280;
             Height = 760;
@@ -41,7 +37,8 @@ namespace SchoolDom.Cbt.Win7
 
             _root = new Panel { Dock = DockStyle.Fill };
             Controls.Add(_root);
-            ShowCloudLogin();
+            if (string.IsNullOrWhiteSpace(_store.State.AccessToken)) ShowCloudLogin();
+            else ShowDashboard();
         }
 
         private void ShowCloudLogin()
@@ -71,7 +68,7 @@ namespace SchoolDom.Cbt.Win7
             });
             hero.Controls.Add(new Label
             {
-                Text = "Cloud login is required on every launch. After login, the app automatically downloads published exams, students, and package metadata.",
+                Text = "Sign in once to save this computer for SchoolDom sync. Use Sync Now whenever you need the latest published exams, students, and package metadata.",
                 Left = 40,
                 Top = 210,
                 Width = 340,
@@ -404,6 +401,7 @@ namespace SchoolDom.Cbt.Win7
                 className.Width = 170;
                 var duration = Field(form, "Duration Minutes", "60", left, 132, false);
                 var pin = Field(form, "LAN PIN", "", left + 250, 132, false);
+                ApplyNumbersOnly(pin);
                 var publish = new CheckBox { Left = left + 500, Top = 136, Width = 240, Height = 28, Text = "Create and publish on cloud", Checked = true, Font = new Font("Segoe UI", 10) };
                 form.Controls.Add(publish);
                 form.Controls.Add(TextLabel("Instructions", left, 182, 9, true, 220, Palette.Text));
@@ -487,6 +485,11 @@ namespace SchoolDom.Cbt.Win7
                     if (!publish.Checked && string.IsNullOrWhiteSpace(pin.Text))
                     {
                         MessageBox.Show("Enter a LAN PIN for local-only exams.", "Create Exam");
+                        return;
+                    }
+                    if (!string.IsNullOrWhiteSpace(pin.Text) && !IsDigitsOnly(pin.Text.Trim()))
+                    {
+                        MessageBox.Show("LAN PIN must contain numbers only.", "Create Exam");
                         return;
                     }
 
@@ -680,6 +683,15 @@ namespace SchoolDom.Cbt.Win7
         {
             using (var form = ListForm("Review: " + exam.Title, 860, 620))
             {
+                var actions = new Panel { Dock = DockStyle.Bottom, Height = 58, BackColor = Palette.Background };
+                var edit = PrimaryButton("Edit Exam", 12, 8, 120);
+                edit.Click += (s, e) =>
+                {
+                    form.Close();
+                    ShowExamEditor(exam);
+                };
+                actions.Controls.Add(edit);
+
                 var text = new TextBox
                 {
                     Dock = DockStyle.Fill,
@@ -690,6 +702,7 @@ namespace SchoolDom.Cbt.Win7
                     Text = BuildExamReviewText(exam)
                 };
                 form.Controls.Add(text);
+                form.Controls.Add(actions);
                 form.ShowDialog(this);
             }
         }
@@ -721,27 +734,69 @@ namespace SchoolDom.Cbt.Win7
 
         private void ShowExamEditor(ExamRecord exam)
         {
-            using (var form = ListForm("Edit Exam", 560, 480))
+            using (var form = ListForm("Edit Exam", 880, 660))
             {
-                var title = Field(form, "Title", exam.Title, 28, 64, false);
-                title.Width = 480;
-                var subject = Field(form, "Subject", exam.Subject, 28, 134, false);
-                var className = Field(form, "Class", exam.ClassName, 288, 134, false);
-                var duration = Field(form, "Duration Minutes", Math.Max(1, exam.DurationSeconds / 60).ToString(), 28, 204, false);
-                var instructionsLabel = TextLabel("Instructions", 28, 254, 9, true, 220, Palette.Text);
+                var left = 54;
+                var title = Field(form, "Title", exam.Title, left, 62, false);
+                title.Width = 360;
+                var subject = Field(form, "Subject", exam.Subject, left + 390, 62, false);
+                subject.Width = 180;
+                var className = Field(form, "Class", exam.ClassName, left + 590, 62, false);
+                className.Width = 190;
+                var duration = Field(form, "Duration Minutes", Math.Max(1, exam.DurationSeconds / 60).ToString(), left, 132, false);
+                var instructionsLabel = TextLabel("Instructions", left, 182, 9, true, 220, Palette.Text);
                 form.Controls.Add(instructionsLabel);
                 var instructions = new TextBox
                 {
-                    Left = 28,
-                    Top = 276,
-                    Width = 480,
-                    Height = 88,
+                    Left = left,
+                    Top = 206,
+                    Width = 742,
+                    Height = 72,
                     Multiline = true,
                     ScrollBars = ScrollBars.Vertical,
-                    Text = exam.Instructions ?? ""
+                    Text = exam.Instructions ?? "",
+                    Font = MathFont(11)
                 };
                 form.Controls.Add(instructions);
-                var save = PrimaryButton("Save Changes", 28, 390, 140);
+                var questions = (exam.Questions ?? new List<QuestionRecord>()).ToList();
+                form.Controls.Add(TextLabel("Questions", left, 300, 12, true, 220, Palette.Text));
+                var list = new ListView { Left = left, Top = 334, Width = 742, Height = 188, View = View.Details, FullRowSelect = true, HideSelection = false, Font = MathFont(10) };
+                list.Columns.Add("#", 44);
+                list.Columns.Add("Question", 420);
+                list.Columns.Add("Options", 90);
+                list.Columns.Add("Correct", 170);
+                Action refreshQuestions = () =>
+                {
+                    list.Items.Clear();
+                    for (var i = 0; i < questions.Count; i++)
+                    {
+                        var q = questions[i];
+                        var item = new ListViewItem((i + 1).ToString());
+                        item.SubItems.Add(q.Text ?? "");
+                        item.SubItems.Add((q.Options == null ? 0 : q.Options.Count).ToString());
+                        item.SubItems.Add(q.CorrectAnswer ?? "");
+                        item.Tag = q;
+                        list.Items.Add(item);
+                    }
+                };
+                refreshQuestions();
+                form.Controls.Add(list);
+                var add = SecondaryButton("Add Question", left, 538, 130);
+                add.Click += (s, e) => { var q = PromptQuestion(null); if (q != null) { questions.Add(q); refreshQuestions(); } };
+                form.Controls.Add(add);
+                var edit = SecondaryButton("Edit", left + 142, 538, 80);
+                edit.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    var index = list.SelectedItems[0].Index;
+                    var q = PromptQuestion(questions[index]);
+                    if (q != null) { questions[index] = q; refreshQuestions(); }
+                };
+                form.Controls.Add(edit);
+                var remove = SecondaryButton("Remove", left + 232, 538, 90);
+                remove.Click += (s, e) => { if (list.SelectedItems.Count > 0) { questions.RemoveAt(list.SelectedItems[0].Index); refreshQuestions(); } };
+                form.Controls.Add(remove);
+                var save = PrimaryButton("Save Changes", left + 602, 538, 140);
                 save.Click += (s, e) =>
                 {
                     int minutes;
@@ -755,6 +810,7 @@ namespace SchoolDom.Cbt.Win7
                     exam.ClassName = className.Text.Trim();
                     exam.DurationSeconds = minutes * 60;
                     exam.Instructions = instructions.Text;
+                    exam.Questions = questions;
                     _packages.SaveExam(exam);
                     form.Close();
                     ShowDashboard();
@@ -860,7 +916,7 @@ namespace SchoolDom.Cbt.Win7
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
-                    var fallbackPin = PromptDialog.Show("LAN PIN", "Optional: enter a LAN PIN for this imported exam if the file does not include one.", true);
+                    var fallbackPin = PromptDialog.Show("LAN PIN", "Optional: enter a numeric LAN PIN for this imported exam if the file does not include one.", true, true);
                     MessageBox.Show(_packages.ImportExamFile(dialog.FileName, fallbackPin), "Import Exam");
                     ShowDashboard();
                 }
@@ -981,6 +1037,42 @@ namespace SchoolDom.Cbt.Win7
             };
             parent.Controls.Add(box);
             return box;
+        }
+
+        private void ApplyNumbersOnly(TextBox box)
+        {
+            box.KeyPress += (sender, args) =>
+            {
+                if (!char.IsControl(args.KeyChar) && !char.IsDigit(args.KeyChar)) args.Handled = true;
+            };
+            box.TextChanged += (sender, args) =>
+            {
+                var clean = OnlyDigits(box.Text);
+                if (clean == box.Text) return;
+                var selectionStart = box.SelectionStart;
+                box.Text = clean;
+                box.SelectionStart = selectionStart > box.Text.Length ? box.Text.Length : selectionStart;
+            };
+        }
+
+        private static bool IsDigitsOnly(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            foreach (char c in value)
+            {
+                if (!char.IsDigit(c)) return false;
+            }
+            return true;
+        }
+
+        private static string OnlyDigits(string value)
+        {
+            var clean = "";
+            foreach (char c in value ?? "")
+            {
+                if (char.IsDigit(c)) clean += c;
+            }
+            return clean;
         }
 
         private Panel Metric(string label, string value, int left, int top, Color accent)

@@ -2792,6 +2792,7 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
   const [subjectName, setSubjectName] = useState("");
   const [subjectCode, setSubjectCode] = useState("");
   const [subjectBusy, setSubjectBusy] = useState(false);
+  const [subjectStreamBusy, setSubjectStreamBusy] = useState("");
   const [subjectError, setSubjectError] = useState("");
   const [subjectSuccess, setSubjectSuccess] = useState("");
   const [promotionForm, setPromotionForm] = useState({
@@ -2899,6 +2900,35 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
     setSubjectCode(codeValue);
     setSubjectError("");
     setSubjectSuccess("");
+  };
+
+  const handleSelectAllRecommendedSubjects = async (group) => {
+    setSubjectError("");
+    setSubjectSuccess("");
+    const existingNames = new Set(subjects.map((subject) => String(subject.name || "").trim().toLowerCase()).filter(Boolean));
+    const existingCodes = new Set(subjects.map((subject) => String(subject.code || "").trim().toLowerCase()).filter(Boolean));
+    const missingSubjects = group.subjects.filter(([subjectLabel, subjectShortCode]) => {
+      const normalizedName = String(subjectLabel || "").trim().toLowerCase();
+      const normalizedCode = String(subjectShortCode || "").trim().toLowerCase();
+      return normalizedName && !existingNames.has(normalizedName) && !existingCodes.has(normalizedCode);
+    });
+
+    if (!missingSubjects.length) {
+      setSubjectSuccess(`All ${group.stream} subjects are already available.`);
+      return;
+    }
+
+    setSubjectStreamBusy(group.stream);
+    try {
+      for (const [subjectLabel, subjectShortCode] of missingSubjects) {
+        await onCreateSubject?.({ name: subjectLabel, code: subjectShortCode });
+      }
+      setSubjectSuccess(`${missingSubjects.length} ${group.stream} subject${missingSubjects.length === 1 ? "" : "s"} added.`);
+    } catch (actionError) {
+      setSubjectError(actionError.message || `Could not add all ${group.stream} subjects.`);
+    } finally {
+      setSubjectStreamBusy("");
+    }
   };
 
   const buildPromotionPayload = (action) => ({
@@ -3207,7 +3237,17 @@ function AdminClassesScreen({ data, loading, error, onRetry, onCreate, onUpdate,
             <section key={group.stream} className="subject-stream-card">
               <div className="subject-stream-head">
                 <h4>{group.stream}</h4>
-                <span>{group.subjects.length} common subjects</span>
+                <div>
+                  <span>{group.subjects.length} common subjects</span>
+                  <button
+                    type="button"
+                    className="subject-select-all"
+                    onClick={() => handleSelectAllRecommendedSubjects(group)}
+                    disabled={Boolean(subjectStreamBusy)}
+                  >
+                    {subjectStreamBusy === group.stream ? "Adding..." : "Select all"}
+                  </button>
+                </div>
               </div>
               <div className="subject-chip-grid">
                 {group.subjects.map(([subjectLabel, subjectShortCode]) => (

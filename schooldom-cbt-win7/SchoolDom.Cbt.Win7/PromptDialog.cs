@@ -4,7 +4,7 @@ namespace SchoolDom.Cbt.Win7
 {
     public static class PromptDialog
     {
-        public static string Show(string title, string label, bool password)
+        public static string Show(string title, string label, bool password, bool numbersOnly = false)
         {
             using (var form = new Form())
             using (var text = new TextBox())
@@ -29,6 +29,25 @@ namespace SchoolDom.Cbt.Win7
                 text.Top = 44;
                 text.Width = 370;
                 text.UseSystemPasswordChar = password;
+                if (numbersOnly)
+                {
+                    text.KeyPress += (sender, args) =>
+                    {
+                        if (!char.IsControl(args.KeyChar) && !char.IsDigit(args.KeyChar)) args.Handled = true;
+                    };
+                    text.TextChanged += (sender, args) =>
+                    {
+                        var clean = "";
+                        foreach (char value in text.Text)
+                        {
+                            if (char.IsDigit(value)) clean += value;
+                        }
+                        if (clean == text.Text) return;
+                        var selectionStart = text.SelectionStart;
+                        text.Text = clean;
+                        text.SelectionStart = selectionStart > text.Text.Length ? text.Text.Length : selectionStart;
+                    };
+                }
 
                 ok.Text = "OK";
                 ok.Left = 214;
@@ -54,4 +73,3 @@ namespace SchoolDom.Cbt.Win7
         }
     }
 }
-

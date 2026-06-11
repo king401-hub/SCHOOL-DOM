@@ -2292,7 +2292,7 @@ def performance_heatmap_snapshot(request):
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response(
-            {"success": False, "message": "Only school administrators can view the performance heatmap."},
+            {"success": False, "message": "Only school administrators can view performance analytics."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
