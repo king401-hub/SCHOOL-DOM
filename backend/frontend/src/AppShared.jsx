@@ -515,6 +515,13 @@ export function roleLabel(role) {
     .join(" ");
 }
 
+export function userRoleLabel(user) {
+  if (!user) {
+    return "Member";
+  }
+  return user.display_role || user.admin_title || user.adminTitle || roleLabel(user.role);
+}
+
 export function BellIcon({ className = "" }) {
     return (
       <svg className={className} viewBox="0 0 24 24" aria-hidden="true">

@@ -58,6 +58,7 @@ import {
   formatDate,
   userDisplayName,
   userInitials,
+  userRoleLabel,
   resolveSchoolBrand,
   SchoolBrand,
   roleLabel,
@@ -808,7 +809,6 @@ function StudentDashboard({
   const profileRows = [
     ["Full Name", studentName],
     ["Student ID", student.student_id || student.admission_number],
-    ["Admission Number", student.admission_number || student.student_id],
     [groupLabels.singular, student.class_name],
     ["Term", currentTerm],
     ["Email", student.email],
@@ -6297,6 +6297,30 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleAccountDeletionRequest = useCallback(async () => {
+    const result = await requestJson(session, "POST", "/api/app/account/deletion-request/");
+    setScreenData((previous) => ({
+      ...previous,
+      "/settings": {
+        ...(previous["/settings"] || {}),
+        account_deletion: result.account_deletion,
+      },
+    }));
+    return result;
+  }, [session]);
+
+  const handleAccountDeletionCancel = useCallback(async () => {
+    const result = await requestJson(session, "DELETE", "/api/app/account/deletion-request/");
+    setScreenData((previous) => ({
+      ...previous,
+      "/settings": {
+        ...(previous["/settings"] || {}),
+        account_deletion: result.account_deletion,
+      },
+    }));
+    return result;
+  }, [session]);
+
   const handleAdminDeleteExam = useCallback(
     async (examId) => {
       const result = await requestJson(session, "DELETE", `/api/app/exams/${examId}/`);
@@ -6653,11 +6677,14 @@ const unreadNotificationsCount =
     content = (
       <AdminSettingsScreen
         data={data}
+        user={session?.user}
         loading={loading}
         error={error}
         onRetry={handleRetry}
         onSave={handleSaveSettings}
         onSubmitSupportTicket={handleSubmitSupportTicket}
+        onRequestAccountDeletion={handleAccountDeletionRequest}
+        onCancelAccountDeletion={handleAccountDeletionCancel}
         themePreference={themePreference}
         onThemeChange={onThemeChange}
           />
@@ -6668,7 +6695,7 @@ const unreadNotificationsCount =
     <main className={`app-shell-page ${navOpen ? "nav-open" : ""}`}>
       <aside className="app-sidebar">
         <div className="brand-block">
-          <SchoolBrand school={schoolBrand} subtitle={roleLabel(session?.user?.role) || "Staff"} compact />
+          <SchoolBrand school={schoolBrand} subtitle={userRoleLabel(session?.user) || "Staff"} compact />
         </div>
 
         <nav className="app-nav" aria-label="Main navigation">
@@ -6725,7 +6752,7 @@ const unreadNotificationsCount =
           })}
         </nav>
 
-        <div className="role-chip">{roleLabel(session?.user?.role)}</div>
+        <div className="role-chip">{userRoleLabel(session?.user)}</div>
       </aside>
       <div
         className="app-sidebar-overlay"

@@ -11,8 +11,13 @@ function Logo() {
 
 function TermsConditionsPage({ onNavigate }) {
   const [theme, setTheme] = useState("light");
+  const fromSignup = new URLSearchParams(window.location.search).get("from") === "signup";
 
-  const goHome = () => {
+  const goBack = () => {
+    if (fromSignup) {
+      window.location.href = "/signin?mode=signup";
+      return;
+    }
     if (typeof onNavigate === "function") {
       onNavigate("/");
       return;
@@ -25,7 +30,7 @@ function TermsConditionsPage({ onNavigate }) {
       <header className="privacy-header">
         <div className="privacy-header-content">
           <div className="privacy-brand">
-            <button type="button" className="privacy-back-button" onClick={goHome} aria-label="Back to home">
+            <button type="button" className="privacy-back-button" onClick={goBack} aria-label={fromSignup ? "Back to signup" : "Back to home"}>
               Back
             </button>
             <Logo />

@@ -71,6 +71,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('parent', 'Parent'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
+    admin_title = models.CharField(max_length=80, blank=True)
     
     # Multi-tenancy
     tenant = models.ForeignKey('core.SchoolTenant', on_delete=models.CASCADE, 
@@ -115,6 +116,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     admin_otp_attempts = models.PositiveIntegerField(default=0)
     admin_otp_challenge = models.CharField(max_length=64, blank=True, null=True)
     admin_otp_verified_at = models.DateTimeField(null=True, blank=True)
+
+    # Account deletion grace period
+    account_deletion_requested_at = models.DateTimeField(null=True, blank=True)
+    account_deletion_scheduled_for = models.DateTimeField(null=True, blank=True)
     
     # Device info for push notifications
     device_tokens = models.JSONField(default=list, blank=True)

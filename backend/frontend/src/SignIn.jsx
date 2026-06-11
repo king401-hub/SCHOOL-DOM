@@ -3,6 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 const SESSION_KEY = "schooldom.session";
 const LEGACY_SESSION_KEY = "educonnect.session";
 const DEFAULT_SIGNUP_ROLE = "school_admin";
+const TERMS_OPENED_KEY = "schooldom.terms_opened";
+const ADMIN_SIGNUP_ROLES = [
+  { value: "school_admin", title: "School Admin", label: "School Admin" },
+  { value: "principal", title: "School Principal", label: "School Principal" },
+  { value: "school_admin", title: "Proprietor/Director", label: "Proprietor/Director" },
+];
 const API_BASE_URL = (() => {
   const raw = import.meta.env.VITE_API_BASE_URL ?? "";
   if (!raw) return ""; // use relative /api/... calls
@@ -115,9 +121,11 @@ function Signin({ onAuthenticated, onBack }) {
   const [theme, setTheme] = useState("light");
   const [mode, setMode] = useState(() => {
     const path = window.location.pathname;
-    const token = new URLSearchParams(window.location.search).get("token");
+    const query = new URLSearchParams(window.location.search);
+    const token = query.get("token");
     if (path === "/reset-password" || token) return "reset";
     if (path === "/forgot-password") return "forgot";
+    if (query.get("mode") === "signup") return "signup";
     return "signin";
   });
 
@@ -134,7 +142,8 @@ function Signin({ onAuthenticated, onBack }) {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [termsOpened, setTermsOpened] = useState(false);
+  const [termsOpened, setTermsOpened] = useState(() => window.localStorage.getItem(TERMS_OPENED_KEY) === "true");
+  const [adminRoleTitle, setAdminRoleTitle] = useState("School Admin");
   const [phone, setPhone] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -432,7 +441,8 @@ function Signin({ onAuthenticated, onBack }) {
         email: signupEmail.trim(),
         password: signupPassword,
         confirm_password: confirmPassword,
-        role: DEFAULT_SIGNUP_ROLE,
+        role: ADMIN_SIGNUP_ROLES.find((item) => item.title === adminRoleTitle)?.value || DEFAULT_SIGNUP_ROLE,
+        admin_title: adminRoleTitle,
         phone: phone.trim(),
         school_code: schoolCode.trim(),
         terms_accepted: termsAccepted,
@@ -466,6 +476,7 @@ function Signin({ onAuthenticated, onBack }) {
       setConfirmPassword("");
       setTermsAccepted(false);
       setTermsOpened(false);
+      window.localStorage.removeItem(TERMS_OPENED_KEY);
     } catch (requestError) {
       setError(requestError.message || "Sign up failed.");
     } finally {
@@ -1060,6 +1071,22 @@ function Signin({ onAuthenticated, onBack }) {
                       />
                     </div>
 
+                    <label htmlFor="admin-role-title">Role</label>
+                    <div className="input-wrap">
+                      <span className="input-icon">R</span>
+                      <select
+                        id="admin-role-title"
+                        value={adminRoleTitle}
+                        onChange={(event) => setAdminRoleTitle(event.target.value)}
+                      >
+                        {ADMIN_SIGNUP_ROLES.map((item) => (
+                          <option key={item.title} value={item.title}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <button
                       type="button"
                       className="create-school-trigger"
@@ -1094,7 +1121,13 @@ function Signin({ onAuthenticated, onBack }) {
                       />
                       <span>
                         I have read and accept the SchoolDom{" "}
-                        <a href="/terms" target="_blank" rel="noreferrer" onClick={() => setTermsOpened(true)}>
+                        <a
+                          href="/terms?from=signup"
+                          onClick={() => {
+                            setTermsOpened(true);
+                            window.localStorage.setItem(TERMS_OPENED_KEY, "true");
+                          }}
+                        >
                           terms and conditions
                         </a>.
                       </span>

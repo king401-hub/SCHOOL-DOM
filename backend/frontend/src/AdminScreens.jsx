@@ -11,6 +11,7 @@ import {
   formatDate,
   userDisplayName,
   userInitials,
+  userRoleLabel,
   resolveSchoolBrand,
   academicGroupLabels,
   SchoolBrand,
@@ -346,6 +347,8 @@ function GuardianSmsComposer({ recipients = [], smsConfigured = false, onSend })
 
 function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage }) {
   const metrics = data?.metrics || {};
+  const dashboardSchool = resolveSchoolBrand(data?.school, user?.school, user);
+  const displayRole = userRoleLabel(user);
   const announcements = data?.announcements || [];
   const recentStudents = data?.recent_students || [];
   const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
@@ -399,8 +402,8 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>Welcome back, {userDisplayName(user)}</h2>
-        <p>Live summary from your school data endpoints.</p>
+        <h2>Welcome back to {dashboardSchool.name}</h2>
+        <p>{displayRole} - {userDisplayName(user)}. Live summary from your school data endpoints.</p>
       </div>
 
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
@@ -4719,7 +4722,7 @@ function TranscriptPreview({ transcript, school }) {
       <OfficialDocHeader school={selectedSchool} title="Official Student Transcript" />
       <section className="doc-info-grid">
         <div className="doc-line"><strong>Student Name</strong><span>{student.name || "-"}</span></div>
-        <div className="doc-line"><strong>Admission No.</strong><span>{student.admission_number || student.student_id || "-"}</span></div>
+        <div className="doc-line"><strong>Student ID</strong><span>{student.student_id || student.admission_number || "-"}</span></div>
         <div className="doc-line"><strong>Current Class</strong><span>{student.class_name || "-"}</span></div>
         <div className="doc-line"><strong>Admission Date</strong><span>{idCardDate(transcript?.admission_date)}</span></div>
         <div className="doc-line"><strong>Gender</strong><span>{genderDisplay(student.gender)}</span></div>
@@ -4778,7 +4781,7 @@ function TestimonialPreview({ detail, school }) {
   const student = detail?.student || {};
   const testimonial = detail?.testimonial || {};
   const rows = [
-    ["Admission Number", testimonial.admission_number || student.admission_number || student.student_id],
+    ["Student ID", student.student_id || testimonial.admission_number || student.admission_number],
     ["Student Full Name", testimonial.student_name || student.name],
     ["Date of Birth", idCardDate(testimonial.date_of_birth || student.date_of_birth)],
     ["Gender", genderDisplay(testimonial.gender || student.gender)],
@@ -5302,7 +5305,19 @@ function SupportCenterPanel({ school, tickets = [], canEdit, onSubmit }) {
   );
 }
 
-function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSupportTicket, themePreference, onThemeChange }) {
+function AdminSettingsScreen({
+  data,
+  user,
+  loading,
+  error,
+  onRetry,
+  onSave,
+  onSubmitSupportTicket,
+  onRequestAccountDeletion,
+  onCancelAccountDeletion,
+  themePreference,
+  onThemeChange,
+}) {
   const school = data?.school || {};
   const canEdit = Boolean(data?.can_edit);
   const [name, setName] = useState("");
@@ -5334,6 +5349,9 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
   });
   const [activityToast, setActivityToast] = useState(null);
   const [pendingActivityRemoval, setPendingActivityRemoval] = useState(null);
+  const [deleteAccountPromptOpen, setDeleteAccountPromptOpen] = useState(false);
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+  const [deleteAccountFeedback, setDeleteAccountFeedback] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -5562,11 +5580,44 @@ function AdminSettingsScreen({ data, loading, error, onRetry, onSave, onSubmitSu
     onThemeChange?.(nextTheme);
   };
 
+  const accountDeletion = data?.account_deletion || {};
+  const accountDeletionDate = accountDeletion.scheduled_for ? formatDate(accountDeletion.scheduled_for) : "";
+
+  const requestAccountDeletion = async () => {
+    setDeleteAccountBusy(true);
+    setDeleteAccountFeedback("");
+    setFormError("");
+    try {
+      const result = await onRequestAccountDeletion?.();
+      setDeleteAccountFeedback(result?.message || "Account deletion requested.");
+      setDeleteAccountPromptOpen(false);
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not request account deletion.");
+    } finally {
+      setDeleteAccountBusy(false);
+    }
+  };
+
+  const cancelAccountDeletion = async () => {
+    setDeleteAccountBusy(true);
+    setDeleteAccountFeedback("");
+    setFormError("");
+    try {
+      const result = await onCancelAccountDeletion?.();
+      setDeleteAccountFeedback(result?.message || "Account deletion request cancelled.");
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not cancel account deletion request.");
+    } finally {
+      setDeleteAccountBusy(false);
+    }
+  };
+
   return (
     <section className="screen-grid">
       <div className="screen-hero">
         <h2>Settings</h2>
         <p>Update school profile and contact details.</p>
+        <span className="role-chip">{userRoleLabel(user)}</span>
       </div>
 
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
@@ -5821,6 +5872,51 @@ onClick={() => handleThemeSelect("light")}
             canEdit={canEdit}
             onSubmit={onSubmitSupportTicket}
           />
+          <article className="app-panel danger-zone-panel">
+            <div className="panel-head">
+              <h3>Delete Account</h3>
+              <small>
+                {accountDeletion.requested
+                  ? `Deletion is scheduled for ${accountDeletionDate || "within 30 days"}.`
+                  : "Request permanent account deletion with a 30-day cancellation window."}
+              </small>
+            </div>
+            <p className="field-note">
+              Your account will be permanently deleted within 30 days after the request. You can cancel the request before then.
+            </p>
+            {deleteAccountFeedback ? <p className="form-feedback success">{deleteAccountFeedback}</p> : null}
+            <div className="panel-form-actions">
+              {accountDeletion.requested ? (
+                <button type="button" className="table-action" onClick={cancelAccountDeletion} disabled={deleteAccountBusy || !onCancelAccountDeletion}>
+                  {deleteAccountBusy ? "Cancelling..." : "Cancel delete request"}
+                </button>
+              ) : (
+                <button type="button" className="table-action danger" onClick={() => setDeleteAccountPromptOpen(true)} disabled={deleteAccountBusy || !onRequestAccountDeletion}>
+                  Request account deletion
+                </button>
+              )}
+            </div>
+          </article>
+          {deleteAccountPromptOpen ? (
+            <div className="student-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+              <article className="student-delete-card">
+                <div className="student-delete-icon" aria-hidden="true">!</div>
+                <p className="student-delete-kicker">Delete account</p>
+                <h3 id="delete-account-title">Request account deletion?</h3>
+                <p>
+                  This account will be permanently deleted within 30 days. You can still cancel this request before the deletion is completed.
+                </p>
+                <div className="student-delete-actions">
+                  <button type="button" className="table-action" onClick={() => setDeleteAccountPromptOpen(false)} disabled={deleteAccountBusy}>
+                    Keep account
+                  </button>
+                  <button type="button" className="table-action danger student-delete-confirm" onClick={requestAccountDeletion} disabled={deleteAccountBusy}>
+                    {deleteAccountBusy ? "Requesting..." : "Request deletion"}
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
           </>
               ) : null}
     </section>
@@ -6780,6 +6876,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
 ) : null}
         </>
       ) : null}
+
     </section>
   );
 }

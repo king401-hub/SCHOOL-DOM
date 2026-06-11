@@ -14,18 +14,26 @@ STRICT_SCHOOL_CODE_LOGIN_ROLES = {"student", "teacher", "staff", "accountant"}
 
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
+    display_role = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'full_name',
-            'role', 'phone', 'profile_picture', 'date_of_birth',
-            'gender', 'is_verified', 'is_active', 'created_at'
+            'role', 'admin_title', 'display_role', 'phone', 'profile_picture', 'date_of_birth',
+            'gender', 'is_verified', 'is_active', 'created_at',
+            'account_deletion_requested_at', 'account_deletion_scheduled_for',
         ]
-        read_only_fields = ['id', 'is_verified', 'is_active', 'created_at']
+        read_only_fields = [
+            'id', 'is_verified', 'is_active', 'created_at',
+            'account_deletion_requested_at', 'account_deletion_scheduled_for',
+        ]
     
     def get_full_name(self, obj):
         return obj.get_full_name()
+
+    def get_display_role(self, obj):
+        return obj.admin_title or obj.get_role_display()
 
 class RegisterSerializer(serializers.Serializer):
     """
@@ -38,6 +46,7 @@ class RegisterSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150)
     phone = serializers.CharField(max_length=17, required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
+    admin_title = serializers.CharField(max_length=80, required=False, allow_blank=True)
     school_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
     terms_accepted = serializers.BooleanField(write_only=True, required=True)
     

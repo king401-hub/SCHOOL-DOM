@@ -5650,6 +5650,7 @@ def school_settings(request):
                 ],
                 "support_tickets": [_support_ticket_payload(item, request) for item in SupportTicket.objects.filter(school=school)[:8]],
                 "can_edit": True,
+                "account_deletion": _account_deletion_payload(user),
                 "renamed": name_changed,
                 "linked_code_counts": linked_code_counts or {},
             }
@@ -5671,6 +5672,49 @@ def school_settings(request):
             ],
             "support_tickets": [_support_ticket_payload(item, request) for item in SupportTicket.objects.filter(school=school)[:8]],
             "can_edit": _can_manage_school_settings(user),
+            "account_deletion": _account_deletion_payload(user),
+        }
+    )
+
+
+def _account_deletion_payload(user):
+    requested_at = getattr(user, "account_deletion_requested_at", None)
+    scheduled_for = getattr(user, "account_deletion_scheduled_for", None)
+    return {
+        "requested": bool(requested_at and scheduled_for),
+        "requested_at": requested_at.isoformat() if requested_at else None,
+        "scheduled_for": scheduled_for.isoformat() if scheduled_for else None,
+        "days": 30,
+    }
+
+
+@api_view(["POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+def account_deletion_request(request):
+    user = request.user
+    if request.method == "DELETE":
+        user.account_deletion_requested_at = None
+        user.account_deletion_scheduled_for = None
+        user.save(update_fields=["account_deletion_requested_at", "account_deletion_scheduled_for", "updated_at"])
+        return Response(
+            {
+                "success": True,
+                "message": "Account deletion request cancelled.",
+                "account_deletion": _account_deletion_payload(user),
+            }
+        )
+
+    now = timezone.now()
+    if not user.account_deletion_scheduled_for:
+        user.account_deletion_requested_at = now
+        user.account_deletion_scheduled_for = now + timedelta(days=30)
+        user.save(update_fields=["account_deletion_requested_at", "account_deletion_scheduled_for", "updated_at"])
+
+    return Response(
+        {
+            "success": True,
+            "message": "Account deletion requested. Your account will be permanently deleted within 30 days unless you cancel this request.",
+            "account_deletion": _account_deletion_payload(user),
         }
     )
 
