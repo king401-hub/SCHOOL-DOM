@@ -2,6 +2,25 @@
 from django.db import models
 
 
+class SchoolGroup(models.Model):
+    name = models.CharField(max_length=255)
+    owner = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="owned_school_groups",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "School Group"
+        verbose_name_plural = "School Groups"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class SchoolTenant(models.Model):
     K12 = "k12"
     NON_K12 = "non_k12"
@@ -14,6 +33,13 @@ class SchoolTenant(models.Model):
     schema_name = models.CharField(max_length=63, unique=True)
     created_on = models.DateField(auto_now_add=True)
     school_type = models.CharField(max_length=20, choices=SCHOOL_TYPE_CHOICES, default=K12)
+    school_group = models.ForeignKey(
+        SchoolGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="schools",
+    )
     
     # School Information
     address = models.TextField(blank=True, null=True)

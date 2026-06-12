@@ -1,8 +1,305 @@
 {% extends "auth/base_auth.html" %}
 
-{% block content %}
-<div class="container py-4">
-    <h1 class="h4 mb-3">Register</h1>
-    <p>Registration form is not implemented yet.</p>
+{% block auth_title %}Register - SchoolDom{% endblock %}
+
+{% block extra_css %}
+<style>
+    .register-card {
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        border-radius: 1rem;
+        padding: 2rem;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+    }
+
+    .register-header {
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .register-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 1rem;
+        margin: 0 auto 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: {{ school.primary_color|default:'#3B82F6' }}15;
+    }
+
+    .register-title {
+        color: #111827;
+        font-size: 1.75rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+    }
+
+    .register-subtitle,
+    .signin-copy {
+        color: #6b7280;
+    }
+
+    .signin-copy {
+        text-align: center;
+        margin-top: 1rem;
+    }
+
+    .role-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .role-option {
+        border: 2px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 1rem;
+        cursor: pointer;
+        background: #fff;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .role-option:hover {
+        transform: translateY(-1px);
+        border-color: {{ school.primary_color|default:'#3B82F6' }};
+    }
+
+    .role-option.active {
+        border-color: {{ school.primary_color|default:'#3B82F6' }};
+        box-shadow: 0 0 0 3px {{ school.primary_color|default:'#3B82F6' }}20;
+    }
+
+    .role-option input {
+        display: none;
+    }
+
+    .role-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #111827;
+        font-weight: 700;
+        margin-bottom: 0.35rem;
+    }
+
+    .role-copy {
+        color: #6b7280;
+        font-size: 0.875rem;
+        line-height: 1.35;
+    }
+
+    .role-message {
+        border-radius: 0.875rem;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+    }
+
+    .role-message.single-school {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #14532d;
+    }
+
+    .section-title {
+        color: #111827;
+        font-size: 0.95rem;
+        font-weight: 800;
+        margin: 1.5rem 0 0.75rem;
+    }
+
+    .select-group {
+        position: relative;
+        margin-bottom: 1.5rem;
+    }
+
+    .select-group select {
+        width: 100%;
+        padding: 0.75rem 1rem 0.75rem 2.5rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 0.75rem;
+        font-size: 1rem;
+        background: white;
+        color: #111827;
+    }
+
+    .select-group i {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #9ca3af;
+    }
+
+    .create-school-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.875rem;
+        padding: 1rem;
+        background: #f9fafb;
+        margin-bottom: 1.5rem;
+    }
+
+    .auth-link {
+        color: {{ school.primary_color|default:'#3B82F6' }};
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    @media (max-width: 560px) {
+        .register-card {
+            padding: 1.25rem;
+        }
+
+        .role-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (prefers-color-scheme: dark) {
+        .role-option,
+        .create-school-box {
+            background: #111827;
+            border-color: #374151;
+        }
+
+        .role-title,
+        .section-title,
+        .register-title {
+            color: #fff;
+        }
+
+        .role-copy,
+        .register-subtitle,
+        .signin-copy {
+            color: #9ca3af;
+        }
+
+        .select-group select {
+            background: #1f2937;
+            border-color: #374151;
+            color: #fff;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block auth_content %}
+<div class="form-container register-card" x-data="schoolSignup()">
+    <div class="register-header">
+        <div class="register-icon">
+            <i class="fas fa-school fa-lg" style="color: {{ school.primary_color|default:'#3B82F6' }}"></i>
+        </div>
+        <h1 class="register-title">Create your account</h1>
+        <p class="register-subtitle">Choose how you want to manage your school setup.</p>
+    </div>
+
+    <form method="post" action="{% url 'register' %}">
+        {% csrf_token %}
+
+        <div class="section-title">Account type</div>
+        <div class="role-grid">
+            <label class="role-option" :class="{ 'active': role === 'school_superadmin' }">
+                <input type="radio" name="role" value="school_superadmin" x-model="role">
+                <div class="role-title">
+                    <i class="fas fa-crown"></i>
+                    Owner / Proprietor
+                </div>
+                <div class="role-copy">For owners managing multiple schools or branches from one login.</div>
+            </label>
+
+            <label class="role-option" :class="{ 'active': role === 'school_admin' }">
+                <input type="radio" name="role" value="school_admin" x-model="role">
+                <div class="role-title">
+                    <i class="fas fa-user-tie"></i>
+                    Principal / Admin
+                </div>
+                <div class="role-copy">For one school only. Create or manage a single school account.</div>
+            </label>
+        </div>
+
+        <div class="role-message"
+             :class="{ 'single-school': role === 'school_admin' }"
+             role="status"
+             aria-live="polite">
+            <template x-if="role === 'school_superadmin'">
+                <div>
+                    <strong>School Superadmin:</strong>
+                    this account is for an owner/proprietor with multiple schools. You will create schools after signup from your School Superadmin dashboard, then invite principals, bursars, and admins for each school.
+                </div>
+            </template>
+            <template x-if="role === 'school_admin'">
+                <div>
+                    <strong>Principal/Admin:</strong>
+                    this account is for one school. Create the school now so your dashboard is connected to that single school.
+                </div>
+            </template>
+        </div>
+
+        <div class="input-group">
+            <input type="text" name="full_name" placeholder="Full name" autocomplete="name" required>
+            <i class="fas fa-user"></i>
+        </div>
+
+        <div class="input-group">
+            <input type="email" name="email" placeholder="Email address" autocomplete="email" required>
+            <i class="fas fa-envelope"></i>
+        </div>
+
+        <div class="input-group">
+            <input type="password" name="password" placeholder="Password" autocomplete="new-password" required>
+            <i class="fas fa-lock"></i>
+        </div>
+
+        <div x-show="role === 'school_admin'" x-transition class="create-school-box">
+            <div class="section-title" style="margin-top: 0;">Create school</div>
+            <div class="select-group">
+                <select name="school_admin_role" :required="role === 'school_admin'">
+                    <option value="school_admin">Admin</option>
+                    <option value="principal">Principal</option>
+                </select>
+                <i class="fas fa-user-shield"></i>
+            </div>
+            <div class="input-group">
+                <input type="text" name="school_name" placeholder="School name" :required="role === 'school_admin'">
+                <i class="fas fa-school"></i>
+            </div>
+            <div class="input-group" style="margin-bottom: 0;">
+                <input type="text" name="school_address" placeholder="School address" :required="role === 'school_admin'">
+                <i class="fas fa-map-marker-alt"></i>
+            </div>
+        </div>
+
+        <div x-show="role === 'school_superadmin'" x-transition class="create-school-box">
+            <div class="section-title" style="margin-top: 0;">School group</div>
+            <div class="input-group" style="margin-bottom: 0;">
+                <input type="text" name="school_group_name" placeholder="Group name, e.g. Xcel Schools Group" :required="role === 'school_superadmin'">
+                <i class="fas fa-layer-group"></i>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-primary">
+            Create account
+        </button>
+    </form>
+
+    <p class="signin-copy">
+        Already have an account?
+        <a href="{% url 'login' %}" class="auth-link">Sign in</a>
+    </p>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function schoolSignup() {
+        return {
+            role: 'school_superadmin'
+        };
+    }
+</script>
 {% endblock %}

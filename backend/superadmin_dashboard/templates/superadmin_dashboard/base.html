@@ -1,0 +1,55 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SchoolDom Super Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'superadmin_dashboard/superadmin.css' %}">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="{% url 'superadmin_dashboard:dashboard' %}">
+        <span class="brand-mark">SD</span>
+        <span><strong>SchoolDom</strong><small>Super Admin</small></span>
+      </a>
+      <nav>
+        <a href="{% url 'superadmin_dashboard:dashboard' %}">Analytics</a>
+        <a href="{% url 'superadmin_dashboard:schools' %}">Schools</a>
+        <a href="{% url 'superadmin_dashboard:subscriptions' %}">Subscriptions</a>
+        <a href="{% url 'superadmin_dashboard:payments' %}">Payments</a>
+        <a href="{% url 'superadmin_dashboard:virtual_accounts' %}">Virtual Accounts</a>
+        <a href="{% url 'superadmin_dashboard:support_tickets' %}">Support</a>
+        <a href="{% url 'superadmin_dashboard:announcements' %}">Announcements</a>
+        <a href="{% url 'superadmin_dashboard:users' %}">Users & Roles</a>
+        <a href="{% url 'superadmin_dashboard:audit_logs' %}">Audit Logs</a>
+        <a href="{% url 'superadmin_dashboard:reports' %}">Reports</a>
+        <a href="{% url 'superadmin_dashboard:system_settings' %}">Settings</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Centralized platform operations</p>
+          <h1>{% block heading %}Super Admin Dashboard{% endblock %}</h1>
+        </div>
+        <div class="admin-chip">
+          <span>{{ request.user.get_full_name|default:request.user.email }}</span>
+        </div>
+      </header>
+
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

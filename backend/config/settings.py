@@ -127,6 +127,7 @@ if USE_SQLITE_FOR_DEV:
         'hr',
         'quizzes',
         'attendance',
+        'superadmin_dashboard',
     ]
 else:
     INSTALLED_APPS = SHARED_APPS + [

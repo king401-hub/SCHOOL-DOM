@@ -62,6 +62,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Role based access
     ROLE_CHOICES = [
         ('super_admin', 'Super Administrator'),
+        ('school_superadmin', 'School Superadmin'),
         ('school_admin', 'School Administrator'),
         ('principal', 'Principal'),
         ('accountant', 'Accountant'),
@@ -76,6 +77,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Multi-tenancy
     tenant = models.ForeignKey('core.SchoolTenant', on_delete=models.CASCADE, 
                                null=True, blank=True, related_name='users')
+    school_group = models.ForeignKey(
+        'core.SchoolGroup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users',
+    )
     
     # Profile
     profile_picture = models.ImageField(upload_to='profiles/', null=True, blank=True)

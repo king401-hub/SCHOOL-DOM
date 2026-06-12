@@ -17,12 +17,13 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static as static_urlpatterns
 from django.contrib import admin
+from django.contrib.auth import views as auth_views
 from django.templatetags.static import static
 from django.urls import include, path
 from django.views.generic import RedirectView
 from django.views.generic import TemplateView
 from django.views.decorators.csrf import csrf_exempt
-from apps.auth.views import LoginView, LogoutView, RegisterView
+from apps.auth.views import LoginView, LogoutView, RegisterView, school_superadmin_dashboard
 from apps.app.views import AppDownloadView, admin_app_download_version, download_admin_app, download_android_apk, download_student_cbt_app, download_student_cbt_win7_app, download_student_cbt_win7_student_app, redirect_student_cbt, student_cbt_app_version, student_cbt_win7_app_version, student_cbt_win7_student_app_version
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -45,6 +46,35 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('register/', RegisterView.as_view(), name='register'),
     path('logout/', LogoutView.as_view(), name='logout'),
+    path('school-superadmin/', school_superadmin_dashboard, name='school_superadmin_dashboard'),
+    path(
+        'password-reset/',
+        auth_views.PasswordResetView.as_view(
+            template_name='registration/password_reset_form.html',
+            email_template_name='registration/password_reset_email.html',
+            subject_template_name='registration/password_reset_subject.txt',
+            success_url='/password-reset/done/',
+        ),
+        name='password_reset',
+    ),
+    path(
+        'password-reset/done/',
+        auth_views.PasswordResetDoneView.as_view(template_name='registration/password_reset_done.html'),
+        name='password_reset_done',
+    ),
+    path(
+        'reset/<uidb64>/<token>/',
+        auth_views.PasswordResetConfirmView.as_view(
+            template_name='registration/password_reset_confirm.html',
+            success_url='/reset/done/',
+        ),
+        name='password_reset_confirm',
+    ),
+    path(
+        'reset/done/',
+        auth_views.PasswordResetCompleteView.as_view(template_name='registration/password_reset_complete.html'),
+        name='password_reset_complete',
+    ),
     path('school/settings/', TemplateView.as_view(template_name='school/settings.html'), name='school_settings'),
     path('app/download/', AppDownloadView.as_view(), name='app_download'),
     path('app/download/admin/', download_admin_app, name='admin_app_download'),
@@ -57,6 +87,7 @@ urlpatterns = [
     path('app/download/student-cbt/win7/student/', download_student_cbt_win7_student_app, name='student_cbt_win7_student_app_download'),
     path('app/download/student-cbt/win7/student/version/', student_cbt_win7_student_app_version, name='student_cbt_win7_student_app_version'),
     path('student-cbt/', redirect_student_cbt, name='student_cbt_redirect'),
+    path("super-admin/", include("superadmin_dashboard.urls")),
 ]
 
 # Serve uploaded media files in development.

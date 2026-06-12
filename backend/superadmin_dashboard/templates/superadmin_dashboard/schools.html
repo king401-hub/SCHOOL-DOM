@@ -1,0 +1,41 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block heading %}School Management{% endblock %}
+{% block content %}
+<form class="filters" method="get">
+  <input name="q" value="{{ query }}" placeholder="Search schools by name, email, domain, or slug">
+  <select name="status">
+    <option value="">All statuses</option>
+    <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+    <option value="suspended" {% if status == "suspended" %}selected{% endif %}>Suspended</option>
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>School</th><th>Schema</th><th>Plan</th><th>Status</th><th>Created</th><th>Operations</th></tr></thead>
+      <tbody>
+        {% for school in objects %}
+          <tr>
+            <td><strong>{{ school }}</strong><small>{{ school.email|default:"" }}</small></td>
+            <td>{{ school.schema_name|default:"" }}</td>
+            <td>{{ school.subscription_tier|default:"free" }}</td>
+            <td><span class="badge">{% if school.is_active %}active{% else %}suspended{% endif %}</span></td>
+            <td>{{ school.created_on|default:"" }}</td>
+            <td class="actions">
+              <form method="post" action="{% url 'superadmin_dashboard:school_action' school.pk 'approve' %}">{% csrf_token %}<button>Approve</button></form>
+              <form method="post" action="{% url 'superadmin_dashboard:school_action' school.pk 'suspend' %}">{% csrf_token %}<button class="danger">Suspend</button></form>
+              <form method="post" action="{% url 'superadmin_dashboard:school_action' school.pk 'reactivate' %}">{% csrf_token %}<button>Reactivate</button></form>
+              <a class="button-link secondary" href="{% url 'superadmin_dashboard:school_token_settings' school.pk %}">Tokens</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">No schools match your filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "superadmin_dashboard/pagination.html" with page_obj=objects %}
+</section>
+{% endblock %}

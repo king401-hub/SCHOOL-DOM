@@ -1,0 +1,43 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block heading %}Announcements and Notifications{% endblock %}
+{% block content %}
+<section class="two-column">
+  <article class="panel">
+    <h2>Create Notification</h2>
+    <form method="post" class="stacked-form">
+      {% csrf_token %}
+      {% for field in form %}
+        <label>
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {% for error in field.errors %}<strong class="field-error">{{ error }}</strong>{% endfor %}
+        </label>
+      {% endfor %}
+      <button type="submit">Publish Notification</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <h2>Published Notifications</h2>
+    <form class="filters compact" method="get">
+      <input name="q" value="{{ query }}" placeholder="Search notifications">
+      <button type="submit">Search</button>
+    </form>
+    <div class="notification-list">
+      {% for item in objects %}
+        <div class="notification-item">
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.message }}</span>
+          <small>{{ item.audience }} · {% if item.is_active %}active{% else %}inactive{% endif %} · {{ item.created_at }}</small>
+        </div>
+      {% empty %}
+        <div class="notification-item">
+          <strong>No notifications yet.</strong>
+          <span>Publish the first platform announcement from this page.</span>
+        </div>
+      {% endfor %}
+    </div>
+    {% include "superadmin_dashboard/pagination.html" with page_obj=objects %}
+  </article>
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block heading %}Reports and Platform Statistics{% endblock %}
+{% block content %}
+<section class="stat-grid">
+  <article class="stat"><span>Schools</span><strong>{{ stats.schools }}</strong><small>{{ stats.suspended_schools }} suspended</small></article>
+  <article class="stat"><span>Subscriptions</span><strong>{{ stats.subscriptions }}</strong><small>active and historical</small></article>
+  <article class="stat"><span>Virtual Accounts</span><strong>{{ stats.virtual_accounts }}</strong><small>banking records</small></article>
+  <article class="stat"><span>Revenue This Month</span><strong>{{ stats.monthly_revenue }}</strong><small>billing performance</small></article>
+</section>
+<section class="panel">
+  <h2>Export Center</h2>
+  <p>Connect CSV/PDF exports here for finance, school onboarding, support performance, audit readiness, and subscription health.</p>
+</section>
+{% endblock %}

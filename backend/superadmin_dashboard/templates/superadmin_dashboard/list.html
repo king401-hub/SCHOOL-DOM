@@ -1,0 +1,49 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% load superadmin_extras %}
+{% block heading %}{{ title }}{% endblock %}
+{% block content %}
+{% if missing %}
+  <section class="empty-state">
+    <h2>{{ title }} module is not connected yet</h2>
+    <p>Add the matching Django app/model or update <code>platform_models()</code> to point this dashboard at your existing implementation.</p>
+  </section>
+{% else %}
+  {% if create_url %}
+    <div class="toolbar">
+      <a class="button-link" href="{% url create_url %}">Create Super Admin</a>
+    </div>
+  {% endif %}
+  <form class="filters" method="get">
+    <input name="q" value="{{ query }}" placeholder="Search {{ title|lower }}">
+    <input name="status" value="{{ status }}" placeholder="Status">
+    <button type="submit">Filter</button>
+  </form>
+  <section class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {% for column in columns %}<th>{{ column|title }}</th>{% endfor %}
+            {% if title == "Users and Roles" %}<th>Functions</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for object in objects %}
+            <tr>
+              {% for column in columns %}
+                <td>{{ object|attr:column }}</td>
+              {% endfor %}
+              {% if title == "Users and Roles" %}
+                <td><a class="link" href="{% url 'superadmin_dashboard:edit_super_admin_functions' object.pk %}">Functions</a></td>
+              {% endif %}
+            </tr>
+          {% empty %}
+            <tr><td colspan="{% if title == 'Users and Roles' %}{{ columns|length|add:1 }}{% else %}{{ columns|length }}{% endif %}">No records match your filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "superadmin_dashboard/pagination.html" with page_obj=objects %}
+  </section>
+{% endif %}
+{% endblock %}

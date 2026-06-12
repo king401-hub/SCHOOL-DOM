@@ -1,0 +1,25 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block heading %}Token Payments for {{ school }}{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+  <div class="summary-strip">
+    <span><strong>Current price</strong>{{ setting.token_price }}</span>
+    <span><strong>Tokens per payment</strong>{{ setting.tokens_per_payment }}</span>
+    <span><strong>Minimum tokens</strong>{{ setting.minimum_tokens }}</span>
+  </div>
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    {% for field in form %}
+      <label>
+        <span>{{ field.label }}</span>
+        {{ field }}
+        {% for error in field.errors %}<strong class="field-error">{{ error }}</strong>{% endfor %}
+      </label>
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit">Save Token Settings</button>
+      <a class="button-link secondary" href="{% url 'superadmin_dashboard:schools' %}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

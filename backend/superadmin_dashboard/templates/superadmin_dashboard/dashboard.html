@@ -1,0 +1,70 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block title %}SchoolDom Super Admin Dashboard{% endblock %}
+{% block heading %}Platform Overview{% endblock %}
+{% block content %}
+<section class="stat-grid">
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:schools' %}"><span>Total Schools</span><strong>{{ stats.schools }}</strong><small>{{ stats.active_schools }} active</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:schools' %}?status=pending"><span>Pending Approval</span><strong>{{ stats.pending_schools }}</strong><small>schools awaiting review</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:payments' %}"><span>Monthly Revenue</span><strong>{{ stats.monthly_revenue }}</strong><small>confirmed billings</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:payments' %}"><span>Transactions</span><strong>{{ stats.transactions }}</strong><small>payment events</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:users' %}"><span>Users</span><strong>{{ stats.users }}</strong><small>platform-wide accounts</small></a>
+  <a class="stat stat-link" href="{% url 'superadmin_dashboard:support_tickets' %}"><span>Open Tickets</span><strong>{{ stats.open_tickets }}</strong><small>support queue</small></a>
+</section>
+
+<section class="two-column">
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Recently Registered Schools</h2>
+      <a href="{% url 'superadmin_dashboard:schools' %}">View all</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>School</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% for school in recent_schools %}
+            <tr>
+              <td>{{ school }}</td>
+              <td><span class="badge">{% if school.is_active %}active{% else %}suspended{% endif %}</span></td>
+              <td><a class="link" href="{% url 'superadmin_dashboard:schools' %}?q={{ school }}">Manage</a></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3">No school records are available yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><h2>Activity Tracking</h2></div>
+    <ol class="activity-list">
+      {% for item in recent_activity %}
+        <li><strong>{{ item }}</strong><small>{{ item.created_at|default:"" }}</small></li>
+      {% empty %}
+        <li><strong>No audit activity available.</strong><small>Connect your audit log model to populate this feed.</small></li>
+      {% endfor %}
+    </ol>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Notifications</h2>
+    <a href="{% url 'superadmin_dashboard:announcements' %}">Create notification</a>
+  </div>
+  <div class="notification-list">
+    {% for notification in notifications %}
+      <a class="notification-item" href="{% url 'superadmin_dashboard:announcements' %}">
+        <strong>{{ notification.title }}</strong>
+        <span>{{ notification.message|truncatechars:120 }}</span>
+        <small>{{ notification.audience|default:"all" }} · {{ notification.created_at|default:"" }}</small>
+      </a>
+    {% empty %}
+      <a class="notification-item" href="{% url 'superadmin_dashboard:announcements' %}">
+        <strong>No platform notifications yet.</strong>
+        <span>Create announcements for schools, admins, and platform updates.</span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

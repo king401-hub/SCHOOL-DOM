@@ -1,0 +1,465 @@
+{% extends "auth/base_auth.html" %}
+
+{% block auth_title %}School Superadmin - SchoolDom{% endblock %}
+
+{% block extra_css %}
+<style>
+    body {
+        align-items: flex-start;
+    }
+
+    .owner-dashboard {
+        width: min(1100px, 100%);
+        margin: 0 auto;
+        color: #111827;
+    }
+
+    .dashboard-shell {
+        background: rgba(255, 255, 255, 0.96);
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+    }
+
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 1rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .dashboard-title {
+        font-size: 1.75rem;
+        font-weight: 800;
+        margin-bottom: 0.25rem;
+    }
+
+    .dashboard-subtitle {
+        color: #6b7280;
+    }
+
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 1rem;
+    }
+
+    .panel {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.875rem;
+        padding: 1rem;
+        background: #fff;
+    }
+
+    .panel-title {
+        font-size: 1rem;
+        font-weight: 800;
+        margin-bottom: 0.85rem;
+    }
+
+    .school-list {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .school-row,
+    .admin-row {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 0.85rem;
+        background: #f9fafb;
+    }
+
+    .school-name,
+    .admin-name {
+        font-weight: 800;
+    }
+
+    .muted {
+        color: #6b7280;
+        font-size: 0.9rem;
+    }
+
+    .form-grid {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .field {
+        width: 100%;
+        border: 2px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 0.75rem 0.9rem;
+        font: inherit;
+        background: #fff;
+    }
+
+    .field:focus {
+        outline: none;
+        border-color: {{ school.primary_color|default:'#3B82F6' }};
+        box-shadow: 0 0 0 3px {{ school.primary_color|default:'#3B82F6' }}20;
+    }
+
+    .button-row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .small-button {
+        border: 0;
+        border-radius: 0.75rem;
+        background: {{ school.primary_color|default:'#3B82F6' }};
+        color: #fff;
+        padding: 0.75rem 1rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .logout-link {
+        color: #fff;
+        text-decoration: none;
+        font-weight: 800;
+        border: 1px solid rgba(255,255,255,0.6);
+        border-radius: 0.75rem;
+        padding: 0.65rem 0.9rem;
+    }
+
+    .notice {
+        border-radius: 0.75rem;
+        padding: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .notice.success {
+        background: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+
+    .notice.error {
+        background: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
+
+    .login-box {
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+        border-radius: 0.75rem;
+        padding: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .finance-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .metric {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.75rem;
+        padding: 0.9rem;
+        background: #f9fafb;
+    }
+
+    .metric-label {
+        color: #6b7280;
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .metric-value {
+        font-size: 1.35rem;
+        font-weight: 900;
+        margin-top: 0.25rem;
+    }
+
+    .finance-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+    }
+
+    .finance-table th,
+    .finance-table td {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 0.75rem 0.5rem;
+        text-align: left;
+        vertical-align: middle;
+    }
+
+    .finance-table th {
+        color: #6b7280;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+    }
+
+    .finance-table .number {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .status-pill {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 0.25rem 0.55rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        background: #ecfdf5;
+        color: #065f46;
+    }
+
+    .status-pill.at-risk {
+        background: #fffbeb;
+        color: #92400e;
+    }
+
+    .status-pill.critical {
+        background: #fef2f2;
+        color: #991b1b;
+    }
+
+    .defaulter-list {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .defaulter-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 0.65rem;
+    }
+
+    .finance-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+    }
+
+    .outline-button {
+        display: inline-block;
+        border: 1px solid {{ school.primary_color|default:'#3B82F6' }};
+        border-radius: 0.75rem;
+        color: {{ school.primary_color|default:'#3B82F6' }};
+        background: #fff;
+        padding: 0.72rem 1rem;
+        font-weight: 800;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    @media (max-width: 900px) {
+        .dashboard-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .dashboard-header {
+            flex-direction: column;
+        }
+
+        .finance-summary {
+            grid-template-columns: 1fr;
+        }
+
+        .finance-table {
+            min-width: 760px;
+        }
+
+        .table-scroll {
+            overflow-x: auto;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block auth_content %}
+<div class="owner-dashboard">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title text-white">School Superadmin</h1>
+            <p class="dashboard-subtitle" style="color: rgba(255,255,255,0.85);">{{ group.name }}</p>
+        </div>
+        <a class="logout-link" href="{% url 'logout' %}">Logout</a>
+    </div>
+
+    <div class="dashboard-shell">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="notice {% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+
+        {% if generated_login %}
+            <div class="login-box">
+                <strong>Share this login with the new admin:</strong><br>
+                School: {{ generated_login.school }}<br>
+                Email: {{ generated_login.email }}<br>
+                Temporary password: {{ generated_login.password }}
+            </div>
+        {% endif %}
+
+        <div class="dashboard-grid">
+            <div class="panel">
+                <div class="panel-title">Finance overview</div>
+                <div class="finance-summary">
+                    <div class="metric">
+                        <div class="metric-label">Total collected</div>
+                        <div class="metric-value">₦{{ finance_totals.collected|floatformat:2 }}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Total outstanding</div>
+                        <div class="metric-value">₦{{ finance_totals.outstanding|floatformat:2 }}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Collection rate</div>
+                        <div class="metric-value">{{ finance_totals.rate|floatformat:1 }}%</div>
+                    </div>
+                </div>
+
+                <div class="table-scroll">
+                    <table class="finance-table">
+                        <thead>
+                            <tr>
+                                <th>Branch</th>
+                                <th class="number">Students</th>
+                                <th class="number">Staff</th>
+                                <th class="number">Collected</th>
+                                <th class="number">Outstanding</th>
+                                <th class="number">Rate</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in finance_rows %}
+                                <tr>
+                                    <td>{{ row.school.name }}</td>
+                                    <td class="number">{{ row.students }}</td>
+                                    <td class="number">{{ row.staff }}</td>
+                                    <td class="number">₦{{ row.collected|floatformat:2 }}</td>
+                                    <td class="number">₦{{ row.outstanding|floatformat:2 }}</td>
+                                    <td class="number">{{ row.rate|floatformat:1 }}%</td>
+                                    <td>
+                                        <span class="status-pill {% if row.status == 'At Risk' %}at-risk{% elif row.status == 'Critical' %}critical{% endif %}">
+                                            {{ row.status }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="7" class="muted">Add schools to see finance overview.</td>
+                                </tr>
+                            {% endfor %}
+                            <tr>
+                                <th>Total</th>
+                                <th class="number">{{ finance_totals.students }}</th>
+                                <th class="number">{{ finance_totals.staff }}</th>
+                                <th class="number">₦{{ finance_totals.collected|floatformat:2 }}</th>
+                                <th class="number">₦{{ finance_totals.outstanding|floatformat:2 }}</th>
+                                <th class="number">{{ finance_totals.rate|floatformat:1 }}%</th>
+                                <th></th>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="finance-actions">
+                    <a class="outline-button" href="?export=finance_csv">Export CSV</a>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="send_reminders">
+                        <button class="small-button" type="submit">Send reminder to defaulters</button>
+                    </form>
+                </div>
+
+                <div class="panel-title" style="margin-top: 1.25rem;">Top defaulters across group</div>
+                <div class="defaulter-list">
+                    {% for fee in top_defaulters %}
+                        <div class="defaulter-row">
+                            <div>
+                                <strong>{{ fee.student.user.get_full_name|default:fee.student.user.email }}</strong>
+                                <div class="muted">{{ fee.student.user.tenant.name }} | {{ fee.title }}</div>
+                            </div>
+                            <strong>₦{{ fee.amount|floatformat:2 }}</strong>
+                        </div>
+                    {% empty %}
+                        <div class="muted">No outstanding fee records yet.</div>
+                    {% endfor %}
+                </div>
+
+                <div class="panel-title" style="margin-top: 1.25rem;">Schools under this owner/proprietor</div>
+                <div class="school-list">
+                    {% for item in schools %}
+                        <div class="school-row">
+                            <div class="school-name">{{ item.name }}</div>
+                            <div class="muted">{{ item.address|default:"No address yet" }}</div>
+                            <div class="muted">{{ item.users.count }} user{{ item.users.count|pluralize }}</div>
+                        </div>
+                    {% empty %}
+                        <div class="muted">No schools yet. Add your first school from the form.</div>
+                    {% endfor %}
+                </div>
+
+                <div class="panel-title" style="margin-top: 1.25rem;">School admins</div>
+                <div class="school-list">
+                    {% for admin in admins %}
+                        <div class="admin-row">
+                            <div class="admin-name">{{ admin.get_full_name|default:admin.email }}</div>
+                            <div class="muted">{{ admin.email }} | {{ admin.get_role_display }} | {{ admin.tenant.name }}</div>
+                        </div>
+                    {% empty %}
+                        <div class="muted">No branch admins created yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <div class="panel">
+                    <div class="panel-title">Add school</div>
+                    <form method="post" class="form-grid">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add_school">
+                        <input class="field" type="text" name="school_name" placeholder="School name" required>
+                        <input class="field" type="email" name="school_email" placeholder="School email">
+                        <textarea class="field" name="school_address" placeholder="School address" rows="3"></textarea>
+                        <button class="small-button" type="submit">Create school</button>
+                    </form>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-title">Create admin login</div>
+                    <form method="post" class="form-grid">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add_admin">
+                        <select class="field" name="school_id" required>
+                            <option value="">Select school</option>
+                            {% for item in schools %}
+                                <option value="{{ item.pk }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <input class="field" type="text" name="admin_name" placeholder="Admin name" required>
+                        <input class="field" type="email" name="admin_email" placeholder="Admin email" required>
+                        <select class="field" name="admin_role">
+                            <option value="school_admin">Admin</option>
+                            <option value="principal">Principal</option>
+                            <option value="accountant">Bursar / Accountant</option>
+                        </select>
+                        <button class="small-button" type="submit">Create login</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
