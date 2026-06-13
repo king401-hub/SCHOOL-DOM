@@ -341,9 +341,6 @@ def get_or_create_activation_credit_pool(tenant=None) -> ActivationCreditPool:
         tenant=tenant,
         defaults={"price_per_credit": price},
     )
-    if pool.price_per_credit != price:
-        pool.price_per_credit = price
-        pool.save(update_fields=["price_per_credit", "updated_at"])
     return pool
 
 
@@ -429,6 +426,36 @@ def add_activation_credits_to_pool(tenant, credits, actor=None):
                 "total_credits": total_credits,
                 "bonus_rule": f"{ACTIVATION_CREDIT_BONUS_AMOUNT} free per {ACTIVATION_CREDIT_BONUS_INTERVAL} purchased",
             },
+            created_by=actor,
+        )
+    pool.refresh_from_db()
+    return pool
+
+
+def adjust_activation_credit_pool(tenant, credits, actor=None, narration="Super admin token adjustment"):
+    credits = int(credits or 0)
+    if credits == 0:
+        raise ValueError("tokens must not be zero.")
+
+    pool = get_or_create_activation_credit_pool(tenant)
+    with transaction.atomic():
+        locked = ActivationCreditPool.objects.select_for_update().get(pk=pool.pk)
+        next_balance = locked.balance + credits
+        if next_balance < 0:
+            raise ValueError(f"Insufficient activation tokens. Available: {locked.balance}.")
+        locked.balance = next_balance
+        locked.save(update_fields=["balance", "updated_at"])
+        ActivationCreditTransaction.objects.create(
+            pool=locked,
+            tx_type=ActivationCreditTransaction.ADJUSTMENT,
+            status=ActivationCreditTransaction.STATUS_SUCCESS,
+            credits=credits,
+            price_per_credit=locked.price_per_credit,
+            amount=Decimal("0.00"),
+            reference=generate_reference("ADJ"),
+            narration=narration,
+            provider="system",
+            metadata={"manual_adjustment": True, "tenant_id": str(tenant.id) if tenant else ""},
             created_by=actor,
         )
     pool.refresh_from_db()

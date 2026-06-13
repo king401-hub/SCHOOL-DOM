@@ -7,7 +7,7 @@ const TERMS_OPENED_KEY = "schooldom.terms_opened";
 const ADMIN_SIGNUP_ROLES = [
   { value: "school_admin", title: "School Admin", label: "School Admin" },
   { value: "principal", title: "School Principal", label: "School Principal" },
-  { value: "school_admin", title: "Proprietor/Director", label: "Proprietor/Director" },
+  { value: "school_superadmin", title: "Proprietor/Director", label: "Proprietor/Director" },
 ];
 const API_BASE_URL = (() => {
   const raw = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -146,6 +146,7 @@ function Signin({ onAuthenticated, onBack }) {
   const [adminRoleTitle, setAdminRoleTitle] = useState("School Admin");
   const [phone, setPhone] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
+  const [schoolGroupName, setSchoolGroupName] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
   const [otpChallenge, setOtpChallenge] = useState("");
@@ -226,6 +227,11 @@ function Signin({ onAuthenticated, onBack }) {
   }, [titleText]);
 
   const canSignIn = useMemo(() => email.trim().length > 0 && password.length > 0, [email, password]);
+  const selectedSignupRole = useMemo(
+    () => ADMIN_SIGNUP_ROLES.find((item) => item.title === adminRoleTitle) || ADMIN_SIGNUP_ROLES[0],
+    [adminRoleTitle]
+  );
+  const isSchoolSuperadminSignup = selectedSignupRole.value === "school_superadmin";
 
   const canSignUp = useMemo(() => {
     if (
@@ -239,12 +245,20 @@ function Signin({ onAuthenticated, onBack }) {
       return false;
     }
 
+    if (isSchoolSuperadminSignup && schoolGroupName.trim().length < 3) {
+      return false;
+    }
+
+    if (!isSchoolSuperadminSignup && schoolCode.trim().length === 0) {
+      return false;
+    }
+
     if (signupPassword !== confirmPassword) {
       return false;
     }
 
     return true;
-  }, [confirmPassword, firstName, lastName, signupEmail, signupPassword, termsAccepted]);
+  }, [confirmPassword, firstName, isSchoolSuperadminSignup, lastName, schoolCode, schoolGroupName, signupEmail, signupPassword, termsAccepted]);
 
   const canCreateSchool = useMemo(() => schoolName.trim().length >= 3, [schoolName]);
   const canRequestReset = useMemo(() => forgotEmail.trim().length > 0, [forgotEmail]);
@@ -441,10 +455,11 @@ function Signin({ onAuthenticated, onBack }) {
         email: signupEmail.trim(),
         password: signupPassword,
         confirm_password: confirmPassword,
-        role: ADMIN_SIGNUP_ROLES.find((item) => item.title === adminRoleTitle)?.value || DEFAULT_SIGNUP_ROLE,
+        role: selectedSignupRole.value || DEFAULT_SIGNUP_ROLE,
         admin_title: adminRoleTitle,
         phone: phone.trim(),
-        school_code: schoolCode.trim(),
+        school_code: isSchoolSuperadminSignup ? "" : schoolCode.trim(),
+        school_group_name: isSchoolSuperadminSignup ? schoolGroupName.trim() : "",
         terms_accepted: termsAccepted,
       };
 
@@ -1059,25 +1074,22 @@ function Signin({ onAuthenticated, onBack }) {
                       />
                     </div>
 
-                    <label htmlFor="signup-school-code">School code </label>
-                    <div className="input-wrap">
-                      <span className="input-icon">S</span>
-                      <input
-                        id="signup-school-code"
-                        type="text"
-                        value={schoolCode}
-                        onChange={(event) => setSchoolCode(event.target.value)}
-                        placeholder="school schema code"
-                      />
-                    </div>
-
                     <label htmlFor="admin-role-title">Role</label>
                     <div className="input-wrap">
                       <span className="input-icon">R</span>
                       <select
                         id="admin-role-title"
                         value={adminRoleTitle}
-                        onChange={(event) => setAdminRoleTitle(event.target.value)}
+                        onChange={(event) => {
+                          const nextTitle = event.target.value;
+                          setAdminRoleTitle(nextTitle);
+                          setShowCreateSchool(false);
+                          setSchoolError("");
+                          setSchoolSuccess("");
+                          if (ADMIN_SIGNUP_ROLES.find((item) => item.title === nextTitle)?.value === "school_superadmin") {
+                            setSchoolCode("");
+                          }
+                        }}
                       >
                         {ADMIN_SIGNUP_ROLES.map((item) => (
                           <option key={item.title} value={item.title}>
@@ -1087,21 +1099,59 @@ function Signin({ onAuthenticated, onBack }) {
                       </select>
                     </div>
 
-                    <button
-                      type="button"
-                      className="create-school-trigger"
-                      onClick={() => {
-                        setShowCreateSchool((previous) => !previous);
-                        setSchoolError("");
-                        setSchoolSuccess("");
-                      }}
-                    >
-                      <CreateSchoolIcon />
-                      {showCreateSchool ? "Close school creator" : "Create school"}
-                    </button>
+                    {isSchoolSuperadminSignup ? (
+                      <>
+                        <p className="success-text">
+                          Proprietor/Director is for an owner managing multiple schools. You will create schools after signup from the School Superadmin dashboard, then invite principals, admins, and bursars for each school.
+                        </p>
+                        <label htmlFor="school-group-name">School group name</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">G</span>
+                          <input
+                            id="school-group-name"
+                            type="text"
+                            value={schoolGroupName}
+                            onChange={(event) => setSchoolGroupName(event.target.value)}
+                            placeholder="e.g. Xcel Schools Group"
+                            required
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="success-text">
+                          School Admin and School Principal accounts are for one school. Create or enter that school's code to continue.
+                        </p>
+                        <label htmlFor="signup-school-code">School code </label>
+                        <div className="input-wrap">
+                          <span className="input-icon">S</span>
+                          <input
+                            id="signup-school-code"
+                            type="text"
+                            value={schoolCode}
+                            onChange={(event) => setSchoolCode(event.target.value)}
+                            placeholder="school schema code"
+                            required
+                          />
+                        </div>
 
-                    {schoolCreationPanel}
-                    {schoolSuccess ? <p className="success-text">{schoolSuccess}</p> : null}
+                        <button
+                          type="button"
+                          className="create-school-trigger"
+                          onClick={() => {
+                            setShowCreateSchool((previous) => !previous);
+                            setSchoolError("");
+                            setSchoolSuccess("");
+                          }}
+                        >
+                          <CreateSchoolIcon />
+                          {showCreateSchool ? "Close school creator" : "Create school"}
+                        </button>
+
+                        {schoolCreationPanel}
+                        {schoolSuccess ? <p className="success-text">{schoolSuccess}</p> : null}
+                      </>
+                    )}
 
                     <label className="terms-checkbox" htmlFor="terms-accepted">
                       <input

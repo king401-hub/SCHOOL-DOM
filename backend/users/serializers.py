@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from .models import User, StudentProfile, TeacherProfile, ParentProfile, LoginHistory, generate_short_student_id, generate_short_teacher_id
-from core.models import SchoolTenant
+from core.models import SchoolGroup, SchoolTenant
 from finance.services import student_has_login_credit, update_student_activation_alerts
 import re
 
@@ -48,6 +48,7 @@ class RegisterSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)
     admin_title = serializers.CharField(max_length=80, required=False, allow_blank=True)
     school_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    school_group_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
     terms_accepted = serializers.BooleanField(write_only=True, required=True)
     
     # Role specific fields
@@ -95,6 +96,11 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"school_code": "School code is required for school-scoped accounts."}
             )
+
+        if data['role'] == 'school_superadmin' and not str(data.get('school_group_name') or '').strip():
+            raise serializers.ValidationError(
+                {"school_group_name": "School group name is required for owner/proprietor accounts."}
+            )
         
         # Validate role-specific fields
         if data['role'] == 'student' and not data.get('guardian_name'):
@@ -119,6 +125,7 @@ class RegisterSerializer(serializers.Serializer):
         validated_data.pop('confirm_password')
         validated_data.pop('terms_accepted', None)
         school_code = validated_data.pop('school_code', None)
+        school_group_name = str(validated_data.pop('school_group_name', '') or '').strip()
         
         # Get role specific fields
         student_id = validated_data.pop('student_id', None)
@@ -138,6 +145,11 @@ class RegisterSerializer(serializers.Serializer):
             user.tenant = school_code
         
         user.save()
+
+        if user.role == 'school_superadmin':
+            group = SchoolGroup.objects.create(name=school_group_name, owner=user)
+            user.school_group = group
+            user.save(update_fields=['school_group'])
         
         # Create role-specific profile
         if user.role == 'student':

@@ -18,6 +18,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from academic.models import Class
+from core.models import SchoolTenant
 from finance.models import (
     ActivationCreditPool,
     ActivationCreditTransaction,
@@ -1327,17 +1328,44 @@ def admin_activation_credit_assign(request):
 @api_view(["POST", "PATCH"])
 @permission_classes([IsAuthenticated])
 def admin_activation_credit_price(request):
-    """Token price is fixed by school type and cannot be edited from the app."""
+    """Allow platform super admins to change a school's activation-token price."""
     user = request.user
-    pool = get_or_create_activation_credit_pool(user.tenant)
-    return Response(
-        {
-            "success": False,
-            "message": "Activation token price is fixed by school type and cannot be changed.",
-            "pool": ActivationCreditPoolSerializer(pool).data,
-        },
-        status=status.HTTP_400_BAD_REQUEST,
+    if user.role != "super_admin" and not user.is_superuser:
+        return Response({"success": False, "message": "Super admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    tenant = user.tenant
+    tenant_id = request.data.get("tenant_id") or request.data.get("school_id")
+    school_code = str(request.data.get("school_code") or request.data.get("schema_name") or "").strip()
+    if tenant_id:
+        tenant = SchoolTenant.objects.filter(id=tenant_id).first()
+    elif school_code:
+        tenant = SchoolTenant.objects.filter(schema_name__iexact=school_code).first()
+
+    if not tenant:
+        return Response({"success": False, "message": "Select a school to update token price."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        price = _parse_amount(request.data.get("price_per_credit") or request.data.get("price"))
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    if price <= 0:
+        return Response({"success": False, "message": "price_per_credit must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+    pool = get_or_create_activation_credit_pool(tenant)
+    old_price = pool.price_per_credit
+    pool.price_per_credit = price
+    pool.save(update_fields=["price_per_credit", "updated_at"])
+    record_finance_activity(
+        tenant,
+        user,
+        "token_price_updated",
+        "Updated activation token price.",
+        amount=price,
+        currency=pool.currency,
+        reference=str(pool.id),
+        metadata={"old_price": str(old_price), "new_price": str(price)},
     )
+    return Response({"success": True, "pool": ActivationCreditPoolSerializer(pool).data})
 
 
 @api_view(["POST"])

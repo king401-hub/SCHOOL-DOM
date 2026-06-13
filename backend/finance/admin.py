@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 
 from finance.models import (
@@ -13,6 +14,25 @@ from finance.models import (
     Transaction,
     Wallet,
 )
+from finance.services import adjust_activation_credit_pool, record_finance_activity
+
+
+class ActivationCreditPoolAdminForm(forms.ModelForm):
+    balance_adjustment = forms.IntegerField(
+        required=False,
+        initial=0,
+        help_text="Optional manual adjustment. Use a positive number to add tokens or a negative number to deduct tokens.",
+    )
+
+    class Meta:
+        model = ActivationCreditPool
+        fields = "__all__"
+
+    def clean_price_per_credit(self):
+        price = self.cleaned_data["price_per_credit"]
+        if price <= 0:
+            raise forms.ValidationError("Token price must be greater than zero.")
+        return price
 
 
 @admin.register(Wallet)
@@ -89,8 +109,62 @@ class FinanceLedgerLogAdmin(admin.ModelAdmin):
 
 @admin.register(ActivationCreditPool)
 class ActivationCreditPoolAdmin(admin.ModelAdmin):
+    form = ActivationCreditPoolAdminForm
     list_display = ("tenant", "balance", "price_per_credit", "auto_assign_enabled", "auto_assign_scope", "updated_at")
     list_filter = ("auto_assign_enabled", "auto_assign_scope")
+    search_fields = ("tenant__name", "tenant__schema_name")
+    fields = (
+        "tenant",
+        "balance",
+        "balance_adjustment",
+        "price_per_credit",
+        "currency",
+        "auto_assign_enabled",
+        "auto_assign_scope",
+        "last_auto_assigned_month",
+        "last_reminder_month",
+        "created_at",
+        "updated_at",
+    )
+    readonly_fields = ("created_at", "updated_at")
+
+    def save_model(self, request, obj, form, change):
+        old_balance = 0
+        old_price = None
+        requested_balance = int(obj.balance or 0)
+        if change and obj.pk:
+            old = ActivationCreditPool.objects.get(pk=obj.pk)
+            old_balance = int(old.balance or 0)
+            old_price = old.price_per_credit
+            obj.balance = old_balance
+        else:
+            obj.balance = 0
+
+        super().save_model(request, obj, form, change)
+
+        balance_delta = requested_balance - old_balance
+        manual_delta = int(form.cleaned_data.get("balance_adjustment") or 0)
+        total_delta = balance_delta + manual_delta
+        if total_delta:
+            adjust_activation_credit_pool(
+                obj.tenant,
+                total_delta,
+                actor=request.user,
+                narration="Super admin activation token adjustment",
+            )
+            obj.refresh_from_db()
+
+        if old_price is not None and old_price != obj.price_per_credit:
+            record_finance_activity(
+                obj.tenant,
+                request.user,
+                "token_price_updated",
+                "Updated activation token price from Django admin.",
+                amount=obj.price_per_credit,
+                currency=obj.currency,
+                reference=str(obj.id),
+                metadata={"old_price": str(old_price), "new_price": str(obj.price_per_credit)},
+            )
 
 
 @admin.register(StudentActivationCredit)

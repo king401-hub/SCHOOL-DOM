@@ -32,7 +32,7 @@ from .serializers import (
 from .serializers import ResendVerificationSerializer
 from finance.services import grant_school_registration_credits, student_has_login_credit, update_student_activation_alerts
 
-ADMIN_OTP_ROLES = {"school_admin", "principal", "super_admin"}
+ADMIN_OTP_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
 ADMIN_OTP_EXPIRY_MINUTES = 10
 logger = logging.getLogger(__name__)
@@ -251,6 +251,7 @@ def clear_admin_otp(user):
 def admin_redirect_url(user):
     return {
         'super_admin': '/admin/dashboard/',
+        'school_superadmin': '/school-superadmin/',
         'school_admin': '/school/dashboard/',
         'principal': '/dashboard/',
         'teacher': '/teacher/dashboard/',
