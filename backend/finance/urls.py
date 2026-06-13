@@ -4,6 +4,7 @@ from finance import views
 
 urlpatterns = [
     path("flutterwave/webhook/", views.flutterwave_webhook, name="flutterwave_webhook"),
+    path("webhooks/custom/", views.custom_webhook, name="custom_webhook"),
     path("kuda/webhook/", views.kuda_webhook, name="kuda_webhook"),
     path("whatsapp/webhook/", views.whatsapp_business_webhook, name="whatsapp_business_webhook"),
     path("whatsapp/balance-preview/", views.whatsapp_balance_preview, name="whatsapp_balance_preview"),
