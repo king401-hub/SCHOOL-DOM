@@ -127,7 +127,7 @@ class Command(BaseCommand):
 
     def _resolve_subject(self, tenant, code):
         subject = Subject.objects.filter(tenant=tenant, code__iexact=code).first()
-        if not subject:
+        if not subject:                   
             subject = Subject.objects.filter(tenant=tenant, name__iexact="Chemistry").first()
         if not subject:
             raise CommandError(f"Could not find Chemistry subject for tenant {tenant.id}.")

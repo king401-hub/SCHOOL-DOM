@@ -277,6 +277,13 @@ def bank_credit_webhook(request):
     return Response({"success": True, "created": created, "payment": BankPaymentSerializer(payment).data})
 
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def custom_webhook(request):
+    """Compatibility endpoint for custom bank-credit webhook integrations."""
+    return bank_credit_webhook(request)
+
+
 def payment_fallback_page(request, student_ref):
     reference = get_object_or_404(
         StudentPaymentReference.objects.select_related("student", "student__user", "student__user__tenant", "student__current_class"),

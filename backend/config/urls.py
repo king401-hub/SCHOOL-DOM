@@ -18,8 +18,10 @@ from django.conf import settings
 from django.conf.urls.static import static as static_urlpatterns
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
+from django.http import FileResponse, Http404
 from django.templatetags.static import static
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from django.views.generic import RedirectView
 from django.views.generic import TemplateView
 from django.views.decorators.csrf import csrf_exempt
@@ -28,8 +30,18 @@ from apps.app.views import AppDownloadView, admin_app_download_version, download
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
+LANDING_DIST_DIR = settings.BASE_DIR / 'backend' / 'landing-page' / 'dist'
+
+
+def landing_page(request):
+    index_file = LANDING_DIST_DIR / 'index.html'
+    if not index_file.exists():
+        raise Http404('Landing page build not found. Run `npm run build` in backend/landing-page.')
+    return FileResponse(index_file.open('rb'), content_type='text/html')
+
+
 urlpatterns = [
-    path('', RedirectView.as_view(pattern_name='school_settings', permanent=False)),
+    path('', landing_page, name='landing_page'),
     path('favicon.ico', RedirectView.as_view(url=static('img/schooldom-favicon.jpeg'), permanent=True)),
     path('admin/', admin.site.urls),
     path('api/auth/', include('users.urls')),
@@ -88,6 +100,14 @@ urlpatterns = [
     path('app/download/student-cbt/win7/student/version/', student_cbt_win7_student_app_version, name='student_cbt_win7_student_app_version'),
     path('student-cbt/', redirect_student_cbt, name='student_cbt_redirect'),
     path("super-admin/", include("superadmin_dashboard.urls")),
+    re_path(r'^assets/(?P<path>.*)$', serve, {'document_root': LANDING_DIST_DIR / 'assets'}),
+    re_path(r'^icons/(?P<path>.*)$', serve, {'document_root': LANDING_DIST_DIR / 'icons'}),
+    path('manifest.webmanifest', serve, {'path': 'manifest.webmanifest', 'document_root': LANDING_DIST_DIR}),
+    path('service-worker.js', serve, {'path': 'service-worker.js', 'document_root': LANDING_DIST_DIR}),
+    path('favicon.svg', serve, {'path': 'favicon.svg', 'document_root': LANDING_DIST_DIR}),
+    path('schooldom-favicon.jpeg', serve, {'path': 'schooldom-favicon.jpeg', 'document_root': LANDING_DIST_DIR}),
+    path('school-favicon.svg', serve, {'path': 'school-favicon.svg', 'document_root': LANDING_DIST_DIR}),
+    re_path(r'^(?!api/|admin/|app/download/|school-superadmin/|student-cbt/|assets/|icons/|favicon\.ico$|favicon\.svg$|schooldom-favicon\.jpeg$|school-favicon\.svg$|manifest\.webmanifest$|service-worker\.js$).*$', landing_page),
 ]
 
 # Serve uploaded media files in development.

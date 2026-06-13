@@ -23,6 +23,8 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!backend/landing-page/dist/
+!backend/landing-page/dist/**
 downloads/
 eggs/
 .eggs/
