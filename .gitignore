@@ -81,3 +81,7 @@ runserver.out.log
 .codex_backend.out.log
 .codex_frontend.err.log
 .codex_frontend.out.log
+backend/.envtc
+media.bak/
+staticfiles/
+backend/frontend/static/
