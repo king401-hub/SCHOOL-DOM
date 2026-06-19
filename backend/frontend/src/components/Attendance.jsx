@@ -199,6 +199,7 @@ function QrScannerPanel({
   scanningLabel = "Point the camera at the QR code.",
   onScan,
   disabled = false,
+  requireLocation = true,
   statusPill = null,
 }) {
   const videoRef = useRef(null);
@@ -238,9 +239,9 @@ function QrScannerPanel({
       }
       setSubmitting(true);
       setError("");
-      setFeedback("Requesting location...");
+      setFeedback(requireLocation ? "Requesting location..." : "Saving scan...");
       try {
-        const location = await getAttendanceLocationPayload();
+        const location = requireLocation ? await getAttendanceLocationPayload() : null;
         setFeedback("Saving scan...");
         const result = await onScan(token, location);
         setFeedback(result?.message || "Scan saved successfully.");
@@ -253,7 +254,7 @@ function QrScannerPanel({
         setSubmitting(false);
       }
     },
-    [onScan, stopCamera]
+    [onScan, requireLocation, stopCamera]
   );
 
   const startCamera = async () => {
@@ -389,10 +390,11 @@ export function StudentQrAttendanceScanner({ session, onRefresh, attendanceToday
 export function IdCardAttendanceScanner({ session, onMarked, title = "Scan Student ID Card", subtitle = "Scan the QR code on the back of a student's ID card to verify it and mark attendance." }) {
   const handleScan = useCallback(
     async (token, location) => {
-      const result = await requestJson(session, "POST", "/api/app/id-cards/scan-attendance/", {
-        token,
-        location,
-      });
+      const payload = { token };
+      if (location) {
+        payload.location = location;
+      }
+      const result = await requestJson(session, "POST", "/api/app/id-cards/scan-attendance/", payload);
       await onMarked?.(result);
       return result;
     },
@@ -408,6 +410,7 @@ export function IdCardAttendanceScanner({ session, onMarked, title = "Scan Stude
         placeholder="Paste student ID card QR URL or token"
         submitLabel="Verify & mark present"
         scanningLabel="Point the camera at the QR code on the back of the student ID card."
+        requireLocation={false}
         onScan={handleScan}
       />
     </article>
