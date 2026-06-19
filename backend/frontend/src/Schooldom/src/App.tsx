@@ -135,10 +135,13 @@ export default function App() {
   const handleAuthenticated = (session: any) => {
     console.log('User authenticated:', session);
     setIsAuthenticated(true);
-    // Redirect to home or dashboard after successful signin
-    navigateToHome();
-    // Optionally redirect to dashboard:
-    // window.location.href = '/dashboard';
+    // Redirect to dashboard (or use server-provided redirectUrl)
+    try {
+      const target = (session && (session.redirectUrl || session.redirect_url)) || '/dashboard';
+      window.location.href = target;
+    } catch (err) {
+      navigateToHome();
+    }
   };
 
   const handleSignOut = () => {

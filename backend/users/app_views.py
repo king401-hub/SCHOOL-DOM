@@ -1739,13 +1739,28 @@ def _decimal_from_request(value, field_name):
         raise ValueError(f"{field_name} must be a valid number.")
 
 
-def _attendance_location_payload(request):
+def _attendance_location_payload(request, *, require_location=True):
     payload = request.data.get("location") or {}
     latitude = payload.get("latitude", request.data.get("latitude"))
     longitude = payload.get("longitude", request.data.get("longitude"))
     accuracy = payload.get("accuracy", request.data.get("accuracy"))
+    device_info = str(
+        payload.get("device_info")
+        or request.data.get("device_info")
+        or request.data.get("client_device_info")
+        or request.META.get("HTTP_USER_AGENT", "")
+        or ""
+    ).strip()
 
     if latitude in (None, "") or longitude in (None, ""):
+        if not require_location:
+            return {
+                "latitude": None,
+                "longitude": None,
+                "accuracy": None,
+                "address": "",
+                "device_info": device_info[:2000],
+            }
         raise ValueError("Enable device location services and allow GPS access before marking attendance.")
 
     latitude = _decimal_from_request(latitude, "Latitude")
@@ -1764,14 +1779,6 @@ def _attendance_location_payload(request):
     address = str(payload.get("address") or request.data.get("address") or "").strip()
     if not address:
         address = f"{latitude}, {longitude}"
-
-    device_info = str(
-        payload.get("device_info")
-        or request.data.get("device_info")
-        or request.data.get("client_device_info")
-        or request.META.get("HTTP_USER_AGENT", "")
-        or ""
-    ).strip()
 
     return {
         "latitude": latitude,
@@ -3630,7 +3637,7 @@ def student_qr_mark_attendance(request):
         )
 
     try:
-        location = _attendance_location_payload(request)
+        location = _attendance_location_payload(request, require_location=False)
     except ValueError as exc:
         return Response(
             {"success": False, "message": str(exc)},
@@ -5557,7 +5564,7 @@ def id_card_scan_attendance(request):
             )
 
     try:
-        location = _attendance_location_payload(request)
+        location = _attendance_location_payload(request, require_location=False)
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

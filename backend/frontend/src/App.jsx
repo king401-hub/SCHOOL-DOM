@@ -4189,17 +4189,14 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
     if (!activeStudent) return;
     setError("");
     setFeedback("");
-    setLocationStatus("Requesting GPS location...");
+    setLocationStatus("Saving attendance...");
     setSavingStatus(statusValue);
     try {
-      const location = await getTeacherAttendanceLocationPayload();
-      setLocationStatus("Location captured. Saving attendance...");
       const result = await requestJson(session, "POST", "/api/app/attendance/teacher-mark/", {
         student_id: activeStudent.student_id,
         class_id: classId,
         status: statusValue,
         date,
-        location,
       });
       setHistory((previous) => [
         result.attendance,

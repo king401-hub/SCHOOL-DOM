@@ -2057,8 +2057,7 @@ h1 {
 }
 
 .signup-button {
-  display: block;
-  margin: 0.8rem auto 0;
+  margin-top: 0.8rem;
   border: 0;
   border-radius: 10px;
   background: var(--button-bg);
@@ -2067,7 +2066,35 @@ h1 {
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
-  text-align: center;
+}
+
+/* Center the small sign-in mode toggle inside the auth form */
+.mode-toggle {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  margin: 0.6rem 0 1rem;
+  padding: 0; /* keep container tight so button size controls appearance */
+  background: transparent;
+}
+
+.mode-button {
+  display: inline-block;
+  padding: 0.72rem 1.75rem; /* larger, more prominent button */
+  border-radius: 10px;
+  background: var(--button-bg);
+  color: #f8fafc;
+  border: 0;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 240px; /* ensure it's not too small */
+  font-size: 1rem;
+}
+
+.mode-button.active {
+  box-shadow: 0 6px 18px rgba(15,23,42,0.12);
+  transform: translateY(-1px);
 }
 
 .signup-button:hover {
