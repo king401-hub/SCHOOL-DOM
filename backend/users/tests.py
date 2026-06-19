@@ -1642,6 +1642,26 @@ class SchoolSettingsAPITests(TestCase):
         self.assertTrue(ticket.attachment.name)
         send_mail_mock.assert_called_once()
 
+    @patch("users.app_views.send_mail", return_value=1)
+    def test_public_contact_form_sends_email_to_support_inbox(self, send_mail_mock):
+        response = self.client.post(
+            "/api/auth/contact/",
+            data={
+                "name": "Jordan Smith",
+                "email": "jordan@example.com",
+                "message": "Please call me back about onboarding and migration.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        send_mail_mock.assert_called_once()
+        args, kwargs = send_mail_mock.call_args
+        self.assertIn("Schooldom contact from Jordan Smith", args[0])
+        self.assertIn("jordan@example.com", args[1])
+        self.assertIn("enquiry@schooldom.academy", args[3])
+
     def test_school_settings_includes_support_tickets(self):
         SupportTicket.objects.create(
             school=self.school,

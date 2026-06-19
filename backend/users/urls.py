@@ -1,7 +1,7 @@
 from django.urls import path
 
 from apps.auth.views import GoogleLoginView, MicrosoftLoginView
-from . import views
+from . import app_views, views
 
 urlpatterns = [
     path("login/", views.login_view, name="api_login"),
@@ -17,6 +17,7 @@ urlpatterns = [
     path("admin/resend-otp/", views.admin_resend_otp, name="admin_resend_otp"),
     path("password-reset/", views.password_reset_request, name="password_reset_request"),
     path("password-reset/confirm/", views.password_reset_confirm, name="password_reset_confirm"),
+    path("contact/", app_views.public_contact_email, name="public_contact_email"),
     path("change-password/", views.change_password, name="api_change_password"),
     path("google/login/", GoogleLoginView.as_view(), name="google_login"),
     path("microsoft/login/", MicrosoftLoginView.as_view(), name="microsoft_login"),

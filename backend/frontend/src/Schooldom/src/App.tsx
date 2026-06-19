@@ -168,18 +168,22 @@ export default function App() {
 
   const handleContactSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const subject = encodeURIComponent(`Schooldom contact from ${contactForm.name || 'Website visitor'}`);
-    const body = encodeURIComponent(
-      [
-        `Name: ${contactForm.name || '-'}`,
-        `Email: ${contactForm.email || '-'}`,
-        '',
-        contactForm.message || '',
-      ].join('\n')
-    );
-    window.location.href = `mailto:enquiry@schooldom.academy?subject=${subject}&body=${body}`;
-    setIsContactOpen(false);
-    setContactForm({ name: '', email: '', message: '' });
+    fetch("/api/auth/contact/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contactForm),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(payload?.message || "Could not send your message.");
+        }
+        setIsContactOpen(false);
+        setContactForm({ name: '', email: '', message: '' });
+      })
+      .catch((error) => {
+        window.alert(error.message || "Could not send your message.");
+      });
   };
 
   // ============================================
@@ -602,8 +606,8 @@ export default function App() {
               </div>
               <label className="space-y-2 text-sm font-semibold block">
                 <span>Message</span>
-                <textarea
-                  required
+                  <textarea
+                    required
                   rows={5}
                   value={contactForm.message}
                   onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}

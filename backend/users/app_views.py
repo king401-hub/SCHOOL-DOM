@@ -3170,6 +3170,41 @@ def admin_desktop_support_tickets(request):
     )
 
 
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def public_contact_email(request):
+    recipient = _support_email()
+    name = str(request.data.get("name") or request.data.get("full_name") or "").strip()
+    email = str(request.data.get("email") or "").strip()
+    message = str(request.data.get("message") or request.data.get("body") or "").strip()
+
+    if len(name) < 2:
+        return Response({"success": False, "message": "Enter your name."}, status=status.HTTP_400_BAD_REQUEST)
+    if "@" not in email:
+        return Response({"success": False, "message": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(message) < 10:
+        return Response({"success": False, "message": "Enter a brief message."}, status=status.HTTP_400_BAD_REQUEST)
+
+    subject = f"Schooldom contact from {name}"
+    body = (
+        f"Name: {name}\n"
+        f"Email: {email}\n\n"
+        f"{message}"
+    )
+    try:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [recipient], fail_silently=False)
+    except Exception:
+        return Response(
+            {"success": False, "message": "Could not send your message right now."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return Response(
+        {"success": True, "message": f"Message sent to {recipient}."},
+        status=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def student_dashboard(request):
@@ -6123,7 +6158,7 @@ def account_deletion_request(request):
 
 
 def _support_email():
-    return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "support@schooldom.academy").strip()
+    return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "enquiry@schooldom.academy").strip()
 
 
 def _support_ticket_payload(ticket, request=None):
