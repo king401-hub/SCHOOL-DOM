@@ -5932,6 +5932,269 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
+function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete }) {
+  const parents = data?.parents || [];
+  const groupLabels = academicGroupLabels(data?.school, school);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedParentId, setSelectedParentId] = useState("");
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    occupation: "",
+    company: "",
+    preferred_contact: "email",
+    is_active: true,
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editSuccess, setEditSuccess] = useState("");
+  const [pendingDeleteParent, setPendingDeleteParent] = useState(null);
+  const [deletingParentId, setDeletingParentId] = useState("");
+  const [deleteSuccess, setDeleteSuccess] = useState("");
+
+  const buildEditForm = (parent) => ({
+    first_name: parent?.first_name || "",
+    last_name: parent?.last_name || "",
+    email: parent?.email || "",
+    phone: parent?.phone || "",
+    occupation: parent?.occupation || "",
+    company: parent?.company || "",
+    preferred_contact: parent?.preferred_contact || "email",
+    is_active: Boolean(parent?.is_active),
+  });
+
+  const filteredParents = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) {
+      return parents;
+    }
+    return parents.filter((item) => {
+      const childrenText = (item.children || []).map((child) => `${child.name} ${child.student_id}`).join(" ");
+      const haystack = [item.name, item.email, item.phone, childrenText].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [parents, searchTerm]);
+
+  const handleStartEdit = (parent) => {
+    setSelectedParentId(parent.id);
+    setEditForm(buildEditForm(parent));
+    setEditError("");
+    setEditSuccess("");
+  };
+
+  const handleUpdateSubmit = async (event) => {
+    event.preventDefault();
+    if (!selectedParentId || !onUpdate) {
+      return;
+    }
+    setEditError("");
+    setEditSuccess("");
+    setIsUpdating(true);
+    try {
+      const result = await onUpdate(selectedParentId, {
+        first_name: editForm.first_name.trim(),
+        last_name: editForm.last_name.trim(),
+        email: editForm.email.trim(),
+        phone: editForm.phone.trim(),
+        occupation: editForm.occupation.trim(),
+        company: editForm.company.trim(),
+        preferred_contact: editForm.preferred_contact,
+        is_active: editForm.is_active,
+      });
+      if (result?.parent) {
+        setEditForm(buildEditForm(result.parent));
+      }
+      setEditSuccess(result?.message || "Parent updated.");
+    } catch (actionError) {
+      setEditError(actionError.message || "Could not update parent.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const confirmDeleteParent = async () => {
+    const parent = pendingDeleteParent;
+    if (!parent?.id || !onDelete) {
+      return;
+    }
+    setDeletingParentId(parent.id);
+    setEditError("");
+    try {
+      const result = await onDelete(parent.id);
+      if (selectedParentId === parent.id) {
+        setSelectedParentId("");
+      }
+      setPendingDeleteParent(null);
+      setDeleteSuccess(result?.message || `${parent.name || "Parent"} deleted.`);
+    } catch (deleteError) {
+      setEditError(deleteError.message || "Could not delete parent.");
+    } finally {
+      setDeletingParentId("");
+    }
+  };
+
+  useEffect(() => {
+    if (!deleteSuccess) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setDeleteSuccess(""), 2600);
+    return () => window.clearTimeout(timer);
+  }, [deleteSuccess]);
+
+  useEffect(() => {
+    if (!selectedParentId) {
+      return;
+    }
+    if (!parents.find((item) => item.id === selectedParentId)) {
+      setSelectedParentId("");
+    }
+  }, [parents, selectedParentId]);
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <h2>Parent Directory</h2>
+        <p>Review, edit, and remove guardian records linked from student profiles.</p>
+      </div>
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+
+      {data ? (
+        <>
+          <div className="metric-grid">
+            <MetricCard label="Total Parents" value={data.summary?.total_parents || 0} helper="Parent profiles in this school" />
+            <MetricCard label="Linked Parents" value={data.summary?.linked_parents || 0} helper="Attached to student records" />
+            <MetricCard label="Without Children" value={data.summary?.without_children || 0} helper="No linked student yet" />
+          </div>
+
+          <article className="app-panel">
+            <h3>Directory</h3>
+            <div className="directory-tools">
+              <label className="panel-field full search-field">
+                Search by parent, phone, email, or student
+                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Example: 0803 or Amina" />
+              </label>
+            </div>
+            {filteredParents.length > 0 ? (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Parent</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Children</th>
+                    <th>Contact</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredParents.map((parent) => (
+                    <tr key={parent.id}>
+                      <td>{parent.name || "Parent"}<br /><small>{parent.is_active ? "Active" : "Inactive"}</small></td>
+                      <td>{parent.phone || "-"}</td>
+                      <td>{parent.email || "-"}</td>
+                      <td>
+                        {(parent.children || []).length ? (
+                          (parent.children || []).map((child) => (
+                            <small key={child.id}>{child.name} - {child.student_id} - {child.class_name || groupLabels.unassigned}</small>
+                          ))
+                        ) : (
+                          <small>No linked student</small>
+                        )}
+                      </td>
+                      <td>{parent.preferred_contact || "email"}</td>
+                      <td>
+                        <div className="table-actions-inline">
+                          <button type="button" className="table-action" onClick={() => handleStartEdit(parent)}>Edit</button>
+                          <button type="button" className="table-action danger" onClick={() => setPendingDeleteParent(parent)} disabled={deletingParentId === parent.id}>
+                            {deletingParentId === parent.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="panel-empty">{searchTerm ? "No parents match your filter." : "No parents found yet. Creating a student with a guardian phone will add one here."}</p>
+            )}
+          </article>
+
+          {deleteSuccess ? (
+            <div className="student-delete-success" role="status" aria-live="polite">
+              <div className="student-delete-success-mark" aria-hidden="true"></div>
+              <div>
+                <strong>Parent deleted</strong>
+                <span>{deleteSuccess}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {pendingDeleteParent ? (
+            <div className="student-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="parent-delete-title">
+              <article className="student-delete-card">
+                <div className="student-delete-icon" aria-hidden="true">!</div>
+                <p className="student-delete-kicker">Delete parent</p>
+                <h3 id="parent-delete-title">Delete {pendingDeleteParent.name || "this parent"}?</h3>
+                <p>This removes the parent login/profile from the directory. Student records will remain in place.</p>
+                <div className="student-delete-summary">
+                  <strong>{pendingDeleteParent.name || "Parent record"}</strong>
+                  <span>{pendingDeleteParent.phone || pendingDeleteParent.email || "Contact profile"}</span>
+                </div>
+                <div className="student-delete-actions">
+                  <button type="button" className="table-action" onClick={() => setPendingDeleteParent(null)} disabled={deletingParentId === pendingDeleteParent.id}>Cancel</button>
+                  <button type="button" className="table-action danger student-delete-confirm" onClick={confirmDeleteParent} disabled={deletingParentId === pendingDeleteParent.id}>
+                    {deletingParentId === pendingDeleteParent.id ? "Deleting..." : "Delete parent"}
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {selectedParentId ? (
+            <article className="app-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-parent-title">
+              <div className="edit-modal-head">
+                <h3 id="edit-parent-title">Edit Parent</h3>
+                <button type="button" className="table-action" onClick={() => setSelectedParentId("")} disabled={isUpdating}>Close</button>
+              </div>
+              <form className="panel-form" onSubmit={handleUpdateSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field">First Name<input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required /></label>
+                  <label className="panel-field">Last Name<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
+                  <label className="panel-field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required /></label>
+                  <label className="panel-field">Phone<input value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} /></label>
+                  <label className="panel-field">Occupation<input value={editForm.occupation} onChange={(event) => setEditForm((prev) => ({ ...prev, occupation: event.target.value }))} /></label>
+                  <label className="panel-field">Company<input value={editForm.company} onChange={(event) => setEditForm((prev) => ({ ...prev, company: event.target.value }))} /></label>
+                  <label className="panel-field">
+                    Preferred Contact
+                    <select value={editForm.preferred_contact} onChange={(event) => setEditForm((prev) => ({ ...prev, preferred_contact: event.target.value }))}>
+                      <option value="email">Email</option>
+                      <option value="sms">SMS</option>
+                      <option value="push">Push Notification</option>
+                      <option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </label>
+                  <label className="panel-field checkbox-field">
+                    <input type="checkbox" checked={editForm.is_active} onChange={(event) => setEditForm((prev) => ({ ...prev, is_active: event.target.checked }))} />
+                    Active account
+                  </label>
+                </div>
+                {editError ? <p className="form-feedback error">{editError}</p> : null}
+                {editSuccess ? <p className="form-feedback success">{editSuccess}</p> : null}
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={isUpdating}>{isUpdating ? "Saving..." : "Update Parent"}</button>
+                  <button type="button" className="table-action" onClick={() => setSelectedParentId("")} disabled={isUpdating}>Cancel</button>
+                </div>
+              </form>
+            </article>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
@@ -8052,6 +8315,7 @@ export {
   AdminIdCardsScreen,
   AdminDocumentsScreen,
   AdminSettingsScreen,
+  AdminParentsScreen,
   AdminStudentsScreen,
   AdminTeachersScreen,
   AdminEnrollmentsScreen,

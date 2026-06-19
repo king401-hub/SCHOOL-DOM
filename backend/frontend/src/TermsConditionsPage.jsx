@@ -30,7 +30,7 @@ function TermsConditionsPage({ onNavigate }) {
       <header className="privacy-header">
         <div className="privacy-header-content">
           <div className="privacy-brand">
-            <button type="button" className="privacy-back-button" onClick={goBack} aria-label={fromSignup ? "Back to signup" : "Back to home"}>
+            <button type="button" className="privacy-back-button" onClick={onOpenOnboarding} aria-label={fromSignup ? "Back to signup" : "Back to home"}>
               Back
             </button>
             <Logo />

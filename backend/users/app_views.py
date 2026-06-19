@@ -55,7 +55,7 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
-from users.models import DatabaseImportJob, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from users.models import DatabaseImportJob, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
 
 try:
@@ -945,6 +945,131 @@ def _student_payload(student_profile, request=None):
         "admission_date": student_profile.admission_date,
         "created_at": student_profile.created_at,
     }
+
+
+def _guardian_phone_key(phone):
+    return re.sub(r"\D+", "", str(phone or ""))
+
+
+def _split_guardian_name(name):
+    parts = str(name or "").strip().split()
+    if not parts:
+        return "Parent", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _find_parent_user_by_phone(tenant, phone_key):
+    if not phone_key:
+        return None
+    for parent_user in User.objects.filter(role="parent", tenant=tenant).exclude(phone="")[:500]:
+        if _guardian_phone_key(parent_user.phone) == phone_key:
+            return parent_user
+    return None
+
+
+def _parent_payload(parent_profile, request=None):
+    parent_user = parent_profile.user
+    children = list(parent_profile.children.select_related("user", "current_class").all())
+    return {
+        "id": str(parent_profile.id),
+        "user_id": str(parent_user.id),
+        "name": parent_user.get_full_name(),
+        "first_name": parent_user.first_name,
+        "last_name": parent_user.last_name,
+        "email": parent_user.email,
+        "phone": parent_user.phone,
+        "is_active": parent_user.is_active,
+        "occupation": parent_profile.occupation,
+        "company": parent_profile.company,
+        "preferred_contact": parent_profile.preferred_contact,
+        "children_count": len(children),
+        "children": [
+            {
+                "id": str(child.id),
+                "name": child.user.get_full_name(),
+                "student_id": child.student_id,
+                "class_name": _class_label(child.current_class) if child.current_class else "Unassigned",
+            }
+            for child in children
+        ],
+        "created_at": parent_profile.created_at,
+    }
+
+
+def _sync_guardian_parent(student_profile, name, phone, email="", relation="Guardian"):
+    phone_key = _guardian_phone_key(phone)
+    if not phone_key:
+        return None
+
+    tenant = student_profile.user.tenant
+    first_name, last_name = _split_guardian_name(name or relation or "Parent")
+    email = str(email or "").strip().lower()
+    if email and User.objects.filter(email__iexact=email).exclude(role="parent", tenant=tenant).exists():
+        email = ""
+
+    parent_user = _find_parent_user_by_phone(tenant, phone_key) or (
+        User.objects.filter(role="parent", tenant=tenant, email__iexact=email).first() if email else None
+    )
+
+    if not parent_user:
+        tenant_key = str(getattr(tenant, "id", "") or "school").replace("-", "")[:12]
+        generated_email = f"parent{phone_key}.{tenant_key}@schooldom.local"
+        user_phone = str(phone or "").strip()
+        if not re.match(r"^\+?1?\d{9,15}$", user_phone):
+            user_phone = phone_key[:17]
+        parent_user = User.objects.create_user(
+            email=email or generated_email,
+            password=f"Parent{uuid.uuid4().hex[:10]}1",
+            first_name=first_name,
+            last_name=last_name,
+            phone=user_phone,
+            role="parent",
+            tenant=tenant,
+            is_active=True,
+            is_verified=True,
+        )
+    else:
+        update_fields = []
+        if first_name and parent_user.first_name != first_name:
+            parent_user.first_name = first_name
+            update_fields.append("first_name")
+        if last_name and parent_user.last_name != last_name:
+            parent_user.last_name = last_name
+            update_fields.append("last_name")
+        if phone and parent_user.phone != phone:
+            parent_user.phone = phone
+            update_fields.append("phone")
+        if email and parent_user.email.endswith("@schooldom.local") and parent_user.email != email and not User.objects.filter(email__iexact=email).exclude(id=parent_user.id).exists():
+            parent_user.email = email
+            update_fields.append("email")
+        if update_fields:
+            parent_user.save(update_fields=sorted(set(update_fields)))
+
+    parent_profile, _ = ParentProfile.objects.get_or_create(user=parent_user)
+    parent_profile.children.add(student_profile)
+    return parent_profile
+
+
+def _sync_student_guardians_to_parent_directory(student_profile):
+    primary = _sync_guardian_parent(
+        student_profile,
+        student_profile.guardian_name,
+        student_profile.guardian_phone,
+        student_profile.guardian_email,
+        student_profile.guardian_relation,
+    )
+    secondary = None
+    if student_profile.second_guardian_phone:
+        secondary = _sync_guardian_parent(
+            student_profile,
+            student_profile.second_guardian_name,
+            student_profile.second_guardian_phone,
+            student_profile.second_guardian_email,
+            student_profile.second_guardian_relation,
+        )
+    return [item for item in (primary, secondary) if item]
 
 
 def _is_terminal_testimonial_class(class_name):
@@ -4033,6 +4158,121 @@ def students_snapshot(request):
     )
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def parents_snapshot(request):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only administrators can view the parent directory."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if not user.tenant:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    parents = (
+        ParentProfile.objects.select_related("user")
+        .prefetch_related("children__user", "children__current_class")
+        .filter(user__tenant=user.tenant)
+        .order_by("user__last_name", "user__first_name", "created_at")
+    )
+    total = parents.count()
+    with_children = parents.filter(children__isnull=False).distinct().count()
+
+    return Response(
+        {
+            "success": True,
+            "school": _school_payload(user.tenant, request),
+            "summary": {
+                "total_parents": total,
+                "linked_parents": with_children,
+                "without_children": max(total - with_children, 0),
+            },
+            "parents": [_parent_payload(parent, request=request) for parent in parents[:200]],
+        }
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def parent_detail(request, parent_id):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only administrators can manage the parent directory."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    parent_profile = get_object_or_404(
+        ParentProfile.objects.select_related("user").prefetch_related("children__user", "children__current_class").filter(user__tenant=user.tenant),
+        id=parent_id,
+    )
+    parent_user = parent_profile.user
+
+    if request.method == "DELETE":
+        label = parent_user.get_full_name() or parent_user.email
+        parent_user.delete()
+        return Response({"success": True, "message": f"{label} deleted from parent directory."})
+
+    user_update_fields = []
+    for field in ("first_name", "last_name", "phone"):
+        if field in request.data:
+            next_value = str(request.data.get(field) or "").strip()
+            if getattr(parent_user, field) != next_value:
+                setattr(parent_user, field, next_value)
+                user_update_fields.append(field)
+
+    if "email" in request.data:
+        next_email = str(request.data.get("email") or "").strip().lower()
+        if not next_email:
+            return Response({"success": False, "message": "email cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        duplicate = User.objects.filter(email__iexact=next_email).exclude(id=parent_user.id).exists()
+        if duplicate:
+            return Response({"success": False, "message": "A user with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if parent_user.email != next_email:
+            parent_user.email = next_email
+            user_update_fields.append("email")
+
+    if "is_active" in request.data:
+        next_active = _to_bool(request.data.get("is_active"), default=parent_user.is_active)
+        if parent_user.is_active != next_active:
+            parent_user.is_active = next_active
+            user_update_fields.append("is_active")
+
+    profile_update_fields = []
+    for field in ("occupation", "company"):
+        if field in request.data:
+            next_value = str(request.data.get(field) or "").strip()
+            if getattr(parent_profile, field) != next_value:
+                setattr(parent_profile, field, next_value)
+                profile_update_fields.append(field)
+
+    if "preferred_contact" in request.data:
+        next_contact = str(request.data.get("preferred_contact") or "").strip() or "email"
+        valid_contacts = {choice[0] for choice in ParentProfile.PREFERENCE_CHOICES}
+        if next_contact not in valid_contacts:
+            return Response({"success": False, "message": "preferred_contact is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+        if parent_profile.preferred_contact != next_contact:
+            parent_profile.preferred_contact = next_contact
+            profile_update_fields.append("preferred_contact")
+
+    if user_update_fields:
+        parent_user.save(update_fields=sorted(set(user_update_fields)))
+    if profile_update_fields:
+        parent_profile.save(update_fields=[*sorted(set(profile_update_fields)), "updated_at"])
+
+    parent_profile.refresh_from_db()
+    return Response(
+        {
+            "success": True,
+            "message": "Parent updated.",
+            "parent": _parent_payload(parent_profile, request=request),
+        }
+    )
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def student_activity_titles(request):
@@ -4557,6 +4797,7 @@ def create_student(request):
         student_profile.save(update_fields=profile_update_fields)
 
     student_profile.refresh_from_db()
+    _sync_student_guardians_to_parent_directory(student_profile)
     return Response(
         {
             "success": True,
@@ -4768,6 +5009,7 @@ def student_detail(request, student_id):
         student_profile.save(update_fields=sorted(set(profile_update_fields)))
 
     student_profile.refresh_from_db()
+    _sync_student_guardians_to_parent_directory(student_profile)
     return Response(
         {
             "success": True,

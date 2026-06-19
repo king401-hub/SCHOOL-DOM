@@ -115,7 +115,7 @@ export default function ParticleBackground() {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0 select-none opacity-60 dark:opacity-35"
+      className="fixed inset-0 pointer-events-none -z-10 select-none opacity-60 dark:opacity-35"
       id="background-particles"
     />
   );

@@ -1,5 +1,41 @@
 import { useEffect, useMemo, useState } from "react";
 
+// ============================================
+// TYPES
+// ============================================
+interface SigninProps {
+  onAuthenticated?: (session: any) => void;
+  onBack?: () => void;
+  initialMode?: "signin" | "signup";
+}
+
+interface SessionData {
+  user: any;
+  access: any;
+  refresh: any;
+  school: any;
+  school_code: string;
+  redirectUrl: string;
+  requiresVerification: boolean;
+  signedInAt: string;
+}
+
+interface OtpResponse {
+  requiresOtp: boolean;
+  email: string;
+  challenge: string;
+  purpose: string;
+  expiresIn: number;
+  debugCode: string;
+  message: string;
+  user: any;
+}
+
+type LoginResponse = SessionData | OtpResponse;
+
+// ============================================
+// CONSTANTS
+// ============================================
 const SESSION_KEY = "schooldom.session";
 const LEGACY_SESSION_KEY = "educonnect.session";
 const DEFAULT_SIGNUP_ROLE = "school_admin";
@@ -9,8 +45,10 @@ const ADMIN_SIGNUP_ROLES = [
   { value: "principal", title: "School Principal", label: "School Principal" },
   { value: "school_superadmin", title: "Proprietor/Director", label: "Proprietor/Director" },
 ];
+
+// Fix for import.meta.env - use Vite's import.meta.env with type assertion
 const API_BASE_URL = (() => {
-  const raw = import.meta.env.VITE_API_BASE_URL ?? "";
+  const raw = (import.meta as any).env?.VITE_API_BASE_URL ?? "";
   if (!raw) return ""; // use relative /api/... calls
   const trimmed = raw.replace(/\/+$/, "");
   const withoutApi = trimmed.endsWith("/api") ? trimmed.slice(0, -4) : trimmed;
@@ -20,7 +58,10 @@ const API_BASE_URL = (() => {
   return `${window.location.protocol}//${window.location.host}${withoutApi.startsWith("/") ? withoutApi : `/${withoutApi}`}`;
 })();
 
-function ThemeIcon({ theme }) {
+// ============================================
+// ICON COMPONENTS
+// ============================================
+function ThemeIcon({ theme }: { theme: string }) {
   if (theme === "light") {
     return (
       <svg className="theme-glyph" viewBox="0 0 24 24" aria-hidden="true">
@@ -64,7 +105,10 @@ function CreateSchoolIcon() {
   );
 }
 
-function parseErrorMessage(payload, fallback) {
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+function parseErrorMessage(payload: any, fallback: string): string {
   if (!payload) {
     return fallback;
   }
@@ -89,7 +133,7 @@ function parseErrorMessage(payload, fallback) {
   return fallback;
 }
 
-async function postAuth(path, payload) {
+async function postAuth(path: string, payload: any) {
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -117,7 +161,15 @@ async function postAuth(path, payload) {
   return data;
 }
 
-function Signin({ onAuthenticated, onBack }) {
+// Type guard to check if response is OtpResponse
+function isOtpResponse(response: LoginResponse): response is OtpResponse {
+  return (response as OtpResponse).requiresOtp === true;
+}
+
+// ============================================
+// MAIN SIGNIN COMPONENT
+// ============================================
+export default function Signin({ onAuthenticated, onBack, initialMode = "signin" }: SigninProps) {
   const [theme, setTheme] = useState("light");
   const [mode, setMode] = useState(() => {
     const path = window.location.pathname;
@@ -126,7 +178,7 @@ function Signin({ onAuthenticated, onBack }) {
     if (path === "/reset-password" || token) return "reset";
     if (path === "/forgot-password") return "forgot";
     if (query.get("mode") === "signup") return "signup";
-    return "signin";
+    return initialMode || "signin";
   });
 
   const [email, setEmail] = useState("");
@@ -172,7 +224,7 @@ function Signin({ onAuthenticated, onBack }) {
 
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [signedInUser, setSignedInUser] = useState(null);
+  const [signedInUser, setSignedInUser] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [typedTitle, setTypedTitle] = useState("");
 
@@ -180,12 +232,12 @@ function Signin({ onAuthenticated, onBack }) {
     mode === "otp"
       ? "Verify admin access."
       : mode === "forgot"
-        ? "Reset your password."
-        : mode === "reset"
-          ? "Choose a new password."
-          : mode === "signin"
-            ? "Sign in to SchoolDom."
-            : "Create your SchoolDom account.";
+      ? "Reset your password."
+      : mode === "reset"
+      ? "Choose a new password."
+      : mode === "signin"
+      ? "Sign in to SchoolDom."
+      : "Create your SchoolDom account.";
 
   useEffect(() => {
     document.body.setAttribute("data-theme", theme);
@@ -258,7 +310,17 @@ function Signin({ onAuthenticated, onBack }) {
     }
 
     return true;
-  }, [confirmPassword, firstName, isSchoolSuperadminSignup, lastName, schoolCode, schoolGroupName, signupEmail, signupPassword, termsAccepted]);
+  }, [
+    confirmPassword,
+    firstName,
+    isSchoolSuperadminSignup,
+    lastName,
+    schoolCode,
+    schoolGroupName,
+    signupEmail,
+    signupPassword,
+    termsAccepted,
+  ]);
 
   const canCreateSchool = useMemo(() => schoolName.trim().length >= 3, [schoolName]);
   const canRequestReset = useMemo(() => forgotEmail.trim().length > 0, [forgotEmail]);
@@ -276,7 +338,7 @@ function Signin({ onAuthenticated, onBack }) {
     window.localStorage.removeItem("refresh_token");
   };
 
-  const switchMode = (nextMode) => {
+  const switchMode = (nextMode: string) => {
     setMode(nextMode);
     setShowCreateSchool(false);
     setError("");
@@ -320,14 +382,14 @@ function Signin({ onAuthenticated, onBack }) {
       setSchoolEmail("");
       setSchoolType("k12");
       setShowCreateSchool(false);
-    } catch (requestError) {
+    } catch (requestError: any) {
       setSchoolError(requestError.message || "School creation failed.");
     } finally {
       setIsCreatingSchool(false);
     }
   };
 
-  const handleLogin = async (credentials) => {
+  const handleLogin = async (credentials: { email: string; password: string; school_code?: string }): Promise<LoginResponse> => {
     const payload = {
       email: credentials.email.trim(),
       password: credentials.password,
@@ -374,7 +436,7 @@ function Signin({ onAuthenticated, onBack }) {
       };
     }
 
-    const session = {
+    const session: SessionData = {
       user: data.user,
       access: data.access,
       refresh: data.refresh,
@@ -388,7 +450,7 @@ function Signin({ onAuthenticated, onBack }) {
     return session;
   };
 
-  const handleSignIn = async (event) => {
+  const handleSignIn = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setSuccessMessage("");
@@ -396,24 +458,26 @@ function Signin({ onAuthenticated, onBack }) {
     setIsSubmitting(true);
 
     try {
-      const session = await handleLogin({
+      const response = await handleLogin({
         email: email.trim(),
         password,
         school_code: schoolCode.trim(),
       });
 
-      if (session.requiresOtp) {
-        setOtpEmail(session.email);
-        setOtpChallenge(session.challenge);
-        setOtpPurpose(session.purpose);
-        setOtpExpiresIn(session.expiresIn);
-        setOtpDebugCode(session.debugCode || "");
+      if (isOtpResponse(response)) {
+        setOtpEmail(response.email);
+        setOtpChallenge(response.challenge);
+        setOtpPurpose(response.purpose);
+        setOtpExpiresIn(response.expiresIn);
+        setOtpDebugCode(response.debugCode || "");
         setOtpCode("");
         setMode("otp");
-        setSuccessMessage(session.message);
+        setSuccessMessage(response.message);
         return;
       }
 
+      // It's a SessionData
+      const session = response as SessionData;
       clearSession();
       if (rememberMe) {
         window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -429,7 +493,7 @@ function Signin({ onAuthenticated, onBack }) {
       setSignedInUser(session);
       setPassword("");
       setSuccessMessage("Sign in successful.");
-    } catch (requestError) {
+    } catch (requestError: any) {
       setSignedInUser(null);
       setError(requestError.message || "Sign in failed.");
     } finally {
@@ -437,7 +501,7 @@ function Signin({ onAuthenticated, onBack }) {
     }
   };
 
-  const handleSignUp = async (event) => {
+  const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setSuccessMessage("");
@@ -492,15 +556,15 @@ function Signin({ onAuthenticated, onBack }) {
       setTermsAccepted(false);
       setTermsOpened(false);
       window.localStorage.removeItem(TERMS_OPENED_KEY);
-    } catch (requestError) {
+    } catch (requestError: any) {
       setError(requestError.message || "Sign up failed.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const completeSession = (data) => {
-    const session = {
+  const completeSession = (data: any) => {
+    const session: SessionData = {
       user: data.user,
       access: data.access,
       refresh: data.refresh,
@@ -523,7 +587,7 @@ function Signin({ onAuthenticated, onBack }) {
     setSignedInUser(session);
   };
 
-  const handleVerifyOtp = async (event) => {
+  const handleVerifyOtp = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setSuccessMessage("");
@@ -540,7 +604,7 @@ function Signin({ onAuthenticated, onBack }) {
       setOtpCode("");
       setSuccessMessage(data.message || "Admin verification successful.");
       completeSession(data);
-    } catch (requestError) {
+    } catch (requestError: any) {
       setError(requestError.message || "OTP verification failed.");
     } finally {
       setIsSubmitting(false);
@@ -563,14 +627,14 @@ function Signin({ onAuthenticated, onBack }) {
       setOtpDebugCode(data.debug_otp || "");
       setOtpCode("");
       setSuccessMessage(data.message || "A new OTP code has been sent.");
-    } catch (requestError) {
+    } catch (requestError: any) {
       setError(requestError.message || "Could not resend OTP.");
     } finally {
       setIsResendingOtp(false);
     }
   };
 
-  const handleForgotPassword = async (event) => {
+  const handleForgotPassword = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setSuccessMessage("");
@@ -580,14 +644,14 @@ function Signin({ onAuthenticated, onBack }) {
         email: forgotEmail.trim(),
       });
       setSuccessMessage(data.message || "If that account exists, a reset link has been sent.");
-    } catch (requestError) {
+    } catch (requestError: any) {
       setError(requestError.message || "Could not send reset email.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleResetPassword = async (event) => {
+  const handleResetPassword = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     setSuccessMessage("");
@@ -607,7 +671,7 @@ function Signin({ onAuthenticated, onBack }) {
       setSchoolSuccess("");
       setSuccessMessage(data.message || "Password reset successful. You can sign in now.");
       window.history.replaceState({}, "", "/signin");
-    } catch (requestError) {
+    } catch (requestError: any) {
       setError(requestError.message || "Password reset failed.");
     } finally {
       setIsSubmitting(false);
@@ -637,7 +701,7 @@ function Signin({ onAuthenticated, onBack }) {
         />
       </div>
 
-      <label htmlFor="preferred-school-code">Preferred code </label>
+      <label htmlFor="preferred-school-code">Preferred code</label>
       <div className="input-wrap">
         <span className="input-icon">C</span>
         <input
@@ -649,7 +713,7 @@ function Signin({ onAuthenticated, onBack }) {
         />
       </div>
 
-      <label htmlFor="school-email">School email </label>
+      <label htmlFor="school-email">School email</label>
       <div className="input-wrap">
         <span className="input-icon">@</span>
         <input
@@ -748,17 +812,7 @@ function Signin({ onAuthenticated, onBack }) {
                   >
                     Sign in
                   </button>
-                  <button
-                    type="button"
-                    className={`mode-button ${mode === "signup" ? "active" : ""}`}
-                    onClick={() => {
-                      switchMode("signup");
-                    }}
-                  >
-                    Sign up
-                  </button>
                 </div>
-
                 {mode === "forgot" ? (
                   <form className="signup-form" onSubmit={handleForgotPassword} noValidate>
                     <p className="help-text">Enter your account email and we will send a secure reset link.</p>
@@ -940,7 +994,7 @@ function Signin({ onAuthenticated, onBack }) {
                       </button>
                     </div>
 
-                    <label htmlFor="signin-school-code">School code </label>
+                    <label htmlFor="signin-school-code">School code</label>
                     <div className="input-wrap">
                       <span className="input-icon">S</span>
                       <input
@@ -1062,7 +1116,7 @@ function Signin({ onAuthenticated, onBack }) {
                       </button>
                     </div>
 
-                    <label htmlFor="signup-phone">Phone </label>
+                    <label htmlFor="signup-phone">Phone</label>
                     <div className="input-wrap">
                       <span className="input-icon">P</span>
                       <input
@@ -1122,7 +1176,7 @@ function Signin({ onAuthenticated, onBack }) {
                         <p className="success-text">
                           School Admin and School Principal accounts are for one school. Create or enter that school's code to continue.
                         </p>
-                        <label htmlFor="signup-school-code">School code </label>
+                        <label htmlFor="signup-school-code">School code</label>
                         <div className="input-wrap">
                           <span className="input-icon">S</span>
                           <input
@@ -1194,12 +1248,12 @@ function Signin({ onAuthenticated, onBack }) {
               </>
             ) : (
               <div className="success-box">
-                <h2>Welcome, {signedInUser.user?.full_name || signedInUser.user?.email}</h2>
+                <h2>Welcome, {signedInUser?.user?.full_name || signedInUser?.user?.email || "User"}</h2>
                 <p>
-                  Signed in as <strong>{signedInUser.user?.role}</strong>.
+                  Signed in as <strong>{signedInUser?.user?.role || "User"}</strong>.
                 </p>
-                <p>{signedInUser.user?.email}</p>
-                {signedInUser.requiresVerification ? (
+                <p>{signedInUser?.user?.email || ""}</p>
+                {signedInUser?.requiresVerification ? (
                   <p>Please verify your email before full access is granted.</p>
                 ) : null}
                 <button type="button" className="signup-button" onClick={handleSignOut}>
@@ -1213,5 +1267,3 @@ function Signin({ onAuthenticated, onBack }) {
     </main>
   );
 }
-
-export default Signin;

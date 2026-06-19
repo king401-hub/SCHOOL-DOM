@@ -235,7 +235,7 @@ export default function PricingCalculator({ onOpenOnboarding }: PricingCalculato
               {/* Slider Input */}
               <div className="space-y-3">
                 <div className="flex justify-between text-xs font-semibold text-slate-300">
-                  <span htmlFor="student-slider-calculator">Estimated Enrollment:</span>
+                  <label htmlFor="student-slider-calculator">Estimated Enrollment:</label>
                   <span className="font-mono text-brand-400 text-sm font-bold">{studentCount} Students</span>
                 </div>
                 <input

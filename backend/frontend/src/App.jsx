@@ -1,7 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Signin from "./SignIn";
-import LandingPage from "./LandingPage";
+﻿import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Signin from "./Schooldom/src/SignIn";
+import LandingPage from "./Schooldom/src/App";
+
+const SchooldomLanding = LandingPage;
+
 import ResourceCenter from "./ResourceCenter";
+
 import FAQPage from "./FAQPage";
 import PrivacyPolicyPage from "./PrivacyPolicyPage";
 import TermsConditionsPage from "./TermsConditionsPage";
@@ -103,6 +107,7 @@ const AdminIdCardsScreen = lazyAdminScreen("AdminIdCardsScreen");
 const AdminDocumentsScreen = lazyAdminScreen("AdminDocumentsScreen");
 const AdminSettingsScreen = lazyAdminScreen("AdminSettingsScreen");
 const AdminStudentsScreen = lazyAdminScreen("AdminStudentsScreen");
+const AdminParentsScreen = lazyAdminScreen("AdminParentsScreen");
 const AdminTeachersScreen = lazyAdminScreen("AdminTeachersScreen");
 const AdminEnrollmentsScreen = lazyAdminScreen("AdminEnrollmentsScreen");
 const AdminMessagesScreen = lazyAdminScreen("AdminMessagesScreen");
@@ -5476,6 +5481,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       });
       await       Promise.all([
         loadScreen("/students", true),
+        loadScreen("/parents", true),
         loadScreen("/enrollments", true),
         loadScreen("/dashboard", true),
       ]);
@@ -6019,6 +6025,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       });
       await Promise.all([
         loadScreen("/students", true),
+        loadScreen("/parents", true),
         loadScreen("/enrollments", true),
         loadScreen("/dashboard", true),
       ]);
@@ -6040,9 +6047,47 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       });
       await Promise.all([
         loadScreen("/students", true),
+        loadScreen("/parents", true),
         loadScreen("/enrollments", true),
         loadScreen("/dashboard", true),
       ]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleUpdateParent = useCallback(
+    async (parentId, payload) => {
+      const result = await requestJson(session, "PATCH", `/api/app/parents/${parentId}/`, payload);
+      addAdminNotification({
+        category: "Students",
+        module: "Parent Directory",
+        action: `Updated parent directory record ${payload?.email || parentId}.`,
+        status: "Success",
+        priority: "Medium",
+        tone: "info",
+      });
+      await Promise.all([
+        loadScreen("/parents", true),
+        loadScreen("/students", true),
+      ]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleDeleteParent = useCallback(
+    async (parentId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/parents/${parentId}/`);
+      addAdminNotification({
+        category: "Students",
+        module: "Parent Directory",
+        action: `Deleted parent directory record ${parentId}.`,
+        status: "Deleted",
+        priority: "High",
+        tone: "warning",
+      });
+      await loadScreen("/parents", true);
       return result;
     },
     [addAdminNotification, loadScreen, session]
@@ -6493,6 +6538,18 @@ const unreadNotificationsCount =
         onDelete={handleDeleteStudent}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
+      />
+    );
+  } else if (activePath === "/parents") {
+    content = (
+      <AdminParentsScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onUpdate={handleUpdateParent}
+        onDelete={handleDeleteParent}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
       />
     );

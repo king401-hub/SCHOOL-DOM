@@ -59,32 +59,41 @@ function AnimatedCounter({ target, suffix = "", prefix = "" }: AnimatedCounterPr
 interface HeroProps {
   onOpenOnboarding: () => void;
   scrollToSection: (id: string) => void;
+  onSignUp?: () => void;  // Add this
 }
 
-export default function Hero({ onOpenOnboarding, scrollToSection }: HeroProps) {
-  const [currentPhraseIdx, setCurrentPhraseIdx] = useState(0);
-  const [animateState, setAnimateState] = useState<'entering' | 'active' | 'exiting'>('active');
+export default function Hero({ onOpenOnboarding, scrollToSection, onSignUp }: HeroProps) {
+  // Typewriter effect: type a phrase out, hold, delete, then move to the next.
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const [displayText, setDisplayText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAnimateState('exiting');
-      
-      const exitTimer = setTimeout(() => {
-        setCurrentPhraseIdx((prev) => (prev + 1) % SLIDING_PHRASES.length);
-        setAnimateState('entering');
-        
-        const enterTimer = setTimeout(() => {
-          setAnimateState('active');
-        }, 30);
-        
-        return () => clearTimeout(enterTimer);
-      }, 400);
+    const fullPhrase = SLIDING_PHRASES[phraseIdx];
+    let timeout: ReturnType<typeof setTimeout>;
 
-      return () => clearTimeout(exitTimer);
-    }, 3200);
+    if (!isDeleting && displayText === fullPhrase) {
+      // Finished typing — hold the full phrase, then start deleting.
+      timeout = setTimeout(() => setIsDeleting(true), 1800);
+    } else if (isDeleting && displayText === '') {
+      // Finished deleting — advance to the next phrase.
+      setIsDeleting(false);
+      setPhraseIdx((prev) => (prev + 1) % SLIDING_PHRASES.length);
+    } else {
+      const nextText = isDeleting
+        ? fullPhrase.substring(0, displayText.length - 1)
+        : fullPhrase.substring(0, displayText.length + 1);
+      timeout = setTimeout(() => setDisplayText(nextText), isDeleting ? 45 : 85);
+    }
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => clearTimeout(timeout);
+  }, [displayText, isDeleting, phraseIdx]);
+
+  const handleSignUp = () => {
+    if (onSignUp) {
+      onSignUp();
+    }
+  };
 
   return (
     <section 
@@ -106,22 +115,14 @@ export default function Hero({ onOpenOnboarding, scrollToSection }: HeroProps) {
             </span>
           </div>
 
-
           {/* Large display typography */}
           <h1 className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl text-brand-950 dark:text-white tracking-tight leading-[1.15] mb-6 block select-none">
             <span className="block opacity-95">Digitize Your School Operations from</span>
-            <span className="block mt-2 relative h-[1.3em] overflow-hidden w-full">
-              <span
-                className={`gradient-text absolute inset-0 flex items-center justify-center whitespace-nowrap px-4 transition-all duration-300 transform ${
-                  animateState === 'active'
-                    ? 'translate-y-0 opacity-100 scale-100'
-                    : animateState === 'entering'
-                    ? 'translate-y-8 opacity-0 scale-95'
-                    : 'translate-y-[-8px] opacity-0 scale-95'
-                }`}
-              >
-                {SLIDING_PHRASES[currentPhraseIdx]}
+            <span className="block mt-2 min-h-[2.5em] sm:min-h-[1.3em] w-full flex items-center justify-center px-2">
+              <span className="gradient-text text-center" aria-live="polite">
+                {displayText}
               </span>
+              <span className="typing-caret" aria-hidden="true" />
             </span>
           </h1>
 
@@ -133,14 +134,17 @@ export default function Hero({ onOpenOnboarding, scrollToSection }: HeroProps) {
 
           {/* Strong action CTA buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14 animate-fade-in-delayed">
+            {/* Get Started - Now goes to Sign Up */}
+            {/* Onboard Your School - Opens Onboarding Wizard */}
             <button
               id="hero-btn-onboard"
               onClick={onOpenOnboarding}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-bold text-white bg-brand-600 hover:bg-brand-700 active:bg-brand-800 shadow-lg shadow-brand-500/20 hover:shadow-brand-500/35 transition-all hover:translate-y-[-1px] cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-bold text-white bg-teal-brand-500 hover:bg-teal-brand-600 active:bg-teal-brand-700 shadow-lg shadow-teal-brand-500/20 hover:shadow-teal-brand-500/35 transition-all hover:translate-y-[-1px] cursor-pointer"
             >
-              Onboard Group & Schools
+               Get started for free           
               <ArrowRight className="h-5 w-5" />
             </button>
+            
             <button
               id="hero-btn-demo"
               onClick={() => scrollToSection('demo-center')}

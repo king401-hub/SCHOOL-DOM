@@ -1,21 +1,32 @@
 import { useState, useEffect } from 'react';
-import { School, Menu, X, ArrowRight, ShieldCheck, Sun, Moon } from 'lucide-react';
+import { School, Menu, X, ArrowRight, ShieldCheck, Sun, Moon, LogIn, UserPlus } from 'lucide-react';
 
 interface NavbarProps {
   onOpenOnboarding: () => void;
   scrollToSection: (id: string) => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
-  signInUrl?: string;
-  signUpUrl?: string;
+
+  // Auth controls (passed by App.tsx)
+  isAuthenticated?: boolean;
+  onSignIn?: () => void;
+  onSignUp?: () => void;
+  onSignOut?: () => void;
 }
 
-export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onToggleTheme, signInUrl, signUpUrl }: NavbarProps) {
+
+export default function Navbar({ 
+  onOpenOnboarding, 
+  scrollToSection, 
+  theme, 
+  onToggleTheme, 
+  onSignIn, 
+  onSignUp 
+}: NavbarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
-
 
   useEffect(() => {
     const handleScroll = () => {
@@ -36,8 +47,6 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
       setIsVisible(true);
       clearTimeout(timeoutId);
       
-      // Auto-hide AFTER 3 seconds of inactivity,
-      // but only if mobile menu is closed and user is not currently hovering over the bar
       if (!isMobileMenuOpen && !isHovered) {
         timeoutId = setTimeout(() => {
           setIsVisible(false);
@@ -45,10 +54,8 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
       }
     };
 
-    // Initialize/reset timer on mount or when conditions shift
     resetTimer();
 
-    // Trigger visibility reset on user activity
     window.addEventListener('scroll', resetTimer);
     window.addEventListener('mousemove', resetTimer);
     window.addEventListener('touchstart', resetTimer);
@@ -63,6 +70,20 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
 
   const handleNavClick = (id: string) => {
     scrollToSection(id);
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleSignIn = () => {
+    if (onSignIn) {
+      onSignIn();
+    }
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleSignUp = () => {
+    if (onSignUp) {
+      onSignUp();
+    }
     setIsMobileMenuOpen(false);
   };
 
@@ -102,8 +123,8 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
             </div>
             <div>
               <div className="flex items-baseline">
-                <span className="font-display font-bold text-xl text-brand-950 dark:text-white tracking-tight animate-fade-in">Schooldom</span>
-                <span className="font-display font-medium text-xs text-teal-brand-500 ml-1 bg-teal-brand-50 dark:bg-teal-brand-950/50 px-1.5 py-0.5 rounded-md border border-teal-brand-500/10 dark:border-teal-brand-500/20">ACADEMY</span>
+                <span className="font-display font-bold text-xl text-brand-950 dark:text-white tracking-tight animate-fade-in">SchoolDom</span>
+                {/* <span className="font-display font-medium text-xs text-teal-brand-500 ml-1 bg-teal-brand-50 dark:bg-teal-brand-950/50 px-1.5 py-0.5 rounded-md border border-teal-brand-500/10 dark:border-teal-brand-500/20">ACADEMY</span> */}
               </div>
               <p className="text-[10px] text-gray-400 dark:text-slate-500 font-medium tracking-wider -mt-0.5">COMPLETE SCHOOL ERP</p>
             </div>
@@ -160,28 +181,30 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             
+            {/* Sign In Button */}
+            <button
+              id="btn-desktop-signin"
+              onClick={handleSignIn}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+            >
+              <LogIn className="h-4 w-4" />
+              Sign In
+            </button>
+
+            {/* Sign Up Button */}
+            <button
+              id="btn-desktop-signup"
+              onClick={onOpenOnboarding}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 active:bg-brand-800 transition-all cursor-pointer shadow-sm hover:shadow-brand-500/25"
+            >
+              <UserPlus className="h-4 w-4" />
+              Sign Up
+            </button>
+
             <div className="flex items-center gap-1.5 text-xs text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-950/30 px-3 py-1.5 rounded-lg border border-brand-100 dark:border-brand-900/40">
               <ShieldCheck className="h-4 w-4 text-teal-brand-500" />
               <span>NUC & WAEC Aligned</span>
             </div>
-            
-            <a
-              id="btn-cta-navbar-onboard"
-              href={typeof signUpUrl === 'string' ? signUpUrl : '/register/'}
-              onClick={(e) => {
-                try {
-                  const url = typeof signUpUrl === 'string' ? signUpUrl : '/register/';
-                  if (typeof url === 'string') {
-                    e.preventDefault();
-                    window.location.href = url;
-                  }
-                } catch (err) {}
-              }}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 active:bg-brand-800 transition-all hover:translate-y-[-1px] shadow-sm hover:shadow-brand-500/25 active:translate-y-0 cursor-pointer"
-            >
-              Onboard Your School
-              <ArrowRight className="h-4 w-4" />
-            </a>
           </div>
 
           {/* Mobile Menu Trigger */}
@@ -195,20 +218,14 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             
-            <a
-              id="btn-cta-navbar-mobile-quick"
-              href={typeof signUpUrl === 'string' ? signUpUrl : '/register/'}
-              onClick={(e) => {
-                try {
-                  const url = typeof signUpUrl === 'string' ? signUpUrl : '/register/';
-                  e.preventDefault();
-                  window.location.href = url;
-                } catch {}
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 cursor-pointer animate-pulse"
+            <button
+              id="btn-mobile-signin"
+              onClick={handleSignIn}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
             >
-              Onboard
-            </a>
+              Sign In
+            </button>
+            
             <button
               id="btn-toggle-mobile-menu"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -255,30 +272,44 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
             <button
               id="btn-mob-faq"
               onClick={() => handleNavClick('faqs')}
-              className="text-left py-2 px-3 rounded-lg text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-00"
+              className="text-left py-2 px-3 rounded-lg text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800 text-sky-950 dark:text-white"
             >
               FAQs
             </button>
+
+            {/* Mobile Sign In / Sign Up Section */}
+            <div className="border-t border-gray-100 dark:border-slate-800 pt-3 flex flex-col gap-2">
+              <button
+                id="btn-mob-signin"
+                onClick={handleSignIn}
+                className="w-full text-center py-2.5 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all"
+              >
+                Sign In
+              </button>
+              <button
+                id="btn-mob-signup"
+                onClick={onOpenOnboarding}
+                className="w-full text-center py-2.5 rounded-xl text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 transition-all"
+              >
+                Sign Up
+              </button>
+            </div>
+
             <div className="border-t border-gray-100 dark:border-slate-800 pt-3 flex flex-col gap-2">
               <div className="flex items-center gap-1.5 text-xs text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-950/40 px-3 py-2 rounded-lg justify-center">
                 <ShieldCheck className="h-4 w-4 text-teal-brand-500" />
                 <span>NUC & WAEC Aligned Operations</span>
               </div>
-              <a
+              {/* <button
                 id="btn-mob-cta-onboard"
-                href={typeof signUpUrl === 'string' ? signUpUrl : '/register/'}
-                onClick={(e) => {
-                  try {
-                    const url = typeof signUpUrl === 'string' ? signUpUrl : '/register/';
-                    e.preventDefault();
-                    setIsMobileMenuOpen(false);
-                    window.location.href = url;
-                  } catch {}
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onOpenOnboarding();
                 }}
                 className="w-full text-center py-3 rounded-xl text-base font-semibold text-white bg-brand-600 hover:bg-brand-700 shadow-sm"
               >
                 Onboard Your School
-              </a>
+              </button> */}
             </div>
           </div>
         </div>

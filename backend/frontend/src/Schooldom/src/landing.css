@@ -1,0 +1,217 @@
+/* ============================================================
+   Schooldom landing page — shared theme, dark-mode variant,
+   custom utilities and animations.
+
+   Imported by BOTH:
+     - the integrated app  (backend/frontend/src/styles.css)
+     - the standalone entry (backend/frontend/src/Schooldom/src/index.css)
+
+   Keeping everything here means the landing page looks identical
+   no matter which entry renders it, with a single source of truth.
+   Requires Tailwind v4 (`@import "tailwindcss"`) to be loaded by
+   the importing stylesheet first.
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   Class-based dark mode.
+   App.tsx toggles `.dark` on <html>; without this, Tailwind v4's
+   `dark:` variant only follows the OS preference and the in-page
+   theme toggle has no effect.
+   ------------------------------------------------------------ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------
+   Design tokens — register custom colors, fonts and animations
+   so Tailwind generates the matching `*-brand-*`, `font-*` and
+   `animate-*` utilities.
+   ------------------------------------------------------------ */
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Primary brand (cyan/blue) scale */
+  --color-brand-50: #effaff;
+  --color-brand-100: #def5ff;
+  --color-brand-200: #bceeff;
+  --color-brand-300: #80e2ff;
+  --color-brand-350: #5cdaff;
+  --color-brand-400: #41d3ff;
+  --color-brand-405: #2bccf9;
+  --color-brand-500: #00b8f0;
+  --color-brand-600: #0094c4;
+  --color-brand-650: #0085b2;
+  --color-brand-700: #0076a1;
+  --color-brand-800: #00587a;
+  --color-brand-900: #054661;
+  --color-brand-950: #011724;
+
+  /* Secondary brand (teal/green) scale */
+  --color-teal-brand-50: #f0fef5;
+  --color-teal-brand-100: #dbfbe6;
+  --color-teal-brand-200: #b9f5cf;
+  --color-teal-brand-300: #8eecb2;
+  --color-teal-brand-400: #6ce09a;
+  --color-teal-brand-500: #50d58c;
+  --color-teal-brand-600: #39bf78;
+  --color-teal-brand-700: #23a362;
+
+  /* Off-scale shades referenced by the page that are not part of
+     Tailwind's default palettes. */
+  --color-slate-705: #2c3a4f;
+  --color-slate-850: #172033;
+  --color-gray-150: #ecedf1;
+  --color-emerald-650: #058257;
+  --color-emerald-705: #04764f;
+
+  /* Custom animation utilities (`animate-*`). */
+  --animate-fade-in: fade-in 0.7s ease-out both;
+  --animate-fade-in-delayed: fade-in 0.7s ease-out 0.25s both;
+  --animate-blob: blob 10s ease-in-out infinite alternate;
+  --animate-blob-delayed: blob 14s ease-in-out 2s infinite alternate;
+  --animate-blob-slow: blob 18s ease-in-out 4s infinite alternate;
+  --animate-float-up: float-up linear infinite;
+  --animate-slide-up: slide-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ------------------------------------------------------------
+   Keyframes
+   ------------------------------------------------------------ */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blob {
+  0%   { transform: translate(0px, 0px) scale(1); }
+  33%  { transform: translate(30px, -35px) scale(1.1); }
+  66%  { transform: translate(-20px, 25px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+/* Rising bubbles background */
+@keyframes float-up {
+  0%   { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateY(-115vh) translateX(var(--bubble-drift, 0)) scale(1.15); opacity: 0; }
+}
+
+/* Blinking caret for the typewriter effect */
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* tailwindcss-animate compatible "enter" animation, driven by the
+   --tw-enter-* custom properties set by the helper classes below. */
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0)
+               scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), 1)
+               rotate(var(--tw-enter-rotate, 0));
+  }
+}
+
+/* ------------------------------------------------------------
+   tailwindcss-animate compatibility layer
+   (the plugin isn't installed; these reproduce the classes used:
+    `animate-in fade-in zoom-in-95 slide-in-from-top-2/3/4 slide-in-from-right-4`)
+   ------------------------------------------------------------ */
+.animate-in {
+  animation-name: enter;
+  animation-duration: 0.35s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+.fade-in,
+.fade-in-0 { --tw-enter-opacity: 0; }
+.zoom-in-95 { --tw-enter-scale: 0.95; }
+.slide-in-from-top-2 { --tw-enter-translate-y: -0.5rem; }
+.slide-in-from-top-3 { --tw-enter-translate-y: -0.75rem; }
+.slide-in-from-top-4 { --tw-enter-translate-y: -1rem; }
+.slide-in-from-right-4 { --tw-enter-translate-x: 1rem; }
+
+/* ------------------------------------------------------------
+   Scroll-reveal (driven by IntersectionObserver in Reveal.tsx)
+   ------------------------------------------------------------ */
+.reveal {
+  opacity: 0;
+  transform: translateY(38px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.reveal.reveal-left  { transform: translateX(-48px); }
+.reveal.reveal-right { transform: translateX(48px); }
+.reveal.is-visible {
+  opacity: 1;
+  transform: translate(0, 0);
+}
+
+/* ------------------------------------------------------------
+   Typewriter caret
+   ------------------------------------------------------------ */
+/* A solid bar caret. The phrase sits in a `.gradient-text` element
+   (transparent text fill), so a glyph caret would be invisible — this
+   uses an explicit background instead. */
+.typing-caret {
+  display: inline-block;
+  width: 3px;
+  height: 0.95em;
+  margin-left: 0.1em;
+  border-radius: 2px;
+  background-color: var(--color-brand-500);
+  vertical-align: text-bottom;
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+/* ------------------------------------------------------------
+   Brand visual utilities
+   ------------------------------------------------------------ */
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-brand-600) 0%, var(--color-teal-brand-500) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, var(--color-brand-950) 0%, #0f172a 100%);
+}
+
+.glow-card {
+  box-shadow: 0 0 25px -5px rgba(99, 111, 235, 0.12), 0 0 15px -5px rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark .glow-card {
+  box-shadow: 0 0 35px -10px rgba(99, 111, 235, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ------------------------------------------------------------
+   Scrollbar styling
+   ------------------------------------------------------------ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.2);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.4); }
+
+/* ------------------------------------------------------------
+   Respect users who prefer reduced motion
+   ------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .animate-blob, .animate-blob-delayed, .animate-blob-slow,
+  .animate-fade-in, .animate-fade-in-delayed, .typing-caret { animation: none !important; }
+}

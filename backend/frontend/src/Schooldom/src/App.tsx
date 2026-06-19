@@ -1,32 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
+import Signin from './SignIn';
+
 import Hero from './components/Hero';
 import DashboardPlayground from './components/DashboardPlayground';
-import SolutionsGrid from './components/SolutionsGrid';
+import SolutionsGrid from './components/SolutionsGrid.tsx';
 import PricingCalculator from './components/PricingCalculator';
-import Testimonials from './components/Testimonials';
-import LegalDocuments from './components/LegalDocuments';
+import Testimonials from './Testimonials';
 import OnboardingWizard from './components/OnboardingWizard';
+import LegalDocuments from './components/LegalDocuments';
 import ParticleBackground from './components/ParticleBackground';
+import Bubbles from './components/Bubbles';
+import Reveal from './components/Reveal';
 import { FAQS } from './data';
 import { 
   Plus, Minus, School, Phone, Mail, MapPin, ShieldCheck, 
   ArrowRight, Heart, Calendar, MessageSquare, CheckCircle, MessageCircle
 } from 'lucide-react';
 
-const AUTH_BASE_URL_RAW = import.meta.env.VITE_AUTH_BASE_URL;
-const AUTH_BASE_URL = AUTH_BASE_URL_RAW ? AUTH_BASE_URL_RAW.replace(/\/+$/, '') : '';
-// If no backend auth URL provided, default to the standalone frontend dev app
-const FRONTEND_DEV_HOST = import.meta.env.VITE_FRONTEND_HOST || 'http://127.0.0.1:5173';
-// Frontend auth app exposes signin at /signin and accepts ?mode=signup to show the register form
-const SIGN_IN_URL = AUTH_BASE_URL ? `${AUTH_BASE_URL}/login/` : `${FRONTEND_DEV_HOST}/signin`;
-const SIGN_UP_URL = AUTH_BASE_URL ? `${AUTH_BASE_URL}/register/` : `${FRONTEND_DEV_HOST}/signin?mode=signup`;
+// ============================================
+// PAGE VIEW TYPES
+// ============================================
+type PageView = 'home' | 'signin' | 'signup';
+
+// ============================================
+// SESSION KEY
+// ============================================
+const SESSION_KEY = "schooldom.session";
 
 export default function App() {
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isLegalOpen, setIsLegalOpen] = useState(false);
   const [legalDefaultTab, setLegalDefaultTab] = useState<'terms' | 'privacy'>('terms');
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  const [currentPage, setCurrentPage] = useState<PageView>(() => {
+    // Check URL path to determine initial page
+    const path = window.location.pathname;
+    if (path === '/signin') return 'signin';
+    if (path === '/signup') return 'signup';
+    return 'home';
+  });
   
   // Theme state
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -35,7 +50,6 @@ export default function App() {
       if (persisted === 'light' || persisted === 'dark') {
         return persisted;
       }
-      // Check system preference
       const media = window.matchMedia('(prefers-color-scheme: dark)');
       return media.matches ? 'dark' : 'light';
     }
@@ -52,6 +66,21 @@ export default function App() {
       localStorage.setItem('theme', 'light');
     }
   }, [theme]);
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const session = localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY);
+    if (session) {
+      try {
+        const parsed = JSON.parse(session);
+        if (parsed.user) {
+          setIsAuthenticated(true);
+        }
+      } catch {
+        // Invalid session
+      }
+    }
+  }, []);
 
   // Newsletter state
   const [newsletterEmail, setNewsletterEmail] = useState('');
@@ -75,99 +104,170 @@ export default function App() {
     }
   };
 
+  // ============================================
+  // NAVIGATION HANDLERS
+  // ============================================
+  const navigateToSignIn = () => {
+    // If already authenticated, go home instead
+    if (isAuthenticated) {
+      navigateToHome();
+      return;
+    }
+    setCurrentPage('signin');
+    window.history.pushState({}, '', '/signin');
+  };
+
+  const navigateToSignUp = () => {
+    // If already authenticated, go home instead
+    if (isAuthenticated) {
+      navigateToHome();
+      return;
+    }
+    setCurrentPage('signup');
+    window.history.pushState({}, '', '/signup');
+  };
+
+  const navigateToHome = () => {
+    setCurrentPage('home');
+    window.history.pushState({}, '', '/');
+  };
+
+  const handleAuthenticated = (session: any) => {
+    console.log('User authenticated:', session);
+    setIsAuthenticated(true);
+    // Redirect to home or dashboard after successful signin
+    navigateToHome();
+    // Optionally redirect to dashboard:
+    // window.location.href = '/dashboard';
+  };
+
+  const handleSignOut = () => {
+    // Clear session
+    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    setIsAuthenticated(false);
+    navigateToHome();
+  };
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      if (path === '/signin') setCurrentPage('signin');
+      else if (path === '/signup') setCurrentPage('signup');
+      else setCurrentPage('home');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // ============================================
+  // RENDER SIGNIN PAGE
+  // ============================================
+  if (currentPage === 'signin' || currentPage === 'signup') {
+    return (
+      <Signin 
+        onAuthenticated={handleAuthenticated}
+        onBack={navigateToHome}
+        initialMode={currentPage === 'signup' ? 'signup' : 'signin'}
+      />
+    );
+  }
+
+  // ============================================
+  // RENDER HOME/LANDING PAGE
+  // ============================================
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 antialiased selection:bg-brand-500 selection:text-white transition-colors duration-300 relative overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 antialiased selection:bg-brand-500 selection:text-white transition-colors duration-300 relative isolate overflow-x-hidden">
       {/* Moving Ambient Web Background Particles */}
       <ParticleBackground />
 
+      {/* Live floating bubbles layer (CSS-only, theme-aware) */}
+      <Bubbles />
+
       {/* Header and Navigation */}
       <Navbar 
+        onOpenOnboarding={() => setIsOnboardingOpen(true)} 
         scrollToSection={scrollToSection} 
         theme={theme}
         onToggleTheme={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-        signInUrl={SIGN_IN_URL}
-        signUpUrl={SIGN_UP_URL}
-        onOpenOnboarding={() => {
-          if (typeof window !== 'undefined') {
-            window.location.href = SIGN_UP_URL;
-          }
-        }}
+        onSignIn={navigateToSignIn}
+        onSignUp={navigateToSignUp}
+        isAuthenticated={isAuthenticated}
+        onSignOut={handleSignOut}
       />
-
 
       {/* Main Content Layout */}
       <main>
         {/* Hero Section with core counts */}
         <Hero 
-          scrollToSection={scrollToSection} 
-          signInUrl={SIGN_IN_URL}
-          signUpUrl={SIGN_UP_URL}
+          onOpenOnboarding={() => setIsOnboardingOpen(true)} 
+          scrollToSection={scrollToSection}
+          onSignUp={navigateToSignUp}
         />
 
         {/* 9 major solutions Bento Grid */}
-        <SolutionsGrid 
-          signUpUrl={SIGN_UP_URL}
-          onOpenOnboarding={() => {
-            if (typeof window !== 'undefined') {
-              window.location.href = SIGN_UP_URL;
-            }
-          }}
-        />
+        <Reveal direction="up">
+          <SolutionsGrid
+            onOpenOnboarding={() => setIsOnboardingOpen(true)}
+          />
+        </Reveal>
 
         {/* School Digitization Admin Sandbox Playground */}
-        <DashboardPlayground />
+        <Reveal direction="left">
+          <DashboardPlayground />
+        </Reveal>
 
         {/* Pricing tiers and interactive slider calculator */}
-        <PricingCalculator 
-          signUpUrl={SIGN_UP_URL}
-          onOpenOnboarding={() => {
-            if (typeof window !== 'undefined') {
-              window.location.href = SIGN_UP_URL;
-            }
-          }}
-        />
+        <Reveal direction="right">
+          <PricingCalculator
+            onOpenOnboarding={() => setIsOnboardingOpen(true)}
+          />
+        </Reveal>
 
         {/* Testimonials Carousel & Trust indicators */}
-        <Testimonials />
+        <Reveal direction="up">
+          <Testimonials />
+        </Reveal>
 
         {/* Interactive FAQ Accordion */}
-        <section id="faqs" className="py-20 bg-white">
+        <section id="faqs" className="py-20 bg-white dark:bg-slate-950 transition-colors duration-300">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center max-w-2xl mx-auto mb-14">
-              <span className="text-xs font-bold uppercase tracking-widest text-[#0d9488] bg-teal-brand-50 px-3.5 py-1.5 rounded-full border border-teal-brand-500/20">
+            <Reveal direction="up" className="text-center max-w-2xl mx-auto mb-14">
+              <span className="text-xs font-bold uppercase tracking-widest text-[#0d9488] dark:text-teal-brand-400 bg-teal-brand-50 dark:bg-teal-brand-950/40 px-3.5 py-1.5 rounded-full border border-teal-brand-500/20">
                 Frequently Answered Questions
               </span>
-              <h2 className="font-display font-bold text-3xl text-brand-950 mt-4 tracking-tight">
+              <h2 className="font-display font-bold text-3xl text-brand-950 dark:text-white mt-4 tracking-tight">
                 Got Questions? We Have Answers.
               </h2>
-              <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+              <p className="text-gray-500 dark:text-slate-400 mt-2 text-sm leading-relaxed">
                 Learn more about how our Hybrid CBT offline bridges, data migrations, and fee ledgers facilitate African classrooms.
               </p>
-            </div>
+            </Reveal>
 
             {/* Accordion List */}
             <div className="space-y-3">
               {FAQS.map((faq, idx) => {
                 const isOpen = activeFaq === idx;
                 return (
-                  <div 
+                  <div
                     key={idx}
                     id={`faq-item-${idx}`}
-                    className="border border-gray-100 rounded-2xl bg-slate-50 overflow-hidden text-left transition-all"
+                    className="border border-gray-100 dark:border-slate-800 rounded-2xl bg-slate-50 dark:bg-slate-900 overflow-hidden text-left transition-all"
                   >
                     <button
                       id={`faq-btn-trigger-${idx}`}
                       onClick={() => setActiveFaq(isOpen ? null : idx)}
-                      className="w-full flex justify-between items-center p-5 text-left font-semibold text-brand-950 text-sm sm:text-base hover:bg-slate-100/60 transition-colors cursor-pointer"
+                      className="w-full flex justify-between items-center p-5 text-left font-semibold text-brand-950 dark:text-white text-sm sm:text-base hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
                     >
                       <span className="pr-4">{faq.question}</span>
-                      <span className={`p-1 rounded-lg bg-white border border-gray-150 shrink-0 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                      <span className={`p-1 rounded-lg bg-white dark:bg-slate-800 border border-gray-150 dark:border-slate-700 shrink-0 text-gray-500 dark:text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                         {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                       </span>
                     </button>
-                    
+
                     {isOpen && (
-                      <div className="p-5 pt-0 text-xs sm:text-sm text-gray-600 leading-relaxed bg-white border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="p-5 pt-0 text-xs sm:text-sm text-gray-600 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2 duration-150">
                         {faq.answer}
                       </div>
                     )}
@@ -177,30 +277,28 @@ export default function App() {
             </div>
 
             {/* Support Callout Widget */}
-            <div className="mt-10 p-5 bg-brand-50 border border-brand-100/70 rounded-2xl flex flex-col sm:flex-row items-center justify-between text-left gap-4">
+            <div className="mt-10 p-5 bg-brand-50 dark:bg-brand-950/30 border border-brand-100/70 dark:border-brand-900/50 rounded-2xl flex flex-col sm:flex-row items-center justify-between text-left gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 text-brand-600 bg-white rounded-xl flex items-center justify-center font-bold shadow-xs">☎</div>
+                <div className="h-10 w-10 text-brand-600 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center font-bold shadow-xs">☎</div>
                 <div>
-                  <h5 className="font-display font-semibold text-sm text-brand-950">Need a custom integration or contract schedule?</h5>
-                  <p className="text-xs text-brand-800">Our senior migration experts are ready to hop on an onboarding call.</p>
+                  <h5 className="font-display font-semibold text-sm text-brand-950 dark:text-white">Need a custom integration or contract schedule?</h5>
+                  <p className="text-xs text-brand-800 dark:text-brand-300">Our senior migration experts are ready to hop on an onboarding call.</p>
                 </div>
               </div>
-              <a
+              <button
                 id="faq-btn-custom-support"
-                href={SIGN_UP_URL}
-                target={SIGN_UP_URL.startsWith('http') ? '_blank' : undefined}
-                rel={SIGN_UP_URL.startsWith('http') ? 'noopener noreferrer' : undefined}
+                onClick={() => setIsOnboardingOpen(true)}
                 className="inline-flex items-center gap-1 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white rounded-xl px-4.5 py-2 text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
-                Create School Account
+                Schedule Integration Call
                 <ArrowRight className="h-3.5 w-3.5" />
-              </a>
+              </button>
             </div>
           </div>
         </section>
 
         {/* Bottom Call to Action Section Banner */}
-        <section className="py-20 bg-radial from-brand-900 via-brand-950 to-[#1e1b4b] text-white overflow-hidden relative text-left">
+        <Reveal as="section" direction="up" className="py-20 bg-radial from-brand-900 via-brand-950 to-[#1e1b4b] text-white overflow-hidden relative text-left">
           <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-teal-brand-500/15 rounded-full filter blur-2xl pointer-events-none" />
           
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10 space-y-6">
@@ -215,16 +313,14 @@ export default function App() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-              <a
+              <button
                 id="btn-bottom-onboard"
-                href={SIGN_UP_URL}
-                target={SIGN_UP_URL.startsWith('http') ? '_blank' : undefined}
-                rel={SIGN_UP_URL.startsWith('http') ? 'noopener noreferrer' : undefined}
+                onClick={() => setIsOnboardingOpen(true)}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-bold text-slate-900 bg-teal-brand-500 hover:bg-teal-brand-600 transition-all cursor-pointer"
               >
-                Sign Up Free
+                Start Onboarding Free
                 <ArrowRight className="h-4.5 w-4.5" />
-              </a>
+              </button>
               <button
                 id="btn-bottom-calculator"
                 onClick={() => scrollToSection('cost-calculator')}
@@ -249,7 +345,7 @@ export default function App() {
               </div>
             </div>
           </div>
-        </section>
+        </Reveal>
       </main>
 
       {/* Integrated Status Bar Footer from Vibrant Palette */}
@@ -269,18 +365,10 @@ export default function App() {
             <span className="bg-white/5 border border-white/10 px-2 py-0.5 rounded text-brand-300">Google Classroom</span>
           </div>
         </div>
-            <div className="flex items-center gap-4 text-[10px] font-bold">
+        <div className="flex items-center gap-4 text-[10px] font-bold">
            <span className="text-slate-500 tracking-widest uppercase">SYSTEMS INTEGRITY VERIFIED</span>
            <button 
-             onClick={() => {
-               if (typeof window !== 'undefined') {
-                 if (SIGN_UP_URL.startsWith('http')) {
-                   window.open(SIGN_UP_URL, '_blank', 'noopener');
-                 } else {
-                   window.location.href = SIGN_UP_URL;
-                 }
-               }
-             }}
+             onClick={() => setIsOnboardingOpen(true)}
              className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 transition-colors px-3.5 py-1 rounded-full text-white cursor-pointer text-[10px]"
            >
              <span className="text-xs">⊛</span>

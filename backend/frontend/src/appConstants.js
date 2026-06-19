@@ -30,6 +30,7 @@ export const ADMIN_ROUTES = [
   { path: "/attendance", label: "Attendance" },
   { path: "/hr/activity", label: "HR Management" },
   { path: "/students", label: "Students" },
+  { path: "/parents", label: "Parent Directory" },
   { path: "/id-cards", label: "ID Cards" },
   { path: "/documents", label: "Transcripts & Testimonials" },
   {
@@ -70,6 +71,7 @@ export const ADMIN_ENDPOINTS = {
   "/hr/activity": "/api/hr/overview/",
   "/non-teaching-staff": "/api/hr/overview/",
   "/students": "/api/app/students/",
+  "/parents": "/api/app/parents/",
   "/id-cards": "/api/app/id-cards/",
   "/documents": "/api/app/documents/",
   "/teachers": "/api/app/teachers/",

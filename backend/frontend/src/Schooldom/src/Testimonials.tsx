@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TESTIMONIALS } from '../data';
+import { TESTIMONIALS } from './data';
 import { Quote, ChevronLeft, ChevronRight, Award, UserCheck, ShieldCheck } from 'lucide-react';
 
 export default function Testimonials() {
