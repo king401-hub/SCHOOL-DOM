@@ -3637,7 +3637,7 @@ def student_qr_mark_attendance(request):
         )
 
     try:
-        location = _attendance_location_payload(request, require_location=False)
+        location = _attendance_location_payload(request, require_location=True)
     except ValueError as exc:
         return Response(
             {"success": False, "message": str(exc)},
@@ -4442,8 +4442,6 @@ def documents_snapshot(request):
 @api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def transcript_detail(request, student_id):
-    from finance.services import deduct_document_generation_credit
-    
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response(
@@ -4457,24 +4455,6 @@ def transcript_detail(request, student_id):
     )
     
     should_generate = request.method == "GET" and request.query_params.get("generate") == "true"
-
-    token_charged = False
-    if should_generate:
-        try:
-            credit_pool = deduct_document_generation_credit(
-                tenant=user.tenant,
-                document_type="transcript",
-                student_profile=student_profile,
-                action="generate",
-                actor=user,
-                credits=1,
-            )
-            token_charged = bool(getattr(credit_pool, "document_credit_charged", True))
-        except ValueError as exc:
-            return Response(
-                {"success": False, "message": str(exc)},
-                status=status.HTTP_402_PAYMENT_REQUIRED,
-            )
     
     if request.method == "PATCH":
         records = request.data.get("scores")
@@ -4535,9 +4515,9 @@ def transcript_detail(request, student_id):
         )
     return Response({
         "success": True,
-        "message": ("1 token used to generate transcript." if token_charged else "Transcript generated. No token used because this student's transcript was already generated.") if should_generate else "Transcript preview loaded.",
-        "token_used": token_charged,
-        "tokens_used": 1 if token_charged else 0,
+        "message": "Transcript generated." if should_generate else "Transcript preview loaded.",
+        "token_used": False,
+        "tokens_used": 0,
         "document_type": "transcript",
         "transcript": _transcript_payload(student_profile, request=request),
     })
@@ -4546,8 +4526,6 @@ def transcript_detail(request, student_id):
 @api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def testimonial_detail(request, student_id):
-    from finance.services import deduct_document_generation_credit
-    
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response(
@@ -4566,24 +4544,6 @@ def testimonial_detail(request, student_id):
         )
 
     should_generate = request.method == "GET" and request.query_params.get("generate") == "true"
-
-    token_charged = False
-    if should_generate:
-        try:
-            credit_pool = deduct_document_generation_credit(
-                tenant=user.tenant,
-                document_type="testimonial",
-                student_profile=student_profile,
-                action="generate",
-                actor=user,
-                credits=1,
-            )
-            token_charged = bool(getattr(credit_pool, "document_credit_charged", True))
-        except ValueError as exc:
-            return Response(
-                {"success": False, "message": str(exc)},
-                status=status.HTTP_402_PAYMENT_REQUIRED,
-            )
 
     record = StudentTestimonial.objects.filter(student=student_profile, school=user.tenant).first()
     if request.method == "PATCH":
@@ -4621,9 +4581,9 @@ def testimonial_detail(request, student_id):
     }
     return Response({
         "success": True,
-        "message": ("1 token used to generate testimonial." if token_charged else "Testimonial generated. No token used because this student's testimonial was already generated.") if should_generate else ("Testimonial preview loaded." if request.method == "GET" else "Testimonial details saved."),
-        "token_used": token_charged,
-        "tokens_used": 1 if token_charged else 0,
+        "message": "Testimonial generated." if should_generate else ("Testimonial preview loaded." if request.method == "GET" else "Testimonial details saved."),
+        "token_used": False,
+        "tokens_used": 0,
         "document_type": "testimonial",
         **payload,
     })
@@ -5319,8 +5279,6 @@ def id_cards_snapshot(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def id_card_qr_code(request):
-    from finance.services import deduct_document_generation_credit
-    
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response(
@@ -5336,30 +5294,7 @@ def id_card_qr_code(request):
     if not person:
         return Response({"success": False, "message": "ID card profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Only deduct credit if this is for download, not preview
     is_download = request.query_params.get("download") == "true"
-    token_charged = False
-    if is_download:
-        try:
-            # Find the student/teacher profile if available
-            student_profile = None
-            if person["person_type"] == "student":
-                student_profile = StudentProfile.objects.filter(id=person["id"], user__tenant=user.tenant).first()
-            
-            credit_pool = deduct_document_generation_credit(
-                tenant=user.tenant,
-                document_type="id_card",
-                student_profile=student_profile,
-                action="generate_qr",
-                actor=user,
-                credits=1,
-            )
-            token_charged = bool(getattr(credit_pool, "document_credit_charged", True))
-        except ValueError as exc:
-            return Response(
-                {"success": False, "message": str(exc)},
-                status=status.HTTP_402_PAYMENT_REQUIRED,
-            )
 
     qr_payload = _id_card_qr_data_url(request, user.tenant, person)
     verify_url = qr_payload["verify_url"]
@@ -5376,8 +5311,8 @@ def id_card_qr_code(request):
     if is_download:
         if person["person_type"] == "student":
             StudentProfile.objects.filter(id=person["id"], user__tenant=user.tenant).update(id_card_generated_at=timezone.now())
-        response["X-Token-Used"] = "1" if token_charged else "0"
-        response["X-Token-Message"] = "1 token used to generate ID card." if token_charged else "ID card generated. No token used because this student's ID card was already generated."
+        response["X-Token-Used"] = "0"
+        response["X-Token-Message"] = "ID card generated."
     return response
 
 
@@ -8228,7 +8163,7 @@ def teacher_mark_student_attendance(request):
             status=status.HTTP_403_FORBIDDEN,
         )
     try:
-        location = _attendance_location_payload(request)
+        location = _attendance_location_payload(request, require_location=False)
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     attendance_date = parse_date(str(request.data.get("date") or "")) or timezone.localdate()

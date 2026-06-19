@@ -31,9 +31,11 @@ const SESSION_KEY = "schooldom.session";
 export default function App() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isLegalOpen, setIsLegalOpen] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false);
   const [legalDefaultTab, setLegalDefaultTab] = useState<'terms' | 'privacy'>('terms');
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
   
   const [currentPage, setCurrentPage] = useState<PageView>(() => {
     // Check URL path to determine initial page
@@ -164,6 +166,22 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  const handleContactSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const subject = encodeURIComponent(`Schooldom contact from ${contactForm.name || 'Website visitor'}`);
+    const body = encodeURIComponent(
+      [
+        `Name: ${contactForm.name || '-'}`,
+        `Email: ${contactForm.email || '-'}`,
+        '',
+        contactForm.message || '',
+      ].join('\n')
+    );
+    window.location.href = `mailto:enquiry@schooldom.academy?subject=${subject}&body=${body}`;
+    setIsContactOpen(false);
+    setContactForm({ name: '', email: '', message: '' });
+  };
+
   // ============================================
   // RENDER SIGNIN PAGE
   // ============================================
@@ -290,7 +308,7 @@ export default function App() {
               </div>
               <button
                 id="faq-btn-custom-support"
-                onClick={() => setIsOnboardingOpen(true)}
+                onClick={() => setIsContactOpen(true)}
                 className="inline-flex items-center gap-1 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white rounded-xl px-4.5 py-2 text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 Schedule Integration Call
@@ -318,7 +336,7 @@ export default function App() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <button
                 id="btn-bottom-onboard"
-                onClick={() => setIsOnboardingOpen(true)}
+                onClick={() => setIsContactOpen(true)}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl text-sm font-bold text-slate-900 bg-teal-brand-500 hover:bg-teal-brand-600 transition-all cursor-pointer"
               >
                 Start Onboarding Free
@@ -530,6 +548,89 @@ export default function App() {
         onClose={() => setIsLegalOpen(false)}
         defaultTab={legalDefaultTab}
       />
+
+      {isContactOpen && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="contact-popup-title"
+          onClick={() => setIsContactOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950 text-white shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-white/10">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-teal-300">Contact Schooldom</p>
+                <h3 id="contact-popup-title" className="mt-1 text-xl font-extrabold">Send an email request</h3>
+                <p className="mt-1 text-sm text-slate-300">Tell us what you need and we will open your email app with the message ready to send.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsContactOpen(false)}
+                className="rounded-xl border border-white/10 px-3 py-2 text-sm font-bold text-slate-300 hover:text-white hover:bg-white/5"
+                aria-label="Close contact form"
+              >
+                Close
+              </button>
+            </div>
+            <form onSubmit={handleContactSubmit} className="p-5 space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-sm font-semibold">
+                  <span>Name</span>
+                  <input
+                    type="text"
+                    value={contactForm.name}
+                    onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-teal-400"
+                    placeholder="Your name"
+                  />
+                </label>
+                <label className="space-y-2 text-sm font-semibold">
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    required
+                    value={contactForm.email}
+                    onChange={(event) => setContactForm((current) => ({ ...current, email: event.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-teal-400"
+                    placeholder="you@example.com"
+                  />
+                </label>
+              </div>
+              <label className="space-y-2 text-sm font-semibold block">
+                <span>Message</span>
+                <textarea
+                  required
+                  rows={5}
+                  value={contactForm.message}
+                  onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-teal-400 resize-none"
+                  placeholder="Tell us about your integration or contract request"
+                />
+              </label>
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsContactOpen(false)}
+                  className="rounded-xl border border-white/10 px-5 py-3 text-sm font-bold text-slate-300 hover:text-white hover:bg-white/5"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-500 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-teal-400"
+                >
+                  <Mail className="h-4 w-4" />
+                  Open Email Draft
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Floating Live WhatsApp Customer Support Button */}
       <a

@@ -2026,7 +2026,7 @@ class AttendanceAndPromptTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(AttendanceRecord.objects.filter(student=other_student_user).exists())
 
-    def test_teacher_attendance_requires_geo_location(self):
+    def test_teacher_can_mark_attendance_without_geo_location(self):
         self.client.force_authenticate(user=self.teacher_user)
         response = self.client.post(
             "/api/app/attendance/teacher-mark/",
@@ -2034,8 +2034,11 @@ class AttendanceAndPromptTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_user).exists())
+        self.assertEqual(response.status_code, 200)
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertEqual(record.status, "present")
+        self.assertIsNone(record.latitude)
+        self.assertIsNone(record.longitude)
 
     def test_teacher_can_mark_assigned_class_attendance(self):
         self.client.force_authenticate(user=self.teacher_user)
@@ -2064,6 +2067,107 @@ class AttendanceAndPromptTests(TestCase):
         self.assertEqual(str(record.latitude), "6.5243793")
         self.assertEqual(str(record.longitude), "3.3792057")
         self.assertEqual(record.location_address, "Lagos, Nigeria")
+
+    def test_teacher_id_card_scan_attendance_does_not_require_geo_location(self):
+        student_profile = StudentProfile.objects.get(user=self.student_user)
+        token = signing.dumps(
+            {
+                "tenant_id": str(self.school.id),
+                "person_type": "student",
+                "person_id": str(student_profile.id),
+                "unique_id": student_profile.student_id,
+            },
+            salt=ID_CARD_SIGNING_SALT,
+            compress=True,
+        )
+
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.post(
+            "/api/app/id-cards/scan-attendance/",
+            data={"token": token},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertEqual(record.status, "present")
+        self.assertEqual(record.noted_by, self.teacher_user)
+        self.assertIsNone(record.latitude)
+        self.assertIsNone(record.longitude)
+
+    def test_document_endpoints_do_not_consume_tokens(self):
+        admin_user = User.objects.create_user(
+            email="admin@attendance.edu",
+            password="AdminPass123",
+            first_name="Avery",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        transcript_student = StudentProfile.objects.create(
+            user=User.objects.create_user(
+                email="transcript@student.edu",
+                password="StudentPass123",
+                first_name="Transcript",
+                last_name="Student",
+                role="student",
+                tenant=self.school,
+                is_active=True,
+                is_verified=True,
+            ),
+            student_id="STU-ATT-2",
+            admission_number="ADM-ATT-2",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Two",
+            guardian_phone="+15550007777",
+            guardian_relation="Parent",
+            current_class=self.classroom,
+        )
+        testimonial_class = Class.objects.create(name="SSS3", section="A", tenant=self.legacy_tenant)
+        testimonial_student = StudentProfile.objects.create(
+            user=User.objects.create_user(
+                email="testimonial@student.edu",
+                password="StudentPass123",
+                first_name="Testimonial",
+                last_name="Student",
+                role="student",
+                tenant=self.school,
+                is_active=True,
+                is_verified=True,
+            ),
+            student_id="STU-ATT-3",
+            admission_number="ADM-ATT-3",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Three",
+            guardian_phone="+15550006666",
+            guardian_relation="Parent",
+            current_class=testimonial_class,
+        )
+
+        self.client.force_authenticate(user=admin_user)
+
+        transcript_response = self.client.get(
+            f"/api/app/documents/transcripts/{transcript_student.id}/?generate=true"
+        )
+        self.assertEqual(transcript_response.status_code, 200)
+        self.assertFalse(transcript_response.data["token_used"])
+        self.assertEqual(transcript_response.data["tokens_used"], 0)
+
+        testimonial_response = self.client.get(
+            f"/api/app/documents/testimonials/{testimonial_student.id}/?generate=true"
+        )
+        self.assertEqual(testimonial_response.status_code, 200)
+        self.assertFalse(testimonial_response.data["token_used"])
+        self.assertEqual(testimonial_response.data["tokens_used"], 0)
+
+        qr_response = self.client.get(
+            f"/api/app/id-cards/qr/?person_type=student&person_id={transcript_student.id}&download=true"
+        )
+        self.assertEqual(qr_response.status_code, 200)
+        self.assertEqual(qr_response.headers.get("X-Token-Used"), "0")
+        self.assertEqual(qr_response.headers.get("X-Token-Message"), "ID card generated.")
 
     def test_student_cannot_mark_own_attendance(self):
         self.client.force_authenticate(user=self.student_user)

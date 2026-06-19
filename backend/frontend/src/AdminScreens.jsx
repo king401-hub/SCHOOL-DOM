@@ -4451,8 +4451,8 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
       }
       return {
         dataUrl: await blobToDataUrl(await response.blob()),
-        tokenUsed: response.headers.get("X-Token-Used") === "1",
-        tokenMessage: response.headers.get("X-Token-Message") || "1 token used to generate ID card.",
+        tokenUsed: false,
+        tokenMessage: response.headers.get("X-Token-Message") || "ID card generated.",
       };
     },
     [session]
@@ -4504,8 +4504,8 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
       const result = await fetchQrDataUrl(selectedPerson, true);
       setQrDataUrl(result.dataUrl);
       await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+      setActionSuccess(result.tokenMessage || "ID card generated.");
       window.print();
-      setActionSuccess(result.tokenMessage || "1 token used to generate ID card.");
     } catch (printError) {
       setActionError(printError.message || "Could not generate ID card for printing.");
     }
@@ -4894,15 +4894,12 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
           setTranscriptForm(transcriptRowsFromDetail(nextDetail));
         }
         if (payload?.token_used) {
-          setTokenNotice(payload.message || `1 token used to generate ${mode}.`);
+          setTokenNotice(payload.message || `${mode} generated.`);
         }
       })
       .catch((loadError) => {
         if (active) {
           let errorMsg = loadError.message || "Could not load document.";
-          if (loadError.statusCode === 402 || loadError.status === 402) {
-            errorMsg = "Insufficient document generation credits. Each document costs 1 credit. Please purchase more credits in the Finance section.";
-          }
           setActionError(errorMsg);
         }
       })
@@ -4964,7 +4961,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
       setTranscriptForm(transcriptRowsFromDetail(nextDetail));
     }
     if (payload?.token_used) {
-      setTokenNotice(payload.message || `1 token used to generate ${mode}.`);
+      setTokenNotice(payload.message || `${mode} generated.`);
     }
     await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
     return nextDetail;
@@ -5014,7 +5011,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
             <MetricCard 
               label="Available Tokens" 
               value={creditBalance ?? 0} 
-              trend={creditBalance > 0 ? `1 token per document` : "Purchase tokens in Finance section"}
+              trend="Document generation is free"
             />
           </section>
           <section className="document-layout">
