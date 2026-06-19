@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-brand-50: #effaff;
+  --color-brand-100: #def5ff;
+  --color-brand-200: #bceeff;
+  --color-brand-300: #80e2ff;
+  --color-brand-400: #41d3ff;
+  --color-brand-500: #00b8f0;
+  --color-brand-600: #0094c4;
+  --color-brand-700: #0076a1;
+  --color-brand-800: #00587a;
+  --color-brand-900: #054661;
+  --color-brand-950: #011724;
+
+  --color-teal-brand-50: #f0fef5;
+  --color-teal-brand-100: #dbfbe6;
+  --color-teal-brand-500: #50d58c;
+  --color-teal-brand-600: #39bf78;
+  --color-teal-brand-700: #23a362;
+}
+
+/* Custom visual utilities to avoid stock styles */
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-brand-600) 0%, var(--color-teal-brand-500) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, var(--color-brand-950) 0%, #0f172a 100%);
+}
+
+.glow-card {
+  box-shadow: 0 0 25px -5px rgba(99, 111, 235, 0.12), 0 0 15px -5px rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark-glow-card {
+  box-shadow: 0 0 35px -10px rgba(99, 111, 235, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.2);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.4);
+}
+
+/* Floating background blobs animations */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -35px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 25px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+.animate-blob {
+  animation: blob 10s infinite alternate ease-in-out;
+}
+
+.animate-blob-delayed {
+  animation: blob 14s infinite alternate ease-in-out;
+  animation-delay: 2s;
+}
+
+.animate-blob-slow {
+  animation: blob 18s infinite alternate ease-in-out;
+  animation-delay: 4s;
+}
+
+/* Custom dark mode variant for Tailwind CSS v4 class-based toggle */
+@variant dark (&:where(.dark, .dark *));
+
+
+

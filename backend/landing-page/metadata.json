@@ -1,0 +1,6 @@
+{
+  "name": "Schooldom Academy",
+  "description": "The complete Enterprise Resource Platform and School Management Software to digitize, manage, and scale school operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
