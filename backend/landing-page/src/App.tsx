@@ -1,3 +1,4 @@
+import AuthModal from './components/AuthModal';
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -17,12 +18,24 @@ import {
 const AUTH_BASE_URL_RAW = import.meta.env.VITE_AUTH_BASE_URL;
 const AUTH_BASE_URL = AUTH_BASE_URL_RAW ? AUTH_BASE_URL_RAW.replace(/\/+$/, '') : '';
 // If no backend auth URL provided, default to the standalone frontend dev app
-const FRONTEND_DEV_HOST = import.meta.env.VITE_FRONTEND_HOST || 'http://127.0.0.1:5173';
+const FRONTEND_DEV_HOST = import.meta.env.VITE_FRONTEND_HOST || '#';
 // Frontend auth app exposes signin at /signin and accepts ?mode=signup to show the register form
 const SIGN_IN_URL = AUTH_BASE_URL ? `${AUTH_BASE_URL}/login/` : `${FRONTEND_DEV_HOST}/signin`;
 const SIGN_UP_URL = AUTH_BASE_URL ? `${AUTH_BASE_URL}/register/` : `${FRONTEND_DEV_HOST}/signin?mode=signup`;
 
 export default function App() {
+    const [modalState, setModalState] = useState<{ isOpen: boolean; mode: 'login' | 'register' }>({
+    isOpen: false,
+    mode: 'login'
+  });
+
+  const openAuth = (mode: 'login' | 'register') => {
+    setModalState({ isOpen: true, mode });
+  };
+
+  const closeAuth = () => {
+    setModalState({ ...modalState, isOpen: false });
+  };
   const [isLegalOpen, setIsLegalOpen] = useState(false);
   const [legalDefaultTab, setLegalDefaultTab] = useState<'terms' | 'privacy'>('terms');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -81,37 +94,31 @@ export default function App() {
       <ParticleBackground />
 
       {/* Header and Navigation */}
-      <Navbar 
-        scrollToSection={scrollToSection} 
+            <Navbar 
+        scrollToSection={scrollToSection}
         theme={theme}
         onToggleTheme={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-        signInUrl={SIGN_IN_URL}
-        signUpUrl={SIGN_UP_URL}
-        onOpenOnboarding={() => {
-          if (typeof window !== 'undefined') {
-            window.location.href = SIGN_UP_URL;
-          }
-        }}
+        signInUrl="#"
+        signUpUrl="#"
+        onLoginClick={() => openAuth('login')}
+        onRegisterClick={() => openAuth('register')}
+        onOpenOnboarding={() => openAuth('register')}
       />
 
-
-      {/* Main Content Layout */}
+            {/* Main Content Layout */}
       <main>
         {/* Hero Section with core counts */}
-        <Hero 
-          scrollToSection={scrollToSection} 
-          signInUrl={SIGN_IN_URL}
-          signUpUrl={SIGN_UP_URL}
+        <Hero
+          scrollToSection={scrollToSection}
+          signInUrl="#"
+          signUpUrl="#"
+          onGetStartedClick={() => openAuth('register')}
         />
 
         {/* 9 major solutions Bento Grid */}
-        <SolutionsGrid 
-          signUpUrl={SIGN_UP_URL}
-          onOpenOnboarding={() => {
-            if (typeof window !== 'undefined') {
-              window.location.href = SIGN_UP_URL;
-            }
-          }}
+        <SolutionsGrid
+          signUpUrl="#"
+          onOpenOnboarding={() => openAuth('register')}
         />
 
         {/* School Digitization Admin Sandbox Playground */}
@@ -454,10 +461,11 @@ export default function App() {
           Support Hotline
         </span>
         <span className="relative flex h-2.5 w-2.5 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-200 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-100"></span>
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-200 opacity-75"/>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-100" />
         </span>
       </a>
+         <AuthModal isOpen={modalState.isOpen} onClose={closeAuth} initialMode={modalState.mode} />
     </div>
   );
 }

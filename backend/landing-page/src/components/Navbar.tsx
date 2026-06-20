@@ -8,9 +8,11 @@ interface NavbarProps {
   onToggleTheme: () => void;
   signInUrl?: string;
   signUpUrl?: string;
+  onLoginClick?: () => void;
+  onRegisterClick?: () => void;
 }
 
-export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onToggleTheme, signInUrl, signUpUrl }: NavbarProps) {
+export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onToggleTheme, signInUrl, signUpUrl,  onLoginClick, onRegisterClick, }: NavbarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
@@ -167,21 +169,16 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
             
             <a
               id="btn-cta-navbar-onboard"
-              href={typeof signUpUrl === 'string' ? signUpUrl : '/register/'}
+              href="#"
               onClick={(e) => {
-                try {
-                  const url = typeof signUpUrl === 'string' ? signUpUrl : '/register/';
-                  if (typeof url === 'string') {
-                    e.preventDefault();
-                    window.location.href = url;
-                  }
-                } catch (err) {}
+                e.preventDefault();
+                if (onRegisterClick) onRegisterClick();
               }}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 active:bg-brand-800 transition-all hover:translate-y-[-1px] shadow-sm hover:shadow-brand-500/25 active:translate-y-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-white bg-blue-600 hover:bg-blue-500 font-semibold text-sm transition-all shadow-lg shadow-blue-600/10 cursor-pointer"
             >
               Onboard Your School
               <ArrowRight className="h-4 w-4" />
-            </a>
+             </a>
           </div>
 
           {/* Mobile Menu Trigger */}
@@ -196,18 +193,16 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
             </button>
             
             <a
-              id="btn-cta-navbar-mobile-quick"
-              href={typeof signUpUrl === 'string' ? signUpUrl : '/register/'}
+              id="btn-cta-navbar-onboard"
+              href="#"
               onClick={(e) => {
-                try {
-                  const url = typeof signUpUrl === 'string' ? signUpUrl : '/register/';
-                  e.preventDefault();
-                  window.location.href = url;
-                } catch {}
+                e.preventDefault();
+                if (onRegisterClick) onRegisterClick();
               }}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 cursor-pointer animate-pulse"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-white bg-blue-600 hover:bg-blue-500 font-semibold text-sm transition-all shadow-lg shadow-blue-600/10 cursor-pointer"
             >
-              Onboard
+              Onboard Your School
+              <ArrowRight className="h-4 w-4" />
             </a>
             <button
               id="btn-toggle-mobile-menu"
@@ -264,21 +259,18 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
                 <ShieldCheck className="h-4 w-4 text-teal-brand-500" />
                 <span>NUC & WAEC Aligned Operations</span>
               </div>
-              <a
-                id="btn-mob-cta-onboard"
-                href={typeof signUpUrl === 'string' ? signUpUrl : '/register/'}
-                onClick={(e) => {
-                  try {
-                    const url = typeof signUpUrl === 'string' ? signUpUrl : '/register/';
-                    e.preventDefault();
-                    setIsMobileMenuOpen(false);
-                    window.location.href = url;
-                  } catch {}
-                }}
-                className="w-full text-center py-3 rounded-xl text-base font-semibold text-white bg-brand-600 hover:bg-brand-700 shadow-sm"
-              >
-                Onboard Your School
-              </a>
+             <a
+              id="btn-cta-navbar-onboard"
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                if (onRegisterClick) onRegisterClick();
+              }}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-white bg-blue-600 hover:bg-blue-500 font-semibold text-sm transition-all shadow-lg shadow-blue-600/10 cursor-pointer"
+            >
+              Onboard Your School
+              <ArrowRight className="h-4 w-4" />
+            </a>
             </div>
           </div>
         </div>

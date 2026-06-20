@@ -29,7 +29,6 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
 urlpatterns = [
-    path('', RedirectView.as_view(pattern_name='school_settings', permanent=False)),
     path('favicon.ico', RedirectView.as_view(url=static('img/schooldom-favicon.jpeg'), permanent=True)),
     path('admin/', admin.site.urls),
     path('api/auth/', include('users.urls')),
