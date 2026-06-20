@@ -53,8 +53,8 @@ function TermsConditionsPage({ onNavigate }) {
 
       <section className="privacy-hero">
         <div className="privacy-hero-content">
-          <h1 className="privacy-hero-title">Terms and Conditions</h1>
-          <p className="privacy-hero-subtitle">Last updated: June 11, 2026</p>
+          <h1 className="privacy-hero-title">Terms &amp; Conditions</h1>
+          <p className="privacy-hero-subtitle">Effective Date: 2026</p>
         </div>
       </section>
 
@@ -62,62 +62,171 @@ function TermsConditionsPage({ onNavigate }) {
         <div className="privacy-container">
           <div className="privacy-document">
             <section className="privacy-section">
-              <h2>1. Acceptance of Terms</h2>
+              <h2>Introduction &amp; Agreement</h2>
               <p>
-                By creating an account or using SchoolDom, you agree to follow these Terms and Conditions. If you do not agree, you should not create an account or use the service.
+                These Terms &amp; Conditions ("Terms") govern your access to and use of the SchoolDom platform ("Platform"), including the website, web application, and mobile applications for school administrators, teachers, students, and parents (collectively, "Applications"). SchoolDom is provided by Xcel Technologies Ltd ("Xcel Technologies", "we", "us", or "our"). By creating an account or using the Platform, you confirm that you have read, understood, and agree to these Terms. If you do not agree, do not use the Platform.
               </p>
             </section>
 
             <section className="privacy-section">
-              <h2>2. Account Responsibility</h2>
+              <h2>Definitions</h2>
               <p>
-                Users are responsible for keeping account details safe and for all activity performed through their accounts. Schools are responsible for approving, managing, and disabling staff or student accounts when needed.
+                <strong>Platform:</strong> SchoolDom website, web app, and mobile apps.
+              </p>
+              <p>
+                <strong>User:</strong> Any individual or entity authorized to use the Platform. Includes School Owner, School Administrator, Teacher, Parent/Guardian, and Student.
+              </p>
+              <p>
+                <strong>Content:</strong> All data, files, results, documents, images, and information uploaded or stored on the Platform by Users.
+              </p>
+              <p>
+                <strong>Account:</strong> The credentials and profile created for each User.
               </p>
             </section>
 
             <section className="privacy-section">
-              <h2>3. School Data</h2>
+              <h2>Accounts &amp; Eligibility</h2>
               <p>
-                Schools remain responsible for the accuracy of student records, attendance, results, fees, exams, and other data entered into SchoolDom. SchoolDom provides tools to manage this information but does not replace the school&apos;s administrative responsibility.
+                <strong>3.1 Eligibility</strong>
               </p>
-            </section>
-
-            <section className="privacy-section">
-              <h2>4. Acceptable Use</h2>
               <ul>
-                <li>Do not use SchoolDom for fraud, impersonation, harassment, or unauthorized access.</li>
-                <li>Do not upload illegal, harmful, or abusive content.</li>
-                <li>Do not attempt to bypass exam security, attendance controls, or account activation rules.</li>
-                <li>Do not interfere with the platform, servers, or other users.</li>
+                <li>School Owners must be legal representatives of the school with authority to contract.</li>
+                <li>School Administrators, Teachers, and Parents must be 18+ years old.</li>
+                <li>Students may use the Platform only under supervision of Teachers/Parents and with consent from the School Owner.</li>
               </ul>
-            </section>
-
-            <section className="privacy-section">
-              <h2>5. CBT and Exam Integrity</h2>
               <p>
-                Students must follow exam rules set by their school. Attempting to cheat, leave a secured exam page, manipulate exam data, or bypass security checks may lead to auto-submission or disciplinary action by the school.
+                <strong>3.2 Account Creation &amp; Security</strong>
+              </p>
+              <p>
+                School Owners subscribe and create the main school account. School Administrators create accounts for Teachers, Parents, and Students. You must provide accurate, current information and keep it updated. You are responsible for all activities under your account. Keep passwords confidential. Notify us immediately at <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a> if you suspect unauthorized access. Xcel Technologies is not liable for losses due to your failure to protect account details.
+              </p>
+              <p>
+                <strong>3.3 Acceptable Use</strong>
+              </p>
+              <p>
+                You agree to use SchoolDom only for lawful school management purposes. You must not:
+              </p>
+              <ul>
+                <li>Violate any Nigerian law, NDPR, or these Terms.</li>
+                <li>Impersonate any person, school, or falsely claim affiliation.</li>
+                <li>Upload malware, viruses, or disrupt servers/networks.</li>
+                <li>Attempt unauthorized access, hacking, or data scraping.</li>
+                <li>Use bots, spiders, or automated tools without written permission.</li>
+                <li>Upload content that is defamatory, obscene, infringing, or harmful to minors.</li>
+              </ul>
+              <p>
+                We may suspend or terminate accounts that violate this section.
               </p>
             </section>
 
             <section className="privacy-section">
-              <h2>6. Payments and Tokens</h2>
+              <h2>Content &amp; Data Ownership</h2>
               <p>
-                Schools are responsible for reviewing purchases, activation tokens, fees, and student payment records. Payment availability and pricing may vary by school type and active platform settings.
+                <strong>4.1 User Responsibility</strong>
+              </p>
+              <p>
+                You own the Content you upload. You are solely responsible for it. You warrant that you have all rights and consents needed, especially for student/parent data.
+              </p>
+              <p>
+                <strong>4.2 License to Xcel Technologies</strong>
+              </p>
+              <p>
+                You grant Xcel Technologies a non-exclusive, worldwide, royalty-free license to host, process, display, and backup your Content solely to provide, maintain, and improve SchoolDom. We do not claim ownership of your data.
+              </p>
+              <p>
+                <strong>4.3 School Data Controller</strong>
+              </p>
+              <p>
+                For NDPR/GDPR purposes, the School Owner is the "Data Controller" for student/parent data. Xcel Technologies is the "Data Processor". We process data only on your instructions. See our Privacy Policy for details.
               </p>
             </section>
 
             <section className="privacy-section">
-              <h2>7. Changes to Terms</h2>
+              <h2>Intellectual Property</h2>
               <p>
-                We may update these Terms and Conditions when the platform, law, or school requirements change. Continued use of SchoolDom after updates means you accept the revised terms.
+                SchoolDom, including all code, design, logos, trademarks, and features, is owned by Xcel Technologies Ltd. All rights reserved. We grant you a limited, non-exclusive, non-transferable license to use the Platform for your school’s internal purposes only. You may not copy, modify, reverse engineer, resell, or create derivative works without written consent.
               </p>
             </section>
 
             <section className="privacy-section">
-              <h2>8. Contact</h2>
+              <h2>Fees, Payment &amp; Refunds</h2>
               <p>
-                For questions about these Terms and Conditions, contact us at{" "}
-                <a href={SUPPORT_MAILTO}>{SUPPORT_EMAIL}</a>.
+                <strong>6.1 Subscription</strong>
+              </p>
+              <p>
+                School Owners pay subscription fees based on the plan chosen. Fees are billed annually/termly in advance. Current pricing is shown on http://schooldom.academy/pricing.
+              </p>
+              <p>
+                <strong>6.2 Payment Gateway Fees</strong>
+              </p>
+              <p>
+                Parents paying school fees through SchoolDom pay gateway/transaction charges set by our payment partners. Xcel Technologies does not receive these charges.
+              </p>
+              <p>
+                <strong>6.3 Free Trial &amp; Refunds</strong>
+              </p>
+              <p>
+                We offer a free trial for new schools. After trial ends, all subscription fees are non-refundable. No refunds for partial months or unused features. Exception: If we fail to provide core services for 7+ consecutive days due to our fault, you may request a pro-rata refund.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Service Availability &amp; Support</h2>
+              <p>
+                We aim for 99.5% monthly uptime, excluding scheduled maintenance. We’ll notify School Administrators 48 hours before planned maintenance.
+              </p>
+              <p>
+                Support is provided via email at <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a> during business hours, 9am-5pm WAT, Mon-Fri. Response time for critical issues: 4 business hours.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Suspension &amp; Termination</h2>
+              <p>
+                <strong>8.1 By You</strong>: School Owners may terminate by emailing <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a>. Access ends at the end of the paid period.
+              </p>
+              <p>
+                <strong>8.2 By Us</strong>: We may suspend or terminate accounts for breach of Terms, non-payment, fraud, or illegal use. We’ll give notice where possible. On termination, you have 30 days to export your data. After 30 days, we may delete Content as per our Privacy Policy. Clauses on IP, liability, and payment survive termination.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Limitation of Liability</h2>
+              <p>
+                To the maximum extent allowed by Nigerian law: Xcel Technologies is not liable for indirect, incidental, special, or consequential damages, including loss of profits, data, or goodwill. Our total liability for any claim is limited to the amount you paid us in the 12 months before the claim. School Owners are liable for data they upload and for actions of their Users.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Disclaimer of Warranties</h2>
+              <p>
+                SchoolDom is provided “AS IS” and “AS AVAILABLE”. We do not guarantee the Platform will be error-free, uninterrupted, or meet all your requirements. We are not responsible for internet outages or third-party service failures.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Changes to Terms</h2>
+              <p>
+                We may update these Terms to reflect new features or legal changes. We’ll post the updated version with a new “Effective Date” and notify School Administrators by email for material changes. Continued use after changes means acceptance.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Governing Law &amp; Disputes</h2>
+              <p>
+                These Terms are governed by the laws of the Federal Republic of Nigeria. Any dispute will first attempt amicable resolution for 30 days. If unresolved, disputes will be settled by arbitration in Lagos under the Arbitration and Conciliation Act.
+              </p>
+            </section>
+
+            <section className="privacy-section">
+              <h2>Contact Us</h2>
+              <p>
+                Questions about these Terms? Contact: Xcel Technologies Ltd<br />
+                Email: <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a><br />
+                Address: 256 Ikotun road, Lagos.
+              </p>
+              <p>
+                These Terms incorporate our Privacy Policy by reference.
               </p>
             </section>
           </div>

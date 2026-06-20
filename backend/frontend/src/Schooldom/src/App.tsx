@@ -306,8 +306,8 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 text-brand-600 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center font-bold shadow-xs">☎</div>
                 <div>
-                  <h5 className="font-display font-semibold text-sm text-brand-950 dark:text-white">Need a custom integration or contract schedule?</h5>
-                  <p className="text-xs text-brand-800 dark:text-brand-300">Our senior migration experts are ready to hop on an onboarding call.</p>
+                  <h5 className="font-display font-semibold text-sm text-brand-950 dark:text-white">Have questions about SchoolDom or need help getting started? Our team is here to assist you with onboarding, technical support, partnerships, or general inquiries.</h5>
+                  <p className="text-xs text-brand-800 dark:text-brand-300">Send us a message and we'll get back to you as soon as possible.</p>
                 </div>
               </div>
               <button
@@ -315,7 +315,7 @@ export default function App() {
                 onClick={() => setIsContactOpen(true)}
                 className="inline-flex items-center gap-1 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white rounded-xl px-4.5 py-2 text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
-                Schedule Integration Call
+                Contact Support
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>

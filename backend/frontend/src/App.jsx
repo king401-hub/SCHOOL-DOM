@@ -7,7 +7,8 @@ const SchooldomLanding = LandingPage;
 import ResourceCenter from "./ResourceCenter";
 
 import FAQPage from "./FAQPage";
-import PrivacyPolicyPage from "./PrivacyPolicyPage";
+import PrivacyPolicyPage from "./PrivacyPolicyPage.jsx";
+
 import TermsConditionsPage from "./TermsConditionsPage";
 import PricingPage from "./PricingPage";
 import { AttendanceModule, IdCardAttendanceScanner, StudentQrAttendanceScanner, TeacherQRCodeAttendancePage } from "./components/Attendance";
