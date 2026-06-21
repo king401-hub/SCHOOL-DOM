@@ -1,27 +1,31 @@
 from rest_framework import serializers
 from .models import Exam, ExamAttempt, Question, StudentAnswer
 
+
 class QuestionSerializer(serializers.ModelSerializer):
     group = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
-        fields = ['id', 'text', 'image', 'options', 'question_type', 'points', 'group', 'group_order']
+        fields = ['id', 'text', 'image', 'options', 'question_type', 'points', 'group_order']
 
-    def get_group(self, obj):
-        group = getattr(obj, "group", None)
-        if not group:
-            return None
-        return {
-            "id": group.id,
-            "title": group.title,
-            "group_type": group.group_type,
-            "passage_text": group.passage_text,
-            "image": group.image.url if group.image else "",
-        }
+    # Removed the get_group() method - no more duplicate group data
+
+
+class QuestionGroupSerializer(serializers.Serializer):
+    """Serializer for a group of linked questions (passage/diagram + questions)"""
+    type = serializers.CharField(default="linked")
+    group_id = serializers.IntegerField()
+    group_title = serializers.CharField()
+    group_type = serializers.CharField()
+    passage_text = serializers.CharField(allow_blank=True)
+    image = serializers.CharField(allow_blank=True, allow_null=True)
+    instructions = serializers.CharField(allow_blank=True, allow_null=True)
+    questions = QuestionSerializer(many=True)
+
 
 class ExamSerializer(serializers.ModelSerializer):
-    questions = QuestionSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
     subject_name = serializers.CharField(source='subject.name', read_only=True)
     class_name = serializers.SerializerMethodField()
     question_count = serializers.SerializerMethodField()
@@ -35,6 +39,39 @@ class ExamSerializer(serializers.ModelSerializer):
             'start_date', 'end_date', 'subject_name', 'class_name', 'question_count',
             'pin_required'
         ]
+
+    def get_questions(self, obj):
+        """
+        Return questions as a mixed array:
+        - Standalone questions: {id, text, options, ...}
+        - Linked groups: {type: "linked", group_id, passage_text, questions: [...]}
+        """
+        all_questions = obj.questions.all().order_by('group__id', 'group_order')
+        
+        grouped = {}
+        standalone = []
+        
+        for question in all_questions:
+            if question.group:
+                group = question.group
+                if group.id not in grouped:
+                    grouped[group.id] = {
+                        "type": "linked",
+                        "group_id": group.id,
+                        "group_title": group.title or f"{group.get_group_type_display()} {group.id}",
+                        "group_type": group.group_type,
+                        "passage_text": group.passage_text or "",
+                        "image": group.image.url if group.image else None,
+                        "instructions": getattr(group, 'instructions', ''),
+                        "questions": []
+                    }
+                grouped[group.id]["questions"].append(QuestionSerializer(question).data)
+            else:
+                standalone.append(QuestionSerializer(question).data)
+        
+        # Combine: standalone questions first, then grouped sets
+        result = standalone + list(grouped.values())
+        return result
 
     def get_class_name(self, obj):
         class_group = obj.class_group
@@ -54,10 +91,12 @@ class ExamSerializer(serializers.ModelSerializer):
     def get_pin_required(self, obj):
         return obj.pins.filter(is_active=True).exists()
 
+
 class StudentAnswerSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentAnswer
         fields = ['id', 'question_id', 'selected_options', 'answer_text']
+
 
 class ExamAttemptSerializer(serializers.ModelSerializer):
     exam = ExamSerializer(read_only=True)
@@ -72,14 +111,21 @@ class ExamAttemptSerializer(serializers.ModelSerializer):
             'auto_submit_activity_logs', 'answers'
         ]
 
+
 class ExamAttemptDetailSerializer(serializers.Serializer):
     """Serializer for exam attempt detail response"""
     attempt = ExamAttemptSerializer(read_only=True)
     exam = ExamSerializer(read_only=True)
-    questions = QuestionSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
     student = serializers.SerializerMethodField()
     time_remaining_seconds = serializers.SerializerMethodField()
     answers = serializers.DictField(read_only=True)
+    
+    def get_questions(self, obj):
+        """Return grouped questions for the exam"""
+        exam = obj.exam if hasattr(obj, 'exam') else obj
+        serializer = ExamSerializer()
+        return serializer.get_questions(exam)
     
     def get_student(self, obj):
         user = self.context['request'].user
@@ -99,6 +145,7 @@ class ExamAttemptDetailSerializer(serializers.Serializer):
         total_seconds = attempt.exam.duration_minutes * 60
         remaining = int(total_seconds - elapsed)
         return max(0, remaining)
+
 
 class ExamResultSerializer(serializers.Serializer):
     """Serializer for exam results"""
