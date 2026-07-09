@@ -659,9 +659,7 @@ namespace SchoolDom.Cbt.Win7
             if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return "";
             try
             {
-                // Tls12 (3072) is not a named member in .NET 4.0 — use numeric cast
-                try { ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; }
-                catch { ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls; }
+                // TLS is configured globally in Program.BootstrapNetworkSecurity() at startup
                 using (var client = new WebClient())
                 {
                     client.Headers["User-Agent"] = "SchoolDom-Admin-Sync-Win7";
