@@ -213,6 +213,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
 
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [showCreateSchool, setShowCreateSchool] = useState(false);
   const [schoolName, setSchoolName] = useState("");
   const [preferredSchoolCode, setPreferredSchoolCode] = useState("");
@@ -543,8 +544,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         setMode("otp");
         setSuccessMessage(data.message || "Enter the OTP sent to your email.");
       } else {
-        setSuccessMessage(data.message || "Account created successfully. You can sign in now.");
-        setMode("signin");
+        completeSession(data);
       }
       setEmail(signupEmail.trim());
       setPassword("");
@@ -1226,8 +1226,10 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                       <span>
                         I have read and accept the SchoolDom{" "}
                         <a
-                          href="/terms?from=signup"
-                          onClick={() => {
+                          href="#terms"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setShowTermsModal(true);
                             setTermsOpened(true);
                             window.localStorage.setItem(TERMS_OPENED_KEY, "true");
                           }}
@@ -1264,6 +1266,113 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
           </div>
         </section>
       </section>
+
+      {showTermsModal && (
+        <div
+          className="terms-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Terms and Conditions"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowTermsModal(false); }}
+        >
+          <div className="terms-modal">
+            <div className="terms-modal-header">
+              <h2>Terms &amp; Conditions</h2>
+              <button
+                type="button"
+                className="terms-modal-close"
+                onClick={() => setShowTermsModal(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="terms-modal-body">
+              <p style={{ color: "#94a3b8", fontSize: "0.8rem", marginBottom: "1rem" }}>Effective Date: 2026 · Xcel Technologies Ltd</p>
+
+              <h3>1. Introduction &amp; Agreement</h3>
+              <p>These Terms govern your access to and use of the SchoolDom platform ("Platform"), including the website, web application, and mobile applications for school administrators, teachers, students, and parents. By creating an account or using the Platform, you confirm that you have read, understood, and agree to these Terms.</p>
+
+              <h3>2. Definitions</h3>
+              <p><strong>Platform:</strong> SchoolDom website, web app, and mobile apps.</p>
+              <p><strong>User:</strong> Any individual or entity authorized to use the Platform — School Owner, Administrator, Teacher, Parent/Guardian, or Student.</p>
+              <p><strong>Content:</strong> All data, files, results, documents, and information uploaded or stored on the Platform by Users.</p>
+
+              <h3>3. Accounts &amp; Eligibility</h3>
+              <p><strong>3.1 Eligibility</strong></p>
+              <ul>
+                <li>School Owners must be legal representatives with authority to contract.</li>
+                <li>Administrators, Teachers, and Parents must be 18+ years old.</li>
+                <li>Students may use the Platform only under supervision and with consent from the School Owner.</li>
+              </ul>
+              <p><strong>3.2 Account Security</strong></p>
+              <p>You must provide accurate, current information and keep it updated. You are responsible for all activities under your account. Notify us immediately at <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a> if you suspect unauthorized access.</p>
+              <p><strong>3.3 Acceptable Use</strong></p>
+              <p>You must not: violate any Nigerian law or NDPR; impersonate any person or school; upload malware; attempt unauthorized access or data scraping; use bots without written permission; upload content that is defamatory, obscene, or harmful to minors. We may suspend or terminate accounts that violate this section.</p>
+
+              <h3>4. Content &amp; Data Ownership</h3>
+              <p>You own the Content you upload and are solely responsible for it. You grant Xcel Technologies a non-exclusive license to host, process, display, and backup your Content solely to provide and maintain SchoolDom. For NDPR/GDPR purposes, the School Owner is the Data Controller and Xcel Technologies is the Data Processor.</p>
+
+              <h3>5. Intellectual Property</h3>
+              <p>SchoolDom, including all code, design, logos, and features, is owned by Xcel Technologies Ltd. All rights reserved. We grant you a limited, non-exclusive, non-transferable license for your school's internal use only. You may not copy, modify, reverse engineer, or resell the Platform without written consent.</p>
+
+              <h3>6. Fees, Payment &amp; Refunds</h3>
+              <p><strong>6.1 Subscription:</strong> School Owners pay subscription fees billed annually/termly in advance. Current pricing is at schooldom.academy/pricing.</p>
+              <p><strong>6.2 Payment Fees:</strong> Parents paying school fees through SchoolDom pay gateway charges set by our payment partners. Xcel Technologies does not receive these charges.</p>
+              <p><strong>6.3 Refunds:</strong> We offer a free trial for new schools. After trial ends, all subscription fees are non-refundable except if we fail to provide core services for 7+ consecutive days due to our fault.</p>
+
+              <h3>7. Service Availability &amp; Support</h3>
+              <p>We aim for 99.5% monthly uptime, excluding scheduled maintenance. We'll notify School Administrators 48 hours before planned maintenance. Support via <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a>, 9am–5pm WAT Mon–Fri.</p>
+
+              <h3>8. Suspension &amp; Termination</h3>
+              <p><strong>By You:</strong> School Owners may terminate by emailing us. Access ends at the end of the paid period. You have 30 days to export your data.</p>
+              <p><strong>By Us:</strong> We may suspend or terminate accounts for breach of Terms, non-payment, fraud, or illegal use.</p>
+
+              <h3>9. Limitation of Liability</h3>
+              <p>To the maximum extent allowed by Nigerian law, Xcel Technologies is not liable for indirect, incidental, or consequential damages. Our total liability for any claim is limited to amounts you paid us in the 12 months before the claim.</p>
+
+              <h3>10. Disclaimer of Warranties</h3>
+              <p>SchoolDom is provided "AS IS" and "AS AVAILABLE". We do not guarantee the Platform will be error-free or uninterrupted. We are not responsible for internet outages or third-party service failures.</p>
+
+              <h3>11. Changes to Terms</h3>
+              <p>We may update these Terms to reflect new features or legal changes. We'll post the updated version with a new Effective Date and notify School Administrators by email for material changes.</p>
+
+              <h3>12. Governing Law &amp; Disputes</h3>
+              <p>These Terms are governed by the laws of the Federal Republic of Nigeria. Disputes will first attempt amicable resolution for 30 days, then proceed to arbitration in Lagos under the Arbitration and Conciliation Act.</p>
+
+              <h3>13. Contact Us</h3>
+              <p>Xcel Technologies Ltd · <a href="mailto:enquiry@schooldom.academy">enquiry@schooldom.academy</a> · 256 Ikotun Road, Lagos.</p>
+            </div>
+
+            <div className="terms-modal-footer">
+              <button
+                type="button"
+                className="terms-modal-decline"
+                onClick={() => {
+                  setTermsAccepted(false);
+                  setShowTermsModal(false);
+                }}
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                className="terms-modal-accept"
+                onClick={() => {
+                  setTermsAccepted(true);
+                  setTermsOpened(true);
+                  window.localStorage.setItem(TERMS_OPENED_KEY, "true");
+                  setShowTermsModal(false);
+                  setError("");
+                }}
+              >
+                Accept &amp; Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

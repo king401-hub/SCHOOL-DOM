@@ -4,7 +4,10 @@ from datetime import timedelta
 from typing import Optional
 import uuid
 import re
+import logging
 from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
 
 import requests
 from django.conf import settings
@@ -21,7 +24,9 @@ from finance.models import (
     BankPayment,
     ClassFee,
     DocumentGenerationCreditTransaction,
+    FeeAllocation,
     FinanceLedgerLog,
+    PaymentReceiptLink,
     SchoolFee,
     StudentActivationCredit,
     StudentPaymentReference,
@@ -132,6 +137,1095 @@ def get_or_create_student_payment_reference(student_profile) -> StudentPaymentRe
     return reference
 
 
+# ============================================================
+# NEW: PAYSTACK SPLIT PAYMENT INTEGRATION
+# ============================================================
+
+def _paystack_headers():
+    """Get Paystack API headers."""
+    secret = getattr(settings, "PAYSTACK_SECRET_KEY", "")
+    if not secret:
+        raise RuntimeError("PAYSTACK_SECRET_KEY is not configured.")
+    return {
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/json",
+    }
+
+
+def _paystack_base_url():
+    """Get Paystack base URL."""
+    return getattr(settings, "PAYSTACK_BASE_URL", "https://api.paystack.co").rstrip("/")
+
+
+def _paystack_json(response):
+    """Parse Paystack JSON response."""
+    try:
+        return response.json()
+    except ValueError:
+        response.raise_for_status()
+        return {}
+
+
+def create_paystack_split_code(school_subaccount_code: str, school_name: str) -> str:
+    """
+    Create a split code for a school in Paystack.
+    
+    Args:
+        school_subaccount_code: Paystack subaccount code for the school
+        school_name: Name of the school
+        
+    Returns:
+        str: Split code (SPL_xxx)
+    """
+    url = f"{_paystack_base_url()}/split"
+    payload = {
+        "name": f"Schooldom Split - {school_name}",
+        "type": "flat",
+        "currency": "NGN",
+        "subaccounts": [
+            {
+                "subaccount": school_subaccount_code,
+                "share": 5000000  # ₦50,000 in kobo
+            },
+            {
+                "subaccount": getattr(settings, "PAYSTACK_SCHOOLDOM_SUBACCOUNT", ""),
+                "share": 10000  # ₦100 in kobo
+            }
+        ],
+        "bearer_type": "subaccount",  # School bears Paystack fee
+        "main_account_share": 0
+    }
+    
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to create split code"))
+    
+    return data["data"]["split_code"]
+
+
+def list_paystack_banks() -> list:
+    """Fetch the list of Nigerian banks (name + settlement code) Paystack supports for subaccounts."""
+    url = f"{_paystack_base_url()}/bank"
+    response = requests.get(
+        url,
+        params={"country": "nigeria", "currency": "NGN", "perPage": 100},
+        headers=_paystack_headers(),
+        timeout=30,
+    )
+    data = _paystack_json(response)
+    if response.status_code != 200 or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to load bank list"))
+    return [{"name": bank["name"], "code": bank["code"]} for bank in data.get("data", [])]
+
+
+def resolve_paystack_account(account_number: str, bank_code: str) -> dict:
+    """Resolve a Nigerian bank account number to its registered name via Paystack."""
+    url = f"{_paystack_base_url()}/bank/resolve"
+    response = requests.get(
+        url,
+        params={"account_number": account_number, "bank_code": bank_code},
+        headers=_paystack_headers(),
+        timeout=20,
+    )
+    data = _paystack_json(response)
+    if response.status_code != 200 or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Could not resolve account number"))
+    return {
+        "account_number": data["data"]["account_number"],
+        "account_name": data["data"]["account_name"],
+    }
+
+
+def create_paystack_subaccount(
+    business_name: str,
+    bank_code: str,
+    account_number: str,
+    percentage_charge: Decimal = Decimal("0.00")
+) -> dict:
+    """
+    Create a subaccount for a school in Paystack.
+    
+    Args:
+        business_name: Name of the school/business
+        bank_code: Bank code (e.g., "058" for GTBank)
+        account_number: Bank account number
+        percentage_charge: Percentage charge (default 0)
+        
+    Returns:
+        dict: Subaccount data including subaccount_code
+    """
+    url = f"{_paystack_base_url()}/subaccount"
+    payload = {
+        "business_name": business_name,
+        "settlement_bank": bank_code,
+        "account_number": account_number,
+        "percentage_charge": float(percentage_charge)
+    }
+    
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to create subaccount"))
+    
+    return data["data"]
+
+
+def create_paystack_customer(email: str, first_name: str, last_name: str, phone: str = "") -> dict:
+    """Get or create a Paystack customer for a parent. Returns customer data including customer_code."""
+    url = f"{_paystack_base_url()}/customer"
+    payload = {
+        "email": email,
+        "first_name": first_name or "Parent",
+        "last_name": last_name or "Guardian",
+    }
+    if phone:
+        payload["phone"] = phone
+
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    if response.status_code in (200, 201) and data.get("status"):
+        return data["data"]
+
+    # Customer may already exist for this email — look it up instead of failing.
+    lookup = requests.get(f"{url}/{email}", headers=_paystack_headers(), timeout=30)
+    lookup_data = _paystack_json(lookup)
+    if lookup.status_code == 200 and lookup_data.get("status"):
+        return lookup_data["data"]
+
+    raise RuntimeError(data.get("message", "Failed to create Paystack customer"))
+
+
+DVA_SCHOOLDOM_SHARE_PERCENT = Decimal("0.25")  # Schooldom's cut of bank-transfer (DVA) payments, in percent
+
+
+def get_or_create_paystack_dva_split_code(tenant) -> str:
+    """
+    Get or create a percentage-type Paystack split code for a school's dedicated virtual accounts.
+
+    Unlike the flat split used at checkout (exact kobo amounts per fee), a DVA must use one fixed
+    split rule applied to every incoming transfer, so this uses a percentage split instead:
+    the school's subaccount gets (100 - DVA_SCHOOLDOM_SHARE_PERCENT)%, Schooldom gets the rest.
+    The school's subaccount bears the Paystack transfer fee, consistent with the checkout flow.
+    """
+    wallet = AdminWallet.objects.get(tenant=tenant)
+    if wallet.dva_split_code:
+        return wallet.dva_split_code
+    if not wallet.subaccount_code:
+        raise RuntimeError("This school has no Paystack subaccount configured yet.")
+
+    school_share = Decimal("100") - DVA_SCHOOLDOM_SHARE_PERCENT
+    url = f"{_paystack_base_url()}/split"
+    payload = {
+        "name": f"Schooldom DVA Split - {tenant.name}",
+        "type": "percentage",
+        "currency": "NGN",
+        "subaccounts": [
+            {"subaccount": wallet.subaccount_code, "share": float(school_share)},
+            {"subaccount": getattr(settings, "PAYSTACK_SCHOOLDOM_SUBACCOUNT", ""), "share": float(DVA_SCHOOLDOM_SHARE_PERCENT)},
+        ],
+        "bearer_type": "subaccount",
+        "bearer_subaccount": wallet.subaccount_code,
+    }
+
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to create DVA split code"))
+
+    split_code = data["data"]["split_code"]
+    wallet.dva_split_code = split_code
+    wallet.save(update_fields=["dva_split_code"])
+    return split_code
+
+
+def create_paystack_dedicated_account(customer_code: str, split_code: str = "", preferred_bank: str = "wema-bank") -> dict:
+    """Create a dedicated virtual account (NUBAN) for a Paystack customer, optionally with a split applied."""
+    url = f"{_paystack_base_url()}/dedicated_account"
+    payload = {
+        "customer": customer_code,
+        "preferred_bank": preferred_bank,
+    }
+    if split_code:
+        payload["split_code"] = split_code
+
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to create dedicated virtual account"))
+
+    return data["data"]
+
+
+def provision_parent_virtual_account(parent_user, actor=None):
+    """
+    Auto-provision a real Paystack dedicated virtual account for a parent, replacing the need
+    to manually type in account details. The account is split so the school's share settles
+    automatically to their existing subaccount on every bank transfer.
+
+    Returns (ParentVirtualAccount, created: bool).
+    """
+    from finance.models import ParentVirtualAccount
+
+    tenant = getattr(parent_user, "tenant", None)
+    if not tenant:
+        raise ValueError("Parent has no school/tenant assigned.")
+
+    full_name = (parent_user.get_full_name() or parent_user.email or "").strip()
+    first_name, _, last_name = full_name.partition(" ")
+    customer = create_paystack_customer(
+        email=parent_user.email,
+        first_name=first_name or "Parent",
+        last_name=last_name or "Guardian",
+        phone=getattr(parent_user, "phone", "") or "",
+    )
+    customer_code = customer["customer_code"]
+
+    split_code = get_or_create_paystack_dva_split_code(tenant)
+    dva = create_paystack_dedicated_account(customer_code, split_code=split_code)
+
+    account_number = dva.get("account_number", "")
+    bank_name = (dva.get("bank") or {}).get("name", "")
+    account_name = dva.get("account_name", "")
+
+    vac, created = ParentVirtualAccount.objects.update_or_create(
+        parent=parent_user,
+        defaults={
+            "tenant": tenant,
+            "account_number": account_number,
+            "bank_name": bank_name,
+            "account_name": account_name,
+            "provider": "paystack",
+            "paystack_reference": customer_code,
+            "is_active": True,
+            "assigned_by": actor,
+        },
+    )
+    return vac, created
+
+
+SCHOOLDOM_RATE = Decimal("0.003")          # 0.3% of each fee's tuition amount
+PAYSTACK_FLAT_FEE = Decimal("300.00")      # ₦300 flat per transaction (charged to parent)
+
+
+def schooldom_fee_for(tuition: Decimal) -> Decimal:
+    """Return Schooldom's 0.3% cut for a given tuition amount, rounded to kobo."""
+    return (tuition * SCHOOLDOM_RATE).quantize(Decimal("0.01"))
+
+
+def initialize_paystack_split_payment(
+    email: str,
+    amount: Decimal,
+    subaccount_code: str,
+    transaction_charge: Decimal = Decimal("0.00"),
+    metadata: dict = None,
+    callback_url: str = ""
+) -> dict:
+    """
+    Initialize a Paystack split payment.
+
+    Money flow:
+    - `amount` (naira): total the parent pays = tuitions + 0.3% Schooldom fees + ₦300 Paystack fee
+    - `transaction_charge` (naira): amount kept by Schooldom main account
+                                    = sum(0.3% × each_tuition) + ₦300
+    - School subaccount receives: amount − transaction_charge = exact tuition total
+    - `bearer = "account"`: Schooldom main account bears Paystack's actual processing fee
+      (the ₦300 in transaction_charge is the parent's contribution toward that)
+
+    Example — parent paying one ₦50,000 fee:
+      amount             = ₦50,450  (₦50,000 + ₦150 Schooldom 0.3% + ₦300 Paystack)
+      transaction_charge = ₦450     → stays in Schooldom main account
+      school subaccount  = ₦50,000  → school receives full tuition, nothing deducted
+    """
+    url = f"{_paystack_base_url()}/transaction/initialize"
+
+    payload = {
+        "email": email,
+        "amount": int(amount * 100),                    # total in kobo
+        "subaccount": subaccount_code,                  # school's subaccount (receives remainder)
+        "transaction_charge": int(transaction_charge * 100),  # kobo → stays in main account
+        "bearer": "account",                            # Schooldom main account pays Paystack fee
+        "metadata": metadata or {},
+        "callback_url": callback_url or getattr(settings, "PAYSTACK_CALLBACK_URL", ""),
+    }
+
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+
+    if not data.get("status"):
+        raise RuntimeError(data.get("message", "Failed to initialize payment"))
+
+    return data["data"]
+
+
+def verify_paystack_transaction(reference: str) -> dict:
+    """
+    Verify a Paystack transaction.
+    
+    Args:
+        reference: Paystack transaction reference
+        
+    Returns:
+        dict: Transaction data
+    """
+    url = f"{_paystack_base_url()}/transaction/verify/{reference}"
+    
+    response = requests.get(url, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to verify transaction"))
+    
+    return data["data"]
+
+
+def verify_paystack_webhook_signature(signature: str, payload: bytes) -> bool:
+    """
+    Verify Paystack webhook signature.
+    
+    Args:
+        signature: x-paystack-signature header value
+        payload: Raw request body
+        
+    Returns:
+        bool: True if signature is valid
+    """
+    import hmac
+    import hashlib
+    
+    secret = getattr(settings, "PAYSTACK_SECRET_KEY", "")
+    if not secret:
+        return False
+    
+    expected_signature = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha512
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature, expected_signature)
+
+
+def get_fee_payment_breakdown(fee_ids: list) -> dict:
+    """
+    Get payment breakdown for a list of fees including Schooldom and Paystack fees.
+    
+    Args:
+        fee_ids: List of SchoolFee IDs
+        
+    Returns:
+        dict: Payment breakdown with totals
+    """
+    fees = SchoolFee.objects.filter(id__in=fee_ids).select_related('student', 'student__user')
+
+    if not fees.exists():
+        raise ValueError("No fees found")
+
+    items = []
+    total_tuition = Decimal("0.00")
+    total_schooldom = Decimal("0.00")
+
+    for fee in fees:
+        tuition = _as_decimal(fee.amount)
+        s_fee = schooldom_fee_for(tuition)   # 0.3% of tuition
+        total_tuition += tuition
+        total_schooldom += s_fee
+
+        student_name = fee.student.user.get_full_name() or fee.student.user.email
+        class_name = getattr(fee.student, 'current_class', None)
+        class_name = class_name.name if class_name else ""
+
+        items.append({
+            'fee_id': str(fee.id),
+            'student_id': str(fee.student.id),
+            'student_name': student_name,
+            'class': class_name,
+            'tuition': float(tuition),
+            'schooldom_fee': float(s_fee),        # 0.3% of this fee
+            'subtotal': float(tuition + s_fee),   # per-item cost before Paystack
+            'due_date': fee.due_date.strftime('%Y-%m-%d'),
+            'status': fee.status,
+        })
+
+    # ₦300 Paystack flat fee is per transaction (not per fee item), paid by parent
+    paystack_fee = PAYSTACK_FLAT_FEE
+    transaction_charge = total_schooldom + paystack_fee  # goes to Schooldom main account
+
+    return {
+        'items': items,
+        'subtotal': float(total_tuition),              # total tuition (what school receives)
+        'schooldom_fee_total': float(total_schooldom), # 0.3% of all tuitions
+        'paystack_fee': float(paystack_fee),           # ₦300 flat per transaction
+        'transaction_charge': float(transaction_charge),  # schooldom% + ₦300
+        'grand_total': float(total_tuition + transaction_charge),
+        'fee_count': len(items),
+    }
+
+
+def _sendchamp_headers() -> dict:
+    api_key = getattr(settings, "SENDCHAMP_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("SENDCHAMP_API_KEY is not configured.")
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+
+def send_sendchamp_sms(to_phone: str, message: str) -> dict:
+    """Send SMS via Sendchamp. Logs the full request and response for debugging."""
+    try:
+        headers = _sendchamp_headers()
+    except RuntimeError as exc:
+        logger.error("Sendchamp SMS skipped: %s", exc)
+        return {"status": "skipped", "reason": str(exc)}
+
+    normalized = normalize_phone_number(to_phone)
+    sender_id = getattr(settings, "SENDCHAMP_SENDER_ID", "Sendchamp")
+    route = getattr(settings, "SENDCHAMP_ROUTE", "non_dnd")
+
+    payload = {
+        "to": [normalized],
+        "message": message,
+        "sender_name": sender_id,
+        "route": route,
+    }
+    logger.info(
+        "Sendchamp SMS → to=%s sender=%s route=%s message_len=%d",
+        normalized, sender_id, route, len(message),
+    )
+    try:
+        response = requests.post(
+            "https://api.sendchamp.com/api/v1/sms/send",
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        data = response.json()
+        logger.info("Sendchamp SMS response [HTTP %s]: %s", response.status_code, data)
+        return data
+    except Exception as exc:
+        logger.error("Sendchamp SMS request failed: %s", exc)
+        return {"status": "error", "reason": str(exc)}
+
+
+def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
+    """Send SMS via eBulkSMS JSON API."""
+    username = getattr(settings, "EBULKSMS_USERNAME", "")
+    apikey = getattr(settings, "EBULKSMS_APIKEY", "")
+    if not username or not apikey:
+        logger.error("eBulkSMS credentials not configured.")
+        return {"status": "skipped", "reason": "eBulkSMS credentials not configured."}
+
+    normalized = normalize_phone_number(to_phone)
+    # eBulkSMS requires the number to start with country code digits, no + sign
+    if not normalized.startswith("234"):
+        logger.error("eBulkSMS: phone %s could not be normalized to Nigerian format (got %s)", to_phone, normalized)
+        return {"status": "error", "reason": f"Invalid phone format: {normalized}"}
+
+    msg_id = uuid.uuid4().hex
+    payload = {
+        "SMS": {
+            "auth": {"username": username, "apikey": apikey},
+            "message": {"sender": sender[:11], "messagetext": message, "flash": "0"},
+            "recipients": {"gsm": [{"msidn": normalized, "msgid": msg_id}]},
+            "dndsender": 1,
+        }
+    }
+    logger.info("eBulkSMS → to=%s sender=%s chars=%d payload=%s", normalized, sender, len(message), payload)
+    try:
+        response = requests.post(
+            "https://api.ebulksms.com/sendsms.json",
+            json=payload,
+            timeout=15,
+        )
+        data = response.json()
+        # Log full response so delivery failures are visible in Django logs
+        logger.info("eBulkSMS response [HTTP %s]: %s", response.status_code, data)
+        if response.status_code != 200:
+            logger.error("eBulkSMS non-200 HTTP status %s: %s", response.status_code, data)
+        return data
+    except Exception as exc:
+        logger.error("eBulkSMS request failed: %s", exc)
+        return {"status": "error", "reason": str(exc)}
+
+
+def send_termii_whatsapp(to_phone: str, message: str) -> dict:
+    """Send WhatsApp message via Termii."""
+    api_key = getattr(settings, "TERMII_API_KEY", "")
+    sender = getattr(settings, "TERMII_WHATSAPP_FROM", "")
+    if not api_key or not sender:
+        return {"status": "skipped", "reason": "Termii credentials not configured."}
+
+    base_url = getattr(settings, "TERMII_BASE_URL", "https://api.ng.termii.com").rstrip("/")
+    payload = {
+        "api_key": api_key,
+        "to": normalize_phone_number(to_phone),
+        "from": sender,
+        "sms": message,
+        "type": "plain",
+        "channel": "whatsapp",
+    }
+    try:
+        response = requests.post(
+            f"{base_url}/api/sms/send",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+        data = response.json()
+        if data.get("code") == "ok":
+            return {"status": "success", "message_id": data.get("message_id", "")}
+        return {"status": "error", "reason": data.get("message", str(response.status_code))}
+    except Exception as exc:
+        return {"status": "error", "reason": str(exc)}
+
+
+def create_receipt_link(
+    data: dict,
+    tenant=None,
+    receipt_type: str = "receipt",
+) -> str:
+    """Persist receipt/bill data and return a public URL the parent can open."""
+    link = PaymentReceiptLink.objects.create(
+        data=data,
+        tenant=tenant,
+        receipt_type=receipt_type,
+        expires_at=timezone.now() + timedelta(days=90),
+    )
+    base_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
+    return f"{base_url}/api/finance/receipt/{link.token}/"
+
+
+def send_payment_receipt(
+    to_email: str,
+    message: str,
+    receipt_url: str = "",
+    data: dict = None,
+    receipt_type: str = "receipt",
+) -> dict:
+    """Send payment receipt/bill as an HTML email with the receipt attached as receipt.html."""
+    if not to_email:
+        return {"sent": False, "channel": "none", "error": "No email address"}
+    try:
+        from django.core.mail import EmailMultiAlternatives
+        from django.template.loader import render_to_string
+
+        d = data or {}
+        school_name = d.get("school_name") or "School"
+        if receipt_type == "bill":
+            subject = f"Fee Statement — {school_name}"
+        else:
+            status_label = "Fully Paid" if d.get("payment_status") == "paid" else "Partial Payment"
+            subject = f"Payment Receipt ({status_label}) — {school_name}"
+
+        class _Link:
+            pass
+
+        link_obj = _Link()
+        link_obj.receipt_type = receipt_type
+        link_obj.created_at = timezone.now()
+        link_obj.expires_at = timezone.now() + timedelta(days=90)
+
+        html_body = render_to_string("finance/receipt.html", {"link": link_obj, "data": d})
+
+        plain_body = message
+        if receipt_url:
+            plain_body += f"\nView online: {receipt_url}"
+
+        em = EmailMultiAlternatives(
+            subject=subject,
+            body=plain_body,
+            from_email=None,
+            to=[to_email],
+        )
+        em.attach_alternative(html_body, "text/html")
+        em.attach("receipt.html", html_body, "text/html")
+        em.send()
+
+        logger.info("Receipt email sent to %s (type=%s)", to_email, receipt_type)
+        return {"sent": True, "channel": "email"}
+    except Exception as exc:
+        logger.error("Receipt email to %s failed: %s", to_email, exc)
+        return {"sent": False, "channel": "none", "email_error": str(exc)}
+
+
+def build_paystack_receipt_message(
+    student_name: str,
+    class_name: str,
+    amount_paid: Decimal,
+    fee_total: Decimal,
+    payment_status: str,
+    school_name: str = "",
+) -> str:
+    """Build SMS/WhatsApp receipt for a Paystack payment."""
+    prefix = school_name if school_name else "School"
+    school_tag = f" at {school_name}" if school_name else ""
+    if payment_status == "paid":
+        return (
+            f"{prefix}: Payment confirmed! ₦{amount_paid:,.2f} received for "
+            f"{student_name} ({class_name}){school_tag}. Fees FULLY PAID."
+        )
+    remaining = fee_total - amount_paid
+    return (
+        f"{prefix}: ₦{amount_paid:,.2f} received for {student_name} ({class_name}){school_tag}. "
+        f"Balance: ₦{remaining:,.2f} remaining."
+    )
+
+
+def allocate_split_payment(
+    parent_id,
+    amount_paid: Decimal,
+    paystack_ref: str,
+    transaction_id: str,
+) -> dict:
+    """
+    Allocate a Paystack split payment across the parent's children's fees.
+
+    `amount_paid` is what Paystack reports (total the parent paid).
+    We consume fees in order (oldest-due first):
+      - per fee cost to parent = tuition + 0.3% (schooldom_fee_for(tuition))
+      - after all fees, ≈₦300 Paystack flat fee remains — that is NOT overpayment
+      - any amount beyond that is credited to the parent's wallet
+
+    Rules:
+    - remaining >= tuition + 0.3%  → full payment (status=paid)
+    - remaining > 0.3%             → partial (apply what's left minus 0.3%)
+    - remaining <= 0.3%            → stop
+    """
+    from users.models import ParentProfile, User
+
+    amount_paid = _as_decimal(amount_paid)
+
+    try:
+        parent_profile = ParentProfile.objects.select_related("user").get(user_id=parent_id)
+        students = parent_profile.children.all()
+    except ParentProfile.DoesNotExist:
+        students = []
+
+    unpaid_fees = (
+        SchoolFee.objects.filter(
+            student__in=students,
+            status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
+        )
+        .select_related("student", "student__user", "student__user__tenant", "student__current_class")
+        .order_by("due_date", "created_at")
+    )
+
+    parent_email = (parent_profile.user.email if parent_profile and parent_profile.user else "") or ""
+
+    remaining = amount_paid
+    allocations = []
+
+    for fee in unpaid_fees:
+        if remaining <= 0:
+            break
+
+        already_paid = fee.amount_paid or Decimal("0.00")
+        tuition_left = fee.amount - already_paid
+        if tuition_left <= 0:
+            continue
+
+        # Per-fee cost to parent = tuition + 0.3% Schooldom fee
+        s_fee = schooldom_fee_for(tuition_left)
+        total_due = tuition_left + s_fee
+
+        student = fee.student
+        student_name = student.user.get_full_name() if student and student.user else ""
+        class_obj = getattr(student, "current_class", None)
+        class_name = class_obj.name if class_obj else ""
+        school_name = getattr(getattr(student, "user", None), "tenant", None)
+        school_name = getattr(school_name, "name", "") if school_name else ""
+
+        if remaining >= total_due:
+            fee.amount_paid = already_paid + tuition_left
+            fee.status = SchoolFee.STATUS_PAID
+            fee.payment_date = timezone.now()
+            fee.last_payment_date = timezone.now()
+            fee.paystack_ref = paystack_ref
+            fee.save(update_fields=["amount_paid", "status", "payment_date", "last_payment_date", "paystack_ref", "updated_at"])
+
+            FeeAllocation.objects.create(
+                fee=fee,
+                transaction_id=transaction_id,
+                amount_allocated=tuition_left,
+                paystack_fee_paid=Decimal("0.00"),
+                schooldom_fee_paid=s_fee,
+                status=FeeAllocation.STATUS_PAID,
+            )
+            allocations.append({
+                "fee_id": str(fee.id),
+                "student_name": student_name,
+                "class": class_name,
+                "tuition_paid": float(tuition_left),
+                "status": "paid",
+                "remaining_balance": 0,
+            })
+            remaining -= total_due
+
+            if parent_email:
+                tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
+                receipt_data = {
+                    "type": "receipt",
+                    "school_name": school_name,
+                    "student_name": student_name,
+                    "class_name": class_name,
+                    "amount_paid": str(tuition_left),
+                    "fee_total": str(fee.amount),
+                    "balance_remaining": "0.00",
+                    "payment_status": "paid",
+                    "payment_date": timezone.now().strftime("%d %b %Y"),
+                    "reference": paystack_ref,
+                }
+                receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
+                send_payment_receipt(
+                    parent_email,
+                    build_paystack_receipt_message(student_name, class_name, tuition_left, fee.amount, "paid", school_name),
+                    receipt_url=receipt_url,
+                    data=receipt_data,
+                    receipt_type="receipt",
+                )
+
+        elif remaining > s_fee:
+            allocated = remaining - s_fee
+            fee.amount_paid = already_paid + allocated
+            fee.status = SchoolFee.STATUS_PARTIAL
+            fee.last_payment_date = timezone.now()
+            fee.paystack_ref = paystack_ref
+            fee.save(update_fields=["amount_paid", "status", "last_payment_date", "paystack_ref", "updated_at"])
+
+            FeeAllocation.objects.create(
+                fee=fee,
+                transaction_id=transaction_id,
+                amount_allocated=allocated,
+                paystack_fee_paid=Decimal("0.00"),
+                schooldom_fee_paid=s_fee,
+                status=FeeAllocation.STATUS_PARTIAL,
+            )
+            balance_left = tuition_left - allocated
+            allocations.append({
+                "fee_id": str(fee.id),
+                "student_name": student_name,
+                "class": class_name,
+                "tuition_paid": float(allocated),
+                "status": "partial",
+                "remaining_balance": float(balance_left + schooldom_fee_for(balance_left)),
+            })
+            remaining = Decimal("0.00")
+
+            if parent_email:
+                tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
+                balance_remaining = tuition_left - allocated
+                receipt_data = {
+                    "type": "receipt",
+                    "school_name": school_name,
+                    "student_name": student_name,
+                    "class_name": class_name,
+                    "amount_paid": str(allocated),
+                    "fee_total": str(fee.amount),
+                    "balance_remaining": str(balance_remaining),
+                    "payment_status": "partial",
+                    "payment_date": timezone.now().strftime("%d %b %Y"),
+                    "reference": paystack_ref,
+                }
+                receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
+                send_payment_receipt(
+                    parent_email,
+                    build_paystack_receipt_message(student_name, class_name, allocated, fee.amount, "partial", school_name),
+                    receipt_url=receipt_url,
+                    data=receipt_data,
+                    receipt_type="receipt",
+                )
+        else:
+            remaining = Decimal("0.00")
+            break
+
+    # After allocating all fees, ≈₦300 Paystack flat fee remains in `remaining`.
+    # That is NOT overpayment — it was charged to parent to cover Paystack's processing.
+    # Only credit to wallet if there's genuine surplus beyond the Paystack flat fee.
+    overpayment = Decimal("0.00")
+    surplus = remaining - PAYSTACK_FLAT_FEE
+    if surplus > Decimal("0.50"):   # 50 kobo threshold to avoid floating-point noise
+        overpayment = surplus
+        try:
+            parent_user = User.objects.get(id=parent_id)
+            wallet = Wallet.objects.get(user=parent_user)
+            credit_wallet(
+                wallet,
+                overpayment,
+                Transaction.ADJUSTMENT_CREDIT,
+                generate_reference("OVP"),
+                f"Overpayment from Paystack transaction {paystack_ref}",
+                metadata={"paystack_ref": paystack_ref},
+            )
+        except Exception:
+            pass
+
+    return {
+        "allocations": allocations,
+        "overpayment": float(overpayment),
+        "total_allocated": float(amount_paid - overpayment),
+        "allocated_count": len([a for a in allocations if a["status"] in ("paid", "partial")]),
+    }
+
+
+def process_paystack_webhook(data: dict) -> dict:
+    """
+    Process a Paystack webhook event for split payments.
+    
+    Args:
+        data: Webhook payload data
+        
+    Returns:
+        dict: Processing result
+    """
+    event = data.get('event')
+
+    if event != 'charge.success':
+        return {'status': 'ignored', 'event': event}
+
+    transaction_data = data.get('data', {})
+    reference = transaction_data.get('reference')
+    channel = transaction_data.get('channel', '')
+
+    # Dedicated virtual account payment (DVA / dedicated_nuban)
+    if channel == 'dedicated_nuban':
+        account_number = (
+            transaction_data.get('authorization', {}).get('receiver_bank_account_number')
+            or transaction_data.get('dedicated_account', {}).get('account_number')
+            or ''
+        )
+        amount_kobo = transaction_data.get('amount', 0)
+        amount_naira = Decimal(str(amount_kobo)) / 100
+
+        from core.models import SchoolTenant
+        # Attempt to identify tenant from metadata
+        tenant = None
+        customer_meta = transaction_data.get('customer', {})
+        meta_tenant_id = transaction_data.get('metadata', {}).get('school_id')
+        if meta_tenant_id:
+            try:
+                tenant = SchoolTenant.objects.get(id=meta_tenant_id)
+            except SchoolTenant.DoesNotExist:
+                pass
+
+        return process_virtual_account_payment(
+            tenant=tenant,
+            account_number=account_number,
+            amount_naira=amount_naira,
+            paystack_reference=reference or f"DVA-{account_number}-{amount_kobo}",
+            metadata={'webhook_data': transaction_data},
+        )
+    
+    if not reference:
+        raise ValueError("No transaction reference in webhook")
+    
+    # Find the transaction record
+    try:
+        tx = Transaction.objects.get(paystack_ref=reference)
+    except Transaction.DoesNotExist:
+        # Create a new transaction if not found
+        # This handles webhook arriving before our callback
+        tx = Transaction.objects.create(
+            paystack_ref=reference,
+            amount=transaction_data.get('amount', 0) / 100,
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_PENDING,
+            reference=generate_reference('SPL'),
+            provider='paystack',
+            metadata={'webhook_data': transaction_data}
+        )
+    
+    if tx.status == Transaction.STATUS_SUCCESS:
+        return {'status': 'already_processed', 'reference': reference}
+    
+    # Verify the transaction
+    try:
+        verification = verify_paystack_transaction(reference)
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
+    
+    # Check if successful
+    if verification.get('status') != 'success':
+        tx.status = Transaction.STATUS_FAILED
+        tx.metadata = {**tx.metadata, 'verification': verification}
+        tx.save()
+        return {'status': 'failed', 'reference': reference}
+    
+    amount_paid = Decimal(str(verification.get('amount', 0))) / 100
+    
+    # Update transaction
+    tx.status = Transaction.STATUS_SUCCESS
+    tx.amount = amount_paid
+    tx.metadata = {**tx.metadata, 'verification': verification}
+    tx.save()
+    
+    # Allocate payment
+    parent_id = tx.metadata.get('parent_id') or tx.parent_id
+    if not parent_id:
+        return {'status': 'error', 'message': 'No parent ID found'}
+    
+    allocation_result = allocate_split_payment(
+        parent_id=parent_id,
+        amount_paid=amount_paid,
+        paystack_ref=reference,
+        transaction_id=tx.id
+    )
+    
+    # Update transaction allocation status
+    if allocation_result['overpayment'] > 0:
+        tx.allocation_status = Transaction.ALLOCATION_OVERPAID
+    elif any(a['status'] == 'partial' for a in allocation_result['allocations']):
+        tx.allocation_status = Transaction.ALLOCATION_PARTIAL
+    else:
+        tx.allocation_status = Transaction.ALLOCATION_ALLOCATED
+    
+    tx.fee_ids = [a['fee_id'] for a in allocation_result['allocations'] if a.get('fee_id')]
+    tx.save()
+    
+    return {
+        'status': 'success',
+        'reference': reference,
+        'allocation': allocation_result
+    }
+
+
+def initialize_paystack_school_fee_payment(
+    parent_user,
+    fee_ids: list,
+    callback_url: str = ""
+) -> dict:
+    """
+    Initialize a Paystack split payment for school fees.
+    
+    Args:
+        parent_user: Parent user object
+        fee_ids: List of SchoolFee IDs to pay
+        callback_url: Optional callback URL
+        
+    Returns:
+        dict: Payment initialization result
+    """
+    # Get payment breakdown
+    breakdown = get_fee_payment_breakdown(fee_ids)
+    
+    # Get school from fees
+    fees = SchoolFee.objects.filter(id__in=fee_ids)
+    if not fees.exists():
+        raise ValueError("No valid fees found")
+    
+    # Get first fee's school (assuming all fees are for same school)
+    first_fee = fees.first()
+    school = first_fee.student.user.tenant if first_fee.student else None
+    
+    if not school:
+        raise ValueError("School not found for fees")
+    
+    # Get or create admin wallet — ensure school subaccount exists
+    admin_wallet = get_or_create_admin_wallet(school)
+
+    if not admin_wallet.subaccount_code:
+        if not admin_wallet.bank_account_number or not admin_wallet.bank_code:
+            raise ValueError("School bank account not configured. Set up the school's bank details first.")
+        subaccount = create_paystack_subaccount(
+            business_name=school.name,
+            bank_code=admin_wallet.bank_code,
+            account_number=admin_wallet.bank_account_number,
+        )
+        admin_wallet.subaccount_code = subaccount['subaccount_code']
+        admin_wallet.save(update_fields=['subaccount_code', 'updated_at'])
+
+    # Create pending transaction record
+    reference = generate_reference('PAY')
+    fee_ids_str = [str(f) for f in fee_ids]
+    tx = Transaction.objects.create(
+        parent_id=parent_user.id,
+        school_id=school.id,
+        amount=Decimal(str(breakdown['grand_total'])),
+        tuition_amount=Decimal(str(breakdown['subtotal'])),
+        schooldom_markup=Decimal(str(breakdown['schooldom_fee_total'])),
+        paystack_fee_amount=Decimal(str(breakdown['paystack_fee'])),
+        tx_type=Transaction.SPLIT_PAYMENT,
+        status=Transaction.STATUS_PENDING,
+        reference=reference,
+        provider='paystack',
+        fee_ids=fee_ids_str,
+        metadata={
+            'fee_ids': fee_ids_str,
+            'parent_id': str(parent_user.id),
+            'breakdown': breakdown,
+        },
+    )
+
+    # Initialize Paystack split payment
+    # transaction_charge = 0.3% schooldom fees + ₦300 Paystack flat → all goes to main account
+    # bearer = "account" → Schooldom main account pays Paystack's actual processing fee
+    # school subaccount receives: grand_total − transaction_charge = exact tuition total
+    payment_data = initialize_paystack_split_payment(
+        email=parent_user.email,
+        amount=Decimal(str(breakdown['grand_total'])),
+        subaccount_code=admin_wallet.subaccount_code,
+        transaction_charge=Decimal(str(breakdown['transaction_charge'])),
+        metadata={
+            'parent_id': str(parent_user.id),
+            'transaction_id': str(tx.id),
+            'fee_ids': fee_ids_str,
+            'school_id': str(school.id),
+        },
+        callback_url=callback_url,
+    )
+    
+    # Update transaction with Paystack reference
+    tx.paystack_ref = payment_data['reference']
+    tx.save()
+    
+    return {
+        'authorization_url': payment_data['authorization_url'],
+        'reference': payment_data['reference'],
+        'transaction_id': str(tx.id),
+        'breakdown': breakdown,
+        'access_code': payment_data.get('access_code', ''),
+        'amount': breakdown['grand_total']
+    }
+
+
+def get_school_payment_split_status(school) -> dict:
+    """
+    Get payment split configuration status for a school.
+    
+    Args:
+        school: School tenant object
+        
+    Returns:
+        dict: Split configuration status
+    """
+    admin_wallet = get_or_create_admin_wallet(school)
+    
+    return {
+        'school_name': school.name,
+        'has_subaccount': bool(admin_wallet.subaccount_code),
+        'has_split': bool(admin_wallet.split_code),
+        'subaccount_code': admin_wallet.subaccount_code,
+        'split_code': admin_wallet.split_code,
+        'has_bank_details': bool(
+            admin_wallet.bank_account_number and 
+            admin_wallet.bank_code and 
+            admin_wallet.bank_account_name
+        ),
+        'bank_name': admin_wallet.bank_code,
+        'account_name': admin_wallet.bank_account_name,
+        'account_number': admin_wallet.bank_account_number[:4] + '****' if admin_wallet.bank_account_number else ''
+    }
+
+
+# ============================================================
+# END OF PAYSTACK SPLIT PAYMENT INTEGRATION
+# ============================================================
+
+
 def _flutterwave_headers():
     secret = getattr(settings, "FLUTTERWAVE_SECRET_KEY", "")
     if not secret:
@@ -156,7 +1250,7 @@ def _flutterwave_json(response):
 
 def active_payment_provider():
     provider = str(getattr(settings, "PAYMENT_PROVIDER", "flutterwave") or "flutterwave").strip().lower()
-    return provider if provider in {"flutterwave", "kuda"} else "flutterwave"
+    return provider if provider in {"flutterwave", "kuda", "paystack"} else "flutterwave"
 
 
 def _provider_success_status(value):
@@ -604,13 +1698,18 @@ def _payment_provider_for_reference(reference):
 
 
 def initialize_payment_transaction(user, amount: Decimal, reference: str, metadata=None, callback_url=""):
-    if active_payment_provider() == "kuda":
+    provider = active_payment_provider()
+    if provider == "paystack":
+        raise ValueError("Use initialize_paystack_school_fee_payment for Paystack split payments")
+    if provider == "kuda":
         return initialize_kuda_transaction(user, amount, reference, metadata=metadata, callback_url=callback_url)
     return initialize_flutterwave_transaction(user, amount, reference, metadata=metadata, callback_url=callback_url)
 
 
 def verify_payment_transaction(reference: str):
     provider = _payment_provider_for_reference(reference)
+    if provider == "paystack":
+        return verify_paystack_transaction(reference)
     if provider == "kuda":
         return verify_kuda_transaction(reference)
     return verify_flutterwave_transaction(reference)
@@ -1603,32 +2702,12 @@ def parent_balance_payload(parent_phone):
     return rows
 
 
-def _whatsapp_headers():
-    token = getattr(settings, "WHATSAPP_BUSINESS_ACCESS_TOKEN", "")
-    if token.lower().startswith("bearer "):
-        auth = token
-    else:
-        auth = f"Bearer {token}"
-    return {"Authorization": auth, "Content-Type": "application/json"}
-
-
 def send_whatsapp_message(to_phone, text):
-    phone_number_id = getattr(settings, "WHATSAPP_BUSINESS_PHONE_NUMBER_ID", "")
-    if not phone_number_id:
-        raise RuntimeError("WHATSAPP_BUSINESS_PHONE_NUMBER_ID is not configured.")
-    if not getattr(settings, "WHATSAPP_BUSINESS_ACCESS_TOKEN", ""):
-        raise RuntimeError("WHATSAPP_BUSINESS_ACCESS_TOKEN is not configured.")
-    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": normalize_phone_number(to_phone),
-        "type": "text",
-        "text": {"preview_url": True, "body": text},
-    }
-    response = requests.post(url, headers=_whatsapp_headers(), json=payload, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    """Send WhatsApp message via Termii."""
+    result = send_termii_whatsapp(to_phone, text)
+    if result.get("status") == "error":
+        raise RuntimeError(result.get("reason", "Twilio WhatsApp delivery failed."))
+    return result
 
 
 def build_balance_message(row):
@@ -1654,6 +2733,214 @@ def send_parent_balance_response(parent_phone):
     return rows
 
 
+def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
+    """
+    Send a fee reminder to a parent via their preferred contact channel (SMS, WhatsApp, or email).
+    """
+    from finance.models import ParentVirtualAccount
+    from users.models import ParentProfile
+
+    # Get parent profile and preferred channel
+    parent_profile = None
+    students = []
+    preferred = "email"
+    try:
+        parent_profile = ParentProfile.objects.prefetch_related("children").get(user=parent_user)
+        students = list(parent_profile.children.select_related("user").all())
+        preferred = (parent_profile.preferred_contact or "email").strip().lower()
+    except ParentProfile.DoesNotExist:
+        pass
+
+    # Get virtual account
+    virtual_account = None
+    try:
+        vac = ParentVirtualAccount.objects.get(parent=parent_user, is_active=True)
+        virtual_account = vac
+    except ParentVirtualAccount.DoesNotExist:
+        pass
+
+    school_name = getattr(getattr(parent_user, "tenant", None), "name", "") or "School"
+    lines = [f"{school_name} Fee Reminder — {parent_user.get_full_name() or parent_user.email}"]
+
+    if not students:
+        lines.append("No children linked to your account yet.")
+    else:
+        for student in students:
+            unpaid_fees = SchoolFee.objects.filter(
+                student=student,
+                status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
+            )
+            total_outstanding = sum(
+                (f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid_fees
+            )
+            if total_outstanding > 0:
+                student_name = student.user.get_full_name() if student.user else "Child"
+                lines.append(f"\n{student_name}: {_format_naira(total_outstanding)} outstanding")
+                for fee in unpaid_fees[:4]:
+                    remaining = fee.amount - (fee.amount_paid or Decimal("0"))
+                    lines.append(f"  • {fee.title}: {_format_naira(remaining)}")
+
+    if virtual_account:
+        lines.append(f"\nPay to:\nAccount: {virtual_account.account_number}")
+        lines.append(f"Bank: {virtual_account.bank_name}")
+        lines.append(f"Name: {virtual_account.account_name}")
+        lines.append("Payments are matched automatically.")
+    else:
+        lines.append("\nContact school office for payment details.")
+
+    message = "\n".join(lines)
+
+    # ── Route by preferred contact ────────────────────────────
+    if preferred == "sms":
+        phone = (parent_user.phone or "").strip()
+        if not phone:
+            return {"success": False, "message": "Parent has no phone number on file."}
+        result = send_ebulksms(phone, message, sender="SchoolDom")
+        ok = result.get("status") not in ("error", "skipped")
+        return {"success": ok, "message": "SMS reminder sent." if ok else f"SMS failed: {result.get('reason', result)}"}
+
+    if preferred == "whatsapp":
+        phone = (parent_user.phone or "").strip()
+        if not phone:
+            return {"success": False, "message": "Parent has no phone number on file."}
+        wa_result = send_termii_whatsapp(phone, message)
+        if wa_result.get("status") == "success":
+            return {"success": True, "message": "WhatsApp reminder sent."}
+        sms_result = send_ebulksms(phone, message, sender="SchoolDom")
+        ok = sms_result.get("status") not in ("error", "skipped")
+        return {"success": ok, "message": "SMS reminder sent (WhatsApp unavailable)." if ok else "WhatsApp and SMS both failed."}
+
+    # ── Email (default) ───────────────────────────────────────
+    email = (parent_user.email or "").strip()
+    if not email:
+        return {"success": False, "message": "Parent has no email address."}
+
+    bill_students = []
+    if students:
+        for student in students:
+            unpaid_fees = SchoolFee.objects.filter(
+                student=student,
+                status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
+            )
+            student_total = sum((f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid_fees)
+            if student_total > 0:
+                bill_students.append({
+                    "name": student.user.get_full_name() if student.user else "Child",
+                    "class": getattr(getattr(student, "current_class", None), "name", ""),
+                    "fees": [
+                        {
+                            "title": f.title,
+                            "amount": str(f.amount),
+                            "paid": str(f.amount_paid or Decimal("0")),
+                            "balance": str(f.amount - (f.amount_paid or Decimal("0"))),
+                        }
+                        for f in unpaid_fees
+                    ],
+                    "total_outstanding": str(student_total),
+                })
+
+    total_all = sum(Decimal(s["total_outstanding"]) for s in bill_students)
+    bill_data = {
+        "type": "bill",
+        "school_name": school_name,
+        "parent_name": parent_user.get_full_name() or parent_user.email,
+        "students": bill_students,
+        "virtual_account": {
+            "number": virtual_account.account_number if virtual_account else "",
+            "bank": virtual_account.bank_name if virtual_account else "",
+            "name": virtual_account.account_name if virtual_account else "",
+        } if virtual_account else None,
+        "total_outstanding": str(total_all),
+        "generated_at": timezone.now().strftime("%d %b %Y"),
+    }
+    tenant_obj = getattr(parent_user, "tenant", None)
+    receipt_url = create_receipt_link(bill_data, tenant=tenant_obj, receipt_type="bill")
+
+    try:
+        send_result = send_payment_receipt(email, message, receipt_url=receipt_url, data=bill_data, receipt_type="bill")
+        if send_result.get("sent"):
+            return {"success": True, "message": "Email reminder sent.", "email": email, "channel": send_result.get("channel")}
+        err = send_result.get("email_error", "")
+        return {"success": False, "message": f"Email delivery failed: {err}"}
+    except Exception as exc:
+        return {"success": False, "message": str(exc)}
+
+
+def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, message: str) -> dict:
+    """
+    Send bulk SMS / WhatsApp / Email to a list of parents (User UUIDs).
+    channel: "sms" | "whatsapp" | "email"
+    Returns: {"sent": int, "failed": int, "errors": list[str]}
+    """
+    from django.conf import settings
+    from django.core.mail import send_mail
+    from users.models import User
+
+    results: dict = {"sent": 0, "failed": 0, "errors": []}
+    school_name = getattr(tenant, "name", "School") if tenant else "School"
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@schooldom.academy")
+
+    parents = list(User.objects.filter(id__in=parent_user_ids, role="parent", tenant=tenant))
+
+    for parent in parents:
+        raw_phone = getattr(parent, "phone", "") or ""
+        phone = normalize_phone_number(raw_phone) if raw_phone else ""
+        email = getattr(parent, "email", "") or ""
+        name = parent.get_full_name() or email
+
+        if channel == "email":
+            if not email or "@schooldom.local" in email:
+                results["failed"] += 1
+                results["errors"].append(f"{name}: no valid email")
+                continue
+            try:
+                send_mail(
+                    subject=f"Message from {school_name}",
+                    message=message,
+                    from_email=from_email,
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
+                results["sent"] += 1
+            except Exception as exc:
+                results["failed"] += 1
+                results["errors"].append(f"{name}: {str(exc)[:100]}")
+
+        elif channel == "whatsapp":
+            if not phone:
+                results["failed"] += 1
+                results["errors"].append(f"{name}: no phone number")
+                continue
+            wa_result = send_termii_whatsapp(phone, message)
+            wa_ok = wa_result.get("status") == "success"
+            if wa_ok:
+                results["sent"] += 1
+            else:
+                # Fallback to SMS
+                sms_result = send_sendchamp_sms(phone, message)
+                sms_ok = (sms_result.get("code") in ("200", 200)) or (sms_result.get("status") == "success")
+                if sms_ok:
+                    results["sent"] += 1
+                else:
+                    results["failed"] += 1
+                    results["errors"].append(f"{name}: WhatsApp and SMS both failed")
+
+        elif channel == "sms":
+            if not phone:
+                results["failed"] += 1
+                results["errors"].append(f"{name}: no phone number")
+                continue
+            sms_result = send_sendchamp_sms(phone, message)
+            sms_ok = (sms_result.get("code") in ("200", 200)) or (sms_result.get("status") == "success")
+            if sms_ok:
+                results["sent"] += 1
+            else:
+                results["failed"] += 1
+                results["errors"].append(f"{name}: {sms_result.get('reason') or sms_result.get('message', 'SMS failed')}")
+
+    return results
+
+
 def send_fee_reminders(limit=None):
     fees = (
         SchoolFee.objects.select_related("student", "student__user", "student__user__tenant", "student__current_class")
@@ -1669,16 +2956,74 @@ def send_fee_reminders(limit=None):
         if student.id in seen_students:
             continue
         seen_students.add(student.id)
-        balance = outstanding_amount_for_student(student)
-        if balance <= 0:
+
+        guardian_email = (getattr(student, "guardian_email", "") or getattr(student, "second_guardian_email", "") or "").strip()
+        if not guardian_email:
             continue
-        row = parent_balance_payload(student.guardian_phone or student.second_guardian_phone)
-        row = next((item for item in row if item["student_id"] == str(student.id)), None)
-        if not row:
+
+        school_name = getattr(getattr(student.user, "tenant", None), "name", "") or "School"
+        student_name = student.user.get_full_name() if student.user else "Student"
+        class_obj = getattr(student, "current_class", None)
+        class_name = class_obj.name if class_obj else ""
+
+        unpaid_fees = SchoolFee.objects.filter(
+            student=student,
+            status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
+        ).order_by("due_date", "created_at")
+
+        total_balance = sum(
+            (f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid_fees
+        )
+        if total_balance <= 0:
             continue
-        message = "SchoolDom Alert\n" + build_balance_message(row) + "\nReply STOP to opt out."
-        send_whatsapp_message(student.guardian_phone or student.second_guardian_phone, message)
-        sent.append(row)
+
+        fee_lines = []
+        for f in unpaid_fees[:6]:
+            remaining = f.amount - (f.amount_paid or Decimal("0"))
+            if remaining > 0:
+                fee_lines.append(f"  • {f.title}: {_format_naira(remaining)}")
+
+        lines = [
+            f"{school_name} Fee Reminder",
+            f"{student_name}" + (f" ({class_name})" if class_name else ""),
+            "",
+            "Outstanding fees:",
+        ] + fee_lines + [
+            f"Total: {_format_naira(total_balance)}",
+            "\nReply STOP to opt out.",
+        ]
+        message = "\n".join(lines)
+
+        try:
+            tenant_obj = getattr(getattr(student.user, "tenant", None), "__class__", None) and getattr(student.user, "tenant", None)
+            bill_data = {
+                "type": "bill",
+                "school_name": school_name,
+                "student_name": student_name,
+                "class_name": class_name,
+                "fees": [
+                    {
+                        "title": f.title,
+                        "amount": str(f.amount),
+                        "paid": str(f.amount_paid or Decimal("0")),
+                        "balance": str(f.amount - (f.amount_paid or Decimal("0"))),
+                    }
+                    for f in unpaid_fees if (f.amount - (f.amount_paid or Decimal("0"))) > 0
+                ],
+                "total_outstanding": str(total_balance),
+                "generated_at": timezone.now().strftime("%d %b %Y"),
+            }
+            receipt_url = create_receipt_link(bill_data, tenant=tenant_obj, receipt_type="bill")
+            send_payment_receipt(guardian_email, message, receipt_url=receipt_url, data=bill_data, receipt_type="bill")
+        except Exception:
+            pass
+        sent.append({
+            "student_id": str(student.id),
+            "student_name": student_name,
+            "school_name": school_name,
+            "email": guardian_email,
+            "total_balance": float(total_balance),
+        })
     return sent
 
 
@@ -1686,10 +3031,10 @@ def receipt_message_for_payment(payment):
     student = payment.student
     school = payment.tenant
     student_name = student.user.get_full_name() or student.user.email if student else "student"
-    school_name = getattr(school, "name", "") or "SchoolDom"
+    school_name = getattr(school, "name", "") or "School"
     return (
-        f"Payment confirmed! {_format_naira(payment.applied_amount or payment.amount)} received for "
-        f"{student_name} at {school_name}. Auto-matched via bank transfer."
+        f"{school_name}: Payment confirmed! {_format_naira(payment.applied_amount or payment.amount)} received for "
+        f"{student_name}. Auto-matched via bank transfer."
     )
 
 
@@ -1903,7 +3248,6 @@ def deduct_document_generation_credit(
     return pool
 
 
-
 def process_due_fees(student_profile, actor=None, due_only=True):
     """Auto-deduct pending fees that are due; returns summary dict."""
     today = timezone.localdate()
@@ -1972,6 +3316,10 @@ def initiate_admin_withdrawal(admin_wallet: AdminWallet, amount: Decimal, refere
     """Reserve balance and kick off a provider transfer. Caller handles response messaging."""
     amount = _as_decimal(amount)
     provider = active_payment_provider()
+    
+    # If provider is paystack, use Paystack transfer API
+    if provider == "paystack":
+        return initiate_paystack_transfer(admin_wallet, amount, reference, bank_payload, actor)
 
     with transaction.atomic():
         locked = AdminWallet.objects.select_for_update().get(pk=admin_wallet.pk)
@@ -2047,3 +3395,296 @@ def initiate_admin_withdrawal(admin_wallet: AdminWallet, amount: Decimal, refere
     )
     return {"status": "successful"}
 
+
+# NEW: Paystack Transfer/Withdrawal
+def initiate_paystack_transfer(admin_wallet: AdminWallet, amount: Decimal, reference: str, bank_payload: dict, actor=None):
+    """
+    Initiate a transfer from Schooldom Paystack wallet to school's bank account.
+    """
+    amount = _as_decimal(amount)
+    
+    # Get the Paystack transfer recipient code
+    recipient_code = get_or_create_paystack_transfer_recipient(
+        bank_payload.get("account_number"),
+        bank_payload.get("bank_code"),
+        bank_payload.get("account_name")
+    )
+    
+    # Initiate transfer via Paystack
+    url = f"{_paystack_base_url()}/transfer"
+    payload = {
+        "source": "balance",
+        "amount": int(amount * 100),  # Convert to kobo
+        "recipient": recipient_code,
+        "reason": f"School withdrawal - {reference}",
+        "reference": reference
+    }
+    
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to initiate transfer"))
+    
+    # Record transaction
+    with transaction.atomic():
+        locked = AdminWallet.objects.select_for_update().get(pk=admin_wallet.pk)
+        if locked.balance < amount:
+            raise ValueError("Insufficient admin wallet balance.")
+        locked.balance -= amount
+        locked.save(update_fields=["balance", "updated_at"])
+        
+        Transaction.objects.create(
+            admin_wallet=locked,
+            amount=amount,
+            currency=locked.currency,
+            tx_type=Transaction.WITHDRAWAL,
+            status=Transaction.STATUS_SUCCESS,
+            reference=reference,
+            narration="Admin wallet withdrawal via Paystack",
+            metadata={
+                "bank": bank_payload,
+                "provider": "paystack",
+                "transfer": data.get("data", {})
+            },
+            created_by=actor,
+        )
+    
+    return {"status": "successful", "transfer_code": data.get("data", {}).get("transfer_code")}
+
+
+def process_virtual_account_payment(
+    tenant,
+    account_number: str,
+    amount_naira: Decimal,
+    paystack_reference: str,
+    metadata: dict = None,
+) -> dict:
+    """
+    Process a Paystack dedicated virtual account (DVA) charge.success payment.
+    Called from process_paystack_webhook when channel == 'dedicated_nuban'.
+    Matches account_number → parent, allocates payment to their children's fees.
+    """
+    from finance.models import ParentVirtualAccount, Transaction, FeeAllocation
+    from users.models import ParentProfile
+
+    logger.info(
+        "DVA payment received: ref=%s account=%s amount=%.2f",
+        paystack_reference, account_number, float(amount_naira),
+    )
+
+    # Prevent duplicate processing
+    if Transaction.objects.filter(paystack_ref=paystack_reference).exists():
+        logger.info("DVA payment %s already processed — skipping.", paystack_reference)
+        return {"status": "duplicate", "message": "Already processed"}
+
+    # Look up parent by virtual account number
+    try:
+        vac = ParentVirtualAccount.objects.select_related("parent").get(
+            account_number=account_number,
+            is_active=True,
+        )
+    except ParentVirtualAccount.DoesNotExist:
+        # Fall back: check if this is the school's main collection DVA (AdminWallet)
+        try:
+            admin_wallet = AdminWallet.objects.select_related("tenant").get(
+                bank_account_number=account_number
+            )
+            school_tenant = admin_wallet.tenant or tenant
+            narration_text = (
+                (metadata or {}).get("webhook_data", {}).get("narration", "")
+                or f"Paystack DVA {paystack_reference}"
+            )
+            payment, created = ingest_bank_payment(
+                tenant=school_tenant,
+                amount=amount_naira,
+                narration=narration_text,
+                bank_reference=paystack_reference,
+                currency="NGN",
+                metadata=metadata or {},
+                actor=None,
+            )
+            logger.info(
+                "DVA payment %s ingested as school BankPayment — status=%s created=%s",
+                paystack_reference, payment.status, created,
+            )
+            return {
+                "status": "ingested_school_account",
+                "bank_payment_status": payment.status,
+                "bank_payment_id": str(payment.id),
+            }
+        except AdminWallet.DoesNotExist:
+            pass
+
+        logger.error(
+            "DVA payment %s: no active ParentVirtualAccount or AdminWallet for account_number=%s",
+            paystack_reference, account_number,
+        )
+        return {"status": "error", "message": f"No active virtual account for {account_number}"}
+
+    parent_user = vac.parent
+    amount = _as_decimal(amount_naira)
+
+    # Get parent's children's unpaid fees
+    try:
+        parent_profile = ParentProfile.objects.prefetch_related("children").get(user=parent_user)
+        students = parent_profile.children.all()
+    except ParentProfile.DoesNotExist:
+        students = []
+
+    unpaid_fees = (
+        SchoolFee.objects.filter(
+            student__in=students,
+            status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
+        )
+        .select_related("student", "student__user", "student__current_class")
+        .order_by("due_date", "created_at")
+    )
+
+    # Create the parent transaction record
+    reference = generate_reference("DVA")
+    tx = Transaction.objects.create(
+        tx_type=Transaction.SPLIT_PAYMENT,
+        status=Transaction.STATUS_SUCCESS,
+        amount=amount,
+        reference=reference,
+        paystack_ref=paystack_reference,
+        provider="paystack",
+        narration=f"Virtual account payment — {parent_user.get_full_name() or parent_user.email}",
+        parent_id=parent_user.id,
+        school_id=tenant.id if tenant else None,
+        tuition_amount=amount,
+        allocation_status=Transaction.ALLOCATION_PENDING,
+        metadata=metadata or {},
+    )
+
+    # Allocate payment to fees (oldest due first, no extra ₦400 markup for DVA payments)
+    remaining = amount
+    allocations = []
+
+    for fee in unpaid_fees:
+        if remaining <= 0:
+            break
+        already_paid = fee.amount_paid or Decimal("0.00")
+        tuition_left = fee.amount - already_paid
+        if tuition_left <= 0:
+            continue
+
+        allocated = min(remaining, tuition_left)
+        new_paid = already_paid + allocated
+        fully_paid = new_paid >= fee.amount
+
+        fee.amount_paid = new_paid
+        fee.status = SchoolFee.STATUS_PAID if fully_paid else SchoolFee.STATUS_PARTIAL
+        if fully_paid:
+            fee.payment_date = timezone.now()
+        fee.last_payment_date = timezone.now()
+        fee.paystack_ref = paystack_reference
+        fee.save(update_fields=["amount_paid", "status", "payment_date", "last_payment_date", "paystack_ref", "updated_at"])
+
+        FeeAllocation.objects.create(
+            fee=fee,
+            transaction=tx,
+            amount_allocated=allocated,
+            status=FeeAllocation.STATUS_PAID if fully_paid else FeeAllocation.STATUS_PARTIAL,
+        )
+        allocations.append({
+            "fee_id": str(fee.id),
+            "fee_title": fee.title,
+            "allocated": float(allocated),
+            "status": "paid" if fully_paid else "partial",
+        })
+        remaining -= allocated
+
+        # Send receipt via email
+        student = fee.student
+        recipient_email = (parent_user.email or "").strip()
+        if recipient_email:
+            student_name = student.user.get_full_name() if student and student.user else ""
+            class_obj = getattr(student, "current_class", None)
+            class_name = class_obj.name if class_obj else ""
+            school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
+            school_name = getattr(school_name, "name", "") if school_name else (tenant.name if tenant else "")
+            try:
+                balance_left = float(fee.amount) - float(fee.amount_paid or 0)
+                receipt_data = {
+                    "type": "receipt",
+                    "school_name": school_name,
+                    "student_name": student_name,
+                    "class_name": class_name,
+                    "amount_paid": str(allocated),
+                    "fee_total": str(fee.amount),
+                    "balance_remaining": "0.00" if fully_paid else str(max(0, balance_left)),
+                    "payment_status": "paid" if fully_paid else "partial",
+                    "payment_date": timezone.now().strftime("%d %b %Y"),
+                    "reference": paystack_reference,
+                }
+                receipt_url = create_receipt_link(receipt_data, tenant=tenant)
+                send_payment_receipt(
+                    recipient_email,
+                    build_paystack_receipt_message(
+                        student_name=student_name,
+                        class_name=class_name,
+                        amount_paid=float(allocated),
+                        fee_total=float(fee.amount),
+                        payment_status="paid" if fully_paid else "partial",
+                        school_name=school_name,
+                    ),
+                    receipt_url=receipt_url,
+                    data=receipt_data,
+                    receipt_type="receipt",
+                )
+            except Exception:
+                pass
+
+    tx.allocation_status = (
+        Transaction.ALLOCATION_OVERPAID if remaining > 0 and not unpaid_fees
+        else Transaction.ALLOCATION_ALLOCATED if remaining <= 0
+        else Transaction.ALLOCATION_PARTIAL
+    )
+    tx.fee_ids = [a["fee_id"] for a in allocations]
+    tx.save(update_fields=["allocation_status", "fee_ids", "updated_at"])
+
+    logger.info(
+        "DVA payment %s allocated: parent=%s fees_updated=%d remaining=%.2f status=%s",
+        paystack_reference,
+        parent_user.email,
+        len(allocations),
+        float(remaining),
+        tx.allocation_status,
+    )
+
+    return {
+        "status": "success",
+        "reference": reference,
+        "paystack_ref": paystack_reference,
+        "amount": float(amount),
+        "allocated_count": len(allocations),
+        "remaining": float(remaining),
+        "allocations": allocations,
+    }
+
+
+def get_or_create_paystack_transfer_recipient(account_number: str, bank_code: str, account_name: str) -> str:
+    """
+    Get or create a Paystack transfer recipient.
+    """
+    url = f"{_paystack_base_url()}/transferrecipient"
+    
+    # Check if recipient exists
+    # Note: In production, you'd want to cache this or check existence first
+    payload = {
+        "type": "nuban",
+        "name": account_name,
+        "account_number": account_number,
+        "bank_code": bank_code,
+        "currency": "NGN"
+    }
+    
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    
+    if response.status_code not in (200, 201) or data.get("status") is not True:
+        raise RuntimeError(data.get("message", "Failed to create transfer recipient"))
+    
+    return data["data"]["recipient_code"]

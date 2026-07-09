@@ -13,6 +13,7 @@ urlpatterns = [
     path("school/settings/", app_views.school_settings, name="app_school_settings"),
     path("account/deletion-request/", app_views.account_deletion_request, name="app_account_deletion_request"),
     path("support-tickets/", app_views.support_tickets, name="app_support_tickets"),
+    path("loan-applications/", app_views.loan_applications, name="app_loan_applications"),
     path("database-imports/", app_views.database_imports, name="app_database_imports"),
     path("academic/planning/", app_views.lesson_planning, name="app_lesson_planning"),
     path("academic/notes/", app_views.teacher_notes, name="app_teacher_notes"),
@@ -73,4 +74,8 @@ urlpatterns = [
     path("results/batches/<int:batch_id>/review/", app_views.review_result_batch, name="app_review_result_batch"),
     path("results/batches/<int:batch_id>/", app_views.delete_result_batch, name="app_delete_result_batch"),
     path("results/report/<str:student_code>/", app_views.student_report_card, name="app_student_report_card"),
+    path("kids-monitor/", app_views.kids_monitor_list, name="app_kids_monitor_list"),
+    path("kids-monitor/<uuid:parent_id>/initiate/", app_views.kids_monitor_initiate, name="app_kids_monitor_initiate"),
+    path("kids-monitor/<uuid:parent_id>/verify/", app_views.kids_monitor_verify, name="app_kids_monitor_verify"),
+    path("kids-monitor/<uuid:parent_id>/", app_views.kids_monitor_deactivate, name="app_kids_monitor_deactivate"),
 ]

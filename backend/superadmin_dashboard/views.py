@@ -3,6 +3,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .access import function_group_name, super_admin_required
@@ -112,6 +113,96 @@ def school_action(request, pk, action):
         school.save(update_fields=["status"])
     messages.success(request, f"{school} was {action_label}.")
     return redirect("superadmin_dashboard:schools")
+
+
+@super_admin_required(function="schools")
+def compliance(request):
+    School = platform_models()["school"]
+    if School is None:
+        return missing_module(request, "Compliance")
+    User = get_user_model()
+
+    status_filter = request.GET.get("status", "submitted").strip()
+    queryset = School.objects.all()
+    if status_filter and status_filter != "all":
+        queryset = queryset.filter(compliance_status=status_filter)
+    queryset = queryset.order_by("-compliance_submitted_at", "-created_on")
+
+    page_obj = paginate(request, queryset)
+    rows = []
+    for school in page_obj:
+        director = (
+            User.objects.filter(tenant=school, role__in=["school_admin", "principal", "school_superadmin"])
+            .order_by("created_at")
+            .first()
+        )
+        rows.append({"school": school, "director": director})
+
+    return render(request, "superadmin_dashboard/compliance.html", {
+        "rows": rows,
+        "page_obj": page_obj,
+        "status": status_filter,
+        "status_choices": School.COMPLIANCE_STATUS_CHOICES,
+    })
+
+
+@require_POST
+@super_admin_required(function="schools")
+def compliance_action(request, pk, action):
+    School = platform_models()["school"]
+    school = get_object_or_404(School, pk=pk)
+
+    if action == "approve":
+        school.compliance_status = "approved"
+        school.compliance_reviewed_at = timezone.now()
+        school.compliance_reviewed_by = request.user
+        school.save(update_fields=["compliance_status", "compliance_reviewed_at", "compliance_reviewed_by"])
+        _send_compliance_review_email(school, approved=True)
+        messages.success(request, f"{school} compliance documents were approved.")
+    elif action == "reject":
+        school.compliance_status = "rejected"
+        school.compliance_reviewed_at = timezone.now()
+        school.compliance_reviewed_by = request.user
+        school.compliance_deadline_reference_at = timezone.now()
+        school.compliance_reminder_stage = 0
+        school.save(update_fields=[
+            "compliance_status", "compliance_reviewed_at", "compliance_reviewed_by",
+            "compliance_deadline_reference_at", "compliance_reminder_stage",
+        ])
+        _send_compliance_review_email(school, approved=False)
+        messages.success(request, f"{school} compliance documents were rejected. They have 30 fresh days to resubmit.")
+    else:
+        messages.error(request, "Unknown compliance action.")
+    return redirect("superadmin_dashboard:compliance")
+
+
+def _send_compliance_review_email(school, approved):
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    User = get_user_model()
+    director = (
+        User.objects.filter(tenant=school, role__in=["school_admin", "principal", "school_superadmin"])
+        .order_by("created_at")
+        .first()
+    )
+    recipient = (director.email if director else "") or school.email
+    if not recipient:
+        return
+    if approved:
+        subject = "Your SchoolDom compliance documents were approved"
+        body = f"Good news! {school.name}'s compliance documents have been reviewed and approved."
+    else:
+        subject = "Your SchoolDom compliance documents need attention"
+        body = (
+            f"Your compliance documents for {school.name} were reviewed and could not be approved as submitted.\n\n"
+            "Please log in, review the documents in School Settings, and resubmit. "
+            "Contact support@schooldom.academy if you have questions."
+        )
+    try:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [recipient], fail_silently=True)
+    except Exception:
+        pass
 
 
 @super_admin_required(function="tokens")

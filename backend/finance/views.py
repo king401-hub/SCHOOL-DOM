@@ -26,7 +26,9 @@ from finance.models import (
     BankPayment,
     ClassFee,
     ExpenseRecord,
+    FeeAllocation,
     FinanceLedgerLog,
+    ParentVirtualAccount,
     SchoolFee,
     StudentActivationCredit,
     StudentPaymentReference,
@@ -82,16 +84,33 @@ from finance.services import (
     receipt_message_for_payment,
     send_fee_reminders,
     send_parent_balance_response,
+    send_payment_receipt,
     send_whatsapp_message,
     update_student_activation_alerts,
     verify_activation_credit_purchase,
+    # Paystack split payment + fee reminders
+    send_parent_virtual_account_fee_reminder,
+    send_bulk_message_to_parents,
+    send_sendchamp_sms,
+    normalize_phone_number,
+    allocate_split_payment,
+    create_paystack_subaccount,
+    list_paystack_banks,
+    resolve_paystack_account,
+    get_fee_payment_breakdown,
+    get_school_payment_split_status,
+    initialize_paystack_school_fee_payment,
+    process_paystack_webhook,
+    provision_parent_virtual_account,
+    verify_paystack_transaction,
+    verify_paystack_webhook_signature,
 )
 from hr.models import PayrollRecord, StaffProfile
 from tenants.models import Tenant
 from users.models import StudentProfile, User
 
 
-ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
+ADMIN_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
 FINANCE_ROLES = ADMIN_ROLES | {"accountant"}
 
 
@@ -271,7 +290,7 @@ def bank_credit_webhook(request):
         phone = payment.student.guardian_phone or payment.student.second_guardian_phone
         if phone:
             try:
-                send_whatsapp_message(phone, receipt_message_for_payment(payment))
+                send_payment_receipt(phone, receipt_message_for_payment(payment))
             except Exception:
                 pass
     return Response({"success": True, "created": created, "payment": BankPaymentSerializer(payment).data})
@@ -344,6 +363,21 @@ def payment_fallback_page(request, student_ref):
 </body>
 </html>"""
     return HttpResponse(html)
+
+
+def receipt_page(request, token):
+    """Public receipt/bill page linked in SMS. No authentication required."""
+    from django.shortcuts import render as django_render
+    from finance.models import PaymentReceiptLink
+    link = get_object_or_404(PaymentReceiptLink, token=token)
+    if link.expires_at and link.expires_at < timezone.now():
+        return HttpResponse(
+            "<html><body style='font-family:sans-serif;text-align:center;padding:40px'>"
+            "<h2>This receipt link has expired.</h2>"
+            "<p>Please contact your school for a copy.</p></body></html>",
+            status=410,
+        )
+    return django_render(request, "finance/receipt.html", {"link": link, "data": link.data})
 
 
 def _classes_for_user(user):
@@ -578,6 +612,28 @@ def _student_paid_ratio_for_snapshot(expected, paid):
     return min(Decimal("1.00"), Decimal(paid) / Decimal(expected))
 
 
+def _get_parent_virtual_account_for_student(user):
+    """Return parent virtual account dict for a student user, or None."""
+    try:
+        student_profile = StudentProfile.objects.filter(user=user).first()
+        if not student_profile:
+            return None
+        vac = ParentVirtualAccount.objects.filter(
+            parent__parent_profile__children=student_profile,
+            is_active=True,
+        ).first()
+        if vac:
+            return {
+                "account_number": vac.account_number,
+                "bank_name": vac.bank_name,
+                "account_name": vac.account_name,
+                "provider": vac.provider,
+            }
+    except Exception:
+        pass
+    return None
+
+
 def _student_wallet_snapshot(user):
     """
     Shared helper to return wallet, transactions, and fees for a student.
@@ -603,7 +659,11 @@ def _student_wallet_snapshot(user):
         .get(pk=wallet.pk)
     )
     transactions = wallet.transactions.order_by("-created_at")[:20]
-    fees = SchoolFee.objects.filter(student__user=user).order_by("due_date")[:12]
+    fees = SchoolFee.objects.filter(
+        student__user=user
+    ).filter(
+        Q(class_fee__isnull=True) | Q(class_fee__is_active=True)
+    ).order_by("due_date")[:12]
     return wallet, transactions, fees, payment_reference, bank_payments
 
 
@@ -633,6 +693,7 @@ def wallet_summary(request):
                 "bank_code": admin_wallet.bank_code,
                 "reference_code": payment_reference.code if payment_reference else "",
                 "narration": f"School fees {payment_reference.code}" if payment_reference else "",
+                "parent_virtual_account": _get_parent_virtual_account_for_student(user),
             },
         }
     )
@@ -767,6 +828,7 @@ def wallet_verify(request):
                 "bank_code": admin_wallet.bank_code,
                 "reference_code": payment_reference.code if payment_reference else "",
                 "narration": f"School fees {payment_reference.code}" if payment_reference else "",
+                "parent_virtual_account": _get_parent_virtual_account_for_student(user),
             },
         }
     )
@@ -1450,6 +1512,13 @@ def admin_bank_payment_ingest(request):
                 actor=user,
             )
             processed.append({"created": created, "payment": BankPaymentSerializer(payment).data})
+            if created and payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
+                phone = payment.student.guardian_phone or payment.student.second_guardian_phone
+                if phone:
+                    try:
+                        send_payment_receipt(phone, receipt_message_for_payment(payment))
+                    except Exception:
+                        pass
             record_finance_activity(
                 user.tenant,
                 user,
@@ -1501,6 +1570,13 @@ def admin_bank_payment_recover(request, payment_id):
     payment.payment_reference = reference
     payment.save(update_fields=["payment_reference", "updated_at"])
     payment = apply_bank_payment_to_student(payment, student, actor=user)
+    if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
+        phone = payment.student.guardian_phone or payment.student.second_guardian_phone
+        if phone:
+            try:
+                send_payment_receipt(phone, receipt_message_for_payment(payment))
+            except Exception:
+                pass
     record_finance_activity(
         user.tenant,
         user,
@@ -1850,3 +1926,781 @@ def admin_withdraw(request):
             "message": f"Withdrawal sent to the school account via {active_payment_provider().title()}.",
         }
     )
+
+
+# ============================================================
+# PAYSTACK SPLIT PAYMENT VIEWS
+# ============================================================
+
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def paystack_webhook(request):
+    """Receive and process Paystack webhook events (charge.success)."""
+    signature = request.META.get("HTTP_X_PAYSTACK_SIGNATURE", "")
+    if not verify_paystack_webhook_signature(signature, request.body):
+        return Response({"success": False, "message": "Invalid signature."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        data = request.data
+        result = process_paystack_webhook(data)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({"success": True, "result": result})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def paystack_initialize_payment(request):
+    """
+    Initialize a Paystack split payment for one or more school fees.
+
+    Body: { "fee_ids": ["uuid", ...], "callback_url": "https://..." }
+    """
+    user = request.user
+    fee_ids = request.data.get("fee_ids") or []
+    callback_url = str(request.data.get("callback_url") or "").strip()
+
+    if not fee_ids:
+        return Response({"success": False, "message": "fee_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Verify all fees belong to the parent's children
+    from users.models import ParentProfile
+    try:
+        parent_profile = ParentProfile.objects.get(user=user)
+    except ParentProfile.DoesNotExist:
+        return Response({"success": False, "message": "Parent profile not found."}, status=status.HTTP_403_FORBIDDEN)
+
+    student_ids = list(parent_profile.children.values_list("id", flat=True))
+    fees = SchoolFee.objects.filter(id__in=fee_ids, student_id__in=student_ids).exclude(status=SchoolFee.STATUS_PAID)
+    if not fees.exists():
+        return Response({"success": False, "message": "No valid unpaid fees found."}, status=status.HTTP_404_NOT_FOUND)
+    if fees.count() != len(fee_ids):
+        return Response({"success": False, "message": "Some fee IDs are invalid or already paid."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        result = initialize_paystack_school_fee_payment(
+            parent_user=user,
+            fee_ids=list(fees.values_list("id", flat=True)),
+            callback_url=callback_url,
+        )
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({"success": True, **result})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def paystack_verify_payment(request):
+    """
+    Verify a Paystack payment after redirect callback.
+
+    Query: ?reference=PAY_xxx
+    """
+    reference = str(request.query_params.get("reference") or "").strip()
+    if not reference:
+        return Response({"success": False, "message": "reference is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        tx = Transaction.objects.get(paystack_ref=reference)
+    except Transaction.DoesNotExist:
+        return Response({"success": False, "message": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if tx.status == Transaction.STATUS_SUCCESS:
+        return Response({
+            "success": True,
+            "status": "already_processed",
+            "allocation_status": tx.allocation_status,
+            "transaction": TransactionSerializer(tx).data,
+        })
+
+    try:
+        verification = verify_paystack_transaction(reference)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if verification.get("status") != "success":
+        tx.status = Transaction.STATUS_FAILED
+        tx.save(update_fields=["status", "updated_at"])
+        return Response({"success": False, "message": "Payment not successful.", "paystack_status": verification.get("status")})
+
+    amount_paid = Decimal(str(verification.get("amount", 0))) / 100
+
+    from django.db import transaction as db_transaction
+    with db_transaction.atomic():
+        locked_tx = Transaction.objects.select_for_update().get(pk=tx.pk)
+        if locked_tx.status == Transaction.STATUS_SUCCESS:
+            return Response({
+                "success": True,
+                "status": "already_processed",
+                "allocation_status": locked_tx.allocation_status,
+                "transaction": TransactionSerializer(locked_tx).data,
+            })
+        locked_tx.status = Transaction.STATUS_SUCCESS
+        locked_tx.amount = amount_paid
+        locked_tx.metadata = {**(locked_tx.metadata or {}), "verification": verification}
+        locked_tx.save(update_fields=["status", "amount", "metadata", "updated_at"])
+
+    tx.refresh_from_db()
+    parent_id = tx.parent_id
+    allocation_result = allocate_split_payment(
+        parent_id=parent_id,
+        amount_paid=amount_paid,
+        paystack_ref=reference,
+        transaction_id=tx.id,
+    )
+
+    if allocation_result["overpayment"] > 0:
+        tx.allocation_status = Transaction.ALLOCATION_OVERPAID
+    elif any(a["status"] == "partial" for a in allocation_result["allocations"]):
+        tx.allocation_status = Transaction.ALLOCATION_PARTIAL
+    else:
+        tx.allocation_status = Transaction.ALLOCATION_ALLOCATED
+    tx.save(update_fields=["allocation_status", "updated_at"])
+
+    return Response({
+        "success": True,
+        "status": "processed",
+        "allocation": allocation_result,
+        "transaction": TransactionSerializer(tx).data,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def paystack_payment_breakdown(request):
+    """
+    Return the fee breakdown a parent sees before paying.
+
+    Body: { "fee_ids": ["uuid", ...] }
+    Shows: student name, class, tuition, ₦100 Schooldom fee, ₦300 Paystack fee, total per fee.
+    """
+    fee_ids = request.data.get("fee_ids") or []
+    if not fee_ids:
+        return Response({"success": False, "message": "fee_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        breakdown = get_fee_payment_breakdown(fee_ids)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response({"success": True, **breakdown})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_test_sms(request):
+    """Send a test SMS via Sendchamp and return the raw provider response. Finance admin only."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+    to_phone = str(request.data.get("phone", "")).strip()
+    message = str(request.data.get("message", "SchoolDom SMS test message.")).strip()
+    if not to_phone:
+        return Response({"success": False, "message": "phone is required."}, status=status.HTTP_400_BAD_REQUEST)
+    normalized = normalize_phone_number(to_phone)
+    result = send_sendchamp_sms(to_phone, message)
+    return Response({
+        "success": True,
+        "normalized_phone": normalized,
+        "sendchamp_response": result,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_test_email(request):
+    """Send a test receipt email and return the result. Finance admin only."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+    to_email = str(request.data.get("email", "")).strip() or user.email
+    if not to_email:
+        return Response({"success": False, "message": "email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from finance.services import send_payment_receipt
+    sample_data = {
+        "school_name": user.tenant.name if hasattr(user, "tenant") and user.tenant else "Test School",
+        "student_name": "Test Student",
+        "class_name": "JSS 1",
+        "amount_paid": "15000.00",
+        "fee_total": "15000.00",
+        "balance_remaining": "0.00",
+        "payment_status": "paid",
+        "payment_date": timezone.now().strftime("%d %b %Y"),
+        "reference": "TEST-REF-001",
+    }
+    result = send_payment_receipt(
+        to_email,
+        "Test receipt from SchoolDom",
+        data=sample_data,
+        receipt_type="receipt",
+    )
+    return Response({"success": result.get("sent", False), "to": to_email, "result": result})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_paystack_banks(request):
+    """List Nigerian banks (name + settlement code) for the subaccount setup form. Finance roles only."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        banks = list_paystack_banks()
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({"success": True, "banks": banks})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_paystack_resolve_account(request):
+    """Resolve a bank account number to its registered name via Paystack. Finance roles only."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+    account_number = request.query_params.get("account_number", "").strip()
+    bank_code = request.query_params.get("bank_code", "").strip()
+    if not account_number or not bank_code:
+        return Response({"success": False, "message": "account_number and bank_code are required."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        result = resolve_paystack_account(account_number, bank_code)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({"success": True, **result})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_paystack_split_setup(request):
+    """
+    Create a Paystack subaccount for the school so parents can pay via split.
+
+    Body: { "account_number": "...", "bank_code": "...", "account_name": "..." }
+    (Uses existing bank details on AdminWallet if not supplied.)
+    Admin / principal / accountant only.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    admin_wallet = get_or_create_admin_wallet(user.tenant)
+
+    account_number = str(request.data.get("account_number") or admin_wallet.bank_account_number or "").strip()
+    bank_code = str(request.data.get("bank_code") or admin_wallet.bank_code or "").strip()
+    account_name = str(request.data.get("account_name") or admin_wallet.bank_account_name or "").strip()
+
+    if not (account_number and bank_code and account_name):
+        return Response(
+            {"success": False, "message": "account_number, bank_code, and account_name are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Persist bank details if they changed
+    changed = []
+    for field, val in [("bank_account_number", account_number), ("bank_code", bank_code), ("bank_account_name", account_name)]:
+        if getattr(admin_wallet, field) != val:
+            setattr(admin_wallet, field, val)
+            changed.append(field)
+    if changed:
+        changed.append("updated_at")
+        admin_wallet.save(update_fields=changed)
+
+    if admin_wallet.subaccount_code:
+        return Response({
+            "success": True,
+            "message": "Subaccount already exists.",
+            "subaccount_code": admin_wallet.subaccount_code,
+        })
+
+    try:
+        subaccount = create_paystack_subaccount(
+            business_name=user.tenant.name if user.tenant else account_name,
+            bank_code=bank_code,
+            account_number=account_number,
+        )
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    admin_wallet.subaccount_code = subaccount["subaccount_code"]
+    admin_wallet.save(update_fields=["subaccount_code", "updated_at"])
+
+    record_finance_activity(
+        user.tenant, user,
+        "paystack_subaccount_created",
+        "Created Paystack subaccount for split payments.",
+        reference=subaccount["subaccount_code"],
+    )
+    return Response({
+        "success": True,
+        "message": "Paystack subaccount created.",
+        "subaccount_code": admin_wallet.subaccount_code,
+        "subaccount": subaccount,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_paystack_split_status(request):
+    """Get Paystack split payment configuration status for the school."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    split_status = get_school_payment_split_status(user.tenant)
+    return Response({"success": True, **split_status})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def parent_transaction_history(request):
+    """
+    Return Paystack split payment history for the authenticated parent.
+
+    Query: ?page=1&limit=20&status=successful
+    """
+    user = request.user
+    qs = Transaction.objects.filter(parent_id=user.id, tx_type=Transaction.SPLIT_PAYMENT).order_by("-created_at")
+
+    status_filter = str(request.query_params.get("status") or "").strip()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+
+    try:
+        limit = max(1, min(int(request.query_params.get("limit") or 20), 100))
+        page = max(1, int(request.query_params.get("page") or 1))
+    except (ValueError, TypeError):
+        limit, page = 20, 1
+
+    offset = (page - 1) * limit
+    total = qs.count()
+    transactions = qs[offset: offset + limit]
+
+    return Response({
+        "success": True,
+        "count": total,
+        "page": page,
+        "limit": limit,
+        "results": TransactionSerializer(transactions, many=True).data,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def transaction_detail(request, reference):
+    """Return full detail for a single split payment transaction."""
+    user = request.user
+    try:
+        tx = Transaction.objects.get(paystack_ref=reference)
+    except Transaction.DoesNotExist:
+        try:
+            tx = Transaction.objects.get(reference=reference)
+        except Transaction.DoesNotExist:
+            return Response({"success": False, "message": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Parents see only their own; admin/finance see all in their tenant
+    if user.role == "parent":
+        if tx.parent_id != user.id:
+            return Response({"success": False, "message": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+    elif user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    allocations = list(
+        tx.allocations.select_related("fee", "fee__student", "fee__student__user", "fee__student__current_class")
+        .values(
+            "id", "amount_allocated", "paystack_fee_paid", "schooldom_fee_paid", "status",
+            "fee__id", "fee__title", "fee__amount",
+            "fee__student__user__first_name", "fee__student__user__last_name",
+        )
+    )
+
+    return Response({
+        "success": True,
+        "transaction": TransactionSerializer(tx).data,
+        "breakdown": tx.get_breakdown(),
+        "allocations": allocations,
+    })
+
+
+# ─── Parent Dashboard ────────────────────────────────────────────────────────
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def parent_dashboard(request):
+    """
+    Return a parent's full dashboard: virtual account, children fee summaries, and recent payments.
+    Only accessible by the authenticated parent or finance/admin roles.
+    """
+    user = request.user
+    from users.models import ParentProfile
+
+    try:
+        parent_profile = ParentProfile.objects.prefetch_related(
+            "children", "children__fees"
+        ).get(user=user)
+    except ParentProfile.DoesNotExist:
+        return Response(
+            {"success": False, "message": "Parent profile not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Virtual account
+    virtual_account = None
+    try:
+        vac = ParentVirtualAccount.objects.get(parent=user, is_active=True)
+        virtual_account = {
+            "account_number": vac.account_number,
+            "bank_name": vac.bank_name,
+            "account_name": vac.account_name,
+            "provider": vac.provider,
+            "paystack_reference": vac.paystack_reference,
+        }
+    except ParentVirtualAccount.DoesNotExist:
+        pass
+
+    # Build per-child fee summary
+    children_data = []
+    total_expected = Decimal("0")
+    total_paid = Decimal("0")
+
+    for student in parent_profile.children.select_related("user", "current_class").all():
+        fees_qs = SchoolFee.objects.filter(student=student).order_by("due_date")
+        student_expected = sum(Decimal(str(f.amount or 0)) for f in fees_qs)
+        student_paid = sum(Decimal(str(f.amount_paid or 0)) for f in fees_qs)
+        student_remaining = max(student_expected - student_paid, Decimal("0"))
+
+        fee_rows = []
+        for f in fees_qs:
+            paid = Decimal(str(f.amount_paid or 0))
+            remaining = max(Decimal(str(f.amount or 0)) - paid, Decimal("0"))
+            fee_rows.append({
+                "id": str(f.id),
+                "title": f.title,
+                "amount": float(f.amount),
+                "amount_paid": float(paid),
+                "remaining": float(remaining),
+                "status": f.status,
+                "due_date": f.due_date.isoformat() if f.due_date else None,
+                "last_payment_date": f.last_payment_date.isoformat() if f.last_payment_date else None,
+            })
+
+        student_obj = student
+        class_obj = getattr(student_obj, "current_class", None)
+        children_data.append({
+            "id": str(student_obj.id),
+            "name": student_obj.user.get_full_name() if student_obj.user else "",
+            "class_name": class_obj.name if class_obj else "",
+            "student_id": getattr(student_obj, "student_id", "") or getattr(student_obj, "admission_number", ""),
+            "fees": fee_rows,
+            "total_expected": float(student_expected),
+            "total_paid": float(student_paid),
+            "total_remaining": float(student_remaining),
+        })
+        total_expected += student_expected
+        total_paid += student_paid
+
+    # Recent payments
+    recent_txs = (
+        Transaction.objects.filter(
+            parent_id=user.id,
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+        )
+        .order_by("-created_at")[:15]
+    )
+
+    return Response({
+        "success": True,
+        "parent": {
+            "name": user.get_full_name() or user.email,
+            "email": user.email,
+            "preferred_contact": parent_profile.preferred_contact,
+        },
+        "virtual_account": virtual_account,
+        "summary": {
+            "total_expected": float(total_expected),
+            "total_paid": float(total_paid),
+            "total_remaining": float(max(total_expected - total_paid, Decimal("0"))),
+            "children_count": len(children_data),
+        },
+        "children": children_data,
+        "recent_payments": TransactionSerializer(recent_txs, many=True).data,
+    })
+
+
+# ─── Admin: Virtual Account Management ───────────────────────────────────────
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_list_virtual_accounts(request):
+    """List all parent virtual account assignments for this school (finance roles only)."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    vacs = (
+        ParentVirtualAccount.objects.filter(tenant=user.tenant)
+        .select_related("parent", "assigned_by")
+        .order_by("-created_at")
+    )
+    data = [
+        {
+            "parent_id": str(v.parent.id),
+            "parent_name": v.parent.get_full_name() or v.parent.email,
+            "parent_email": v.parent.email,
+            "account_number": v.account_number,
+            "bank_name": v.bank_name,
+            "account_name": v.account_name,
+            "provider": v.provider,
+            "paystack_reference": v.paystack_reference,
+            "is_active": v.is_active,
+            "notes": v.notes,
+            "assigned_at": v.created_at.isoformat(),
+            "assigned_by": v.assigned_by.get_full_name() if v.assigned_by else None,
+        }
+        for v in vacs
+    ]
+
+    parents_with_account = {v.parent_id for v in vacs}
+    parents_without_account = [
+        {
+            "parent_id": str(p.id),
+            "parent_name": p.get_full_name() or p.email,
+            "parent_email": p.email,
+        }
+        for p in User.objects.filter(tenant=user.tenant, role="parent").order_by("first_name", "last_name")
+        if p.id not in parents_with_account
+    ]
+
+    return Response({
+        "success": True,
+        "virtual_accounts": data,
+        "count": len(data),
+        "parents_without_account": parents_without_account,
+    })
+
+
+@api_view(["GET", "POST", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def admin_manage_virtual_account(request, parent_id):
+    """
+    GET  – fetch current virtual account for a parent (returns null if none).
+    POST/PUT – assign or update virtual account for a parent.
+    DELETE – deactivate virtual account for a parent.
+    Finance roles only.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        parent_user = User.objects.get(id=parent_id)
+    except User.DoesNotExist:
+        return Response({"success": False, "message": "Parent not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "GET":
+        try:
+            vac = ParentVirtualAccount.objects.get(parent=parent_user)
+            return Response({
+                "success": True,
+                "virtual_account": {
+                    "account_number": vac.account_number,
+                    "bank_name": vac.bank_name,
+                    "account_name": vac.account_name,
+                    "provider": vac.provider,
+                    "paystack_reference": vac.paystack_reference,
+                    "is_active": vac.is_active,
+                    "notes": vac.notes,
+                    "assigned_at": vac.created_at.isoformat(),
+                    "assigned_by": vac.assigned_by.get_full_name() if vac.assigned_by else None,
+                },
+            })
+        except ParentVirtualAccount.DoesNotExist:
+            return Response({"success": True, "virtual_account": None})
+
+    if request.method == "DELETE":
+        try:
+            vac = ParentVirtualAccount.objects.get(parent=parent_user)
+            vac.is_active = False
+            vac.save(update_fields=["is_active", "updated_at"])
+            return Response({"success": True, "message": "Virtual account deactivated."})
+        except ParentVirtualAccount.DoesNotExist:
+            return Response({"success": False, "message": "No virtual account assigned."}, status=status.HTTP_404_NOT_FOUND)
+
+    # POST / PUT – assign or update
+    account_number = str(request.data.get("account_number") or "").strip()
+    bank_name = str(request.data.get("bank_name") or "").strip()
+    account_name = str(request.data.get("account_name") or "").strip()
+    provider = str(request.data.get("provider") or "paystack").strip()
+    paystack_reference = str(request.data.get("paystack_reference") or "").strip()
+    is_active = bool(request.data.get("is_active", True))
+    notes = str(request.data.get("notes") or "").strip()
+
+    if not all([account_number, bank_name, account_name]):
+        return Response(
+            {"success": False, "message": "account_number, bank_name, and account_name are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    vac, created = ParentVirtualAccount.objects.update_or_create(
+        parent=parent_user,
+        defaults={
+            "tenant": user.tenant,
+            "account_number": account_number,
+            "bank_name": bank_name,
+            "account_name": account_name,
+            "provider": provider,
+            "paystack_reference": paystack_reference,
+            "is_active": is_active,
+            "assigned_by": user,
+            "notes": notes,
+        },
+    )
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "virtual_account_assigned" if created else "virtual_account_updated",
+        f"{'Assigned' if created else 'Updated'} virtual account {account_number} for {parent_user.get_full_name() or parent_user.email}.",
+        reference=account_number,
+    )
+
+    return Response({
+        "success": True,
+        "message": "Virtual account assigned." if created else "Virtual account updated.",
+        "virtual_account": {
+            "account_number": vac.account_number,
+            "bank_name": vac.bank_name,
+            "account_name": vac.account_name,
+            "provider": vac.provider,
+            "paystack_reference": vac.paystack_reference,
+            "is_active": vac.is_active,
+            "notes": vac.notes,
+        },
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_provision_paystack_virtual_account(request, parent_id):
+    """
+    Auto-provision a real Paystack dedicated virtual account (DVA) for a parent, replacing the
+    need to manually type in account details. Splits automatically to the school's subaccount.
+    Finance roles only.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        parent_user = User.objects.get(id=parent_id)
+    except User.DoesNotExist:
+        return Response({"success": False, "message": "Parent not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        vac, created = provision_parent_virtual_account(parent_user, actor=user)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "virtual_account_paystack_provisioned" if created else "virtual_account_paystack_reprovisioned",
+        f"Auto-provisioned Paystack virtual account {vac.account_number} for {parent_user.get_full_name() or parent_user.email}.",
+        reference=vac.account_number,
+    )
+
+    return Response({
+        "success": True,
+        "message": "Paystack virtual account provisioned." if created else "Paystack virtual account re-provisioned.",
+        "virtual_account": {
+            "account_number": vac.account_number,
+            "bank_name": vac.bank_name,
+            "account_name": vac.account_name,
+            "provider": vac.provider,
+            "paystack_reference": vac.paystack_reference,
+            "is_active": vac.is_active,
+            "notes": vac.notes,
+        },
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_send_fee_reminder(request, parent_id):
+    """
+    Send a fee statement email to a parent.
+    Includes their virtual account details and outstanding fee balance per child.
+    Finance roles only.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        parent_user = User.objects.get(id=parent_id)
+    except User.DoesNotExist:
+        return Response({"success": False, "message": "Parent not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    result = send_parent_virtual_account_fee_reminder(parent_user)
+    if result.get("success"):
+        record_finance_activity(
+            user.tenant, user,
+            "fee_reminder_sent",
+            f"Fee statement emailed to {parent_user.get_full_name() or parent_user.email} ({result.get('email', parent_user.email)}).",
+        )
+    return Response({
+        "success": result.get("success", False),
+        "message": result.get("message", ""),
+        "channel": result.get("channel", "email"),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_bulk_message_parents(request):
+    """
+    Send bulk SMS / WhatsApp / Email to selected parents.
+    Finance and admin roles only.
+    Body: { parent_ids: [uuid...], channel: "sms"|"whatsapp"|"email", message: str }
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+
+    parent_ids = request.data.get("parent_ids") or []
+    channel = str(request.data.get("channel") or "sms").lower().strip()
+    message = str(request.data.get("message") or "").strip()
+
+    if not parent_ids:
+        return Response({"success": False, "message": "No parents selected."}, status=status.HTTP_400_BAD_REQUEST)
+    if not message:
+        return Response({"success": False, "message": "Message cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+    if channel not in ("sms", "whatsapp", "email"):
+        return Response(
+            {"success": False, "message": "Invalid channel. Use sms, whatsapp, or email."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    result = send_bulk_message_to_parents(user.tenant, parent_ids, channel, message)
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "bulk_message_sent",
+        f"Bulk {channel.upper()} sent to {result['sent']} of {result['sent'] + result['failed']} parents.",
+    )
+
+    return Response({
+        "success": True,
+        "sent": result["sent"],
+        "failed": result["failed"],
+        "errors": result["errors"][:10],
+    })

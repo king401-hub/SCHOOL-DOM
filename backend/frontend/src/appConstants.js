@@ -46,6 +46,7 @@ export const ADMIN_ROUTES = [
   { path: "/results", label: "Results" },
   { path: "/database-import", label: "Database Import" },
   { path: "/messages", label: "Messages" },
+  { path: "/loan-application", label: "Loan Application" },
   { path: "/settings", label: "Settings" },
 ];
 export const ACCOUNTANT_ROUTES = [
@@ -81,6 +82,7 @@ export const ADMIN_ENDPOINTS = {
   "/results": "/api/app/results/",
   "/database-import": "/api/app/database-imports/",
   "/messages": "/api/app/messages/",
+  "/loan-application": "/api/app/loan-applications/",
   "/settings": "/api/app/school/settings/",
 };
 export const STUDENT_ROUTES = [
@@ -95,6 +97,12 @@ export const STUDENT_ROUTES = [
   { path: "/results", label: "Results" },
 ];
 export const STUDENT_ROUTE_SET = new Set(STUDENT_ROUTES.map((item) => item.path));
+export const PARENT_ROUTES = [
+  { path: "/dashboard", label: "Dashboard" },
+  { path: "/fees", label: "School Fees" },
+  { path: "/payments", label: "Payment History" },
+];
+export const PARENT_ROUTE_SET = new Set(PARENT_ROUTES.map((item) => item.path));
 export const RECOMMENDED_SUBJECT_GROUPS = [
   {
     stream: "Science",

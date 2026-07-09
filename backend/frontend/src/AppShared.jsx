@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon } from "lucide-react";
 import {
   API_BASE_URL,
   LEGACY_SESSION_KEY,
@@ -348,7 +349,9 @@ export async function fetchDashboardSnapshot(session) {
         ? "/api/app/teacher/dashboard/"
         : role === "staff"
           ? "/api/hr/me/"
-        : "/api/app/dashboard/";
+          : role === "parent"
+            ? "/api/finance/parent/dashboard/"
+            : "/api/app/dashboard/";
   return requestJson(session, "GET", endpoint);
 }
 
@@ -641,17 +644,21 @@ export function DashboardIcon({ name = "overview", className = "" }) {
   );
 }
 
-export function MetricCard({ label, value, trend, icon = "overview", tone = "blue" }) {
+export function MetricCard({ label, value, trend, trendUp, icon = "overview", tone = "blue" }) {
   return (
     <article className={`metric-card tone-${tone}`}>
       <div className="metric-card-head">
-        <span className="metric-icon">
+        <span className={`metric-icon metric-icon-${tone}`}>
           <DashboardIcon name={icon} className="inline-icon" />
         </span>
         <p className="metric-label">{label}</p>
       </div>
-      <p className="metric-value">{value}</p>
-      {trend ? <p className="metric-trend">{trend}</p> : null}
+      <p className="metric-value">{value ?? "—"}</p>
+      {trend ? (
+        <p className={`metric-trend${trendUp === false ? " metric-trend-down" : ""}`}>
+          {trendUp === true ? "↑ " : trendUp === false ? "↓ " : ""}{trend}
+        </p>
+      ) : null}
     </article>
   );
 }
@@ -659,9 +666,27 @@ export function MetricCard({ label, value, trend, icon = "overview", tone = "blu
 export function ScreenState({ loading, error, onRetry }) {
   if (loading) {
     return (
-      <article className="app-panel state-panel">
-        <h3>Loading data...</h3>
-      </article>
+      <div className="screen-grid">
+        <div className="skeleton-card" aria-busy="true" aria-label="Loading…">
+          <div className="skeleton-line skeleton-line-short" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line skeleton-line-medium" />
+        </div>
+        <div className="metric-grid">
+          {[0,1,2,3].map((i) => (
+            <div key={i} className="skeleton-card skeleton-metric" aria-hidden="true">
+              <div className="skeleton-line skeleton-line-short" />
+              <div className="skeleton-line skeleton-line-value" />
+            </div>
+          ))}
+        </div>
+        <div className="skeleton-card skeleton-tall" aria-hidden="true">
+          <div className="skeleton-line skeleton-line-short" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line skeleton-line-medium" />
+          <div className="skeleton-line" />
+        </div>
+      </div>
     );
   }
 
@@ -670,17 +695,20 @@ export function ScreenState({ loading, error, onRetry }) {
   }
 
   return (
-    <article className="app-panel state-panel">
-      <h3>Something went wrong</h3>
-      <p>{error}</p>
-      {onRetry ? (
-        <div className="panel-form-actions">
-          <button type="button" onClick={onRetry}>
-            Retry
-          </button>
-        </div>
-      ) : null}
-    </article>
+    <div className="screen-grid">
+      <article className="app-panel state-panel state-panel-error">
+        <div className="state-panel-icon">⚠</div>
+        <h3>Something went wrong</h3>
+        <p>{error}</p>
+        {onRetry ? (
+          <div className="panel-form-actions">
+            <button type="button" className="btn-primary" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+        ) : null}
+      </article>
+    </div>
   );
 }
 
@@ -1026,6 +1054,13 @@ function LegacyMessageInboxPanel({
   );
 }
 
+const CHAT_EMOJIS = [
+  "😀","😂","😍","🥰","😊","😎","😢","😅","🤔","😮","😴","🤩","🥳","😤","🤗",
+  "👍","👎","👏","🙌","🤝","✌️","👋","💪","🙏","❤️","💙","💚","💛","🧡","💜",
+  "🎉","🎊","🎁","🏆","⭐","🌟","💡","📚","📖","✅","❌","⚠️","🔥","💯","🚀",
+  "😡","😭","😱","🤯","😬","🥺","😏","😇","🤭","😶","😪","🤤","😠","😈","👀",
+];
+
 export function MessageInboxPanel({
   title = "Messages",
   messages = [],
@@ -1045,10 +1080,36 @@ export function MessageInboxPanel({
   const [composeError, setComposeError] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const [actionBusyId, setActionBusyId] = useState("");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const localMessageScope = String(sessionScope || "default");
   const [localSentMessages, setLocalSentMessages] = useState(() => readLocalSentMessages(localMessageScope));
   const [composeAttachments, setComposeAttachments] = useState([]);
   const attachmentInputRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const textareaRef = useRef(null);
+  const chatBodyRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const insertEmoji = (emoji) => {
+    const el = textareaRef.current;
+    if (!el) { setComposeForm((p) => ({ ...p, body: p.body + emoji })); return; }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const newBody = composeForm.body.slice(0, start) + emoji + composeForm.body.slice(end);
+    setComposeForm((p) => ({ ...p, body: newBody }));
+    setTimeout(() => { el.focus(); el.setSelectionRange(start + emoji.length, start + emoji.length); }, 0);
+    setShowEmojiPicker(false);
+  };
 
   useEffect(() => {
     setLocalSentMessages(readLocalSentMessages(localMessageScope));
@@ -1163,6 +1224,13 @@ export function MessageInboxPanel({
   }, [conversationThreads, filter, searchTerm]);
 
   const activeThread = conversationThreads.find((item) => item.key === activeThreadKey) || filteredThreads[0] || null;
+
+  useEffect(() => {
+    if (chatBodyRef.current) {
+      chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
+    }
+  }, [activeThread?.messages?.length, activeThreadKey]);
+
   const selectedRecipient = recipientOptions.find((option) => option.value === composeForm.recipient);
   const composerRecipientOptions = useMemo(() => {
     if (!activeThread?.email || recipientOptions.some((option) => option.value === activeThread.email)) {
@@ -1280,103 +1348,210 @@ export function MessageInboxPanel({
     }
   };
 
+  const totalUnread = messages.filter((item) => !item.is_read).length;
+
   return (
-    <article className="modern-message-shell">
-      <aside className="modern-message-sidebar">
-        <div className="modern-message-sidebar-head">
-          <h3>{title}</h3>
-          <span>{messages.filter((item) => !item.is_read).length}</span>
+    <article className="chat-shell">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && <div className="chat-sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      {/* ── Left sidebar ─────────────────────────────────── */}
+      <aside className={`chat-sidebar${sidebarOpen ? " open" : ""}`}>
+        <div className="chat-sidebar-head">
+          <div className="chat-sidebar-title">
+            <span className="chat-sidebar-icon">💬</span>
+            <h3>{title}</h3>
+            {totalUnread > 0 && <span className="chat-unread-badge">{totalUnread}</span>}
+          </div>
+          <button type="button" className="chat-sidebar-close-btn" onClick={() => setSidebarOpen(false)}><XIcon size={18} /></button>
         </div>
-        <div className="modern-message-search">
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search..." />
+
+        <div className="chat-search-wrap">
+          <Search size={14} className="chat-search-icon" />
+          <input className="chat-search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search conversations…" />
         </div>
-        <div className="modern-message-tabs">
-          <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All messages</button>
-          <button type="button" className={filter === "unread" ? "active" : ""} onClick={() => setFilter("unread")}>Unread</button>
+
+        <div className="chat-filter-tabs">
+          <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All</button>
+          <button type="button" className={filter === "unread" ? "active" : ""} onClick={() => setFilter("unread")}>Unread {totalUnread > 0 && <b>{totalUnread}</b>}</button>
         </div>
-        <div className="modern-thread-list">
+
+        <div className="chat-thread-list">
           {filteredThreads.length === 0 ? (
-            <p className="panel-empty compact">No messages found.</p>
+            <p className="chat-empty-hint">No conversations found.</p>
           ) : (
             filteredThreads.map((thread) => (
               <button
                 key={thread.key}
                 type="button"
-                className={`modern-thread-item ${activeThread?.key === thread.key ? "active" : ""} ${thread.unread ? "unread" : ""}`}
-                onClick={() => openThread(thread)}
+                className={`chat-thread-item${activeThread?.key === thread.key ? " active" : ""}${thread.unread ? " unread" : ""}`}
+                onClick={() => { openThread(thread); setSidebarOpen(false); }}
               >
-                <span className="modern-thread-avatar">{thread.name.slice(0, 1).toUpperCase()}</span>
-                <span className="modern-thread-copy">
-                  <strong>{thread.name}</strong>
-                  <small>{thread.preview || thread.role || "Start a conversation"}</small>
+                <span className="chat-thread-avatar" data-letter={thread.name.slice(0, 1).toUpperCase()}>{thread.name.slice(0, 1).toUpperCase()}</span>
+                <span className="chat-thread-body">
+                  <span className="chat-thread-name">{thread.name}</span>
+                  <span className="chat-thread-preview">{thread.preview || thread.role || "Start a conversation"}</span>
                 </span>
-                <em>{thread.unread ? thread.unread : thread.latestAt ? formatDate(thread.latestAt) : ""}</em>
+                <span className="chat-thread-meta">
+                  {thread.latestAt && <span className="chat-thread-time">{formatDate(thread.latestAt)}</span>}
+                  {thread.unread > 0 && <span className="chat-thread-badge">{thread.unread}</span>}
+                </span>
               </button>
             ))
           )}
         </div>
       </aside>
 
-      <section className="modern-chat-panel">
-        <header className="modern-chat-head">
-          <div>
-            <h3>{activeThread ? activeThread.name : "New message"}</h3>
-            <p>{activeThread ? `${activeThread.role}${activeThread.email ? ` - ${activeThread.email}` : ""}` : "Choose a recipient and start a conversation."}</p>
-          </div>
-          {activeThread?.unread ? (
-            <div className="table-actions-inline">
-              <button type="button" className="table-action" onClick={markThreadRead}>
-                Mark chat read
-              </button>
+      {/* ── Right chat panel ─────────────────────────────── */}
+      <section className="chat-panel">
+        {/* Header */}
+        <header className="chat-panel-head">
+          <button type="button" className="chat-mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
+            <span /><span /><span />
+          </button>
+          {activeThread ? (
+            <div className="chat-head-contact">
+              <span className="chat-head-avatar" data-letter={activeThread.name.slice(0,1).toUpperCase()}>{activeThread.name.slice(0,1).toUpperCase()}</span>
+              <div>
+                <strong>{activeThread.name}</strong>
+                <small>{activeThread.role}{activeThread.email ? ` · ${activeThread.email}` : ""}</small>
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="chat-head-contact"><strong>New conversation</strong></div>
+          )}
+          <div className="chat-head-actions">
+            {activeThread?.unread > 0 && (
+              <button type="button" className="chat-icon-btn" onClick={markThreadRead} title="Mark all read">
+                <CheckCheck size={18} />
+              </button>
+            )}
+          </div>
         </header>
 
-        <div className="modern-chat-body">
+        {/* Message body */}
+        <div className="chat-body" ref={chatBodyRef}>
           {activeThread?.messages.length ? (
-            activeThread.messages.map((message) => (
-              <div key={message.id} className={`modern-chat-bubble ${message.direction === "outgoing" ? "outgoing" : "incoming"}`}>
-                <span>{message.direction === "outgoing" ? "You" : message.from || message.from_name || activeThread.name}</span>
-                {messageSubject(message) ? <strong>{messageSubject(message)}</strong> : null}
-                <p>{messageBody(message) || "No content provided."}</p>
-                {messageAttachments(message).length ? (
-                  <div className="message-attachment-list">
-                    {messageAttachments(message).map((attachment, index) => (
-                      <MessageAttachment key={`${attachmentUrl(attachment) || attachmentLabel(attachment)}-${index}`} attachment={attachment} index={index} />
-                    ))}
+            <>
+              {activeThread.messages.map((message) => {
+                const isOut = message.direction === "outgoing";
+                const attachments = messageAttachments(message);
+                return (
+                  <div key={message.id} className={`chat-bubble-wrap${isOut ? " out" : " in"}`}>
+                    {!isOut && (
+                      <span className="chat-bubble-avatar" data-letter={(message.from || activeThread.name).slice(0,1).toUpperCase()}>
+                        {(message.from || activeThread.name).slice(0,1).toUpperCase()}
+                      </span>
+                    )}
+                    <div className={`chat-bubble${isOut ? " out" : " in"}`}>
+                      {messageSubject(message) && <p className="chat-bubble-subject">{messageSubject(message)}</p>}
+                      {messageBody(message) && <p className="chat-bubble-text">{messageBody(message)}</p>}
+                      {attachments.length > 0 && (
+                        <div className="chat-bubble-attachments">
+                          {attachments.map((att, idx) => (
+                            <MessageAttachment key={`${attachmentUrl(att) || attachmentLabel(att)}-${idx}`} attachment={att} index={idx} />
+                          ))}
+                        </div>
+                      )}
+                      <div className="chat-bubble-foot">
+                        <span className="chat-bubble-time">{formatDate(message.created_at)}</span>
+                        <span className="chat-bubble-status">
+                          {isOut ? (message.is_read ? <CheckCheck size={13} /> : <Check size={13} />) : null}
+                        </span>
+                        <span className="chat-bubble-btns">
+                          {!isOut && !message.is_read && (
+                            <button type="button" disabled={actionBusyId === `read:${message.id}`} onClick={() => handleMarkRead(message.id)} title="Mark read">
+                              <Check size={12} />
+                            </button>
+                          )}
+                          <button type="button" disabled={actionBusyId === `delete:${message.id}`} onClick={() => handleDelete(message.id)} title="Delete">
+                            <Trash2 size={12} />
+                          </button>
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                ) : null}
-                <small>{formatDate(message.created_at)} - {message.direction === "outgoing" ? "Sent" : message.is_read ? "Read" : "Unread"}</small>
-                <div className="modern-bubble-actions">
-                  {message.direction !== "outgoing" && !message.is_read ? (
-                    <button type="button" disabled={actionBusyId === `read:${message.id}`} onClick={() => handleMarkRead(message.id)}>Mark read</button>
-                  ) : null}
-                  <button type="button" disabled={actionBusyId === `delete:${message.id}`} onClick={() => handleDelete(message.id)}>Delete</button>
-                </div>
-              </div>
-            ))
+                );
+              })}
+            </>
           ) : (
-            <p className="panel-empty">{activeThread ? "No messages in this chat yet." : "Select a message or send a new one."}</p>
+            <div className="chat-empty-state">
+              <span className="chat-empty-icon">💬</span>
+              <p>{activeThread ? "No messages yet — say hello!" : "Select a conversation to get started."}</p>
+            </div>
           )}
         </div>
 
+        {/* Composer */}
         {onComposeSubmit ? (
-          <form className="modern-chat-composer" onSubmit={handleComposeSubmit}>
-            <div className="modern-composer-row">
-              <textarea value={composeForm.body} onChange={(event) => setComposeForm((prev) => ({ ...prev, body: event.target.value }))} placeholder={composerRecipient ? `Message ${composerRecipient.label}` : "Write a message"} />
-              <button type="submit" disabled={composerRecipientOptions.length === 0 || isComposing}>{isComposing ? "..." : "Send"}</button>
-            </div>
-            <label className="message-attachment-picker">
-              <span>Attach files</span>
-              <input ref={attachmentInputRef} type="file" multiple onChange={handleAttachmentChange} />
-            </label>
-            {composeAttachments.length ? (
-              <div className="message-attachment-list pending">
-                {composeAttachments.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+          <form className="chat-composer" onSubmit={handleComposeSubmit}>
+            {composeAttachments.length > 0 && (
+              <div className="chat-attachment-preview">
+                {composeAttachments.map((file) => (
+                  <span key={`${file.name}-${file.size}`} className="chat-attachment-chip">
+                    <Paperclip size={11} />
+                    {file.name}
+                    <button type="button" onClick={() => setComposeAttachments((p) => p.filter((f) => f !== file))}><XIcon size={10}/></button>
+                  </span>
+                ))}
               </div>
-            ) : null}
-            {composeError ? <p className="form-feedback error">{composeError}</p> : null}
-            {composeFeedback ? <p className="form-feedback success">{composeFeedback}</p> : null}
+            )}
+            {(composeError || composeFeedback) && (
+              <div className={`chat-composer-feedback${composeError ? " error" : " success"}`}>
+                {composeError || composeFeedback}
+              </div>
+            )}
+            <div className="chat-composer-row">
+              {/* Emoji button */}
+              <div className="chat-emoji-wrap" ref={emojiPickerRef}>
+                <button
+                  type="button"
+                  className="chat-composer-icon-btn"
+                  onClick={() => setShowEmojiPicker((p) => !p)}
+                  aria-label="Insert emoji"
+                  title="Emoji"
+                >
+                  <Smile size={20} />
+                </button>
+                {showEmojiPicker && (
+                  <div className="chat-emoji-picker">
+                    {CHAT_EMOJIS.map((emoji) => (
+                      <button key={emoji} type="button" className="chat-emoji-btn" onClick={() => insertEmoji(emoji)}>
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Text input */}
+              <textarea
+                ref={textareaRef}
+                className="chat-composer-input"
+                value={composeForm.body}
+                onChange={(e) => setComposeForm((p) => ({ ...p, body: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleComposeSubmit(e); } }}
+                placeholder={composerRecipient ? `Message ${composerRecipient.label.split(" - ")[0]}…` : "Write a message…"}
+                rows={1}
+              />
+
+              {/* Paperclip / attach */}
+              <label className="chat-composer-icon-btn" title="Attach file" aria-label="Attach file">
+                <Paperclip size={20} />
+                <input ref={attachmentInputRef} type="file" multiple onChange={handleAttachmentChange} style={{display:"none"}} />
+              </label>
+
+              {/* Send */}
+              <button
+                type="submit"
+                className="chat-send-btn"
+                disabled={composerRecipientOptions.length === 0 || isComposing}
+                aria-label="Send"
+                title="Send (Enter)"
+              >
+                {isComposing ? <span className="chat-send-spinner" /> : <Send size={18} />}
+              </button>
+            </div>
           </form>
         ) : null}
       </section>

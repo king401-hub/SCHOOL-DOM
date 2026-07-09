@@ -1,4 +1,11 @@
 ﻿import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LayoutDashboard, TrendingUp, DollarSign, Receipt, CalendarCheck,
+  Briefcase, UserCheck, GraduationCap, Users, CreditCard, FileText,
+  BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
+  Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
+  Banknote, LifeBuoy,
+} from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 import LandingPage from "./Schooldom/src/App";
 
@@ -11,11 +18,13 @@ import PrivacyPolicyPage from "./PrivacyPolicyPage.jsx";
 
 import TermsConditionsPage from "./TermsConditionsPage";
 import PricingPage from "./PricingPage";
+import AiChatWidget from "./AiChatWidget";
 import { AttendanceModule, IdCardAttendanceScanner, StudentQrAttendanceScanner, TeacherQRCodeAttendancePage } from "./components/Attendance";
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
 import FormattedTextarea from "./components/FormattedTextarea";
+import NotepadEditor from "./components/NotepadEditor";
 import RichQuizText from "./components/RichQuizText";
 import {
   SESSION_KEY,
@@ -113,6 +122,8 @@ const AdminTeachersScreen = lazyAdminScreen("AdminTeachersScreen");
 const AdminEnrollmentsScreen = lazyAdminScreen("AdminEnrollmentsScreen");
 const AdminMessagesScreen = lazyAdminScreen("AdminMessagesScreen");
 const AdminDatabaseImportScreen = lazyAdminScreen("AdminDatabaseImportScreen");
+const AdminLoanApplicationScreen = lazyAdminScreen("AdminLoanApplicationScreen");
+const SupportCenterPanel = lazyAdminScreen("SupportCenterPanel");
 
 const NAIRA_SYMBOL = "\u20A6";
 const DAILY_PERSONAL_QUESTION_LIMIT = 20;
@@ -576,6 +587,8 @@ function StudentDashboard({
   scrollTargets = {},
   onNavigate,
   session,
+  themePreference,
+  onThemeChange,
 }) {
   const dashboardData = data || {};
   const attendance = dashboardData.attendance || {};
@@ -892,6 +905,18 @@ function StudentDashboard({
               <small>{student.email || "Student"}</small>
             </div>
           </button>
+          {onThemeChange ? (
+            <button
+              type="button"
+              className="theme-icon-toggle"
+              onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+              aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+              title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+            >
+              <ThemeModeIcon mode={themePreference} className="inline-icon" />
+              <span>{themePreference === "dark" ? "Dark" : "Light"}</span>
+            </button>
+          ) : null}
           {onSignOut ? (
             <button className="student-sidebar-signout" type="button" onClick={onSignOut}>
               Sign out
@@ -973,12 +998,12 @@ function StudentDashboard({
           ))}
         </section>
 
-        {paymentInstructions.reference_code ? (
+        {(paymentInstructions.reference_code || fees.length > 0) ? (
           <section className="student-panel">
             <div className="student-panel-head">
               <div>
                 <h3>School Fees</h3>
-                <p className="student-panel-sub">Expected amount, payments received, and what is left.</p>
+                <p className="student-panel-sub">Expected amount, payments received, and balance due.</p>
               </div>
               <button className="student-link-btn" type="button" onClick={() => go("/fees")}>
                 Open fees
@@ -1000,22 +1025,34 @@ function StudentDashboard({
                 <strong className="student-card-value">{formatFeeAmount(remainingFees)}</strong>
                 <span className="student-card-detail">{remainingFees > 0 ? "Outstanding balance" : "Fully paid"}</span>
               </article>
-              <article className="student-card tone-gold">
-                <span className="student-card-label">Reference Code</span>
-                <strong className="student-card-value">{paymentInstructions.reference_code}</strong>
-                <span className="student-card-detail">{paymentInstructions.narration}</span>
-              </article>
-              <article className="student-card tone-blue">
-                <span className="student-card-label">School Account</span>
-                <strong className="student-card-value">{paymentInstructions.bank_account_number || "-"}</strong>
-                <span className="student-card-detail">{paymentInstructions.bank_account_name || "Ask school office to set account"}</span>
-              </article>
+              {paymentInstructions.parent_virtual_account ? (
+                <article className="student-card tone-teal">
+                  <span className="student-card-label">Parent Payment Account</span>
+                  <strong className="student-card-value" style={{ letterSpacing: "0.08em" }}>
+                    {paymentInstructions.parent_virtual_account.account_number}
+                  </strong>
+                  <span className="student-card-detail">{paymentInstructions.parent_virtual_account.bank_name}</span>
+                </article>
+              ) : paymentInstructions.reference_code ? (
+                <article className="student-card tone-gold">
+                  <span className="student-card-label">Transfer Reference</span>
+                  <strong className="student-card-value">{paymentInstructions.reference_code}</strong>
+                  <span className="student-card-detail">{paymentInstructions.narration}</span>
+                </article>
+              ) : null}
             </div>
-            <div className="table-actions-inline">
-              <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.reference_code)}>Copy code</button>
-              <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.narration)}>Copy narration</button>
-              <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_number)}>Copy account</button>
-            </div>
+            {paymentInstructions.parent_virtual_account ? (
+              <div className="table-actions-inline">
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.parent_virtual_account.account_number)}>Copy Account No.</button>
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.parent_virtual_account.bank_name)}>Copy Bank</button>
+              </div>
+            ) : paymentInstructions.reference_code ? (
+              <div className="table-actions-inline">
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.reference_code)}>Copy code</button>
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.narration)}>Copy narration</button>
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_number)}>Copy account</button>
+              </div>
+            ) : null}
             {paymentFeedback ? <p className="form-feedback success">{paymentFeedback}</p> : null}
           </section>
         ) : null}
@@ -1272,7 +1309,112 @@ function StudentDashboard({
   );
 }
 
-function StudentAttendancePage({ session, onNavigate }) {
+function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTitle, children, themePreference, onThemeChange }) {
+  const [navOpen, setNavOpen] = useState(false);
+  const studentName = (
+    session?.user?.full_name ||
+    `${session?.user?.first_name || ""} ${session?.user?.last_name || ""}`.trim() ||
+    session?.user?.name ||
+    "Student"
+  );
+  const studentEmail = session?.user?.email || "";
+  const schoolName = session?.school?.name || "SchoolDom";
+  const nonK12Shell = session?.school?.school_type === "non_k12" || session?.school?.schoolType === "non_k12";
+  const initials = userInitials({ full_name: studentName });
+  const go = (path) => { onNavigate?.(path); setNavOpen(false); };
+
+  return (
+    <div className="student-page">
+      <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
+        <aside className="student-sidebar">
+          <div className="student-sidebar-head">
+            <div className="student-brand-info">
+              <strong>{schoolName}</strong>
+              <span>Student Portal</span>
+            </div>
+            <button type="button" className="sidebar-close-btn" onClick={() => setNavOpen(false)} aria-label="Close menu">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="student-nav-group-label">Navigation</div>
+          <nav className="student-nav">
+            <button type="button" className={`student-nav-item${currentPath === "/dashboard" ? " active" : ""}`} onClick={() => go("/dashboard")}>
+              <LayoutDashboard size={17} strokeWidth={1.8} /><span>Dashboard</span>
+            </button>
+            {nonK12Shell ? (
+              <button type="button" className={`student-nav-item${currentPath === "/attendance" ? " active" : ""}`} onClick={() => go("/attendance")}>
+                <CalendarCheck size={17} strokeWidth={1.8} /><span>Attendance</span>
+              </button>
+            ) : null}
+            <button type="button" className={`student-nav-item${currentPath === "/fees" ? " active" : ""}`} onClick={() => go("/fees")}>
+              <DollarSign size={17} strokeWidth={1.8} /><span>School Fees</span>
+            </button>
+            <button type="button" className={`student-nav-item${currentPath === "/id-card" ? " active" : ""}`} onClick={() => go("/id-card")}>
+              <CreditCard size={17} strokeWidth={1.8} /><span>ID Card</span>
+            </button>
+            <button type="button" className={`student-nav-item${currentPath === "/quizzes" ? " active" : ""}`} onClick={() => go("/quizzes")}>
+              <FileCheck size={17} strokeWidth={1.8} /><span>Assessment</span>
+            </button>
+            <button type="button" className={`student-nav-item${currentPath === "/exams" ? " active" : ""}`} onClick={() => go("/exams")}>
+              <FileText size={17} strokeWidth={1.8} /><span>Exams</span>
+            </button>
+            <button type="button" className={`student-nav-item${currentPath === "/academic-planning" ? " active" : ""}`} onClick={() => go("/academic-planning")}>
+              <BookOpen size={17} strokeWidth={1.8} /><span>Scheme</span>
+            </button>
+            <button type="button" className={`student-nav-item${currentPath === "/messages" ? " active" : ""}`} onClick={() => go("/messages")}>
+              <MessageSquare size={17} strokeWidth={1.8} /><span>Messages</span>
+            </button>
+            <button type="button" className={`student-nav-item${currentPath === "/results" ? " active" : ""}`} onClick={() => go("/results")}>
+              <BarChart2 size={17} strokeWidth={1.8} /><span>Results</span>
+            </button>
+          </nav>
+
+          <div className="student-sidebar-footer">
+            <div className="student-sidebar-profile">
+              <div className="student-avatar"><span aria-hidden="true">{initials}</span></div>
+              <div className="student-profile-meta">
+                <strong>{studentName}</strong>
+                <small>{studentEmail || "Student"}</small>
+              </div>
+            </div>
+            {onThemeChange ? (
+              <button
+                type="button"
+                className="theme-icon-toggle"
+                onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+                aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+              >
+                <ThemeModeIcon mode={themePreference} className="inline-icon" />
+              </button>
+            ) : null}
+          </div>
+        </aside>
+
+        <main className="student-main">
+          <div className="student-main-topbar">
+            <div className="student-topbar-left">
+              <button type="button" className="student-menu-toggle" onClick={() => setNavOpen(!navOpen)} aria-label="Toggle navigation menu">
+                <Menu size={20} />
+              </button>
+              <p className="topbar-kicker">{pageKicker || "Student Workspace"}</p>
+            </div>
+            {pageTitle ? (
+              <div className="student-topbar-actions">
+                <span className="student-status-pill">{pageTitle}</span>
+              </div>
+            ) : null}
+          </div>
+          {children}
+          <div className="student-sidebar-overlay" onClick={() => setNavOpen(false)} style={{ display: navOpen ? "block" : "none" }} />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function StudentAttendancePage({ session, onNavigate, themePreference, onThemeChange }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1295,25 +1437,14 @@ function StudentAttendancePage({ session, onNavigate }) {
   }, [loadAttendance]);
 
   const attendance = data?.attendance || {};
-  const school = resolveSchoolBrand(data?.school, session?.school, session);
   const nonK12School = isNonK12School(session, data);
   const history = attendance.history || [];
 
   return (
-    <section className="student-standalone-page">
-      <header className="student-standalone-hero">
-        <div>
-          <p className="topbar-kicker">{school?.name || "SchoolDom"}</p>
-          <h1>Attendance</h1>
-          <p>{nonK12School ? "Scan your school QR code to mark your attendance." : "Your school marks attendance for you."}</p>
-        </div>
-        <button type="button" className="student-link-btn" onClick={() => onNavigate?.("/dashboard")}>
-          Back to dashboard
-        </button>
-      </header>
-
+    <StudentPageShell session={session} currentPath="/attendance" onNavigate={onNavigate}
+      themePreference={themePreference} onThemeChange={onThemeChange}
+      pageKicker="Attendance" pageTitle="Attendance">
       <ScreenState loading={loading && !data} error={error} onRetry={loadAttendance} />
-
       {data ? (
         nonK12School ? (
           <>
@@ -1362,11 +1493,11 @@ function StudentAttendancePage({ session, onNavigate }) {
           </article>
         )
       ) : null}
-    </section>
+    </StudentPageShell>
   );
 }
 
-function StudentIdCardPage({ session, onNavigate }) {
+function StudentIdCardPage({ session, onNavigate, themePreference, onThemeChange }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1391,59 +1522,47 @@ function StudentIdCardPage({ session, onNavigate }) {
   const school = resolveSchoolBrand(data?.school, session?.school, session);
 
   return (
-    <section className="student-standalone-page student-id-card-page">
-      <header className="student-standalone-hero">
-        <div>
-          <p className="topbar-kicker">{school?.name || "SchoolDom"}</p>
-          <h1>Student ID Card</h1>
-          <p>View your official student ID card. Printing is managed by the school admin.</p>
-        </div>
-        <button type="button" className="student-link-btn" onClick={() => onNavigate?.("/dashboard")}>
-          Back to dashboard
-        </button>
-      </header>
-
-      <ScreenState loading={loading && !data} error={error} onRetry={loadCard} />
-
-      {data?.was_new ? <p className="form-feedback success">New ID card opened. The dashboard notice has been cleared.</p> : null}
-
-      {data?.person ? (
-        <Suspense fallback={<ScreenState loading />}>
-          <StudentIdCardPreview person={data.person} school={school} qrDataUrl={data.qr_data_url} />
-        </Suspense>
-      ) : !loading && !error ? (
-        <article className="student-panel">
-          <h3>No ID card yet</h3>
-          <p className="student-panel-sub">{data?.message || "Your school admin has not generated your ID card yet."}</p>
-        </article>
-      ) : null}
-    </section>
+    <StudentPageShell session={session} currentPath="/id-card" onNavigate={onNavigate}
+      themePreference={themePreference} onThemeChange={onThemeChange}
+      pageKicker="Student ID" pageTitle="ID Card">
+      <div className="student-id-card-page">
+        <ScreenState loading={loading && !data} error={error} onRetry={loadCard} />
+        {data?.was_new ? <p className="form-feedback success">New ID card opened. The dashboard notice has been cleared.</p> : null}
+        {data?.person ? (
+          <Suspense fallback={<ScreenState loading />}>
+            <StudentIdCardPreview person={data.person} school={school} qrDataUrl={data.qr_data_url} />
+          </Suspense>
+        ) : !loading && !error ? (
+          <article className="student-panel">
+            <h3>No ID card yet</h3>
+            <p className="student-panel-sub">{data?.message || "Your school admin has not generated your ID card yet."}</p>
+          </article>
+        ) : null}
+      </div>
+    </StudentPageShell>
   );
 }
 
-function StudentFeesPage({
-  session,
-  onNavigate,
-}) {
+function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [financeData, setFinanceData] = useState({});
   const [paymentInstructions, setPaymentInstructions] = useState({});
   const [bankPayments, setBankPayments] = useState([]);
   const [fees, setFees] = useState([]);
   const [feedback, setFeedback] = useState("");
-  const [navOpen, setNavOpen] = useState(false);
-  const school = resolveSchoolBrand(financeData?.school, session?.school, session);
+  const [copiedField, setCopiedField] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const loadFinance = useCallback(async () => {
     setLoading(true);
+    setLoaded(false);
     setError("");
     try {
       const result = await requestJson(session, "GET", "/api/finance/wallet/");
-      setFinanceData({ school: result.school || {} });
       setPaymentInstructions(result.payment_instructions || {});
       setBankPayments(result.bank_payments || []);
       setFees(result.fees || []);
+      setTimeout(() => setLoaded(true), 40);
     } catch (loadError) {
       setError(loadError.message || "Could not load school fees.");
     } finally {
@@ -1451,178 +1570,196 @@ function StudentFeesPage({
     }
   }, [session]);
 
-  useEffect(() => {
-    loadFinance();
-  }, [loadFinance]);
+  useEffect(() => { loadFinance(); }, [loadFinance]);
 
-  const expectedFees = fees.reduce((sum, fee) => sum + Number(fee.amount || 0), 0);
-  const paidFees = fees.reduce((sum, fee) => sum + Number(fee.amount_paid || 0), 0);
-  const remainingFees = fees.reduce((sum, fee) => sum + Number(fee.remaining_balance ?? Math.max(Number(fee.amount || 0) - Number(fee.amount_paid || 0), 0)), 0);
-  const formatFeeAmount = (value) =>
-    `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  const copyText = async (value) => {
+  const totalExpected = fees.reduce((s, f) => s + Number(f.amount || 0), 0);
+  const totalPaid = fees.reduce((s, f) => s + Number(f.amount_paid || 0), 0);
+  const totalRemaining = fees.reduce((s, f) => s + Number(f.remaining_balance ?? Math.max(Number(f.amount || 0) - Number(f.amount_paid || 0), 0)), 0);
+  const paymentPct = totalExpected > 0 ? Math.min(100, Math.round((totalPaid / totalExpected) * 100)) : 0;
+  const allPaid = fees.length > 0 && totalRemaining <= 0;
+
+  const fmt = (v) => `${NAIRA_SYMBOL}${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const copyText = async (value, field) => {
     if (!value) return;
     const copied = await copyToClipboard(value);
-    setFeedback(copied ? "Copied to clipboard." : `Copy this: ${value}`);
+    if (copied) {
+      setCopiedField(field);
+      setFeedback("Copied to clipboard!");
+      setTimeout(() => { setCopiedField(""); setFeedback(""); }, 2200);
+    } else {
+      setFeedback(`Copy: ${value}`);
+    }
   };
 
-  return (
-    <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
-      <aside className="student-sidebar">
-        <SchoolBrand school={school} subtitle="Student" />
-        <nav className="student-nav">
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/dashboard"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">D</span>
-            <span>Dashboard</span>
-          </button>
-          <button className="student-nav-item active" type="button">
-            <span className="student-nav-icon" aria-hidden="true">
-              <DashboardIcon name="money" className="inline-icon" />
-            </span>
-            <span>School Fees</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">Q</span>
-            <span>Assessment</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/messages"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">M</span>
-            <span>Messages</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/results"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">R</span>
-            <span>Results</span>
-          </button>
-        </nav>
-      </aside>
+  const pva = paymentInstructions.parent_virtual_account;
 
-      <main className="student-main">
-        <div className="student-main-topbar">
-          <div className="student-topbar-left">
-            <button 
-              type="button" 
-              className="student-menu-toggle" 
-              onClick={() => setNavOpen(!navOpen)}
-              aria-label="Toggle navigation menu"
-            >
-              <span className="menu-bars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
+  return (
+    <StudentPageShell session={session} currentPath="/fees" onNavigate={onNavigate}
+      themePreference={themePreference} onThemeChange={onThemeChange}
+      pageKicker="Student Payments" pageTitle="School Fees">
+      {loading ? (
+        <div className="fee-loading">
+          <div className="fee-loading-spinner" />
+          <p>Loading your fees…</p>
+        </div>
+      ) : error ? (
+        <div className="fee-error-block">
+          <p className="form-feedback error">{error}</p>
+          <button type="button" className="student-primary-btn" onClick={loadFinance}>Retry</button>
+        </div>
+      ) : (
+        <div className={`fee-page${loaded ? " fee-page--loaded" : ""}`}>
+
+          {/* Overall progress hero */}
+          <div className="fee-hero">
+            <div className="fee-hero-left">
+              <p className="fee-hero-kicker">Payment Progress</p>
+              <h2 className="fee-hero-amount">{fmt(totalPaid)}<span> of {fmt(totalExpected)}</span></h2>
+              {allPaid && <span className="fee-hero-badge fee-hero-badge--paid">✓ All Fees Paid</span>}
+            </div>
+            <div className="fee-hero-right">
+              <div className="fee-progress-track">
+                <div className="fee-progress-fill" style={{ "--pct": `${paymentPct}%` }} />
+              </div>
+              <p className="fee-progress-label">{paymentPct}% paid · {fmt(totalRemaining)} remaining</p>
+            </div>
+          </div>
+
+          {/* Summary stat cards */}
+          <div className="fee-stat-row">
+            <div className="fee-stat-card fee-stat-card--blue" style={{ "--delay": "0ms" }}>
+              <DollarSign size={20} className="fee-stat-icon" />
+              <p className="fee-stat-label">Total Billed</p>
+              <p className="fee-stat-value">{fmt(totalExpected)}</p>
+              <p className="fee-stat-sub">{fees.length} fee{fees.length !== 1 ? "s" : ""} assigned</p>
+            </div>
+            <div className="fee-stat-card fee-stat-card--green" style={{ "--delay": "60ms" }}>
+              <TrendingUp size={20} className="fee-stat-icon" />
+              <p className="fee-stat-label">Amount Paid</p>
+              <p className="fee-stat-value">{fmt(totalPaid)}</p>
+              <p className="fee-stat-sub">Confirmed payments</p>
+            </div>
+            <div className={`fee-stat-card ${totalRemaining > 0 ? "fee-stat-card--amber" : "fee-stat-card--green"}`} style={{ "--delay": "120ms" }}>
+              <Receipt size={20} className="fee-stat-icon" />
+              <p className="fee-stat-label">Outstanding</p>
+              <p className="fee-stat-value">{fmt(totalRemaining)}</p>
+              <p className="fee-stat-sub">{totalRemaining > 0 ? "Balance due" : "Fully settled"}</p>
+            </div>
+          </div>
+
+          {/* Payment account / reference card */}
+          {pva ? (
+            <div className="fee-payment-card fee-payment-card--teal" style={{ "--delay": "180ms" }}>
+              <div className="fee-payment-header">
+                <Banknote size={16} />
+                <span>Parent Payment Account</span>
+              </div>
+              <p className="fee-payment-sub">Your parent should bank-transfer fees to this account</p>
+              <div className="fee-account-number">{pva.account_number}</div>
+              <p className="fee-account-details">{pva.bank_name} · {pva.account_name}</p>
+              <div className="fee-copy-row">
+                <button type="button" className={`fee-copy-btn${copiedField === "acct" ? " fee-copy-btn--copied" : ""}`} onClick={() => copyText(pva.account_number, "acct")}>
+                  {copiedField === "acct" ? "✓ Copied" : "Copy Account No."}
+                </button>
+                <button type="button" className={`fee-copy-btn${copiedField === "bank" ? " fee-copy-btn--copied" : ""}`} onClick={() => copyText(pva.bank_name, "bank")}>
+                  {copiedField === "bank" ? "✓ Copied" : "Copy Bank Name"}
+                </button>
+              </div>
+              <p className="fee-payment-note">Payments are matched automatically. Your parent will receive a receipt via email.</p>
+            </div>
+          ) : (
+            <div className="fee-payment-card fee-payment-card--blue" style={{ "--delay": "180ms" }}>
+              <div className="fee-payment-header">
+                <CreditCard size={16} />
+                <span>Bank Transfer Reference</span>
+              </div>
+              <p className="fee-payment-sub">Include this code in your bank transfer narration</p>
+              <div className="fee-account-number">{paymentInstructions.reference_code || "—"}</div>
+              <p className="fee-account-details">
+                {paymentInstructions.bank_account_name || "—"} · {paymentInstructions.bank_account_number || "Contact school office"}
+              </p>
+              <div className="fee-copy-row">
+                <button type="button" className={`fee-copy-btn${copiedField === "ref" ? " fee-copy-btn--copied" : ""}`} onClick={() => copyText(paymentInstructions.reference_code, "ref")}>
+                  {copiedField === "ref" ? "✓ Copied" : "Copy Reference"}
+                </button>
+                <button type="button" className={`fee-copy-btn${copiedField === "nar" ? " fee-copy-btn--copied" : ""}`} onClick={() => copyText(paymentInstructions.narration, "nar")}>
+                  {copiedField === "nar" ? "✓ Copied" : "Copy Narration"}
+                </button>
+              </div>
+            </div>
+          )}
+          {feedback && <p className="fee-feedback">{feedback}</p>}
+
+          {/* Fee breakdown cards */}
+          <div className="fee-section" style={{ "--delay": "240ms" }}>
+            <h3 className="fee-section-title">Fee Breakdown</h3>
+            {fees.length ? (
+              <div className="fee-list">
+                {fees.map((fee, idx) => {
+                  const paid = Number(fee.amount_paid || 0);
+                  const total = Number(fee.amount || 0);
+                  const remaining = Number(fee.remaining_balance ?? Math.max(total - paid, 0));
+                  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+                  const statusLabel = fee.payment_status || (remaining <= 0 ? "paid" : paid > 0 ? "partial" : fee.status || "pending");
+                  const barColor = statusLabel === "paid" ? "#16a34a" : statusLabel === "partial" ? "#0284c7" : statusLabel === "overdue" ? "#dc2626" : "#f59e0b";
+                  return (
+                    <div key={fee.id} className="fee-item" style={{ "--item-delay": `${idx * 45}ms` }}>
+                      <div className="fee-item-top">
+                        <div className="fee-item-info">
+                          <span className="fee-item-title">{fee.title}</span>
+                          <span className={`fee-item-badge status-${statusLabel}`}>{statusLabel}</span>
+                        </div>
+                        <div className="fee-item-amounts">
+                          <span className="fee-item-paid">{fmt(paid)}</span>
+                          <span className="fee-item-total">of {fmt(total)}</span>
+                        </div>
+                      </div>
+                      <div className="fee-item-bar-track">
+                        <div className="fee-item-bar-fill" style={{ "--pct": `${pct}%`, "--status": barColor }} />
+                      </div>
+                      <div className="fee-item-bottom">
+                        <span className="fee-item-due">Due {formatDate(fee.due_date)}</span>
+                        {remaining > 0 && <span className="fee-item-remaining">{fmt(remaining)} left</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="fee-empty">No fees have been assigned to your class yet.</p>
+            )}
+          </div>
+
+          {/* Payment history */}
+          {bankPayments.length > 0 && (
+            <div className="fee-section" style={{ "--delay": "300ms" }}>
+              <h3 className="fee-section-title">Payment History</h3>
+              <div className="fee-history-list">
+                {bankPayments.map((p) => (
+                  <div key={p.id} className="fee-history-item">
+                    <div className="fee-history-left">
+                      <span className="fee-history-ref">{p.bank_reference || p.reference_code || "—"}</span>
+                      <span className="fee-history-date">{formatDate(p.created_at)}</span>
+                    </div>
+                    <div className="fee-history-right">
+                      <span className="fee-history-amount">{fmt(p.amount)}</span>
+                      <span className={`fee-item-badge status-${p.status || "pending"}`}>{p.status || "pending"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="fee-refresh-row">
+            <button type="button" className="fee-refresh-btn" onClick={loadFinance}>
+              Refresh
             </button>
-            <p className="topbar-kicker">Student Payments</p>
-            <h1>School Fees</h1>
-            <small>Use your bank transfer reference and track confirmed school-fee payments.</small>
           </div>
         </div>
-
-        {loading ? (
-          <p className="panel-empty">Loading school fees...</p>
-        ) : error ? (
-          <>
-            <p className="form-feedback error">{error}</p>
-            <button type="button" className="student-primary-btn" onClick={loadFinance}>Retry</button>
-          </>
-        ) : (
-          <>
-            <div className="student-fee-summary-grid">
-              <article className="app-panel frosted">
-                <p className="metric-label">Expected to pay</p>
-                <h2 className="metric-value">{formatFeeAmount(expectedFees)}</h2>
-                <p className="metric-trend">{fees.length ? `${fees.length} assigned fee${fees.length === 1 ? "" : "s"}` : "No fees assigned yet."}</p>
-              </article>
-              <article className="app-panel frosted">
-                <p className="metric-label">Amount paid</p>
-                <h2 className="metric-value">{formatFeeAmount(paidFees)}</h2>
-                <p className="metric-trend">Confirmed fee payments.</p>
-              </article>
-              <article className="app-panel frosted">
-                <p className="metric-label">Amount left</p>
-                <h2 className="metric-value">{formatFeeAmount(remainingFees)}</h2>
-                <p className="metric-trend">{remainingFees > 0 ? "Outstanding balance." : "Fully paid."}</p>
-              </article>
-              <article className="app-panel frosted">
-                <h3>Bank Transfer Reference</h3>
-                <p className="metric-label">Use this code in your transfer narration</p>
-                <h2 className="metric-value">{paymentInstructions.reference_code || "-"}</h2>
-                <div className="table-actions-inline">
-                  <button type="button" className="table-action" onClick={() => copyText(paymentInstructions.reference_code)}>Copy code</button>
-                  <button type="button" className="table-action" onClick={() => copyText(paymentInstructions.narration)}>Copy narration</button>
-                </div>
-                <p className="field-note">
-                  Bank: {paymentInstructions.bank_account_name || "-"} - {paymentInstructions.bank_account_number || "No account set"}
-                </p>
-              </article>
-              {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-            </div>
-            <article className="app-panel">
-              <h3>Fee Breakdown</h3>
-              {fees.length ? (
-                <table className="student-table">
-                  <thead>
-                    <tr>
-                      <th>Fee</th>
-                      <th>Expected</th>
-                      <th>Paid</th>
-                      <th>Left</th>
-                      <th>Status</th>
-                      <th>Due</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fees.map((fee) => {
-                      const paid = Number(fee.amount_paid || 0);
-                      const remaining = Number(fee.remaining_balance ?? Math.max(Number(fee.amount || 0) - paid, 0));
-                      const statusLabel = fee.payment_status || (remaining <= 0 ? "paid" : paid > 0 ? "partial" : fee.status);
-                      return (
-                        <tr key={fee.id}>
-                          <td>{fee.title}</td>
-                          <td>{formatFeeAmount(fee.amount, fee.currency)}</td>
-                          <td>{formatFeeAmount(paid, fee.currency)}</td>
-                          <td>{formatFeeAmount(remaining, fee.currency)}</td>
-                          <td><span className={`finance-status status-${statusLabel}`}>{statusLabel}</span></td>
-                          <td>{formatDate(fee.due_date)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              ) : <p className="panel-empty">No school fees have been assigned to your class yet.</p>}
-            </article>
-            <article className="app-panel">
-              <h3>Student Bank Payment History</h3>
-              {bankPayments.length ? (
-                <table className="student-table">
-                  <thead><tr><th>Date</th><th>Reference</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {bankPayments.map((payment) => (
-                      <tr key={payment.id}>
-                        <td>{formatDate(payment.created_at)}</td>
-                        <td>{payment.bank_reference || payment.reference_code || "-"}</td>
-                        <td>{formatFeeAmount(payment.amount)}</td>
-                        <td>{formatFeeAmount(payment.applied_amount)}</td>
-                        <td>{formatFeeAmount(payment.unapplied_amount)}</td>
-                        <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : <p className="panel-empty">No bank transfer payments found yet.</p>}
-            </article>
-          </>
-        )}
-
-        <div
-          className="student-sidebar-overlay"
-          onClick={() => setNavOpen(false)}
-          style={{ display: navOpen ? 'block' : 'none' }}
-        />
-      </main>
-    </div>
+      )}
+    </StudentPageShell>
   );
 }
 
@@ -1656,11 +1793,10 @@ function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "
   });
 }
 
-function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
+function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePreference, onThemeChange }) {
   const [messageData, setMessageData] = useState(data || { inbox: [], admin_contacts: [] });
   const [messages, setMessages] = useState((data?.inbox || []).slice(0, 50));
   const [loading, setLoading] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
   const availableRecipients = filterRecipientsForRole(
     messageData?.recipients || messageData?.admin_contacts || [],
     { ...(session?.user || {}), school_type: session?.school?.school_type || session?.school?.schoolType },
@@ -1670,8 +1806,6 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
     value: item.email,
     label: `${item.name || item.email}${normalizeRecipientRole(item) ? ` - ${roleLabel(normalizeRecipientRole(item))}` : ""}`,
   }));
-  const school = resolveSchoolBrand(messageData?.school, data?.school, session?.school, session);
-
   const loadMessages = useCallback(async () => {
     setLoading(true);
     try {
@@ -1710,91 +1844,30 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate }) {
   };
 
   return (
-    <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
-      <aside className="student-sidebar">
-        <SchoolBrand school={school} subtitle={roleLabel(session?.user?.role) || "Messages"} />
-        <nav className="student-nav">
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/dashboard"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">D</span>
-            <span>Dashboard</span>
-          </button>
-          {session?.user?.role === "student" ? (
-            <>
-              <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/fees"); setNavOpen(false); }}>
-                <span className="student-nav-icon" aria-hidden="true">
-                  <DashboardIcon name="money" className="inline-icon" />
-                </span>
-                <span>School Fees</span>
-              </button>
-              <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
-                <span className="student-nav-icon" aria-hidden="true">Q</span>
-                <span>Assessment</span>
-              </button>
-            </>
-          ) : null}
-          <button className="student-nav-item active" type="button">
-            <span className="student-nav-icon" aria-hidden="true">M</span>
-            <span>Messages</span>
-          </button>
-          {session?.user?.role === "student" ? (
-            <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/results"); setNavOpen(false); }}>
-              <span className="student-nav-icon" aria-hidden="true">R</span>
-              <span>Results</span>
-            </button>
-          ) : null}
-        </nav>
-      </aside>
-
-      <main className="student-main">
-        <div className="student-main-topbar">
-          <div className="student-topbar-left">
-            <button 
-              type="button" 
-              className="student-menu-toggle" 
-              onClick={() => setNavOpen(!navOpen)}
-              aria-label="Toggle navigation menu"
-            >
-              <span className="menu-bars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </button>
-            <p className="topbar-kicker">Messages</p>
-            <h1>Inbox & Communications</h1>
-            <small>Stay connected with your school team.</small>
-          </div>
-        </div>
-
-        <section className="student-panel">
-          <MessageInboxPanel
-            title="Your Messages"
-            messages={messages}
-            recipientOptions={recipientOptions}
-            sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
-            onComposeSubmit={handleComposeMessage}
-            onMarkRead={handleMarkRead}
-            onDelete={handleDelete}
-            onRefresh={loadMessages}
-          />
-          {loading ? <p className="panel-empty compact">Checking for new messages...</p> : null}
-        </section>
-
-        <div
-          className="student-sidebar-overlay"
-          onClick={() => setNavOpen(false)}
-          style={{ display: navOpen ? 'block' : 'none' }}
+    <StudentPageShell session={session} currentPath="/messages" onNavigate={onNavigate}
+      themePreference={themePreference} onThemeChange={onThemeChange}
+      pageKicker="Messages" pageTitle="Messages">
+      <section className="student-panel">
+        <MessageInboxPanel
+          title="Your Messages"
+          messages={messages}
+          recipientOptions={recipientOptions}
+          sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
+          onComposeSubmit={handleComposeMessage}
+          onMarkRead={handleMarkRead}
+          onDelete={handleDelete}
+          onRefresh={loadMessages}
         />
-      </main>
-    </div>
+        {loading ? <p className="panel-empty compact">Checking for new messages...</p> : null}
+      </section>
+    </StudentPageShell>
   );
 }
 
-function StudentResultsPage({ session, data, onNavigate }) {
+function StudentResultsPage({ session, data, onNavigate, themePreference, onThemeChange }) {
   const [reportCard, setReportCard] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [navOpen, setNavOpen] = useState(false);
   const student = data?.student || {};
   const school = resolveSchoolBrand(reportCard?.school, data?.school, session?.school, session);
 
@@ -1816,128 +1889,74 @@ function StudentResultsPage({ session, data, onNavigate }) {
   }, []);
 
   return (
-    <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
-      <aside className="student-sidebar">
-        <SchoolBrand school={school} subtitle="Student" />
-        <nav className="student-nav">
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/dashboard"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">D</span>
-            <span>Dashboard</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/fees"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">
-              <DashboardIcon name="money" className="inline-icon" />
-            </span>
-            <span>School Fees</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/quizzes"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">Q</span>
-            <span>Assessment</span>
-          </button>
-          <button className="student-nav-item" type="button" onClick={() => { onNavigate?.("/messages"); setNavOpen(false); }}>
-            <span className="student-nav-icon" aria-hidden="true">M</span>
-            <span>Messages</span>
-          </button>
-          <button className="student-nav-item active" type="button">
-            <span className="student-nav-icon" aria-hidden="true">R</span>
-            <span>Results</span>
-          </button>
-        </nav>
-      </aside>
-
-      <main className="student-main">
-        <div className="student-main-topbar">
-          <div className="student-topbar-left">
-            <button 
-              type="button" 
-              className="student-menu-toggle" 
-              onClick={() => setNavOpen(!navOpen)}
-              aria-label="Toggle navigation menu"
-            >
-              <span className="menu-bars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-            </button>
-            <p className="topbar-kicker">Academic Performance</p>
-            <h1>Your Results</h1>
-            <small>{student.class_name || "Class"} - {student.student_id || "ID"}</small>
-          </div>
-        </div>
-
-        <section className="student-panel">
-          {loading && !reportCard ? (
-            <p className="panel-empty">Loading results...</p>
-          ) : error ? (
-            <>
-              <p className="form-feedback error">{error}</p>
-              <button type="button" className="student-primary-btn" onClick={handleLoadResults}>Retry</button>
-            </>
-          ) : reportCard ? (
-            <>
-              <div className="report-school-brand compact-inline">
-                <SchoolBrand school={reportCard.school || school} subtitle="Report card" compact />
-              </div>
-              <div className="pill-stack">
-                <span className="pill">Total: {reportCard.total_score ?? "-"}</span>
-                <span className="pill">Average: {reportCard.average_score ?? "-"}</span>
-                {reportCard.class_position ? (
-                  <span className="pill">
-                    Position: {reportCard.class_position} / {reportCard.class_size || "?"}
-                  </span>
-                ) : null}
-              </div>
-              {reportCard.scores && reportCard.scores.length ? (
-                <table className="student-table">
-                  <thead>
-                    <tr>
-                      <th>Subject</th>
-                      <th>Score</th>
-                      <th>Max</th>
-                      <th>%</th>
-                      <th>Grade</th>
-                      <th>Remark</th>
-                      <th>Teacher</th>
-                      <th>Term</th>
-                      <th>Updated</th>
+    <StudentPageShell session={session} currentPath="/results" onNavigate={onNavigate}
+      themePreference={themePreference} onThemeChange={onThemeChange}
+      pageKicker="Academic Performance" pageTitle="Results">
+      <section className="student-panel">
+        {loading && !reportCard ? (
+          <p className="panel-empty">Loading results...</p>
+        ) : error ? (
+          <>
+            <p className="form-feedback error">{error}</p>
+            <button type="button" className="student-primary-btn" onClick={handleLoadResults}>Retry</button>
+          </>
+        ) : reportCard ? (
+          <>
+            <div className="report-school-brand compact-inline">
+              <SchoolBrand school={reportCard.school || school} subtitle="Report card" compact />
+            </div>
+            <div className="pill-stack">
+              <span className="pill">Total: {reportCard.total_score ?? "-"}</span>
+              <span className="pill">Average: {reportCard.average_score ?? "-"}</span>
+              {reportCard.class_position ? (
+                <span className="pill">
+                  Position: {reportCard.class_position} / {reportCard.class_size || "?"}
+                </span>
+              ) : null}
+            </div>
+            {reportCard.scores && reportCard.scores.length ? (
+              <table className="student-table">
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Score</th>
+                    <th>Max</th>
+                    <th>%</th>
+                    <th>Grade</th>
+                    <th>Remark</th>
+                    <th>Teacher</th>
+                    <th>Term</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportCard.scores.map((row, index) => (
+                    <tr key={row.id || `score-${index}`}>
+                      <td>{row.subject || "Subject"}</td>
+                      <td>{row.score ?? "-"}</td>
+                      <td>{row.max_score ?? "-"}</td>
+                      <td>{row.percentage ? `${Math.round(row.percentage)}%` : "-"}</td>
+                      <td>{row.grade || "-"}</td>
+                      <td>{row.performance_remark || "-"}</td>
+                      <td>{row.teacher || row.teacher_email || "-"}</td>
+                      <td>{row.term || "-"}</td>
+                      <td>{formatDate(row.recorded_at)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {reportCard.scores.map((row, index) => (
-                      <tr key={row.id || `score-${index}`}>
-                        <td>{row.subject || "Subject"}</td>
-                        <td>{row.score ?? "-"}</td>
-                        <td>{row.max_score ?? "-"}</td>
-                        <td>{row.percentage ? `${Math.round(row.percentage)}%` : "-"}</td>
-                        <td>{row.grade || "-"}</td>
-                        <td>{row.performance_remark || "-"}</td>
-                        <td>{row.teacher || row.teacher_email || "-"}</td>
-                        <td>{row.term || "-"}</td>
-                        <td>{formatDate(row.recorded_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="panel-empty">No subjects have been scored yet.</p>
-              )}
-            </>
-          ) : (
-            <p className="panel-empty">Click refresh to load your results.</p>
-          )}
-          <button type="button" className="student-link-btn" onClick={handleLoadResults} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh Results"}
-          </button>
-        </section>
-
-        <div
-          className="student-sidebar-overlay"
-          onClick={() => setNavOpen(false)}
-          style={{ display: navOpen ? 'block' : 'none' }}
-        />
-      </main>
-    </div>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="panel-empty">No subjects have been scored yet.</p>
+            )}
+          </>
+        ) : (
+          <p className="panel-empty">Click refresh to load your results.</p>
+        )}
+        <button type="button" className="student-link-btn" onClick={handleLoadResults} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh Results"}
+        </button>
+      </section>
+    </StudentPageShell>
   );
 }
  
@@ -1954,6 +1973,8 @@ function StudentWorkspace({
   isRefreshing,
   onRefresh,
   onNavigate,
+  themePreference,
+  onThemeChange,
 }) {
   const student = data?.student || {};
 
@@ -1972,6 +1993,8 @@ function StudentWorkspace({
       isRefreshing={isRefreshing}
       onSignOut={onSignOut}
       session={session}
+      themePreference={themePreference}
+      onThemeChange={onThemeChange}
     />
   );
 }
@@ -2316,6 +2339,8 @@ function StudentQuizPage({ session, onNavigate }) {
   const [teacherQuizzes, setTeacherQuizzes] = useState([]);
   const [answers, setAnswers] = useState({});
   const [assessmentNote, setAssessmentNote] = useState("");
+  const [noteSaved, setNoteSaved] = useState(false);
+  const noteSavedTimerRef = useRef(null);
   const [result, setResult] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -2353,6 +2378,31 @@ function StudentQuizPage({ session, onNavigate }) {
       // Local storage can be disabled in some browsers.
     }
   }, [assessmentNote, assessmentNoteKey]);
+
+  useEffect(() => {
+    return () => {
+      if (noteSavedTimerRef.current) {
+        window.clearTimeout(noteSavedTimerRef.current);
+        noteSavedTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const saveAssessmentNote = () => {
+    try {
+      window.localStorage.setItem(assessmentNoteKey, assessmentNote);
+    } catch {
+      // Local storage can be disabled in some browsers.
+    }
+    setNoteSaved(true);
+    if (noteSavedTimerRef.current) {
+      window.clearTimeout(noteSavedTimerRef.current);
+    }
+    noteSavedTimerRef.current = window.setTimeout(() => {
+      setNoteSaved(false);
+      noteSavedTimerRef.current = null;
+    }, 2000);
+  };
 
   const loadPersonalQuizData = useCallback(async () => {
     setLoading(true);
@@ -2970,7 +3020,7 @@ function StudentQuizPage({ session, onNavigate }) {
             <section className="cbt-notepad">
               <div>
                 <strong>Notepad</strong>
-                <small>Private scratch notes</small>
+                <small>{noteSaved ? "Notes saved" : "Private scratch notes"}</small>
               </div>
               <textarea
                 value={assessmentNote}
@@ -2978,9 +3028,14 @@ function StudentQuizPage({ session, onNavigate }) {
                 placeholder="Write rough work or reminders here..."
                 aria-label="Assessment notepad"
               />
-              <button type="button" onClick={() => setAssessmentNote("")} disabled={!assessmentNote.trim()}>
-                Clear Notes
-              </button>
+              <div className="cbt-notepad-actions">
+                <button type="button" onClick={saveAssessmentNote} disabled={!assessmentNote.trim()}>
+                  {noteSaved ? "Saved ✓" : "Save Notes"}
+                </button>
+                <button type="button" onClick={() => setAssessmentNote("")} disabled={!assessmentNote.trim()}>
+                  Clear Notes
+                </button>
+              </div>
             </section>
             <button
               type="button"
@@ -3520,20 +3575,72 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
           </div>
           <div className="panel-form-actions"><button type="submit">Save {planningItemLabel.toLowerCase()}</button></div>
         </form>
-        <form className="panel-form note-pad-form" onSubmit={handleNoteSubmit}>
-          <label className="panel-field">
-            Note title
-            <input value={noteForm.title} onChange={(event) => setNoteForm((prev) => ({ ...prev, title: event.target.value }))} />
-          </label>
-          <label className="panel-field full">
-            Digital notepad
-            <FormattedTextarea value={noteForm.body} onChange={(event) => setNoteForm((prev) => ({ ...prev, body: event.target.value }))} rows={8} placeholder="Write lesson ideas, reminders, or quick academic notes..." />
-          </label>
-          <label className="panel-field checkbox-field">
-            <input type="checkbox" checked={noteForm.pinned} onChange={(event) => setNoteForm((prev) => ({ ...prev, pinned: event.target.checked }))} />
-            Pin note
-          </label>
-          <div className="panel-form-actions"><button type="submit">Save note</button></div>
+        <form className="notepad-shell" onSubmit={handleNoteSubmit}>
+          <div className="notepad-editor-col">
+            <NotepadEditor
+              value={noteForm.body}
+              onChange={(event) => setNoteForm((prev) => ({ ...prev, body: event.target.value }))}
+              placeholder="Write lesson ideas, objectives, reminders or quick academic notes..."
+            />
+          </div>
+          <aside className="notepad-settings-col">
+            <p className="notepad-settings-title">Note Settings</p>
+            <div className="notepad-settings-body">
+              <label className="notepad-field">
+                <span>Title</span>
+                <input
+                  value={noteForm.title}
+                  onChange={(event) => setNoteForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="Enter note title"
+                />
+              </label>
+              <label className="notepad-field">
+                <span>Subject</span>
+                <select
+                  value={noteForm.subject_id || ""}
+                  onChange={(event) => setNoteForm((prev) => ({ ...prev, subject_id: event.target.value }))}
+                >
+                  <option value="">Select subject</option>
+                  {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </label>
+              <label className="notepad-field">
+                <span>Tags</span>
+                <input
+                  value={noteForm.tags || ""}
+                  onChange={(event) => setNoteForm((prev) => ({ ...prev, tags: event.target.value }))}
+                  placeholder="Add tags..."
+                />
+              </label>
+              <label className="notepad-toggle-row">
+                <span>Pin note</span>
+                <button
+                  type="button"
+                  className={`notepad-toggle${noteForm.pinned ? " active" : ""}`}
+                  onClick={() => setNoteForm((prev) => ({ ...prev, pinned: !prev.pinned }))}
+                  aria-pressed={noteForm.pinned}
+                  aria-label="Pin note"
+                >
+                  <span className="notepad-toggle-thumb" />
+                </button>
+              </label>
+              <label className="notepad-field">
+                <span>Status</span>
+                <select
+                  value={noteForm.status || "draft"}
+                  onChange={(event) => setNoteForm((prev) => ({ ...prev, status: event.target.value }))}
+                >
+                  <option value="draft">Draft</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit" className="notepad-save-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9l20-7z"/></svg>
+              Save Note
+            </button>
+          </aside>
         </form>
       </div>
       <div className="scheme-subject-grid">
@@ -5247,6 +5354,37 @@ function AdminNotificationsCenter({ session, data = {}, activityRecords = [], lo
   );
 }
 
+const ADMIN_ROUTE_ICONS = {
+  "/dashboard": LayoutDashboard,
+  "/performance-heatmap": TrendingUp,
+  "/finance": DollarSign,
+  "/expenses": Receipt,
+  "/attendance": CalendarCheck,
+  "/hr/activity": Briefcase,
+  "/hr-self-service": UserCheck,
+  "/students": GraduationCap,
+  "/parents": Users,
+  "/id-cards": CreditCard,
+  "/documents": FileText,
+  "/teachers": BookOpen,
+  "/non-teaching-staff": Briefcase,
+  "/classes": School,
+  "/exams": FileCheck,
+  "/results": BarChart2,
+  "/database-import": Upload,
+  "/messages": MessageSquare,
+  "/loan-application": Banknote,
+  "/settings": Settings,
+};
+
+const ADMIN_NAV_SECTIONS = [
+  { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
+  { label: "Academics", paths: ["/classes", "/attendance", "/exams", "/results"] },
+  { label: "People", paths: ["/students", "/parents", "/teachers"] },
+  { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr/activity", "/hr-self-service", "/loan-application"] },
+  { label: "Administration", paths: ["/id-cards", "/documents", "/database-import", "/messages", "/settings"] },
+];
+
 function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreference, onThemeChange, onSessionUpdate }) {
   const isAccountant = session?.user?.role === "accountant";
   const visibleRoutes = isAccountant ? ACCOUNTANT_ROUTES : ADMIN_ROUTES;
@@ -5265,6 +5403,9 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const [adminActivityRecords, setAdminActivityRecords] = useState(() => readAdminActivityLog(session));
   const [navOpen, setNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpTickets, setHelpTickets] = useState(null);
+  const [helpTicketsLoading, setHelpTicketsLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(null);
   const messagesPollRef = useRef(null);
   const adminPollRef = useRef(null);
@@ -5280,6 +5421,33 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   useEffect(() => {
     setAdminActivityRecords(readAdminActivityLog(session));
   }, [session]);
+
+  useEffect(() => {
+    if (!helpOpen) {
+      return;
+    }
+    let cancelled = false;
+    setHelpTicketsLoading(true);
+    requestJson(session, "GET", "/api/app/support-tickets/")
+      .then((result) => {
+        if (!cancelled) {
+          setHelpTickets(result?.tickets || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHelpTickets((current) => current || []);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHelpTicketsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [helpOpen, session]);
 
   const loadScreen = useCallback(
     async (path, force = false, silent = false) => {
@@ -5583,6 +5751,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
         category: "Finance",
         module: "Payment Accounts",
         action: "Updated school payment account settings.",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleAdminPaystackSubaccountSetup = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/finance/admin/paystack/split/setup/", payload);
+      addAdminNotification({
+        category: "Finance",
+        module: "Payment Accounts",
+        action: "Created Paystack subaccount for split payments.",
         status: "Success",
         priority: "High",
         tone: "success",
@@ -6091,6 +6276,32 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleKidsMonitorInitiate = useCallback(
+    async (parentId) => {
+      const result = await requestJson(session, "POST", `/api/app/kids-monitor/${parentId}/initiate/`);
+      return result;
+    },
+    [session]
+  );
+
+  const handleKidsMonitorVerify = useCallback(
+    async (parentId, reference) => {
+      const result = await requestJson(session, "POST", `/api/app/kids-monitor/${parentId}/verify/`, { reference });
+      await loadScreen("/parents", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleKidsMonitorDeactivate = useCallback(
+    async (parentId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/kids-monitor/${parentId}/`);
+      await loadScreen("/parents", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
   const handleUpdateTeacher = useCallback(
     async (teacherId, payload) => {
       const result = await requestJson(session, "PATCH", `/api/app/teachers/${teacherId}/`, payload);
@@ -6172,6 +6383,34 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, session]
   );
 
+  const handleSubmitLoanApplication = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/loan-applications/", payload);
+      if (result?.loan) {
+        setScreenData((previous) => ({
+          ...previous,
+          "/loan-application": {
+            ...(previous["/loan-application"] || {}),
+            loans: [
+              result.loan,
+              ...((previous["/loan-application"]?.loans || []).filter((item) => item.id !== result.loan.id)),
+            ].slice(0, 20),
+          },
+        }));
+      }
+      addAdminNotification({
+        category: "Finance",
+        module: "Loan Application",
+        action: `Submitted a loan application for ${payload.amount_requested || "an unspecified amount"}.`,
+        status: "Pending",
+        priority: "High",
+        tone: "info",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
   const handleUploadExamResults = useCallback(
     async (examId, file) => {
       const parsedId = Number(examId);
@@ -6227,6 +6466,15 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       return result;
     },
     [addAdminNotification, loadScreen, session]
+  );
+
+  const handleDatabaseImportClear = useCallback(
+    async () => {
+      const result = await requestJson(session, "DELETE", "/api/app/database-imports/");
+      await loadScreen("/database-import", true);
+      return result;
+    },
+    [loadScreen, session]
   );
 
   const handleAdminCreateExam = useCallback(
@@ -6312,6 +6560,18 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       }
       const result = await requestJson(session, "GET", `/api/app/results/?student_id=${encodeURIComponent(trimmed)}`);
       setScreenData((previous) => ({ ...previous, "/results": result }));
+      return result;
+    },
+    [session]
+  );
+
+  const handleSendReportSms = useCallback(
+    async ({ phones, report }) => {
+      const result = await requestJson(session, "POST", "/api/app/messages/send/", {
+        target: "report_card_sms",
+        phone: phones[0],
+        report_data: report,
+      });
       return result;
     },
     [session]
@@ -6433,6 +6693,7 @@ const unreadNotificationsCount =
         onRetry={handleRetry}
         onWithdraw={handleAdminWithdraw}
         onPaymentAccountSave={handleAdminPaymentAccountSave}
+        onPaystackSubaccountSetup={handleAdminPaystackSubaccountSetup}
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
         onStudentFeeSave={handleAdminStudentFeeSave}
@@ -6443,6 +6704,7 @@ const unreadNotificationsCount =
         onRunAutoCredits={handleActivationCreditRunAuto}
         onBankPaymentsIngest={handleBankPaymentsIngest}
         onBankPaymentRecover={handleBankPaymentRecover}
+        session={session}
       />
     );
   } else if (activePath === "/expenses") {
@@ -6548,7 +6810,11 @@ const unreadNotificationsCount =
         onRetry={handleRetry}
         onUpdate={handleUpdateParent}
         onDelete={handleDeleteParent}
+        onChildMonitorInitiate={handleKidsMonitorInitiate}
+        onChildMonitorVerify={handleKidsMonitorVerify}
+        onChildMonitorDeactivate={handleKidsMonitorDeactivate}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
+        session={session}
       />
     );
   } else if (activePath === "/id-cards") {
@@ -6639,6 +6905,7 @@ const unreadNotificationsCount =
         onSearch={handleSearchReport}
         onReviewBatch={handleReviewResultBatch}
         onDeleteBatch={handleDeleteResultBatch}
+        onSendSms={handleSendReportSms}
       />
     );
   } else if (activePath === "/database-import") {
@@ -6649,6 +6916,17 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onUpload={handleDatabaseImportUpload}
+        onClear={handleDatabaseImportClear}
+      />
+    );
+  } else if (activePath === "/loan-application") {
+    content = (
+      <AdminLoanApplicationScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onSubmit={handleSubmitLoanApplication}
       />
     );
   } else {
@@ -6660,7 +6938,6 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onSave={handleSaveSettings}
-        onSubmitSupportTicket={handleSubmitSupportTicket}
         onRequestAccountDeletion={handleAccountDeletionRequest}
         onCancelAccountDeletion={handleAccountDeletionCancel}
         themePreference={themePreference}
@@ -6669,125 +6946,200 @@ const unreadNotificationsCount =
             );
   }
 
+  const currentPageTitle = (() => {
+    const route = displayRoutes.find((item) => item.path === activePath);
+    if (route) return route.label;
+    for (const parentRoute of displayRoutes) {
+      if (parentRoute.children) {
+        const childRoute = parentRoute.children.find((child) => child.path === activePath);
+        if (childRoute) return childRoute.label;
+      }
+    }
+    return "Dashboard";
+  })();
+
+  const routeByPath = useMemo(() => {
+    const map = {};
+    for (const r of displayRoutes) {
+      map[r.path] = r;
+      if (r.children) for (const c of r.children) map[c.path] = c;
+    }
+    return map;
+  }, [displayRoutes]);
+
+  const sectionedNav = useMemo(() => {
+    const used = new Set();
+    const sections = ADMIN_NAV_SECTIONS.map(({ label, paths }) => {
+      const routes = paths.map((p) => routeByPath[p]).filter(Boolean);
+      routes.forEach((r) => used.add(r.path));
+      return { label, routes };
+    }).filter((s) => s.routes.length > 0);
+    const remaining = displayRoutes.filter((r) => !used.has(r.path));
+    if (remaining.length) sections.push({ label: "More", routes: remaining });
+    return sections;
+  }, [displayRoutes, routeByPath]);
+
+  const renderNavRoute = (route, isChild = false) => {
+    const IconComp = ADMIN_ROUTE_ICONS[route.path];
+    if (route.children) {
+      const isOpen = dropdownOpen === route.path;
+      const hasActive = route.children.some((c) => activePath === c.path);
+      return (
+        <div key={route.path} className="nav-dropdown">
+          <button
+            type="button"
+            className={`nav-item nav-item-parent ${isOpen ? "dropdown-open" : ""} ${hasActive ? "active" : ""}`}
+            onClick={() => setDropdownOpen(isOpen ? null : route.path)}
+          >
+            <span className="nav-item-icon">
+              {IconComp ? <IconComp size={17} strokeWidth={1.8} /> : null}
+            </span>
+            <span className="nav-item-label">{route.label}</span>
+            <span className="nav-chevron">
+              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
+          </button>
+          {isOpen && (
+            <div className="nav-dropdown-content">
+              {route.children.map((child) => {
+                const ChildIcon = ADMIN_ROUTE_ICONS[child.path];
+                return (
+                  <button
+                    key={child.path}
+                    type="button"
+                    className={`nav-item nav-dropdown-item ${activePath === child.path ? "active" : ""}`}
+                    onClick={() => { onNavigate(child.path); setNavOpen(false); setDropdownOpen(null); }}
+                  >
+                    <span className="nav-item-icon">
+                      {ChildIcon ? <ChildIcon size={15} strokeWidth={1.8} /> : null}
+                    </span>
+                    <span className="nav-item-label">{child.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <button
+        key={route.path}
+        type="button"
+        className={`nav-item ${isChild ? "nav-dropdown-item" : ""} ${activePath === route.path ? "active" : ""}`}
+        onClick={() => { onNavigate(route.path); setNavOpen(false); }}
+      >
+        <span className="nav-item-icon">
+          {IconComp ? <IconComp size={17} strokeWidth={1.8} /> : null}
+        </span>
+        <span className="nav-item-label">{route.label}</span>
+        {route.path === "/messages" && unreadNotificationsCount > 0 ? (
+          <strong className="nav-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
+        ) : null}
+      </button>
+    );
+  };
+
   return (
     <main className={`app-shell-page ${navOpen ? "nav-open" : ""}`}>
       <aside className="app-sidebar">
-        <div className="brand-block">
+        <div className="sidebar-brand">
           <SchoolBrand school={schoolBrand} subtitle={userRoleLabel(session?.user) || "Staff"} compact />
+          <button type="button" className="sidebar-close-btn" onClick={() => setNavOpen(false)} aria-label="Close menu">
+            <X size={18} />
+          </button>
         </div>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {displayRoutes.map((route) => {
-            if (route.children) {
-              const isOpen = dropdownOpen === route.path;
-              return (
-                <div key={route.path} className="nav-dropdown">
-                  <button
-                    type="button"
-                    className={`nav-item ${isOpen ? "dropdown-open" : ""} ${route.children.some(child => activePath === child.path) ? "active" : ""}`}
-                    onClick={() => {
-                      setDropdownOpen(isOpen ? null : route.path);
-                    }}
-                  >
-                    {route.label}
-                    <span className="dropdown-arrow">{isOpen ? "-" : "+"}</span>
-                  </button>
-                  {isOpen && (
-                    <div className="nav-dropdown-content">
-                      {route.children.map((child) => (
-                        <button
-                          key={child.path}
-                          type="button"
-                          className={`nav-item nav-dropdown-item ${activePath === child.path ? "active" : ""}`}
-                          onClick={() => {
-                            onNavigate(child.path);
-                            setNavOpen(false);
-                            setDropdownOpen(null);
-                          }}
-                        >
-                          {child.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            } else {
-              return (
-                <button
-                  key={route.path}
-                  type="button"
-                  className={`nav-item ${activePath === route.path ? "active" : ""}`}
-                  onClick={() => {
-                    onNavigate(route.path);
-                    setNavOpen(false);
-                  }}
-                >
-                  {route.label}
-                </button>
-              );
-            }
-          })}
+          {sectionedNav.map(({ label, routes }) => (
+            <div key={label} className="nav-section">
+              <p className="nav-section-label">{label}</p>
+              {routes.map((route) => renderNavRoute(route))}
+            </div>
+          ))}
         </nav>
 
-        <div className="role-chip">{userRoleLabel(session?.user)}</div>
+        <div className="sidebar-help-card">
+          <h4>Need Help?</h4>
+          <p>Visit our help center or contact support.</p>
+          <button type="button" onClick={() => setHelpOpen(true)}>
+            <LifeBuoy size={15} strokeWidth={2} />
+            Get Help
+          </button>
+        </div>
+
+        <div className="sidebar-footer">
+          <div className="sidebar-user-row">
+            <div className="sidebar-avatar">
+              {session?.user?.profile_picture
+                ? <img src={session.user.profile_picture} alt={userDisplayName(session?.user)} />
+                : <span>{userInitials(session?.user)}</span>
+              }
+            </div>
+            <div className="sidebar-user-meta">
+              <p>{userDisplayName(session?.user)}</p>
+              <span>{userRoleLabel(session?.user)}</span>
+            </div>
+            <button type="button" className="sidebar-signout-btn" onClick={onSignOut} title="Sign out">
+              <LogOut size={16} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
       </aside>
-      <div
-        className="app-sidebar-overlay"
-        role="presentation"
-        onClick={() => setNavOpen(false)}
-      />
+
+      <div className="app-sidebar-overlay" role="presentation" onClick={() => setNavOpen(false)} />
 
       <section className="app-main">
         <header className="app-topbar">
-          <div>
-            <p className="topbar-kicker">Protected Workspace</p>
-            <h2>{(() => {
-              const route = displayRoutes.find((item) => item.path === activePath);
-              if (route) return route.label;
-              // Check child routes
-              for (const parentRoute of displayRoutes) {
-                if (parentRoute.children) {
-                  const childRoute = parentRoute.children.find((child) => child.path === activePath);
-                  if (childRoute) return childRoute.label;
-                }
-              }
-              return "Dashboard";
-            })()}</h2>
+          <div className="topbar-left">
+            <button type="button" className="menu-toggle" onClick={() => setNavOpen((prev) => !prev)} aria-label="Toggle navigation">
+              <Menu size={20} />
+            </button>
+            <div className="topbar-title-block">
+              <p className="topbar-kicker">SchoolDom Platform</p>
+              <h2 className="topbar-title">{currentPageTitle}</h2>
+            </div>
           </div>
-          <div className="topbar-user">
-            <button type="button" className="menu-toggle" onClick={() => setNavOpen((prev) => !prev)}>
-              <span className="menu-bars" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="topbar-icon-btn theme-toggle-btn"
+              onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+              aria-label="Toggle theme"
+              title={themePreference === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              <ThemeModeIcon mode={themePreference === "dark" ? "light" : "dark"} className="inline-icon" />
             </button>
-            <button type="button" className="notification-button" onClick={() => setNotificationsOpen(true)}>
-              <BellIcon className="inline-icon" />
-              <span>Notifications</span>
-              {unreadNotificationsCount > 0 ? <strong className="notification-badge">{unreadNotificationsCount}</strong> : null}
-            </button>
-            <div className="avatar">
-              {session?.user?.profile_picture ? (
-                <img src={session.user.profile_picture} alt={userDisplayName(session.user)} />
-              ) : (
-                userInitials(session?.user)
+            <button
+              type="button"
+              className={`topbar-icon-btn notification-btn${unreadNotificationsCount > 0 ? " has-unread" : ""}`}
+              onClick={() => setNotificationsOpen(true)}
+              aria-label="Notifications"
+            >
+              <Bell size={18} strokeWidth={1.8} />
+              {unreadNotificationsCount > 0 && (
+                <strong className="topbar-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
               )}
-            </div>
-            <div className="user-meta">
-              <p>{userDisplayName(session?.user)}</p>
-              <span>{session?.user?.email}</span>
-            </div>
-            <button type="button" className="signout-button" onClick={onSignOut}>
-              Sign out
             </button>
+            <div className="topbar-user-chip">
+              <div className="topbar-avatar">
+                {session?.user?.profile_picture
+                  ? <img src={session.user.profile_picture} alt={userDisplayName(session?.user)} />
+                  : <span>{userInitials(session?.user)}</span>
+                }
+              </div>
+              <div className="topbar-user-meta">
+                <p>{userDisplayName(session?.user)}</p>
+                <span>{session?.user?.email}</span>
+              </div>
+            </div>
           </div>
         </header>
-        
+
         <Suspense fallback={<ScreenState loading />}>
           {content}
         </Suspense>
+
         {notificationsOpen ? (
           <div className="notification-drawer-overlay" role="presentation" onClick={() => setNotificationsOpen(false)}>
             <aside className="notification-drawer" role="dialog" aria-modal="true" aria-label="Admin notifications" onClick={(event) => event.stopPropagation()}>
@@ -6803,6 +7155,28 @@ const unreadNotificationsCount =
                 isPopup
                 onClose={() => setNotificationsOpen(false)}
               />
+            </aside>
+          </div>
+        ) : null}
+
+        {helpOpen ? (
+          <div className="notification-drawer-overlay" role="presentation" onClick={() => setHelpOpen(false)}>
+            <aside className="notification-drawer help-drawer" role="dialog" aria-modal="true" aria-label="Get help" onClick={(event) => event.stopPropagation()}>
+              <div className="help-drawer-head">
+                <h3>Get Help</h3>
+                <button type="button" className="notification-close-button" onClick={() => setHelpOpen(false)}>
+                  Close
+                </button>
+              </div>
+              {helpTicketsLoading && !helpTickets ? <ScreenState loading /> : null}
+              <Suspense fallback={<ScreenState loading />}>
+                <SupportCenterPanel
+                  school={screenData["/settings"]?.school || session?.school || {}}
+                  tickets={helpTickets || []}
+                  canEdit={screenData["/settings"]?.can_edit ?? true}
+                  onSubmit={handleSubmitSupportTicket}
+                />
+              </Suspense>
             </aside>
           </div>
         ) : null}
@@ -7123,9 +7497,7 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
     return (
 <main className="student-page">
         {loading && !data ? (
-          <div className="state-panel frosted">
-            <h3>Loading dashboard...</h3>
-          </div>
+          <DashboardLoader />
         ) : error ? (
       <section className="student-error-scene" aria-live="polite">
         <div className="student-error-bubbles" aria-hidden="true">
@@ -7164,6 +7536,8 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
         onNavigate={onNavigate}
         onSignOut={onSignOut}
         isRefreshing={isRefreshing}
+        themePreference={themePreference}
+        onThemeChange={onThemeChange}
       />
 )}
       </main>
@@ -7195,9 +7569,7 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
         )}
 
         {loading && !data ? (
-          <div className="state-panel">
-            <h3>Loading dashboard...</h3>
-          </div>
+          <DashboardLoader />
         ) : error ? (
           <div className="state-panel">
             <h3>Error</h3>
@@ -7236,6 +7608,15 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
             standalone
             onRefresh={loadDashboard}
           />
+) : role === "parent" ? (
+          <ParentWorkspace
+            session={session}
+            data={data}
+            onRefresh={loadDashboard}
+            onSignOut={onSignOut}
+            isRefreshing={isRefreshing}
+            onNavigate={onNavigate}
+          />
 ) : (
           <div className="app-panel">
             <h3>Admin dashboard ongoing</h3>
@@ -7244,6 +7625,363 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
         )}
       </section>
     </main>
+  );
+}
+
+// ─── Parent Dashboard ───────────────────────────────────────────────────────
+
+function ParentWorkspace({ session, data, onRefresh, onSignOut, isRefreshing, onNavigate }) {
+  return (
+    <ParentDashboard
+      session={session}
+      data={data}
+      onRefresh={onRefresh}
+      onSignOut={onSignOut}
+      isRefreshing={isRefreshing}
+      onNavigate={onNavigate}
+    />
+  );
+}
+
+function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, onNavigate }) {
+  const dashData = data || {};
+  const parent = dashData.parent || {};
+  const virtualAccount = dashData.virtual_account || null;
+  const summary = dashData.summary || {};
+  const children = dashData.children || [];
+  const recentPayments = dashData.recent_payments || [];
+
+  const [navOpen, setNavOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [copiedField, setCopiedField] = useState("");
+
+  const NAIRA = "₦";
+
+  const fmt = (value) =>
+    `${NAIRA}${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const fmtDate = (value) => {
+    if (!value) return "-";
+    try { return new Date(value).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" }); }
+    catch { return String(value); }
+  };
+
+  const copyField = async (value, label) => {
+    if (!value) return;
+    const copied = await copyToClipboard(value);
+    setCopiedField(copied ? label : "");
+    if (copied) setTimeout(() => setCopiedField(""), 2500);
+  };
+
+  const go = (tab) => { setActiveTab(tab); setNavOpen(false); if (onNavigate) onNavigate(`/${tab === "dashboard" ? "dashboard" : tab}`); };
+
+  const parentName = parent.name || session?.user?.full_name || session?.user?.email || "Parent";
+  const initials = userInitials({ full_name: parentName });
+
+  const totalExpected = summary.total_expected || 0;
+  const totalPaid = summary.total_paid || 0;
+  const totalRemaining = summary.total_remaining || 0;
+
+  return (
+    <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
+      <aside className="student-sidebar">
+        <div className="student-sidebar-head">
+          <span>Parent Portal</span>
+          <strong>{parentName}</strong>
+          <small>{parent.email || session?.user?.email || "Parent"}</small>
+        </div>
+        <nav className="student-nav">
+          <button
+            type="button"
+            className={`student-nav-item ${activeTab === "dashboard" ? "active" : ""}`}
+            onClick={() => go("dashboard")}
+          >
+            <DashboardIcon name="home" className="inline-icon" />
+            <span>Dashboard</span>
+          </button>
+          <button
+            type="button"
+            className={`student-nav-item ${activeTab === "fees" ? "active" : ""}`}
+            onClick={() => go("fees")}
+          >
+            <DashboardIcon name="money" className="inline-icon" />
+            <span>School Fees</span>
+          </button>
+          <button
+            type="button"
+            className={`student-nav-item ${activeTab === "payments" ? "active" : ""}`}
+            onClick={() => go("payments")}
+          >
+            <DashboardIcon name="results" className="inline-icon" />
+            <span>Payment History</span>
+          </button>
+        </nav>
+        <div className="student-sidebar-footer">
+          <div className="student-sidebar-profile">
+            <div className="student-avatar"><span aria-hidden="true">{initials}</span></div>
+            <div>
+              <strong>{parentName}</strong>
+              <small>{parent.email || "Parent account"}</small>
+            </div>
+          </div>
+          {onSignOut ? (
+            <button className="student-sidebar-signout" type="button" onClick={onSignOut}>Sign out</button>
+          ) : null}
+        </div>
+      </aside>
+
+      <main className="student-main">
+        <div className="student-main-topbar">
+          <div className="student-topbar-left">
+            <button
+              type="button"
+              className="student-menu-toggle"
+              onClick={() => setNavOpen(!navOpen)}
+              aria-label="Toggle navigation menu"
+            >
+              <span className="menu-bars" aria-hidden="true"><span /><span /><span /></span>
+            </button>
+            <p className="topbar-kicker">
+              {activeTab === "dashboard" ? "Parent Overview" : activeTab === "fees" ? "School Fees" : "Payment History"}
+            </p>
+            <h1>
+              {activeTab === "dashboard" ? `Welcome, ${parentName.split(" ")[0]}` : activeTab === "fees" ? "Fee Breakdown" : "Payments"}
+            </h1>
+            <small>
+              {activeTab === "dashboard"
+                ? "Your children's fees and payment status at a glance."
+                : activeTab === "fees"
+                  ? "Detailed fee records per child."
+                  : "Confirmed school fee payments."}
+            </small>
+          </div>
+          <div className="dashboard-actions">
+            <button type="button" onClick={onRefresh} disabled={isRefreshing}>
+              {isRefreshing ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+        </div>
+
+        {/* ── DASHBOARD TAB ── */}
+        {activeTab === "dashboard" ? (
+          <>
+            {/* Virtual Account Card */}
+            <article className="app-panel" style={{ borderLeft: virtualAccount ? "4px solid #14b8a6" : "4px solid #f59e0b" }}>
+              <h3>{virtualAccount ? "Your Payment Account" : "Payment Account Not Assigned"}</h3>
+              {virtualAccount ? (
+                <>
+                  <p className="field-note" style={{ marginBottom: "1rem" }}>
+                    Transfer your school fees to this account. Payments are matched to your children automatically.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+                    <div>
+                      <p className="metric-label">Account Number</p>
+                      <h2 className="metric-value" style={{ fontSize: "1.6rem", letterSpacing: "0.1em" }}>
+                        {virtualAccount.account_number}
+                      </h2>
+                    </div>
+                    <div>
+                      <p className="metric-label">Bank Name</p>
+                      <strong style={{ fontSize: "1.1rem" }}>{virtualAccount.bank_name}</strong>
+                    </div>
+                    <div>
+                      <p className="metric-label">Account Name</p>
+                      <strong style={{ fontSize: "1.1rem" }}>{virtualAccount.account_name}</strong>
+                    </div>
+                  </div>
+                  <div className="table-actions-inline">
+                    <button type="button" className="table-action" onClick={() => copyField(virtualAccount.account_number, "account_number")}>
+                      {copiedField === "account_number" ? "Copied!" : "Copy Account No."}
+                    </button>
+                    <button type="button" className="table-action" onClick={() => copyField(virtualAccount.bank_name, "bank_name")}>
+                      {copiedField === "bank_name" ? "Copied!" : "Copy Bank Name"}
+                    </button>
+                    <button type="button" className="table-action" onClick={() => copyField(virtualAccount.account_name, "account_name")}>
+                      {copiedField === "account_name" ? "Copied!" : "Copy Account Name"}
+                    </button>
+                  </div>
+                  <p className="field-note" style={{ marginTop: "0.75rem" }}>
+                    Payments arrive within minutes. You will receive a WhatsApp/SMS receipt after each successful payment.
+                  </p>
+                </>
+              ) : (
+                <p className="panel-empty">
+                  Your payment account has not been set up yet. Please contact the school office to have a virtual account assigned to you.
+                </p>
+              )}
+            </article>
+
+            {/* Summary Cards */}
+            <div className="metric-grid" style={{ marginTop: "1rem" }}>
+              <MetricCard label="Total Fees Expected" value={fmt(totalExpected)} trend={`${summary.children_count || 0} child${summary.children_count === 1 ? "" : "ren"}`} icon="money" tone="blue" />
+              <MetricCard label="Total Paid" value={fmt(totalPaid)} trend="Confirmed payments" icon="results" tone="emerald" />
+              <MetricCard label="Balance Due" value={fmt(totalRemaining)} trend={totalRemaining > 0 ? "Outstanding" : "All fees cleared"} icon="money" tone={totalRemaining > 0 ? "amber" : "emerald"} />
+            </div>
+
+            {/* Children quick summary */}
+            {children.length > 0 ? (
+              <article className="app-panel" style={{ marginTop: "1rem" }}>
+                <h3>Children Overview</h3>
+                <table className="student-table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Class</th>
+                      <th>Fees Expected</th>
+                      <th>Paid</th>
+                      <th>Remaining</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {children.map((child) => {
+                      const status = child.total_remaining <= 0 ? "paid" : child.total_paid > 0 ? "partial" : "pending";
+                      return (
+                        <tr key={child.id}>
+                          <td>{child.name || "Student"}<br /><small>{child.student_id || ""}</small></td>
+                          <td>{child.class_name || "-"}</td>
+                          <td>{fmt(child.total_expected)}</td>
+                          <td>{fmt(child.total_paid)}</td>
+                          <td>{fmt(child.total_remaining)}</td>
+                          <td><span className={`finance-status status-${status}`}>{status}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </article>
+            ) : (
+              <article className="app-panel" style={{ marginTop: "1rem" }}>
+                <p className="panel-empty">No children linked to your account yet. Contact the school office.</p>
+              </article>
+            )}
+
+            {/* Recent Payments preview */}
+            {recentPayments.length > 0 ? (
+              <article className="app-panel" style={{ marginTop: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3>Recent Payments</h3>
+                  <button type="button" className="student-link-btn" onClick={() => go("payments")}>See all</button>
+                </div>
+                <table className="student-table">
+                  <thead>
+                    <tr><th>Date</th><th>Amount</th><th>Status</th><th>Reference</th></tr>
+                  </thead>
+                  <tbody>
+                    {recentPayments.slice(0, 5).map((tx) => (
+                      <tr key={tx.id || tx.reference}>
+                        <td>{fmtDate(tx.created_at)}</td>
+                        <td>{fmt(tx.amount)}</td>
+                        <td><span className={`finance-status status-${tx.status || "pending"}`}>{tx.status}</span></td>
+                        <td><small>{tx.paystack_ref || tx.reference || "-"}</small></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </article>
+            ) : null}
+          </>
+        ) : null}
+
+        {/* ── FEES TAB ── */}
+        {activeTab === "fees" ? (
+          <>
+            {/* Virtual account reminder */}
+            {virtualAccount ? (
+              <article className="app-panel" style={{ borderLeft: "4px solid #14b8a6", marginBottom: "1rem" }}>
+                <p className="metric-label">Pay to this account</p>
+                <strong style={{ fontSize: "1.1rem" }}>{virtualAccount.account_number}</strong>
+                <span style={{ marginLeft: "0.75rem", color: "#64748b" }}>{virtualAccount.bank_name} — {virtualAccount.account_name}</span>
+                <button type="button" className="table-action" style={{ marginLeft: "1rem" }} onClick={() => copyField(virtualAccount.account_number, "fees_acct")}>
+                  {copiedField === "fees_acct" ? "Copied!" : "Copy"}
+                </button>
+              </article>
+            ) : null}
+
+            {children.length ? children.map((child) => (
+              <article key={child.id} className="app-panel" style={{ marginBottom: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                  <div>
+                    <h3>{child.name || "Student"}</h3>
+                    <p className="field-note">{child.class_name || ""}{child.student_id ? ` — ID: ${child.student_id}` : ""}</p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <p className="metric-label">Balance</p>
+                    <strong style={{ color: child.total_remaining > 0 ? "#f59e0b" : "#10b981", fontSize: "1.2rem" }}>{fmt(child.total_remaining)}</strong>
+                  </div>
+                </div>
+                {child.fees && child.fees.length ? (
+                  <table className="student-table">
+                    <thead>
+                      <tr><th>Fee</th><th>Amount</th><th>Paid</th><th>Remaining</th><th>Status</th><th>Due Date</th></tr>
+                    </thead>
+                    <tbody>
+                      {child.fees.map((fee) => (
+                        <tr key={fee.id}>
+                          <td>{fee.title}</td>
+                          <td>{fmt(fee.amount)}</td>
+                          <td>{fmt(fee.amount_paid)}</td>
+                          <td>{fmt(fee.remaining)}</td>
+                          <td><span className={`finance-status status-${fee.status}`}>{fee.status}</span></td>
+                          <td>{fmtDate(fee.due_date)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="panel-empty">No fees assigned yet.</p>
+                )}
+              </article>
+            )) : (
+              <article className="app-panel">
+                <p className="panel-empty">No children linked to your account yet.</p>
+              </article>
+            )}
+          </>
+        ) : null}
+
+        {/* ── PAYMENTS TAB ── */}
+        {activeTab === "payments" ? (
+          <article className="app-panel">
+            <h3>Payment History</h3>
+            {recentPayments.length ? (
+              <table className="student-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Tuition</th>
+                    <th>Status</th>
+                    <th>Allocation</th>
+                    <th>Reference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentPayments.map((tx) => (
+                    <tr key={tx.id || tx.reference}>
+                      <td>{fmtDate(tx.created_at)}</td>
+                      <td>{fmt(tx.amount)}</td>
+                      <td>{fmt(tx.tuition_amount)}</td>
+                      <td><span className={`finance-status status-${tx.status}`}>{tx.status}</span></td>
+                      <td><span className={`finance-status status-${tx.allocation_status || "pending"}`}>{tx.allocation_status || "pending"}</span></td>
+                      <td><small>{tx.paystack_ref || tx.reference || "-"}</small></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="panel-empty">No payment records yet. Payments made via your virtual account will appear here.</p>
+            )}
+          </article>
+        ) : null}
+
+        <div
+          className="student-sidebar-overlay"
+          onClick={() => setNavOpen(false)}
+          style={{ display: navOpen ? "block" : "none" }}
+        />
+      </main>
+    </div>
   );
 }
 
@@ -7286,6 +8024,25 @@ function PwaUpdatePrompt() {
     <div className="pwa-update-prompt" role="status" aria-live="polite">
       <span>{message || "A new SchoolDom update is ready."}</span>
       <button type="button" onClick={handleUpdate}>Update App</button>
+    </div>
+  );
+}
+
+function DashboardLoader({ message = "Loading dashboard..." }) {
+  return (
+    <div className="dashboard-loader" aria-live="polite" aria-busy="true">
+      <div className="dashboard-loader-inner">
+        <div className="dl-spinner">
+          <div className="dl-ring dl-ring-outer" />
+          <div className="dl-ring dl-ring-mid" />
+          <div className="dl-ring dl-ring-inner" />
+          <div className="dl-dot" />
+        </div>
+        <p className="dl-text">{message}</p>
+        <div className="dl-dots">
+          <span /><span /><span />
+        </div>
+      </div>
     </div>
   );
 }
@@ -7485,6 +8242,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         <GlobalNotificationBell session={session} onNavigate={navigate} />
+        {session && <AiChatWidget session={session} />}
         {content}
       </>
     ),
@@ -7496,6 +8254,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       <>
         <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
+        {session && <AiChatWidget session={session} />}
         {content}
       </>
     ),
@@ -7600,8 +8359,15 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   }
 
   if (currentPath.match(/^\/exam\/\d+\/?$/)) {
+    // Deliberately bypasses withGlobalHome: the AI assistant must not be reachable during a live exam attempt.
     const attemptId = parseInt(currentPath.split("/")[2]);
-    return withGlobalHome(<ExamCBT attemptId={attemptId} session={session} onNavigate={navigate} />);
+    return (
+      <>
+        <PwaUpdatePrompt />
+        <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
+        <ExamCBT attemptId={attemptId} session={session} onNavigate={navigate} />
+      </>
+    );
   }
 
   if (currentPath.match(/^\/exam-result\/\d+\/?$/)) {
@@ -7614,6 +8380,8 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       <StudentFeesPage
         session={session}
         onNavigate={navigate}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
       />
     );
   }
@@ -7623,6 +8391,8 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       <StudentAttendancePage
         session={session}
         onNavigate={navigate}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
       />
     );
   }
@@ -7632,6 +8402,8 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       <StudentIdCardPage
         session={session}
         onNavigate={navigate}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
       />
     );
   }
@@ -7643,6 +8415,8 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         data={null}
         onMessageSend={handleStandaloneMessageSend}
         onNavigate={navigate}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
       />
     );
   }
@@ -7653,6 +8427,8 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         session={session}
         data={null}
         onNavigate={navigate}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
       />
     );
   }

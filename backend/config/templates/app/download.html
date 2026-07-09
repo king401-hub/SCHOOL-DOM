@@ -38,6 +38,39 @@
           Open Website
         </a>
       </article>
+
+      <article style="background:#0c1f14;border:1px solid #1a3a24;border-radius:18px;padding:24px;">
+        <p style="margin:0 0 4px;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#4ade80;">Offline CBT</p>
+        <h2 style="margin:0 0 8px;font-size:1.45rem;color:#f0fdf4;">Admin CBT App</h2>
+        <p style="margin:0 0 18px;color:#86efac;font-size:.9rem;">Windows desktop app for running offline computer-based tests. Install on the admin/teacher machine — it acts as the local server for student CBT clients on your LAN.</p>
+        {% if admin_app_available %}
+          <a href="{{ admin_app_download_url }}" style="display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:48px;border-radius:12px;background:#16a34a;color:#fff;text-decoration:none;font-weight:900;">
+            Download Admin CBT App
+          </a>
+          <p style="margin:12px 0 0;color:#4ade80;font-size:.85rem;">v{{ admin_app_version }}{% if admin_app_size_mb %} &mdash; {{ admin_app_size_mb }} MB{% endif %} &mdash; Windows 7/10/11</p>
+        {% else %}
+          <button type="button" disabled style="width:100%;min-height:48px;border:0;border-radius:12px;background:#166534;color:#4ade80;font-weight:900;opacity:.5;">
+            Not available yet
+          </button>
+          <p style="margin:12px 0 0;color:#4ade80;font-size:.85rem;">Build with <code>schooldom-cbt-win7/build-release.ps1</code> and redeploy.</p>
+        {% endif %}
+      </article>
+
+      <article style="background:#1c1007;border:1px solid #3a2510;border-radius:18px;padding:24px;">
+        <p style="margin:0 0 4px;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#fb923c;">Offline CBT</p>
+        <h2 style="margin:0 0 8px;font-size:1.45rem;color:#fff7ed;">Student CBT Client</h2>
+        <p style="margin:0 0 18px;color:#fdba74;font-size:.9rem;">Install on each student computer. Connects to the Admin CBT App on the same network — no internet required during the exam.</p>
+        {% if student_win7_available %}
+          <a href="{{ student_win7_download_url }}" style="display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:48px;border-radius:12px;background:#ea580c;color:#fff;text-decoration:none;font-weight:900;">
+            Download Student CBT Client
+          </a>
+          <p style="margin:12px 0 0;color:#fb923c;font-size:.85rem;">v{{ student_win7_version }}{% if student_win7_size_mb %} &mdash; {{ student_win7_size_mb }} MB{% endif %} &mdash; Windows 7/10/11</p>
+        {% else %}
+          <button type="button" disabled style="width:100%;min-height:48px;border:0;border-radius:12px;background:#7c2d12;color:#fb923c;font-weight:900;opacity:.5;">
+            Not available yet
+          </button>
+        {% endif %}
+      </article>
     </div>
 
     <section style="margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;">

@@ -56,6 +56,11 @@ class AdminWallet(models.Model):
     last_settled_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # NEW: Paystack split payment fields
+    subaccount_code = models.CharField(max_length=50, blank=True, null=True, help_text="Paystack subaccount code for this school")
+    split_code = models.CharField(max_length=50, blank=True, null=True, help_text="Paystack split code for this school (flat, used at checkout)")
+    dva_split_code = models.CharField(max_length=50, blank=True, null=True, help_text="Paystack percentage split code applied to this school's dedicated virtual accounts")
 
     class Meta:
         constraints = [
@@ -289,6 +294,12 @@ class DocumentGenerationCreditTransaction(models.Model):
 
 class Transaction(models.Model):
     """Ledger entries for both student and admin wallets."""
+    
+    # NEW: Add split payment transaction types
+    SPLIT_PAYMENT = "split_payment"
+    SCHOOL_SETTLEMENT = "school_settlement"
+    SCHOOLDOM_FEE = "schooldom_fee"
+    PAYSTACK_FEE = "paystack_fee"
 
     FUNDING = "fund"
     FEE_DEBIT = "fee_debit"
@@ -304,6 +315,10 @@ class Transaction(models.Model):
         (WITHDRAWAL, "Withdrawal"),
         (ADJUSTMENT_CREDIT, "Adjustment Credit"),
         (ADJUSTMENT_DEBIT, "Adjustment Debit"),
+        (SPLIT_PAYMENT, "Split Payment"),
+        (SCHOOL_SETTLEMENT, "School Settlement"),
+        (SCHOOLDOM_FEE, "Schooldom Fee"),
+        (PAYSTACK_FEE, "Paystack Fee"),
     ]
 
     STATUS_PENDING = "pending"
@@ -313,6 +328,18 @@ class Transaction(models.Model):
         (STATUS_PENDING, "Pending"),
         (STATUS_SUCCESS, "Successful"),
         (STATUS_FAILED, "Failed"),
+    ]
+
+    # NEW: Allocation status for split payments
+    ALLOCATION_PENDING = "pending"
+    ALLOCATION_ALLOCATED = "allocated"
+    ALLOCATION_PARTIAL = "partial"
+    ALLOCATION_OVERPAID = "overpaid"
+    ALLOCATION_CHOICES = [
+        (ALLOCATION_PENDING, "Pending"),
+        (ALLOCATION_ALLOCATED, "Allocated"),
+        (ALLOCATION_PARTIAL, "Partial"),
+        (ALLOCATION_OVERPAID, "Overpaid"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -347,6 +374,17 @@ class Transaction(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # NEW: Split payment fields
+    paystack_ref = models.CharField(max_length=100, blank=True, null=True, unique=True, help_text="Paystack transaction reference")
+    split_code = models.CharField(max_length=50, blank=True, null=True, help_text="Paystack split code used")
+    allocation_status = models.CharField(max_length=16, choices=ALLOCATION_CHOICES, default=ALLOCATION_PENDING)
+    tuition_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"), help_text="Total tuition amount")
+    schooldom_markup = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"), help_text="Schooldom service fee")
+    paystack_fee_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"), help_text="Paystack processing fee")
+    school_id = models.UUIDField(null=True, blank=True, help_text="School tenant ID for this transaction")
+    parent_id = models.UUIDField(null=True, blank=True, help_text="Parent user ID for this transaction")
+    fee_ids = models.JSONField(default=list, blank=True, help_text="List of fee IDs allocated")
 
     class Meta:
         ordering = ["-created_at"]
@@ -355,13 +393,30 @@ class Transaction(models.Model):
                 check=(
                     models.Q(wallet__isnull=False, admin_wallet__isnull=True)
                     | models.Q(wallet__isnull=True, admin_wallet__isnull=False)
+                    | models.Q(wallet__isnull=True, admin_wallet__isnull=True, tx_type="split_payment")
                 ),
                 name="transaction_requires_single_wallet",
             ),
         ]
+        indexes = [
+            models.Index(fields=["paystack_ref"]),
+            models.Index(fields=["allocation_status"]),
+            models.Index(fields=["parent_id"]),
+            models.Index(fields=["school_id"]),
+        ]
 
     def __str__(self):
         return f"{self.reference} • {self.tx_type} • {self.status}"
+    
+    def get_breakdown(self):
+        """Get payment breakdown for this transaction"""
+        return {
+            'total_paid': float(self.amount),
+            'tuition': float(self.tuition_amount),
+            'schooldom_fee': float(self.schooldom_markup),
+            'paystack_fee': float(self.paystack_fee_amount),
+            'school_net': float(self.tuition_amount - self.paystack_fee_amount)
+        }
 
 
 class SchoolFee(models.Model):
@@ -370,10 +425,12 @@ class SchoolFee(models.Model):
     STATUS_PENDING = "pending"
     STATUS_PAID = "paid"
     STATUS_OVERDUE = "overdue"
+    STATUS_PARTIAL = "partial"  # NEW: For partial payments
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_PAID, "Paid"),
         (STATUS_OVERDUE, "Overdue"),
+        (STATUS_PARTIAL, "Partial"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -397,6 +454,15 @@ class SchoolFee(models.Model):
     auto_deduct = models.BooleanField(default=True)
     is_customized = models.BooleanField(default=False)
     last_attempted_at = models.DateTimeField(null=True, blank=True)
+    
+    # NEW: Track payments
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    payment_date = models.DateTimeField(null=True, blank=True)
+    last_payment_date = models.DateTimeField(null=True, blank=True)
+    
+    # NEW: Split payment tracking
+    paystack_ref = models.CharField(max_length=100, blank=True, null=True, help_text="Paystack reference for last payment")
+    
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -412,11 +478,38 @@ class SchoolFee(models.Model):
         indexes = [
             models.Index(fields=["student", "due_date"]),
             models.Index(fields=["status"]),
+            models.Index(fields=["paystack_ref"]),
         ]
 
     def mark_attempted(self):
         self.last_attempted_at = timezone.now()
         self.save(update_fields=["last_attempted_at"])
+    
+    def calculate_total_with_fees(self):
+        """Calculate total including Schooldom and Paystack fees"""
+        tuition = float(self.amount)
+        return {
+            'tuition': tuition,
+            'schooldom_fee': 100,
+            'paystack_fee': 300,
+            'total': tuition + 400,
+            'fee_id': str(self.id),
+            'student_name': self.student.user.get_full_name() if self.student.user else str(self.student),
+            'class': self.student.class_name if hasattr(self.student, 'class_name') else ''
+        }
+    
+    def get_remaining_balance(self):
+        """Get remaining balance including fees"""
+        tuition = float(self.amount)
+        paid = float(self.amount_paid or 0)
+        remaining_tuition = tuition - paid
+        if remaining_tuition <= 0:
+            return 0
+        # Add fees only if not fully paid
+        return remaining_tuition + 400  # 100 Schooldom + 300 Paystack
+    
+    def is_fully_paid(self):
+        return float(self.amount_paid or 0) >= float(self.amount)
 
     def __str__(self):
         return f"{self.title} • {self.student.user.email}"
@@ -633,3 +726,115 @@ class ClassFee(models.Model):
 
     def __str__(self):
         return f"{self.title} • {self.school_class.name} • ₦{self.amount}"
+
+
+# NEW: Fee Allocation Model for Split Payments
+class FeeAllocation(models.Model):
+    """Track how split payments are allocated to individual fees."""
+    
+    STATUS_PAID = "paid"
+    STATUS_PARTIAL = "partial"
+    STATUS_PENDING = "pending"
+    STATUS_CHOICES = [
+        (STATUS_PAID, "Paid"),
+        (STATUS_PARTIAL, "Partial"),
+        (STATUS_PENDING, "Pending"),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    fee = models.ForeignKey(
+        SchoolFee,
+        on_delete=models.CASCADE,
+        related_name="allocations",
+    )
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.CASCADE,
+        related_name="allocations",
+    )
+    amount_allocated = models.DecimalField(max_digits=14, decimal_places=2, help_text="Tuition amount allocated to this fee")
+    paystack_fee_paid = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    schooldom_fee_paid = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["fee", "status"]),
+            models.Index(fields=["transaction"]),
+        ]
+        unique_together = [["fee", "transaction"]]  # One allocation per fee per transaction
+    
+    def __str__(self):
+        return f"Allocation {self.fee.title} - {self.amount_allocated} ({self.status})"
+
+
+class ParentVirtualAccount(models.Model):
+    """Static virtual account manually assigned by admin to a parent for school fee payments."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    parent = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="virtual_account",
+    )
+    tenant = models.ForeignKey(
+        "core.SchoolTenant",
+        on_delete=models.CASCADE,
+        related_name="parent_virtual_accounts",
+        null=True,
+        blank=True,
+    )
+    account_number = models.CharField(max_length=20)
+    bank_name = models.CharField(max_length=100)
+    account_name = models.CharField(max_length=150)
+    provider = models.CharField(max_length=30, default="paystack", help_text="Payment provider (paystack, kuda, etc.)")
+    paystack_reference = models.CharField(max_length=100, blank=True, help_text="Paystack DVA customer code or reference")
+    is_active = models.BooleanField(default=True)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_virtual_accounts",
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["account_number"]),
+            models.Index(fields=["tenant"]),
+        ]
+
+    def __str__(self):
+        return f"VirtualAccount({self.account_number} → {self.parent.email})"
+
+
+class PaymentReceiptLink(models.Model):
+    RECEIPT = "receipt"
+    BILL = "bill"
+    TYPE_CHOICES = [(RECEIPT, "Receipt"), (BILL, "Bill")]
+
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    receipt_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=RECEIPT)
+    tenant = models.ForeignKey(
+        "core.SchoolTenant",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="receipt_links",
+    )
+    phone = models.CharField(max_length=20, blank=True)
+    data = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["token"])]
+
+    def __str__(self):
+        return f"ReceiptLink({self.receipt_type} {self.token})"

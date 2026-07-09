@@ -96,7 +96,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('N', 'Prefer not to say')
     ]
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, null=True, blank=True)
-    
+
+    # Director/proprietor KYC (collected during school onboarding)
+    DIRECTOR_ID_TYPE_CHOICES = [
+        ('drivers_license', "Driver's License"),
+        ('nin', 'National ID (NIN)'),
+        ('voters_card', "Voter's Card"),
+        ('passport', 'International Passport'),
+    ]
+    director_address = models.TextField(blank=True, default="")
+    director_proof_of_address = models.FileField(upload_to='directors/proof_of_address/%Y/%m/', null=True, blank=True)
+    director_id_type = models.CharField(max_length=20, choices=DIRECTOR_ID_TYPE_CHOICES, blank=True, default="")
+    director_id_document = models.FileField(upload_to='directors/id_documents/%Y/%m/', null=True, blank=True)
+
     # Account status
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -772,3 +784,71 @@ class SupportTicket(models.Model):
 
     def __str__(self):
         return f"{self.get_category_display()} - {self.subject}"
+
+
+class LoanApplication(models.Model):
+    """A school's request for financing from SchoolDom, reviewed manually by the SchoolDom team."""
+
+    STATUS_CHOICES = [
+        ("pending", "Pending Review"),
+        ("under_review", "Under Review"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+        ("disbursed", "Disbursed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    school = models.ForeignKey("core.SchoolTenant", on_delete=models.CASCADE, related_name="loan_applications")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="loan_applications")
+    amount_requested = models.DecimalField(max_digits=14, decimal_places=2)
+    purpose = models.CharField(max_length=255)
+    repayment_period_months = models.PositiveIntegerField()
+    additional_notes = models.TextField(blank=True)
+    supporting_document = models.FileField(upload_to="loan_applications/%Y/%m/", null=True, blank=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default="pending")
+    requester_email = models.EmailField(blank=True)
+    requester_phone = models.CharField(max_length=32, blank=True)
+    support_notified_at = models.DateTimeField(null=True, blank=True)
+    requester_notified_at = models.DateTimeField(null=True, blank=True)
+    last_status_email_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["school", "status"]),
+            models.Index(fields=["school", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.school.name} loan - {self.amount_requested} ({self.status})"
+
+
+class KidsMonitorSubscription(models.Model):
+    """Paid subscription enabling SMS alerts to a parent when their child's attendance is marked."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    parent = models.OneToOneField(
+        'ParentProfile',
+        on_delete=models.CASCADE,
+        related_name='kids_monitor',
+    )
+    school = models.ForeignKey(
+        'core.SchoolTenant',
+        on_delete=models.CASCADE,
+        related_name='kids_monitor_subscriptions',
+    )
+    is_active = models.BooleanField(default=False)
+    paystack_ref = models.CharField(max_length=100, blank=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['school', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"KidsMonitor({self.parent.user.email}, active={self.is_active})"

@@ -25,7 +25,7 @@ namespace SchoolDom.Cbt.Win7
             _cloud = new CloudSyncService(_store, _packages);
             _lan = new LanServerService(_store);
 
-            Text = "SchoolDom Admin Sync Win7";
+            Text = "SchoolDom Admin Sync Win7 v" + Application.ProductVersion;
             Width = 1280;
             Height = 760;
             MinimumSize = new Size(1120, 680);
@@ -174,8 +174,42 @@ namespace SchoolDom.Cbt.Win7
             content.Controls.Add(TextLabel(DisplaySchoolName(), 34, 18, 20, true, 600, Palette.Text));
             content.Controls.Add(TextLabel("School data synced from SchoolDom cloud.", 36, 62, 10, false, 560, Palette.Muted));
 
-            var status = TextLabel("Cloud: " + (_store.State.CloudUrl ?? "") + "\r\nLast sync: " + Display(_store.State.LastSyncAt), 650, 26, 9, false, 330, Palette.Muted);
+            var discoveryToken = _store.State.DiscoveryToken ?? "(start LAN server to generate)";
+            var status = TextLabel("Cloud: " + (_store.State.CloudUrl ?? "") + "\r\nLast sync: " + Display(_store.State.LastSyncAt) + "\r\nNetwork Token: " + discoveryToken, 650, 18, 9, false, 330, Palette.Muted);
             content.Controls.Add(status);
+
+            if (_store.State.HasPendingUpload)
+            {
+                var warningBanner = new Panel { Left = 34, Top = 88, Width = 940, Height = 36, BackColor = Color.FromArgb(255, 243, 205) };
+                warningBanner.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+                var warningText = new Label
+                {
+                    Text = "Results pending upload. Click Upload Results to send them to the cloud.",
+                    Left = 12,
+                    Top = 8,
+                    Width = 780,
+                    Height = 20,
+                    ForeColor = Color.FromArgb(133, 77, 14),
+                    Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                    AutoSize = false
+                };
+                warningBanner.Controls.Add(warningText);
+                var retryBtn = new Button
+                {
+                    Text = "Upload Now",
+                    Left = 800,
+                    Top = 6,
+                    Width = 110,
+                    Height = 24,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(184, 127, 33),
+                    ForeColor = Color.White,
+                    Font = new Font("Segoe UI", 8, FontStyle.Bold)
+                };
+                retryBtn.Click += (s, e) => RunWithStatus("Uploading pending results...", () => _cloud.RetryPendingUpload(), ShowDashboard);
+                warningBanner.Controls.Add(retryBtn);
+                content.Controls.Add(warningBanner);
+            }
 
             content.Controls.Add(Metric("Published Exams", _store.State.Exams.Count.ToString(), 34, 112, Palette.Blue));
             content.Controls.Add(Metric("Students Cached", _store.State.Students.Count.ToString(), 290, 112, Palette.Green));
@@ -298,10 +332,11 @@ namespace SchoolDom.Cbt.Win7
                 FullRowSelect = true,
                 HideSelection = false
             };
-            list.Columns.Add("Student", 210);
-            list.Columns.Add("Student ID", 110);
-            list.Columns.Add("Exam", 240);
-            list.Columns.Add("Submitted", 180);
+            list.Columns.Add("Student", 190);
+            list.Columns.Add("Student ID", 100);
+            list.Columns.Add("Exam", 200);
+            list.Columns.Add("Score", 110);
+            list.Columns.Add("Submitted", 140);
             foreach (var session in submitted)
             {
                 var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
@@ -309,11 +344,16 @@ namespace SchoolDom.Cbt.Win7
                 var item = new ListViewItem(DisplayStudentName(session, student));
                 item.SubItems.Add(session.StudentId ?? "");
                 item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
+                item.SubItems.Add(PackageService.ComputeScore(session, exam).Display);
                 item.SubItems.Add(Display(session.SubmittedAt ?? session.StartedAt));
                 item.Tag = session;
                 list.Items.Add(item);
             }
             card.Controls.Add(list);
+            if (!submitted.Any())
+            {
+                card.Controls.Add(TextLabel("No results submitted yet — students must complete and submit their exams via the LAN server.", 22, 100, 9, false, 760, Palette.Muted));
+            }
 
             var delete = PrimaryButton("Delete / Retake", 836, 70, 150);
             delete.Enabled = submitted.Any();
@@ -328,7 +368,20 @@ namespace SchoolDom.Cbt.Win7
             };
             card.Controls.Add(delete);
 
-            var more = SecondaryButton("Manage All", 836, 124, 150);
+            var grade = SecondaryButton("Grade Written", 836, 124, 150);
+            grade.Enabled = submitted.Any();
+            grade.Click += (s, e) =>
+            {
+                if (list.SelectedItems.Count == 0)
+                {
+                    MessageBox.Show("Select a submitted result first.", "Grade Written Answers");
+                    return;
+                }
+                ShowGradeWritten((SessionRecord)list.SelectedItems[0].Tag);
+            };
+            card.Controls.Add(grade);
+
+            var more = SecondaryButton("Manage All", 836, 178, 150);
             more.Click += (s, e) => ShowResultList();
             card.Controls.Add(more);
 
@@ -648,11 +701,12 @@ namespace SchoolDom.Cbt.Win7
             using (var form = ListForm("Submitted Results", 900, 560))
             {
                 var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
-                list.Columns.Add("Student", 240);
-                list.Columns.Add("Student ID", 130);
-                list.Columns.Add("Exam", 260);
-                list.Columns.Add("Status", 100);
-                list.Columns.Add("Submitted", 180);
+                list.Columns.Add("Student", 220);
+                list.Columns.Add("Student ID", 120);
+                list.Columns.Add("Exam", 220);
+                list.Columns.Add("Status", 90);
+                list.Columns.Add("Score", 110);
+                list.Columns.Add("Submitted", 150);
                 foreach (var session in _store.State.Sessions.Where(s => string.Equals(s.Status, "submitted", StringComparison.OrdinalIgnoreCase)).OrderByDescending(s => s.SubmittedAt ?? s.StartedAt))
                 {
                     var student = _store.State.Students.FirstOrDefault(s => string.Equals(s.StudentId, session.StudentId, StringComparison.OrdinalIgnoreCase));
@@ -661,22 +715,120 @@ namespace SchoolDom.Cbt.Win7
                     item.SubItems.Add(session.StudentId ?? "");
                     item.SubItems.Add(exam == null ? session.ExamId : exam.Title);
                     item.SubItems.Add(session.Status ?? "");
+                    item.SubItems.Add(PackageService.ComputeScore(session, exam).Display);
                     item.SubItems.Add(Display(session.SubmittedAt ?? session.StartedAt));
                     item.Tag = session;
                     list.Items.Add(item);
                 }
-                var delete = PrimaryButton("Delete / Allow Retake", 12, 458, 180);
-                delete.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+                var delete = PrimaryButton("Delete / Allow Retake", 12, 8, 180);
                 delete.Click += (s, e) =>
                 {
                     if (list.SelectedItems.Count == 0) return;
                     DeleteResult((SessionRecord)list.SelectedItems[0].Tag);
                     form.Close();
                 };
+                var gradeWritten = SecondaryButton("Grade Written", 204, 8, 160);
+                gradeWritten.Click += (s, e) =>
+                {
+                    if (list.SelectedItems.Count == 0) return;
+                    ShowGradeWritten((SessionRecord)list.SelectedItems[0].Tag);
+                    form.Close();
+                };
                 var panel = new Panel { Dock = DockStyle.Bottom, Height = 58 };
                 panel.Controls.Add(delete);
+                panel.Controls.Add(gradeWritten);
                 form.Controls.Add(list);
                 form.Controls.Add(panel);
+                form.ShowDialog(this);
+            }
+        }
+
+        private void ShowGradeWritten(SessionRecord session)
+        {
+            if (session == null) return;
+            var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
+            if (exam == null)
+            {
+                MessageBox.Show("This exam is no longer available locally.", "Grade Written Answers");
+                return;
+            }
+            var written = (exam.Questions ?? new List<QuestionRecord>()).Where(q => PackageService.IsWrittenType(q.Type)).ToList();
+            if (written.Count == 0)
+            {
+                MessageBox.Show("This exam has no written/essay questions to grade. Objective questions are scored automatically.", "Grade Written Answers");
+                return;
+            }
+
+            using (var form = ListForm("Grade Written Answers: " + exam.Title, 860, 640))
+            {
+                var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+                var marksBoxes = new List<NumericUpDown>();
+                var y = 16;
+                for (var i = 0; i < written.Count; i++)
+                {
+                    var q = written[i];
+                    var maxPoints = q.Points <= 0 ? 1 : q.Points;
+                    object rawAnswer;
+                    var answerText = session.Answers != null && session.Answers.TryGetValue(q.Id, out rawAnswer)
+                        ? JsonUtil.Text(rawAnswer)
+                        : "";
+                    if (string.IsNullOrWhiteSpace(answerText)) answerText = "(No answer submitted)";
+
+                    scroll.Controls.Add(TextLabel((i + 1) + ". " + q.Text + "  (max " + PackageService.FormatScoreNumber(maxPoints) + ")", 16, y, 10, true, 760, Palette.Text));
+                    y += 28;
+                    var answerBox = new TextBox
+                    {
+                        Left = 16,
+                        Top = y,
+                        Width = 700,
+                        Height = 70,
+                        Multiline = true,
+                        ReadOnly = true,
+                        ScrollBars = ScrollBars.Vertical,
+                        Text = answerText,
+                        Font = MathFont(10)
+                    };
+                    scroll.Controls.Add(answerBox);
+                    y += 80;
+
+                    scroll.Controls.Add(TextLabel("Marks awarded", 16, y + 4, 9, false, 120, Palette.Muted));
+                    double existing;
+                    var marks = new NumericUpDown
+                    {
+                        Left = 140,
+                        Top = y,
+                        Width = 90,
+                        Minimum = 0,
+                        Maximum = (decimal)maxPoints,
+                        DecimalPlaces = 2,
+                        Increment = 0.5m,
+                        Value = session.ManualScores != null && session.ManualScores.TryGetValue(q.Id, out existing)
+                            ? Math.Min((decimal)existing, (decimal)maxPoints)
+                            : 0
+                    };
+                    marks.Tag = q.Id;
+                    scroll.Controls.Add(marks);
+                    marksBoxes.Add(marks);
+                    y += 50;
+                }
+
+                var actions = new Panel { Dock = DockStyle.Bottom, Height = 58 };
+                var save = PrimaryButton("Save Grades", 12, 8, 150);
+                save.Click += (s, e) =>
+                {
+                    if (session.ManualScores == null) session.ManualScores = new Dictionary<string, double>();
+                    foreach (var box in marksBoxes)
+                    {
+                        session.ManualScores[(string)box.Tag] = (double)box.Value;
+                    }
+                    _store.Save();
+                    form.Close();
+                    ShowDashboard();
+                };
+                actions.Controls.Add(save);
+
+                form.Controls.Add(scroll);
+                form.Controls.Add(actions);
                 form.ShowDialog(this);
             }
         }

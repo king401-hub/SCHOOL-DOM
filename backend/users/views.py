@@ -393,6 +393,7 @@ def create_school(request):
                     phone=payload.get('phone') or None,
                     address=payload.get('address') or None,
                     is_active=True,
+                    compliance_deadline_reference_at=timezone.now(),
                 )
 
                 # Keep legacy tenant model in sync for modules still using tenants.Tenant.
@@ -407,6 +408,26 @@ def create_school(request):
                     is_primary=True,
                 )
                 credit_pool = grant_school_registration_credits(tenant, credits=50)
+
+            try:
+                support_email = getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", None) or "support@schooldom.academy"
+                send_mail(
+                    f"New school signed up: {tenant.name}",
+                    (
+                        f"A new school has signed up on SchoolDom.\n\n"
+                        f"School name: {tenant.name}\n"
+                        f"School code: {tenant.schema_name}\n"
+                        f"Sign-up date: {tenant.created_on.strftime('%Y-%m-%d')}\n"
+                    ),
+                    settings.DEFAULT_FROM_EMAIL,
+                    [support_email],
+                    fail_silently=False,
+                )
+                tenant.signup_notification_sent_at = timezone.now()
+                tenant.save(update_fields=["signup_notification_sent_at"])
+            except Exception:
+                logger.warning("Signup notification email failed for school %s.", tenant.schema_name, exc_info=True)
+
             return Response({
                 'success': True,
                 'message': 'School created successfully with 50 free activation credits.',
@@ -440,7 +461,14 @@ def login_view(request):
     
     if serializer.is_valid():
         user = serializer.validated_data['user']
-        
+
+        if user.tenant_id and not user.tenant.is_active:
+            create_login_history(user, request, status='failed')
+            return Response({
+                'success': False,
+                'message': "Your school's account is suspended pending compliance documents. Contact support@schooldom.academy for help."
+            }, status=status.HTTP_403_FORBIDDEN)
+
         # Update last login
         user.last_login = timezone.now()
         user.update_last_login_ip(get_client_ip(request))

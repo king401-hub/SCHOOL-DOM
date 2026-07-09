@@ -28,13 +28,20 @@ namespace SchoolDom.StudentCbt.Win7
         private bool _submitting;
         private bool _calculatorOpen;
         private bool _dialogOpen;
+
+        // Path for local answer backup — survives LAN disconnects
+        private static readonly string _backupDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "SchoolDom", "StudentCbt", "answers");
+        private string _answerBackupPath;
         private DateTime? _offlineSince;
         private bool _pendingAutoSubmit;
         private int _lastSaveSecond = -1;
+        private WebBrowser _questionWebView;
 
         public MainForm()
         {
-            Text = "SchoolDom Student CBT";
+            Text = "SchoolDom Student CBT v" + Application.ProductVersion;
             Width = 1120;
             Height = 740;
             MinimumSize = new Size(960, 620);
@@ -71,41 +78,45 @@ namespace SchoolDom.StudentCbt.Win7
             hero.Controls.Add(Label("Connect to the exam room LAN and start with your Student ID and PIN.", 40, 180, 15, false, 290, Color.White));
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(80, 90, 560, 410);
+            var card = Card(80, 60, 560, 460);
             content.Controls.Add(card);
             card.Controls.Add(Label("Exam Login", 34, 30, 20, true, 420, Palette.Text));
             card.Controls.Add(Label("The app connects to the admin LAN server automatically. No internet login is needed.", 36, 76, 10, false, 480, Palette.Muted));
 
             var server = Field(card, "LAN Server", "", 36, 150, false);
             server.Width = 500;
-            var studentId = Field(card, "Student ID", "", 36, 230, false);
-            var pin = Field(card, "Exam PIN", "", 306, 230, true);
+            var token = Field(card, "Network Token (optional)", "", 36, 230, false);
+            token.Width = 500;
+            var studentId = Field(card, "Student ID", "", 36, 310, false);
+            var pin = Field(card, "Exam PIN", "", 306, 310, true);
             ApplyNumbersOnly(pin);
-            _status = Label("", 36, 346, 10, false, 490, Palette.Muted);
+            _status = Label("", 36, 426, 10, false, 490, Palette.Muted);
             card.Controls.Add(_status);
 
-            var discover = SecondaryButton("Find LAN", 36, 292, 130);
+            var discover = SecondaryButton("Find LAN", 36, 374, 130);
             discover.Click += (s, e) =>
             {
                 try
                 {
+                    _client.DiscoveryToken = token.Text.Trim();
                     SetStatus("Searching for admin LAN server...", Palette.Muted);
                     server.Text = _client.Discover();
                     SetStatus("Connected to " + server.Text, Palette.Green);
                 }
                 catch (Exception ex)
                 {
-                    SetStatus("Could not find LAN server. Ask admin to start LAN.", Palette.Coral);
+                    SetStatus("Could not find LAN server. Ask admin for the Network Token.", Palette.Coral);
                     MessageBox.Show(ex.Message, "LAN discovery failed");
                 }
             };
             card.Controls.Add(discover);
 
-            var start = PrimaryButton("Start Exam", 180, 292, 150);
+            var start = PrimaryButton("Start Exam", 180, 374, 150);
             start.Click += (s, e) =>
             {
                 try
                 {
+                    _client.DiscoveryToken = token.Text.Trim();
                     if (!string.IsNullOrWhiteSpace(server.Text)) _client.BaseUrl = server.Text.Trim().TrimEnd('/');
                     if (string.IsNullOrWhiteSpace(_client.BaseUrl)) _client.Discover();
                     SetStatus("Checking Student ID and PIN...", Palette.Muted);
@@ -244,10 +255,37 @@ namespace SchoolDom.StudentCbt.Win7
             if (!_questions.Any()) throw new InvalidOperationException("This exam has no questions.");
         }
 
+        private void SaveAnswersLocally()
+        {
+            if (string.IsNullOrWhiteSpace(_answerBackupPath) || _answers == null) return;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_answerBackupPath));
+                File.WriteAllText(_answerBackupPath, JsonUtil.Serialize(_answers));
+            }
+            catch { }
+        }
+
+        private void RestoreAnswersFromBackup()
+        {
+            if (string.IsNullOrWhiteSpace(_answerBackupPath) || !File.Exists(_answerBackupPath)) return;
+            try
+            {
+                var json = File.ReadAllText(_answerBackupPath);
+                var restored = JsonUtil.Object(json);
+                if (restored != null && restored.Count > 0 && (_answers == null || _answers.Count == 0))
+                    _answers = restored;
+            }
+            catch { }
+        }
+
         private void EnterExamMode()
         {
             _examMode = true;
             _current = 0;
+            var sessionId = Value(_session, "id", "Id");
+            _answerBackupPath = Path.Combine(_backupDir, sessionId + ".json");
+            RestoreAnswersFromBackup();
             _offlineSince = null;
             _pendingAutoSubmit = false;
             _lastSaveSecond = -1;
@@ -262,6 +300,7 @@ namespace SchoolDom.StudentCbt.Win7
         {
             _root.Controls.Clear();
             _questionPanel = null;
+            _questionWebView = null;
             var header = new Panel { Dock = DockStyle.Top, Height = 82, BackColor = Palette.Navy };
             var headerWidth = Math.Max(960, ClientSize.Width);
             header.Controls.Add(Label(Value(_exam, "title", "Title"), 22, 14, 16, true, Math.Max(420, headerWidth - 560), Color.White));
@@ -332,16 +371,60 @@ namespace SchoolDom.StudentCbt.Win7
 
             var innerWidth = main.Width - 84;
             body.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
-            var text = Label(Value(question, "text", "Text"), 32, 70, 14, true, innerWidth, Palette.Text);
-            text.Font = ReadableExamFont(14, true);
-            body.Controls.Add(text);
-            var top = Math.Max(160, text.Top + text.Height + 20);
+            
+            // ** FIX: Use WebBrowser to render HTML content instead of Label **
+            _questionWebView = new WebBrowser
+            {
+                Left = 32,
+                Top = 70,
+                Width = innerWidth,
+                Height = 300,
+                DocumentText = Value(question, "text", "Text"),
+                ScrollBarsEnabled = true,
+                AllowNavigation = false,
+                WebBrowserShortcutsEnabled = false,
+                IsWebBrowserContextMenuEnabled = false,
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.None
+            };
+            // Wait for document to load before reading height
+            _questionWebView.DocumentCompleted += (s, e) =>
+            {
+                try
+                {
+                    var doc = _questionWebView.Document;
+                    if (doc != null)
+                    {
+                        var element = doc.Body;
+                        if (element != null)
+                        {
+                            _questionWebView.Height = Math.Max(150, element.ScrollRectangle.Height + 20);
+                        }
+                    }
+                }
+                catch { }
+            };
+            body.Controls.Add(_questionWebView);
+
+            var top = Math.Max(160, 70 + _questionWebView.Height + 20);
             var type = Value(question, "type", "Type").ToLowerInvariant();
             var options = JsonUtil.List(Raw(question, "options", "Options")).Select(JsonUtil.Text).Where(x => x.Length > 0).ToList();
 
             if (type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any())
             {
-                var answer = new TextBox { Left = 32, Top = top, Width = innerWidth, Height = 190, Multiline = true, ScrollBars = ScrollBars.Vertical, Tag = "answer", Font = ReadableExamFont(12, false), ForeColor = Palette.Text, BackColor = Color.White };
+                var answer = new TextBox
+                {
+                    Left = 32,
+                    Top = top,
+                    Width = innerWidth,
+                    Height = 190,
+                    Multiline = true,
+                    ScrollBars = ScrollBars.Vertical,
+                    Tag = "answer",
+                    Font = ReadableExamFont(12, false),
+                    ForeColor = Palette.Text,
+                    BackColor = Color.White
+                };
                 object saved;
                 if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
                 body.Controls.Add(answer);
@@ -439,6 +522,7 @@ namespace SchoolDom.StudentCbt.Win7
             if (_lastSaveSecond != now.Second)
             {
                 _lastSaveSecond = now.Second;
+                SaveAnswersLocally();
                 try
                 {
                     var saved = _client.SaveAnswers(Value(_session, "id", "Id"), _answers);
@@ -568,7 +652,20 @@ namespace SchoolDom.StudentCbt.Win7
         private void ShowCalculator()
         {
             _calculatorOpen = true;
-            var form = new Form { Text = "Calculator", Width = 360, Height = 430, StartPosition = FormStartPosition.CenterParent, TopMost = true, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = Palette.Background, Font = new Font("Segoe UI", 10), KeyPreview = true };
+            var form = new Form
+            {
+                Text = "Calculator",
+                Width = 360,
+                Height = 430,
+                StartPosition = FormStartPosition.CenterParent,
+                TopMost = true,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = Palette.Background,
+                Font = new Font("Segoe UI", 10),
+                KeyPreview = true
+            };
             form.FormClosed += (s, e) =>
             {
                 _calculatorOpen = false;
@@ -579,7 +676,15 @@ namespace SchoolDom.StudentCbt.Win7
                     Activate();
                 }
             };
-            var input = new TextBox { Left = 16, Top = 16, Width = 310, Height = 34, Font = new Font("Segoe UI", 13), TextAlign = HorizontalAlignment.Right };
+            var input = new TextBox
+            {
+                Left = 16,
+                Top = 16,
+                Width = 310,
+                Height = 34,
+                Font = new Font("Segoe UI", 13),
+                TextAlign = HorizontalAlignment.Right
+            };
             var result = Label("", 16, 58, 12, true, 310, Palette.Blue);
             form.Controls.Add(input);
             form.Controls.Add(result);

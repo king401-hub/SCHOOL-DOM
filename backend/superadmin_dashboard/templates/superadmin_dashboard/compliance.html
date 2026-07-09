@@ -1,0 +1,67 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block heading %}Compliance{% endblock %}
+{% block content %}
+<form class="filters" method="get">
+  <select name="status">
+    {% for value, label in status_choices %}
+      <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+    <option value="all" {% if status == "all" %}selected{% endif %}>All statuses</option>
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>School</th>
+          <th>Status</th>
+          <th>Submitted</th>
+          <th>School documents</th>
+          <th>Director documents</th>
+          <th>Operations</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          {% with school=row.school director=row.director %}
+          <tr>
+            <td>
+              <strong>{{ school.name }}</strong>
+              <small>{{ school.schema_name }}</small>
+            </td>
+            <td><span class="badge">{{ school.get_compliance_status_display }}</span></td>
+            <td>{{ school.compliance_submitted_at|default:"-" }}</td>
+            <td>
+              {% if school.cac_certificate %}<a class="link" href="{{ school.cac_certificate.url }}" target="_blank">CAC certificate</a><br>{% endif %}
+              {% if school.entrance_photo %}<a class="link" href="{{ school.entrance_photo.url }}" target="_blank">Entrance photo</a><br>{% endif %}
+              {% if school.proof_of_address %}<a class="link" href="{{ school.proof_of_address.url }}" target="_blank">Proof of address</a><br>{% endif %}
+              {% if not school.cac_certificate and not school.entrance_photo and not school.proof_of_address %}-{% endif %}
+            </td>
+            <td>
+              {% if director %}
+                <small>{{ director.get_full_name|default:director.email }}</small><br>
+                {% if director.director_id_document %}<a class="link" href="{{ director.director_id_document.url }}" target="_blank">ID card ({{ director.get_director_id_type_display }})</a><br>{% endif %}
+                {% if director.director_proof_of_address %}<a class="link" href="{{ director.director_proof_of_address.url }}" target="_blank">Proof of address</a><br>{% endif %}
+                {% if director.profile_picture %}<a class="link" href="{{ director.profile_picture.url }}" target="_blank">Passport photo</a><br>{% endif %}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td class="actions">
+              <form method="post" action="{% url 'superadmin_dashboard:compliance_action' school.pk 'approve' %}">{% csrf_token %}<button>Approve</button></form>
+              <form method="post" action="{% url 'superadmin_dashboard:compliance_action' school.pk 'reject' %}">{% csrf_token %}<button class="danger">Reject</button></form>
+            </td>
+          </tr>
+          {% endwith %}
+        {% empty %}
+          <tr><td colspan="6">No schools match this filter.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "superadmin_dashboard/pagination.html" %}
+</section>
+{% endblock %}

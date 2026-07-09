@@ -85,6 +85,7 @@ namespace SchoolDom.Cbt.Win7
 
         private void DiscoveryLoop()
         {
+            EnsureDiscoveryToken();
             while (_running)
             {
                 try
@@ -92,7 +93,13 @@ namespace SchoolDom.Cbt.Win7
                     var remote = new IPEndPoint(IPAddress.Any, 0);
                     var bytes = _discovery.Receive(ref remote);
                     var message = Encoding.UTF8.GetString(bytes);
-                    if (message != DiscoveryQuery) continue;
+                    // Accept legacy unauthenticated queries from same subnet only,
+                    // and authenticated queries with the correct token from anywhere.
+                    var expectedQuery = DiscoveryQuery + ":" + _store.State.DiscoveryToken;
+                    var legacyQuery = DiscoveryQuery;
+                    if (message != expectedQuery && message != legacyQuery) continue;
+                    // Reject legacy unauthenticated queries from outside the local subnet
+                    if (message == legacyQuery && !IsSameSubnet(remote.Address)) continue;
                     var payload = Encoding.UTF8.GetBytes(JsonUtil.Serialize(new Dictionary<string, object>
                     {
                         { "type", "SCHOOLDOM_CBT_ADMIN" },
@@ -109,6 +116,26 @@ namespace SchoolDom.Cbt.Win7
                     if (_running) Thread.Sleep(250);
                 }
             }
+        }
+
+        private void EnsureDiscoveryToken()
+        {
+            if (!string.IsNullOrWhiteSpace(_store.State.DiscoveryToken)) return;
+            _store.State.DiscoveryToken = Guid.NewGuid().ToString("N");
+            _store.Save();
+        }
+
+        private bool IsSameSubnet(IPAddress remote)
+        {
+            foreach (var local in LocalAddresses())
+            {
+                var localParts = local.Split('.');
+                var remoteParts = remote.ToString().Split('.');
+                if (localParts.Length == 4 && remoteParts.Length == 4 &&
+                    localParts[0] == remoteParts[0] && localParts[1] == remoteParts[1] && localParts[2] == remoteParts[2])
+                    return true;
+            }
+            return false;
         }
 
         private void HandleClient(TcpClient client)
@@ -293,6 +320,10 @@ namespace SchoolDom.Cbt.Win7
             var session = FindSession(sessionId);
             if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
             if (session.Status == "submitted") return new Dictionary<string, object> { { "success", true }, { "session", session } };
+            if (IsSessionExpired(session))
+            {
+                return new Dictionary<string, object> { { "success", false }, { "message", "Exam time has expired." } };
+            }
             var body = JsonUtil.DeserializeObject(bodyText);
             session.Answers = body.ContainsKey("answers") ? NormalizeAnswers(body["answers"]) : session.Answers;
             _store.Save();
@@ -304,12 +335,22 @@ namespace SchoolDom.Cbt.Win7
             var session = FindSession(sessionId);
             if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
             var body = JsonUtil.DeserializeObject(bodyText);
+            // Accept final answers even if time just expired (grace: save whatever they have)
             if (body.ContainsKey("answers")) session.Answers = NormalizeAnswers(body["answers"]);
             session.Status = "submitted";
             session.SubmittedAt = JsonUtil.IsoNow();
-            session.AuditLogs.Add(new ActivityLogRecord { Type = "session_submitted", Message = "Student submitted exam on LAN.", CreatedAt = JsonUtil.IsoNow() });
+            var reason = IsSessionExpired(session) ? "Time expired — auto-submitted on LAN." : "Student submitted exam on LAN.";
+            session.AuditLogs.Add(new ActivityLogRecord { Type = "session_submitted", Message = reason, CreatedAt = JsonUtil.IsoNow() });
             _store.Save();
             return new Dictionary<string, object> { { "success", true }, { "session", session } };
+        }
+
+        private static bool IsSessionExpired(SessionRecord session)
+        {
+            if (string.IsNullOrWhiteSpace(session.EndsAt)) return false;
+            DateTime ends;
+            return DateTime.TryParse(session.EndsAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out ends)
+                && DateTime.UtcNow > ends.ToUniversalTime();
         }
 
         private Dictionary<string, object> LogFocusLoss(string sessionId, string bodyText)

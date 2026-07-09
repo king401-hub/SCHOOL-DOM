@@ -115,6 +115,7 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
   const [studentSize, setStudentSize] = useState(350);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsOpened, setTermsOpened] = useState(() => window.localStorage.getItem(TERMS_OPENED_KEY) === "true");
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [legalConsent, setLegalConsent] = useState(false);
   
   // Integrations preferences
@@ -189,7 +190,7 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
       refresh: data.refresh,
       school: data.school || null,
       school_code: data.school_code || createdSchoolCode || "",
-      redirectUrl: data.redirect_url || "/dashboard/",
+      redirectUrl: data.redirect_url || "/settings",
       requiresVerification: false,
       signedInAt: new Date().toISOString(),
     };
@@ -297,8 +298,7 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
         setStep(4);
         setSuccessMessage(registerData.message || "Enter the OTP sent to your email.");
       } else {
-        setSuccessMessage(registerData.message || "Account created successfully. You can sign in now.");
-        setOnboardSuccess(true);
+        completeSession(registerData);
       }
     } catch (requestError: any) {
       setError(requestError.message || "School onboarding failed.");
@@ -360,7 +360,7 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
 
   const generatedRegId = `SD-SCH-${Math.floor(1000 + Math.random() * 9000)}`;
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs text-left">
       <div className="relative w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
         
@@ -953,11 +953,11 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
                       <label htmlFor="checkbox-terms-accepted" className="text-[10px] sm:text-[11px] text-slate-600 font-semibold cursor-pointer select-none leading-relaxed">
                         I have read and accept the Schooldom{' '}
                         <a
-                          href="/terms?from=signup"
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href="#terms"
                           className="text-brand-600 underline hover:text-brand-700"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setShowTermsModal(true);
                             setTermsOpened(true);
                             window.localStorage.setItem(TERMS_OPENED_KEY, "true");
                           }}
@@ -1012,6 +1012,96 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
 
       </div>
     </div>
-  );
+
+    {showTermsModal && (
+      <div
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(3px)' }}
+        onClick={(e) => { if (e.target === e.currentTarget) setShowTermsModal(false); }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Terms and Conditions"
+      >
+        <div style={{ background: '#fff', borderRadius: '14px', width: '100%', maxWidth: '660px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 28px 64px rgba(0,0,0,0.2)' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.2rem 1.5rem 1rem', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#1e293b' }}>Terms &amp; Conditions</h2>
+            <button type="button" onClick={() => setShowTermsModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.6rem', lineHeight: 1, cursor: 'pointer', color: '#64748b', padding: '0.2rem 0.5rem', borderRadius: '6px' }} aria-label="Close">×</button>
+          </div>
+
+          {/* Body */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', fontSize: '0.875rem', lineHeight: 1.7, color: '#475569' }}>
+            <p style={{ color: '#94a3b8', fontSize: '0.78rem', marginBottom: '1rem' }}>Effective Date: 2026 · Xcel Technologies Ltd</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '0 0 0.4rem' }}>1. Introduction &amp; Agreement</h3>
+            <p>These Terms govern your access to and use of the SchoolDom platform, including the website, web application, and mobile applications. By creating an account, you confirm you have read, understood, and agree to these Terms.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>2. Definitions</h3>
+            <p><strong>Platform:</strong> SchoolDom website, web app, and mobile apps.</p>
+            <p><strong>User:</strong> Any individual authorized to use the Platform — School Owner, Administrator, Teacher, Parent/Guardian, or Student.</p>
+            <p><strong>Content:</strong> All data, files, results, documents, and information uploaded or stored by Users.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>3. Accounts &amp; Eligibility</h3>
+            <p>School Owners must be legal representatives with authority to contract. Administrators, Teachers, and Parents must be 18+. Students may use the Platform only under supervision and with consent from the School Owner.</p>
+            <p>You must provide accurate information and keep it updated. You are responsible for all activities under your account. Notify us at <a href="mailto:enquiry@schooldom.academy" style={{ color: '#4f46e5' }}>enquiry@schooldom.academy</a> immediately if you suspect unauthorized access.</p>
+            <p>You must not: violate any Nigerian law or NDPR; impersonate any person or school; upload malware; attempt unauthorized access or data scraping; upload content that is defamatory, obscene, or harmful to minors.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>4. Content &amp; Data Ownership</h3>
+            <p>You own the Content you upload and are solely responsible for it. You grant Xcel Technologies a non-exclusive license to host, process, and backup your Content solely to provide SchoolDom. The School Owner is the Data Controller for NDPR/GDPR purposes; Xcel Technologies is the Data Processor.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>5. Intellectual Property</h3>
+            <p>SchoolDom, including all code, design, logos, and features, is owned by Xcel Technologies Ltd. We grant you a limited, non-exclusive, non-transferable license for your school's internal use only. You may not copy, modify, reverse engineer, or resell the Platform without written consent.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>6. Fees, Payment &amp; Refunds</h3>
+            <p>Subscription fees are billed annually/termly in advance. After the free trial ends, fees are non-refundable except if we fail to provide core services for 7+ consecutive days due to our fault. Parents paying school fees via SchoolDom pay gateway charges set by payment partners — Xcel Technologies does not receive these.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>7. Service Availability &amp; Support</h3>
+            <p>We aim for 99.5% monthly uptime, excluding scheduled maintenance (48-hour notice given). Support: <a href="mailto:enquiry@schooldom.academy" style={{ color: '#4f46e5' }}>enquiry@schooldom.academy</a>, 9am–5pm WAT Mon–Fri. Critical issues: 4-hour response.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>8. Suspension &amp; Termination</h3>
+            <p>School Owners may terminate by emailing us; access ends at the paid period. We may suspend accounts for breach of Terms, non-payment, fraud, or illegal use. You have 30 days after termination to export your data.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>9. Limitation of Liability</h3>
+            <p>Xcel Technologies is not liable for indirect, incidental, or consequential damages. Our total liability is limited to amounts you paid us in the 12 months before the claim.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>10. Disclaimer of Warranties</h3>
+            <p>SchoolDom is provided "AS IS" and "AS AVAILABLE". We do not guarantee the Platform will be error-free or uninterrupted, and are not responsible for internet outages or third-party service failures.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>11. Changes to Terms</h3>
+            <p>We may update these Terms to reflect new features or legal changes. We'll post the updated version with a new Effective Date and notify School Administrators by email for material changes.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>12. Governing Law &amp; Disputes</h3>
+            <p>These Terms are governed by the laws of the Federal Republic of Nigeria. Disputes will first attempt amicable resolution for 30 days, then proceed to arbitration in Lagos under the Arbitration and Conciliation Act.</p>
+
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', margin: '1.2rem 0 0.4rem' }}>13. Contact Us</h3>
+            <p>Xcel Technologies Ltd · <a href="mailto:enquiry@schooldom.academy" style={{ color: '#4f46e5' }}>enquiry@schooldom.academy</a> · 256 Ikotun Road, Lagos.</p>
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => { setTermsAccepted(false); setShowTermsModal(false); }}
+              style={{ padding: '0.6rem 1.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'transparent', color: '#64748b', fontSize: '0.875rem', cursor: 'pointer' }}
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTermsAccepted(true);
+                setTermsOpened(true);
+                window.localStorage.setItem(TERMS_OPENED_KEY, "true");
+                setShowTermsModal(false);
+                setError("");
+              }}
+              style={{ padding: '0.6rem 1.5rem', borderRadius: '8px', border: 'none', background: '#4f46e5', color: '#fff', fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Accept &amp; Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>);
 }
 

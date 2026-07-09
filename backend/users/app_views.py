@@ -2,6 +2,7 @@ import csv
 import base64
 import io
 import json
+import logging
 import os
 import re
 import uuid
@@ -55,13 +56,15 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
-from users.models import DatabaseImportJob, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplication, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
 
 try:
     from hr.models import StaffProfile
 except Exception:  # pragma: no cover - HR app is optional in older installs
     StaffProfile = None
+
+logger = logging.getLogger(__name__)
 
 try:
     from notifications.models import Announcement, InAppMessage, Notification, NotificationPreference, SMSConfiguration
@@ -809,6 +812,26 @@ def _school_payload(school, request=None):
         "favicon": _media_url(request, school.favicon),
         "currency": school.currency,
         "timezone": school.timezone,
+        "cac_registered_name": getattr(school, "cac_registered_name", "") or "",
+        "cac_certificate": _media_url(request, school.cac_certificate),
+        "entrance_photo": _media_url(request, school.entrance_photo),
+        "proof_of_address": _media_url(request, school.proof_of_address),
+        "ministry_approval_number": getattr(school, "ministry_approval_number", "") or "",
+    }
+
+
+def _director_payload(user, request=None):
+    if not user:
+        return {}
+    return {
+        "full_name": user.get_full_name(),
+        "email": user.email or "",
+        "phone": user.phone or "",
+        "address": user.director_address or "",
+        "proof_of_address": _media_url(request, user.director_proof_of_address),
+        "id_type": user.director_id_type or "",
+        "id_document": _media_url(request, user.director_id_document),
+        "passport_photo": _profile_picture_url(request, user),
     }
 
 
@@ -972,6 +995,30 @@ def _find_parent_user_by_phone(tenant, phone_key):
 def _parent_payload(parent_profile, request=None):
     parent_user = parent_profile.user
     children = list(parent_profile.children.select_related("user", "current_class").all())
+
+    # Fetch admin-assigned virtual account (if any)
+    virtual_account = None
+    try:
+        from finance.models import ParentVirtualAccount
+        vac = ParentVirtualAccount.objects.get(parent=parent_user, is_active=True)
+        virtual_account = {
+            "account_number": vac.account_number,
+            "bank_name": vac.bank_name,
+            "account_name": vac.account_name,
+            "provider": vac.provider,
+        }
+    except Exception:
+        pass
+
+    child_monitor_active = False
+    child_monitor_ref = ""
+    try:
+        km = parent_profile.kids_monitor
+        child_monitor_active = km.is_active
+        child_monitor_ref = km.paystack_ref or ""
+    except Exception:
+        pass
+
     return {
         "id": str(parent_profile.id),
         "user_id": str(parent_user.id),
@@ -994,6 +1041,9 @@ def _parent_payload(parent_profile, request=None):
             }
             for child in children
         ],
+        "virtual_account": virtual_account,
+        "child_monitor_active": child_monitor_active,
+        "child_monitor_ref": child_monitor_ref,
         "created_at": parent_profile.created_at,
     }
 
@@ -3318,12 +3368,31 @@ def student_dashboard(request):
         payment_reference = get_or_create_student_payment_reference(student_profile)
         admin_wallet = AdminWallet.objects.filter(tenant=user.tenant).first()
         payment_reference_data = {"code": payment_reference.code}
+        # Check if any of the student's parents has an assigned virtual account
+        parent_virtual_account = None
+        try:
+            from finance.models import ParentVirtualAccount
+            parent_vac = ParentVirtualAccount.objects.filter(
+                parent__parent_profile__children=student_profile,
+                is_active=True,
+            ).select_related("parent").first()
+            if parent_vac:
+                parent_virtual_account = {
+                    "account_number": parent_vac.account_number,
+                    "bank_name": parent_vac.bank_name,
+                    "account_name": parent_vac.account_name,
+                    "provider": parent_vac.provider,
+                }
+        except Exception:
+            pass
+
         payment_instructions = {
             "bank_account_name": admin_wallet.bank_account_name if admin_wallet else "",
             "bank_account_number": admin_wallet.bank_account_number if admin_wallet else "",
             "bank_code": admin_wallet.bank_code if admin_wallet else "",
             "reference_code": payment_reference.code,
             "narration": f"School fees {payment_reference.code}",
+            "parent_virtual_account": parent_virtual_account,
         }
         wallet = Wallet.objects.prefetch_related("transactions").get(pk=wallet.pk)
         wallet_data = {
@@ -4216,7 +4285,7 @@ def parents_snapshot(request):
         )
 
     parents = (
-        ParentProfile.objects.select_related("user")
+        ParentProfile.objects.select_related("user", "kids_monitor")
         .prefetch_related("children__user", "children__current_class")
         .filter(user__tenant=user.tenant)
         .order_by("user__last_name", "user__first_name", "created_at")
@@ -4233,6 +4302,8 @@ def parents_snapshot(request):
                 "linked_parents": with_children,
                 "without_children": max(total - with_children, 0),
             },
+            "paystack_public_key": getattr(settings, "PAYSTACK_PUBLIC_KEY", ""),
+            "child_monitor_price": 1000,
             "parents": [_parent_payload(parent, request=request) for parent in parents[:200]],
         }
     )
@@ -5555,6 +5626,7 @@ def id_card_scan_attendance(request):
             "device_info": location["device_info"],
         },
     )
+    _notify_parents_on_attendance(student_profile.user, "present", attendance_date, school.name)
     return Response(
         {
             "success": True,
@@ -5982,6 +6054,49 @@ def school_settings(request):
                     setattr(school, field, new_value)
                     update_fields.append(field)
 
+        for field in ("cac_registered_name", "ministry_approval_number"):
+            if field in request.data:
+                new_value = str(request.data.get(field) or "").strip()
+                if getattr(school, field, "") != new_value:
+                    setattr(school, field, new_value)
+                    update_fields.append(field)
+
+        for field in ("cac_certificate", "entrance_photo", "proof_of_address"):
+            uploaded_file = request.FILES.get(field)
+            if uploaded_file:
+                setattr(school, field, uploaded_file)
+                update_fields.append(field)
+
+        user_update_fields = []
+        raw_director_address = request.data.get("director_address")
+        if raw_director_address is not None:
+            new_value = str(raw_director_address or "").strip()
+            if user.director_address != new_value:
+                user.director_address = new_value
+                user_update_fields.append("director_address")
+
+        raw_director_id_type = request.data.get("director_id_type")
+        if raw_director_id_type is not None:
+            new_value = str(raw_director_id_type or "").strip()
+            allowed_id_types = {value for value, _label in User.DIRECTOR_ID_TYPE_CHOICES}
+            if new_value and new_value not in allowed_id_types:
+                return Response(
+                    {"success": False, "message": "Select a valid director ID type."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if user.director_id_type != new_value:
+                user.director_id_type = new_value
+                user_update_fields.append("director_id_type")
+
+        for field in ("director_proof_of_address", "director_id_document", "profile_picture"):
+            uploaded_file = request.FILES.get(field)
+            if uploaded_file:
+                setattr(user, field, uploaded_file)
+                user_update_fields.append(field)
+
+        if user_update_fields:
+            user.save(update_fields=sorted(set(user_update_fields)))
+
         if update_fields:
             with db_transaction.atomic():
                 school.save(update_fields=sorted(set(update_fields)))
@@ -6004,6 +6119,12 @@ def school_settings(request):
 
                     linked_code_counts = _regenerate_school_linked_codes(school)
 
+        if school.compliance_status in ("not_submitted", "rejected") and school.compliance_documents_complete():
+            school.compliance_status = "submitted"
+            school.compliance_submitted_at = timezone.now()
+            school.save(update_fields=["compliance_status", "compliance_submitted_at"])
+            _send_compliance_submitted_emails(school, user)
+
         activity_items = None
         if "activity_calendar" in request.data:
             try:
@@ -6019,25 +6140,45 @@ def school_settings(request):
                     {"success": False, "message": "Could not resolve the school calendar tenant."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            with db_transaction.atomic():
-                SchoolActivityCalendar.objects.filter(tenant=activity_tenant).delete()
-                SchoolActivityCalendar.objects.bulk_create(
-                    [
-                        SchoolActivityCalendar(
-                            tenant=activity_tenant,
-                            created_by=user,
-                            **item,
-                        )
-                        for item in (activity_items or [])
-                    ]
+            try:
+                with db_transaction.atomic():
+                    SchoolActivityCalendar.objects.filter(tenant=activity_tenant).delete()
+                    SchoolActivityCalendar.objects.bulk_create(
+                        [
+                            SchoolActivityCalendar(
+                                tenant=activity_tenant,
+                                created_by=user,
+                                **item,
+                            )
+                            for item in (activity_items or [])
+                        ]
+                    )
+            except Exception as exc:
+                return Response(
+                    {"success": False, "message": f"Could not save the activity calendar: {exc}"},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
         active_year = _active_academic_year(user)
         year_name = str(request.data.get("academic_year_name") or "").strip()
         year_start = request.data.get("academic_year_start_date")
         year_end = request.data.get("academic_year_end_date")
-        tenant_obj = _tenant_for_model(AcademicYear, user)
-        if year_name and year_start and year_end and tenant_obj:
+        year_fields_touched = any([year_name, year_start, year_end])
+        if year_fields_touched:
+            if not (year_name and year_start and year_end):
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Provide the academic year name, start date, and end date together to save it.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            tenant_obj = _tenant_for_model(AcademicYear, user)
+            if not tenant_obj:
+                return Response(
+                    {"success": False, "message": "Could not resolve the school tenant for the academic year."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             parsed_start = parse_date(str(year_start))
             parsed_end = parse_date(str(year_end))
             if not parsed_start or not parsed_end or parsed_end <= parsed_start:
@@ -6045,19 +6186,40 @@ def school_settings(request):
                     {"success": False, "message": "Academic year dates are invalid."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            AcademicYear.objects.filter(tenant=tenant_obj, is_active=True).update(is_active=False)
-            active_year, _ = AcademicYear.objects.update_or_create(
-                tenant=tenant_obj,
-                name=year_name,
-                defaults={"start_date": parsed_start, "end_date": parsed_end, "is_active": True},
-            )
+            try:
+                with db_transaction.atomic():
+                    AcademicYear.objects.filter(tenant=tenant_obj, is_active=True).update(is_active=False)
+                    active_year, _ = AcademicYear.objects.update_or_create(
+                        tenant=tenant_obj,
+                        name=year_name,
+                        defaults={"start_date": parsed_start, "end_date": parsed_end, "is_active": True},
+                    )
+            except Exception as exc:
+                return Response(
+                    {"success": False, "message": f"Could not save the academic year: {exc}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         active_term = _active_term(user)
         term_name = str(request.data.get("term_name") or "").strip()
         term_start = request.data.get("term_start_date")
         term_end = request.data.get("term_end_date")
-        term_tenant = _tenant_for_model(Term, user)
-        if term_name and term_start and term_end and term_tenant:
+        term_fields_touched = any([term_name, term_start, term_end])
+        if term_fields_touched:
+            if not (term_name and term_start and term_end):
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Provide the term name, start date, and end date together to save it.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            term_tenant = _tenant_for_model(Term, user)
+            if not term_tenant:
+                return Response(
+                    {"success": False, "message": "Could not resolve the school tenant for the term."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             parsed_start = parse_date(str(term_start))
             parsed_end = parse_date(str(term_end))
             if not parsed_start or not parsed_end or parsed_end <= parsed_start:
@@ -6067,19 +6229,27 @@ def school_settings(request):
                 )
             if not active_year:
                 active_year = _active_academic_year(user)
-            Term.objects.filter(tenant=term_tenant, is_active=True).update(is_active=False)
-            active_term, _ = Term.objects.update_or_create(
-                tenant=term_tenant,
-                name=term_name,
-                academic_year=active_year,
-                defaults={"start_date": parsed_start, "end_date": parsed_end, "is_active": True},
-            )
+            try:
+                with db_transaction.atomic():
+                    Term.objects.filter(tenant=term_tenant, is_active=True).update(is_active=False)
+                    active_term, _ = Term.objects.update_or_create(
+                        tenant=term_tenant,
+                        name=term_name,
+                        academic_year=active_year,
+                        defaults={"start_date": parsed_start, "end_date": parsed_end, "is_active": True},
+                    )
+            except Exception as exc:
+                return Response(
+                    {"success": False, "message": f"Could not save the term: {exc}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         return Response(
             {
                 "success": True,
                 "message": "School settings updated.",
                 "school": _school_payload(school, request),
+                "director": _director_payload(user, request),
                 "academic_year": _academic_year_payload(active_year),
                 "term": _term_payload(active_term),
                 "activity_calendar": [
@@ -6100,6 +6270,7 @@ def school_settings(request):
         {
             "success": True,
             "school": _school_payload(school, request),
+            "director": _director_payload(user, request),
             "academic_year": _academic_year_payload(active_year),
             "term": _term_payload(active_term),
             "academic_years": [_academic_year_payload(item) for item in _scope_to_user_tenant(AcademicYear.objects.all(), user)[:20]],
@@ -6159,6 +6330,43 @@ def account_deletion_request(request):
 
 def _support_email():
     return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "enquiry@schooldom.academy").strip()
+
+
+def _compliance_notification_email():
+    return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "support@schooldom.academy").strip()
+
+
+def _send_compliance_submitted_emails(school, user):
+    support_email = _compliance_notification_email()
+    director_email = str(user.email or school.email or "").strip()
+    try:
+        send_mail(
+            f"Compliance documents submitted: {school.name}",
+            (
+                f"{school.name} ({school.schema_name}) has submitted its compliance documents for review.\n\n"
+                "Open the Super Admin Dashboard > Compliance to review and approve."
+            ),
+            settings.DEFAULT_FROM_EMAIL,
+            [support_email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.warning("Compliance submission notice to support failed for %s.", school.schema_name, exc_info=True)
+
+    if director_email:
+        try:
+            send_mail(
+                "SchoolDom compliance documents received",
+                (
+                    f"Thanks for completing your school's compliance documents for {school.name}.\n\n"
+                    "Our team will review them shortly. We'll email you once they're approved."
+                ),
+                settings.DEFAULT_FROM_EMAIL,
+                [director_email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.warning("Compliance submission confirmation to director failed for %s.", school.schema_name, exc_info=True)
 
 
 def _support_ticket_payload(ticket, request=None):
@@ -6233,8 +6441,141 @@ def _send_support_ticket_email(ticket, kind="created"):
     try:
         send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, recipients, fail_silently=False)
     except Exception:
+        logger.exception("Failed to send support ticket email (ticket=%s, kind=%s)", ticket.id, kind)
         return False
     return True
+
+
+def _loan_application_payload(loan, request=None):
+    document_url = ""
+    if loan.supporting_document:
+        try:
+            document_url = loan.supporting_document.url
+            if request:
+                document_url = request.build_absolute_uri(document_url)
+        except Exception:
+            document_url = ""
+    return {
+        "id": str(loan.id),
+        "amount_requested": str(loan.amount_requested),
+        "purpose": loan.purpose,
+        "repayment_period_months": loan.repayment_period_months,
+        "additional_notes": loan.additional_notes,
+        "status": loan.status,
+        "status_label": loan.get_status_display(),
+        "requester_email": loan.requester_email,
+        "requester_phone": loan.requester_phone,
+        "submitted_by": loan.submitted_by.get_full_name() if loan.submitted_by_id else "",
+        "supporting_document": document_url,
+        "created_at": loan.created_at,
+        "updated_at": loan.updated_at,
+    }
+
+
+def _send_loan_application_email(loan, kind="created"):
+    support_email = _support_email()
+    requester_email = loan.requester_email or (loan.submitted_by.email if loan.submitted_by_id else "")
+    school = loan.school
+    subject_prefix = "SchoolDom loan application"
+    if kind == "status":
+        subject = f"{subject_prefix} update: {loan.get_status_display()}"
+        body = (
+            f"Your SchoolDom loan application status is now {loan.get_status_display()}.\n\n"
+            f"Amount requested: {loan.amount_requested}\n"
+            f"Purpose: {loan.purpose}\n"
+            f"School: {school.name} ({school.schema_name})\n\n"
+            "We will continue tracking this request in your School Settings."
+        )
+        recipients = [requester_email] if requester_email else []
+    else:
+        subject = f"{subject_prefix}: {school.name}"
+        body = (
+            "A new loan application was submitted.\n\n"
+            f"School: {school.name}\n"
+            f"School code: {school.schema_name}\n"
+            f"School email: {school.email or '-'}\n"
+            f"School phone: {school.phone or '-'}\n"
+            f"Submitted by: {loan.submitted_by.get_full_name() if loan.submitted_by_id else '-'}\n"
+            f"Requester email: {requester_email or '-'}\n"
+            f"Requester phone: {loan.requester_phone or '-'}\n"
+            f"Amount requested: {loan.amount_requested}\n"
+            f"Repayment period: {loan.repayment_period_months} months\n"
+            f"Purpose: {loan.purpose}\n\n"
+            f"Additional notes:\n{loan.additional_notes or '-'}"
+        )
+        recipients = [support_email]
+        if requester_email and requester_email.lower() != support_email.lower():
+            recipients.append(requester_email)
+
+    if not recipients:
+        return False
+
+    try:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, recipients, fail_silently=False)
+    except Exception:
+        logger.exception("Failed to send loan application email (loan=%s, kind=%s)", loan.id, kind)
+        return False
+    return True
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def loan_applications(request):
+    user = request.user
+    school = getattr(user, "tenant", None)
+    if not school:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can submit loan applications."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "GET":
+        loans = LoanApplication.objects.filter(school=school)[:20]
+        return Response({"success": True, "loans": [_loan_application_payload(item, request) for item in loans]})
+
+    try:
+        amount_requested = Decimal(str(request.data.get("amount_requested") or "0"))
+    except InvalidOperation:
+        return Response({"success": False, "message": "Enter a valid loan amount."}, status=status.HTTP_400_BAD_REQUEST)
+    if amount_requested <= 0:
+        return Response({"success": False, "message": "Enter a loan amount greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+
+    purpose = str(request.data.get("purpose") or "").strip()
+    if len(purpose) < 3:
+        return Response({"success": False, "message": "Enter the purpose of the loan."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        repayment_period_months = int(request.data.get("repayment_period_months") or 0)
+    except (TypeError, ValueError):
+        return Response({"success": False, "message": "Enter a valid repayment period in months."}, status=status.HTTP_400_BAD_REQUEST)
+    if repayment_period_months <= 0:
+        return Response({"success": False, "message": "Repayment period must be at least 1 month."}, status=status.HTTP_400_BAD_REQUEST)
+
+    loan = LoanApplication.objects.create(
+        school=school,
+        submitted_by=user,
+        amount_requested=amount_requested,
+        purpose=purpose[:255],
+        repayment_period_months=repayment_period_months,
+        additional_notes=str(request.data.get("additional_notes") or "").strip(),
+        supporting_document=request.FILES.get("supporting_document"),
+        requester_email=str(request.data.get("requester_email") or user.email or school.email or "").strip(),
+        requester_phone=str(request.data.get("requester_phone") or school.phone or "").strip(),
+    )
+    notified = _send_loan_application_email(loan, kind="created")
+    now = timezone.now()
+    if notified:
+        loan.support_notified_at = now
+        loan.requester_notified_at = now
+        loan.save(update_fields=["support_notified_at", "requester_notified_at"])
+
+    return Response(
+        {
+            "success": True,
+            "message": "Loan application submitted. We'll review it and follow up by email.",
+            "loan": _loan_application_payload(loan, request),
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["GET", "POST", "PATCH"])
@@ -6316,7 +6657,7 @@ def _database_imports_summary(school):
     }
 
 
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "DELETE"])
 @permission_classes([IsAuthenticated])
 def database_imports(request):
     user = request.user
@@ -6380,6 +6721,17 @@ def database_imports(request):
             },
             status=status.HTTP_201_CREATED,
         )
+
+    if request.method == "DELETE":
+        old_jobs = DatabaseImportJob.objects.filter(tenant=school)
+        for job in old_jobs:
+            try:
+                job.upload.delete(save=False)
+            except Exception:
+                pass
+        deleted_count = old_jobs.count()
+        old_jobs.delete()
+        return Response({"success": True, "message": f"{deleted_count} import record{'s' if deleted_count != 1 else ''} cleared.", "summary": _database_imports_summary(school), "history": []})
 
     jobs = DatabaseImportJob.objects.filter(tenant=school).select_related("uploaded_by")
     return Response(
@@ -8029,6 +8381,8 @@ def _student_result_report(student_profile, class_group=None, term=None, request
             "email": student_profile.user.email,
             "class_name": _class_label(class_group) if class_group else "",
             "profile_picture": _profile_picture_url(request, student_profile.user),
+            "guardian_phone": student_profile.guardian_phone or "",
+            "second_guardian_phone": student_profile.second_guardian_phone or "",
         },
         "scores": scores,
         "total_score": round(total_score, 2),
@@ -8218,6 +8572,7 @@ def teacher_mark_student_attendance(request):
             "device_info": location["device_info"],
         },
     )
+    _notify_parents_on_attendance(student_profile.user, status_value, attendance_date, user.tenant.name if user.tenant else "School")
     return Response(
         {
             "success": True,
@@ -8812,6 +9167,85 @@ def send_message(request):
             status=status.HTTP_201_CREATED,
         )
 
+    if target == "report_card_sms":
+        if not _can_manage_school_settings(request.user):
+            return Response(
+                {"success": False, "message": "Only administrators can send report card SMS."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        phone = str(request.data.get("phone", "")).strip()
+        if not phone:
+            return Response(
+                {"success": False, "message": "A recipient phone number is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        report_data = request.data.get("report_data") or {}
+        student_name = str((report_data.get("student") or {}).get("name") or "").strip()
+        school_name = str((report_data.get("school") or {}).get("name") or "").strip() or getattr(request.user, "tenant", None) and request.user.tenant.name or ""
+        total_score = report_data.get("total_score") or 0
+        average_score = report_data.get("average_score") or 0
+        class_name = str((report_data.get("student") or {}).get("class_name") or "").strip()
+        class_position = report_data.get("class_position")
+        class_size = report_data.get("class_size") or 0
+        scores = report_data.get("scores") or []
+
+        from finance.services import create_receipt_link
+        link_data = {
+            "school_name": school_name,
+            "student_name": student_name,
+            "class_name": class_name,
+            "total_score": total_score,
+            "average_score": average_score,
+            "class_position": class_position,
+            "class_size": class_size,
+            "generated_at": timezone.now().strftime("%d %b %Y"),
+            "scores": [
+                {
+                    "subject": s.get("subject", ""),
+                    "score": s.get("score", 0),
+                    "max_score": s.get("max_score", 100),
+                    "percentage": s.get("percentage"),
+                    "grade": s.get("grade", ""),
+                    "remark": s.get("performance_remark", ""),
+                }
+                for s in scores[:30]
+            ],
+        }
+        report_url = create_receipt_link(
+            link_data,
+            tenant=getattr(request.user, "tenant", None),
+            phone=phone,
+            receipt_type="report_card",
+        )
+
+        sms_parts = [f"{school_name} Report Card: {student_name}."]
+        if class_name:
+            sms_parts.append(f"Class: {class_name}.")
+        sms_parts.append(f"Total: {total_score}, Avg: {average_score}.")
+        if class_position:
+            sms_parts.append(f"Position: {class_position}/{class_size}.")
+        sms_parts.append(f"View: {report_url}")
+        sms_body = " ".join(sms_parts)
+
+        try:
+            from finance.services import send_sendchamp_sms
+            sms_result = send_sendchamp_sms(phone, sms_body)
+        except Exception as exc:
+            return Response(
+                {"success": False, "message": f"Could not send SMS: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        if sms_result.get("status") in ("error", "skipped"):
+            return Response(
+                {"success": False, "message": sms_result.get("reason") or "SMS delivery failed."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response(
+            {"success": True, "message": f"Report card SMS sent to {phone}."},
+            status=status.HTTP_201_CREATED,
+        )
+
     if target in {"students_teachers_announcement", "school_broadcast"}:
         if not Announcement:
             return Response(
@@ -9117,3 +9551,239 @@ def delete_message(request, message_id):
         )
 
     return Response({"success": True, "message": "Message deleted."})
+
+
+# ─────────────────────────────────────────────
+# Kids Monitor
+# ─────────────────────────────────────────────
+
+KIDS_MONITOR_PRICE = 1000  # ₦1,000 in naira
+
+
+def _kids_monitor_parent_payload(parent_profile):
+    parent_user = parent_profile.user
+    children = list(parent_profile.children.select_related("user", "current_class").all())
+    wards = [
+        {
+            "name": c.user.get_full_name() or c.user.email,
+            "student_id": c.student_id,
+            "class_name": _class_label(c.current_class) if c.current_class else "Unassigned",
+        }
+        for c in children
+    ]
+    try:
+        sub = parent_profile.kids_monitor
+        monitor_active = sub.is_active
+        monitor_ref = sub.paystack_ref
+    except KidsMonitorSubscription.DoesNotExist:
+        monitor_active = False
+        monitor_ref = ""
+    return {
+        "id": str(parent_profile.id),
+        "name": parent_user.get_full_name() or parent_user.email,
+        "phone": parent_user.phone or "",
+        "email": parent_user.email,
+        "wards": wards,
+        "monitor_active": monitor_active,
+        "monitor_ref": monitor_ref,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def kids_monitor_list(request):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    parents = (
+        ParentProfile.objects.select_related("user")
+        .prefetch_related("children__user", "children__current_class", "kids_monitor")
+        .filter(user__tenant=user.tenant)
+        .order_by("user__last_name", "user__first_name")
+    )
+
+    from django.conf import settings as _settings
+    public_key = getattr(_settings, "PAYSTACK_PUBLIC_KEY", "")
+
+    return Response({
+        "success": True,
+        "paystack_public_key": public_key,
+        "price": KIDS_MONITOR_PRICE,
+        "parents": [_kids_monitor_parent_payload(p) for p in parents],
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def kids_monitor_initiate(request, parent_id):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    parent_profile = get_object_or_404(
+        ParentProfile.objects.select_related("user").filter(user__tenant=user.tenant),
+        id=parent_id,
+    )
+
+    # If already active, return early
+    try:
+        sub = parent_profile.kids_monitor
+        if sub.is_active:
+            return Response({"success": False, "message": "Kids Monitor is already active for this parent."}, status=status.HTTP_400_BAD_REQUEST)
+    except KidsMonitorSubscription.DoesNotExist:
+        pass
+
+    from finance.services import _paystack_base_url, _paystack_headers, _paystack_json
+    import requests as _requests
+
+    reference = f"km-{uuid.uuid4().hex[:16]}"
+    email = parent_profile.user.email or user.email
+
+    url = f"{_paystack_base_url()}/transaction/initialize"
+    payload = {
+        "email": email,
+        "amount": KIDS_MONITOR_PRICE * 100,
+        "reference": reference,
+        "metadata": {
+            "parent_id": str(parent_id),
+            "school_id": str(user.tenant.id),
+            "parent_name": parent_profile.user.get_full_name(),
+            "type": "kids_monitor",
+        },
+    }
+    try:
+        response = _requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+        data = _paystack_json(response)
+    except Exception as exc:
+        return Response({"success": False, "message": f"Payment initialization failed: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+    if not data.get("status"):
+        return Response({"success": False, "message": data.get("message", "Paystack initialization failed.")}, status=status.HTTP_400_BAD_REQUEST)
+
+    tx_data = data["data"]
+
+    # Create/update subscription record as pending
+    KidsMonitorSubscription.objects.update_or_create(
+        parent=parent_profile,
+        defaults={
+            "school": user.tenant,
+            "is_active": False,
+            "paystack_ref": reference,
+        },
+    )
+
+    return Response({
+        "success": True,
+        "authorization_url": tx_data["authorization_url"],
+        "access_code": tx_data["access_code"],
+        "reference": reference,
+        "amount": KIDS_MONITOR_PRICE,
+        "parent_name": parent_profile.user.get_full_name(),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def kids_monitor_verify(request, parent_id):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    reference = str(request.data.get("reference") or "").strip()
+    if not reference:
+        return Response({"success": False, "message": "reference is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    parent_profile = get_object_or_404(
+        ParentProfile.objects.select_related("user").filter(user__tenant=user.tenant),
+        id=parent_id,
+    )
+
+    from finance.services import verify_paystack_transaction
+    try:
+        tx = verify_paystack_transaction(reference)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if tx.get("status") not in ("success", "successful"):
+        return Response({"success": False, "message": "Payment has not been completed."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+
+    sub, _ = KidsMonitorSubscription.objects.update_or_create(
+        parent=parent_profile,
+        defaults={
+            "school": user.tenant,
+            "is_active": True,
+            "paystack_ref": reference,
+            "activated_at": timezone.now(),
+        },
+    )
+
+    return Response({
+        "success": True,
+        "message": f"Kids Monitor activated for {parent_profile.user.get_full_name()}.",
+        "monitor_active": True,
+    })
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def kids_monitor_deactivate(request, parent_id):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    parent_profile = get_object_or_404(
+        ParentProfile.objects.select_related("user").filter(user__tenant=user.tenant),
+        id=parent_id,
+    )
+
+    try:
+        sub = parent_profile.kids_monitor
+        sub.is_active = False
+        sub.save(update_fields=["is_active", "updated_at"])
+    except KidsMonitorSubscription.DoesNotExist:
+        pass
+
+    return Response({
+        "success": True,
+        "message": f"Kids Monitor deactivated for {parent_profile.user.get_full_name()}.",
+    })
+
+
+def _notify_parents_on_attendance(student_user, attendance_status, attendance_date, school_name):
+    """Send SMS to parents who have Kids Monitor active when attendance is marked."""
+    try:
+        student_profile = student_user.student_profile
+    except Exception:
+        return
+
+    parents = ParentProfile.objects.filter(children=student_profile).select_related("user")
+    student_name = student_user.get_full_name() or student_user.email
+    status_label = {"present": "present", "absent": "ABSENT", "late": "late"}.get(attendance_status, attendance_status)
+    date_str = attendance_date.strftime("%d/%m/%Y")
+    message = f"{student_name} was marked {status_label} on {date_str}. -SchoolDom"
+
+    for parent_profile in parents:
+        try:
+            if not parent_profile.kids_monitor.is_active:
+                continue
+        except KidsMonitorSubscription.DoesNotExist:
+            continue
+
+        phone = parent_profile.user.phone
+        if not phone:
+            continue
+
+        try:
+            from finance.services import send_ebulksms
+            send_ebulksms(phone, message, sender="SchoolDom")
+        except Exception:
+            pass

@@ -309,11 +309,20 @@ class AppDownloadView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         apk_path = app_apk_path()
+        admin_path = admin_app_installer_path()
+        student_win7_path = win7_student_cbt_installer_path()
         context["apk_available"] = apk_path.exists()
         context["apk_size_mb"] = round(apk_path.stat().st_size / (1024 * 1024), 1) if apk_path.exists() else None
         context["apk_download_url"] = reverse("app_apk_download")
         context["student_cbt_download_url"] = reverse("student_cbt_app_download")
         context["admin_app_download_url"] = reverse("admin_app_download")
+        context["admin_app_available"] = bool(admin_path)
+        context["admin_app_size_mb"] = round(admin_path.stat().st_size / (1024 * 1024), 1) if admin_path else None
+        context["admin_app_version"] = admin_app_version()
+        context["student_win7_available"] = bool(student_win7_path)
+        context["student_win7_download_url"] = reverse("student_cbt_win7_student_app_download")
+        context["student_win7_size_mb"] = round(student_win7_path.stat().st_size / (1024 * 1024), 1) if student_win7_path else None
+        context["student_win7_version"] = win7_student_cbt_client_version()
         context["app_version"] = "0.1.0"
         return context
 

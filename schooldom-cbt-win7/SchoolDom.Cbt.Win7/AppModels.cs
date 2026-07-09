@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 
 namespace SchoolDom.Cbt.Win7
 {
@@ -17,11 +18,16 @@ namespace SchoolDom.Cbt.Win7
         public List<StudentRecord> Students { get; set; }
         public List<ExamRecord> Exams { get; set; }
         public List<SessionRecord> Sessions { get; set; }
+        // True when submitted results have not yet been uploaded to the cloud
+        public bool HasPendingUpload { get; set; }
+        public string LastUploadAttemptAt { get; set; }
+        // Shared token for UDP LAN discovery — student app must include this to get a response
+        public string DiscoveryToken { get; set; }
 
         public AppState()
         {
             DeviceId = "device_" + Guid.NewGuid().ToString("N");
-            CloudUrl = "https://schooldom.academy";
+            CloudUrl = ConfigurationManager.AppSettings["CloudUrl"] ?? "https://schooldom.academy";
             Students = new List<StudentRecord>();
             Exams = new List<ExamRecord>();
             Sessions = new List<SessionRecord>();
@@ -93,6 +99,8 @@ namespace SchoolDom.Cbt.Win7
         public int FocusLossCount { get; set; }
         public Dictionary<string, object> Answers { get; set; }
         public List<ActivityLogRecord> AuditLogs { get; set; }
+        // Admin-awarded marks for written/essay questions, keyed by question Id (these cannot be auto-graded)
+        public Dictionary<string, double> ManualScores { get; set; }
 
         public SessionRecord()
         {
@@ -100,6 +108,7 @@ namespace SchoolDom.Cbt.Win7
             SyncStatus = "pending";
             Answers = new Dictionary<string, object>();
             AuditLogs = new List<ActivityLogRecord>();
+            ManualScores = new Dictionary<string, double>();
         }
     }
 

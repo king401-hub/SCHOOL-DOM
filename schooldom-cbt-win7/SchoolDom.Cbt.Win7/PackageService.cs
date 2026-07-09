@@ -2,7 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
+using System.IO.Packaging;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -131,7 +131,7 @@ namespace SchoolDom.Cbt.Win7
         {
             var lines = new List<string>();
             var headers = new List<string> { "Student ID", "Full Name", "Class" };
-            headers.AddRange(_store.State.Exams.Select(e => e.Title + " Status"));
+            headers.AddRange(_store.State.Exams.Select(e => e.Title + " Score"));
             lines.Add(Csv(headers));
 
             foreach (var student in _store.State.Students.OrderBy(s => s.FullName))
@@ -142,7 +142,9 @@ namespace SchoolDom.Cbt.Win7
                     var session = _store.State.Sessions.FirstOrDefault(s =>
                         s.ExamId == exam.Id &&
                         string.Equals(s.StudentId, student.StudentId, StringComparison.OrdinalIgnoreCase));
-                    row.Add(session == null ? "Not submitted" : (session.Status == "submitted" ? "Submitted" : "In progress"));
+                    if (session == null) row.Add("Not submitted");
+                    else if (session.Status != "submitted") row.Add("In progress");
+                    else row.Add(ComputeScore(session, exam).Display);
                 }
                 lines.Add(Csv(row));
             }
@@ -249,8 +251,68 @@ namespace SchoolDom.Cbt.Win7
             _store.Save();
         }
 
+        public static bool IsWrittenType(string type)
+        {
+            var value = (type ?? "").ToLowerInvariant();
+            return value == "essay" || value == "theory" || value == "written";
+        }
+
+        public static string FormatScoreNumber(double value)
+        {
+            return value == Math.Floor(value) ? ((int)value).ToString() : value.ToString("0.##");
+        }
+
+        // Computes a session's score: objective questions (mcq/true-false/fill-blank) are
+        // auto-graded by comparing the student's answer to CorrectAnswer; written/essay
+        // questions require an admin-awarded mark stored in session.ManualScores.
+        public static ExamScore ComputeScore(SessionRecord session, ExamRecord exam)
+        {
+            var result = new ExamScore();
+            if (exam == null || exam.Questions == null) return result;
+            var answers = (session != null ? session.Answers : null) ?? new Dictionary<string, object>();
+            var manual = (session != null ? session.ManualScores : null) ?? new Dictionary<string, double>();
+            foreach (var q in exam.Questions)
+            {
+                var points = q.Points <= 0 ? 1 : q.Points;
+                result.MaxScore += points;
+
+                if (IsWrittenType(q.Type))
+                {
+                    double awarded;
+                    if (manual.TryGetValue(q.Id, out awarded))
+                    {
+                        result.Score += Math.Max(0, Math.Min(awarded, points));
+                    }
+                    else
+                    {
+                        result.PendingManual++;
+                    }
+                    continue;
+                }
+
+                object raw;
+                if (!answers.TryGetValue(q.Id, out raw)) continue;
+                var answerText = JsonUtil.Text(raw);
+                var selected = answerText;
+                int optionIndex;
+                if (q.Options != null && q.Options.Count > 0 && int.TryParse(answerText, out optionIndex) &&
+                    optionIndex >= 0 && optionIndex < q.Options.Count)
+                {
+                    selected = q.Options[optionIndex];
+                }
+                if (!string.IsNullOrWhiteSpace(q.CorrectAnswer) &&
+                    string.Equals((selected ?? "").Trim(), q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Score += points;
+                }
+            }
+            return result;
+        }
+
         private Dictionary<string, object> BuildEnvelope(SessionRecord session)
         {
+            var exam = _store.State.Exams.FirstOrDefault(e => e.Id == session.ExamId);
+            var score = ComputeScore(session, exam);
             var payload = new Dictionary<string, object>
             {
                 { "session_id", session.Id },
@@ -263,7 +325,11 @@ namespace SchoolDom.Cbt.Win7
                 { "focus_loss_count", session.FocusLossCount },
                 { "malpractice_log", new object[0] },
                 { "audit_logs", session.AuditLogs ?? new List<ActivityLogRecord>() },
-                { "cause", "student_submit" }
+                { "cause", "student_submit" },
+                { "score", score.Score },
+                { "max_score", score.MaxScore },
+                { "pending_manual_grading", score.PendingManual },
+                { "manual_scores", session.ManualScores ?? new Dictionary<string, double>() }
             };
             var envelope = new Dictionary<string, object>
             {
@@ -507,12 +573,16 @@ namespace SchoolDom.Cbt.Win7
 
         private static string ReadDocxText(string path)
         {
-            using (var archive = ZipFile.OpenRead(path))
+            // System.IO.Compression.ZipFile requires .NET 4.5+.
+            // System.IO.Packaging.Package (WindowsBase.dll) ships with Win7 and supports .NET 4.0.
+            // A .docx is a valid OPC/ZIP package so Package.Open() reads it correctly.
+            var partUri = new Uri("/word/document.xml", UriKind.Relative);
+            using (var package = Package.Open(path, FileMode.Open, FileAccess.Read))
             {
-                var entry = archive.GetEntry("word/document.xml");
-                if (entry == null) throw new InvalidOperationException("Could not read the Word document body.");
-                using (var stream = entry.Open())
-                using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+                if (!package.PartExists(partUri))
+                    throw new InvalidOperationException("Could not read the Word document body.");
+                using (var stream = package.GetPart(partUri).GetStream())
+                using (var reader = new StreamReader(stream, Encoding.UTF8))
                 {
                     var xml = reader.ReadToEnd();
                     xml = Regex.Replace(xml, @"</w:p>", "\n", RegexOptions.IgnoreCase);
@@ -589,7 +659,9 @@ namespace SchoolDom.Cbt.Win7
             if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return "";
             try
             {
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                // Tls12 (3072) is not a named member in .NET 4.0 — use numeric cast
+                try { ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; }
+                catch { ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls; }
                 using (var client = new WebClient())
                 {
                     client.Headers["User-Agent"] = "SchoolDom-Admin-Sync-Win7";
@@ -647,6 +719,24 @@ namespace SchoolDom.Cbt.Win7
             if (array != null) return array.Cast<object>().ToList();
             var enumerable = value as IEnumerable<object>;
             return enumerable != null ? enumerable.ToList() : new List<object>();
+        }
+    }
+
+    public class ExamScore
+    {
+        public double Score { get; set; }
+        public double MaxScore { get; set; }
+        public int PendingManual { get; set; }
+
+        public string Display
+        {
+            get
+            {
+                if (MaxScore <= 0) return "-";
+                var text = PackageService.FormatScoreNumber(Score) + " / " + PackageService.FormatScoreNumber(MaxScore);
+                if (PendingManual > 0) text += " (" + PendingManual + " ungraded)";
+                return text;
+            }
         }
     }
 }

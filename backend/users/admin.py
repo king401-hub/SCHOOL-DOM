@@ -6,10 +6,12 @@ from academic.models import Class
 from core.models import SchoolTenant
 from exams.models import Exam
 from .models import (
+    LoanApplication,
     LoginHistory,
     ParentProfile,
     StudentEnrollment,
     StudentProfile,
+    SupportTicket,
     TeacherProfile,
     User,
     resolve_legacy_tenant_for_school,
@@ -100,6 +102,7 @@ class UserAdmin(BaseUserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Personal info", {"fields": ("first_name", "last_name", "phone", "profile_picture", "date_of_birth", "gender", "tenant")}),
+        ("Director KYC", {"fields": ("director_address", "director_proof_of_address", "director_id_type", "director_id_document")}),
         ("Security", {"fields": ("is_verified", "is_locked", "last_login_ip", "login_attempts", "last_password_change")}),
         ("Permissions", {"fields": ("role", "is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Important dates", {"fields": ("last_login", "created_at", "updated_at")}),
@@ -263,3 +266,21 @@ class LoginHistoryAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(SupportTicket)
+class SupportTicketAdmin(admin.ModelAdmin):
+    list_display = ("subject", "school", "category", "status", "requester_email", "created_at")
+    list_filter = ("status", "category", "created_at")
+    search_fields = ("subject", "description", "requester_email", "school__name", "school__schema_name")
+    raw_id_fields = ("school", "submitted_by")
+    readonly_fields = ("id", "created_at", "updated_at", "support_notified_at", "requester_notified_at", "last_status_email_at")
+
+
+@admin.register(LoanApplication)
+class LoanApplicationAdmin(admin.ModelAdmin):
+    list_display = ("school", "amount_requested", "repayment_period_months", "status", "requester_email", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("purpose", "requester_email", "school__name", "school__schema_name")
+    raw_id_fields = ("school", "submitted_by")
+    readonly_fields = ("id", "created_at", "updated_at", "support_notified_at", "requester_notified_at", "last_status_email_at")

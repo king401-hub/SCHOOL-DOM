@@ -20,7 +20,10 @@ namespace SchoolDom.Cbt.Win7
         {
             _store = store;
             _packages = packages;
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            // Tls12 (3072) is not a named member in the .NET 4.0 enum — use numeric cast.
+            // The admin app connects to HTTPS cloud endpoints so we want TLS 1.2 when available.
+            try { ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; }  // TLS 1.2
+            catch { ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls; }
         }
 
         public string NormalizeCloudUrl(string value)
@@ -83,14 +86,37 @@ namespace SchoolDom.Cbt.Win7
         {
             RequireToken();
             var json = _packages.ExportResultsJson(markExported: false);
-            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/package/results/import/", json, _store.State.AccessToken);
-            var data = JsonUtil.DeserializeObject(response);
-            var imported = data.ContainsKey("imported") ? Convert.ToString(data["imported"]) : "0";
-            var failed = data.ContainsKey("failed") ? Convert.ToString(data["failed"]) : "0";
-            _packages.MarkSubmittedResultsSynced();
-            _store.State.LastSyncAt = JsonUtil.IsoNow();
+            _store.State.LastUploadAttemptAt = JsonUtil.IsoNow();
             _store.Save();
-            return "Uploaded results. Imported: " + imported + ". Failed: " + failed + ".";
+            try
+            {
+                var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/exams/cbt/package/results/import/", json, _store.State.AccessToken);
+                var data = JsonUtil.DeserializeObject(response);
+                var imported = data.ContainsKey("imported") ? Convert.ToString(data["imported"]) : "0";
+                var failed = data.ContainsKey("failed") ? Convert.ToString(data["failed"]) : "0";
+                _packages.MarkSubmittedResultsSynced();
+                _store.State.HasPendingUpload = false;
+                _store.State.LastSyncAt = JsonUtil.IsoNow();
+                _store.Save();
+                return "Uploaded results. Imported: " + imported + ". Failed: " + failed + ".";
+            }
+            catch
+            {
+                // Mark pending so the next launch or manual retry can try again
+                _store.State.HasPendingUpload = true;
+                _store.Save();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Retry a previously failed upload. Called automatically on startup when
+        /// HasPendingUpload is true and the admin is logged in.
+        /// </summary>
+        public string RetryPendingUpload()
+        {
+            if (!_store.State.HasPendingUpload) return null;
+            return UploadResults();
         }
 
         public Dictionary<string, object> RegenerateExamPin(string examId)

@@ -254,6 +254,7 @@ class AdminWalletSerializer(serializers.ModelSerializer):
             "bank_account_number",
             "bank_name",
             "bank_code",
+            "subaccount_code",
             "kuda_virtual_account_number",
             "kuda_virtual_account_name",
             "kuda_virtual_account_bank_name",

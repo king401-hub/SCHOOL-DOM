@@ -48,9 +48,17 @@ def env_list(name: str, default: str = "") -> list[str]:
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# ── Schooldom Secretary AI ──────────────────────────────────────────────────
+# Ollama model for the admin secretary (must support tool calling).
+# Recommended: llama3.2:3b (fast), llama3.1:8b (smarter), gemma3:4b
+SECRETARY_OLLAMA_MODEL = os.getenv('SECRETARY_OLLAMA_MODEL', 'llama3.2:3b')
+
 DEBUG = env_bool('DEBUG', True)
 # Keep local setup zero-config unless PostgreSQL is explicitly requested.
 USE_SQLITE_FOR_DEV = env_bool('USE_SQLITE_FOR_DEV', True)
+# When False and USE_SQLITE_FOR_DEV is also False: plain PostgreSQL (no tenants) for local dev.
+# When True: full django-tenants PostgreSQL (production default when USE_SQLITE_FOR_DEV=False).
+USE_DJANGO_TENANTS = env_bool('USE_DJANGO_TENANTS', not USE_SQLITE_FOR_DEV)
 
 # Hosts / CSRF / CORS
 ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', '*')
@@ -95,6 +103,8 @@ TENANT_APPS = [
     'quizzes',
     'analytics',
     'attendance',
+    'ai_chat',
+    'ai_secretary',
     'django_otp',
     'django_otp.plugins.otp_email',
     'rest_framework',
@@ -102,33 +112,37 @@ TENANT_APPS = [
     'django_filters',
 ]
 
-if USE_SQLITE_FOR_DEV:
-    INSTALLED_APPS = [
-        'django.contrib.admin',
-        'django.contrib.auth',
-        'django.contrib.contenttypes',
-        'django.contrib.sessions',
-        'django.contrib.messages',
-        'django.contrib.staticfiles',
-        'django_otp',
-        'django_otp.plugins.otp_email',
-        'django_htmx',
-        'rest_framework',
-        'corsheaders',
-        'core',
-        'settings_app',
-        'tenants',
-        'users',
-        'academic',
-        'exams',
-        'notifications',
-        'finance',
-        'fee_collections',
-        'hr',
-        'quizzes',
-        'attendance',
-        'superadmin_dashboard',
-    ]
+_FLAT_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django_otp',
+    'django_otp.plugins.otp_email',
+    'django_htmx',
+    'rest_framework',
+    'corsheaders',
+    'core',
+    'settings_app',
+    'tenants',
+    'users',
+    'academic',
+    'exams',
+    'notifications',
+    'finance',
+    'fee_collections',
+    'hr',
+    'quizzes',
+    'attendance',
+    'ai_chat',
+    'ai_secretary',
+    'superadmin_dashboard',
+]
+
+if USE_SQLITE_FOR_DEV or not USE_DJANGO_TENANTS:
+    INSTALLED_APPS = _FLAT_APPS
 else:
     INSTALLED_APPS = SHARED_APPS + [
         app for app in TENANT_APPS if app not in SHARED_APPS
@@ -153,7 +167,7 @@ MIDDLEWARE = [
     'django_htmx.middleware.HtmxMiddleware',
 ]
 
-if not USE_SQLITE_FOR_DEV:
+if USE_DJANGO_TENANTS:
     MIDDLEWARE.insert(0, 'django_tenants.middleware.main.TenantMainMiddleware')  # must be first
 
 ROOT_URLCONF = 'config.urls'
@@ -185,7 +199,7 @@ if USE_SQLITE_FOR_DEV:
         }
     }
     DATABASE_ROUTERS = []
-else:
+elif USE_DJANGO_TENANTS:
     DATABASES = {
         'default': {
             'ENGINE': 'django_tenants.postgresql_backend',
@@ -198,6 +212,21 @@ else:
         }
     }
     DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
+else:
+    # Plain PostgreSQL for local dev — same flat app structure as SQLite mode
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'virtual_school'),
+            'USER': os.getenv('DB_USER', 'postgres'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+            'ATOMIC_REQUESTS': True,
+            'CONN_MAX_AGE': 60,
+        }
+    }
+    DATABASE_ROUTERS = []
 
 # Tenant Configuration
 TENANT_MODEL = "core.SchoolTenant"
@@ -261,6 +290,7 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '25'))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
+EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 10)
 OTP_EMAIL_TOKEN_VALIDITY = int(os.environ.get('OTP_EMAIL_TOKEN_VALIDITY', '600'))
 OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1'))
@@ -293,6 +323,20 @@ FLUTTERWAVE_VIRTUAL_ACCOUNT_ENDPOINT = os.getenv('FLUTTERWAVE_VIRTUAL_ACCOUNT_EN
 FLUTTERWAVE_REQUEST_TIMEOUT = env_int('FLUTTERWAVE_REQUEST_TIMEOUT', 25)
 FLUTTERWAVE_SCENARIO_KEY = os.getenv('FLUTTERWAVE_SCENARIO_KEY', '')
 
+# Paystack
+PAYSTACK_TEST_MODE = env_bool('PAYSTACK_TEST_MODE', False)
+
+if PAYSTACK_TEST_MODE:
+    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY_TEST') or os.getenv('PAYSTACK_SECRET_KEY', '')
+    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY_TEST') or os.getenv('PAYSTACK_PUBLIC_KEY', '')
+else:
+    PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY_LIVE') or os.getenv('PAYSTACK_SECRET_KEY', '')
+    PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY_LIVE') or os.getenv('PAYSTACK_PUBLIC_KEY', '')
+
+PAYSTACK_BASE_URL = os.getenv('PAYSTACK_BASE_URL', 'https://api.paystack.co')
+PAYSTACK_CALLBACK_URL = os.getenv('PAYSTACK_CALLBACK_URL', '')
+PAYSTACK_SCHOOLDOM_SUBACCOUNT = os.getenv('PAYSTACK_SCHOOLDOM_SUBACCOUNT', '')
+
 # Kuda
 KUDA_BASE_URL = os.getenv('KUDA_BASE_URL', '').rstrip('/')
 KUDA_API_KEY = os.getenv('KUDA_API_KEY', '')
@@ -317,6 +361,20 @@ SCHOOLDOM_PAY_BASE_URL = os.getenv('SCHOOLDOM_PAY_BASE_URL', 'https://pay.school
 KUDISMS_TOKEN = os.getenv('KUDISMS_TOKEN', '')
 KUDISMS_SENDER_ID = os.getenv('KUDISMS_SENDER_ID', 'neo')
 KUDISMS_GATEWAY = os.getenv('KUDISMS_GATEWAY', '2')
+
+# Sendchamp (SMS only — WhatsApp is handled by Twilio)
+SENDCHAMP_API_KEY = os.getenv('SENDCHAMP_API_KEY', '')
+SENDCHAMP_SENDER_ID = os.getenv('SENDCHAMP_SENDER_ID', 'Sendchamp')
+SENDCHAMP_ROUTE = os.getenv('SENDCHAMP_ROUTE', 'dnd')
+
+# Termii (WhatsApp)
+TERMII_API_KEY = os.getenv('TERMII_API_KEY', '')
+TERMII_WHATSAPP_FROM = os.getenv('TERMII_WHATSAPP_FROM', '')
+TERMII_BASE_URL = os.getenv('TERMII_BASE_URL', 'https://api.ng.termii.com')
+
+# eBulkSMS
+EBULKSMS_USERNAME = os.getenv('EBULKSMS_USERNAME', '')
+EBULKSMS_APIKEY = os.getenv('EBULKSMS_APIKEY', '')
 
 if PAYMENT_PROVIDER == 'flutterwave' and not FLUTTERWAVE_SECRET_KEY:
     missing = [
@@ -369,5 +427,34 @@ CELERY_BEAT_SCHEDULE = {
     'schooldom-daily-fee-settlement': {
         'task': 'fee_collections.tasks.run_collection_settlement_cycle',
         'schedule': 60 * 60 * 24,
+    },
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {
+            "format": "[{levelname}] {name}: {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+    },
+    "loggers": {
+        "finance": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
     },
 }

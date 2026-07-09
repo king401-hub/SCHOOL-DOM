@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -23,6 +25,47 @@ import {
   ScreenState,
 } from "./AppShared";
 import { TeacherExamBuilder } from "./TeacherExamPanels";
+
+function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onCancel(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return createPortal(
+    <div className="cfm-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="cfm-card" role="alertdialog" aria-modal="true" aria-labelledby="cfm-title">
+        <div className={`cfm-icon ${danger ? "cfm-icon--danger" : "cfm-icon--neutral"}`}>
+          {danger
+            ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          }
+        </div>
+        <h3 className="cfm-title" id="cfm-title">{title}</h3>
+        {message && <p className="cfm-message">{message}</p>}
+        <div className="cfm-actions">
+          <button type="button" className="cfm-btn cfm-btn--cancel" onClick={onCancel}>Cancel</button>
+          <button type="button" className={`cfm-btn cfm-btn--ok${danger ? " cfm-btn--danger" : " cfm-btn--neutral"}`} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function useConfirm() {
+  const [state, setState] = useState(null);
+  const resolveRef = useRef(null);
+  const confirm = useCallback((options) => new Promise((resolve) => {
+    resolveRef.current = resolve;
+    setState(options);
+  }), []);
+  const handleConfirm = useCallback(() => { setState(null); resolveRef.current?.(true); }, []);
+  const handleCancel = useCallback(() => { setState(null); resolveRef.current?.(false); }, []);
+  const dialog = state ? <ConfirmModal {...state} onConfirm={handleConfirm} onCancel={handleCancel} /> : null;
+  return [confirm, dialog];
+}
 
 const NAIRA_SYMBOL = "\u20A6";
 const FINANCE_TABLE_PREVIEW_COUNT = 3;
@@ -749,6 +792,7 @@ function AdminFinanceScreen({
   onClassFeeDelete,
   onStudentFeeSave,
   onPaymentAccountSave,
+  onPaystackSubaccountSetup,
   onPurchaseCredits,
   onVerifyCredits,
   onAssignCredits,
@@ -756,6 +800,7 @@ function AdminFinanceScreen({
   onRunAutoCredits,
   onBankPaymentsIngest,
   onBankPaymentRecover,
+  session,
 }) {
   const finance = data?.finance_overview || data || {};
   const schoolBrand = resolveSchoolBrand(finance?.school, data?.school, school, finance?.tenant, data?.tenant);
@@ -813,7 +858,77 @@ function AdminFinanceScreen({
   const [expandedFinanceTables, setExpandedFinanceTables] = useState({});
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
+  const [vaAccounts, setVaAccounts] = useState([]);
+  const [vaParentsWithoutAccount, setVaParentsWithoutAccount] = useState([]);
+  const [vaListLoading, setVaListLoading] = useState(false);
+  const [vaListError, setVaListError] = useState("");
+  const [vaSearch, setVaSearch] = useState("");
+  const [vaBusyParentId, setVaBusyParentId] = useState("");
+  const [vaActionMessage, setVaActionMessage] = useState("");
+  const [vaActionError, setVaActionError] = useState("");
+  const [subaccountForm, setSubaccountForm] = useState({ account_number: "", bank_code: "", account_name: "" });
+  const [subaccountBankQuery, setSubaccountBankQuery] = useState("");
+  const [subaccountBanks, setSubaccountBanks] = useState([]);
+  const [subaccountBanksLoading, setSubaccountBanksLoading] = useState(false);
+  const [subaccountBusy, setSubaccountBusy] = useState(false);
+  const [subaccountMessage, setSubaccountMessage] = useState("");
+  const [subaccountError, setSubaccountError] = useState("");
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const [resolveError, setResolveError] = useState("");
   const tokenPurchaseRef = useRef(null);
+
+  const loadVirtualAccountsList = useCallback(async () => {
+    if (!session) return;
+    setVaListLoading(true);
+    setVaListError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/finance/admin/virtual-accounts/");
+      setVaAccounts(result?.virtual_accounts || []);
+      setVaParentsWithoutAccount(result?.parents_without_account || []);
+    } catch (err) {
+      setVaListError(err.message || "Could not load virtual accounts.");
+    } finally {
+      setVaListLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadVirtualAccountsList();
+  }, [loadVirtualAccountsList]);
+
+  const handleProvisionVirtualAccount = async (parentId) => {
+    if (!parentId) return;
+    setVaBusyParentId(parentId);
+    setVaActionMessage("");
+    setVaActionError("");
+    try {
+      const result = await requestJson(session, "POST", `/api/finance/admin/virtual-accounts/${parentId}/provision/`);
+      setVaActionMessage(result?.message || "Paystack virtual account provisioned.");
+      await loadVirtualAccountsList();
+    } catch (err) {
+      setVaActionError(err.message || "Could not provision Paystack virtual account.");
+    } finally {
+      setVaBusyParentId("");
+    }
+  };
+
+  const normalizedVaSearch = vaSearch.trim().toLowerCase();
+  const filteredVaAccounts = vaAccounts.filter((row) => {
+    if (!normalizedVaSearch) return true;
+    return [row.parent_name, row.parent_email, row.account_number, row.bank_name]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedVaSearch);
+  });
+  const filteredVaParentsWithoutAccount = vaParentsWithoutAccount.filter((row) => {
+    if (!normalizedVaSearch) return true;
+    return [row.parent_name, row.parent_email]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedVaSearch);
+  });
   const financeCurrency = "NGN";
   const formatFinanceAmount = (value) =>
     `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, {
@@ -917,6 +1032,79 @@ function AdminFinanceScreen({
       setFeedback("School fee receiving account saved. Students will see it on their fees page.");
     } catch (err) {
       setFormError(err.message || "Unable to save receiving account.");
+    }
+  };
+
+  useEffect(() => {
+    setSubaccountForm((current) => ({
+      account_number: current.account_number || adminWallet.bank_account_number || "",
+      bank_code: current.bank_code || adminWallet.bank_code || "",
+      account_name: current.account_name || adminWallet.bank_account_name || "",
+    }));
+  }, [adminWallet.bank_account_number, adminWallet.bank_code, adminWallet.bank_account_name]);
+
+  useEffect(() => {
+    if (!session) return;
+    setSubaccountBanksLoading(true);
+    requestJson(session, "GET", "/api/finance/admin/paystack/banks/")
+      .then((result) => setSubaccountBanks(result?.banks || []))
+      .catch(() => {})
+      .finally(() => setSubaccountBanksLoading(false));
+  }, [session]);
+
+  useEffect(() => {
+    if (!subaccountBankQuery && subaccountForm.bank_code && subaccountBanks.length) {
+      const matched = subaccountBanks.find((bank) => bank.code === subaccountForm.bank_code);
+      if (matched) setSubaccountBankQuery(matched.name);
+    }
+  }, [subaccountBanks, subaccountForm.bank_code, subaccountBankQuery]);
+
+  const handleSubaccountBankQueryChange = (value) => {
+    setSubaccountBankQuery(value);
+    const matched = subaccountBanks.find((bank) => bank.name.toLowerCase() === value.trim().toLowerCase());
+    setSubaccountForm((current) => ({ ...current, bank_code: matched ? matched.code : "", account_name: "" }));
+    setResolveError("");
+  };
+
+  useEffect(() => {
+    const acct = subaccountForm.account_number.replace(/\D/g, "");
+    const code = subaccountForm.bank_code;
+    if (acct.length !== 10 || !code) return;
+    let cancelled = false;
+    setResolveLoading(true);
+    setResolveError("");
+    requestJson(session, "GET", `/api/finance/admin/paystack/resolve-account/?account_number=${acct}&bank_code=${code}`)
+      .then((result) => {
+        if (cancelled) return;
+        if (result?.success && result.account_name) {
+          setSubaccountForm((current) => ({ ...current, account_name: result.account_name }));
+        } else {
+          setResolveError(result?.message || "Could not resolve account.");
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setResolveError(err.message || "Could not resolve account.");
+      })
+      .finally(() => { if (!cancelled) setResolveLoading(false); });
+    return () => { cancelled = true; };
+  }, [subaccountForm.account_number, subaccountForm.bank_code, session]);
+
+  const handleSubaccountSetupSubmit = async (event) => {
+    event.preventDefault();
+    setSubaccountMessage("");
+    setSubaccountError("");
+    if (!subaccountForm.bank_code) {
+      setSubaccountError("Select a valid bank from the list.");
+      return;
+    }
+    setSubaccountBusy(true);
+    try {
+      const result = await onPaystackSubaccountSetup(subaccountForm);
+      setSubaccountMessage(result?.message || "Paystack subaccount created.");
+    } catch (err) {
+      setSubaccountError(err.message || "Unable to create Paystack subaccount.");
+    } finally {
+      setSubaccountBusy(false);
     }
   };
 
@@ -1218,24 +1406,7 @@ function AdminFinanceScreen({
     };
   });
   const topClassStats = classStats.slice(0, 6);
-  const recentTransactions = transactionHistory.length
-    ? transactionHistory.slice(0, 6)
-    : [
-        ...paymentRows.slice(0, 3).map((row) => ({
-          id: `payment-${row.id}`,
-          description: `${row.name || "Student"} school fee`,
-          amount: row.amount_paid,
-          status: row.payment_status,
-          created_at: row.updated_at || row.due_date,
-        })),
-        ...bankPaymentRows.slice(0, 3).map((row) => ({
-          id: `bank-${row.id}`,
-          description: row.student_name ? `${row.student_name} transfer` : "Unmatched school-fee transfer",
-          amount: row.amount,
-          status: row.status,
-          created_at: row.matched_at || row.created_at,
-        })),
-      ];
+  const recentTransactions = transactionHistory.slice(0, 6);
   const payrollRows = data?.hr_snapshot?.payroll || [];
   const pendingPayroll = payrollRows.filter((item) => item.status !== "paid").length;
 
@@ -1320,30 +1491,31 @@ function AdminFinanceScreen({
           </div>
 
           {editingStudentFeeId ? (
-            <article className="app-panel edit-modal-card student-fee-modal" role="dialog" aria-modal="true" aria-labelledby="student-fee-edit-title">
-              <div className="edit-modal-head">
-                <div>
-                  <h3 id="student-fee-edit-title">Edit Student Payment Record</h3>
-                  <p className="panel-sub">
-                    {selectedStudentFee?.student_name || "Selected student"}
-                    {selectedStudentFee?.student_identifier ? ` - ${selectedStudentFee.student_identifier}` : ""}
-                  </p>
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="student-fee-edit-title" onClick={(e) => { if (e.target === e.currentTarget) resetStudentFeeForm(); }}>
+              <article className="app-panel edit-modal-card student-fee-modal">
+                <div className="edit-modal-head">
+                  <div>
+                    <h3 id="student-fee-edit-title">Edit Payment Record</h3>
+                    <p>{selectedStudentFee?.student_name || "Selected student"}{selectedStudentFee?.student_identifier ? ` · ${selectedStudentFee.student_identifier}` : ""}</p>
+                  </div>
+                  <button type="button" className="edit-modal-close" onClick={resetStudentFeeForm} aria-label="Close"><X size={16} /></button>
                 </div>
-                <button type="button" className="table-action" onClick={resetStudentFeeForm}>Close</button>
-              </div>
-              <form className="panel-form student-fee-edit-form" onSubmit={handleStudentFeeSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">Fee title<input value={studentFeeForm.title} onChange={(event) => setStudentFeeForm((current) => ({ ...current, title: event.target.value }))} required /></label>
-                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(event) => setStudentFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
-                  <label className="panel-field">Due date<input type="date" value={studentFeeForm.due_date} onChange={(event) => setStudentFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
-                  <label className="panel-field">Status<select value={studentFeeForm.status} onChange={(event) => setStudentFeeForm((current) => ({ ...current, status: event.target.value }))}><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onStudentFeeSave}>Update record</button>
-                  <button type="button" onClick={resetStudentFeeForm}>Cancel</button>
-                </div>
-              </form>
-            </article>
+                <form className="modal-form-wrap" onSubmit={handleStudentFeeSubmit}>
+                  <div className="form-section">
+                    <div className="panel-form-grid">
+                      <label className="panel-field">Fee title<input value={studentFeeForm.title} onChange={(e) => setStudentFeeForm((c) => ({ ...c, title: e.target.value }))} required /></label>
+                      <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(e) => setStudentFeeForm((c) => ({ ...c, amount: e.target.value }))} required /></label>
+                      <label className="panel-field">Due date<input type="date" value={studentFeeForm.due_date} onChange={(e) => setStudentFeeForm((c) => ({ ...c, due_date: e.target.value }))} required /></label>
+                      <label className="panel-field">Status<select value={studentFeeForm.status} onChange={(e) => setStudentFeeForm((c) => ({ ...c, status: e.target.value }))}><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></label>
+                    </div>
+                  </div>
+                  <div className="panel-form-actions" style={{margin:"0.75rem 1.5rem 0",paddingTop:"1rem",borderTop:"1px solid #f1f5f9"}}>
+                    <button type="submit" disabled={!onStudentFeeSave}>Update record</button>
+                    <button type="button" className="btn-secondary" onClick={resetStudentFeeForm}>Cancel</button>
+                  </div>
+                </form>
+              </article>
+            </div>
           ) : null}
 
           <div className="finance-analytics-grid">
@@ -1386,6 +1558,8 @@ function AdminFinanceScreen({
             </article>
           </div>
 
+          {editingClassFeeId && <div className="modal-overlay-bg" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }} />}
+
           <div className="finance-workspace">
             <article
               className={`app-panel ${editingClassFeeId ? "edit-modal-card class-fee-edit-modal" : ""}`}
@@ -1396,12 +1570,10 @@ function AdminFinanceScreen({
               <div className="edit-modal-head">
                 <div>
                   <h3 id="class-fee-form-title">{editingClassFeeId ? `Update ${groupLabels.fee}` : `Create ${groupLabels.fee}`}</h3>
-                  <p className="panel-sub">Create school-focused bills for each {groupLabels.singular.toLowerCase()}. No personal finance categories are shown here.</p>
+                  <p className="panel-sub">Create school-focused bills for each {groupLabels.singular.toLowerCase()}.</p>
                 </div>
                 {editingClassFeeId ? (
-                  <button type="button" className="table-action" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>
-                    Close
-                  </button>
+                  <button type="button" className="edit-modal-close" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }} aria-label="Close"><X size={16} /></button>
                 ) : null}
               </div>
               <form className="panel-form" onSubmit={handleClassFeeSubmit}>
@@ -1413,7 +1585,70 @@ function AdminFinanceScreen({
                 </div>
                 <div className="panel-form-actions">
                   <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? `Update ${groupLabels.fee.toLowerCase()}` : `Create ${groupLabels.fee.toLowerCase()}`}</button>
-                  {editingClassFeeId ? <button type="button" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
+                  {editingClassFeeId ? <button type="button" className="btn-secondary" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
+                </div>
+              </form>
+            </article>
+
+            <article className="app-panel">
+              <div className="panel-head">
+                <h3>Paystack Bank Account</h3>
+                <small>
+                  {adminWallet.subaccount_code
+                    ? "Configured - parents' bank transfers split automatically to this account."
+                    : "Required before parent virtual accounts can be provisioned."}
+                </small>
+              </div>
+              {subaccountMessage ? <p className="form-feedback success">{subaccountMessage}</p> : null}
+              {subaccountError ? <p className="form-feedback error">{subaccountError}</p> : null}
+              <form className="panel-form" onSubmit={handleSubaccountSetupSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field full">
+                    Settlement bank
+                    <input
+                      list="settlement-bank-options"
+                      value={subaccountBankQuery}
+                      onChange={(event) => handleSubaccountBankQueryChange(event.target.value)}
+                      placeholder={subaccountBanksLoading ? "Loading banks..." : "Start typing to search banks"}
+                      autoComplete="off"
+                      required
+                    />
+                    <datalist id="settlement-bank-options">
+                      {subaccountBanks.map((bank) => (
+                        <option key={bank.code} value={bank.name} />
+                      ))}
+                    </datalist>
+                    {subaccountBankQuery && !subaccountForm.bank_code ? (
+                      <small className="field-note">No matching bank - pick one from the suggestions.</small>
+                    ) : null}
+                  </label>
+                  <label className="panel-field">
+                    Account number
+                    <input
+                      value={subaccountForm.account_number}
+                      onChange={(event) => setSubaccountForm((current) => ({ ...current, account_number: event.target.value.replace(/\D/g, "").slice(0, 10), account_name: "" }))}
+                      placeholder="0123456789"
+                      maxLength={10}
+                      inputMode="numeric"
+                      required
+                    />
+                  </label>
+                  <label className="panel-field">
+                    Account name
+                    <input
+                      value={resolveLoading ? "" : subaccountForm.account_name}
+                      onChange={(event) => setSubaccountForm((current) => ({ ...current, account_name: event.target.value }))}
+                      placeholder={resolveLoading ? "Fetching account name…" : "Auto-filled after account number"}
+                      readOnly={resolveLoading}
+                      required
+                    />
+                    {resolveError ? <small className="field-note" style={{ color: "#ef4444" }}>{resolveError}</small> : null}
+                  </label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onPaystackSubaccountSetup || subaccountBusy}>
+                    {subaccountBusy ? "Saving..." : adminWallet.subaccount_code ? "Update bank account" : "Create Paystack subaccount"}
+                  </button>
                 </div>
               </form>
             </article>
@@ -1612,6 +1847,85 @@ function AdminFinanceScreen({
               {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
             </div>
           </article>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
+              <h3>Virtual Accounts</h3>
+              <small>Auto-generate a real Paystack dedicated account number per parent for bank-transfer fee payments.</small>
+            </div>
+            {vaActionMessage ? <p className="form-feedback success">{vaActionMessage}</p> : null}
+            {vaActionError ? <p className="form-feedback error">{vaActionError}</p> : null}
+            {vaListError ? <p className="form-feedback error">{vaListError}</p> : null}
+            <div className="panel-form-actions" style={{ margin: "0.5rem 0 0.75rem" }}>
+              <input
+                type="text"
+                placeholder="Search parent by name, email, or account number"
+                value={vaSearch}
+                onChange={(event) => setVaSearch(event.target.value)}
+                style={{ maxWidth: "320px" }}
+              />
+              <button type="button" onClick={loadVirtualAccountsList} disabled={vaListLoading}>
+                {vaListLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {filteredVaParentsWithoutAccount.length ? (
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Parent (no account yet)</th><th>Email</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {filteredVaParentsWithoutAccount.map((row) => (
+                      <tr key={row.parent_id}>
+                        <td>{row.parent_name}</td>
+                        <td>{row.parent_email}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="table-action active"
+                            onClick={() => handleProvisionVirtualAccount(row.parent_id)}
+                            disabled={vaBusyParentId === row.parent_id}
+                          >
+                            {vaBusyParentId === row.parent_id ? "Provisioning..." : "Provision via Paystack"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Parent</th><th>Account Number</th><th>Bank</th><th>Provider</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>
+                  {filteredVaAccounts.length ? filteredVaAccounts.map((row) => (
+                    <tr key={row.parent_id}>
+                      <td>{row.parent_name}<small>{row.parent_email}</small></td>
+                      <td>{row.account_number}</td>
+                      <td>{row.bank_name}</td>
+                      <td>{row.provider}</td>
+                      <td><span className={`finance-status status-${row.is_active ? "paid" : "pending"}`}>{row.is_active ? "active" : "inactive"}</span></td>
+                      <td>
+                        {row.provider === "paystack" ? (
+                          <button
+                            type="button"
+                            className="table-action"
+                            onClick={() => handleProvisionVirtualAccount(row.parent_id)}
+                            disabled={vaBusyParentId === row.parent_id}
+                          >
+                            {vaBusyParentId === row.parent_id ? "Working..." : "Re-provision"}
+                          </button>
+                        ) : (
+                          <small>Manually assigned</small>
+                        )}
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan="6">No virtual accounts assigned yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </article>
         </>
       ) : null}
     </section>
@@ -1659,6 +1973,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [deleteExamError, setDeleteExamError] = useState("");
   const [deleteExamFeedback, setDeleteExamFeedback] = useState("");
   const fileInputRef = useRef(null);
+  const [confirm, confirmDialog] = useConfirm();
 
   useEffect(() => {
     setUploadExamId((previous) => previous || exams[0]?.id || exams[0]?.exam_id || "");
@@ -1769,7 +2084,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const examId = exam.id || exam.exam_id;
     if (!examId || !onDeleteExam) return;
     const title = exam.title || exam.name || "this exam";
-    if (!window.confirm(`Delete ${title}? Students will no longer see this exam.`)) {
+    const ok = await confirm({ title: "Delete Exam", message: `Delete "${title}"? Students will no longer see this exam.`, confirmLabel: "Delete", danger: true });
+    if (!ok) {
       return;
     }
     setDeleteExamBusyId(String(examId));
@@ -2483,11 +2799,12 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           )}
         </article>
       ) : null}
+      {confirmDialog}
     </section>
   );
 }
 
-function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch }) {
+function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onSendSms }) {
   const summary = data?.summary || {};
   const leaderboard = data?.leaderboard || [];
   const batches = data?.result_batches || [];
@@ -2496,16 +2813,16 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [searchError, setSearchError] = useState("");
-
-  useEffect(() => {
-    setReport(data?.report_card || null);
-  }, [data?.report_card]);
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
+  const [smsPhone, setSmsPhone] = useState("");
+  const [smsBusy, setSmsBusy] = useState(false);
+  const [smsFeedback, setSmsFeedback] = useState("");
+  const [smsError, setSmsError] = useState("");
 
   const handleSearch = async (event) => {
     event.preventDefault();
-    if (!onSearch) {
-      return;
-    }
+    if (!onSearch) return;
     const trimmed = studentId.trim();
     if (!trimmed) {
       setSearchError("Enter a student ID to search.");
@@ -2514,10 +2831,15 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
     setBusy(true);
     setSearchError("");
     setFeedback("");
+    setReport(null);
     try {
       const result = await onSearch(trimmed);
-      setReport(result?.report_card || result?.report || result?.reportCard || null);
-      setFeedback("Report card generated.");
+      const card = result?.report_card || result?.report || result?.reportCard || null;
+      setReport(card);
+      if (card) {
+        setSmsPhone(card.student?.guardian_phone || "");
+        setFeedback("Report card generated.");
+      }
     } catch (actionError) {
       setSearchError(actionError.message || "Could not fetch report card.");
     } finally {
@@ -2525,9 +2847,41 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
     }
   };
 
+  const handlePrintReport = () => {
+    window.print();
+  };
+
+  const handleOpenSms = () => {
+    setSmsPhone(report?.student?.guardian_phone || "");
+    setSmsError("");
+    setSmsFeedback("");
+    setShowSmsModal(true);
+  };
+
+  const handleSendSms = async (event) => {
+    event.preventDefault();
+    // Split on commas/semicolons and strip internal spaces so "0801 234 5678" stays one number
+    const phones = smsPhone.split(/[,;]+/).map((p) => p.replace(/\s+/g, "").trim()).filter(Boolean);
+    if (!phones.length) {
+      setSmsError("Enter at least one phone number.");
+      return;
+    }
+    setSmsBusy(true);
+    setSmsError("");
+    setSmsFeedback("");
+    try {
+      const result = await onSendSms?.({ phones, report });
+      setSmsFeedback(result?.message || "SMS sent successfully.");
+    } catch (err) {
+      setSmsError(err.message || "Could not send SMS.");
+    } finally {
+      setSmsBusy(false);
+    }
+  };
+
   const handleDeleteBatch = async (batch) => {
-    const confirmed = window.confirm(`Delete "${batch.title}" and all ${batch.score_count || 0} score record(s)?`);
-    if (!confirmed) {
+    const ok = await confirm({ title: "Delete Results Batch", message: `Delete "${batch.title}" and all ${batch.score_count || 0} score record(s)?`, confirmLabel: "Delete", danger: true });
+    if (!ok) {
       return;
     }
     setBusy(true);
@@ -2611,8 +2965,23 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
       </article>
 
       {report ? (
-        <article className="app-panel report-card">
-          <div className="report-school-brand">
+        <article className="app-panel report-card" id="report-card-printable">
+          <div className="report-card-topbar no-print">
+            <div className="report-school-brand">
+              <SchoolBrand school={report.school} subtitle="Official report card" compact />
+            </div>
+            <div className="report-card-actions">
+              <button type="button" className="btn-secondary report-action-btn" onClick={handleOpenSms}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Send Report Card
+              </button>
+              <button type="button" className="btn-primary report-action-btn" onClick={handlePrintReport}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                Print Report
+              </button>
+            </div>
+          </div>
+          <div className="report-print-brand print-only">
             <SchoolBrand school={report.school} subtitle="Official report card" compact />
           </div>
           <div className="panel-head">
@@ -2706,6 +3075,49 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
         </article>
       ) : null}
 
+      {showSmsModal && report ? (
+        <>
+          <div className="modal-overlay-bg" onClick={() => setShowSmsModal(false)} />
+          <article className="edit-modal-card">
+            <div className="edit-modal-head">
+              <div>
+                <h3>Send Result via SMS</h3>
+                <p>Send a link to {report.student?.name}&apos;s report card to their parent/guardian.</p>
+              </div>
+              <button type="button" className="edit-modal-close" onClick={() => setShowSmsModal(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: "1rem 1.5rem 1.5rem" }}>
+              <form onSubmit={handleSendSms}>
+                <div className="panel-form-grid">
+                  <label className="panel-field full">
+                    Parent / Guardian phone number
+                    <input
+                      value={smsPhone}
+                      onChange={(e) => setSmsPhone(e.target.value)}
+                      placeholder="e.g. 08012345678"
+                    />
+                    <small className="field-note">Pre-filled from student record. SMS will be sent via Sendchamp.</small>
+                  </label>
+                  <div className="panel-field full">
+                    <p style={{ margin: 0, fontSize: "0.83rem", color: "#64748b" }}>
+                      <strong>Message preview:</strong> The SMS will contain the school name, student name, scores summary and a link to the full report card.
+                    </p>
+                  </div>
+                </div>
+                {smsError ? <p className="form-feedback error">{smsError}</p> : null}
+                {smsFeedback ? <p className="form-feedback success">{smsFeedback}</p> : null}
+                <div className="panel-form-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setShowSmsModal(false)}>Cancel</button>
+                  <button type="submit" disabled={smsBusy}>{smsBusy ? "Sending..." : "Send SMS"}</button>
+                </div>
+              </form>
+            </div>
+          </article>
+        </>
+      ) : null}
+
       <article className="app-panel">
         <div className="panel-head">
           <h3>Class Rankings</h3>
@@ -2738,6 +3150,7 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
           <p className="panel-empty">No rankings available yet.</p>
         )}
       </article>
+      {confirmDialog}
     </section>
   );
 }
@@ -2816,6 +3229,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
   const [promotionError, setPromotionError] = useState("");
   const [promotionSuccess, setPromotionSuccess] = useState("");
   const [promotionConfirmed, setPromotionConfirmed] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   const departmentOptions = useMemo(
     () => Array.from(new Set(classes.map((item) => item.section).filter(Boolean))).sort(),
@@ -2981,7 +3395,8 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
     }
     const targetName = promotionPreview?.target_class?.label || "the destination class";
     const count = promotionPreview?.summary?.eligible_students || 0;
-    if (!window.confirm(`Promote ${count} student(s) to ${targetName}?`)) {
+    const ok = await confirm({ title: "Apply Bulk Promotion", message: `Promote ${count} student(s) to ${targetName}? This will update their class assignment.`, confirmLabel: "Promote", danger: false });
+    if (!ok) {
       return;
     }
     setPromotionBusy(true);
@@ -3006,18 +3421,20 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
 
       <ScreenState loading={loading && !classes.length} error={error} onRetry={onRetry} />
 
+      {editingClass && <div className="modal-overlay-bg" onClick={handleCancelEdit} />}
+
       <article
         className={`app-panel ${editingClass ? "edit-modal-card" : ""}`}
         role={editingClass ? "dialog" : undefined}
         aria-modal={editingClass ? "true" : undefined}
         aria-labelledby={editingClass ? "edit-class-title" : undefined}
       >
-        <div className="panel-head">
-          <h3 id={editingClass ? "edit-class-title" : undefined}>{editingClass ? `Edit ${groupLabels.singular.toLowerCase()}` : `Create ${groupLabels.singular.toLowerCase()}`}</h3>
-          {editingClass ? <button type="button" className="table-action" onClick={handleCancelEdit} disabled={busy}>Close</button> : null}
-          <small>
-            {editingClass ? `Updating ${editingClass.label || editingClass.name}.` : `Name is required; ${groupLabels.singular === "Class" ? "section" : "faculty"} is optional.`}
-          </small>
+        <div className="edit-modal-head">
+          <div>
+            <h3 id={editingClass ? "edit-class-title" : undefined}>{editingClass ? `Edit ${groupLabels.singular.toLowerCase()}` : `Create ${groupLabels.singular.toLowerCase()}`}</h3>
+            <p>{editingClass ? `Updating ${editingClass.label || editingClass.name}.` : `Name is required; ${groupLabels.singular === "Class" ? "section" : "faculty"} is optional.`}</p>
+          </div>
+          {editingClass ? <button type="button" className="edit-modal-close" onClick={handleCancelEdit} disabled={busy} aria-label="Close"><X size={16} /></button> : null}
         </div>
         <form className="panel-form" onSubmit={handleSubmit}>
           <div className="panel-form-grid">
@@ -3353,6 +3770,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
           <p className="panel-empty">No class promotions recorded yet.</p>
         )}
       </article>
+      {confirmDialog}
     </section>
   );
 }
@@ -3379,27 +3797,29 @@ function ReadOnlyPersonProfile({ person, title = "Profile", onClose, codeLabel =
   ].filter(([, value]) => value !== undefined && value !== null && value !== "");
 
   return (
-    <article className="app-panel record-detail-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="readonly-profile-title">
-      <div className="panel-head">
-        <h3 id="readonly-profile-title">{title}</h3>
-        {onClose ? <button type="button" className="table-action" onClick={onClose}>Close</button> : null}
+    <article className="app-panel edit-modal-card record-detail-panel" role="dialog" aria-modal="true" aria-labelledby="readonly-profile-title">
+      <div className="edit-modal-head">
+        <div><h3 id="readonly-profile-title">{title}</h3><p>Read-only profile view</p></div>
+        {onClose ? <button type="button" className="edit-modal-close" onClick={onClose} aria-label="Close"><X size={16} /></button> : null}
       </div>
-      <dl className="record-detail-grid">
-        <div>
-          <dt>Name</dt>
-          <dd>{person.name || `${person.first_name || ""} ${person.last_name || ""}`.trim() || "-"}</dd>
-        </div>
-        {fields.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value || "-"}</dd>
+      <div style={{padding:"0.75rem 1.5rem 1.5rem"}}>
+        <dl className="record-detail-grid">
+          <div>
+            <dt>Name</dt>
+            <dd>{person.name || `${person.first_name || ""} ${person.last_name || ""}`.trim() || "-"}</dd>
           </div>
-        ))}
-        <div>
-          <dt>CV</dt>
-          <dd>{cvUrl ? <a href={cvUrl} target="_blank" rel="noreferrer">Open CV</a> : "-"}</dd>
-        </div>
-      </dl>
+          {fields.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value || "-"}</dd>
+            </div>
+          ))}
+          <div>
+            <dt>CV</dt>
+            <dd>{cvUrl ? <a href={cvUrl} target="_blank" rel="noreferrer">Open CV</a> : "-"}</dd>
+          </div>
+        </dl>
+      </div>
     </article>
   );
 }
@@ -3794,16 +4214,20 @@ function AdminNonTeachingStaffScreen({
         </article>
       ) : null}
 
+      {editingStaffId && <div className="modal-overlay-bg" onClick={resetStaffForm} />}
+
       <article
         className={`app-panel ${editingStaffId ? "edit-modal-card" : ""}`}
         role={editingStaffId ? "dialog" : undefined}
         aria-modal={editingStaffId ? "true" : undefined}
         aria-labelledby={editingStaffId ? "edit-non-teaching-staff-title" : undefined}
       >
-        <div className="panel-head">
-          <h3 id={editingStaffId ? "edit-non-teaching-staff-title" : undefined}>{editingStaffId ? "Edit non-teaching staff profile" : "Add non-teaching staff profile"}</h3>
-          {editingStaffId ? <button type="button" className="table-action" onClick={resetStaffForm}>Close</button> : null}
-          <small>Create or update administrative and support staff records.</small>
+        <div className="edit-modal-head">
+          <div>
+            <h3 id={editingStaffId ? "edit-non-teaching-staff-title" : undefined}>{editingStaffId ? "Edit staff profile" : "Add non-teaching staff"}</h3>
+            <p>Create or update administrative and support staff records.</p>
+          </div>
+          {editingStaffId ? <button type="button" className="edit-modal-close" onClick={resetStaffForm} aria-label="Close"><X size={16} /></button> : null}
         </div>
         <form className="panel-form" onSubmit={handleStaffSubmit}>
           <div className="panel-form-grid">
@@ -3882,30 +4306,36 @@ function AdminNonTeachingStaffScreen({
       </article>
 
       {selectedRecord && selectedRecordType === "profile" ? (
-        <ReadOnlyPersonProfile
-          person={selectedRecord}
-          title="Staff profile"
-          codeLabel="Staff ID"
-          codeValue={selectedRecord.staff_code}
-          onClose={clearSelectedRecord}
-        />
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) clearSelectedRecord(); }}>
+          <ReadOnlyPersonProfile
+            person={selectedRecord}
+            title="Staff profile"
+            codeLabel="Staff ID"
+            codeValue={selectedRecord.staff_code}
+            onClose={clearSelectedRecord}
+          />
+        </div>
       ) : selectedRecord ? (
-        <article className="app-panel record-detail-panel">
-          <div className="panel-head">
-            <h3>{selectedRecordTitle}</h3>
-            <button type="button" className="table-action" onClick={clearSelectedRecord}>Close</button>
-          </div>
-          <dl className="record-detail-grid">
-            {Object.entries(selectedRecord)
-              .filter(([key]) => key !== "id" && key !== "staff_id")
-              .map(([key, value]) => (
-                <div key={key}>
-                  <dt>{key.replaceAll("_", " ")}</dt>
-                  <dd>{value === null || value === undefined || value === "" ? "-" : String(value)}</dd>
-                </div>
-              ))}
-          </dl>
-        </article>
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) clearSelectedRecord(); }}>
+          <article className="app-panel edit-modal-card">
+            <div className="edit-modal-head">
+              <div><h3>{selectedRecordTitle}</h3></div>
+              <button type="button" className="edit-modal-close" onClick={clearSelectedRecord} aria-label="Close"><X size={16} /></button>
+            </div>
+            <div style={{padding:"0 1.5rem 1.5rem"}}>
+              <dl className="record-detail-grid">
+                {Object.entries(selectedRecord)
+                  .filter(([key]) => key !== "id" && key !== "staff_id")
+                  .map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key.replaceAll("_", " ")}</dt>
+                      <dd>{value === null || value === undefined || value === "" ? "-" : String(value)}</dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
+          </article>
+        </div>
       ) : null}
     </section>
   );
@@ -5171,7 +5601,7 @@ const SUPPORT_TICKET_CATEGORIES = [
   { value: "general_inquiry", label: "General Inquiry" },
 ];
 
-function SupportCenterPanel({ school, tickets = [], canEdit, onSubmit }) {
+export function SupportCenterPanel({ school, tickets = [], canEdit, onSubmit }) {
   const [form, setForm] = useState({
     category: "technical_issue",
     subject: "",
@@ -5311,6 +5741,196 @@ function SupportCenterPanel({ school, tickets = [], canEdit, onSubmit }) {
   );
 }
 
+function AdminLoanApplicationScreen({ data = {}, loading, error, onRetry, onSubmit }) {
+  const [form, setForm] = useState({
+    amount_requested: "",
+    purpose: "",
+    repayment_period_months: "",
+    additional_notes: "",
+    requester_email: "",
+    requester_phone: "",
+    supporting_document: null,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [formError, setFormError] = useState("");
+  const loans = data?.loans || [];
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (submitting) return;
+    setFeedback("");
+    setFormError("");
+    if (!form.amount_requested || Number(form.amount_requested) <= 0) {
+      setFormError("Enter a loan amount greater than zero.");
+      return;
+    }
+    if (form.purpose.trim().length < 3) {
+      setFormError("Tell us the purpose of the loan.");
+      return;
+    }
+    if (!form.repayment_period_months || Number(form.repayment_period_months) <= 0) {
+      setFormError("Enter a repayment period of at least 1 month.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await onSubmit?.({
+        ...form,
+        purpose: form.purpose.trim(),
+        additional_notes: form.additional_notes.trim(),
+      });
+      setFeedback(result?.message || "Loan application submitted.");
+      setForm({
+        amount_requested: "",
+        purpose: "",
+        repayment_period_months: "",
+        additional_notes: "",
+        requester_email: "",
+        requester_phone: "",
+        supporting_document: null,
+      });
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not submit loan application.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="screen-grid loan-application-screen">
+      <div className="screen-hero">
+        <h2>Loan Application</h2>
+        <p>Apply for financing from SchoolDom. Applications are reviewed manually and you'll be notified by email.</p>
+      </div>
+
+      <ScreenState loading={loading && !loans.length} error={error} onRetry={onRetry} />
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Apply for a loan</h3>
+          <small>Give us the details of the financing your school needs.</small>
+        </div>
+        <form className="panel-form" onSubmit={handleSubmit}>
+          <div className="panel-form-grid">
+            <label className="panel-field">
+              Amount requested
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                value={form.amount_requested}
+                onChange={(event) => setForm((current) => ({ ...current, amount_requested: event.target.value }))}
+                disabled={submitting}
+                placeholder="e.g. 500000"
+              />
+            </label>
+            <label className="panel-field">
+              Repayment period (months)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={form.repayment_period_months}
+                onChange={(event) => setForm((current) => ({ ...current, repayment_period_months: event.target.value }))}
+                disabled={submitting}
+                placeholder="e.g. 12"
+              />
+            </label>
+            <label className="panel-field full">
+              Purpose
+              <input
+                value={form.purpose}
+                onChange={(event) => setForm((current) => ({ ...current, purpose: event.target.value }))}
+                disabled={submitting}
+                placeholder="What is the loan for?"
+              />
+            </label>
+            <label className="panel-field">
+              Contact email
+              <input
+                type="email"
+                value={form.requester_email}
+                onChange={(event) => setForm((current) => ({ ...current, requester_email: event.target.value }))}
+                disabled={submitting}
+                placeholder="Optional - defaults to your account email"
+              />
+            </label>
+            <label className="panel-field">
+              Contact phone
+              <input
+                value={form.requester_phone}
+                onChange={(event) => setForm((current) => ({ ...current, requester_phone: event.target.value }))}
+                disabled={submitting}
+                placeholder="Optional - defaults to school phone"
+              />
+            </label>
+            <label className="panel-field full">
+              Additional notes
+              <textarea
+                value={form.additional_notes}
+                onChange={(event) => setForm((current) => ({ ...current, additional_notes: event.target.value }))}
+                disabled={submitting}
+                placeholder="Anything else we should know about this request."
+              />
+            </label>
+            <label className="panel-field full">
+              Supporting document
+              <input
+                type="file"
+                onChange={(event) => setForm((current) => ({ ...current, supporting_document: event.target.files?.[0] || null }))}
+                disabled={submitting}
+              />
+            </label>
+          </div>
+          {formError ? <p className="form-feedback error">{formError}</p> : null}
+          {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={submitting}>
+              {submitting ? "Submitting..." : "Submit Application"}
+            </button>
+          </div>
+        </form>
+      </article>
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Your loan applications</h3>
+          <small>Track the status of loans you've applied for.</small>
+        </div>
+        {loans.length ? (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Purpose</th>
+                  <th>Repayment</th>
+                  <th>Status</th>
+                  <th>Submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map((loan) => (
+                  <tr key={loan.id}>
+                    <td>{loan.amount_requested}</td>
+                    <td>{loan.purpose}</td>
+                    <td>{loan.repayment_period_months} months</td>
+                    <td><span className={`support-status ${loan.status || "pending"}`}>{loan.status_label || loan.status || "Pending"}</span></td>
+                    <td>{formatDate(loan.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel-empty">No loan applications submitted yet.</p>
+        )}
+      </article>
+    </section>
+  );
+}
+
 function AdminSettingsScreen({
   data,
   user,
@@ -5318,13 +5938,13 @@ function AdminSettingsScreen({
   error,
   onRetry,
   onSave,
-  onSubmitSupportTicket,
   onRequestAccountDeletion,
   onCancelAccountDeletion,
   themePreference,
   onThemeChange,
 }) {
   const school = data?.school || {};
+  const director = data?.director || {};
   const canEdit = Boolean(data?.can_edit);
   const [name, setName] = useState("");
   const [motto, setMotto] = useState("");
@@ -5335,6 +5955,22 @@ function AdminSettingsScreen({
   const [staffRules, setStaffRules] = useState("");
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState("");
+  const [cacRegisteredName, setCacRegisteredName] = useState("");
+  const [ministryApprovalNumber, setMinistryApprovalNumber] = useState("");
+  const [cacCertificateFile, setCacCertificateFile] = useState(null);
+  const [cacCertificateUrl, setCacCertificateUrl] = useState("");
+  const [entrancePhotoFile, setEntrancePhotoFile] = useState(null);
+  const [entrancePhotoPreview, setEntrancePhotoPreview] = useState("");
+  const [proofOfAddressFile, setProofOfAddressFile] = useState(null);
+  const [proofOfAddressUrl, setProofOfAddressUrl] = useState("");
+  const [directorAddress, setDirectorAddress] = useState("");
+  const [directorIdType, setDirectorIdType] = useState("");
+  const [directorProofOfAddressFile, setDirectorProofOfAddressFile] = useState(null);
+  const [directorProofOfAddressUrl, setDirectorProofOfAddressUrl] = useState("");
+  const [directorIdDocumentFile, setDirectorIdDocumentFile] = useState(null);
+  const [directorIdDocumentUrl, setDirectorIdDocumentUrl] = useState("");
+  const [directorPassportFile, setDirectorPassportFile] = useState(null);
+  const [directorPassportPreview, setDirectorPassportPreview] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
   const [academicYearStart, setAcademicYearStart] = useState("");
   const [academicYearEnd, setAcademicYearEnd] = useState("");
@@ -5372,12 +6008,38 @@ function AdminSettingsScreen({
     setStaffRules((current) => school.staff_rules || school.staffRules || current || "");
     setLogoPreview(school.logo || "");
     setLogoFile(null);
+    setCacRegisteredName(school.cac_registered_name || "");
+    setMinistryApprovalNumber(school.ministry_approval_number || "");
+    setCacCertificateUrl(school.cac_certificate || "");
+    setCacCertificateFile(null);
+    setEntrancePhotoPreview(school.entrance_photo || "");
+    setEntrancePhotoFile(null);
+    setProofOfAddressUrl(school.proof_of_address || "");
+    setProofOfAddressFile(null);
+    setDirectorAddress(director.address || "");
+    setDirectorIdType(director.id_type || "");
+    setDirectorProofOfAddressUrl(director.proof_of_address || "");
+    setDirectorProofOfAddressFile(null);
+    setDirectorIdDocumentUrl(director.id_document || "");
+    setDirectorIdDocumentFile(null);
+    setDirectorPassportPreview(director.passport_photo || "");
+    setDirectorPassportFile(null);
     setAcademicYearName(data?.academic_year?.name || "");
     setAcademicYearStart((data?.academic_year?.start_date || "").slice(0, 10));
     setAcademicYearEnd((data?.academic_year?.end_date || "").slice(0, 10));
     setTermName(data?.term?.name || "");
     setTermStart((data?.term?.start_date || "").slice(0, 10));
     setTermEnd((data?.term?.end_date || "").slice(0, 10));
+  }, [
+    data?.academic_year?.id, data?.academic_year?.name, data?.academic_year?.start_date, data?.academic_year?.end_date,
+    data?.term?.id, data?.term?.name, data?.term?.start_date, data?.term?.end_date,
+    school.address, school.email, school.logo, school.motto, school.name, school.phone,
+    school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline,
+    school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
+    director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo,
+  ]);
+
+  useEffect(() => {
     setActivityCalendar(
       (data?.activity_calendar || []).map((item) => ({
         id: item.id || `activity-${Date.now()}-${Math.random()}`,
@@ -5390,7 +6052,7 @@ function AdminSettingsScreen({
         color: item.color || "#2563EB",
       }))
     );
-  }, [data?.academic_year, data?.term, data?.activity_calendar, school.address, school.email, school.logo, school.motto, school.name, school.phone, school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline]);
+  }, [data?.activity_calendar]);
 
   useEffect(() => {
     if (!activityToast) {
@@ -5411,6 +6073,16 @@ function AdminSettingsScreen({
       student_rules: studentRules.trim(),
       staff_rules: staffRules.trim(),
       logo: logoFile,
+      cac_registered_name: cacRegisteredName.trim(),
+      ministry_approval_number: ministryApprovalNumber.trim(),
+      cac_certificate: cacCertificateFile,
+      entrance_photo: entrancePhotoFile,
+      proof_of_address: proofOfAddressFile,
+      director_address: directorAddress.trim(),
+      director_id_type: directorIdType,
+      director_proof_of_address: directorProofOfAddressFile,
+      director_id_document: directorIdDocumentFile,
+      profile_picture: directorPassportFile,
       academic_year_name: academicYearName.trim(),
       academic_year_start_date: academicYearStart,
       academic_year_end_date: academicYearEnd,
@@ -5431,7 +6103,11 @@ function AdminSettingsScreen({
           }))
       ),
     }),
-    [academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, email, logoFile, motto, name, phone, staffRules, studentRules, termEnd, termName, termStart]
+    [
+      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, email, logoFile, motto, name, phone, staffRules, studentRules, termEnd, termName, termStart,
+      cacRegisteredName, ministryApprovalNumber, cacCertificateFile, entrancePhotoFile, proofOfAddressFile,
+      directorAddress, directorIdType, directorProofOfAddressFile, directorIdDocumentFile, directorPassportFile,
+    ]
   );
 
   const selectCalendarDate = (dateValue) => {
@@ -5560,9 +6236,19 @@ function AdminSettingsScreen({
     if (!canEdit) {
       return;
     }
-    setIsSaving(true);
     setFeedback("");
     setFormError("");
+    const yearTouched = academicYearName.trim() || academicYearStart || academicYearEnd;
+    if (yearTouched && !(academicYearName.trim() && academicYearStart && academicYearEnd)) {
+      setFormError("Provide the academic year name, start date, and end date together to save it.");
+      return;
+    }
+    const termTouched = termName.trim() || termStart || termEnd;
+    if (termTouched && !(termName.trim() && termStart && termEnd)) {
+      setFormError("Provide the term name, start date, and end date together to save it.");
+      return;
+    }
+    setIsSaving(true);
     try {
       const result = await onSave(buildSettingsPayload());
       setFeedback(result?.message || "School settings updated.");
@@ -5577,6 +6263,18 @@ function AdminSettingsScreen({
     const file = event.target.files?.[0] || null;
     setLogoFile(file);
     setLogoPreview(file ? URL.createObjectURL(file) : school.logo || "");
+  };
+
+  const handleEntrancePhotoChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setEntrancePhotoFile(file);
+    setEntrancePhotoPreview(file ? URL.createObjectURL(file) : school.entrance_photo || "");
+  };
+
+  const handleDirectorPassportChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setDirectorPassportFile(file);
+    setDirectorPassportPreview(file ? URL.createObjectURL(file) : director.passport_photo || "");
   };
 
   const handleThemeSelect = (nextTheme) => {
@@ -5731,6 +6429,119 @@ onClick={() => handleThemeSelect("light")}
                           <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} disabled={!canEdit || isSaving} />
                         </label>
                       </div>
+
+                      <div className="settings-compliance-section">
+                        <div className="panel-head">
+                          <h3>School Compliance Details</h3>
+                          <small>Provide your school's registration documents for verification.</small>
+                        </div>
+                        <div className="panel-form-grid">
+                          <label className="panel-field">
+                            School Name (as on CAC)
+                            <input
+                              value={cacRegisteredName}
+                              onChange={(event) => setCacRegisteredName(event.target.value)}
+                              placeholder="Exact name on your CAC certificate"
+                              disabled={!canEdit || isSaving}
+                            />
+                          </label>
+                          <label className="panel-field">
+                            Ministry of Education Approval Number (if approved)
+                            <input
+                              value={ministryApprovalNumber}
+                              onChange={(event) => setMinistryApprovalNumber(event.target.value)}
+                              placeholder="Optional"
+                              disabled={!canEdit || isSaving}
+                            />
+                          </label>
+                          <label className="panel-field">
+                            CAC Certificate
+                            <input type="file" accept="image/*,.pdf" onChange={(event) => setCacCertificateFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                            {cacCertificateFile ? (
+                              <span className="field-note">Selected: {cacCertificateFile.name}</span>
+                            ) : cacCertificateUrl ? (
+                              <a className="field-note" href={cacCertificateUrl} target="_blank" rel="noreferrer">View uploaded certificate</a>
+                            ) : null}
+                          </label>
+                          <label className="panel-field">
+                            Proof of Address (utility bill)
+                            <input type="file" accept="image/*,.pdf" onChange={(event) => setProofOfAddressFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                            {proofOfAddressFile ? (
+                              <span className="field-note">Selected: {proofOfAddressFile.name}</span>
+                            ) : proofOfAddressUrl ? (
+                              <a className="field-note" href={proofOfAddressUrl} target="_blank" rel="noreferrer">View uploaded document</a>
+                            ) : null}
+                          </label>
+                          <div className="settings-logo-field full">
+                            <div className="settings-logo-preview">
+                              {entrancePhotoPreview ? <img src={entrancePhotoPreview} alt="School entrance" /> : <span>No photo</span>}
+                            </div>
+                            <label className="panel-field">
+                              Picture of School Entrance
+                              <input type="file" accept="image/*" onChange={handleEntrancePhotoChange} disabled={!canEdit || isSaving} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="settings-compliance-section">
+                        <div className="panel-head">
+                          <h3>Director's Personal Information</h3>
+                          <small>KYC details for the school's proprietor/director.</small>
+                        </div>
+                        <div className="panel-form-grid">
+                          <label className="panel-field">
+                            Full Name
+                            <input value={director.full_name || `${user?.first_name || ""} ${user?.last_name || ""}`.trim()} disabled />
+                          </label>
+                          <label className="panel-field">
+                            Email
+                            <input value={director.email || user?.email || ""} disabled />
+                          </label>
+                          <label className="panel-field full">
+                            Address
+                            <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} disabled={!canEdit || isSaving} />
+                          </label>
+                          <label className="panel-field">
+                            ID Card Type
+                            <select value={directorIdType} onChange={(event) => setDirectorIdType(event.target.value)} disabled={!canEdit || isSaving}>
+                              <option value="">Select ID type</option>
+                              <option value="drivers_license">Driver's License</option>
+                              <option value="nin">National ID (NIN)</option>
+                              <option value="voters_card">Voter's Card</option>
+                              <option value="passport">International Passport</option>
+                            </select>
+                          </label>
+                          <label className="panel-field">
+                            Upload ID Card
+                            <input type="file" accept="image/*,.pdf" onChange={(event) => setDirectorIdDocumentFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                            {directorIdDocumentFile ? (
+                              <span className="field-note">Selected: {directorIdDocumentFile.name}</span>
+                            ) : directorIdDocumentUrl ? (
+                              <a className="field-note" href={directorIdDocumentUrl} target="_blank" rel="noreferrer">View uploaded ID</a>
+                            ) : null}
+                          </label>
+                          <label className="panel-field">
+                            Proof of Address
+                            <input type="file" accept="image/*,.pdf" onChange={(event) => setDirectorProofOfAddressFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                            {directorProofOfAddressFile ? (
+                              <span className="field-note">Selected: {directorProofOfAddressFile.name}</span>
+                            ) : directorProofOfAddressUrl ? (
+                              <a className="field-note" href={directorProofOfAddressUrl} target="_blank" rel="noreferrer">View uploaded document</a>
+                            ) : null}
+                          </label>
+                          <div className="settings-logo-field full">
+                            <div className="settings-logo-preview">
+                              {directorPassportPreview ? <img src={directorPassportPreview} alt="Director passport" /> : <span>No photo</span>}
+                            </div>
+                            <label className="panel-field">
+                              Upload Passport Photograph
+                              <input type="file" accept="image/*" onChange={handleDirectorPassportChange} disabled={!canEdit || isSaving} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="settings-activity-calendar">
                         <div className="panel-head">
                           <div>
@@ -5872,12 +6683,6 @@ onClick={() => handleThemeSelect("light")}
                   </div>
                 </form>
           </article>
-          <SupportCenterPanel
-            school={school}
-            tickets={data.support_tickets || []}
-            canEdit={canEdit}
-            onSubmit={onSubmitSupportTicket}
-          />
           <article className="app-panel danger-zone-panel">
             <div className="panel-head">
               <h3>Delete Account</h3>
@@ -5929,11 +6734,14 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
-function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete }) {
+function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete, onChildMonitorInitiate, onChildMonitorVerify, onChildMonitorDeactivate, session }) {
   const parents = data?.parents || [];
   const groupLabels = academicGroupLabels(data?.school, school);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedParentId, setSelectedParentId] = useState("");
+  const [selectedParentUserId, setSelectedParentUserId] = useState("");
+  const [cmPaying, setCmPaying] = useState(null);
+  const [cmConfirmParent, setCmConfirmParent] = useState(null);
   const [editForm, setEditForm] = useState({
     first_name: "",
     last_name: "",
@@ -5950,6 +6758,130 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   const [pendingDeleteParent, setPendingDeleteParent] = useState(null);
   const [deletingParentId, setDeletingParentId] = useState("");
   const [deleteSuccess, setDeleteSuccess] = useState("");
+
+  // Virtual account assignment state
+  const [vaTab, setVaTab] = useState("profile");
+  const [vaForm, setVaForm] = useState({ account_number: "", bank_name: "", account_name: "", provider: "paystack", paystack_reference: "", is_active: true, notes: "" });
+  const [vaLoading, setVaLoading] = useState(false);
+  const [vaSaving, setVaSaving] = useState(false);
+  const [vaError, setVaError] = useState("");
+  const [vaSuccess, setVaSuccess] = useState("");
+  const [vaExisting, setVaExisting] = useState(null);
+  const [vaProvisioning, setVaProvisioning] = useState(false);
+
+  // Fee reminder state
+  const [sendingReminder, setSendingReminder] = useState("");
+  const [reminderFeedback, setReminderFeedback] = useState("");
+
+  // Bulk messaging state
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkChannel, setBulkChannel] = useState("sms");
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+
+  // Preload Paystack inline SDK so it's ready before the user clicks
+  useEffect(() => {
+    if (window.PaystackPop || !data?.paystack_public_key) return;
+    const existing = document.querySelector('script[src*="paystack.co"]');
+    if (existing) return;
+    const s = document.createElement("script");
+    s.src = "https://js.paystack.co/v1/inline.js";
+    document.head.appendChild(s);
+  }, [data?.paystack_public_key]);
+
+  const handleChildMonitorEnable = async (parent) => {
+    if (!window.PaystackPop) {
+      await new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[src*="paystack.co"]');
+        if (existing) { existing.addEventListener("load", resolve, { once: true }); return; }
+        const s = document.createElement("script");
+        s.src = "https://js.paystack.co/v1/inline.js";
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Could not load payment system. Check your internet connection."));
+        document.head.appendChild(s);
+      }).catch((err) => { alert(err.message); });
+    }
+    if (!window.PaystackPop) { alert("Payment system unavailable. Try again."); return; }
+    setCmPaying(parent.id);
+    try {
+      const result = await onChildMonitorInitiate(parent.id);
+      if (!result?.success) { alert(result?.message || "Failed to initiate payment."); return; }
+      const handler = window.PaystackPop.setup({
+        key: data.paystack_public_key,
+        email: parent.email,
+        amount: (data.child_monitor_price || 1000) * 100,
+        ref: result.reference,
+        onSuccess: async (tx) => {
+          const ref = tx.reference || result.reference;
+          const verifyResult = await onChildMonitorVerify(parent.id, ref);
+          if (!verifyResult?.success) alert(verifyResult?.message || "Payment verification failed. Contact support.");
+        },
+        onCancel: () => {},
+      });
+      handler.openIframe();
+    } catch {
+      alert("An error occurred. Please try again.");
+    } finally {
+      setCmPaying(null);
+    }
+  };
+
+  const confirmChildMonitorDeactivate = async () => {
+    const parent = cmConfirmParent;
+    setCmConfirmParent(null);
+    const result = await onChildMonitorDeactivate(parent.id);
+    if (!result?.success) alert(result?.message || "Failed to deactivate.");
+  };
+
+  const buildTemplate = (tpl) => {
+    const schoolName = data?.school?.name || school?.name || "School";
+    const now = new Date();
+    const date = now.toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const time = now.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const tpls = {
+      fee_reminder: `Dear Parent,\n\n${schoolName} reminds you that your ward's school fees are currently outstanding. Kindly ensure payment is made promptly.\n\nFor payment details, please log in to the school portal or contact the school office.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName} Administration`,
+      meeting: `Dear Parent,\n\n${schoolName} invites you to an important parent-teacher meeting.\n\nDate: ${date}\nTime: ${time}\n\nPlease endeavour to attend.\n\n— ${schoolName} Administration`,
+      general: `Dear Parent,\n\n${schoolName} has an important announcement for you. Please visit the school office or check the school portal for further details.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName}`,
+      resumption: `Dear Parent,\n\n${schoolName} wishes to remind you that resumption for the new term is scheduled. Kindly ensure your ward is in school on the appropriate date.\n\nDate: ${date}\n\n— ${schoolName} Administration`,
+    };
+    return tpls[tpl] || tpls.general;
+  };
+
+  const handleBulkSelectToggle = (parentUserId) => {
+    setBulkSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentUserId)) { next.delete(parentUserId); } else { next.add(parentUserId); }
+      return next;
+    });
+  };
+
+  const handleBulkSelectAll = () => {
+    setBulkSelectedIds((prev) =>
+      prev.size === filteredParents.length
+        ? new Set()
+        : new Set(filteredParents.map((p) => p.user_id))
+    );
+  };
+
+  const handleBulkSend = async () => {
+    if (bulkSelectedIds.size === 0 || !bulkMessage.trim()) return;
+    setBulkSending(true);
+    setBulkResult(null);
+    try {
+      const result = await requestJson(session, "POST", "/api/finance/admin/parents/bulk-message/", {
+        parent_ids: Array.from(bulkSelectedIds),
+        channel: bulkChannel,
+        message: bulkMessage,
+      });
+      setBulkResult(result);
+    } catch (err) {
+      setBulkResult({ success: false, message: err.message || "Could not send." });
+    } finally {
+      setBulkSending(false);
+    }
+  };
 
   const buildEditForm = (parent) => ({
     first_name: parent?.first_name || "",
@@ -5974,11 +6906,111 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
     });
   }, [parents, searchTerm]);
 
+  const loadVirtualAccount = async (parentId) => {
+    setVaLoading(true);
+    setVaError("");
+    setVaExisting(null);
+    try {
+      const result = await requestJson(session, "GET", `/api/finance/admin/virtual-accounts/${parentId}/`);
+      if (result?.virtual_account) {
+        setVaExisting(result.virtual_account);
+        setVaForm({
+          account_number: result.virtual_account.account_number || "",
+          bank_name: result.virtual_account.bank_name || "",
+          account_name: result.virtual_account.account_name || "",
+          provider: result.virtual_account.provider || "paystack",
+          paystack_reference: result.virtual_account.paystack_reference || "",
+          is_active: result.virtual_account.is_active !== false,
+          notes: result.virtual_account.notes || "",
+        });
+      } else {
+        setVaForm({ account_number: "", bank_name: "", account_name: "", provider: "paystack", paystack_reference: "", is_active: true, notes: "" });
+      }
+    } catch (err) {
+      setVaError(err.message || "Could not load virtual account.");
+    } finally {
+      setVaLoading(false);
+    }
+  };
+
+  const handleSaveVirtualAccount = async (event) => {
+    event.preventDefault();
+    if (!selectedParentUserId) return;
+    setVaSaving(true);
+    setVaError("");
+    setVaSuccess("");
+    try {
+      const result = await requestJson(session, "POST", `/api/finance/admin/virtual-accounts/${selectedParentUserId}/`, {
+        account_number: vaForm.account_number.trim(),
+        bank_name: vaForm.bank_name.trim(),
+        account_name: vaForm.account_name.trim(),
+        provider: vaForm.provider,
+        paystack_reference: vaForm.paystack_reference.trim(),
+        is_active: vaForm.is_active,
+        notes: vaForm.notes.trim(),
+      });
+      if (result?.virtual_account) {
+        setVaExisting(result.virtual_account);
+      }
+      setVaSuccess(result?.message || "Virtual account saved.");
+    } catch (err) {
+      setVaError(err.message || "Could not save virtual account.");
+    } finally {
+      setVaSaving(false);
+    }
+  };
+
+  const handleProvisionPaystackAccount = async () => {
+    if (!selectedParentUserId) return;
+    setVaProvisioning(true);
+    setVaError("");
+    setVaSuccess("");
+    try {
+      const result = await requestJson(session, "POST", `/api/finance/admin/virtual-accounts/${selectedParentUserId}/provision/`);
+      if (result?.virtual_account) {
+        setVaExisting(result.virtual_account);
+        setVaForm({
+          account_number: result.virtual_account.account_number || "",
+          bank_name: result.virtual_account.bank_name || "",
+          account_name: result.virtual_account.account_name || "",
+          provider: result.virtual_account.provider || "paystack",
+          paystack_reference: result.virtual_account.paystack_reference || "",
+          is_active: result.virtual_account.is_active !== false,
+          notes: result.virtual_account.notes || "",
+        });
+      }
+      setVaSuccess(result?.message || "Paystack virtual account provisioned.");
+    } catch (err) {
+      setVaError(err.message || "Could not provision Paystack virtual account.");
+    } finally {
+      setVaProvisioning(false);
+    }
+  };
+
+  const handleSendReminder = async (parentUserId) => {
+    setSendingReminder(parentUserId);
+    setReminderFeedback("");
+    try {
+      const result = await requestJson(session, "POST", `/api/finance/admin/virtual-accounts/${parentUserId}/remind/`);
+      setReminderFeedback(result?.success ? `Reminder sent.` : result?.message || "Could not send.");
+    } catch (err) {
+      setReminderFeedback(err.message || "Could not send reminder.");
+    } finally {
+      setSendingReminder("");
+      setTimeout(() => setReminderFeedback(""), 4000);
+    }
+  };
+
   const handleStartEdit = (parent) => {
     setSelectedParentId(parent.id);
+    setSelectedParentUserId(parent.user_id);
     setEditForm(buildEditForm(parent));
     setEditError("");
     setEditSuccess("");
+    setVaTab("profile");
+    setVaError("");
+    setVaSuccess("");
+    loadVirtualAccount(parent.user_id);
   };
 
   const handleUpdateSubmit = async (event) => {
@@ -6046,6 +7078,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
     }
     if (!parents.find((item) => item.id === selectedParentId)) {
       setSelectedParentId("");
+      setSelectedParentUserId("");
     }
   }, [parents, selectedParentId]);
 
@@ -6065,6 +7098,132 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
             <MetricCard label="Without Children" value={data.summary?.without_children || 0} helper="No linked student yet" />
           </div>
 
+          {/* Child Monitor Pricing Card */}
+          {data.paystack_public_key ? (
+            <article className="app-panel cm-pricing-card">
+              <div className="cm-pricing-body">
+                <div className="cm-pricing-icon">🔔</div>
+                <div className="cm-pricing-info">
+                  <h3 className="cm-pricing-title">Child Monitor</h3>
+                  <p className="cm-pricing-desc">
+                    Enable instant SMS alerts for a parent whenever their child&apos;s attendance is marked — present, absent, or late.
+                    Toggle on per parent in the table below.
+                  </p>
+                </div>
+                <div className="cm-pricing-tag">
+                  ₦{(data.child_monitor_price || 1000).toLocaleString()}<span>/parent</span>
+                </div>
+              </div>
+              <div className="cm-pricing-meta">
+                <span className="km-badge km-badge--active">{parents.filter((p) => p.child_monitor_active).length} active</span>
+                <span className="cm-pricing-total">{parents.length} total parents</span>
+              </div>
+            </article>
+          ) : null}
+
+          {/* Bulk Messaging Panel */}
+          <article className="app-panel" style={{ borderLeft: bulkOpen ? "4px solid #6366f1" : undefined }}>
+            <div className="bulk-panel-header">
+              <h3>Bulk Message</h3>
+              <button
+                type="button"
+                className={`table-action${bulkOpen ? " active" : ""}`}
+                style={bulkOpen ? { background: "#6366f1", color: "#fff", borderColor: "#6366f1" } : undefined}
+                onClick={() => { setBulkOpen((p) => !p); setBulkResult(null); if (bulkOpen) setBulkSelectedIds(new Set()); }}
+              >
+                {bulkOpen ? "Close Bulk Message" : "Open Bulk Message"}
+              </button>
+            </div>
+
+            {bulkOpen ? (
+              <div className="bulk-panel-body">
+                {/* Channel picker */}
+                <div className="bulk-channel-row">
+                  {[["sms", "SMS"], ["whatsapp", "WhatsApp"], ["email", "Email"]].map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      className={`bulk-channel-btn${bulkChannel === val ? " active" : ""}`}
+                      onClick={() => setBulkChannel(val)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Template picker */}
+                <div className="bulk-template-row">
+                  <span className="bulk-template-label">Templates:</span>
+                  {[["fee_reminder", "Fee Reminder"], ["meeting", "Meeting Notice"], ["general", "General Notice"], ["resumption", "Resumption Reminder"]].map(([tpl, lbl]) => (
+                    <button
+                      key={tpl}
+                      type="button"
+                      className="bulk-template-btn"
+                      onClick={() => setBulkMessage(buildTemplate(tpl))}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Message textarea */}
+                <label className="bulk-message-label">
+                  Message<span className="bulk-message-hint">(school name, date &amp; time are pre-filled in templates)</span>
+                  <textarea
+                    className="bulk-message-field"
+                    rows={6}
+                    value={bulkMessage}
+                    onChange={(e) => setBulkMessage(e.target.value)}
+                    placeholder="Type your message or pick a template above…"
+                  />
+                </label>
+
+                {/* Select controls + send */}
+                <div className="bulk-controls-row">
+                  <label className="bulk-select-label">
+                    <input
+                      type="checkbox"
+                      checked={filteredParents.length > 0 && bulkSelectedIds.size === filteredParents.length}
+                      onChange={handleBulkSelectAll}
+                    />
+                    Select all ({filteredParents.length})
+                  </label>
+                  <span className="bulk-selected-count">{bulkSelectedIds.size} selected</span>
+                  <button
+                    type="button"
+                    className="table-action"
+                    style={{ background: "#6366f1", color: "#fff", borderColor: "#6366f1", opacity: bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim() ? 0.45 : 1 }}
+                    disabled={bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim()}
+                    onClick={handleBulkSend}
+                  >
+                    {bulkSending ? "Sending…" : `Send ${bulkChannel.toUpperCase()} to ${bulkSelectedIds.size}`}
+                  </button>
+                  {bulkSelectedIds.size > 0 && (
+                    <button type="button" className="table-action" onClick={() => setBulkSelectedIds(new Set())}>
+                      Clear selection
+                    </button>
+                  )}
+                </div>
+
+                {/* Result feedback */}
+                {bulkResult && (
+                  <div className={`bulk-result ${bulkResult.success ? "success" : "error"}`}>
+                    {bulkResult.success
+                      ? `Sent to ${bulkResult.sent} parent${bulkResult.sent !== 1 ? "s" : ""}${bulkResult.failed > 0 ? `, ${bulkResult.failed} failed` : ""}.`
+                      : bulkResult.message || "Send failed."}
+                    {bulkResult.errors?.length > 0 && (
+                      <ul>{bulkResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="field-note" style={{ margin: "0.4rem 0 0" }}>
+                Send SMS, WhatsApp, or Email to selected parents at once with school-branded templates.
+              </p>
+            )}
+          </article>
+
           <article className="app-panel">
             <h3>Directory</h3>
             <div className="directory-tools">
@@ -6077,33 +7236,98 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
               <table className="data-table">
                 <thead>
                   <tr>
+                    {bulkOpen ? (
+                      <th style={{ width: "2.5rem", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          title="Select all visible"
+                          checked={filteredParents.length > 0 && bulkSelectedIds.size === filteredParents.length}
+                          onChange={handleBulkSelectAll}
+                        />
+                      </th>
+                    ) : null}
                     <th>Parent</th>
                     <th>Phone</th>
                     <th>Email</th>
-                    <th>Children</th>
+                    <th>Ward(s)</th>
+                    <th>Virtual Account</th>
+                    <th>Child Monitor</th>
                     <th>Contact</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredParents.map((parent) => (
-                    <tr key={parent.id}>
+                    <tr key={parent.id} className={bulkSelectedIds.has(parent.user_id) ? "bulk-row-selected" : undefined}>
+                      {bulkOpen ? (
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={bulkSelectedIds.has(parent.user_id)}
+                            onChange={() => handleBulkSelectToggle(parent.user_id)}
+                          />
+                        </td>
+                      ) : null}
                       <td>{parent.name || "Parent"}<br /><small>{parent.is_active ? "Active" : "Inactive"}</small></td>
                       <td>{parent.phone || "-"}</td>
                       <td>{parent.email || "-"}</td>
                       <td>
                         {(parent.children || []).length ? (
                           (parent.children || []).map((child) => (
-                            <small key={child.id}>{child.name} - {child.student_id} - {child.class_name || groupLabels.unassigned}</small>
+                            <small key={child.id} style={{ display: "block" }}>{child.name} — {child.student_id} — {child.class_name || groupLabels.unassigned}</small>
                           ))
                         ) : (
-                          <small>No linked student</small>
+                          <small>No ward linked</small>
                         )}
+                      </td>
+                      <td>
+                        {parent.virtual_account ? (
+                          <>
+                            <strong style={{ fontSize: "0.85rem", letterSpacing: "0.05em" }}>{parent.virtual_account.account_number}</strong>
+                            <br />
+                            <small style={{ color: "#64748b" }}>{parent.virtual_account.bank_name}</small>
+                          </>
+                        ) : (
+                          <small style={{ color: "#94a3b8" }}>Not assigned</small>
+                        )}
+                      </td>
+                      <td>
+                        <div className="km-toggle-cell">
+                          {parent.child_monitor_active ? (
+                            <>
+                              <span className="km-badge km-badge--active">Active</span>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={() => setCmConfirmParent(parent)}
+                              >Off</button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className={`btn btn-sm btn-primary km-enable-btn${cmPaying === parent.id ? " loading" : ""}`}
+                              onClick={() => handleChildMonitorEnable(parent)}
+                              disabled={cmPaying === parent.id || !parent.phone || !data.paystack_public_key}
+                              title={!parent.phone ? "Parent has no phone number on file" : ""}
+                            >
+                              {cmPaying === parent.id ? "Processing…" : `Enable — ₦${(data.child_monitor_price || 1000).toLocaleString()}`}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td>{parent.preferred_contact || "email"}</td>
                       <td>
                         <div className="table-actions-inline">
                           <button type="button" className="table-action" onClick={() => handleStartEdit(parent)}>Edit</button>
+                          <button
+                            type="button"
+                            className="table-action"
+                            title="Send WhatsApp/SMS fee reminder"
+                            onClick={() => handleSendReminder(parent.user_id)}
+                            disabled={sendingReminder === parent.user_id || !parent.phone}
+                          >
+                            {sendingReminder === parent.user_id ? "Sending…" : "Remind"}
+                          </button>
                           <button type="button" className="table-action danger" onClick={() => setPendingDeleteParent(parent)} disabled={deletingParentId === parent.id}>
                             {deletingParentId === parent.id ? "Deleting..." : "Delete"}
                           </button>
@@ -6117,6 +7341,16 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
               <p className="panel-empty">{searchTerm ? "No parents match your filter." : "No parents found yet. Creating a student with a guardian phone will add one here."}</p>
             )}
           </article>
+
+          {reminderFeedback ? (
+            <div className="student-delete-success" role="status" aria-live="polite">
+              <div className="student-delete-success-mark" aria-hidden="true"></div>
+              <div>
+                <strong>Fee Reminder</strong>
+                <span>{reminderFeedback}</span>
+              </div>
+            </div>
+          ) : null}
 
           {deleteSuccess ? (
             <div className="student-delete-success" role="status" aria-live="polite">
@@ -6149,42 +7383,189 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
             </div>
           ) : null}
 
+          {cmConfirmParent ? (
+            <div className="student-delete-dialog" role="dialog" aria-modal="true">
+              <article className="student-delete-card">
+                <div className="student-delete-icon" aria-hidden="true">🔔</div>
+                <p className="student-delete-kicker">Child Monitor</p>
+                <h3>Deactivate for {cmConfirmParent.name}?</h3>
+                <p>SMS attendance alerts will stop immediately. You&apos;ll need to pay ₦{(data.child_monitor_price || 1000).toLocaleString()} to re-enable.</p>
+                <div className="student-delete-actions">
+                  <button type="button" className="table-action" onClick={() => setCmConfirmParent(null)}>Cancel</button>
+                  <button type="button" className="table-action danger student-delete-confirm" onClick={confirmChildMonitorDeactivate}>Deactivate</button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
           {selectedParentId ? (
-            <article className="app-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-parent-title">
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-parent-title" onClick={(e) => { if (e.target === e.currentTarget && !isUpdating && !vaSaving) setSelectedParentId(""); }}>
+            <article className="app-panel edit-modal-card">
               <div className="edit-modal-head">
-                <h3 id="edit-parent-title">Edit Parent</h3>
-                <button type="button" className="table-action" onClick={() => setSelectedParentId("")} disabled={isUpdating}>Close</button>
+                <div>
+                  <h3 id="edit-parent-title">Edit Parent</h3>
+                  <p>Update contact, profile and virtual account</p>
+                </div>
+                <button type="button" className="edit-modal-close" onClick={() => setSelectedParentId("")} disabled={isUpdating || vaSaving} aria-label="Close"><X size={16} /></button>
               </div>
-              <form className="panel-form" onSubmit={handleUpdateSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">First Name<input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required /></label>
-                  <label className="panel-field">Last Name<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
-                  <label className="panel-field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required /></label>
-                  <label className="panel-field">Phone<input value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} /></label>
-                  <label className="panel-field">Occupation<input value={editForm.occupation} onChange={(event) => setEditForm((prev) => ({ ...prev, occupation: event.target.value }))} /></label>
-                  <label className="panel-field">Company<input value={editForm.company} onChange={(event) => setEditForm((prev) => ({ ...prev, company: event.target.value }))} /></label>
-                  <label className="panel-field">
-                    Preferred Contact
-                    <select value={editForm.preferred_contact} onChange={(event) => setEditForm((prev) => ({ ...prev, preferred_contact: event.target.value }))}>
-                      <option value="email">Email</option>
-                      <option value="sms">SMS</option>
-                      <option value="push">Push Notification</option>
-                      <option value="whatsapp">WhatsApp</option>
-                    </select>
-                  </label>
-                  <label className="panel-field checkbox-field">
-                    <input type="checkbox" checked={editForm.is_active} onChange={(event) => setEditForm((prev) => ({ ...prev, is_active: event.target.checked }))} />
-                    Active account
-                  </label>
-                </div>
-                {editError ? <p className="form-feedback error">{editError}</p> : null}
-                {editSuccess ? <p className="form-feedback success">{editSuccess}</p> : null}
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={isUpdating}>{isUpdating ? "Saving..." : "Update Parent"}</button>
-                  <button type="button" className="table-action" onClick={() => setSelectedParentId("")} disabled={isUpdating}>Cancel</button>
-                </div>
-              </form>
+
+              {/* Tab switcher */}
+              <div className="pill-stack" style={{ marginBottom: "1rem" }}>
+                <button
+                  type="button"
+                  className={`pill${vaTab === "profile" ? " active" : ""}`}
+                  style={{ cursor: "pointer", fontWeight: vaTab === "profile" ? "700" : "400" }}
+                  onClick={() => setVaTab("profile")}
+                >
+                  Profile
+                </button>
+                <button
+                  type="button"
+                  className={`pill${vaTab === "virtual-account" ? " active" : ""}`}
+                  style={{ cursor: "pointer", fontWeight: vaTab === "virtual-account" ? "700" : "400" }}
+                  onClick={() => setVaTab("virtual-account")}
+                >
+                  Virtual Account {vaExisting ? "✓" : ""}
+                </button>
+              </div>
+
+              {/* Profile tab */}
+              {vaTab === "profile" ? (
+                <form className="panel-form" onSubmit={handleUpdateSubmit}>
+                  <div className="panel-form-grid">
+                    <label className="panel-field">First Name<input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required /></label>
+                    <label className="panel-field">Last Name<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
+                    <label className="panel-field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required /></label>
+                    <label className="panel-field">Phone<input value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} /></label>
+                    <label className="panel-field">Occupation<input value={editForm.occupation} onChange={(event) => setEditForm((prev) => ({ ...prev, occupation: event.target.value }))} /></label>
+                    <label className="panel-field">Company<input value={editForm.company} onChange={(event) => setEditForm((prev) => ({ ...prev, company: event.target.value }))} /></label>
+                    <label className="panel-field">
+                      Preferred Contact
+                      <select value={editForm.preferred_contact} onChange={(event) => setEditForm((prev) => ({ ...prev, preferred_contact: event.target.value }))}>
+                        <option value="email">Email</option>
+                        <option value="sms">SMS</option>
+                        <option value="push">Push Notification</option>
+                        <option value="whatsapp">WhatsApp</option>
+                      </select>
+                    </label>
+                    <label className="panel-field checkbox-field">
+                      <input type="checkbox" checked={editForm.is_active} onChange={(event) => setEditForm((prev) => ({ ...prev, is_active: event.target.checked }))} />
+                      Active account
+                    </label>
+                  </div>
+                  {editError ? <p className="form-feedback error">{editError}</p> : null}
+                  {editSuccess ? <p className="form-feedback success">{editSuccess}</p> : null}
+                  <div className="panel-form-actions">
+                    <button type="submit" disabled={isUpdating}>{isUpdating ? "Saving..." : "Update Parent"}</button>
+                    <button type="button" className="table-action" onClick={() => setSelectedParentId("")} disabled={isUpdating}>Cancel</button>
+                  </div>
+                </form>
+              ) : null}
+
+              {/* Virtual Account tab */}
+              {vaTab === "virtual-account" ? (
+                vaLoading ? (
+                  <p className="panel-empty">Loading virtual account...</p>
+                ) : (
+                  <form className="panel-form" onSubmit={handleSaveVirtualAccount}>
+                    <p className="field-note" style={{ marginBottom: "0.75rem" }}>
+                      Auto-generate a real Paystack dedicated account number for this parent, or assign one manually below.
+                      The parent transfers school fees to this account and the system automatically matches and credits their children's fees.
+                    </p>
+                    <div className="panel-form-actions" style={{ marginBottom: "1rem" }}>
+                      <button
+                        type="button"
+                        onClick={handleProvisionPaystackAccount}
+                        disabled={vaProvisioning || vaSaving}
+                      >
+                        {vaProvisioning ? "Provisioning..." : "Provision via Paystack"}
+                      </button>
+                    </div>
+                    {vaExisting ? (
+                      <div style={{ padding: "0.75rem", background: "#f0fdf4", borderRadius: "6px", marginBottom: "1rem", border: "1px solid #bbf7d0" }}>
+                        <strong style={{ color: "#166534" }}>Active virtual account assigned</strong>
+                        <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#15803d" }}>
+                          {vaExisting.account_number} — {vaExisting.bank_name}
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ padding: "0.75rem", background: "#fffbeb", borderRadius: "6px", marginBottom: "1rem", border: "1px solid #fde68a" }}>
+                        <strong style={{ color: "#92400e" }}>No virtual account assigned yet</strong>
+                      </div>
+                    )}
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        Account Number <span style={{ color: "#ef4444" }}>*</span>
+                        <input
+                          value={vaForm.account_number}
+                          onChange={(e) => setVaForm((p) => ({ ...p, account_number: e.target.value }))}
+                          placeholder="e.g. 0123456789"
+                          required
+                        />
+                      </label>
+                      <label className="panel-field">
+                        Bank Name <span style={{ color: "#ef4444" }}>*</span>
+                        <input
+                          value={vaForm.bank_name}
+                          onChange={(e) => setVaForm((p) => ({ ...p, bank_name: e.target.value }))}
+                          placeholder="e.g. Wema Bank"
+                          required
+                        />
+                      </label>
+                      <label className="panel-field">
+                        Account Name <span style={{ color: "#ef4444" }}>*</span>
+                        <input
+                          value={vaForm.account_name}
+                          onChange={(e) => setVaForm((p) => ({ ...p, account_name: e.target.value }))}
+                          placeholder="e.g. John Doe / SchoolDom"
+                          required
+                        />
+                      </label>
+                      <label className="panel-field">
+                        Provider
+                        <select value={vaForm.provider} onChange={(e) => setVaForm((p) => ({ ...p, provider: e.target.value }))}>
+                          <option value="paystack">Paystack</option>
+                          <option value="kuda">Kuda</option>
+                          <option value="flutterwave">Flutterwave</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </label>
+                      <label className="panel-field">
+                        Paystack Reference (optional)
+                        <input
+                          value={vaForm.paystack_reference}
+                          onChange={(e) => setVaForm((p) => ({ ...p, paystack_reference: e.target.value }))}
+                          placeholder="DVA customer code from Paystack"
+                        />
+                      </label>
+                      <label className="panel-field checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={vaForm.is_active}
+                          onChange={(e) => setVaForm((p) => ({ ...p, is_active: e.target.checked }))}
+                        />
+                        Active (parent can see and use this account)
+                      </label>
+                      <label className="panel-field full">
+                        Notes (optional)
+                        <input
+                          value={vaForm.notes}
+                          onChange={(e) => setVaForm((p) => ({ ...p, notes: e.target.value }))}
+                          placeholder="Internal notes about this virtual account"
+                        />
+                      </label>
+                    </div>
+                    {vaError ? <p className="form-feedback error">{vaError}</p> : null}
+                    {vaSuccess ? <p className="form-feedback success">{vaSuccess}</p> : null}
+                    <div className="panel-form-actions">
+                      <button type="submit" disabled={vaSaving}>{vaSaving ? "Saving..." : vaExisting ? "Update Virtual Account" : "Assign Virtual Account"}</button>
+                      <button type="button" className="table-action" onClick={() => setVaTab("profile")} disabled={vaSaving}>Back to Profile</button>
+                    </div>
+                  </form>
+                )
+              ) : null}
             </article>
+            </div>
           ) : null}
         </>
       ) : null}
@@ -6950,199 +8331,247 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
           ) : null}
 
           {selectedStudentId ? (
-            <article className="app-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-student-title">
-              <div className="edit-modal-head">
-                <h3 id="edit-student-title">Edit Student</h3>
-                <button type="button" className="table-action" onClick={() => setSelectedStudentId("")} disabled={isUpdating}>
-                  Close
-                </button>
-              </div>
-              <form className="panel-form" onSubmit={handleUpdateSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">
-                    First Name
-                    <input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Last Name
-                    <input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Email
-                    <input value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Phone
-                    <input value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Gender
-                    <select value={editForm.gender} onChange={(event) => setEditForm((prev) => ({ ...prev, gender: event.target.value }))}>
-                      <option value="">Select gender</option>
-                      <option value="M">Male</option>
-                      <option value="F">Female</option>
-                      <option value="O">Other</option>
-                      <option value="N">Prefer not to say</option>
-                    </select>
-                  </label>
-                  <label className="panel-field">
-                    State of Origin
-                    <textarea className="compact-textarea" value={editForm.state_of_origin} onChange={(event) => setEditForm((prev) => ({ ...prev, state_of_origin: event.target.value }))} rows="1" />
-                  </label>
-                  <label className="panel-field">
-                    Local Government
-                    <textarea className="compact-textarea" value={editForm.local_government} onChange={(event) => setEditForm((prev) => ({ ...prev, local_government: event.target.value }))} rows="1" />
-                  </label>
-                  <label className="panel-field">
-                    Guardian Name
-                    <input value={editForm.guardian_name} onChange={(event) => setEditForm((prev) => ({ ...prev, guardian_name: event.target.value }))} required />
-                  </label>
-                  <label className="panel-field">
-                    Guardian Phone
-                    <input value={editForm.guardian_phone} onChange={(event) => setEditForm((prev) => ({ ...prev, guardian_phone: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Guardian Email
-                    <input type="email" value={editForm.guardian_email} onChange={(event) => setEditForm((prev) => ({ ...prev, guardian_email: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Guardian Relationship
-                    <input value={editForm.guardian_relation} onChange={(event) => setEditForm((prev) => ({ ...prev, guardian_relation: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Second Guardian Name
-                    <input value={editForm.second_guardian_name} onChange={(event) => setEditForm((prev) => ({ ...prev, second_guardian_name: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Second Guardian Phone
-                    <input value={editForm.second_guardian_phone} onChange={(event) => setEditForm((prev) => ({ ...prev, second_guardian_phone: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Second Guardian Email
-                    <input type="email" value={editForm.second_guardian_email} onChange={(event) => setEditForm((prev) => ({ ...prev, second_guardian_email: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    Second Guardian Relationship
-                    <input value={editForm.second_guardian_relation} onChange={(event) => setEditForm((prev) => ({ ...prev, second_guardian_relation: event.target.value }))} />
-                  </label>
-                  <label className="panel-field">
-                    {groupLabels.singular}
-                    <select value={editForm.class_id} onChange={(event) => setEditForm((prev) => ({ ...prev, class_id: event.target.value }))}>
-                      <option value="">{groupLabels.unassigned}</option>
-                      {classes.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                <label className="panel-field">
-                  Admission Date
-                  <input type="date" value={editForm.admission_date} onChange={(event) => setEditForm((prev) => ({ ...prev, admission_date: event.target.value }))} />
-                </label>
-                <label className="panel-field">
-                  Date of Birth
-                  <input type="date" value={editForm.date_of_birth} onChange={(event) => setEditForm((prev) => ({ ...prev, date_of_birth: event.target.value }))} />
-                </label>
-                <label className="panel-field">
-                  Disability
-                  <select value={editForm.disability} onChange={(event) => setEditForm((prev) => ({ ...prev, disability: event.target.value }))}>
-                    <option value="no">No</option>
-                    <option value="yes">Yes</option>
-                  </select>
-                </label>
-                <label className="panel-field">
-                  Blood Group
-                  <select value={editForm.blood_group} onChange={(event) => setEditForm((prev) => ({ ...prev, blood_group: event.target.value }))}>
-                    <option value="">Select Blood Group</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                  </select>
-                </label>
-                <label className="panel-field">
-                  Student Type
-                  <input value={editForm.student_type} onChange={(event) => setEditForm((prev) => ({ ...prev, student_type: event.target.value }))} placeholder="e.g., Regular, Scholarship, Transfer" />
-                </label>
-                <label className="panel-field">
-                  Activity Title
-                  <select value={editForm.extra_curricular_activity_title_id} onChange={(event) => setEditForm((prev) => ({ ...prev, extra_curricular_activity_title_id: event.target.value }))}>
-                    <option value="">No title</option>
-                    {activeActivityTitles.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} - {item.star_label || `${item.star_rating || 0} stars`}
-                      </option>
-                    ))}
-                    {editForm.extra_curricular_activity_title_id && !activeActivityTitles.some((item) => item.id === editForm.extra_curricular_activity_title_id) ? (
-                      <option value={editForm.extra_curricular_activity_title_id}>Inactive title</option>
-                    ) : null}
-                  </select>
-                </label>
-                <label className="panel-field full">
-                  Medical Records
-                  <textarea value={editForm.medical_records} onChange={(event) => setEditForm((prev) => ({ ...prev, medical_records: event.target.value }))} placeholder="Any medical conditions, allergies, or special medical needs" rows="3" />
-                </label>
-                <label className="panel-field full">
-                  Home Address
-                  <textarea value={editForm.home_address} onChange={(event) => setEditForm((prev) => ({ ...prev, home_address: event.target.value }))} placeholder="Street address, city, state, postal code" rows="3" />
-                </label>
-                <label className="panel-field">
-                  New Password (optional)
-                  <div className="password-toggle-field">
-                    <input
-                      type={showEditPassword ? "text" : "password"}
-                      placeholder="Leave blank to keep current"
-                      value={editForm.student_password}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, student_password: event.target.value }))}
-                    />
-                    <button type="button" onClick={() => setShowEditPassword((current) => !current)}>
-                      {showEditPassword ? "Hide" : "Show"}
-                    </button>
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-student-title" onClick={(e) => { if (e.target === e.currentTarget && !isUpdating) setSelectedStudentId(""); }}>
+              <article className="app-panel edit-modal-card">
+                <div className="edit-modal-head">
+                  <div>
+                    <h3 id="edit-student-title">Edit Student</h3>
+                    <p>Update profile, contact and academic information</p>
                   </div>
-                </label>
-                <label className="panel-field">
-                  Confirm New Password
-                  <div className="password-toggle-field">
-                    <input
-                      type={showEditConfirmPassword ? "text" : "password"}
-                      placeholder="Repeat new password"
-                      value={editForm.confirm_student_password}
-                      onChange={(event) =>
-                        setEditForm((prev) => ({ ...prev, confirm_student_password: event.target.value }))
-                      }
-                    />
-                    <button type="button" onClick={() => setShowEditConfirmPassword((current) => !current)}>
-                      {showEditConfirmPassword ? "Hide" : "Show"}
-                    </button>
-                  </div>
-                </label>
-                <label className="panel-field checkbox-field">
-                  <input
-                    type="checkbox"
-                    checked={editForm.is_active}
-                    onChange={(event) => setEditForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                    />
-                    Active account
-                  </label>
-                </div>
-                {editError ? <p className="form-feedback error">{editError}</p> : null}
-                {editSuccess ? <p className="form-feedback success">{editSuccess}</p> : null}
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={isUpdating}>
-                    {isUpdating ? "Saving..." : "Update Student"}
-                  </button>
-                  <button type="button" className="table-action" onClick={() => setSelectedStudentId("")} disabled={isUpdating}>
-                    Cancel
+                  <button type="button" className="edit-modal-close" onClick={() => setSelectedStudentId("")} disabled={isUpdating} aria-label="Close">
+                    <X size={16} />
                   </button>
                 </div>
-              </form>
-      </article>
-) : null}
+
+                <form className="modal-form-wrap" onSubmit={handleUpdateSubmit}>
+                  {/* Personal Information */}
+                  <div className="form-section">
+                    <p className="form-section-label"><User size={13} /> Personal Information</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        First Name
+                        <input value={editForm.first_name} onChange={(e) => setEditForm((p) => ({ ...p, first_name: e.target.value }))} required />
+                      </label>
+                      <label className="panel-field">
+                        Last Name
+                        <input value={editForm.last_name} onChange={(e) => setEditForm((p) => ({ ...p, last_name: e.target.value }))} required />
+                      </label>
+                      <label className="panel-field">
+                        Email
+                        <input type="email" value={editForm.email} onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))} required />
+                      </label>
+                      <label className="panel-field">
+                        Phone
+                        <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Gender
+                        <select value={editForm.gender} onChange={(e) => setEditForm((p) => ({ ...p, gender: e.target.value }))}>
+                          <option value="">Select gender</option>
+                          <option value="M">Male</option>
+                          <option value="F">Female</option>
+                          <option value="O">Other</option>
+                          <option value="N">Prefer not to say</option>
+                        </select>
+                      </label>
+                      <label className="panel-field">
+                        Date of Birth
+                        <input type="date" value={editForm.date_of_birth} onChange={(e) => setEditForm((p) => ({ ...p, date_of_birth: e.target.value }))} />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Location */}
+                  <div className="form-section">
+                    <p className="form-section-label"><MapPin size={13} /> Location &amp; Background</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        State of Origin
+                        <input value={editForm.state_of_origin} onChange={(e) => setEditForm((p) => ({ ...p, state_of_origin: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Local Government
+                        <input value={editForm.local_government} onChange={(e) => setEditForm((p) => ({ ...p, local_government: e.target.value }))} />
+                      </label>
+                      <label className="panel-field full">
+                        Home Address
+                        <textarea value={editForm.home_address} onChange={(e) => setEditForm((p) => ({ ...p, home_address: e.target.value }))} placeholder="Street address, city, state, postal code" rows="2" />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Guardian 1 */}
+                  <div className="form-section">
+                    <p className="form-section-label"><Users size={13} /> Primary Guardian</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        Guardian Name
+                        <input value={editForm.guardian_name} onChange={(e) => setEditForm((p) => ({ ...p, guardian_name: e.target.value }))} required />
+                      </label>
+                      <label className="panel-field">
+                        Relationship
+                        <input value={editForm.guardian_relation} onChange={(e) => setEditForm((p) => ({ ...p, guardian_relation: e.target.value }))} placeholder="e.g., Father, Mother" />
+                      </label>
+                      <label className="panel-field">
+                        Guardian Phone
+                        <input value={editForm.guardian_phone} onChange={(e) => setEditForm((p) => ({ ...p, guardian_phone: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Guardian Email
+                        <input type="email" value={editForm.guardian_email} onChange={(e) => setEditForm((p) => ({ ...p, guardian_email: e.target.value }))} />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Guardian 2 */}
+                  <div className="form-section">
+                    <p className="form-section-label"><Users size={13} /> Secondary Guardian</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        Name
+                        <input value={editForm.second_guardian_name} onChange={(e) => setEditForm((p) => ({ ...p, second_guardian_name: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Relationship
+                        <input value={editForm.second_guardian_relation} onChange={(e) => setEditForm((p) => ({ ...p, second_guardian_relation: e.target.value }))} placeholder="e.g., Uncle, Aunt" />
+                      </label>
+                      <label className="panel-field">
+                        Phone
+                        <input value={editForm.second_guardian_phone} onChange={(e) => setEditForm((p) => ({ ...p, second_guardian_phone: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Email
+                        <input type="email" value={editForm.second_guardian_email} onChange={(e) => setEditForm((p) => ({ ...p, second_guardian_email: e.target.value }))} />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Academic */}
+                  <div className="form-section">
+                    <p className="form-section-label"><GraduationCap size={13} /> Academic &amp; Activity</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        {groupLabels.singular}
+                        <select value={editForm.class_id} onChange={(e) => setEditForm((p) => ({ ...p, class_id: e.target.value }))}>
+                          <option value="">{groupLabels.unassigned}</option>
+                          {classes.map((item) => (
+                            <option key={item.id} value={item.id}>{item.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="panel-field">
+                        Admission Date
+                        <input type="date" value={editForm.admission_date} onChange={(e) => setEditForm((p) => ({ ...p, admission_date: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Student Type
+                        <input value={editForm.student_type} onChange={(e) => setEditForm((p) => ({ ...p, student_type: e.target.value }))} placeholder="e.g., Regular, Scholarship, Transfer" />
+                      </label>
+                      <label className="panel-field">
+                        Activity Title
+                        <select value={editForm.extra_curricular_activity_title_id} onChange={(e) => setEditForm((p) => ({ ...p, extra_curricular_activity_title_id: e.target.value }))}>
+                          <option value="">No title</option>
+                          {activeActivityTitles.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name} — {item.star_label || `${item.star_rating || 0} stars`}</option>
+                          ))}
+                          {editForm.extra_curricular_activity_title_id && !activeActivityTitles.some((item) => item.id === editForm.extra_curricular_activity_title_id) ? (
+                            <option value={editForm.extra_curricular_activity_title_id}>Inactive title</option>
+                          ) : null}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Health */}
+                  <div className="form-section">
+                    <p className="form-section-label"><Heart size={13} /> Health Information</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        Blood Group
+                        <select value={editForm.blood_group} onChange={(e) => setEditForm((p) => ({ ...p, blood_group: e.target.value }))}>
+                          <option value="">Select Blood Group</option>
+                          <option value="O+">O+</option>
+                          <option value="O-">O-</option>
+                          <option value="A+">A+</option>
+                          <option value="A-">A-</option>
+                          <option value="B+">B+</option>
+                          <option value="B-">B-</option>
+                          <option value="AB+">AB+</option>
+                          <option value="AB-">AB-</option>
+                        </select>
+                      </label>
+                      <label className="panel-field">
+                        Disability
+                        <select value={editForm.disability} onChange={(e) => setEditForm((p) => ({ ...p, disability: e.target.value }))}>
+                          <option value="no">No</option>
+                          <option value="yes">Yes</option>
+                        </select>
+                      </label>
+                      <label className="panel-field full">
+                        Medical Records
+                        <textarea value={editForm.medical_records} onChange={(e) => setEditForm((p) => ({ ...p, medical_records: e.target.value }))} placeholder="Any medical conditions, allergies, or special medical needs" rows="2" />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Security */}
+                  <div className="form-section">
+                    <p className="form-section-label"><Lock size={13} /> Account &amp; Security</p>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        New Password <span style={{color:"#94a3b8",fontWeight:400}}>(optional)</span>
+                        <div className="password-toggle-field">
+                          <input
+                            type={showEditPassword ? "text" : "password"}
+                            placeholder="Leave blank to keep current"
+                            value={editForm.student_password}
+                            onChange={(e) => setEditForm((p) => ({ ...p, student_password: e.target.value }))}
+                          />
+                          <button type="button" onClick={() => setShowEditPassword((c) => !c)}>
+                            {showEditPassword ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                      </label>
+                      <label className="panel-field">
+                        Confirm New Password
+                        <div className="password-toggle-field">
+                          <input
+                            type={showEditConfirmPassword ? "text" : "password"}
+                            placeholder="Repeat new password"
+                            value={editForm.confirm_student_password}
+                            onChange={(e) => setEditForm((p) => ({ ...p, confirm_student_password: e.target.value }))}
+                          />
+                          <button type="button" onClick={() => setShowEditConfirmPassword((c) => !c)}>
+                            {showEditConfirmPassword ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                      </label>
+                      <label className="panel-field checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={editForm.is_active}
+                          onChange={(e) => setEditForm((p) => ({ ...p, is_active: e.target.checked }))}
+                        />
+                        Active account
+                      </label>
+                    </div>
+                  </div>
+
+                  {editError ? <p className="form-feedback error" style={{margin:"0.5rem 1.5rem 0"}}>{editError}</p> : null}
+                  {editSuccess ? <p className="form-feedback success" style={{margin:"0.5rem 1.5rem 0"}}>{editSuccess}</p> : null}
+
+                  <div className="panel-form-actions" style={{margin:"0.75rem 1.5rem 0",paddingTop:"1rem",borderTop:"1px solid #f1f5f9"}}>
+                    <button type="submit" disabled={isUpdating}>
+                      {isUpdating ? "Saving..." : "Update Student"}
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={() => setSelectedStudentId("")} disabled={isUpdating}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </article>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -7209,6 +8638,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   const toDateInputValue = (value) => {
     const raw = String(value || "");
@@ -7259,7 +8689,8 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     if (!onDelete) {
       return;
     }
-    if (!window.confirm("Are you sure you want to delete this teacher?")) {
+    const ok = await confirm({ title: "Delete Teacher", message: "Are you sure you want to delete this teacher? This action cannot be undone.", confirmLabel: "Delete", danger: true });
+    if (!ok) {
       return;
     }
     setIsDeleting(teacherId);
@@ -7695,22 +9126,26 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
       </article>
 
           {profileTeacher ? (
-            <ReadOnlyPersonProfile
-              person={profileTeacher}
-              title="Teacher profile"
-              codeLabel="Employee ID"
-              codeValue={profileTeacher.employee_id}
-              onClose={() => setProfileTeacher(null)}
-            />
+            <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setProfileTeacher(null); }}>
+              <ReadOnlyPersonProfile
+                person={profileTeacher}
+                title="Teacher profile"
+                codeLabel="Employee ID"
+                codeValue={profileTeacher.employee_id}
+                onClose={() => setProfileTeacher(null)}
+              />
+            </div>
           ) : null}
 
           {selectedTeacherId ? (
-            <article className="app-panel edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-teacher-title">
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-teacher-title" onClick={(e) => { if (e.target === e.currentTarget && !isUpdating) setSelectedTeacherId(""); }}>
+            <article className="app-panel edit-modal-card">
               <div className="edit-modal-head">
-                <h3 id="edit-teacher-title">Edit Teacher</h3>
-                <button type="button" className="table-action" onClick={() => setSelectedTeacherId("")} disabled={isUpdating}>
-                  Close
-                </button>
+                <div>
+                  <h3 id="edit-teacher-title">Edit Teacher</h3>
+                  <p>Update profile, subjects, classes and account settings</p>
+                </div>
+                <button type="button" className="edit-modal-close" onClick={() => setSelectedTeacherId("")} disabled={isUpdating} aria-label="Close"><X size={16} /></button>
               </div>
               <form className="panel-form" onSubmit={handleUpdateSubmit}>
                 <div className="panel-form-grid">
@@ -7865,15 +9300,17 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                   <button type="submit" disabled={isUpdating}>
                     {isUpdating ? "Saving..." : "Update Teacher"}
                   </button>
-                  <button type="button" className="table-action" onClick={() => setSelectedTeacherId("")} disabled={isUpdating}>
+                  <button type="button" className="btn-secondary" onClick={() => setSelectedTeacherId("")} disabled={isUpdating}>
                     Cancel
                   </button>
                 </div>
               </form>
             </article>
+            </div>
           ) : null}
         </>
       ) : null}
+      {confirmDialog}
     </section>
   );
 }
@@ -8101,7 +9538,7 @@ function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessag
 
 }
 
-function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUpload }) {
+function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUpload, onClear }) {
   const summary = data?.summary || {};
   const history = data?.history || [];
   const importTypes = data?.options?.import_types || [
@@ -8126,8 +9563,10 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
 
   const submitImport = async (event) => {
     event.preventDefault();
@@ -8147,6 +9586,23 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
       setUploadError(actionError.message || "Could not upload import.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (!onClear) return;
+    const ok = await confirm({ title: "Clear Import History", message: "Clear all import history? This cannot be undone.", confirmLabel: "Clear all", danger: true });
+    if (!ok) return;
+    setClearing(true);
+    setFeedback("");
+    setUploadError("");
+    try {
+      const result = await onClear();
+      setFeedback(result?.message || "Import history cleared.");
+    } catch (err) {
+      setUploadError(err.message || "Could not clear history.");
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -8208,6 +9664,11 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
                     onChange={(event) => setFiles(Array.from(event.target.files || []))}
                   />
                 </label>
+                {files.length > 0 && (
+                  <button type="button" className="table-action" onClick={() => { setFiles([]); setUploadError(""); setFeedback(""); }}>
+                    Clear
+                  </button>
+                )}
               </div>
               <strong>{files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Drop files or a folder here"}</strong>
               <span>
@@ -8259,6 +9720,11 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
         <div className="panel-head">
           <h3>Recent import history</h3>
           <small>Validation summaries from recent migration uploads.</small>
+          {history.length > 0 && (
+            <button type="button" className="table-action" onClick={clearHistory} disabled={clearing} style={{ marginLeft: "auto" }}>
+              {clearing ? "Clearing…" : "Clear history"}
+            </button>
+          )}
         </div>
         {history.length ? (
           <div className="table-scroll">
@@ -8294,6 +9760,7 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
           <p className="panel-empty">No database imports have been uploaded yet.</p>
         )}
       </article>
+      {confirmDialog}
     </section>
   );
 }
@@ -8318,7 +9785,186 @@ export {
   AdminEnrollmentsScreen,
   AdminMessagesScreen,
   AdminDatabaseImportScreen,
+  AdminLoanApplicationScreen,
 };
+
+// ─── Child Monitor (standalone, kept for reference) ──────────────────────────
+
+function usePaystackPopup() {
+  const [loaded, setLoaded] = useState(!!window.PaystackPop);
+  useEffect(() => {
+    if (window.PaystackPop) { setLoaded(true); return; }
+    const script = document.createElement("script");
+    script.src = "https://js.paystack.co/v1/inline.js";
+    script.onload = () => setLoaded(true);
+    document.head.appendChild(script);
+    return () => {};
+  }, []);
+  return loaded;
+}
+
+function AdminKidsMonitorScreen({ data, loading, error, onRetry, onInitiate, onVerify, onDeactivate, session }) {
+  const [confirm, confirmDialog] = useConfirm();
+  const [paying, setPaying] = useState(null);
+  const paystackReady = usePaystackPopup();
+
+  const parents = data?.parents || [];
+  const publicKey = data?.paystack_public_key || "";
+  const price = data?.price || 1000;
+
+  if (loading && !data) return <section className="screen-grid"><div className="panel"><p className="panel-empty">Loading Kids Monitor…</p></div></section>;
+  if (error) return (
+    <section className="screen-grid">
+      <div className="panel">
+        <p className="panel-empty">{error}</p>
+        <button type="button" className="btn" onClick={onRetry}>Retry</button>
+      </div>
+    </section>
+  );
+
+  const handleToggleOn = async (parent) => {
+    if (!paystackReady) {
+      alert("Payment system not ready yet. Please wait a moment and try again.");
+      return;
+    }
+    setPaying(parent.id);
+    try {
+      const result = await onInitiate(parent.id);
+      if (!result?.success) {
+        alert(result?.message || "Failed to initiate payment.");
+        return;
+      }
+      const handler = window.PaystackPop.setup({
+        key: publicKey,
+        email: parent.email,
+        amount: price * 100,
+        ref: result.reference,
+        metadata: { parent_id: parent.id, type: "kids_monitor" },
+        onSuccess: async (tx) => {
+          const ref = tx.reference || result.reference;
+          const verifyResult = await onVerify(parent.id, ref);
+          if (!verifyResult?.success) {
+            alert(verifyResult?.message || "Payment verification failed. Contact support.");
+          }
+        },
+        onCancel: () => {},
+      });
+      handler.openIframe();
+    } catch {
+      alert("An error occurred. Please try again.");
+    } finally {
+      setPaying(null);
+    }
+  };
+
+  const handleToggleOff = async (parent) => {
+    const ok = await confirm({
+      title: "Deactivate Kids Monitor",
+      message: `Stop SMS attendance alerts for ${parent.name}? You'll need to pay again to re-enable.`,
+      confirmLabel: "Deactivate",
+      danger: true,
+    });
+    if (!ok) return;
+    const result = await onDeactivate(parent.id);
+    if (!result?.success) alert(result?.message || "Failed to deactivate.");
+  };
+
+  return (
+    <section className="screen-grid">
+      {confirmDialog}
+      <div className="panel km-header-panel">
+        <div className="km-header">
+          <div>
+            <h2 className="panel-title">Kids Monitor</h2>
+            <p className="panel-subtitle">
+              Enable SMS attendance alerts for parents — ₦{price.toLocaleString()} per parent.
+              When a child&apos;s attendance is marked (present, absent or late), the parent receives an instant SMS.
+            </p>
+          </div>
+          <div className="km-stats">
+            <div className="km-stat-card">
+              <span className="km-stat-num">{parents.filter((p) => p.monitor_active).length}</span>
+              <span className="km-stat-label">Active</span>
+            </div>
+            <div className="km-stat-card">
+              <span className="km-stat-num">{parents.length}</span>
+              <span className="km-stat-label">Total Parents</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        {!parents.length ? (
+          <p className="panel-empty">No parents in the directory yet. Add parents first.</p>
+        ) : (
+          <div className="table-responsive">
+            <table className="data-table km-table">
+              <thead>
+                <tr>
+                  <th>Parent</th>
+                  <th>Phone</th>
+                  <th>Ward(s)</th>
+                  <th>Kids Monitor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parents.map((parent) => (
+                  <tr key={parent.id}>
+                    <td>
+                      <strong>{parent.name}</strong>
+                      <small>{parent.email}</small>
+                    </td>
+                    <td>{parent.phone || <span className="text-muted">—</span>}</td>
+                    <td>
+                      {parent.wards.length ? (
+                        <div className="km-wards">
+                          {parent.wards.map((w, i) => (
+                            <span key={i} className="km-ward-chip">
+                              {w.name} <em>{w.class_name}</em>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted">No wards linked</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="km-toggle-cell">
+                        {parent.monitor_active ? (
+                          <>
+                            <span className="km-badge km-badge--active">Active</span>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => handleToggleOff(parent)}
+                            >
+                              Deactivate
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`btn btn-sm btn-primary km-enable-btn${paying === parent.id ? " loading" : ""}`}
+                            onClick={() => handleToggleOn(parent)}
+                            disabled={paying === parent.id || !parent.phone}
+                            title={!parent.phone ? "Parent has no phone number on file" : ""}
+                          >
+                            {paying === parent.id ? "Processing…" : `Enable — ₦${price.toLocaleString()}`}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 
 

@@ -1,5 +1,6 @@
 # backend/core/models/tenant.py
 from django.db import models
+from django.utils import timezone as django_timezone
 
 
 class SchoolGroup(models.Model):
@@ -54,7 +55,32 @@ class SchoolTenant(models.Model):
     favicon = models.ImageField(upload_to='school_favicons/', null=True, blank=True)
     primary_color = models.CharField(max_length=7, default='#3B82F6')
     secondary_color = models.CharField(max_length=7, default='#1E40AF')
-    
+
+    # Compliance / KYC documents
+    cac_registered_name = models.CharField(max_length=255, blank=True, default="")
+    cac_certificate = models.FileField(upload_to='school_compliance/cac_certificates/%Y/%m/', null=True, blank=True)
+    entrance_photo = models.ImageField(upload_to='school_compliance/entrance_photos/%Y/%m/', null=True, blank=True)
+    proof_of_address = models.FileField(upload_to='school_compliance/proof_of_address/%Y/%m/', null=True, blank=True)
+    ministry_approval_number = models.CharField(max_length=100, blank=True, default="")
+
+    # Compliance review workflow
+    COMPLIANCE_STATUS_CHOICES = [
+        ('not_submitted', 'Not Submitted'),
+        ('submitted', 'Submitted - Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    compliance_status = models.CharField(max_length=20, choices=COMPLIANCE_STATUS_CHOICES, default='not_submitted')
+    compliance_deadline_reference_at = models.DateTimeField(null=True, blank=True)
+    compliance_submitted_at = models.DateTimeField(null=True, blank=True)
+    compliance_reviewed_at = models.DateTimeField(null=True, blank=True)
+    compliance_reviewed_by = models.ForeignKey(
+        'users.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='compliance_reviews',
+    )
+    compliance_suspended_at = models.DateTimeField(null=True, blank=True)
+    compliance_reminder_stage = models.PositiveSmallIntegerField(default=0)
+    signup_notification_sent_at = models.DateTimeField(null=True, blank=True)
+
     # Configuration
     timezone = models.CharField(max_length=50, default='UTC')
     currency = models.CharField(max_length=3, default='USD')
@@ -94,6 +120,38 @@ class SchoolTenant(models.Model):
     def __str__(self):
         return self.name
     
+    def compliance_documents_complete(self):
+        """Whether all required school + director compliance documents have been uploaded."""
+        school_ok = bool(
+            (self.cac_registered_name or "").strip()
+            and self.cac_certificate
+            and self.entrance_photo
+            and (self.address or "").strip()
+            and self.proof_of_address
+        )
+        if not school_ok:
+            return False
+
+        from users.models import User
+
+        return (
+            User.objects.filter(tenant=self)
+            .exclude(director_address="")
+            .exclude(director_id_type="")
+            .exclude(director_id_document="")
+            .exclude(director_proof_of_address="")
+            .exclude(profile_picture="")
+            .exists()
+        )
+
+    def compliance_deadline_reference(self):
+        """The moment the 30-day compliance clock started for this school."""
+        if self.compliance_deadline_reference_at:
+            return self.compliance_deadline_reference_at
+        return django_timezone.make_aware(
+            django_timezone.datetime.combine(self.created_on, django_timezone.datetime.min.time())
+        )
+
     def is_feature_enabled(self, feature_code):
         """Check if a feature is enabled for this school"""
         from settings_app.models import FeatureFlag
