@@ -32,7 +32,7 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
   }, []);
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
 
     const resetTimer = () => {
       setIsVisible(true);
