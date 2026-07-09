@@ -15,7 +15,23 @@ interface StudentData {
   attendance: string;
 }
 
-export default function DashboardPlayground() {
+const MOBILE_MODULES = [
+  { icon: Building2, title: 'Analytics Overview', description: 'Live dashboard of attendance, fees, and academic performance.' },
+  { icon: BookOpen, title: 'Hybrid CBT Simulation', description: 'Run exams online or fully offline with local sync.' },
+  { icon: Receipt, title: 'Bursar Ledger & Pay', description: 'Collect fees, generate receipts, and split payments automatically.' },
+  { icon: Briefcase, title: 'HR & Staff Onboarding', description: 'Manage payroll, leave requests, and staff records.' },
+  { icon: ClipboardList, title: 'Teacher Lesson & Parents', description: 'Plan lessons, track progress, and message parents.' },
+  { icon: Box, title: 'Assets, Hostel & Stock', description: 'Track inventory, hostel beds, and school assets.' },
+  { icon: Calendar, title: 'Activities Calendar', description: "Plan and share the full term's academic calendar." },
+  { icon: Award, title: 'Automated Report Sheets', description: 'Generate WAEC-style report cards automatically.' },
+  { icon: QrCode, title: 'Secure ID Badge Factory', description: 'Print QR-secured student and staff ID cards.' },
+];
+
+interface DashboardPlaygroundProps {
+  onOpenOnboarding?: () => void;
+}
+
+export default function DashboardPlayground({ onOpenOnboarding }: DashboardPlaygroundProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'cbt' | 'finance' | 'reports' | 'id-cards' | 'hr-payroll' | 'teacher-planner' | 'physical-ops' | 'calendar-activities'>('overview');
 
   const [clientSchoolName, setClientSchoolName] = useState(() => {
@@ -331,21 +347,21 @@ export default function DashboardPlayground() {
   };
 
   return (
-    <section 
+    <section
       id="demo-center"
-      className="py-20 bg-gray-50 border-y border-gray-100/70"
+      className="py-20 bg-gray-50 dark:bg-slate-900 border-y border-gray-100/70 dark:border-slate-800 transition-colors duration-300"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* Section Headings */}
         <div className="text-center max-w-3xl mx-auto mb-12">
-          <span className="text-xs font-bold uppercase tracking-widest text-brand-600 bg-brand-50 px-3 py-1 rounded-full border border-brand-200/50">
+          <span className="text-xs font-bold uppercase tracking-widest text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950/40 px-3 py-1 rounded-full border border-brand-200/50 dark:border-brand-900/50">
             Interactive Test Drive
           </span>
-          <h2 className="font-display font-bold text-3xl sm:text-4xl text-brand-950 mt-4 tracking-tight">
+          <h2 className="font-display font-bold text-3xl sm:text-4xl text-brand-950 dark:text-white mt-4 tracking-tight">
             Explore the Digital Solution Sandbox
           </h2>
-          <p className="text-gray-600 mt-3 text-base">
+          <p className="text-gray-600 dark:text-slate-400 mt-3 text-base">
             Click through the mock administration panels below to experience why hundreds of schools have digitized their operations.
           </p>
         </div>
@@ -358,9 +374,43 @@ export default function DashboardPlayground() {
           </div>
         )}
 
-        {/* Sandbox Window Frame */}
-        <div className="max-w-6xl mx-auto bg-white rounded-3xl overflow-hidden shadow-xl border border-gray-200 flex flex-col md:flex-row h-[720px] md:h-[650px]">
-          
+        {/* Mobile module showcase — the interactive sandbox below is a dense,
+            desktop-only admin mockup (tables, sliders, multi-panel forms) that
+            doesn't work as a cramped mobile layout, so phones get a simple,
+            readable list of the same modules instead. */}
+        <div className="md:hidden max-w-lg mx-auto space-y-3">
+          {MOBILE_MODULES.map((mod) => {
+            const Icon = mod.icon;
+            return (
+              <div
+                key={mod.title}
+                className="flex items-center gap-3.5 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm text-left"
+              >
+                <div className="h-10 w-10 rounded-xl bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 flex items-center justify-center shrink-0">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-display font-bold text-sm text-brand-950 dark:text-white">{mod.title}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 leading-relaxed">{mod.description}</p>
+                </div>
+              </div>
+            );
+          })}
+          <button
+            id="btn-mobile-sandbox-onboard"
+            onClick={onOpenOnboarding}
+            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-sm font-bold text-white bg-brand-600 hover:bg-brand-700 active:bg-brand-800 transition-all cursor-pointer shadow-lg shadow-brand-500/20 mt-2"
+          >
+            Get Started For Free
+          </button>
+        </div>
+
+        {/* Sandbox Window Frame — desktop only. Always renders as a light
+            "product screenshot" regardless of site theme, since its dozens of
+            inner panels are styled as a fixed light-mode dashboard mockup,
+            not a theme-aware section. */}
+        <div className="hidden md:flex max-w-6xl mx-auto bg-white text-slate-800 rounded-3xl overflow-hidden shadow-xl border border-gray-200 md:flex-row h-[650px]">
+
           {/* Inner Sidebar Controls */}
           <div className="w-full md:w-64 bg-slate-900 text-white flex flex-col justify-between shrink-0 overflow-y-auto border-r border-slate-800">
             <div>

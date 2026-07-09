@@ -362,7 +362,7 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
 
   return (<>
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs text-left">
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-2xl bg-white text-slate-800 rounded-3xl overflow-hidden shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
         
         {/* Header Ribbon Indicator */}
         <div className="bg-brand-600 text-white px-6 py-4 flex items-center justify-between relative">
@@ -389,8 +389,8 @@ export default function OnboardingWizard({ isOpen, onClose, onAuthenticated }: O
             <div className="py-12 flex flex-col items-center justify-center text-center space-y-6">
               <RefreshCw className="h-12 w-12 text-brand-600 animate-spin" />
               <div className="space-y-2">
-                <h4 className="font-display font-bold text-lg text-brand-950">Provisioning Schooldom Sandbox Shards</h4>
-                <p className="text-xs text-gray-500 max-w-xs mx-auto">Please wait while our West African server nodes organize databases for your institution.</p>
+                <h4 className="font-display font-bold text-lg text-brand-950">Provisioning Schooldom</h4>
+                <p className="text-xs text-gray-500 max-w-xs mx-auto">Please wait while we organize databases for your institution.</p>
               </div>
               <div className="px-5 py-2.5 rounded-xl bg-slate-50 border border-gray-150 inline-block text-xs font-semibold text-slate-600 font-mono animate-pulse">
                 {loadingStage || "Connecting to core cloud routers..."}

@@ -15,8 +15,8 @@ export default function LegalDocuments({ isOpen, onClose, defaultTab = 'terms' }
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xs text-left">
       <div 
-        id="legal-modal-container" 
-        className="relative w-full max-w-3xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex flex-col h-[85vh]"
+        id="legal-modal-container"
+        className="relative w-full max-w-3xl bg-white text-slate-800 rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex flex-col h-[85vh]"
       >
         {/* Sky-Blue / Mint Ribbon Heading */}
         <div className="bg-slate-900 text-white px-6 py-4.5 flex items-center justify-between border-b border-slate-800">

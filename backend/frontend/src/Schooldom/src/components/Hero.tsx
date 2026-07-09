@@ -192,7 +192,7 @@ export default function Hero({ onOpenOnboarding, scrollToSection, onSignUp }: He
         <div className="mt-12 flex flex-wrap justify-center items-center gap-x-8 gap-y-4 text-sm text-gray-500 dark:text-slate-400 font-medium">
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="h-4.5 w-4.5 text-teal-brand-500" />
-            <span>Parent portal app download included</span>
+            <span>Seamless Finance Transactions.</span>
           </div>
           <div className="hidden sm:block text-gray-300 dark:text-slate-800">•</div>
           <div className="flex items-center gap-1.5">

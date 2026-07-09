@@ -98,20 +98,22 @@ export default function Navbar({
           : '-translate-y-full opacity-0 pointer-events-none'
       } ${
         isScrolled
-          ? 'bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl shadow-md border-b border-gray-150/50 dark:border-slate-800/60 py-3'
-          : 'bg-white/40 dark:bg-slate-900/30 backdrop-blur-md shadow-xs border-b border-white/20 dark:border-white/5 py-5'
+          ? 'bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl shadow-md border-b border-gray-150/50 dark:border-slate-800/60 py-3'
+          : 'bg-white/85 dark:bg-slate-900/85 backdrop-blur-lg shadow-xs border-b border-white/20 dark:border-white/5 py-5'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
           {/* Logo */}
-<div className="h-10 w-10 rounded-xl overflow-hidden shadow-md shadow-brand-500/10 border border-slate-900/60">
-  <img 
-    src="/schooldom-favicon.jpeg" 
-    alt="SchoolDom Logo"
-    className="h-full w-full object-cover select-none"
-  />
-</div>
+          <div className="flex items-center gap-2.5 select-none">
+            <div className="h-10 w-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-md shadow-brand-500/10 shrink-0">
+              <School className="h-5.5 w-5.5" />
+            </div>
+            <div className="hidden sm:flex items-baseline">
+              <span className="font-display font-extrabold text-lg text-brand-950 dark:text-white tracking-tight">Schooldom</span>
+              <span className="font-display font-medium text-[10px] text-teal-brand-600 dark:text-teal-brand-500 ml-1 bg-teal-brand-500/10 px-1.5 py-0.5 rounded-md border border-teal-brand-500/10">ACADEMY</span>
+            </div>
+          </div>
 
           {/* Desktop Links */}
           <div className="hidden md:flex items-center gap-8">

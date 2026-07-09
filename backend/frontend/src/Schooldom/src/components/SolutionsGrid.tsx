@@ -31,18 +31,18 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
   );
 
   return (
-    <section id="solutions" className="py-20 bg-white">
+    <section id="solutions" className="py-20 bg-white dark:bg-slate-950 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header content block */}
         <div className="text-center max-w-3xl mx-auto mb-12">
-          <span className="text-xs font-bold uppercase tracking-widest text-teal-brand-600 bg-teal-brand-50 px-3 py-1 rounded-full border border-teal-brand-500/15">
+          <span className="text-xs font-bold uppercase tracking-widest text-teal-brand-600 dark:text-teal-brand-400 bg-teal-brand-50 dark:bg-teal-brand-950/40 px-3 py-1 rounded-full border border-teal-brand-500/15 dark:border-teal-brand-500/20">
             Solutions Avalanche
           </span>
-          <h2 className="font-display font-bold text-3xl sm:text-4xl text-brand-950 mt-4 tracking-tight">
+          <h2 className="font-display font-bold text-3xl sm:text-4xl text-brand-950 dark:text-white mt-4 tracking-tight">
             Comprehensive Tools to Revolutionize School Admin
           </h2>
-          <p className="text-gray-600 mt-3 text-base">
+          <p className="text-gray-600 dark:text-slate-400 mt-3 text-base">
             Replace dozens of disparate softwares, excel trackers, and physical registries. Schooldom handles everything.
           </p>
         </div>
@@ -59,8 +59,8 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
               }}
               className={`px-4.5 py-2 rounded-xl text-xs font-bold tracking-wide transition-all uppercase cursor-pointer ${
                 filter === cat
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-slate-100 text-gray-600 hover:bg-slate-200'
+                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-900 text-gray-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
               }`}
             >
               {cat === 'all' ? 'All Modules' : cat}
@@ -85,29 +85,29 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
                     className={`p-5 rounded-2xl cursor-pointer text-left transition-all duration-300 border ${
                       isSelected
                         ? 'bg-brand-600 text-white border-brand-700 shadow-xl shadow-brand-500/20 translate-y-[-2px]'
-                        : 'bg-white hover:bg-slate-50 border-gray-200/70 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-100/30 hover:translate-y-[-3px] hover:scale-[1.02]'
+                        : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border-gray-200/70 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-lg hover:shadow-brand-100/30 dark:hover:shadow-none hover:translate-y-[-3px] hover:scale-[1.02]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className={`p-2.5 rounded-xl ${isSelected ? 'bg-white/10 text-white' : 'bg-brand-50 text-brand-600'}`}>
+                      <div className={`p-2.5 rounded-xl ${isSelected ? 'bg-white/10 text-white' : 'bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400'}`}>
                         <IconComponent className="h-5 w-5" />
                       </div>
                       <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${
-                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-gray-500'
+                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400'
                       }`}>
                         {sol.category}
                       </span>
                     </div>
 
-                    <h4 className="font-display font-bold text-sm sm:text-base mt-4 tracking-tight leading-snug">
+                    <h4 className={`font-display font-bold text-sm sm:text-base mt-4 tracking-tight leading-snug ${isSelected ? 'text-white' : 'text-brand-950 dark:text-white'}`}>
                       {sol.title}
                     </h4>
-                    <p className={`text-xs mt-2 leading-relaxed ${isSelected ? 'text-brand-100' : 'text-gray-500'}`}>
+                    <p className={`text-xs mt-2 leading-relaxed ${isSelected ? 'text-brand-100' : 'text-gray-500 dark:text-slate-400'}`}>
                       {sol.shortDescription}
                     </p>
 
                     <div className="flex items-center gap-1.5 font-semibold text-xs mt-4 group">
-                      <span className={isSelected ? 'text-white' : 'text-brand-600 hover:text-brand-700'}>
+                      <span className={isSelected ? 'text-white' : 'text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300'}>
                         {isSelected ? 'Click to minimize spec' : 'Explore specifications'}
                       </span>
                       <Plus className={`h-4.5 w-4.5 transition-transform ${isSelected ? 'rotate-45' : ''}`} />
@@ -120,33 +120,33 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
 
           {/* Expanded specs module */}
           {selectedSolution && (
-            <div className="lg:col-span-6 border border-gray-200/90 rounded-3xl p-6 sm:p-8 bg-slate-50 relative animate-in fade-in slide-in-from-right-4 duration-300 text-left">
+            <div className="lg:col-span-6 border border-gray-200/90 dark:border-slate-800 rounded-3xl p-6 sm:p-8 bg-slate-50 dark:bg-slate-900 relative animate-in fade-in slide-in-from-right-4 duration-300 text-left">
               {(() => {
                 const activeSol = SOLUTIONS.find(s => s.id === selectedSolution)!;
                 const IconComponent = iconMap[activeSol.icon] || Terminal;
                 return (
                   <>
-                    <div className="flex items-center gap-3 border-b border-gray-200 pb-5">
+                    <div className="flex items-center gap-3 border-b border-gray-200 dark:border-slate-800 pb-5">
                       <div className="p-3 rounded-2xl bg-brand-600 text-white">
                         <IconComponent className="h-6 w-6" />
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase tracking-wider font-extrabold text-brand-600 bg-brand-50 border border-brand-200/60 px-2.5 py-0.5 rounded-full">
+                        <span className="text-[10px] uppercase tracking-wider font-extrabold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950/40 border border-brand-200/60 dark:border-brand-900/60 px-2.5 py-0.5 rounded-full">
                           {activeSol.category.toUpperCase()} SEGMENT
                         </span>
-                        <h3 className="font-display font-extrabold text-xl text-brand-950 mt-1">{activeSol.title}</h3>
+                        <h3 className="font-display font-extrabold text-xl text-brand-950 dark:text-white mt-1">{activeSol.title}</h3>
                       </div>
                     </div>
 
                     <div className="py-5 space-y-4">
                       <div>
-                        <h5 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Functional Scope</h5>
-                        <p className="text-gray-600 text-sm leading-relaxed mt-1.5">{activeSol.description}</p>
+                        <h5 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Functional Scope</h5>
+                        <p className="text-gray-600 dark:text-slate-300 text-sm leading-relaxed mt-1.5">{activeSol.description}</p>
                       </div>
 
                       <div>
-                        <h5 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Key Core Benefits</h5>
-                        <ul className="space-y-2 text-xs text-brand-950">
+                        <h5 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2.5">Key Core Benefits</h5>
+                        <ul className="space-y-2 text-xs text-brand-950 dark:text-slate-200">
                           {activeSol.benefits.map((benefit, idx) => (
                             <li key={idx} className="flex items-start gap-2.5 font-medium leading-relaxed">
                               <CheckCircle2 className="h-4.5 w-4.5 text-teal-brand-500 shrink-0 mt-0.5" />
@@ -157,8 +157,8 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
                       </div>
 
                       {activeSol.specs && (
-                        <div className="p-3.5 bg-brand-50 border border-brand-100 rounded-xl flex items-start gap-2 text-xs text-brand-900 font-medium">
-                          <CheckCircle2 className="h-4 w-4 text-brand-600 shrink-0 mt-0.5" />
+                        <div className="p-3.5 bg-brand-50 dark:bg-brand-950/30 border border-brand-100 dark:border-brand-900/50 rounded-xl flex items-start gap-2 text-xs text-brand-900 dark:text-brand-200 font-medium">
+                          <CheckCircle2 className="h-4 w-4 text-brand-600 dark:text-brand-400 shrink-0 mt-0.5" />
                           <span>
                             <strong>Enterprise Spec:</strong> {activeSol.specs}
                           </span>
@@ -166,7 +166,7 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
                       )}
                     </div>
 
-                    <div className="border-t border-gray-200 pt-5 flex items-center gap-3">
+                    <div className="border-t border-gray-200 dark:border-slate-800 pt-5 flex items-center gap-3">
                       <button
                         id="btn-onboard-solution-direct"
                         onClick={onOpenOnboarding}
@@ -177,7 +177,7 @@ export default function SolutionsGrid({ onOpenOnboarding }: SolutionsGridProps) 
                       <button
                         id="btn-close-solution-detail"
                         onClick={() => setSelectedSolution(null)}
-                        className="px-4 py-3 rounded-xl border border-gray-200 hover:bg-slate-100 text-sm font-semibold text-gray-700 cursor-pointer"
+                        className="px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold text-gray-700 dark:text-slate-300 cursor-pointer"
                       >
                         Close
                       </button>

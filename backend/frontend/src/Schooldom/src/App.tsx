@@ -240,7 +240,7 @@ export default function App() {
 
         {/* School Digitization Admin Sandbox Playground */}
         <Reveal direction="left">
-          <DashboardPlayground />
+          <DashboardPlayground onOpenOnboarding={() => setIsOnboardingOpen(true)} />
         </Reveal>
 
         {/* Pricing tiers and interactive slider calculator */}

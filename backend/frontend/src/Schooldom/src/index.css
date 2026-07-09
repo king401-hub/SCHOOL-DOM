@@ -6,3 +6,7 @@
    looks identical whether it runs standalone or integrated into the
    main app (backend/frontend/src/styles.css imports the same file). */
 @import "./landing.css";
+
+/* Sign In / Sign Up page theme, shared with the integrated app the
+   same way (backend/frontend/src/styles.css imports the same file). */
+@import "./auth-shared.css";
