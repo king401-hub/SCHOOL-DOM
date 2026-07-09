@@ -9,6 +9,7 @@
     <RootNamespace>SchoolDom.StudentCbt.Win7</RootNamespace>
     <AssemblyName>SchoolDom.StudentCbt.Win7</AssemblyName>
     <!-- .NET 4.0 is the last version that runs on Windows 7 RTM without SP1 -->
+    <!-- .NET 4.0 — compiled against original clean ref assemblies (no in-place upgrade contamination) -->
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>

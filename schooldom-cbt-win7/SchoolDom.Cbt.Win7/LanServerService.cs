@@ -145,7 +145,7 @@ namespace SchoolDom.Cbt.Win7
                 try
                 {
                     var stream = client.GetStream();
-                    using (var reader = new StreamReader(stream, Encoding.ASCII, false, 8192, true))
+                    using (var reader = new StreamReader(stream, Encoding.ASCII, false, 8192))
                     {
                         var requestLine = reader.ReadLine() ?? "";
                         var parts = requestLine.Split(' ');
