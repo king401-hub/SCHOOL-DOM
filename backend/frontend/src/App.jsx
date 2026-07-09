@@ -905,18 +905,6 @@ function StudentDashboard({
               <small>{student.email || "Student"}</small>
             </div>
           </button>
-          {onThemeChange ? (
-            <button
-              type="button"
-              className="theme-icon-toggle"
-              onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
-              aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
-              title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
-            >
-              <ThemeModeIcon mode={themePreference} className="inline-icon" />
-              <span>{themePreference === "dark" ? "Dark" : "Light"}</span>
-            </button>
-          ) : null}
           {onSignOut ? (
             <button className="student-sidebar-signout" type="button" onClick={onSignOut}>
               Sign out
@@ -928,9 +916,9 @@ function StudentDashboard({
       <main className="student-main">
         <div className="student-main-topbar">
           <div className="student-topbar-left">
-            <button 
-              type="button" 
-              className="student-menu-toggle" 
+            <button
+              type="button"
+              className="student-menu-toggle"
               onClick={() => setNavOpen(!navOpen)}
               aria-label="Toggle navigation menu"
             >
@@ -950,6 +938,17 @@ function StudentDashboard({
             </div>
             <div className="student-topbar-actions">
               <span className="student-status-pill">Dashboard</span>
+              {onThemeChange ? (
+                <button
+                  type="button"
+                  className="student-topbar-theme-btn"
+                  onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+                  aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                  title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                >
+                  <ThemeModeIcon mode={themePreference} className="inline-icon" />
+                </button>
+              ) : null}
             </div>
         </div>
 
@@ -1378,17 +1377,6 @@ function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTi
                 <small>{studentEmail || "Student"}</small>
               </div>
             </div>
-            {onThemeChange ? (
-              <button
-                type="button"
-                className="theme-icon-toggle"
-                onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
-                aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
-                title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
-              >
-                <ThemeModeIcon mode={themePreference} className="inline-icon" />
-              </button>
-            ) : null}
           </div>
         </aside>
 
@@ -1400,11 +1388,20 @@ function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTi
               </button>
               <p className="topbar-kicker">{pageKicker || "Student Workspace"}</p>
             </div>
-            {pageTitle ? (
-              <div className="student-topbar-actions">
-                <span className="student-status-pill">{pageTitle}</span>
-              </div>
-            ) : null}
+            <div className="student-topbar-actions">
+              {pageTitle ? <span className="student-status-pill">{pageTitle}</span> : null}
+              {onThemeChange ? (
+                <button
+                  type="button"
+                  className="student-topbar-theme-btn"
+                  onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+                  aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                  title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                >
+                  <ThemeModeIcon mode={themePreference} className="inline-icon" />
+                </button>
+              ) : null}
+            </div>
           </div>
           {children}
           <div className="student-sidebar-overlay" onClick={() => setNavOpen(false)} style={{ display: navOpen ? "block" : "none" }} />
@@ -5366,6 +5363,7 @@ const ADMIN_ROUTE_ICONS = {
   "/parents": Users,
   "/id-cards": CreditCard,
   "/documents": FileText,
+  "/staff": Users,
   "/teachers": BookOpen,
   "/non-teaching-staff": Briefcase,
   "/classes": School,
@@ -5380,7 +5378,7 @@ const ADMIN_ROUTE_ICONS = {
 const ADMIN_NAV_SECTIONS = [
   { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
   { label: "Academics", paths: ["/classes", "/attendance", "/exams", "/results"] },
-  { label: "People", paths: ["/students", "/parents", "/teachers"] },
+  { label: "People", paths: ["/students", "/parents", "/staff"] },
   { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr/activity", "/hr-self-service", "/loan-application"] },
   { label: "Administration", paths: ["/id-cards", "/documents", "/database-import", "/messages", "/settings"] },
 ];
