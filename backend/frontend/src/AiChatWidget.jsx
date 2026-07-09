@@ -12,6 +12,19 @@ const MAX_SAVED_CONVOS = 50;
 const SEC_MAX_SAVED = 30;
 const SEC_MAX_HISTORY_TURNS = 20;
 
+const POS_KEY = "phoenix_ai_pos";
+
+function loadPos() {
+  try {
+    const raw = localStorage.getItem(POS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (typeof p.right === "number" && typeof p.bottom === "number") return p;
+    }
+  } catch {}
+  return { right: 16, bottom: 16 };
+}
+
 const QUICK_PROMPTS = [
   "What can you do?",
   "Help me understand a topic",
@@ -117,6 +130,9 @@ export default function AiChatWidget({ session }) {
   const [tasks, setTasks] = useState([]);
   const [taskInput, setTaskInput] = useState("");
   const [taskFilter, setTaskFilter] = useState("all");
+  const [pos, setPos] = useState(loadPos);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef(null);
 
   // Secretary state
   const [secMessages, setSecMessages] = useState([]);
@@ -479,6 +495,50 @@ export default function AiChatWidget({ session }) {
     else startNewChat();
   }
 
+  // ── Drag-to-move ─────────────────────────────────────────────────────────────
+
+  function handleTogglePointerDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originRight: pos.right,
+      originBottom: pos.bottom,
+      moved: false,
+    };
+    setIsDragging(true);
+  }
+
+  function handleTogglePointerMove(e) {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragRef.current.moved = true;
+    if (dragRef.current.moved) {
+      setPos({
+        right: Math.max(0, Math.min(dragRef.current.originRight - dx, window.innerWidth - 70)),
+        bottom: Math.max(0, Math.min(dragRef.current.originBottom - dy, window.innerHeight - 70)),
+      });
+    }
+  }
+
+  function handleTogglePointerUp() {
+    if (!dragRef.current) return;
+    const wasDragged = dragRef.current.moved;
+    dragRef.current = null;
+    setIsDragging(false);
+    if (!wasDragged) {
+      setOpen((v) => !v);
+    } else {
+      setPos((p) => {
+        try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
+        return p;
+      });
+    }
+  }
+
   if (!session) return null;
 
   const remaining = DAILY_LIMIT - dailyUsed;
@@ -496,7 +556,7 @@ export default function AiChatWidget({ session }) {
   const historyActive = mode === "secretary" ? secShowHistory : mode === "history";
 
   return (
-    <div className="ai-chat-shell">
+    <div className="ai-chat-shell" style={{ right: pos.right, bottom: pos.bottom }}>
       {open && (
         <div className="ai-chat-panel" role="dialog" aria-label="Phoenix AI">
 
@@ -908,13 +968,16 @@ export default function AiChatWidget({ session }) {
         </div>
       )}
 
-      {/* Floating toggle button */}
+      {/* Floating toggle button — drag to reposition */}
       <button
         type="button"
-        className={`ai-chat-toggle ${open ? "is-open" : ""}`}
-        onClick={() => setOpen((v) => !v)}
+        className={`ai-chat-toggle ${open ? "is-open" : ""} ${isDragging ? "is-dragging" : ""}`}
+        onPointerDown={handleTogglePointerDown}
+        onPointerMove={handleTogglePointerMove}
+        onPointerUp={handleTogglePointerUp}
+        onPointerCancel={() => { dragRef.current = null; setIsDragging(false); }}
         aria-label={open ? "Close Phoenix AI" : "Open Phoenix AI"}
-        title="Phoenix AI"
+        title="Phoenix AI — drag to move"
       >
         {open ? (
           <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
