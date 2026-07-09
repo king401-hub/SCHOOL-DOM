@@ -563,7 +563,7 @@ export default function AiChatWidget({ session }) {
           {/* Header */}
           <header className="ai-chat-header">
             <div className="ai-chat-header-left">
-              <div className="ai-chat-logo">{mode === "secretary" ? "🗂️" : "⚡"}</div>
+              <div className="ai-chat-logo">{mode === "secretary" ? "🗂️" : <span className="ai-header-logo-text">AI</span>}</div>
               <div>
                 <strong>{mode === "secretary" ? "Schooldom Secretary" : AI_NAME}</strong>
                 <span className="ai-chat-subtitle">
@@ -884,7 +884,7 @@ export default function AiChatWidget({ session }) {
               <div className="ai-chat-messages" ref={listRef}>
                 {messages.length === 0 && (
                   <div className="ai-chat-welcome">
-                    <div className="ai-chat-welcome-icon">⚡</div>
+                    <div className="ai-chat-welcome-icon">AI</div>
                     <h3>Hello! How can I help you?</h3>
                     <p>Ask me anything about Schooldom or school management.</p>
                     <div className="ai-chat-quick-prompts">
@@ -905,7 +905,7 @@ export default function AiChatWidget({ session }) {
                 {messages.map((msg, i) => (
                   <div key={i} className={`ai-chat-message ai-chat-message-${msg.role}`}>
                     {msg.role === "assistant" && (
-                      <div className="ai-chat-avatar ai-chat-avatar-ai">⚡</div>
+                      <div className="ai-chat-avatar ai-chat-avatar-ai">AI</div>
                     )}
                     <div className="ai-chat-bubble">
                       {msg.content ? (
@@ -985,7 +985,7 @@ export default function AiChatWidget({ session }) {
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         ) : (
-          <span className="ai-toggle-icon">⚡</span>
+          <span className="ai-toggle-icon">AI</span>
         )}
       </button>
     </div>
