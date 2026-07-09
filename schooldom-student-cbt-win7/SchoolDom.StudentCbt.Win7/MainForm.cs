@@ -384,8 +384,7 @@ namespace SchoolDom.StudentCbt.Win7
                 AllowNavigation = false,
                 WebBrowserShortcutsEnabled = false,
                 IsWebBrowserContextMenuEnabled = false,
-                BackColor = Color.White,
-                BorderStyle = BorderStyle.None
+                BackColor = Color.White
             };
             // Wait for document to load before reading height
             _questionWebView.DocumentCompleted += (s, e) =>

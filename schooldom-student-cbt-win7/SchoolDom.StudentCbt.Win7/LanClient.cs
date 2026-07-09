@@ -399,7 +399,7 @@ namespace SchoolDom.StudentCbt.Win7
             return request;
         }
 
-        private static Dictionary<string, object> ReadResponse(HttpWebRequest request)
+        private Dictionary<string, object> ReadResponse(HttpWebRequest request)
         {
             try
             {

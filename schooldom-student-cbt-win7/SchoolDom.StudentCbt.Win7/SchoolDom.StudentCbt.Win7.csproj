@@ -13,8 +13,8 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
-    <!-- Allow C# 6+ syntax (string interpolation, expression-bodied members) while targeting .NET 4.0 -->
-    <LangVersion>6</LangVersion>
+    <!-- C# 7 needed for pattern matching (is T v) and out-var used in JsonUtil/LanClient -->
+    <LangVersion>7</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -42,6 +42,7 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Data" />
     <Reference Include="System.Net.Security" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Web.Extensions" />

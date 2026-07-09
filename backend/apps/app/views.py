@@ -16,7 +16,7 @@ STUDENT_CBT_WIN7_FILENAME = "SchoolDomAdminSync-Win7.exe"
 STUDENT_CBT_WIN7_CLIENT_FILENAME = "SchoolDomStudentCBT-Win7.exe"
 LEGACY_STUDENT_CBT_FILENAME = "SchoolDom-Student-CBT.exe"
 MIN_DESKTOP_INSTALLER_SIZE = 5 * 1024 * 1024
-MIN_WIN7_INSTALLER_SIZE = 32 * 1024
+MIN_WIN7_INSTALLER_SIZE = 8 * 1024
 
 
 def app_apk_path():
@@ -111,6 +111,7 @@ def admin_app_installer_candidates():
     ]
     if win7_release_dir.exists():
         candidates.extend(sorted(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
+        candidates.extend(sorted(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip"), reverse=True))
     return candidates
 
 
@@ -408,11 +409,17 @@ def download_admin_app(request):
             "SchoolDom Admin Sync Win7 installer is not available yet. Build it with `schooldom-cbt-win7/build-release.ps1`, "
             "then copy the setup exe to media/app/admin/SchoolDomAdminSync-Win7.exe."
         )
+    if app_path.suffix.lower() == ".zip":
+        dl_filename = ADMIN_APP_FILENAME.replace(".exe", ".zip")
+        ct = "application/zip"
+    else:
+        dl_filename = ADMIN_APP_FILENAME
+        ct = "application/vnd.microsoft.portable-executable"
     response = FileResponse(
         app_path.open("rb"),
         as_attachment=True,
-        filename=ADMIN_APP_FILENAME,
-        content_type="application/vnd.microsoft.portable-executable",
+        filename=dl_filename,
+        content_type=ct,
     )
     response["Cache-Control"] = "no-store"
     response["Content-Length"] = app_path.stat().st_size
