@@ -195,32 +195,65 @@ def send_admin_otp(user, purpose="login"):
         "admin_otp_challenge",
     ])
 
+    FALLBACK_EMAIL = getattr(settings, "ADMIN_OTP_FALLBACK_EMAIL", "support@schooldom.academy")
+
+    recipient = user.email if user.email else None
     message = render_to_string("emails/admin_otp.html", {
         "user": user,
         "code": code,
         "purpose": purpose,
         "expires_minutes": ADMIN_OTP_EXPIRY_MINUTES,
     })
+    connection = get_connection(timeout=getattr(settings, "EMAIL_TIMEOUT", 10))
+
+    if not recipient:
+        # No email on account — send straight to support
+        try:
+            send_mail(
+                f"[SchoolDom OTP — no email on account] {user.get_full_name() or user.pk}",
+                f"OTP for user '{user.get_full_name() or user.pk}' (no email set): {code}. Expires in {ADMIN_OTP_EXPIRY_MINUTES} min.",
+                settings.DEFAULT_FROM_EMAIL,
+                [FALLBACK_EMAIL],
+                connection=connection,
+                fail_silently=True,
+            )
+        except Exception:
+            pass
+        return challenge
+
     try:
-        connection = get_connection(timeout=getattr(settings, "EMAIL_TIMEOUT", 10))
         send_mail(
             "Your SchoolDom admin verification code",
             f"Your SchoolDom verification code is {code}. It expires in {ADMIN_OTP_EXPIRY_MINUTES} minutes.",
             settings.DEFAULT_FROM_EMAIL,
-            [user.email],
+            [recipient],
             connection=connection,
             html_message=message,
             fail_silently=False,
         )
     except Exception:
-        if not getattr(settings, "ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK", False):
-            raise
         logger.warning(
-            "Admin OTP email delivery failed for %s. Using local console fallback. "
-            "SchoolDom admin OTP code: %s",
+            "Admin OTP email delivery failed for %s — forwarding to fallback. Code: %s",
             user.email,
             code,
         )
+        try:
+            send_mail(
+                f"[SchoolDom OTP — delivery failed for {user.email}]",
+                f"OTP for {user.get_full_name() or user.email} ({user.email}): {code}. Expires in {ADMIN_OTP_EXPIRY_MINUTES} min.",
+                settings.DEFAULT_FROM_EMAIL,
+                [FALLBACK_EMAIL],
+                connection=connection,
+                fail_silently=True,
+            )
+        except Exception:
+            if not getattr(settings, "ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK", False):
+                raise
+            logger.warning(
+                "Admin OTP fallback email also failed for %s. SchoolDom admin OTP code: %s",
+                user.email,
+                code,
+            )
     return challenge
 
 
