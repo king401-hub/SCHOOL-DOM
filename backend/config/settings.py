@@ -161,6 +161,7 @@ MIDDLEWARE = [
     # 'django.middleware.csrf.CsrfViewMiddleware',  # Temporarily disabled for testing
     'middleware.invalid_uuid_session.InvalidUUIDSessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'middleware.idempotency.IdempotencyMiddleware',
     'django_otp.middleware.OTPMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',

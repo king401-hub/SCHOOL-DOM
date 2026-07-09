@@ -256,6 +256,8 @@ export function formatApiError(data, fallback) {
 
 export const SCHOOL_DATA_MUTATED_EVENT = "schooldom:data-mutated";
 
+const _inFlightMutations = new Set();
+
 export function emitSchoolDomDataMutation(detail = {}) {
   if (typeof window === "undefined") {
     return;
@@ -271,73 +273,87 @@ export function emitSchoolDomDataMutation(detail = {}) {
 }
 
 export async function requestJson(session, method, endpoint, payload = null, options = {}) {
-  const { retryOnAuthFailure = true } = options;
-  const headers = {};
-  if (session?.access) {
-    headers.Authorization = `Bearer ${session.access}`;
-  } else {
-    const error = new Error("Session expired. Please sign in again.");
-    error.status = 401;
-    error.statusCode = 401;
-    error.authExpired = true;
-    clearStoredSession();
-    throw error;
+  const { retryOnAuthFailure = true, skipDuplicateCheck = false } = options;
+
+  const isMutation = !["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase());
+  const mutationKey = (isMutation && !skipDuplicateCheck) ? `${method}:${endpoint}` : null;
+
+  if (mutationKey && _inFlightMutations.has(mutationKey)) {
+    const err = new Error("Please wait — a request is already in progress.");
+    err.status = 429;
+    err.isDuplicate = true;
+    throw err;
   }
+  if (mutationKey) _inFlightMutations.add(mutationKey);
 
-  const shouldSendFormData = payload !== null && (payload instanceof FormData || payloadContainsFile(payload));
-  const body =
-    payload === null
-      ? undefined
-      : payload instanceof FormData
-        ? payload
-        : shouldSendFormData
-          ? buildFormData(payload)
-          : JSON.stringify(payload);
-
-if (payload !== null && !shouldSendFormData && !(payload instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
-    }
-
-  let response;
   try {
-    response = await fetch(`${API_BASE_URL}${endpoint}`, {
-method,
-headers,
-body,
-});
-  } catch (networkError) {
-    throw new Error("Network error. Please check your connection.");
-  }
-  
-  const data = await response.json().catch(() => null);
-  if (response?.ok) {
-if (!["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase())) {
-      emitSchoolDomDataMutation({ endpoint, method });
-    }
-return     data ?? {};
-  }
-
-  if (response?.status === 401 && retryOnAuthFailure) {
-    try {
-await refreshAccessToken(session);
-  return requestJson(session, method, endpoint, payload, { ...options, retryOnAuthFailure: false });
-    } catch (refreshError) {
+    const headers = {};
+    if (session?.access) {
+      headers.Authorization = `Bearer ${session.access}`;
+    } else {
+      const error = new Error("Session expired. Please sign in again.");
+      error.status = 401;
+      error.statusCode = 401;
+      error.authExpired = true;
       clearStoredSession();
-      throw refreshError;
+      throw error;
     }
-  }
 
-  if (response?.status === 413) {
-    const error = new Error("The selected file is too large for the server upload limit. Try a smaller image or increase MAX_UPLOAD_SIZE on the server.");
-    error.status = response.status;
-    error.statusCode = response.status;
+    const shouldSendFormData = payload !== null && (payload instanceof FormData || payloadContainsFile(payload));
+    const body =
+      payload === null
+        ? undefined
+        : payload instanceof FormData
+          ? payload
+          : shouldSendFormData
+            ? buildFormData(payload)
+            : JSON.stringify(payload);
+
+    if (payload !== null && !shouldSendFormData && !(payload instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    let response;
+    try {
+      response = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body });
+    } catch (networkError) {
+      throw new Error("Network error. Please check your connection.");
+    }
+
+    const data = await response.json().catch(() => null);
+    if (response?.ok) {
+      if (isMutation) emitSchoolDomDataMutation({ endpoint, method });
+      return data ?? {};
+    }
+
+    if (response?.status === 401 && retryOnAuthFailure) {
+      try {
+        await refreshAccessToken(session);
+        return requestJson(session, method, endpoint, payload, {
+          ...options,
+          retryOnAuthFailure: false,
+          skipDuplicateCheck: true,
+        });
+      } catch (refreshError) {
+        clearStoredSession();
+        throw refreshError;
+      }
+    }
+
+    if (response?.status === 413) {
+      const error = new Error("The selected file is too large for the server upload limit. Try a smaller image or increase MAX_UPLOAD_SIZE on the server.");
+      error.status = response.status;
+      error.statusCode = response.status;
+      throw error;
+    }
+
+    const error = new Error(formatApiError(data, `Request failed (${response?.status || "network"}).`));
+    error.status = response?.status;
+    error.statusCode = response?.status;
     throw error;
+  } finally {
+    if (mutationKey) _inFlightMutations.delete(mutationKey);
   }
-
-  const error = new Error(formatApiError(data, `Request failed (${response?.status || "network"}).`));
-  error.status = response?.status;
-  error.statusCode = response?.status;
-  throw error;
 }
 
 export async function fetchDashboardSnapshot(session) {
