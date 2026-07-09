@@ -373,12 +373,15 @@ def provision_parent_virtual_account(parent_user, actor=None):
     if not tenant:
         raise ValueError("Parent has no school/tenant assigned.")
 
+    school_name = (getattr(tenant, "name", "") or "").strip()
     full_name = (parent_user.get_full_name() or parent_user.email or "").strip()
     first_name, _, last_name = full_name.partition(" ")
+    # Append school name to last_name so the DVA account reads "Parent Name - School Name"
+    last_name_field = f"{last_name} - {school_name}"[:50] if school_name else (last_name or "Guardian")
     customer = create_paystack_customer(
         email=parent_user.email,
         first_name=first_name or "Parent",
-        last_name=last_name or "Guardian",
+        last_name=last_name_field,
         phone=getattr(parent_user, "phone", "") or "",
     )
     customer_code = customer["customer_code"]
@@ -2916,9 +2919,9 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
             if wa_ok:
                 results["sent"] += 1
             else:
-                # Fallback to SMS
-                sms_result = send_sendchamp_sms(phone, message)
-                sms_ok = (sms_result.get("code") in ("200", 200)) or (sms_result.get("status") == "success")
+                # Fallback to eBulkSMS
+                sms_result = send_ebulksms(phone, message)
+                sms_ok = sms_result.get("status") not in ("error", "skipped")
                 if sms_ok:
                     results["sent"] += 1
                 else:
@@ -2930,13 +2933,13 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 results["failed"] += 1
                 results["errors"].append(f"{name}: no phone number")
                 continue
-            sms_result = send_sendchamp_sms(phone, message)
-            sms_ok = (sms_result.get("code") in ("200", 200)) or (sms_result.get("status") == "success")
+            sms_result = send_ebulksms(phone, message)
+            sms_ok = sms_result.get("status") not in ("error", "skipped")
             if sms_ok:
                 results["sent"] += 1
             else:
                 results["failed"] += 1
-                results["errors"].append(f"{name}: {sms_result.get('reason') or sms_result.get('message', 'SMS failed')}")
+                results["errors"].append(f"{name}: {sms_result.get('reason', 'SMS failed')}")
 
     return results
 

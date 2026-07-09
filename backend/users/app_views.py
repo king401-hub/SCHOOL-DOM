@@ -9145,24 +9145,32 @@ def send_message(request):
                 {"success": False, "message": "recipients must be a list of phone numbers."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        try:
-            sms_result = _send_kudisms_bulk_sms(request.user.tenant, raw_recipients, body)
-        except ValueError as exc:
+
+        from finance.services import send_ebulksms, normalize_phone_number
+        sent, failed = 0, 0
+        seen = set()
+        for raw_phone in raw_recipients:
+            phone = normalize_phone_number(str(raw_phone).strip()) if raw_phone else ""
+            if not phone or phone in seen:
+                continue
+            seen.add(phone)
+            result = send_ebulksms(phone, body)
+            if result.get("status") not in ("error", "skipped"):
+                sent += 1
+            else:
+                failed += 1
+
+        if not seen:
             return Response(
-                {"success": False, "message": str(exc)},
+                {"success": False, "message": "No valid phone numbers provided."},
                 status=status.HTTP_400_BAD_REQUEST,
-            )
-        except requests.RequestException:
-            return Response(
-                {"success": False, "message": "Could not reach KudiSMS. Please try again."},
-                status=status.HTTP_502_BAD_GATEWAY,
             )
 
         return Response(
             {
                 "success": True,
-                "message": f"SMS sent to {sms_result['recipient_count']} guardian number(s).",
-                "sms_data": sms_result,
+                "message": f"SMS sent to {sent} guardian number(s)." + (f" {failed} failed." if failed else ""),
+                "sms_data": {"sent": sent, "failed": failed},
             },
             status=status.HTTP_201_CREATED,
         )
