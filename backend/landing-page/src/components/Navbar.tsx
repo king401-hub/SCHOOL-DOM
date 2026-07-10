@@ -90,17 +90,8 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
             className="flex items-center gap-2.5 cursor-pointer"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
-            <div className="h-10 w-10 rounded-xl bg-slate-950 flex items-center justify-center shadow-md shadow-brand-500/10 border border-slate-900/60 overflow-hidden">
-              <svg viewBox="0 0 128 128" className="h-7 w-7 select-none" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <g fill="#80e2ff">
-                  <rect x="53" y="29.5" width="6" height="4.5" rx="2.25" />
-                  <rect x="47.5" y="34.5" width="7" height="4.5" rx="2.25" />
-                  <path d="M 52,38.5 C 33.5,38.5 22.5,45.5 22.5,58 C 22.5,70.5 35,74.5 45.5,76.5 C 50.5,77.5 54.5,78.5 54.5,81.5 C 54.5,84.5 50.5,86 45,86 C 37,86 32,83.5 32,80 L 26.5,80 C 26.5,87 34,91.5 45,91.5 C 61,91.5 61.5,85 61.5,81.5 C 61.5,70 48.5,67.5 38.5,65.5 C 33,64.5 29.5,63.5 29.5,60 C 29.5,56.5 33,54 39,54 C 47,54 50,56.5 51.5,59.5 L 57.5,59.5 C 56,53.5 49.5,49.5 45.5,49.5 C 44,49.5 43,49.5 42,49.5" transform="translate(1, -2)" />
-                  <rect x="23.5" y="72" width="5.5" height="4" rx="2" />
-                  <rect x="33.5" y="78.5" width="5" height="4" rx="2" />
-                </g>
-                <path d="M 64.5,27.5 H 85.5 C 103,27.5 115,39.5 115,57.5 C 115,75.5 103,87.5 85.5,87.5 H 64.5 Z M 76.5,37 V 78 H 85.5 C 96.5,78 103,70.5 103,57.5 C 103,44.5 96.5,37 85.5,37 Z" fill="#50d58c" />
-              </svg>
+            <div className="h-10 w-10 rounded-xl overflow-hidden shadow-md shadow-brand-500/10 border border-slate-900/60">
+              <img src="/schooldom-favicon.jpeg" alt="Schooldom" className="h-full w-full object-cover" />
             </div>
             <div>
               <div className="flex items-baseline">
