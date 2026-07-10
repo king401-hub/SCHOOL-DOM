@@ -5,11 +5,32 @@ export default function ContactPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', school: '', message: '' });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    setTimeout(() => { setSubmitting(false); setSubmitted(true); }, 1800);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/contact/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          message: `${form.message}\n\n—\nPhone: ${form.phone || 'not provided'}\nSchool: ${form.school || 'not provided'}`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || 'Could not send your message right now.');
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send your message. Please email support@schooldom.academy directly.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
@@ -44,11 +65,11 @@ export default function ContactPage() {
           {/* Left: Contact info */}
           <div className="lg:col-span-2 space-y-5">
             {[
-              { icon: Mail, label: 'Email', value: 'solomonomotayo96@gmail.com', href: 'mailto:solomonomotayo96@gmail.com', color: '#22c55e' },
-              { icon: Phone, label: 'Phone', value: '+234 800 000 0000', href: 'tel:+2348000000000', color: '#0ea5e9' },
+              { icon: Mail, label: 'Email', value: 'support@schooldom.academy', href: 'mailto:support@schooldom.academy', color: '#22c55e' },
+              { icon: Phone, label: 'Phone', value: '+234 907 682 1365', href: 'tel:+2349076821365', color: '#0ea5e9' },
               { icon: MapPin, label: 'Location', value: 'Lagos, Nigeria', href: '#', color: '#8b5cf6' },
               { icon: Clock, label: 'Support Hours', value: 'Mon–Fri, 8am–6pm WAT', href: '#', color: '#f59e0b' },
-              { icon: MessageSquare, label: 'WhatsApp', value: '+234 800 000 0000', href: 'https://wa.me/2348000000000', color: '#10b981' },
+              { icon: MessageSquare, label: 'WhatsApp', value: '+234 907 682 1365', href: 'https://wa.me/2349076821365', color: '#10b981' },
             ].map(c => {
               const Icon = c.icon;
               return (
@@ -140,6 +161,12 @@ export default function ContactPage() {
                       className="w-full px-4 py-3 text-sm placeholder-slate-600 resize-none"
                       style={inputStyle} />
                   </div>
+                  {error && (
+                    <div className="p-3.5 rounded-xl text-sm"
+                      style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}>
+                      {error}
+                    </div>
+                  )}
                   <button type="submit" disabled={submitting} className="w-full btn-primary justify-center py-4 text-base">
                     {submitting ? (
                       <span className="flex items-center gap-2">

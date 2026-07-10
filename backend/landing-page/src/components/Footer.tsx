@@ -40,13 +40,13 @@ export default function Footer({ onGetStarted }: FooterProps) {
             </p>
 
             <div className="space-y-2.5 mb-6">
-              <a href="mailto:solomonomotayo96@gmail.com" className="flex items-center gap-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors">
+              <a href="mailto:support@schooldom.academy" className="flex items-center gap-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors">
                 <Mail className="h-4 w-4 shrink-0" style={{ color: '#22c55e' }} />
-                solomonomotayo96@gmail.com
+                support@schooldom.academy
               </a>
-              <a href="tel:+2348000000000" className="flex items-center gap-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors">
+              <a href="tel:+2349076821365" className="flex items-center gap-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors">
                 <Phone className="h-4 w-4 shrink-0" style={{ color: '#0ea5e9' }} />
-                +234 800 000 0000
+                +234 907 682 1365
               </a>
               <div className="flex items-center gap-2.5 text-slate-500 text-sm">
                 <MapPin className="h-4 w-4 shrink-0" style={{ color: '#8b5cf6' }} />

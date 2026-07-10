@@ -7,7 +7,7 @@ import os
 import re
 import uuid
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -52,6 +52,7 @@ from academic.models import (
     StudentClassPromotion,
     SchoolActivityCalendar,
     TeacherNote,
+    TimetableEntry,
 )
 from core.models import SchoolTenant, Domain
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
@@ -6329,7 +6330,7 @@ def account_deletion_request(request):
 
 
 def _support_email():
-    return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "enquiry@schooldom.academy").strip()
+    return str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "support@schooldom.academy").strip()
 
 
 def _compliance_notification_email():
@@ -7882,6 +7883,228 @@ def class_detail(request, class_id):
             "class": _class_payload(class_obj),
         }
     )
+
+
+def _timetable_entry_payload(entry):
+    return {
+        "id": entry.id,
+        "class_id": entry.class_group_id,
+        "class_name": _class_label(entry.class_group) if entry.class_group_id else "",
+        "subject_id": entry.subject_id,
+        "subject_name": entry.subject.name if entry.subject_id else "",
+        "teacher_id": str(entry.teacher_id) if entry.teacher_id else None,
+        "teacher_name": entry.teacher.get_full_name() if entry.teacher_id else "",
+        "day_of_week": entry.day_of_week,
+        "day_label": entry.get_day_of_week_display(),
+        "start_time": entry.start_time.strftime("%H:%M") if entry.start_time else "",
+        "end_time": entry.end_time.strftime("%H:%M") if entry.end_time else "",
+        "room": entry.room or "",
+        "term_id": entry.term_id,
+        "academic_year_id": entry.academic_year_id,
+    }
+
+
+def _parse_time_value(raw):
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def timetables_snapshot(request):
+    user = request.user
+    role = getattr(user, "role", None)
+    entries_qs = _scope_to_user_tenant(
+        TimetableEntry.objects.select_related("class_group", "subject", "teacher"), user
+    )
+
+    if role == "teacher":
+        entries_qs = entries_qs.filter(teacher=user)
+    elif role == "student":
+        student_class = _current_student_class(user)
+        entries_qs = entries_qs.filter(class_group=student_class) if student_class else entries_qs.none()
+    elif role not in ADMIN_ROLES:
+        entries_qs = entries_qs.none()
+
+    class_id = request.query_params.get("class_id")
+    if class_id and role in ADMIN_ROLES:
+        entries_qs = entries_qs.filter(class_group_id=class_id)
+
+    response = {
+        "success": True,
+        "entries": [_timetable_entry_payload(item) for item in entries_qs[:500]],
+        "days": [{"value": value, "label": label} for value, label in TimetableEntry.DAY_CHOICES],
+    }
+
+    if role in ADMIN_ROLES:
+        response["classes"] = [
+            _class_payload(class_obj)
+            for class_obj in _scope_to_user_tenant(Class.objects.prefetch_related("subjects"), user).order_by("name", "section")[:100]
+        ]
+        response["subjects"] = [
+            _subject_payload(subject)
+            for subject in _scope_to_user_tenant(Subject.objects.all(), user).order_by("name")[:500]
+        ]
+        response["teachers"] = [
+            {"id": str(item.user_id), "name": item.user.get_full_name() or item.user.email}
+            for item in TeacherProfile.objects.select_related("user").filter(user__tenant=user.tenant).order_by("user__first_name", "user__last_name")[:200]
+        ]
+
+    return Response(response)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_timetable_entry(request):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can manage the timetable."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    class_id = request.data.get("class_id")
+    subject_id = request.data.get("subject_id")
+    try:
+        day_of_week = int(request.data.get("day_of_week"))
+    except (TypeError, ValueError):
+        return Response({"success": False, "message": "Select a valid day of the week."}, status=status.HTTP_400_BAD_REQUEST)
+    if day_of_week not in dict(TimetableEntry.DAY_CHOICES):
+        return Response({"success": False, "message": "Select a valid day of the week."}, status=status.HTTP_400_BAD_REQUEST)
+
+    start_time = _parse_time_value(request.data.get("start_time"))
+    end_time = _parse_time_value(request.data.get("end_time"))
+    if not start_time or not end_time:
+        return Response({"success": False, "message": "Enter a valid start and end time."}, status=status.HTTP_400_BAD_REQUEST)
+    if end_time <= start_time:
+        return Response({"success": False, "message": "End time must be after the start time."}, status=status.HTTP_400_BAD_REQUEST)
+
+    class_obj = _scope_to_user_tenant(Class.objects.all(), user).filter(id=class_id).first()
+    if not class_obj:
+        return Response({"success": False, "message": "Select a valid class."}, status=status.HTTP_400_BAD_REQUEST)
+
+    subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=subject_id).first()
+    if not subject_obj:
+        return Response({"success": False, "message": "Select a valid subject."}, status=status.HTTP_400_BAD_REQUEST)
+
+    teacher_id = request.data.get("teacher_id")
+    teacher_obj = None
+    if teacher_id:
+        teacher_obj = User.objects.filter(id=teacher_id, tenant=user.tenant, role="teacher").first()
+        if not teacher_obj:
+            return Response({"success": False, "message": "Select a valid teacher."}, status=status.HTTP_400_BAD_REQUEST)
+
+    conflicts = _scope_to_user_tenant(TimetableEntry.objects.all(), user).filter(
+        day_of_week=day_of_week, start_time__lt=end_time, end_time__gt=start_time,
+    ).filter(Q(class_group=class_obj) | (Q(teacher=teacher_obj) if teacher_obj else Q(pk=None)))
+    if conflicts.exists():
+        return Response(
+            {"success": False, "message": "This clashes with an existing timetable entry for the class or teacher."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    tenant_obj = _tenant_for_model(TimetableEntry, user, school_code=request.data.get("school_code"))
+    active_year = _active_academic_year(user)
+    active_term = _active_term(user)
+
+    entry = TimetableEntry.objects.create(
+        tenant=tenant_obj,
+        class_group=class_obj,
+        subject=subject_obj,
+        teacher=teacher_obj,
+        day_of_week=day_of_week,
+        start_time=start_time,
+        end_time=end_time,
+        room=str(request.data.get("room") or "").strip(),
+        academic_year=active_year,
+        term=active_term,
+    )
+    return Response(
+        {"success": True, "message": "Timetable entry added.", "entry": _timetable_entry_payload(entry)},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def timetable_entry_detail(request, entry_id):
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can manage the timetable."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    entries_qs = _scope_to_user_tenant(TimetableEntry.objects.all(), user)
+    entry = get_object_or_404(entries_qs, id=entry_id)
+
+    if request.method == "DELETE":
+        entry.delete()
+        return Response({"success": True, "message": "Timetable entry removed."})
+
+    update_fields = []
+
+    if "class_id" in request.data:
+        class_obj = _scope_to_user_tenant(Class.objects.all(), user).filter(id=request.data.get("class_id")).first()
+        if not class_obj:
+            return Response({"success": False, "message": "Select a valid class."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.class_group = class_obj
+        update_fields.append("class_group")
+
+    if "subject_id" in request.data:
+        subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=request.data.get("subject_id")).first()
+        if not subject_obj:
+            return Response({"success": False, "message": "Select a valid subject."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.subject = subject_obj
+        update_fields.append("subject")
+
+    if "teacher_id" in request.data:
+        teacher_id = request.data.get("teacher_id")
+        entry.teacher = User.objects.filter(id=teacher_id, tenant=user.tenant, role="teacher").first() if teacher_id else None
+        update_fields.append("teacher")
+
+    if "day_of_week" in request.data:
+        try:
+            day_of_week = int(request.data.get("day_of_week"))
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "Select a valid day of the week."}, status=status.HTTP_400_BAD_REQUEST)
+        if day_of_week not in dict(TimetableEntry.DAY_CHOICES):
+            return Response({"success": False, "message": "Select a valid day of the week."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.day_of_week = day_of_week
+        update_fields.append("day_of_week")
+
+    if "start_time" in request.data:
+        start_time = _parse_time_value(request.data.get("start_time"))
+        if not start_time:
+            return Response({"success": False, "message": "Enter a valid start time."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.start_time = start_time
+        update_fields.append("start_time")
+
+    if "end_time" in request.data:
+        end_time = _parse_time_value(request.data.get("end_time"))
+        if not end_time:
+            return Response({"success": False, "message": "Enter a valid end time."}, status=status.HTTP_400_BAD_REQUEST)
+        entry.end_time = end_time
+        update_fields.append("end_time")
+
+    if entry.end_time <= entry.start_time:
+        return Response({"success": False, "message": "End time must be after the start time."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if "room" in request.data:
+        entry.room = str(request.data.get("room") or "").strip()
+        update_fields.append("room")
+
+    if update_fields:
+        entry.save(update_fields=update_fields)
+
+    return Response({"success": True, "message": "Timetable entry updated.", "entry": _timetable_entry_payload(entry)})
 
 
 @api_view(["POST"])

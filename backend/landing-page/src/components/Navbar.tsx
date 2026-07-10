@@ -1,5 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, ArrowRight, ChevronDown } from 'lucide-react';
+import { Menu, X, ArrowRight, ChevronDown, Sun, Moon } from 'lucide-react';
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    (localStorage.getItem('sd-theme') as 'dark' | 'light') || 'dark'
+  );
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light');
+    localStorage.setItem('sd-theme', theme);
+  }, [theme]);
+  return (
+    <button
+      onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+      aria-label="Toggle theme"
+      className="h-9 w-9 rounded-xl border border-white/8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer shrink-0"
+    >
+      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" style={{ color: '#475569' }} />}
+    </button>
+  );
+}
 
 interface NavbarProps {
   onSignIn: () => void;
@@ -132,6 +151,7 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
             <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">Sign In</button>
             <button
               ref={btnRef}
@@ -145,12 +165,15 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
             </button>
           </div>
 
-          <button
-            className="md:hidden p-2 rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
-            onClick={() => setMobileOpen(o => !o)}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+          <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              className="p-2 rounded-xl border border-white/8 text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+              onClick={() => setMobileOpen(o => !o)}
+            >
+              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
       </nav>
 
