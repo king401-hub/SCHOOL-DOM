@@ -162,9 +162,11 @@ export default function CBTSection() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <button className="btn-primary">
-                <Download className="h-4 w-4" /> Download CBT App
-              </button>
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border text-sm"
+                style={{ background: 'rgba(34,197,94,0.06)', borderColor: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>
+                <Monitor className="h-4 w-4" />
+                Included with your Schooldom subscription
+              </div>
               <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-white/8 text-slate-400 text-sm">
                 <Wifi className="h-4 w-4 text-green-400" />
                 Mobile app coming soon

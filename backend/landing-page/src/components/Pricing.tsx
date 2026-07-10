@@ -20,7 +20,7 @@ const K12_FEATURES = [
   'Full student management & admissions',
   'Hybrid CBT exam engine (online + offline)',
   'Fee collection with Paystack integration',
-  'Biometric & QR attendance tracking',
+  'QR attendance tracking',
   'Auto-generated report cards & transcripts',
   'Parent portal (mobile-friendly)',
   'HR & staff payroll management',

@@ -1,5 +1,14 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, Search, ArrowLeft } from 'lucide-react';
+
+const CAT_KEYS: Record<string, string> = {
+  pricing: 'Pricing',
+  cbt: 'CBT & Exams',
+  finance: 'Finance & Fees',
+  setup: 'Setup & Support',
+  security: 'Security & Compliance',
+};
 
 const FAQS = [
   {
@@ -75,8 +84,10 @@ function AccordionItem({ q, a, color }: { q: string; a: string; color: string })
 }
 
 export default function FAQPage() {
+  const [searchParams] = useSearchParams();
+  const initialCat = CAT_KEYS[searchParams.get('cat') ?? ''] ?? 'All';
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeCategory, setActiveCategory] = useState(initialCat);
 
   const filtered = FAQS.map(cat => ({
     ...cat,

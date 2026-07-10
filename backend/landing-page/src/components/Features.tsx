@@ -1,8 +1,16 @@
 import { useRef, useState, useEffect } from 'react';
 import {
-  BookOpen, DollarSign, Users, Fingerprint, FileText, MessageSquare,
-  Brain, Briefcase, Monitor, ArrowRight, CheckCircle, TrendingUp, CreditCard, QrCode
+  BookOpen, DollarSign, Users, FileText, MessageSquare,
+  Brain, Briefcase, Monitor, ArrowRight, CheckCircle, QrCode
 } from 'lucide-react';
+
+function goTo(link: string) {
+  if (link.startsWith('#')) {
+    document.getElementById(link.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+  } else {
+    window.location.href = link;
+  }
+}
 
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
@@ -16,21 +24,22 @@ function useVisible(threshold = 0.15) {
 }
 
 const FEATURES_GRID = [
-  { icon: BookOpen, title: 'Hybrid CBT Engine', desc: 'Offline-first exam system. Students sit exams without internet. Auto-syncs when online.', color: '#0ea5e9', glow: 'rgba(14,165,233,0.2)' },
-  { icon: DollarSign, title: 'Fee & Finance Ledger', desc: 'Complete bursary suite — collect fees, generate receipts, track balances, Paystack integration.', color: '#22c55e', glow: 'rgba(34,197,94,0.2)' },
-  { icon: Users, title: 'Student Management', desc: 'Full student lifecycle from admission to graduation. Profiles, enrollments, transcripts.', color: '#8b5cf6', glow: 'rgba(139,92,246,0.2)' },
-  { icon: Fingerprint, title: 'Biometric Attendance', desc: 'QR code + biometric scanning. Real-time dashboards. Parent SMS alerts.', color: '#f59e0b', glow: 'rgba(245,158,11,0.2)' },
-  { icon: FileText, title: 'Auto Report Cards', desc: 'Generate professional report cards in seconds. Custom grading scales, remarks, PDFs.', color: '#ec4899', glow: 'rgba(236,72,153,0.2)' },
-  { icon: MessageSquare, title: 'Parent Portal', desc: 'Parents track fees, results, attendance and communicate with teachers from mobile.', color: '#06b6d4', glow: 'rgba(6,182,212,0.2)' },
-  { icon: Brain, title: 'AI Secretary', desc: 'AI-powered school assistant. Answers queries, schedules, generates documents automatically.', color: '#a855f7', glow: 'rgba(168,85,247,0.2)' },
-  { icon: Briefcase, title: 'HR & Payroll', desc: 'Staff management, leave tracking, payroll computation, performance reviews.', color: '#14b8a6', glow: 'rgba(20,184,166,0.2)' },
-  { icon: Monitor, title: 'Desktop CBT App', desc: 'Win7-compatible offline CBT app for schools with no internet infrastructure.', color: '#f97316', glow: 'rgba(249,115,22,0.2)' },
+  { icon: BookOpen, title: 'Hybrid CBT Engine', desc: 'Offline-first exam system. Students sit exams without internet. Auto-syncs when online.', color: '#0ea5e9', glow: 'rgba(14,165,233,0.2)', link: '#cbt' },
+  { icon: DollarSign, title: 'Fee & Finance Ledger', desc: 'Complete bursary suite — collect fees, generate receipts, track balances, Paystack integration.', color: '#22c55e', glow: 'rgba(34,197,94,0.2)', link: '/#/faq?cat=finance' },
+  { icon: Users, title: 'Student Management', desc: 'Full student lifecycle from admission to graduation. Profiles, enrollments, transcripts.', color: '#8b5cf6', glow: 'rgba(139,92,246,0.2)', link: '/#/faq?cat=setup' },
+  { icon: QrCode, title: 'QR Attendance', desc: 'QR code scanning. Real-time attendance dashboards. Parent SMS alerts.', color: '#f59e0b', glow: 'rgba(245,158,11,0.2)', link: '/#/faq' },
+  { icon: FileText, title: 'Auto Report Cards', desc: 'Generate professional report cards in seconds. Custom grading scales, remarks, PDFs.', color: '#ec4899', glow: 'rgba(236,72,153,0.2)', link: '/#/faq' },
+  { icon: MessageSquare, title: 'Parent Portal', desc: 'Parents track fees, results, attendance and communicate with teachers from mobile.', color: '#06b6d4', glow: 'rgba(6,182,212,0.2)', link: '/#/faq' },
+  { icon: Brain, title: 'AI Secretary', desc: 'AI-powered school assistant. Answers queries, schedules, generates documents automatically.', color: '#a855f7', glow: 'rgba(168,85,247,0.2)', link: '/#/faq' },
+  { icon: Briefcase, title: 'HR & Payroll', desc: 'Staff management, leave tracking, payroll computation, performance reviews.', color: '#14b8a6', glow: 'rgba(20,184,166,0.2)', link: '/#/faq' },
+  { icon: Monitor, title: 'Desktop CBT App', desc: 'Win7-compatible offline CBT app for schools with no internet infrastructure.', color: '#f97316', glow: 'rgba(249,115,22,0.2)', link: '#cbt' },
 ];
 
 const SHOWCASE_SECTIONS = [
   {
     badge: 'Finance Module',
     badgeColor: '#22c55e',
+    link: '/#/faq?cat=finance',
     title: 'Collect fees, track every naira',
     desc: "Complete bursary management — generate invoices via SMS, collect payments through Paystack, issue receipts instantly, and track outstanding balances across every student.",
     points: ['Paystack + bank transfer integration', 'SMS invoice delivery', 'Automatic receipt generation', 'Outstanding balance alerts', 'Multi-term ledger history'],
@@ -82,6 +91,7 @@ const SHOWCASE_SECTIONS = [
   {
     badge: 'CBT Module',
     badgeColor: '#0ea5e9',
+    link: '#cbt',
     title: 'Run exams anywhere, online or offline',
     desc: "Our hybrid CBT engine lets students take exams without internet. Results auto-sync when connectivity is restored. Built for Nigerian school realities.",
     points: ['100% offline-capable exam engine', 'Auto-sync on reconnect', 'Anti-cheat & proctoring', 'Custom question banks', 'Instant result computation'],
@@ -123,9 +133,10 @@ const SHOWCASE_SECTIONS = [
   {
     badge: 'Attendance Module',
     badgeColor: '#8b5cf6',
-    title: 'QR & biometric attendance in seconds',
-    desc: "Students scan QR codes or touch fingerprint readers. Parents receive instant SMS when children arrive late or are absent. Real-time dashboard tracks every class.",
-    points: ['QR code scanning', 'Fingerprint biometrics', 'Instant parent SMS alerts', 'Late arrival tracking', 'Monthly attendance analytics'],
+    link: '/#/faq',
+    title: 'QR attendance in seconds',
+    desc: "Students scan QR codes at the gate or in class. Parents receive instant SMS when children arrive late or are absent. Real-time dashboard tracks every class.",
+    points: ['QR code scanning', 'Class-by-class dashboards', 'Instant parent SMS alerts', 'Late arrival tracking', 'Monthly attendance analytics'],
     color: '#8b5cf6',
     preview: (
       <div className="rounded-2xl overflow-hidden border border-white/6" style={{ background: 'rgba(255,255,255,0.02)' }}>
@@ -189,7 +200,7 @@ function ShowcaseSection({ section, idx }: { section: typeof SHOWCASE_SECTIONS[0
             </li>
           ))}
         </ul>
-        <button className="btn-ghost">
+        <button className="btn-ghost" onClick={() => goTo(section.link)}>
           Learn more <ArrowRight className="h-4 w-4" />
         </button>
       </div>
@@ -206,7 +217,7 @@ function ShowcaseSection({ section, idx }: { section: typeof SHOWCASE_SECTIONS[0
 
 function FeatureCard({ feature, index, visible }: { feature: typeof FEATURES_GRID[0]; index: number; visible: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { icon: Icon, title, desc, color, glow } = feature;
+  const { icon: Icon, title, desc, color, glow, link } = feature;
 
   const handleMove = (e: React.MouseEvent) => {
     const el = ref.current;
@@ -218,7 +229,8 @@ function FeatureCard({ feature, index, visible }: { feature: typeof FEATURES_GRI
 
   return (
     <div ref={ref}
-      className="group relative rounded-2xl p-6 border border-white/5 cursor-default overflow-hidden"
+      onClick={() => goTo(link)}
+      className="group relative rounded-2xl p-6 border border-white/5 cursor-pointer overflow-hidden"
       style={{
         background: 'rgba(255,255,255,0.02)',
         opacity: visible ? 1 : 0,
