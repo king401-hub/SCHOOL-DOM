@@ -452,28 +452,29 @@ export function userInitials(user) {
 
 export function resolveSchoolBrand(...sources) {
   const school = sources.find((item) => item && Object.keys(item).length) || {};
+  const str = (v) => (typeof v === "string" && v) || null;
   const name =
-    school.name ||
-    school.school_name ||
-    school.schoolName ||
-    school.school ||
-    school.institution_name ||
-    school.institutionName ||
-    school.tenant?.name ||
-    school.user?.school_name ||
-    school.user?.schoolName ||
-    school.user?.school?.name ||
-    school.user?.tenant?.name ||
+    str(school.name) ||
+    str(school.school_name) ||
+    str(school.schoolName) ||
+    str(school.school) ||
+    str(school.institution_name) ||
+    str(school.institutionName) ||
+    str(school.tenant?.name) ||
+    str(school.user?.school_name) ||
+    str(school.user?.schoolName) ||
+    str(school.user?.school?.name) ||
+    str(school.user?.tenant?.name) ||
     "SchoolDom";
   return {
     name,
-    code: school.school_code || school.schoolCode || school.tenant?.schema_name || school.user?.school_code || school.user?.schoolCode || school.user?.tenant?.schema_name || "",
-    logo: school.logo || school.logo_url || school.logoUrl || school.school_logo || school.schoolLogo || school.logo_path || school.user?.school_logo || school.user?.schoolLogo || "",
-    motto: school.motto || school.tagline || school.school_motto || school.schoolMotto || school.school_tagline || school.schoolTagline || school.user?.motto || school.user?.tagline || "",
-    address: school.address || school.school_address || school.schoolAddress || school.user?.school_address || school.user?.schoolAddress || "",
-    phone: school.phone || school.phone_number || school.phoneNumber || school.school_phone || school.schoolPhone || school.user?.school_phone || school.user?.schoolPhone || "",
-    email: school.email || school.school_email || school.schoolEmail || school.user?.school_email || school.user?.schoolEmail || "",
-    school_type: school.school_type || school.schoolType || school.type || school.user?.school_type || school.user?.schoolType || "k12",
+    code: str(school.school_code) || str(school.schoolCode) || str(school.tenant?.schema_name) || str(school.user?.school_code) || str(school.user?.schoolCode) || str(school.user?.tenant?.schema_name) || "",
+    logo: str(school.logo) || str(school.logo_url) || str(school.logoUrl) || str(school.school_logo) || str(school.schoolLogo) || str(school.logo_path) || str(school.user?.school_logo) || str(school.user?.schoolLogo) || "",
+    motto: str(school.motto) || str(school.tagline) || str(school.school_motto) || str(school.schoolMotto) || str(school.school_tagline) || str(school.schoolTagline) || str(school.user?.motto) || str(school.user?.tagline) || "",
+    address: str(school.address) || str(school.school_address) || str(school.schoolAddress) || str(school.user?.school_address) || str(school.user?.schoolAddress) || "",
+    phone: str(school.phone) || str(school.phone_number) || str(school.phoneNumber) || str(school.school_phone) || str(school.schoolPhone) || str(school.user?.school_phone) || str(school.user?.schoolPhone) || "",
+    email: str(school.email) || str(school.school_email) || str(school.schoolEmail) || str(school.user?.school_email) || str(school.user?.schoolEmail) || "",
+    school_type: str(school.school_type) || str(school.schoolType) || str(school.type) || str(school.user?.school_type) || str(school.user?.schoolType) || "k12",
     initials: name
       .split(/\s+/)
       .filter(Boolean)
