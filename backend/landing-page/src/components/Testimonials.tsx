@@ -1,143 +1,182 @@
-import { useState } from 'react';
-import { TESTIMONIALS } from '../data';
-import { Quote, ChevronLeft, ChevronRight, Award, UserCheck, ShieldCheck } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Star, ChevronLeft, ChevronRight, Quote } from 'lucide-react';
+
+const TESTIMONIALS = [
+  {
+    name: 'Mr. Adewale Ogundimu',
+    role: 'Principal, Bright Future Academy, Lagos',
+    avatar: 'AO',
+    color: '#0ea5e9',
+    stars: 5,
+    text: "Schooldom completely transformed how we run our school. Fee collection used to take weeks of manual reconciliation. Now bursary staff settle everything in a day. The Paystack integration alone has been life-changing.",
+  },
+  {
+    name: 'Mrs. Chidinma Eze',
+    role: 'Director, Excellence Model School, Enugu',
+    avatar: 'CE',
+    color: '#10b981',
+    stars: 5,
+    text: "Our report card generation used to take three staff members an entire week. With Schooldom, we generate all 800 report cards in under 10 minutes with a single click. Parents are amazed at how professional they look.",
+  },
+  {
+    name: 'Alhaji Musa Abdullahi',
+    role: 'Proprietor, Crown Heights Academy, Abuja',
+    avatar: 'MA',
+    color: '#8b5cf6',
+    stars: 5,
+    text: "The offline CBT system is exactly what we needed. Our exam hall has poor internet and the old system kept failing during exams. Now exams run perfectly offline and sync when connectivity is restored. No more panicking.",
+  },
+  {
+    name: 'Mrs. Folake Adeyemi',
+    role: 'Admin Officer, Heritage International School, Ibadan',
+    avatar: 'FA',
+    color: '#f59e0b',
+    stars: 5,
+    text: "Parents now pay school fees from their phones at midnight if they want to. We get the alert instantly. The debt tracking means we never lose track of who owes what. Our outstanding balance dropped by 60% in one term.",
+  },
+  {
+    name: 'Mr. Emmanuel Okeke',
+    role: "ICT Coordinator, St. Andrew's Secondary, Port Harcourt",
+    avatar: 'EO',
+    color: '#ec4899',
+    stars: 5,
+    text: "The Win7 desktop CBT app is a god-send. Some of our student machines are old Dell systems that can't run modern browsers well. The desktop app handles 200 concurrent students without breaking a sweat.",
+  },
+];
+
+function StarRating({ count }: { count: number }) {
+  return (
+    <div className="flex gap-0.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+      ))}
+    </div>
+  );
+}
 
 export default function Testimonials() {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [active, setActive] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const prevSlide = () => {
-    setCurrentIndex((prev) => (prev === 0 ? TESTIMONIALS.length - 1 : prev - 1));
+  const go = (idx: number) => {
+    if (animating) return;
+    setAnimating(true);
+    setTimeout(() => {
+      setActive((idx + TESTIMONIALS.length) % TESTIMONIALS.length);
+      setAnimating(false);
+    }, 200);
   };
 
-  const nextSlide = () => {
-    setCurrentIndex((prev) => (prev === TESTIMONIALS.length - 1 ? 0 : prev + 1));
-  };
+  useEffect(() => {
+    intervalRef.current = setInterval(() => go(active + 1), 5000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [active]);
 
-  const curTest = TESTIMONIALS[currentIndex];
+  const t = TESTIMONIALS[active];
 
   return (
-    <section id="testimonials" className="py-20 bg-gray-50 border-y border-gray-100/60">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Title sections */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-xs font-bold uppercase tracking-widest text-brand-600 bg-brand-50 px-3.5 py-1.5 rounded-full border border-brand-200/50">
-            Social Proof & Trust Indicators
+    <section id="testimonials" className="py-28 px-4 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center mb-16">
+          <span
+            className="text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-full border mb-4 inline-block"
+            style={{ color: '#10b981', background: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)' }}
+          >
+            What Schools Say
           </span>
-          <h2 className="font-display font-bold text-3xl sm:text-4xl text-brand-950 mt-4 tracking-tight">
-            Loved By Proprietors and School Administrators
+          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+            Trusted by schools{' '}
+            <span style={{ background: 'linear-gradient(90deg, #10b981, #0ea5e9)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              across Nigeria
+            </span>
           </h2>
-          <p className="text-gray-600 mt-3 text-base">
-            See how schools across Ibadan, Lekki, Kaduna, and Port Harcourt successfully transition physically to modern digitized management systems.
-          </p>
         </div>
 
-        {/* Big visual carousel and stats card display grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center justify-center max-w-6xl mx-auto">
-          
-          {/* Left testimonial card */}
-          <div className="lg:col-span-7 bg-white p-6 sm:p-10 rounded-3xl glow-card text-left relative min-h-[350px] flex flex-col justify-between">
-            <div className="absolute top-6 right-6 text-brand-100 pointer-events-none">
-              <Quote className="h-16 w-16" />
-            </div>
-
-            <div>
-              {/* Star Rating decoration */}
-              <div className="flex gap-1 text-amber-400 mb-6">
-                {[...Array(5)].map((_, i) => (
-                  <span key={i} className="text-sm">★</span>
-                ))}
-                <span className="text-xs text-gray-400 font-semibold ml-2 font-mono">5.0 OUTSTANDING</span>
-              </div>
-
-              <blockquote className="text-base sm:text-lg text-brand-950 leading-relaxed font-normal italic">
-                "{curTest.quote}"
-              </blockquote>
-            </div>
-
-            {/* Principal signature profile */}
-            <div className="border-t border-gray-100 pt-6 mt-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <p className="font-display font-extrabold text-base text-brand-950">{curTest.principalName}</p>
-                <p className="text-xs font-semibold text-gray-500">{curTest.role} • {curTest.schoolName}</p>
-                <p className="text-xs text-brand-500 font-medium mt-0.5">{curTest.location}</p>
-              </div>
-
-              {/* Slider arrow controls */}
-              <div className="flex gap-2 shrink-0">
-                <button
-                  id="btn-prev-test"
-                  onClick={prevSlide}
-                  className="p-2 border border-gray-200 hover:bg-slate-50 active:bg-slate-100 rounded-xl cursor-pointer"
+        <div className="relative">
+          <div
+            className="rounded-3xl border border-white/5 p-8 sm:p-12 transition-all duration-200"
+            style={{
+              background: 'rgba(255,255,255,0.02)',
+              opacity: animating ? 0 : 1,
+              transform: animating ? 'translateY(8px)' : 'translateY(0)',
+            }}
+          >
+            <Quote className="h-10 w-10 mb-6" style={{ color: t.color, opacity: 0.6 }} />
+            <p className="text-white text-lg sm:text-xl leading-relaxed mb-8 font-light">
+              "{t.text}"
+            </p>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-4">
+                <div
+                  className="h-12 w-12 rounded-2xl flex items-center justify-center text-white font-bold text-sm shrink-0"
+                  style={{ background: `linear-gradient(135deg, ${t.color}80, ${t.color}40)`, border: `1px solid ${t.color}30` }}
                 >
-                  <ChevronLeft className="h-5 w-5 text-gray-600" />
-                </button>
-                <button
-                  id="btn-next-test"
-                  onClick={nextSlide}
-                  className="p-2 border border-brand-100 text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer"
-                >
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Right Metrics summary visual block */}
-          <div className="lg:col-span-5 bg-slate-900 text-white rounded-3xl p-6 sm:p-8 flex flex-col justify-between h-full min-h-[350px] text-left border border-slate-800 relative overflow-hidden">
-            {/* Design glow background */}
-            <div className="absolute top-[-10%] right-[-10%] w-32 h-32 bg-teal-brand-500/10 rounded-full filter blur-xl pointer-events-none" />
-
-            <div className="space-y-6">
-              <div className="flex items-center gap-2 text-teal-brand-500">
-                <ShieldCheck className="h-5 w-5" />
-                <span className="text-xs font-bold uppercase tracking-wider font-mono">Verified Integration Metrics</span>
-              </div>
-
-              <div>
-                <h4 className="font-display font-bold text-lg text-white">Trust Ecosystem Scale</h4>
-                <p className="text-xs text-slate-400 mt-1">Real-time statistics updated directly from registered African educational institutes.</p>
-              </div>
-
-              <div className="space-y-5">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-xl bg-slate-800 text-teal-brand-500 flex items-center justify-center shrink-0">
-                    <Award className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-300">250+ Schools Onboarded</p>
-                    <p className="text-xs text-slate-500">Includes multi-school groups and vocational centres.</p>
-                  </div>
+                  {t.avatar}
                 </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-xl bg-slate-800 text-teal-brand-500 flex items-center justify-center shrink-0">
-                    <UserCheck className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-300">85,000+ Enrolled Students</p>
-                    <p className="text-xs text-slate-500">Each student earns profile credentials and quiz XP daily.</p>
-                  </div>
+                <div>
+                  <p className="text-white font-semibold">{t.name}</p>
+                  <p className="text-slate-500 text-sm">{t.role}</p>
                 </div>
               </div>
+              <StarRating count={t.stars} />
             </div>
-
-            <div className="border-t border-slate-800 pt-6 mt-8 grid grid-cols-2 gap-4 text-xs font-medium text-slate-400">
-              <div>
-                <p className="text-white font-extrabold text-lg leading-none">99.8%</p>
-                <p className="text-[10px] uppercase text-slate-500 font-bold mt-1.5">Server Uptime API</p>
-              </div>
-              <div>
-                <p className="text-white font-extrabold text-lg leading-none">₦450M+</p>
-                <p className="text-[10px] uppercase text-slate-500 font-bold mt-1.5">Tuition Collections Reconciled</p>
-              </div>
-            </div>
-
           </div>
 
+          <div className="flex items-center justify-between mt-8">
+            <div className="flex gap-2">
+              {TESTIMONIALS.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => go(i)}
+                  className="rounded-full transition-all duration-300 cursor-pointer"
+                  style={{
+                    width: active === i ? '24px' : '8px',
+                    height: '8px',
+                    background: active === i ? '#0ea5e9' : 'rgba(255,255,255,0.15)',
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => go(active - 1)}
+                className="h-10 w-10 rounded-xl flex items-center justify-center border border-white/10 text-slate-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => go(active + 1)}
+                className="h-10 w-10 rounded-xl flex items-center justify-center border border-white/10 text-slate-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
 
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-4 mt-16">
+          {TESTIMONIALS.map((item, i) => (
+            <button
+              key={i}
+              onClick={() => go(i)}
+              className="flex flex-col items-center gap-2 p-3 rounded-xl border transition-all cursor-pointer"
+              style={{
+                border: active === i ? `1px solid ${item.color}40` : '1px solid rgba(255,255,255,0.05)',
+                background: active === i ? `${item.color}08` : 'transparent',
+              }}
+            >
+              <div
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-xs font-bold"
+                style={{ background: `${item.color}30` }}
+              >
+                {item.avatar}
+              </div>
+              <span className="text-[10px] text-slate-500 text-center leading-tight hidden sm:block">{item.name.split(' ')[0]}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   );
