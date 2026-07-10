@@ -16,7 +16,7 @@ const FAQS = [
     color: '#22c55e',
     items: [
       { q: 'How much does Schooldom cost?', a: 'K-12 schools pay ₦500 per term (3 months 15 days). Non-K12 institutions pay ₦200 per month. Both plans are flat rates — no per-student charges, no hidden fees.' },
-      { q: 'What is the Kid Monitor add-on?', a: 'Kid Monitor is an optional add-on for K-12 schools at ₦1,000 per term. It provides real-time location tracking, screen activity monitoring, and safety alerts for students.' },
+      { q: 'What is the Child Monitor add-on?', a: 'Child Monitor is an optional add-on for K-12 schools at ₦1,000 per term. It provides real-time location tracking, screen activity monitoring, and safety alerts for students.' },
       { q: 'Is there a free trial?', a: 'Yes! New schools get a 30-day free trial with full access to all features. No credit card required to start.' },
       { q: 'Are there setup fees or per-student charges?', a: 'No. Our pricing is completely flat. You pay one rate for the entire school regardless of how many students or staff members you add.' },
     ]
@@ -124,8 +124,7 @@ export default function FAQPage() {
             placeholder="Search questions..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-white text-sm placeholder-slate-600"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm sd-input placeholder-slate-600"
           />
         </div>
 
@@ -135,11 +134,11 @@ export default function FAQPage() {
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer sd-card-2"
               style={{
-                background: activeCategory === cat ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${activeCategory === cat ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                color: activeCategory === cat ? '#22c55e' : '#94a3b8',
+                background: activeCategory === cat ? 'rgba(34,197,94,0.1)' : undefined,
+                borderColor: activeCategory === cat ? 'rgba(34,197,94,0.3)' : undefined,
+                color: activeCategory === cat ? '#22c55e' : undefined,
               }}
             >
               {cat}
@@ -150,8 +149,7 @@ export default function FAQPage() {
         {/* FAQ sections */}
         <div className="space-y-8">
           {filtered.map(cat => (
-            <div key={cat.category} className="rounded-2xl p-6 border border-white/6"
-              style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <div key={cat.category} className="rounded-2xl p-6 sd-card">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-2 h-2 rounded-full" style={{ background: cat.color }} />
                 <h2 className="font-bold text-sm" style={{ color: cat.color }}>{cat.category}</h2>

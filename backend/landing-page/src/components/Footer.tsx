@@ -1,7 +1,7 @@
 import { Mail, MapPin, Twitter, Youtube, Facebook, ArrowRight, Phone } from 'lucide-react';
 
 const LINKS = {
-  Product: ['Features', 'CBT Engine', 'Finance Ledger', 'Parent Portal', 'Kid Monitor'],
+  Product: ['Features', 'CBT Engine', 'Finance Ledger', 'Parent Portal', 'Child Monitor'],
   Company: ['About Us', 'Blog', 'Careers', 'Privacy Policy', 'Terms of Service'],
   Support: ['Documentation', 'Help Center', 'Status Page', 'Contact Us', 'API Reference'],
 };

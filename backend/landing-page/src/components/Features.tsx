@@ -45,7 +45,7 @@ const SHOWCASE_SECTIONS = [
     points: ['Paystack + bank transfer integration', 'SMS invoice delivery', 'Automatic receipt generation', 'Outstanding balance alerts', 'Multi-term ledger history'],
     color: '#22c55e',
     preview: (
-      <div className="rounded-2xl overflow-hidden border border-white/6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+      <div className="rounded-2xl overflow-hidden sd-card">
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-white text-sm font-semibold">Fee Collection Dashboard</span>
           <span className="badge badge-green text-[9px]">Live</span>
@@ -78,7 +78,7 @@ const SHOWCASE_SECTIONS = [
               { label: 'Pending', val: '₦1.8M', color: '#f59e0b' },
               { label: 'Students', val: '842', color: '#0ea5e9' },
             ].map(s => (
-              <div key={s.label} className="rounded-xl p-2.5 text-center" style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <div key={s.label} className="rounded-xl p-2.5 text-center sd-card-2">
                 <p className="font-bold font-mono text-sm" style={{ color: s.color }}>{s.val}</p>
                 <p className="text-slate-600 text-[9px]">{s.label}</p>
               </div>
@@ -97,7 +97,7 @@ const SHOWCASE_SECTIONS = [
     points: ['100% offline-capable exam engine', 'Auto-sync on reconnect', 'Anti-cheat & proctoring', 'Custom question banks', 'Instant result computation'],
     color: '#0ea5e9',
     preview: (
-      <div className="rounded-2xl overflow-hidden border border-white/6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+      <div className="rounded-2xl overflow-hidden sd-card">
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-white text-sm font-semibold">CBT — English SS3 (Term 2)</span>
           <div className="flex items-center gap-2">
@@ -108,7 +108,7 @@ const SHOWCASE_SECTIONS = [
         <div className="p-4">
           <div className="grid grid-cols-2 gap-3 mb-4">
             {[{ l: 'Active', v: '127', c: '#0ea5e9' }, { l: 'Submitted', v: '43', c: '#22c55e' }, { l: 'Avg Progress', v: '68%', c: '#8b5cf6' }, { l: 'Offline', v: '12', c: '#f59e0b' }].map(s => (
-              <div key={s.l} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <div key={s.l} className="rounded-xl p-3 sd-card-2">
                 <p className="text-slate-500 text-[9px]">{s.l}</p>
                 <p className="font-bold text-lg font-mono" style={{ color: s.c }}>{s.v}</p>
               </div>
@@ -119,7 +119,7 @@ const SHOWCASE_SECTIONS = [
             {['Bello Fatima', 'Chidi Okonkwo', 'Ngozi Eze', 'Tunde A.'].map((name, i) => (
               <div key={name} className="flex items-center gap-3">
                 <span className="text-slate-500 text-[9px] w-20 truncate">{name}</span>
-                <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <div className="flex-1 h-1.5 rounded-full sd-track">
                   <div className="h-full rounded-full transition-all" style={{ width: `${[78, 95, 62, 88][i]}%`, background: 'linear-gradient(90deg, #22c55e, #0ea5e9)' }} />
                 </div>
                 <span className="text-[9px] font-mono w-8 text-right" style={{ color: '#0ea5e9' }}>{[78, 95, 62, 88][i]}%</span>
@@ -139,7 +139,7 @@ const SHOWCASE_SECTIONS = [
     points: ['QR code scanning', 'Class-by-class dashboards', 'Instant parent SMS alerts', 'Late arrival tracking', 'Monthly attendance analytics'],
     color: '#8b5cf6',
     preview: (
-      <div className="rounded-2xl overflow-hidden border border-white/6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+      <div className="rounded-2xl overflow-hidden sd-card">
         <div className="p-4 border-b border-white/5 flex items-center justify-between">
           <span className="text-white text-sm font-semibold">Attendance — JSS2A</span>
           <div className="flex items-center gap-1.5">
@@ -150,7 +150,7 @@ const SHOWCASE_SECTIONS = [
         <div className="p-4">
           <div className="grid grid-cols-4 gap-2 mb-4">
             {[{ l: 'Present', v: '38', c: '#22c55e' }, { l: 'Late', v: '3', c: '#f59e0b' }, { l: 'Absent', v: '4', c: '#ef4444' }, { l: 'Rate', v: '93%', c: '#8b5cf6' }].map(s => (
-              <div key={s.l} className="rounded-xl p-2 text-center" style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <div key={s.l} className="rounded-xl p-2 text-center sd-card-2">
                 <p className="font-bold text-base font-mono" style={{ color: s.c }}>{s.v}</p>
                 <p className="text-slate-600 text-[8px]">{s.l}</p>
               </div>
@@ -230,9 +230,8 @@ function FeatureCard({ feature, index, visible }: { feature: typeof FEATURES_GRI
   return (
     <div ref={ref}
       onClick={() => goTo(link)}
-      className="group relative rounded-2xl p-6 border border-white/5 cursor-pointer overflow-hidden"
+      className="group relative rounded-2xl p-6 cursor-pointer overflow-hidden sd-card"
       style={{
-        background: 'rgba(255,255,255,0.02)',
         opacity: visible ? 1 : 0,
         transform: visible ? 'none' : 'translateY(24px)',
         transition: `opacity 0.5s ease ${index * 60}ms, transform 0.5s ease ${index * 60}ms`,

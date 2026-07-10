@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   X, Check, ChevronRight, Eye, ShieldCheck, RefreshCw, Award, Sparkles
 } from 'lucide-react';
@@ -73,7 +73,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
   };
 
   const pricing = schoolType === 'K12'
-    ? `₦500 / term (3 months 15 days)${kidMonitor ? ' + ₦1,000 Kid Monitor = ₦1,500/term' : ''}`
+    ? `₦500 / term (3 months 15 days)${kidMonitor ? ' + ₦1,000 Child Monitor = ₦1,500/term' : ''}`
     : '₦200 / month';
 
   return (
@@ -83,8 +83,8 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-xl rounded-3xl overflow-hidden flex flex-col max-h-[92vh]"
-        style={{ background: '#0d1424', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 40px 80px rgba(0,0,0,0.6)' }}
+        className="relative w-full max-w-xl rounded-3xl overflow-hidden flex flex-col max-h-[92vh] sd-modal"
+        style={{ boxShadow: '0 40px 80px rgba(0,0,0,0.6)' }}
       >
         {/* Header */}
         <div
@@ -114,8 +114,8 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
             {[1, 2, 3].map(s => (
               <div
                 key={s}
-                className="flex-1 h-1 rounded-full transition-all duration-300"
-                style={{ background: s <= step ? '#22c55e' : 'rgba(255,255,255,0.08)' }}
+                className={`flex-1 h-1 rounded-full transition-all duration-300 ${s <= step ? '' : 'sd-track'}`}
+                style={{ background: s <= step ? '#22c55e' : undefined }}
               />
             ))}
           </div>
@@ -147,7 +147,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                 <p className="text-slate-500 text-sm">Your school has been compiled on the Schooldom cluster.</p>
               </div>
 
-              <div className="rounded-2xl p-5 relative overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="rounded-2xl p-5 relative overflow-hidden sd-card">
                 <div className="absolute top-4 right-4 opacity-5 pointer-events-none">
                   <Award className="h-24 w-24 text-white" />
                 </div>
@@ -208,8 +208,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                       placeholder="e.g. Royal Heights Group of Schools"
                       value={schoolName}
                       onChange={e => setSchoolName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                      className="w-full px-4 py-3 rounded-xl text-sm sd-input placeholder-slate-600 outline-none"
                     />
                   </Field>
 
@@ -219,8 +218,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                         id="wiz-type"
                         value={schoolType}
                         onChange={e => setSchoolType(e.target.value as 'K12' | 'Non-K12')}
-                        className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none appearance-none"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                        className="w-full px-4 py-3 rounded-xl text-sm sd-input outline-none appearance-none"
                       >
                         <option value="K12">K-12 (Nursery / Primary / Secondary)</option>
                         <option value="Non-K12">Non-K12 (Vocational / Tertiary)</option>
@@ -231,15 +229,14 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                         id="wiz-state"
                         value={locationState}
                         onChange={e => setLocationState(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none appearance-none"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                        className="w-full px-4 py-3 rounded-xl text-sm sd-input outline-none appearance-none"
                       >
                         {NIG_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </Field>
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="flex items-center justify-between p-4 rounded-xl sd-card-2">
                     <div>
                       <p className="text-white text-sm font-medium">Multi-campus / Group of Schools?</p>
                       <p className="text-slate-500 text-xs mt-0.5">Enables centralized executive reporting across all campuses.</p>
@@ -248,7 +245,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                       type="button"
                       onClick={() => setIsGroup(g => !g)}
                       className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
-                      style={{ background: isGroup ? '#22c55e' : 'rgba(255,255,255,0.1)' }}
+                      style={{ background: isGroup ? '#22c55e' : 'rgba(148,163,184,0.4)' }}
                     >
                       <div className="absolute top-1 h-4 w-4 rounded-full bg-white transition-all duration-200" style={{ left: isGroup ? '24px' : '4px' }} />
                     </button>
@@ -279,22 +276,19 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                   <Field label="Full Name" id="wiz-auth-name">
                     <input id="wiz-auth-name" type="text" required placeholder="e.g. Mrs. Adunola Okafor"
                       value={authName} onChange={e => setAuthName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }} />
+                      className="w-full px-4 py-3 rounded-xl text-sm sd-input placeholder-slate-600 outline-none" />
                   </Field>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field label="Email Address" id="wiz-auth-email">
                       <input id="wiz-auth-email" type="email" required placeholder="principal@school.com"
                         value={authEmail} onChange={e => setAuthEmail(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }} />
+                        className="w-full px-4 py-3 rounded-xl text-sm sd-input placeholder-slate-600 outline-none" />
                     </Field>
                     <Field label="Phone Number" id="wiz-auth-phone">
                       <input id="wiz-auth-phone" type="tel" required placeholder="+234 80x xxx xxxx"
                         value={authPhone} onChange={e => setAuthPhone(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none"
-                        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }} />
+                        className="w-full px-4 py-3 rounded-xl text-sm sd-input placeholder-slate-600 outline-none" />
                     </Field>
                   </div>
 
@@ -332,7 +326,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                   </div>
 
                   {/* Plan summary */}
-                  <div className="rounded-xl p-4 space-y-2.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="rounded-xl p-4 space-y-2.5 sd-card">
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Institution</span>
                       <span className="text-white font-medium">{schoolName}</span>
@@ -351,17 +345,17 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                     </div>
                   </div>
 
-                  {/* Kid Monitor add-on (K-12 only) */}
+                  {/* Child Monitor add-on (K-12 only) */}
                   {schoolType === 'K12' && (
-                    <div className="flex items-center justify-between p-4 rounded-xl transition-all"
+                    <div className="flex items-center justify-between p-4 rounded-xl transition-all sd-card-2"
                       style={{
-                        background: kidMonitor ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.03)',
-                        border: `1px solid ${kidMonitor ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                        background: kidMonitor ? 'rgba(34,197,94,0.06)' : undefined,
+                        borderColor: kidMonitor ? 'rgba(34,197,94,0.3)' : undefined,
                       }}>
                       <div className="flex items-center gap-3">
                         <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? '#22c55e' : '#475569' }} />
                         <div>
-                          <p className="text-white text-sm font-medium">Kid Monitor <span className="text-green-400 text-xs font-mono">+₦1,000/term</span></p>
+                          <p className="text-white text-sm font-medium">Child Monitor <span className="text-green-400 text-xs font-mono">+₦1,000/term</span></p>
                           <p className="text-slate-500 text-[10px] mt-0.5">Optional — real-time location, screen & activity tracking.</p>
                         </div>
                       </div>
@@ -369,7 +363,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                         type="button"
                         onClick={() => setKidMonitor(k => !k)}
                         className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
-                        style={{ background: kidMonitor ? '#22c55e' : 'rgba(255,255,255,0.1)' }}
+                        style={{ background: kidMonitor ? '#22c55e' : 'rgba(148,163,184,0.4)' }}
                       >
                         <div className="absolute top-1 h-4 w-4 rounded-full bg-white transition-all duration-200" style={{ left: kidMonitor ? '24px' : '4px' }} />
                       </button>
@@ -385,7 +379,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                   </div>
 
                   {/* Terms & Conditions consent */}
-                  <div className="p-3.5 rounded-xl flex items-start gap-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="p-3.5 rounded-xl flex items-start gap-3 sd-card">
                     <input id="wiz-consent" type="checkbox" required checked={consent}
                       onChange={e => setConsent(e.target.checked)}
                       className="mt-0.5 h-4 w-4 rounded cursor-pointer accent-green-500 shrink-0" />

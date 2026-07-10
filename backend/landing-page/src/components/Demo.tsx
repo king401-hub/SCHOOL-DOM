@@ -104,8 +104,7 @@ export default function Demo() {
           <div className="overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)' }}>
             <div className="flex gap-6 animate-marquee-left" style={{ width: 'max-content' }}>
               {[...LOGOS, ...LOGOS].map((logo, i) => (
-                <div key={i} className="flex items-center gap-2 px-5 py-3 rounded-xl border border-white/5 shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <div key={i} className="flex items-center gap-2 px-5 py-3 rounded-xl shrink-0 sd-card">
                   <div className="w-2 h-2 rounded-full" style={{ background: ['#22c55e', '#0ea5e9', '#8b5cf6', '#f59e0b'][i % 4] }} />
                   <span className="text-slate-400 text-xs font-medium whitespace-nowrap">{logo}</span>
                 </div>
@@ -115,8 +114,8 @@ export default function Demo() {
         </div>
 
         {/* Shield trust bar */}
-        <div className="mt-16 rounded-2xl p-6 border border-white/6 flex flex-wrap items-center justify-center gap-8"
-          style={{ background: 'rgba(255,255,255,0.02)', opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.7s' }}>
+        <div className="mt-16 rounded-2xl p-6 flex flex-wrap items-center justify-center gap-8 sd-card"
+          style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.7s' }}>
           {[
             { icon: Shield, label: 'NDPA Compliant', color: '#22c55e' },
             { icon: Globe, label: 'AWS West Africa', color: '#0ea5e9' },

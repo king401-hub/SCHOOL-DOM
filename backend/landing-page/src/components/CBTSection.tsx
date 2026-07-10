@@ -37,7 +37,7 @@ function CBTAppMockup() {
   const q = questions[question];
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-white/8 shadow-2xl"
+    <div className="rounded-2xl overflow-hidden border border-white/8 shadow-2xl keep-dark"
       style={{ background: 'rgba(10,15,30,0.95)', boxShadow: '0 30px 60px rgba(0,0,0,0.5), 0 0 40px rgba(14,165,233,0.08)' }}>
       {/* Title bar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(14,165,233,0.05)' }}>
@@ -151,8 +151,7 @@ export default function CBTSection() {
               {FEATURES.map(f => {
                 const Icon = f.icon;
                 return (
-                  <div key={f.title} className="rounded-xl p-4 border border-white/5 hover:border-white/10 transition-all"
-                    style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div key={f.title} className="rounded-xl p-4 hover:border-white/10 transition-all sd-card">
                     <Icon className="h-5 w-5 mb-2" style={{ color: f.color }} />
                     <p className="text-white text-sm font-semibold mb-1">{f.title}</p>
                     <p className="text-slate-500 text-xs leading-relaxed">{f.desc}</p>
@@ -183,7 +182,7 @@ export default function CBTSection() {
                 { val: '99.8%', label: 'Uptime', color: '#22c55e' },
                 { val: '2.8s', label: 'Submit speed', color: '#8b5cf6' },
               ].map(s => (
-                <div key={s.label} className="rounded-xl p-3 text-center border border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <div key={s.label} className="rounded-xl p-3 text-center sd-card">
                   <p className="font-display font-black text-xl" style={{ color: s.color }}>{s.val}</p>
                   <p className="text-slate-500 text-[10px]">{s.label}</p>
                 </div>

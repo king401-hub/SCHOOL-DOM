@@ -56,6 +56,84 @@ export function ParticleField({ count = 40 }: { count?: number }) {
   return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0 opacity-60" />;
 }
 
+const SCHOOL_GLYPHS = ['🎓', '📚', '✏️', '🧮', '🌍', '🔬', '📐', '🖥️', '🏫', '📝', '⚗️', '🎨', '📊', '🔔'];
+
+export function IconConstellation({ count = 14 }: { count?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const nodes = Array.from({ length: count }, (_, i) => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: (Math.random() - 0.5) * 0.35,
+      glyph: SCHOOL_GLYPHS[i % SCHOOL_GLYPHS.length],
+      size: 18 + Math.random() * 10,
+      phase: Math.random() * Math.PI * 2,
+    }));
+
+    const LINK_DIST = 240;
+    let frame: number;
+    let t = 0;
+
+    const draw = () => {
+      t += 0.008;
+      const light = document.documentElement.classList.contains('light');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Connection lines
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < LINK_DIST) {
+            const alpha = (1 - dist / LINK_DIST) * (light ? 0.14 : 0.12);
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.strokeStyle = light ? `rgba(15,23,42,${alpha})` : `rgba(148,163,184,${alpha})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Icon nodes with gentle bob
+      nodes.forEach(n => {
+        n.x += n.vx;
+        n.y += n.vy + Math.sin(t * 2 + n.phase) * 0.08;
+        if (n.x < -30) n.x = canvas.width + 30;
+        if (n.x > canvas.width + 30) n.x = -30;
+        if (n.y < -30) n.y = canvas.height + 30;
+        if (n.y > canvas.height + 30) n.y = -30;
+
+        ctx.globalAlpha = light ? 0.38 : 0.32;
+        ctx.font = `${n.size}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(n.glyph, n.x, n.y);
+        ctx.globalAlpha = 1;
+      });
+
+      frame = requestAnimationFrame(draw);
+    };
+    draw();
+
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+    window.addEventListener('resize', resize);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', resize); };
+  }, [count]);
+
+  return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" />;
+}
+
 export function CursorSpotlight() {
   const [pos, setPos] = useState({ x: -200, y: -200 });
   useEffect(() => {

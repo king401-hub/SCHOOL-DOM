@@ -70,7 +70,7 @@ function DashboardFrame() {
 
   return (
     <div
-      className="w-full rounded-2xl overflow-hidden border border-white/10"
+      className="w-full rounded-2xl overflow-hidden border border-white/10 keep-dark"
       style={{
         background: 'rgba(8,12,24,0.98)',
         boxShadow: '0 60px 120px rgba(0,0,0,0.7), 0 0 80px rgba(34,197,94,0.06), inset 0 1px 0 rgba(255,255,255,0.06)',
@@ -321,11 +321,9 @@ export default function Hero({ onGetStarted, onDemo }: HeroProps) {
             const Icon = chip.icon;
             return (
               <div key={i}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border animate-float"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full animate-float sd-panel"
                 style={{
-                  background: 'rgba(10,15,30,0.9)',
-                  border: `1px solid ${chip.color}30`,
-                  backdropFilter: 'blur(20px)',
+                  borderColor: `${chip.color}30`,
                   animationDelay: `${i * 0.6}s`,
                   animationDuration: `${3.5 + i * 0.5}s`,
                 }}>
@@ -340,8 +338,7 @@ export default function Hero({ onGetStarted, onDemo }: HeroProps) {
         <DashboardFrame />
 
         {/* Gradient fade at bottom of dashboard (disappears into next section) */}
-        <div className="h-20 -mt-20 relative pointer-events-none"
-          style={{ background: 'linear-gradient(to bottom, transparent, #030712)' }} />
+        <div className="h-20 -mt-20 relative pointer-events-none hero-fade" />
       </div>
     </section>
   );

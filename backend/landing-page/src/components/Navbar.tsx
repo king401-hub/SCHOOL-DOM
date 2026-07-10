@@ -85,15 +85,8 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
   return (
     <>
       <nav
-        className="fixed top-0 left-0 right-0 z-[100] transition-all duration-500"
-        style={{
-          background: scrolled ? 'rgba(3,7,18,0.85)' : 'transparent',
-          backdropFilter: scrolled ? 'blur(24px)' : 'none',
-          WebkitBackdropFilter: scrolled ? 'blur(24px)' : 'none',
-          borderBottom: scrolled ? '1px solid rgba(255,255,255,0.04)' : '1px solid transparent',
-          boxShadow: scrolled ? '0 4px 30px rgba(0,0,0,0.3)' : 'none',
-          padding: scrolled ? '0.625rem 0' : '1.25rem 0',
-        }}
+        className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${scrolled ? 'nav-scrolled' : ''}`}
+        style={{ padding: scrolled ? '0.625rem 0' : '1.25rem 0' }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between">
           <a href="/" className="flex items-center gap-3 group">
@@ -120,8 +113,7 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
                       {link.label} <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     {openDropdown === link.label && (
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 rounded-2xl overflow-hidden border border-white/8 shadow-2xl z-50"
-                        style={{ background: 'rgba(10,15,30,0.98)', backdropFilter: 'blur(24px)' }}>
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-44 rounded-2xl overflow-hidden shadow-2xl z-50 sd-panel">
                         {link.children.map(c => (
                           <a key={c.label} href={c.href}
                             className="block px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-all">
@@ -181,8 +173,7 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
         <div className="fixed inset-0 z-[99] md:hidden" onClick={() => setMobileOpen(false)}>
           <div className="absolute inset-0" style={{ background: 'rgba(3,7,18,0.6)', backdropFilter: 'blur(8px)' }} />
           <div
-            className="absolute top-[70px] left-4 right-4 rounded-2xl overflow-hidden border border-white/8 shadow-2xl"
-            style={{ background: 'rgba(10,15,30,0.98)', backdropFilter: 'blur(30px)' }}
+            className="absolute top-[70px] left-4 right-4 rounded-2xl overflow-hidden shadow-2xl sd-panel"
             onClick={e => e.stopPropagation()}
           >
             <div className="p-4 space-y-1">

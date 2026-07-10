@@ -288,8 +288,24 @@ body {
   transition: background 0.4s ease, color 0.4s ease;
 }
 
+/* ── Themeable surface classes ───────────────────────────── */
+.sd-card { background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); }
+.sd-card-2 { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); }
+.sd-input { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); color: #f8fafc; }
+.sd-modal { background: #0d1424; border: 1px solid rgba(255, 255, 255, 0.08); }
+.sd-panel { background: rgba(10, 15, 30, 0.92); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.sd-track { background: rgba(255, 255, 255, 0.06); }
+.nav-scrolled {
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
+.hero-fade { background: linear-gradient(to bottom, transparent, #030712); }
+
 /* ── Light theme ─────────────────────────────────────────── */
-:root.light .app-root { background: #f4f7fb; color: #0f172a; }
+:root.light .app-root { background: #e9eef5; color: #0f172a; }
 
 .light .text-white { color: #0f172a !important; }
 .light .text-slate-300 { color: #334155 !important; }
@@ -303,34 +319,24 @@ body {
   border-color: rgba(15, 23, 42, 0.09) !important;
 }
 
-/* Translucent-white dark surfaces become white cards */
-.light [style*="rgba(255,255,255,0.0"] {
-  background-color: #ffffff !important;
-  border-color: rgba(15, 23, 42, 0.08) !important;
+.light .sd-card { background: #f6f8fb; border-color: rgba(15, 23, 42, 0.08); }
+.light .sd-card-2 { background: #eef2f7; border-color: rgba(15, 23, 42, 0.07); }
+.light .sd-input { background: #ffffff; border-color: rgba(15, 23, 42, 0.15); color: #0f172a; }
+.light .sd-modal { background: #eef2f8; border-color: rgba(15, 23, 42, 0.12); }
+.light .sd-panel { background: rgba(255, 255, 255, 0.96); border-color: rgba(15, 23, 42, 0.1); }
+.light .sd-track { background: rgba(15, 23, 42, 0.08); }
+.light .nav-scrolled {
+  background: rgba(233, 238, 245, 0.88);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 4px 30px rgba(15, 23, 42, 0.08);
 }
-
-/* Solid dark surfaces (modal, dashboard frame, dropdowns, chips, navbar) */
-.light [style*="#0d1424"],
-.light [style*="rgba(8,12,24"],
-.light [style*="rgba(10,15,30"] {
-  background: #ffffff !important;
-  border-color: rgba(15, 23, 42, 0.1) !important;
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12) !important;
-}
-.light [style*="rgba(3,7,18"] {
-  background: rgba(255, 255, 255, 0.88) !important;
-  border-color: rgba(15, 23, 42, 0.06) !important;
-}
-/* Hero bottom fade into page background */
-.light [style*="transparent, #030712"] {
-  background: linear-gradient(to bottom, transparent, #f4f7fb) !important;
-}
+.light .hero-fade { background: linear-gradient(to bottom, transparent, #e9eef5); }
 
 .light .btn-ghost { color: #475569; border-color: rgba(15, 23, 42, 0.15); }
 .light .btn-ghost:hover { color: #0f172a; background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.25); }
 
 .light .premium-card {
-  background: #ffffff;
+  background: #f6f8fb;
   border-color: rgba(15, 23, 42, 0.08);
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
 }
@@ -343,6 +349,20 @@ body {
 }
 .light input, .light select, .light textarea { color: #0f172a !important; }
 .light input::placeholder, .light textarea::placeholder { color: #94a3b8 !important; }
+select option { color: #0f172a; background: #ffffff; }
+
+/* Surfaces that stay dark in light mode (product mockups) */
+.light .keep-dark .text-white { color: #f8fafc !important; }
+.light .keep-dark .text-slate-300 { color: #cbd5e1 !important; }
+.light .keep-dark .text-slate-400 { color: #94a3b8 !important; }
+.light .keep-dark .text-slate-500 { color: #64748b !important; }
+.light .keep-dark .text-slate-600 { color: #475569 !important; }
+.light .keep-dark .text-slate-700 { color: #334155 !important; }
+.light .keep-dark .border-white\/3, .light .keep-dark .border-white\/4,
+.light .keep-dark .border-white\/5, .light .keep-dark .border-white\/6,
+.light .keep-dark .border-white\/8, .light .keep-dark .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
 
 /* Perspective grid overlay */
 .perspective-grid {

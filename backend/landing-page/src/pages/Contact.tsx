@@ -36,12 +36,7 @@ export default function ContactPage() {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
-  const inputStyle = {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: '0.875rem',
-    color: '#f8fafc',
-  };
+  const inputCls = 'w-full px-4 py-3 text-sm rounded-xl sd-input placeholder-slate-600';
 
   return (
     <div className="min-h-screen pt-24 pb-20 px-4 relative">
@@ -74,8 +69,7 @@ export default function ContactPage() {
               const Icon = c.icon;
               return (
                 <a key={c.label} href={c.href}
-                  className="flex items-center gap-4 p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  className="flex items-center gap-4 p-4 rounded-2xl hover:border-white/10 transition-all sd-card">
                   <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
                     style={{ background: `${c.color}12`, border: `1px solid ${c.color}25` }}>
                     <Icon className="h-4.5 w-4.5" style={{ color: c.color }} />
@@ -101,7 +95,7 @@ export default function ContactPage() {
 
           {/* Right: Form */}
           <div className="lg:col-span-3">
-            <div className="rounded-3xl p-8 border border-white/6" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <div className="rounded-3xl p-8 sd-card">
               {submitted ? (
                 <div className="py-12 text-center space-y-4">
                   <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto"
@@ -126,15 +120,13 @@ export default function ContactPage() {
                       <label className="block text-slate-500 text-xs mb-1.5">Full Name *</label>
                       <input required type="text" value={form.name} onChange={set('name')}
                         placeholder="Mrs. Adunola Okafor"
-                        className="w-full px-4 py-3 text-sm placeholder-slate-600"
-                        style={inputStyle} />
+                        className={inputCls} />
                     </div>
                     <div>
                       <label className="block text-slate-500 text-xs mb-1.5">Email Address *</label>
                       <input required type="email" value={form.email} onChange={set('email')}
                         placeholder="principal@school.com"
-                        className="w-full px-4 py-3 text-sm placeholder-slate-600"
-                        style={inputStyle} />
+                        className={inputCls} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -142,15 +134,13 @@ export default function ContactPage() {
                       <label className="block text-slate-500 text-xs mb-1.5">Phone Number</label>
                       <input type="tel" value={form.phone} onChange={set('phone')}
                         placeholder="+234 80x xxx xxxx"
-                        className="w-full px-4 py-3 text-sm placeholder-slate-600"
-                        style={inputStyle} />
+                        className={inputCls} />
                     </div>
                     <div>
                       <label className="block text-slate-500 text-xs mb-1.5">School Name</label>
                       <input type="text" value={form.school} onChange={set('school')}
                         placeholder="Royal Heights Academy"
-                        className="w-full px-4 py-3 text-sm placeholder-slate-600"
-                        style={inputStyle} />
+                        className={inputCls} />
                     </div>
                   </div>
                   <div>
@@ -158,8 +148,7 @@ export default function ContactPage() {
                     <textarea required value={form.message} onChange={set('message')}
                       placeholder="Tell us about your school and what you're looking for..."
                       rows={5}
-                      className="w-full px-4 py-3 text-sm placeholder-slate-600 resize-none"
-                      style={inputStyle} />
+                      className={`${inputCls} resize-none`} />
                   </div>
                   {error && (
                     <div className="p-3.5 rounded-xl text-sm"

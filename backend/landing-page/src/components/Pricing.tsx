@@ -63,9 +63,8 @@ export default function Pricing({ onGetStarted }: PricingProps) {
 
         <div className="grid lg:grid-cols-2 gap-6">
           {/* K-12 Card */}
-          <div className="relative rounded-3xl p-8 overflow-hidden"
+          <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
             style={{
-              background: 'rgba(255,255,255,0.02)',
               border: '1px solid rgba(34,197,94,0.25)',
               boxShadow: '0 0 60px rgba(34,197,94,0.08), inset 0 1px 0 rgba(34,197,94,0.08)',
               opacity: visible ? 1 : 0,
@@ -103,17 +102,17 @@ export default function Pricing({ onGetStarted }: PricingProps) {
                 <p className="text-slate-500 text-xs mt-2">Flat rate — unlimited students & staff</p>
               </div>
 
-              {/* Kid Monitor Toggle */}
-              <div className="rounded-2xl p-4 mb-6 border transition-all"
+              {/* Child Monitor Toggle */}
+              <div className="rounded-2xl p-4 mb-6 transition-all sd-card"
                 style={{
-                  background: kidMonitor ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.02)',
-                  borderColor: kidMonitor ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)',
+                  background: kidMonitor ? 'rgba(34,197,94,0.06)' : undefined,
+                  borderColor: kidMonitor ? 'rgba(34,197,94,0.3)' : undefined,
                 }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? '#22c55e' : '#475569' }} />
                     <div>
-                      <p className="text-white text-sm font-semibold">Kid Monitor</p>
+                      <p className="text-white text-sm font-semibold">Child Monitor</p>
                       <p className="text-slate-500 text-[10px]">Real-time location + activity tracking</p>
                     </div>
                   </div>
@@ -151,9 +150,8 @@ export default function Pricing({ onGetStarted }: PricingProps) {
           </div>
 
           {/* Non-K12 Card */}
-          <div className="relative rounded-3xl p-8 overflow-hidden"
+          <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
             style={{
-              background: 'rgba(255,255,255,0.02)',
               border: '1px solid rgba(14,165,233,0.2)',
               boxShadow: '0 0 40px rgba(14,165,233,0.05)',
               opacity: visible ? 1 : 0,
@@ -186,8 +184,7 @@ export default function Pricing({ onGetStarted }: PricingProps) {
                 <p className="text-slate-500 text-xs mt-2">Flat rate — unlimited students & staff</p>
               </div>
 
-              <div className="h-[120px] mb-6 rounded-2xl flex items-center px-4 border border-white/5"
-                style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div className="h-[120px] mb-6 rounded-2xl flex items-center px-4 sd-card">
                 <div className="flex items-center gap-3">
                   <Shield className="h-5 w-5 text-slate-500" />
                   <div>
@@ -226,8 +223,7 @@ export default function Pricing({ onGetStarted }: PricingProps) {
           ].map(g => {
             const Icon = g.icon;
             return (
-              <div key={g.label} className="flex items-center gap-2 justify-center px-4 py-3 rounded-xl border border-white/5"
-                style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div key={g.label} className="flex items-center gap-2 justify-center px-4 py-3 rounded-xl sd-card">
                 <Icon className="h-4 w-4 shrink-0" style={{ color: g.color }} />
                 <span className="text-slate-400 text-xs">{g.label}</span>
               </div>

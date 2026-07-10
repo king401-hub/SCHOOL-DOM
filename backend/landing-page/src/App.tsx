@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
-import { AuroraBackground, ParticleField, CursorSpotlight, ScrollProgress } from './components/Background';
+import { AuroraBackground, ParticleField, CursorSpotlight, ScrollProgress, IconConstellation } from './components/Background';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Features from './components/Features';
@@ -56,7 +56,8 @@ export default function App() {
     <HashRouter>
       <div className="app-root">
         <AuroraBackground />
-        <ParticleField count={50} />
+        <IconConstellation count={14} />
+        <ParticleField count={40} />
         <CursorSpotlight />
         <ScrollProgress />
 
