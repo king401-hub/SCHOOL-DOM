@@ -418,3 +418,40 @@ class TeacherNote(TenantAwareModel):
 
     class Meta:
         ordering = ["-pinned", "-updated_at"]
+
+
+class TimetableEntry(TenantAwareModel, TimeStampedModel):
+    MONDAY = 0
+    TUESDAY = 1
+    WEDNESDAY = 2
+    THURSDAY = 3
+    FRIDAY = 4
+    SATURDAY = 5
+    DAY_CHOICES = [
+        (MONDAY, "Monday"),
+        (TUESDAY, "Tuesday"),
+        (WEDNESDAY, "Wednesday"),
+        (THURSDAY, "Thursday"),
+        (FRIDAY, "Friday"),
+        (SATURDAY, "Saturday"),
+    ]
+
+    academic_year = models.ForeignKey(AcademicYear, on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
+    term = models.ForeignKey(Term, on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
+    class_group = models.ForeignKey(Class, on_delete=models.CASCADE, related_name="timetable_entries")
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="timetable_entries")
+    teacher = models.ForeignKey("users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
+    day_of_week = models.PositiveSmallIntegerField(choices=DAY_CHOICES)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    room = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ["day_of_week", "start_time"]
+        indexes = [
+            models.Index(fields=["tenant", "class_group", "day_of_week"]),
+            models.Index(fields=["tenant", "teacher", "day_of_week"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_day_of_week_display()} {self.start_time}-{self.end_time}: {self.subject} ({self.class_group})"

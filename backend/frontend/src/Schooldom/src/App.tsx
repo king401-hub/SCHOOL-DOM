@@ -460,7 +460,7 @@ export default function App() {
               <div className="space-y-3.5 text-xs text-slate-400">
                 <div className="flex items-start gap-2">
                   <MapPin className="h-4 w-4 text-brand-500 shrink-0 mt-0.5" />
-                  <span>Executive Suites, Admiralty Way, Lekki Phase 1, Lagos, Nigeria</span>
+                  <span></span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-brand-500 shrink-0" />

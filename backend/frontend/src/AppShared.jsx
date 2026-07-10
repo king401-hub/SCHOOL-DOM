@@ -652,6 +652,10 @@ export function DashboardIcon({ name = "overview", className = "" }) {
       <path key="3" d="M8 14h8" />,
       <path key="4" d="M15 10h1" />,
     ],
+    clock: [
+      <path key="1" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />,
+      <path key="2" d="M12 7v5l3.5 2" />,
+    ],
   };
 
   return (

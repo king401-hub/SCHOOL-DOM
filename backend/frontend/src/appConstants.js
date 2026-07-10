@@ -34,7 +34,7 @@ export const ADMIN_ROUTES = [
   { path: "/id-cards", label: "ID Cards" },
   { path: "/documents", label: "Transcripts & Testimonials" },
   {
-    path: "/teachers",
+    path: "/staff",
     label: "Staffs",
     children: [
       { path: "/teachers", label: "Teachers" },
@@ -42,7 +42,14 @@ export const ADMIN_ROUTES = [
     ]
   },
   { path: "/classes", label: "Classes" },
-  { path: "/exams", label: "Exams" },
+  {
+    path: "/exams-group",
+    label: "Exams",
+    children: [
+      { path: "/exams", label: "CBT Exams" },
+      { path: "/timetables", label: "Timetables" },
+    ]
+  },
   { path: "/results", label: "Results" },
   { path: "/database-import", label: "Database Import" },
   { path: "/messages", label: "Messages" },
@@ -62,6 +69,8 @@ export const ADMIN_ROUTE_SET = new Set([
 ]);
 export const ADMIN_ROUTE_REDIRECTS = {
   "/hr": "/hr/activity",
+  "/staff": "/teachers",
+  "/exams-group": "/exams",
 };
 export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",
@@ -79,6 +88,7 @@ export const ADMIN_ENDPOINTS = {
   "/classes": "/api/app/classes/",
   "/subjects": "/api/app/classes/", // subjects included in classes snapshot
   "/exams": "/api/app/exams/",
+  "/timetables": "/api/app/timetables/",
   "/results": "/api/app/results/",
   "/database-import": "/api/app/database-imports/",
   "/messages": "/api/app/messages/",
@@ -92,6 +102,7 @@ export const STUDENT_ROUTES = [
   { path: "/fees", label: "School Fees" },
   { path: "/exams", label: "Exams" },
   { path: "/quizzes", label: "Quizzes" },
+  { path: "/timetable", label: "Timetable" },
   { path: "/academic-planning", label: "Academic Planning" },
   { path: "/messages", label: "Messages" },
   { path: "/results", label: "Results" },

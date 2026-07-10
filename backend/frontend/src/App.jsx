@@ -4,7 +4,7 @@ import {
   Briefcase, UserCheck, GraduationCap, Users, CreditCard, FileText,
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
-  Banknote, LifeBuoy,
+  Banknote, LifeBuoy, CalendarClock,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 import LandingPage from "./Schooldom/src/App";
@@ -107,6 +107,7 @@ const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
+const AdminTimetablesScreen = lazyAdminScreen("AdminTimetablesScreen");
 const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
 const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
 const AdminClassesScreen = lazyAdminScreen("AdminClassesScreen");
@@ -867,6 +868,14 @@ function StudentDashboard({
           <button
             className="student-nav-item"
             type="button"
+            onClick={() => { go("/timetable"); setNavOpen(false); }}
+          >
+            <DashboardIcon name="clock" className="inline-icon" />
+            <span>Timetable</span>
+          </button>
+          <button
+            className="student-nav-item"
+            type="button"
             onClick={() => { go("/messages"); setNavOpen(false); }}
           >
             <BellIcon className="inline-icon" />
@@ -1361,6 +1370,9 @@ function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTi
             <button type="button" className={`student-nav-item${currentPath === "/academic-planning" ? " active" : ""}`} onClick={() => go("/academic-planning")}>
               <BookOpen size={17} strokeWidth={1.8} /><span>Scheme</span>
             </button>
+            <button type="button" className={`student-nav-item${currentPath === "/timetable" ? " active" : ""}`} onClick={() => go("/timetable")}>
+              <CalendarClock size={17} strokeWidth={1.8} /><span>Timetable</span>
+            </button>
             <button type="button" className={`student-nav-item${currentPath === "/messages" ? " active" : ""}`} onClick={() => go("/messages")}>
               <MessageSquare size={17} strokeWidth={1.8} /><span>Messages</span>
             </button>
@@ -1536,6 +1548,22 @@ function StudentIdCardPage({ session, onNavigate, themePreference, onThemeChange
           </article>
         ) : null}
       </div>
+    </StudentPageShell>
+  );
+}
+
+function StudentTimetablePage({ session, onNavigate, themePreference, onThemeChange }) {
+  return (
+    <StudentPageShell session={session} currentPath="/timetable" onNavigate={onNavigate}
+      themePreference={themePreference} onThemeChange={onThemeChange}
+      pageKicker="Academics" pageTitle="Timetable">
+      <TimetableWeekView
+        session={session}
+        title="My Timetable"
+        subtitle="Your class's weekly schedule."
+        emptyMessage="Your class timetable hasn't been set up yet."
+        showClassColumn={false}
+      />
     </StudentPageShell>
   );
 }
@@ -3430,6 +3458,96 @@ function isNonK12School(session, data = {}) {
   return schoolTypeFromSession(session, data) === "non_k12";
 }
 
+const TIMETABLE_DAY_FALLBACK = [
+  { value: 0, label: "Monday" },
+  { value: 1, label: "Tuesday" },
+  { value: 2, label: "Wednesday" },
+  { value: 3, label: "Thursday" },
+  { value: 4, label: "Friday" },
+  { value: 5, label: "Saturday" },
+];
+
+function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassColumn = true }) {
+  const [entries, setEntries] = useState([]);
+  const [days, setDays] = useState(TIMETABLE_DAY_FALLBACK);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadTimetable = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/app/timetables/");
+      setEntries(result?.entries || []);
+      if (result?.days?.length) setDays(result.days);
+    } catch (loadError) {
+      setError(loadError.message || "Could not load the timetable.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session) loadTimetable();
+  }, [loadTimetable, session]);
+
+  const dayLabel = (value) => days.find((item) => String(item.value) === String(value))?.label || "-";
+
+  const entriesByDay = useMemo(() => {
+    const groups = new Map();
+    [...entries]
+      .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
+      .forEach((entry) => {
+        const key = entry.day_of_week;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(entry);
+      });
+    return Array.from(groups.entries()).sort((a, b) => a[0] - b[0]);
+  }, [entries]);
+
+  return (
+    <section className="workspace-timetable">
+      <div className="panel-head">
+        <h3>{title}</h3>
+        <small>{subtitle}</small>
+      </div>
+      <ScreenState loading={loading && !entries.length} error={error} onRetry={loadTimetable} />
+      {!loading && !error && !entriesByDay.length ? (
+        <p className="panel-empty">{emptyMessage}</p>
+      ) : null}
+      {entriesByDay.map(([day, dayEntries]) => (
+        <article key={day} className="app-panel timetable-day-card">
+          <h4>{dayLabel(day)}</h4>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  {showClassColumn ? <th>Class</th> : null}
+                  <th>Subject</th>
+                  {!showClassColumn ? <th>Teacher</th> : null}
+                  <th>Room</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dayEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.start_time} - {entry.end_time}</td>
+                    {showClassColumn ? <td>{entry.class_name}</td> : null}
+                    <td>{entry.subject_name}</td>
+                    {!showClassColumn ? <td>{entry.teacher_name || "Unassigned"}</td> : null}
+                    <td>{entry.room || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [planning, setPlanning] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -4905,6 +5023,7 @@ function TeacherWorkspace({
     ["past-exams", "Exam History", "calendar"],
     nonK12 ? ["attendance-info", "Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
     ["planning", nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad", "planning"],
+    ["timetable", "Timetable", "calendar"],
     ["class-messages", "Messages & Notifications", "message"],
     ["results", "Results", "results"],
     ["requests", "HR System", "requests"],
@@ -5002,6 +5121,17 @@ function TeacherWorkspace({
     }
     if (activeTab === "planning") {
       return <TeacherPlanningPanel session={session} onNavigate={onNavigate} />;
+    }
+    if (activeTab === "timetable") {
+      return (
+        <TimetableWeekView
+          session={session}
+          title="My Timetable"
+          subtitle="Your weekly teaching schedule across all assigned classes."
+          emptyMessage="No timetable entries have been assigned to you yet."
+          showClassColumn
+        />
+      );
     }
     if (activeTab === "class-messages") {
       return (
@@ -5367,7 +5497,9 @@ const ADMIN_ROUTE_ICONS = {
   "/teachers": BookOpen,
   "/non-teaching-staff": Briefcase,
   "/classes": School,
+  "/exams-group": FileCheck,
   "/exams": FileCheck,
+  "/timetables": CalendarClock,
   "/results": BarChart2,
   "/database-import": Upload,
   "/messages": MessageSquare,
@@ -5377,7 +5509,7 @@ const ADMIN_ROUTE_ICONS = {
 
 const ADMIN_NAV_SECTIONS = [
   { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
-  { label: "Academics", paths: ["/classes", "/attendance", "/exams", "/results"] },
+  { label: "Academics", paths: ["/classes", "/attendance", "/exams-group", "/results"] },
   { label: "People", paths: ["/students", "/parents", "/staff"] },
   { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr/activity", "/hr-self-service", "/loan-application"] },
   { label: "Administration", paths: ["/id-cards", "/documents", "/database-import", "/messages", "/settings"] },
@@ -6509,6 +6641,49 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleCreateTimetableEntry = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/timetables/create/", payload);
+      addAdminNotification({
+        category: "Academics",
+        module: "Timetable",
+        action: `Added a timetable entry for ${result?.entry?.class_name || "a class"}.`,
+        status: "Scheduled",
+        priority: "Normal",
+        tone: "success",
+      });
+      await loadScreen("/timetables", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleUpdateTimetableEntry = useCallback(
+    async (entryId, payload) => {
+      const result = await requestJson(session, "PATCH", `/api/app/timetables/${entryId}/`, payload);
+      await loadScreen("/timetables", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleDeleteTimetableEntry = useCallback(
+    async (entryId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/timetables/${entryId}/`);
+      addAdminNotification({
+        category: "Academics",
+        module: "Timetable",
+        action: "Removed a timetable entry.",
+        status: "Removed",
+        priority: "Low",
+        tone: "info",
+      });
+      await loadScreen("/timetables", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAccountDeletionRequest = useCallback(async () => {
     const result = await requestJson(session, "POST", "/api/app/account/deletion-request/");
     setScreenData((previous) => ({
@@ -6891,6 +7066,18 @@ const unreadNotificationsCount =
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}
+      />
+    );
+  } else if (activePath === "/timetables") {
+    content = (
+      <AdminTimetablesScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onCreate={handleCreateTimetableEntry}
+        onUpdate={handleUpdateTimetableEntry}
+        onDelete={handleDeleteTimetableEntry}
       />
     );
   } else if (activePath === "/results") {
@@ -8387,6 +8574,17 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   if (currentPath === "/attendance" && role === "student") {
     return withGlobalNotifications(
       <StudentAttendancePage
+        session={session}
+        onNavigate={navigate}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
+      />
+    );
+  }
+
+  if (currentPath === "/timetable" && role === "student") {
+    return withGlobalNotifications(
+      <StudentTimetablePage
         session={session}
         onNavigate={navigate}
         themePreference={themePreference}

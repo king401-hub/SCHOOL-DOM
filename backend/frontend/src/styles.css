@@ -7208,6 +7208,187 @@ body[data-theme="dark"] .token-usage-toast {
   flex-wrap: wrap;
 }
 
+/* ── HR Management screen ────────────────────────────────────────────────── */
+
+.hr-hero-stats {
+  display: flex;
+  gap: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.hr-hero-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 60px;
+}
+
+.hr-hero-stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.hr-hero-stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.hr-hero-stat.muted .hr-hero-stat-value { color: #94a3b8; }
+
+.hr-panel { padding: 0; }
+
+.hr-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 1rem;
+}
+
+.hr-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.8rem 0.25rem;
+  margin-right: 1.25rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms;
+  font-family: inherit;
+}
+
+.hr-tab:hover { color: #0f172a; }
+
+.hr-tab.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.hr-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 99px;
+}
+
+.hr-tab-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.hr-tab.active .hr-tab-count { color: #93c5fd; }
+
+.hr-tab-body {
+  padding: 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hr-approval-section { padding: 0.25rem 0; }
+
+.hr-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.hr-approval-header h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.hr-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 99px;
+  border: 1px solid #fde68a;
+}
+
+.hr-section-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 1.25rem 0;
+}
+
+.hr-empty-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  font-size: 0.84rem;
+  color: #64748b;
+}
+
+.hr-empty-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: #dcfce7;
+  color: #16a34a;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.hr-action-tag {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.table-scroll { overflow-x: auto; }
+
+/* Dark theme */
+body[data-theme="dark"] .hr-hero-stat-value { color: #e2e8f0; }
+body[data-theme="dark"] .hr-hero-stat.muted .hr-hero-stat-value { color: #475569; }
+body[data-theme="dark"] .hr-tab-bar { border-bottom-color: rgba(255,255,255,0.08); }
+body[data-theme="dark"] .hr-tab { color: #94a3b8; }
+body[data-theme="dark"] .hr-tab:hover { color: #e2e8f0; }
+body[data-theme="dark"] .hr-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+body[data-theme="dark"] .hr-approval-header h4 { color: #e2e8f0; }
+body[data-theme="dark"] .hr-count-badge { background: rgba(251,191,36,0.15); color: #fbbf24; border-color: rgba(251,191,36,0.25); }
+body[data-theme="dark"] .hr-section-divider { background: rgba(255,255,255,0.06); }
+body[data-theme="dark"] .hr-empty-row { color: #64748b; }
+body[data-theme="dark"] .hr-action-tag { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #94a3b8; }
+
 .table-inline-input {
   width: min(100%, 9rem);
   min-height: 2rem;

@@ -3195,6 +3195,245 @@ function AdminTableScreen({ title, description, loading, error, onRetry, columns
   );
 }
 
+const TIMETABLE_DAY_FALLBACK = [
+  { value: 0, label: "Monday" },
+  { value: 1, label: "Tuesday" },
+  { value: 2, label: "Wednesday" },
+  { value: 3, label: "Thursday" },
+  { value: 4, label: "Friday" },
+  { value: 5, label: "Saturday" },
+];
+
+function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
+  const entries = data?.entries || [];
+  const classes = data?.classes || [];
+  const subjects = data?.subjects || [];
+  const teachers = data?.teachers || [];
+  const days = data?.days?.length ? data.days : TIMETABLE_DAY_FALLBACK;
+
+  const [filterClassId, setFilterClassId] = useState("");
+  const [form, setForm] = useState({
+    class_id: "", subject_id: "", teacher_id: "", day_of_week: "0",
+    start_time: "", end_time: "", room: "",
+  });
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [formSuccess, setFormSuccess] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
+
+  const dayLabel = (value) => days.find((item) => String(item.value) === String(value))?.label || "-";
+
+  const filteredEntries = useMemo(() => {
+    const list = filterClassId ? entries.filter((item) => String(item.class_id) === String(filterClassId)) : entries;
+    return [...list].sort((a, b) => {
+      if (a.day_of_week !== b.day_of_week) return a.day_of_week - b.day_of_week;
+      return String(a.start_time).localeCompare(String(b.start_time));
+    });
+  }, [entries, filterClassId]);
+
+  const resetForm = () => {
+    setForm({ class_id: "", subject_id: "", teacher_id: "", day_of_week: "0", start_time: "", end_time: "", room: "" });
+    setEditingEntry(null);
+  };
+
+  const handleEdit = (entry) => {
+    setEditingEntry(entry);
+    setForm({
+      class_id: String(entry.class_id || ""),
+      subject_id: String(entry.subject_id || ""),
+      teacher_id: entry.teacher_id || "",
+      day_of_week: String(entry.day_of_week),
+      start_time: entry.start_time || "",
+      end_time: entry.end_time || "",
+      room: entry.room || "",
+    });
+    setFormError("");
+    setFormSuccess("");
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setFormError("");
+    setFormSuccess("");
+    if (!form.class_id || !form.subject_id) {
+      setFormError("Select a class and subject.");
+      return;
+    }
+    if (!form.start_time || !form.end_time) {
+      setFormError("Enter a start and end time.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = {
+        class_id: form.class_id,
+        subject_id: form.subject_id,
+        teacher_id: form.teacher_id || null,
+        day_of_week: Number(form.day_of_week),
+        start_time: form.start_time,
+        end_time: form.end_time,
+        room: form.room.trim(),
+      };
+      const result = editingEntry ? await onUpdate?.(editingEntry.id, payload) : await onCreate?.(payload);
+      setFormSuccess(result?.message || "Saved.");
+      resetForm();
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not save timetable entry.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (entry) => {
+    const ok = await confirm({
+      title: "Remove Timetable Entry",
+      message: `Remove ${entry.subject_name} for ${entry.class_name} on ${dayLabel(entry.day_of_week)}?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    setFormError("");
+    try {
+      const result = await onDelete?.(entry.id);
+      setFormSuccess(result?.message || "Timetable entry removed.");
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not remove timetable entry.");
+    }
+  };
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <h2>Timetables</h2>
+        <p>Build and manage each class's weekly timetable. Teachers and students automatically see their relevant schedule.</p>
+      </div>
+
+      <ScreenState loading={loading && !entries.length} error={error} onRetry={onRetry} />
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>{editingEntry ? "Edit Timetable Entry" : "Add Timetable Entry"}</h3>
+          <small>Assign a subject and teacher to a class for a specific day and time.</small>
+        </div>
+        <form className="panel-form" onSubmit={handleSubmit}>
+          <div className="panel-form-grid">
+            <label className="panel-field">
+              Class
+              <select value={form.class_id} onChange={(event) => setForm((current) => ({ ...current, class_id: event.target.value }))} disabled={busy}>
+                <option value="">Select class</option>
+                {classes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label || item.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Subject
+              <select value={form.subject_id} onChange={(event) => setForm((current) => ({ ...current, subject_id: event.target.value }))} disabled={busy}>
+                <option value="">Select subject</option>
+                {subjects.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Teacher
+              <select value={form.teacher_id} onChange={(event) => setForm((current) => ({ ...current, teacher_id: event.target.value }))} disabled={busy}>
+                <option value="">Unassigned</option>
+                {teachers.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Day
+              <select value={form.day_of_week} onChange={(event) => setForm((current) => ({ ...current, day_of_week: event.target.value }))} disabled={busy}>
+                {days.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="panel-field">
+              Start Time
+              <input type="time" value={form.start_time} onChange={(event) => setForm((current) => ({ ...current, start_time: event.target.value }))} disabled={busy} />
+            </label>
+            <label className="panel-field">
+              End Time
+              <input type="time" value={form.end_time} onChange={(event) => setForm((current) => ({ ...current, end_time: event.target.value }))} disabled={busy} />
+            </label>
+            <label className="panel-field">
+              Room (optional)
+              <input value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} placeholder="e.g. Block A, Room 3" disabled={busy} />
+            </label>
+          </div>
+          {formError ? <p className="form-feedback error">{formError}</p> : null}
+          {formSuccess ? <p className="form-feedback success">{formSuccess}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={busy}>{busy ? "Saving..." : editingEntry ? "Update Entry" : "Add Entry"}</button>
+            {editingEntry ? (
+              <button type="button" className="table-action" onClick={resetForm} disabled={busy}>Cancel</button>
+            ) : null}
+          </div>
+        </form>
+      </article>
+
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Weekly Schedule</h3>
+          <label className="panel-field">
+            Filter by class
+            <select value={filterClassId} onChange={(event) => setFilterClassId(event.target.value)}>
+              <option value="">All Classes</option>
+              {classes.map((item) => (
+                <option key={item.id} value={item.id}>{item.label || item.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {filteredEntries.length ? (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th>Time</th>
+                  <th>Class</th>
+                  <th>Subject</th>
+                  <th>Teacher</th>
+                  <th>Room</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{dayLabel(entry.day_of_week)}</td>
+                    <td>{entry.start_time} - {entry.end_time}</td>
+                    <td>{entry.class_name}</td>
+                    <td>{entry.subject_name}</td>
+                    <td>{entry.teacher_name || "Unassigned"}</td>
+                    <td>{entry.room || "-"}</td>
+                    <td>
+                      <div className="table-actions-inline">
+                        <button type="button" className="table-action" onClick={() => handleEdit(entry)}>Edit</button>
+                        <button type="button" className="table-action danger" onClick={() => handleDelete(entry)}>Remove</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel-empty">No timetable entries yet. Add one above to get started.</p>
+        )}
+      </article>
+
+      {confirmDialog}
+    </section>
+  );
+}
+
 function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onBulkPromotion, onCreateSubject, onDeleteSubject }) {
   const classes = data?.classes || [];
   const subjects = data?.subjects || [];
@@ -4349,6 +4588,7 @@ function AdminHRActivityScreen({ data, loading, error, onRetry, onReviewLeave, o
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
+  const [activeTab, setActiveTab] = useState("approvals");
   const formatMoney = (value) => `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString()}`;
 
   const runAction = async (key, action, successMessage) => {
@@ -4367,88 +4607,183 @@ function AdminHRActivityScreen({ data, loading, error, onRetry, onReviewLeave, o
     }
   };
 
+  const pendingCount = leaves.length + advances.length;
+
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>HR Management</h2>
-        <p>Audit HR actions and approve staffs leave and salary advance requests.</p>
+        <div>
+          <h2>HR Management</h2>
+          <p>Approve leave and salary advance requests, and review HR activity.</p>
+        </div>
+        {data ? (
+          <div className="hr-hero-stats">
+            <div className="hr-hero-stat">
+              <span className="hr-hero-stat-value">{leaves.length}</span>
+              <span className="hr-hero-stat-label">Leave{leaves.length !== 1 ? "s" : ""} Pending</span>
+            </div>
+            <div className="hr-hero-stat">
+              <span className="hr-hero-stat-value">{advances.length}</span>
+              <span className="hr-hero-stat-label">Advance{advances.length !== 1 ? "s" : ""} Pending</span>
+            </div>
+            <div className="hr-hero-stat muted">
+              <span className="hr-hero-stat-value">{summary.today_activity ?? 0}</span>
+              <span className="hr-hero-stat-label">Actions Today</span>
+            </div>
+          </div>
+        ) : null}
       </div>
-      <ScreenState loading={loading && !activity.length} error={error} onRetry={onRetry} />
-      <section className="metric-grid">
-        <MetricCard label="Total Activity" value={summary.total_activity ?? 0} trend="All HR records" />
-        <MetricCard label="Today" value={summary.today_activity ?? 0} trend="Actions today" />
-        <MetricCard label="Staffs Leaves" value={summary.pending_teacher_leaves ?? 0} trend="Awaiting approval" />
-        <MetricCard label="Salary Advances" value={summary.pending_teacher_advances ?? 0} trend="Awaiting approval" />
-      </section>
 
-      {(feedback || formError) ? (
-        <article className="app-panel">
-          {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-          {formError ? <p className="form-feedback error">{formError}</p> : null}
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+
+      {data ? (
+        <article className="app-panel hr-panel">
+          <div className="hr-tab-bar">
+            <button
+              type="button"
+              className={`hr-tab ${activeTab === "approvals" ? "active" : ""}`}
+              onClick={() => setActiveTab("approvals")}
+            >
+              Pending Approvals
+              {pendingCount > 0 ? <span className="hr-tab-badge">{pendingCount}</span> : null}
+            </button>
+            <button
+              type="button"
+              className={`hr-tab ${activeTab === "activity" ? "active" : ""}`}
+              onClick={() => setActiveTab("activity")}
+            >
+              Activity Log
+              <span className="hr-tab-count">{activity.length}</span>
+            </button>
+          </div>
+
+          {(feedback || formError) ? (
+            <div style={{ padding: "0.75rem 1rem 0", borderBottom: "1px solid var(--panel-border, #e2e8f0)" }}>
+              {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+              {formError ? <p className="form-feedback error">{formError}</p> : null}
+            </div>
+          ) : null}
+
+          {activeTab === "approvals" && (
+            <div className="hr-tab-body">
+              <div className="hr-approval-section">
+                <div className="hr-approval-header">
+                  <h4>Leave Requests</h4>
+                  {leaves.length > 0 ? <span className="hr-count-badge">{leaves.length} pending</span> : null}
+                </div>
+                {leaves.length ? (
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr><th>Staff</th><th>Type</th><th>Duration</th><th>Reason</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {leaves.map((item) => (
+                          <tr key={item.id}>
+                            <td><strong>{item.staff_name}</strong></td>
+                            <td>{item.leave_type}</td>
+                            <td>
+                              {item.start_date} → {item.end_date}
+                              <br /><small className="text-muted">{item.days} day{item.days === 1 ? "" : "s"}</small>
+                            </td>
+                            <td>{item.reason || "—"}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="table-action"
+                                disabled={!!busy}
+                                onClick={() => runAction(`leave-${item.id}`, () => onReviewLeave(item.id, "approved"), "Leave approved.")}
+                              >
+                                {busy === `leave-${item.id}` ? "…" : "Approve"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="hr-empty-row">
+                    <span className="hr-empty-check">✓</span> No pending leave requests
+                  </div>
+                )}
+              </div>
+
+              <div className="hr-section-divider" />
+
+              <div className="hr-approval-section">
+                <div className="hr-approval-header">
+                  <h4>Salary Advance Requests</h4>
+                  {advances.length > 0 ? <span className="hr-count-badge">{advances.length} pending</span> : null}
+                </div>
+                {advances.length ? (
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr><th>Staff</th><th>Amount</th><th>Requested</th><th>Reason</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {advances.map((item) => (
+                          <tr key={item.id}>
+                            <td><strong>{item.staff_name}</strong></td>
+                            <td><strong>{formatMoney(item.amount)}</strong></td>
+                            <td>{item.request_date}</td>
+                            <td>{item.reason || "—"}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="table-action"
+                                disabled={!!busy}
+                                onClick={() => runAction(`advance-${item.id}`, () => onReviewAdvance(item.id, "approved"), "Salary advance approved.")}
+                              >
+                                {busy === `advance-${item.id}` ? "…" : "Approve"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="hr-empty-row">
+                    <span className="hr-empty-check">✓</span> No pending salary advance requests
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "activity" && (
+            <div className="hr-tab-body">
+              {activity.length ? (
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>Action</th><th>Staff</th><th>Details</th><th>Actor</th><th>Date</th></tr>
+                    </thead>
+                    <tbody>
+                      {activity.map((item) => (
+                        <tr key={item.id}>
+                          <td><span className="hr-action-tag">{item.action}</span></td>
+                          <td>
+                            {item.staff_name || "System"}
+                            {item.staff_code ? <><br /><small className="text-muted">{item.staff_code}</small></> : null}
+                          </td>
+                          <td>{item.details || "—"}</td>
+                          <td>{item.actor || "—"}</td>
+                          <td><small>{item.created_at ? new Date(item.created_at).toLocaleString() : "—"}</small></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="panel-empty">No activity records yet.</p>
+              )}
+            </div>
+          )}
         </article>
       ) : null}
-
-      <section className="panel-grid">
-        <article className="app-panel">
-          <div className="panel-head"><h3>Staff leave requests</h3><small>{leaves.length} pending</small></div>
-          {leaves.length ? (
-            <table className="data-table">
-              <thead><tr><th>Teacher</th><th>Leave</th><th>Dates</th><th>Reason</th><th>Action</th></tr></thead>
-              <tbody>
-                {leaves.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.staff_name}</td>
-                    <td>{item.leave_type}<br /><small>{item.days} day{item.days === 1 ? "" : "s"}</small></td>
-                    <td>{item.start_date} to {item.end_date}</td>
-                    <td>{item.reason || "-"}</td>
-                    <td><button type="button" className="table-action" disabled={busy === `leave-${item.id}`} onClick={() => runAction(`leave-${item.id}`, () => onReviewLeave(item.id, "approved"), "Leave approved.")}>Approve</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p className="panel-empty">No pending staff leave requests.</p>}
-        </article>
-
-        <article className="app-panel">
-          <div className="panel-head"><h3>Staff salary advances</h3><small>{advances.length} pending</small></div>
-          {advances.length ? (
-            <table className="data-table">
-              <thead><tr><th>Teacher</th><th>Amount</th><th>Requested</th><th>Reason</th><th>Action</th></tr></thead>
-              <tbody>
-                {advances.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.staff_name}</td>
-                    <td>{formatMoney(item.amount)}</td>
-                    <td>{item.request_date}</td>
-                    <td>{item.reason || "-"}</td>
-                    <td><button type="button" className="table-action" disabled={busy === `advance-${item.id}`} onClick={() => runAction(`advance-${item.id}`, () => onReviewAdvance(item.id, "approved"), "Salary advance approved.")}>Approve</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p className="panel-empty">No pending teacher salary advance requests.</p>}
-        </article>
-      </section>
-
-      <article className="app-panel">
-        <div className="panel-head"><h3>Activity log</h3><small>{activity.length} latest records</small></div>
-        {activity.length ? (
-          <table className="data-table">
-            <thead><tr><th>Action</th><th>Staff</th><th>Details</th><th>Actor</th><th>Date</th></tr></thead>
-            <tbody>
-              {activity.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.action}</td>
-                  <td>{item.staff_name || "System"}<br /><small>{item.staff_code || ""}</small></td>
-                  <td>{item.details || "-"}</td>
-                  <td>{item.actor || "-"}</td>
-                  <td>{item.created_at ? new Date(item.created_at).toLocaleString() : "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : <p className="panel-empty">No activity records yet.</p>}
-      </article>
     </section>
   );
 }
@@ -9770,6 +10105,7 @@ export {
   AdminPerformanceHeatmapScreen,
   AdminFinanceScreen,
   AdminExamResultsScreen,
+  AdminTimetablesScreen,
   AdminResultsScreen,
   AdminTableScreen,
   AdminClassesScreen,
