@@ -167,18 +167,26 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
               <span>NUC & WAEC Aligned</span>
             </div>
 
-            <a
-              id="btn-cta-navbar-onboard"
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                if (onRegisterClick) onRegisterClick();
-              }}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-white bg-blue-600 hover:bg-blue-500 font-semibold text-sm transition-all shadow-lg shadow-blue-600/10 cursor-pointer"
-            >
-              Onboard Your School
-              <ArrowRight className="h-4 w-4" />
-             </a>
+            {onLoginClick && (
+              <button
+                id="btn-sign-in"
+                onClick={onLoginClick}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              >
+                <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+                Sign In
+              </button>
+            )}
+
+            {onRegisterClick && (
+              <button
+                id="btn-sign-up"
+                onClick={onRegisterClick}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-500 hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20 cursor-pointer"
+              >
+                Sign Up
+              </button>
+            )}
           </div>
 
           {/* Mobile Menu Trigger */}
@@ -258,6 +266,26 @@ export default function Navbar({ onOpenOnboarding, scrollToSection, theme, onTog
               <div className="flex items-center gap-1.5 text-xs text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-950/40 px-3 py-2 rounded-lg justify-center">
                 <ShieldCheck className="h-4 w-4 text-teal-brand-500" />
                 <span>NUC & WAEC Aligned Operations</span>
+              </div>
+              <div className="flex gap-2">
+                {onLoginClick && (
+                  <button
+                    id="btn-mob-sign-in"
+                    onClick={() => { onLoginClick(); setIsMobileMenuOpen(false); }}
+                    className="flex-1 text-center py-2.5 px-4 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                  >
+                    Sign In
+                  </button>
+                )}
+                {onRegisterClick && (
+                  <button
+                    id="btn-mob-sign-up"
+                    onClick={() => { onRegisterClick(); setIsMobileMenuOpen(false); }}
+                    className="flex-1 text-center py-2.5 px-4 rounded-xl text-sm font-semibold text-white bg-teal-500 hover:bg-teal-400 transition-all cursor-pointer"
+                  >
+                    Sign Up
+                  </button>
+                )}
               </div>
              <a
               id="btn-cta-navbar-onboard"
