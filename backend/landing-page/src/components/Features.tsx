@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { BookOpen, DollarSign, Users, Fingerprint, FileText, MessageSquare, Brain, Briefcase, Monitor, ArrowRight } from 'lucide-react';
 
 const FEATURES = [
@@ -13,7 +13,7 @@ const FEATURES = [
   { icon: Monitor, title: 'Desktop CBT App', desc: 'Win7-compatible offline CBT app for schools with no internet infrastructure.', color: '#f97316', glow: 'rgba(249,115,22,0.3)' },
 ];
 
-function FeatureCard({ feature, index }: { feature: typeof FEATURES[0]; index: number }) {
+function FeatureCard({ feature, index, visible }: { feature: typeof FEATURES[0]; index: number; visible: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const { icon: Icon, title, desc, color, glow } = feature;
 
@@ -30,10 +30,12 @@ function FeatureCard({ feature, index }: { feature: typeof FEATURES[0]; index: n
   return (
     <div
       ref={ref}
-      className="group relative rounded-2xl p-6 border border-white/5 cursor-default overflow-hidden transition-all duration-300 hover:border-white/10 hover:-translate-y-1"
+      className="group relative rounded-2xl p-6 border border-white/5 cursor-default overflow-hidden hover:border-white/10 hover:-translate-y-1"
       style={{
         background: 'rgba(255,255,255,0.02)',
-        animation: `fadeInUp 0.6s ease ${index * 0.07}s both`,
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(30px)',
+        transition: `opacity 0.5s ease ${index * 60}ms, transform 0.5s ease ${index * 60}ms, border-color 0.3s, translate 0.3s`,
       }}
       onMouseMove={handleMove}
     >
@@ -45,7 +47,7 @@ function FeatureCard({ feature, index }: { feature: typeof FEATURES[0]; index: n
       />
 
       <div
-        className="h-12 w-12 rounded-xl flex items-center justify-center mb-4 shrink-0"
+        className="h-12 w-12 rounded-xl flex items-center justify-center mb-4 shrink-0 group-hover:scale-110 transition-transform duration-300"
         style={{ background: `${color}18`, border: `1px solid ${color}30` }}
       >
         <Icon className="h-5 w-5" style={{ color }} />
@@ -62,10 +64,25 @@ function FeatureCard({ feature, index }: { feature: typeof FEATURES[0]; index: n
 }
 
 export default function Features() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisible(true); },
+      { threshold: 0.1 }
+    );
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+
   return (
-    <section id="features" className="py-28 px-4 relative">
+    <section id="features" className="py-28 px-4 relative" ref={ref}>
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-16">
+        <div
+          className="text-center mb-16 transition-all duration-700"
+          style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)' }}
+        >
           <span
             className="text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-full border mb-4 inline-block"
             style={{ color: '#0ea5e9', background: 'rgba(14,165,233,0.08)', borderColor: 'rgba(14,165,233,0.2)' }}
@@ -85,7 +102,7 @@ export default function Features() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {FEATURES.map((f, i) => <FeatureCard key={f.title} feature={f} index={i} />)}
+          {FEATURES.map((f, i) => <FeatureCard key={f.title} feature={f} index={i} visible={visible} />)}
         </div>
       </div>
     </section>

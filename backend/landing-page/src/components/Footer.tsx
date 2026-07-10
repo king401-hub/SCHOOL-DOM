@@ -1,4 +1,4 @@
-import { Mail, Phone, MapPin, Twitter, Youtube, Facebook } from 'lucide-react';
+import { Mail, MapPin, Twitter, Youtube, Facebook, ArrowRight } from 'lucide-react';
 
 const LINKS = {
   Product: ['Features', 'Pricing', 'CBT Engine', 'Finance Ledger', 'Parent Portal'],
@@ -6,7 +6,11 @@ const LINKS = {
   Support: ['Documentation', 'API Reference', 'Status Page', 'Help Center'],
 };
 
-export default function Footer() {
+interface FooterProps {
+  onGetStarted: () => void;
+}
+
+export default function Footer({ onGetStarted }: FooterProps) {
   const year = new Date().getFullYear();
 
   return (
@@ -69,6 +73,18 @@ export default function Footer() {
               </ul>
             </div>
           ))}
+        </div>
+
+        <div className="rounded-2xl p-8 mb-10 text-center" style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.08), rgba(99,102,241,0.08))', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <h3 className="text-white font-bold text-xl mb-2">Ready to digitize your school?</h3>
+          <p className="text-slate-400 text-sm mb-5">Join hundreds of Nigerian schools running on Schooldom. Set up in minutes.</p>
+          <button
+            onClick={onGetStarted}
+            className="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-white text-sm cursor-pointer hover:opacity-90 transition-all"
+            style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}
+          >
+            Onboard Your School <ArrowRight className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">

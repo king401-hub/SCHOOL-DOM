@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Play, Users, DollarSign, BookOpen, CheckCircle, TrendingUp, Bell } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Users, DollarSign, BookOpen, CheckCircle, TrendingUp, Bell } from 'lucide-react';
 
 const NOTIFICATIONS = [
   { icon: DollarSign, msg: 'Payment received: ₦32,000', name: 'Bello Fatima', color: '#10b981' },
@@ -80,11 +80,22 @@ function AnimatedChart() {
 export default function Demo() {
   const [active, setActive] = useState(0);
   const tabs = ['Finance', 'Attendance', 'Exams', 'Reports'];
+  const sectionRef = useRef<HTMLElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold: 0.1 });
+    if (sectionRef.current) obs.observe(sectionRef.current);
+    return () => obs.disconnect();
+  }, []);
 
   return (
-    <section id="demo" className="py-28 px-4 relative">
+    <section id="demo" className="py-28 px-4 relative" ref={sectionRef}>
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-16">
+        <div
+          className="text-center mb-16 transition-all duration-700"
+          style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)' }}
+        >
           <span className="text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-full border border-violet-500/30 text-violet-400 bg-violet-500/08 mb-4 inline-block">
             Live Simulation
           </span>
@@ -97,7 +108,10 @@ export default function Demo() {
           <p className="text-slate-400 max-w-lg mx-auto">Real-time operations running inside your dashboard, right now.</p>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8 items-stretch">
+        <div
+          className="grid lg:grid-cols-2 gap-8 items-stretch transition-all duration-700 delay-200"
+          style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)' }}
+        >
           <div className="rounded-2xl border border-white/5 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
             <div className="flex border-b border-white/5">
               {tabs.map((t, i) => (
