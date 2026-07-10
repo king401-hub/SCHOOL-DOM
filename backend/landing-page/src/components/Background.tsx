@@ -3,15 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 export function AuroraBackground() {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-      <div className="absolute -top-80 -left-40 w-[700px] h-[700px] rounded-full opacity-20 animate-aurora"
-        style={{ background: 'radial-gradient(circle, #22c55e 0%, transparent 70%)', filter: 'blur(80px)' }} />
-      <div className="absolute top-1/4 -right-60 w-[600px] h-[600px] rounded-full opacity-15 animate-aurora-delayed"
-        style={{ background: 'radial-gradient(circle, #0ea5e9 0%, transparent 70%)', filter: 'blur(80px)' }} />
-      <div className="absolute bottom-0 left-1/3 w-[500px] h-[500px] rounded-full opacity-12 animate-aurora-slow"
-        style={{ background: 'radial-gradient(circle, #8b5cf6 0%, transparent 70%)', filter: 'blur(80px)' }} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] opacity-[0.06]"
-        style={{ background: 'linear-gradient(135deg, #22c55e, transparent, #0ea5e9)', filter: 'blur(60px)' }} />
-      <div className="absolute inset-0 perspective-grid opacity-40" />
+      <div className="absolute -top-96 -left-60 w-[700px] h-[700px] rounded-full animate-aurora"
+        style={{ background: 'radial-gradient(circle, rgba(34,197,94,0.08) 0%, transparent 70%)', filter: 'blur(90px)' }} />
+      <div className="absolute top-1/4 -right-72 w-[600px] h-[600px] rounded-full animate-aurora-delayed"
+        style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.07) 0%, transparent 70%)', filter: 'blur(90px)' }} />
+      <div className="absolute bottom-0 left-1/3 w-[500px] h-[500px] rounded-full animate-aurora-slow"
+        style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%)', filter: 'blur(90px)' }} />
+      <div className="absolute inset-0 perspective-grid opacity-25"
+        style={{ maskImage: 'radial-gradient(ellipse at 50% 0%, black 0%, transparent 70%)' }} />
     </div>
   );
 }
