@@ -1,128 +1,95 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export function AuroraBackground() {
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-      <div className="absolute inset-0 bg-[#020817]" />
-      <div
-        className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full opacity-30"
-        style={{
-          background: 'radial-gradient(circle, #0ea5e9 0%, #6366f1 50%, transparent 70%)',
-          animation: 'aurora1 12s ease-in-out infinite',
-          filter: 'blur(60px)',
-        }}
-      />
-      <div
-        className="absolute top-1/3 -right-40 w-[600px] h-[600px] rounded-full opacity-25"
-        style={{
-          background: 'radial-gradient(circle, #10b981 0%, #0ea5e9 50%, transparent 70%)',
-          animation: 'aurora2 15s ease-in-out infinite',
-          filter: 'blur(60px)',
-        }}
-      />
-      <div
-        className="absolute -bottom-40 left-1/3 w-[500px] h-[500px] rounded-full opacity-20"
-        style={{
-          background: 'radial-gradient(circle, #8b5cf6 0%, #ec4899 50%, transparent 70%)',
-          animation: 'aurora3 18s ease-in-out infinite',
-          filter: 'blur(60px)',
-        }}
-      />
-      <div
-        className="absolute inset-0 opacity-[0.03]"
-        style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
-          backgroundSize: '60px 60px',
-        }}
-      />
-      <style>{`
-        @keyframes aurora1 {
-          0%,100% { transform: translate(0,0) scale(1); }
-          33% { transform: translate(80px,-60px) scale(1.2); }
-          66% { transform: translate(-40px,80px) scale(0.9); }
-        }
-        @keyframes aurora2 {
-          0%,100% { transform: translate(0,0) scale(1); }
-          33% { transform: translate(-70px,50px) scale(1.1); }
-          66% { transform: translate(60px,-70px) scale(1.3); }
-        }
-        @keyframes aurora3 {
-          0%,100% { transform: translate(0,0) scale(1); }
-          50% { transform: translate(50px,-50px) scale(1.2); }
-        }
-      `}</style>
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+      <div className="absolute -top-80 -left-40 w-[700px] h-[700px] rounded-full opacity-20 animate-aurora"
+        style={{ background: 'radial-gradient(circle, #22c55e 0%, transparent 70%)', filter: 'blur(80px)' }} />
+      <div className="absolute top-1/4 -right-60 w-[600px] h-[600px] rounded-full opacity-15 animate-aurora-delayed"
+        style={{ background: 'radial-gradient(circle, #0ea5e9 0%, transparent 70%)', filter: 'blur(80px)' }} />
+      <div className="absolute bottom-0 left-1/3 w-[500px] h-[500px] rounded-full opacity-12 animate-aurora-slow"
+        style={{ background: 'radial-gradient(circle, #8b5cf6 0%, transparent 70%)', filter: 'blur(80px)' }} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] opacity-[0.06]"
+        style={{ background: 'linear-gradient(135deg, #22c55e, transparent, #0ea5e9)', filter: 'blur(60px)' }} />
+      <div className="absolute inset-0 perspective-grid opacity-40" />
     </div>
   );
 }
 
-export function ParticleField({ count = 60 }: { count?: number }) {
-  return (
-    <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-      {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="absolute rounded-full"
-          style={{
-            width: `${Math.random() * 3 + 1}px`,
-            height: `${Math.random() * 3 + 1}px`,
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            background: ['#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899'][Math.floor(Math.random() * 5)],
-            animation: `particleFloat ${Math.random() * 20 + 10}s linear infinite`,
-            animationDelay: `${Math.random() * 10}s`,
-            opacity: Math.random() * 0.6 + 0.2,
-          }}
-        />
-      ))}
-      <style>{`
-        @keyframes particleFloat {
-          0% { transform: translateY(0) translateX(0); opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { transform: translateY(-100vh) translateX(${Math.random() > 0.5 ? '' : '-'}${Math.floor(Math.random() * 200)}px); opacity: 0; }
-        }
-      `}</style>
-    </div>
-  );
+export function ParticleField({ count = 40 }: { count?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const colors = ['rgba(34,197,94,', 'rgba(14,165,233,', 'rgba(139,92,246,', 'rgba(16,185,129,'];
+    const particles = Array.from({ length: count }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.5 + 0.5,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: -Math.random() * 0.4 - 0.1,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      opacity: Math.random() * 0.4 + 0.1,
+    }));
+    let frame: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.y < -5) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `${p.color}${p.opacity})`;
+        ctx.fill();
+      });
+      frame = requestAnimationFrame(draw);
+    };
+    draw();
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+    window.addEventListener('resize', resize);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', resize); };
+  }, [count]);
+  return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0 opacity-60" />;
 }
 
 export function CursorSpotlight() {
-  const spotRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x: -200, y: -200 });
   useEffect(() => {
-    const move = (e: MouseEvent) => {
-      if (spotRef.current) {
-        spotRef.current.style.left = `${e.clientX}px`;
-        spotRef.current.style.top = `${e.clientY}px`;
-      }
-    };
+    const move = (e: MouseEvent) => setPos({ x: e.clientX, y: e.clientY });
     window.addEventListener('mousemove', move);
     return () => window.removeEventListener('mousemove', move);
   }, []);
   return (
-    <div
-      ref={spotRef}
-      className="fixed pointer-events-none -z-10 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full"
+    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
       style={{
-        background: 'radial-gradient(circle, rgba(14,165,233,0.06) 0%, transparent 70%)',
-        transition: 'left 0.08s ease-out, top 0.08s ease-out',
+        background: `radial-gradient(400px circle at ${pos.x}px ${pos.y}px, rgba(34,197,94,0.04) 0%, transparent 60%)`,
+        transition: 'background 0.1s ease',
       }}
     />
   );
 }
 
 export function ScrollProgress() {
-  const barRef = useRef<HTMLDivElement>(null);
+  const [pct, setPct] = useState(0);
   useEffect(() => {
     const update = () => {
-      const pct = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
-      if (barRef.current) barRef.current.style.width = `${pct}%`;
+      const el = document.documentElement;
+      setPct((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100);
     };
     window.addEventListener('scroll', update, { passive: true });
     return () => window.removeEventListener('scroll', update);
   }, []);
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] h-[2px] bg-white/5">
-      <div ref={barRef} className="h-full bg-gradient-to-r from-cyan-400 via-violet-500 to-emerald-400 w-0 transition-none" />
+    <div className="fixed top-0 left-0 right-0 z-[999] h-[2px]">
+      <div
+        className="h-full transition-all duration-100"
+        style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #22c55e, #0ea5e9, #8b5cf6)' }}
+      />
     </div>
   );
 }

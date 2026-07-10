@@ -1,222 +1,239 @@
-import { useState, useEffect, useRef } from 'react';
-import { Check, Zap, School, Eye } from 'lucide-react';
+import { useRef, useState, useEffect } from 'react';
+import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye } from 'lucide-react';
 
 interface PricingProps {
   onGetStarted: () => void;
 }
 
-export default function Pricing({ onGetStarted }: PricingProps) {
+function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-  const [kidMonitor, setKidMonitor] = useState(false);
-
   useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold: 0.15 });
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold });
     if (ref.current) obs.observe(ref.current);
     return () => obs.disconnect();
-  }, []);
+  }, [threshold]);
+  return { ref, visible };
+}
 
-  const plans = [
-    {
-      icon: School,
-      name: 'K-12 Schools',
-      badge: 'Nursery · Primary · Secondary',
-      price: '₦500',
-      cycle: '/ term  (3 months 15 days)',
-      desc: 'Full platform access per term for structured K-12 institutions.',
-      color: '#0ea5e9',
-      popular: true,
-      features: [
-        'Unlimited staff & teacher accounts',
-        'Full CBT exam engine (hybrid offline)',
-        'Fee collection & Paystack gateway',
-        'Auto report card generation',
-        'QR / biometric attendance',
-        'Parent portal & SMS alerts',
-        'Student enrollment & profiles',
-        'Academic calendar & timetable',
-      ],
-      addon: {
-        name: 'Kid Monitor',
-        icon: Eye,
-        price: '₦1,000',
-        cycle: '/ term',
-        desc: "Real-time location, screen & activity monitoring for students' devices. Parents get a live dashboard.",
-        optional: true,
-      },
-      cta: 'Onboard Your School',
-    },
-    {
-      icon: Zap,
-      name: 'Non-K12 Institutions',
-      badge: 'Vocational · Tertiary · Training',
-      price: '₦200',
-      cycle: '/ month',
-      desc: 'Flexible monthly billing for vocational centres, tutoring hubs, and continuing education.',
-      color: '#10b981',
-      popular: false,
-      features: [
-        'Unlimited staff accounts',
-        'CBT exam engine (online)',
-        'Fee & payment tracking',
-        'Student enrollment & profiles',
-        'Attendance tracking',
-        'Basic report generation',
-        'Email & chat support',
-      ],
-      addon: null,
-      cta: 'Get Started',
-    },
-  ];
+const K12_FEATURES = [
+  'Full student management & admissions',
+  'Hybrid CBT exam engine (online + offline)',
+  'Fee collection with Paystack integration',
+  'Biometric & QR attendance tracking',
+  'Auto-generated report cards & transcripts',
+  'Parent portal (mobile-friendly)',
+  'HR & staff payroll management',
+  'AI school secretary assistant',
+  'Bulk ID / PVC card generator',
+  'Multi-campus central dashboard',
+  'NDPA compliant data handling',
+  'Priority support & onboarding',
+];
+
+const NON_K12_FEATURES = [
+  'Student enrollment management',
+  'Hybrid CBT exam engine',
+  'Fee collection & digital receipts',
+  'Attendance tracking',
+  'Course results & transcripts',
+  'Staff management',
+  'Analytics dashboard',
+  'NDPA compliant storage',
+];
+
+export default function Pricing({ onGetStarted }: PricingProps) {
+  const { ref, visible } = useVisible(0.1);
+  const [kidMonitor, setKidMonitor] = useState(false);
 
   return (
-    <section id="pricing" className="py-28 px-4 relative" ref={ref}>
+    <section id="pricing" ref={ref} className="py-28 px-4 relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.05) 0%, transparent 60%)' }} />
+
       <div className="max-w-5xl mx-auto">
-        <div
-          className="text-center mb-16 transition-all duration-700"
-          style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)' }}
-        >
-          <span
-            className="text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-full border mb-4 inline-block"
-            style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.2)' }}
-          >
-            Transparent Pricing
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-            Flat rates, zero surprises,{' '}
-            <span style={{ background: 'linear-gradient(90deg, #f59e0b, #ef4444)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              pay per cycle
-            </span>
+        <div className="text-center mb-14"
+          style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(24px)', transition: 'all 0.7s ease' }}>
+          <span className="badge badge-green mb-4">Simple Pricing</span>
+          <h2 className="font-display font-black text-4xl sm:text-5xl text-white mb-4">
+            Fair pricing, <span className="gradient-text">full power</span>
           </h2>
-          <p className="text-slate-400 max-w-lg mx-auto">No setup fees. No per-student charges. One flat rate covers your entire school.</p>
+          <p className="text-slate-400 max-w-lg mx-auto">No setup fees. No per-student charges. No surprises. Just a flat rate that keeps every school covered.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {plans.map((plan, pi) => {
-            const Icon = plan.icon;
-            return (
-              <div
-                key={plan.name}
-                className="relative rounded-2xl border flex flex-col transition-all duration-500"
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* K-12 Card */}
+          <div className="relative rounded-3xl p-8 overflow-hidden"
+            style={{
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(34,197,94,0.25)',
+              boxShadow: '0 0 60px rgba(34,197,94,0.08), inset 0 1px 0 rgba(34,197,94,0.08)',
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'none' : 'translateY(30px)',
+              transition: 'all 0.7s ease 0.1s',
+            }}>
+            <div className="absolute top-4 right-4">
+              <span className="flex items-center gap-1 badge badge-green text-[9px]">
+                <Star className="h-2.5 w-2.5 fill-current" /> Most Popular
+              </span>
+            </div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse, rgba(34,197,94,0.1) 0%, transparent 70%)', filter: 'blur(20px)' }} />
+
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
+                  style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)' }}>
+                  <Users className="h-5 w-5" style={{ color: '#22c55e' }} />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-white text-xl">K-12 Schools</h3>
+                  <p className="text-slate-500 text-xs">Nursery · Primary · Secondary</p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <div className="flex items-end gap-2">
+                  <span className="font-display font-black text-5xl" style={{ color: '#22c55e' }}>₦500</span>
+                  <div className="mb-2">
+                    <p className="text-white text-sm font-semibold">/ term</p>
+                    <p className="text-slate-500 text-xs">(3 months 15 days)</p>
+                  </div>
+                </div>
+                <p className="text-slate-500 text-xs mt-2">Flat rate — unlimited students & staff</p>
+              </div>
+
+              {/* Kid Monitor Toggle */}
+              <div className="rounded-2xl p-4 mb-6 border transition-all"
                 style={{
-                  border: plan.popular ? `1px solid ${plan.color}40` : '1px solid rgba(255,255,255,0.06)',
-                  background: plan.popular ? `rgba(14,165,233,0.05)` : 'rgba(255,255,255,0.02)',
-                  opacity: visible ? 1 : 0,
-                  transform: visible ? 'translateY(0)' : 'translateY(40px)',
-                  transitionDelay: `${pi * 150}ms`,
-                }}
-              >
-                {plan.popular && (
-                  <div
-                    className="absolute -top-3 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold px-4 py-1 rounded-full whitespace-nowrap"
-                    style={{ background: `linear-gradient(90deg, ${plan.color}, #6366f1)` }}
-                  >
-                    MOST COMMON
+                  background: kidMonitor ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.02)',
+                  borderColor: kidMonitor ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)',
+                }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? '#22c55e' : '#475569' }} />
+                    <div>
+                      <p className="text-white text-sm font-semibold">Kid Monitor</p>
+                      <p className="text-slate-500 text-[10px]">Real-time location + activity tracking</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono font-bold" style={{ color: '#22c55e' }}>+₦1,000/term</span>
+                    <button onClick={() => setKidMonitor(k => !k)}
+                      className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
+                      style={{ background: kidMonitor ? '#22c55e' : 'rgba(255,255,255,0.1)' }}>
+                      <div className="absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-all duration-200"
+                        style={{ left: kidMonitor ? 24 : 4 }} />
+                    </button>
+                  </div>
+                </div>
+                {kidMonitor && (
+                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-slate-400 text-xs">Total per term</span>
+                    <span className="font-display font-black text-lg" style={{ color: '#22c55e' }}>₦1,500</span>
                   </div>
                 )}
+              </div>
 
-                <div className="p-7">
-                  <div className="flex items-start justify-between mb-5">
-                    <div
-                      className="h-11 w-11 rounded-xl flex items-center justify-center"
-                      style={{ background: `${plan.color}18`, border: `1px solid ${plan.color}30` }}
-                    >
-                      <Icon className="h-5 w-5" style={{ color: plan.color }} />
-                    </div>
-                    <span
-                      className="text-[10px] font-bold px-3 py-1 rounded-full border"
-                      style={{ color: plan.color, background: `${plan.color}10`, borderColor: `${plan.color}30` }}
-                    >
-                      {plan.badge}
-                    </span>
-                  </div>
+              <ul className="space-y-2.5 mb-8">
+                {K12_FEATURES.map(f => (
+                  <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
+                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: '#22c55e' }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
 
-                  <h3 className="text-white font-bold text-xl mb-1">{plan.name}</h3>
-                  <p className="text-slate-500 text-sm mb-6">{plan.desc}</p>
+              <button onClick={onGetStarted} className="w-full btn-primary justify-center py-4 text-base">
+                Start with K-12 <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
 
-                  <div className="flex items-end gap-2 mb-2">
-                    <span className="text-white text-5xl font-bold">{plan.price}</span>
-                    <span className="text-slate-400 text-sm mb-2">{plan.cycle}</span>
-                  </div>
+          {/* Non-K12 Card */}
+          <div className="relative rounded-3xl p-8 overflow-hidden"
+            style={{
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(14,165,233,0.2)',
+              boxShadow: '0 0 40px rgba(14,165,233,0.05)',
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'none' : 'translateY(30px)',
+              transition: 'all 0.7s ease 0.25s',
+            }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse, rgba(14,165,233,0.07) 0%, transparent 70%)', filter: 'blur(20px)' }} />
 
-                  <div className="space-y-3 mt-6 mb-6">
-                    {plan.features.map(f => (
-                      <div key={f} className="flex items-start gap-3">
-                        <div
-                          className="h-5 w-5 rounded-full flex items-center justify-center shrink-0 mt-px"
-                          style={{ background: `${plan.color}20` }}
-                        >
-                          <Check className="h-3 w-3" style={{ color: plan.color }} />
-                        </div>
-                        <span className="text-slate-300 text-sm">{f}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {plan.addon && (
-                    <div
-                      className="rounded-xl p-4 mb-6 border"
-                      style={{ background: 'rgba(255,255,255,0.03)', borderColor: kidMonitor ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.07)' }}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Eye className="h-4 w-4 text-violet-400" />
-                          <span className="text-white text-sm font-semibold">{plan.addon.name}</span>
-                          <span className="text-[10px] font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">OPTIONAL</span>
-                        </div>
-                        <button
-                          onClick={() => setKidMonitor(k => !k)}
-                          className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
-                          style={{ background: kidMonitor ? '#8b5cf6' : 'rgba(255,255,255,0.1)' }}
-                        >
-                          <div
-                            className="absolute top-1 h-4 w-4 rounded-full bg-white transition-all duration-200"
-                            style={{ left: kidMonitor ? '24px' : '4px' }}
-                          />
-                        </button>
-                      </div>
-                      <p className="text-slate-500 text-xs leading-relaxed mb-2">{plan.addon.desc}</p>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-violet-400 text-lg font-bold">{plan.addon.price}</span>
-                        <span className="text-slate-500 text-xs">{plan.addon.cycle}</span>
-                        {kidMonitor && <span className="text-emerald-400 text-xs ml-1 font-semibold">✓ Added</span>}
-                      </div>
-                    </div>
-                  )}
-
-                  {plan.addon && kidMonitor && (
-                    <div
-                      className="rounded-xl p-3 mb-4 flex items-center justify-between"
-                      style={{ background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.15)' }}
-                    >
-                      <span className="text-slate-400 text-sm">Total per term</span>
-                      <span className="text-white font-bold text-lg">₦1,500</span>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={onGetStarted}
-                    className="w-full py-3.5 rounded-xl font-semibold text-sm transition-all cursor-pointer hover:opacity-90 active:scale-[0.98]"
-                    style={
-                      plan.popular
-                        ? { background: `linear-gradient(135deg, ${plan.color}, #6366f1)`, color: '#fff' }
-                        : { border: `1px solid ${plan.color}40`, color: plan.color, background: `${plan.color}08` }
-                    }
-                  >
-                    {plan.cta}
-                  </button>
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
+                  style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.25)' }}>
+                  <Zap className="h-5 w-5" style={{ color: '#0ea5e9' }} />
                 </div>
+                <div>
+                  <h3 className="font-display font-black text-white text-xl">Non-K12</h3>
+                  <p className="text-slate-500 text-xs">Vocational · Tertiary · Academies</p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <div className="flex items-end gap-2">
+                  <span className="font-display font-black text-5xl" style={{ color: '#0ea5e9' }}>₦200</span>
+                  <div className="mb-2">
+                    <p className="text-white text-sm font-semibold">/ month</p>
+                    <p className="text-slate-500 text-xs">billed monthly</p>
+                  </div>
+                </div>
+                <p className="text-slate-500 text-xs mt-2">Flat rate — unlimited students & staff</p>
+              </div>
+
+              <div className="h-[120px] mb-6 rounded-2xl flex items-center px-4 border border-white/5"
+                style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <div className="flex items-center gap-3">
+                  <Shield className="h-5 w-5 text-slate-500" />
+                  <div>
+                    <p className="text-white text-sm font-semibold">Full Platform Access</p>
+                    <p className="text-slate-500 text-xs mt-1">All modules included, no add-ons required</p>
+                  </div>
+                </div>
+              </div>
+
+              <ul className="space-y-2.5 mb-8">
+                {NON_K12_FEATURES.map(f => (
+                  <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
+                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: '#0ea5e9' }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <button onClick={onGetStarted}
+                className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all"
+                style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)' }}>
+                Start with Non-K12 <ArrowRight className="h-4 w-4 inline ml-2" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Guarantees row */}
+        <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4"
+          style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.7s ease 0.5s' }}>
+          {[
+            { icon: Shield, label: 'No setup fee', color: '#22c55e' },
+            { icon: Zap, label: 'Start in 4 minutes', color: '#0ea5e9' },
+            { icon: Users, label: 'Unlimited users', color: '#8b5cf6' },
+            { icon: Star, label: '30-day free trial', color: '#f59e0b' },
+          ].map(g => {
+            const Icon = g.icon;
+            return (
+              <div key={g.label} className="flex items-center gap-2 justify-center px-4 py-3 rounded-xl border border-white/5"
+                style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <Icon className="h-4 w-4 shrink-0" style={{ color: g.color }} />
+                <span className="text-slate-400 text-xs">{g.label}</span>
               </div>
             );
           })}
         </div>
-
-        <p
-          className="text-center text-slate-600 text-xs mt-8 transition-all duration-700 delay-300"
-          style={{ opacity: visible ? 1 : 0 }}
-        >
-          All plans include SSL, 99.9% uptime, daily automated backups, and unlimited admin & teacher accounts.
-        </p>
       </div>
     </section>
   );

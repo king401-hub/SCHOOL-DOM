@@ -109,11 +109,11 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
         {/* Header */}
         <div
           className="flex items-center justify-between px-6 py-5"
-          style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(99,102,241,0.1))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+          style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(14,165,233,0.08))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
         >
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(14,165,233,0.25)' }}>
-              <School className="h-4.5 w-4.5 text-cyan-400" />
+            <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.25)' }}>
+              <School className="h-4.5 w-4.5 text-green-400" />
             </div>
             <div>
               <p className="text-white font-bold text-sm">Schooldom Onboarding</p>
@@ -195,7 +195,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                 <a
                   href="/register/"
                   className="flex-1 py-3 rounded-xl text-white text-sm font-bold text-center transition-all cursor-pointer"
-                  style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}
+                  style={{ background: 'linear-gradient(135deg, #22c55e, #0ea5e9)' }}
                 >
                   Continue Setup →
                 </a>
@@ -274,7 +274,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                       disabled={!canStep1}
                       onClick={() => setStep(2)}
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all cursor-pointer disabled:opacity-40"
-                      style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}
+                      style={{ background: 'linear-gradient(135deg, #22c55e, #0ea5e9)' }}
                     >
                       Registrar Details <ChevronRight className="h-4 w-4" />
                     </button>
@@ -330,7 +330,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                     </button>
                     <button type="button" disabled={!canStep2} onClick={() => setStep(3)}
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all cursor-pointer disabled:opacity-40"
-                      style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}>
+                      style={{ background: 'linear-gradient(135deg, #22c55e, #0ea5e9)' }}>
                       Select Modules <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
@@ -402,7 +402,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                     </button>
                     <button type="submit" disabled={!consent}
                       className="px-7 py-3 rounded-xl font-bold text-sm text-white transition-all cursor-pointer disabled:opacity-40"
-                      style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)' }}>
+                      style={{ background: 'linear-gradient(135deg, #22c55e, #0ea5e9)' }}>
                       Provision & Deploy →
                     </button>
                   </div>

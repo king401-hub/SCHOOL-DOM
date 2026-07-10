@@ -1,165 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { ArrowRight, Bell, Users, BookOpen, TrendingUp, CheckCircle, Zap, Shield } from 'lucide-react';
-
-const WORDS = ['Admission to Graduation', 'Fees to Settlement', 'Attendance to Results', 'CBT to Certification'];
-
-function TypewriterText() {
-  const [wordIdx, setWordIdx] = useState(0);
-  const [displayed, setDisplayed] = useState('');
-  const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    const target = WORDS[wordIdx];
-    const delay = deleting ? 30 : 60;
-    const timer = setTimeout(() => {
-      if (!deleting) {
-        if (displayed.length < target.length) {
-          setDisplayed(target.slice(0, displayed.length + 1));
-        } else {
-          setTimeout(() => setDeleting(true), 1800);
-        }
-      } else {
-        if (displayed.length > 0) {
-          setDisplayed(displayed.slice(0, -1));
-        } else {
-          setDeleting(false);
-          setWordIdx(i => (i + 1) % WORDS.length);
-        }
-      }
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [displayed, deleting, wordIdx]);
-
-  return (
-    <span
-      className="block"
-      style={{ background: 'linear-gradient(90deg, #0ea5e9, #10b981, #8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
-    >
-      {displayed}<span className="animate-pulse">|</span>
-    </span>
-  );
-}
-
-function Tilt3DCard({ children, className }: { children: React.ReactNode; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const handleMove = useCallback((e: React.MouseEvent) => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    const rotX = (y - 0.5) * -20;
-    const rotY = (x - 0.5) * 20;
-    el.style.transform = `perspective(1000px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(1.02)`;
-  }, []);
-  const handleLeave = () => {
-    if (ref.current) ref.current.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1)';
-  };
-  return (
-    <div
-      ref={ref}
-      className={className}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      style={{ transition: 'transform 0.1s ease-out', transformStyle: 'preserve-3d' }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function FloatingNotification({ icon: Icon, text, sub, color, delay }: { icon: any; text: string; sub: string; color: string; delay: string }) {
-  return (
-    <div
-      className="absolute flex items-center gap-3 px-4 py-3 rounded-2xl border border-white/10 backdrop-blur-xl shadow-2xl"
-      style={{
-        background: 'rgba(2,8,23,0.8)',
-        animation: `float 4s ease-in-out infinite`,
-        animationDelay: delay,
-      }}
-    >
-      <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: color }}>
-        <Icon className="h-4 w-4 text-white" />
-      </div>
-      <div>
-        <p className="text-white text-xs font-semibold">{text}</p>
-        <p className="text-slate-400 text-[10px]">{sub}</p>
-      </div>
-    </div>
-  );
-}
-
-function DashboardMockup() {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setTick(i => (i + 1) % 100), 80);
-    return () => clearInterval(t);
-  }, []);
-
-  const bars = [65, 80, 45, 90, 72, 88, 60, 95, 70, 85, 78, 92];
-  const animated = bars.map((b, i) => Math.min(b, (tick / 100) * b * 1.2 + (i * 5)));
-
-  return (
-    <div
-      className="w-full h-full rounded-2xl overflow-hidden border border-white/10"
-      style={{ background: 'rgba(2,8,23,0.9)' }}
-    >
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5">
-        <div className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
-        <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
-        <div className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
-        <span className="text-slate-500 text-xs ml-2">Schooldom Dashboard</span>
-      </div>
-
-      <div className="p-4 grid grid-cols-2 gap-3">
-        {[
-          { label: 'Students', val: '1,284', color: '#0ea5e9', icon: Users },
-          { label: 'Fee Rate', val: '₦2.4M', color: '#10b981', icon: TrendingUp },
-          { label: 'Active CBT', val: '14', color: '#8b5cf6', icon: BookOpen },
-          { label: 'Attendance', val: '94%', color: '#f59e0b', icon: CheckCircle },
-        ].map(({ label, val, color, icon: Icon }) => (
-          <div key={label} className="rounded-xl p-3 border border-white/5" style={{ background: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-slate-500 text-[10px]">{label}</span>
-              <Icon className="h-3 w-3" style={{ color }} />
-            </div>
-            <p className="text-white text-sm font-bold">{val}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="px-4 pb-2">
-        <p className="text-slate-500 text-[10px] mb-2">Exam Performance</p>
-        <div className="flex items-end gap-1 h-16">
-          {animated.map((h, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-sm transition-all duration-75"
-              style={{
-                height: `${Math.max(4, h)}%`,
-                background: `linear-gradient(to top, #0ea5e9, #6366f1)`,
-                opacity: 0.7 + (i % 3) * 0.1,
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="px-4 pb-4 mt-1 space-y-1.5">
-        {['Adeola O. - Payment confirmed ✓', 'Exam: JSS2 Maths started →', 'Report card generated ✓'].map((line, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-2 text-[10px] text-slate-500 opacity-0"
-            style={{ animation: `fadeInUp 0.5s ease forwards`, animationDelay: `${0.5 + i * 0.3}s` }}
-          >
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-            {line}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+import { useState, useEffect, useRef } from 'react';
+import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star } from 'lucide-react';
 
 interface HeroProps {
   onGetStarted: () => void;
@@ -167,190 +7,284 @@ interface HeroProps {
   onDemo: () => void;
 }
 
-export default function Hero({ onGetStarted, onSignIn, onDemo }: HeroProps) {
-  const [count1, setCount1] = useState(0);
-  const [count2, setCount2] = useState(0);
-  const [count3, setCount3] = useState(0);
+const PHRASES = ['K-12 Schools', 'Universities', 'Vocational Centers', 'Groups of Schools'];
 
+function TypewriterText() {
+  const [idx, setIdx] = useState(0);
+  const [chars, setChars] = useState(0);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => {
-    const animate = (setter: (v: number) => void, target: number, duration: number) => {
-      const start = Date.now();
-      const tick = () => {
-        const elapsed = Date.now() - start;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased = 1 - Math.pow(1 - progress, 3);
-        setter(Math.floor(eased * target));
-        if (progress < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    };
+    const phrase = PHRASES[idx];
+    const delay = deleting ? 40 : chars < phrase.length ? 80 : 1800;
     const t = setTimeout(() => {
-      animate(setCount1, 250, 2000);
-      animate(setCount2, 85000, 2500);
-      animate(setCount3, 450, 2000);
-    }, 400);
+      if (!deleting && chars < phrase.length) setChars(c => c + 1);
+      else if (!deleting && chars === phrase.length) setDeleting(true);
+      else if (deleting && chars > 0) setChars(c => c - 1);
+      else { setDeleting(false); setIdx(i => (i + 1) % PHRASES.length); }
+    }, delay);
     return () => clearTimeout(t);
+  }, [idx, chars, deleting]);
+  return (
+    <span className="gradient-text font-display">
+      {PHRASES[idx].slice(0, chars)}
+      <span className="animate-pulse" style={{ color: '#22c55e' }}>|</span>
+    </span>
+  );
+}
+
+function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number; prefix?: string; suffix?: string }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  const started = useRef(false);
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting && !started.current) {
+        started.current = true;
+        let start = 0;
+        const step = target / 60;
+        const t = setInterval(() => {
+          start += step;
+          if (start >= target) { setCount(target); clearInterval(t); }
+          else setCount(Math.floor(start));
+        }, 20);
+      }
+    });
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [target]);
+  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
+}
+
+function DashboardMockup() {
+  const [progress, setProgress] = useState(0);
+  const [feed, setFeed] = useState(0);
+  const bars = [65, 80, 72, 90, 85, 95, 78, 88, 70, 92, 83, 96];
+  const feedItems = [
+    { icon: DollarSign, msg: '₦42,000 payment received', color: '#22c55e', name: 'Bello F.' },
+    { icon: CheckCircle, msg: 'CBT exam submitted', color: '#0ea5e9', name: 'Chidi O.' },
+    { icon: Users, msg: 'New student enrolled', color: '#8b5cf6', name: 'Amina Y.' },
+    { icon: Bell, msg: 'Attendance alert sent', color: '#f59e0b', name: 'Mrs. Eze' },
+  ];
+  useEffect(() => {
+    const t = setInterval(() => setProgress(p => p >= 100 ? 0 : p + 1.5), 60);
+    const f = setInterval(() => setFeed(i => (i + 1) % feedItems.length), 2500);
+    return () => { clearInterval(t); clearInterval(f); };
   }, []);
 
   return (
-    <section className="relative min-h-screen flex flex-col items-center justify-center pt-28 pb-20 px-4 overflow-hidden">
-      <div
-        className="absolute inset-0 -z-10"
-        style={{
-          background: 'radial-gradient(ellipse 80% 60% at 50% -10%, rgba(14,165,233,0.15) 0%, transparent 60%)',
-        }}
-      />
-      <div
-        className="absolute inset-0 -z-10 opacity-20"
-        style={{
-          backgroundImage: `linear-gradient(rgba(14,165,233,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(14,165,233,0.3) 1px, transparent 1px)`,
-          backgroundSize: '80px 80px',
-          maskImage: 'radial-gradient(ellipse 80% 80% at 50% 0%, black 40%, transparent 100%)',
-        }}
-      />
-
-      <div
-        className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-full border border-cyan-500/30 text-cyan-400 mb-8"
-        style={{
-          background: 'rgba(14,165,233,0.08)',
-          animation: 'fadeInUp 0.6s ease forwards',
-        }}
-      >
-        <Zap className="h-3 w-3 fill-cyan-400" />
-        Enterprise Resource Platform & Complete School Manager
-        <Shield className="h-3 w-3" />
-      </div>
-
-      <div
-        className="text-center max-w-5xl mx-auto"
-        style={{ animation: 'fadeInUp 0.6s ease 0.1s forwards', opacity: 0 }}
-      >
-        <h1 className="font-bold text-4xl sm:text-5xl lg:text-7xl text-white leading-tight mb-4">
-          Digitize Your School
-          <br />
-          Operations
-          <br />
-          from&nbsp;
-        </h1>
-        <h1 className="font-bold text-4xl sm:text-5xl lg:text-7xl leading-tight mb-8 min-h-[1.2em]">
-          <TypewriterText />
-        </h1>
-        <p
-          className="text-slate-400 text-base sm:text-lg max-w-2xl mx-auto mb-10 leading-relaxed"
-          style={{ animation: 'fadeInUp 0.6s ease 0.3s forwards', opacity: 0 }}
-        >
-          Schooldom Academy is the unified school manager built to run and scale African schools — hybrid offline/online CBT, automated report cards, biometric attendance, parent fee gateways, and much more.
-        </p>
-
-        <div
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
-          style={{ animation: 'fadeInUp 0.6s ease 0.4s forwards', opacity: 0 }}
-        >
-          <button
-            onClick={onGetStarted}
-            className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-2xl text-white font-bold text-base overflow-hidden cursor-pointer"
-            style={{ background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)' }}
-          >
-            <span className="relative z-10 flex items-center gap-2">
-              Onboard Your School
-              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-            </span>
-            <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-600 skew-x-12" />
-          </button>
-
-          <button
-            onClick={onSignIn}
-            className="inline-flex items-center gap-2 px-8 py-4 rounded-2xl text-white font-bold text-base border border-white/10 hover:border-white/20 hover:bg-white/5 transition-all cursor-pointer"
-          >
-            Sign In
-          </button>
-
-          <button
-            onClick={onDemo}
-            className="inline-flex items-center gap-2 px-6 py-4 rounded-2xl text-slate-300 font-medium text-sm hover:text-white transition-colors cursor-pointer"
-          >
-            Explore Demo ↓
-          </button>
+    <div
+      className="relative w-full rounded-2xl overflow-hidden border border-white/8 shadow-2xl"
+      style={{
+        background: 'rgba(10,15,30,0.9)',
+        backdropFilter: 'blur(20px)',
+        transform: 'perspective(1200px) rotateY(-5deg) rotateX(3deg)',
+        boxShadow: '0 40px 80px rgba(0,0,0,0.5), 0 0 60px rgba(34,197,94,0.08), inset 0 1px 0 rgba(255,255,255,0.05)',
+      }}
+    >
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        <div className="flex gap-1.5">
+          <div className="w-3 h-3 rounded-full bg-red-500/70" />
+          <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
+          <div className="w-3 h-3 rounded-full bg-green-500/70" />
         </div>
-
-        <div
-          className="flex flex-wrap items-center justify-center gap-8 sm:gap-12 mb-20 text-center"
-          style={{ animation: 'fadeInUp 0.6s ease 0.5s forwards', opacity: 0 }}
-        >
-          <div>
-            <p className="text-3xl font-bold text-white">{count1}+</p>
-            <p className="text-slate-500 text-xs mt-1">Schools Onboarded</p>
-          </div>
-          <div className="hidden sm:block w-px h-8 bg-white/10" />
-          <div>
-            <p className="text-3xl font-bold text-white">{count2.toLocaleString()}+</p>
-            <p className="text-slate-500 text-xs mt-1">Students Managed</p>
-          </div>
-          <div className="hidden sm:block w-px h-8 bg-white/10" />
-          <div>
-            <p className="text-3xl font-bold text-white">₦{count3}M+</p>
-            <p className="text-slate-500 text-xs mt-1">Fees Processed</p>
-          </div>
+        <div className="flex-1 mx-3 h-6 rounded-lg flex items-center px-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <span className="text-slate-600 text-[10px] font-mono">schooldom.app/dashboard</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-6 rounded-full" style={{ background: 'linear-gradient(135deg, #22c55e, #0ea5e9)' }} />
+          <span className="text-white text-[10px]">Admin</span>
         </div>
       </div>
 
-      <div
-        className="relative w-full max-w-4xl mx-auto"
-        style={{ animation: 'fadeInUp 0.8s ease 0.6s forwards', opacity: 0 }}
-      >
-        <Tilt3DCard className="relative w-full aspect-[16/9] max-h-[480px] rounded-2xl shadow-2xl shadow-cyan-500/10">
-          <div
-            className="absolute inset-0 rounded-2xl"
-            style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.3), rgba(99,102,241,0.3), rgba(16,185,129,0.3))', padding: '1px' }}
-          >
-            <div className="w-full h-full rounded-2xl overflow-hidden" style={{ background: '#020817' }}>
-              <DashboardMockup />
+      <div className="flex" style={{ height: 340 }}>
+        <div className="w-12 border-r border-white/5 flex flex-col items-center gap-3 pt-4" style={{ background: 'rgba(255,255,255,0.01)' }}>
+          {[TrendingUp, Users, DollarSign, BookOpen, Bell].map((Icon, i) => (
+            <div key={i} className="w-8 h-8 rounded-xl flex items-center justify-center"
+              style={{
+                background: i === 0 ? 'rgba(34,197,94,0.15)' : 'transparent',
+                border: i === 0 ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+              }}>
+              <Icon className="h-3.5 w-3.5" style={{ color: i === 0 ? '#22c55e' : '#475569' }} />
+            </div>
+          ))}
+        </div>
+        <div className="flex-1 p-4 flex flex-col gap-3">
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: 'Students', value: '1,842', delta: '+24', color: '#22c55e' },
+              { label: 'Fees', value: '₦2.4M', delta: '+18%', color: '#0ea5e9' },
+              { label: 'Avg Score', value: '78.4%', delta: '+5.2', color: '#8b5cf6' },
+            ].map(s => (
+              <div key={s.label} className="rounded-xl p-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <p className="text-slate-600 text-[9px] uppercase tracking-wider">{s.label}</p>
+                <p className="text-white font-bold text-sm font-mono mt-0.5">{s.value}</p>
+                <p className="text-[9px] mt-0.5" style={{ color: s.color }}>▲ {s.delta}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex-1 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-slate-500 text-[9px] uppercase tracking-wider">Term Performance</span>
+              <span className="text-[9px] font-mono font-bold animate-pulse" style={{ color: '#22c55e' }}>● LIVE</span>
+            </div>
+            <div className="flex items-end gap-1 h-20">
+              {bars.map((h, i) => (
+                <div key={i} className="flex-1 rounded-sm relative overflow-hidden" style={{ height: '100%', background: 'rgba(255,255,255,0.04)' }}>
+                  <div className="absolute bottom-0 left-0 right-0 rounded-sm transition-all duration-700"
+                    style={{ height: `${progress > 0 ? h : 0}%`, background: 'linear-gradient(to top, #22c55e, #0ea5e9)', opacity: 0.6 + (i % 3) * 0.13, transitionDelay: `${i * 40}ms` }} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-white/4">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-[9px] text-white font-semibold">Live Activity</span>
+            </div>
+            {feedItems.map((item, i) => {
+              const Icon = item.icon;
+              return (
+                <div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-white/3 last:border-0 transition-all duration-500"
+                  style={{ opacity: i === feed ? 1 : 0.3, background: i === feed ? `${item.color}06` : 'transparent' }}>
+                  <Icon className="h-3 w-3 shrink-0" style={{ color: item.color }} />
+                  <span className="text-slate-400 text-[9px] flex-1 truncate">{item.msg}</span>
+                  <span className="text-slate-600 text-[8px] shrink-0">{item.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Hero({ onGetStarted, onDemo }: HeroProps) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setVisible(true), 100); return () => clearTimeout(t); }, []);
+
+  return (
+    <section className="relative min-h-screen flex items-center pt-24 pb-16 px-4 overflow-hidden">
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse, rgba(34,197,94,0.05) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+
+      <div className="max-w-7xl mx-auto w-full">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(30px)', transition: 'all 0.8s ease' }}>
+            <div className="inline-flex items-center gap-2 badge badge-green mb-6">
+              <Star className="h-3 w-3 fill-current" />
+              Africa's #1 School OS
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+            </div>
+
+            <h1 className="font-display font-black text-5xl sm:text-6xl lg:text-6xl xl:text-7xl leading-[1.05] tracking-tight mb-6">
+              <span className="text-white block">The Complete</span>
+              <span className="text-white block">School Platform</span>
+              <span className="block mt-1">for <TypewriterText /></span>
+            </h1>
+
+            <p className="text-lg text-slate-400 leading-relaxed max-w-xl mb-8">
+              From admissions to graduation — manage fees, run CBT exams, track attendance,
+              generate report cards, and connect parents. One platform, every school.
+            </p>
+
+            <div className="flex flex-wrap gap-4 mb-10">
+              <button onClick={onGetStarted} className="btn-primary">
+                Get Started Free <ArrowRight className="h-4 w-4" />
+              </button>
+              <button onClick={onDemo} className="btn-ghost">
+                <Play className="h-4 w-4" /> See Live Demo
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-6">
+              {[
+                { value: 300, suffix: '+', label: 'Schools', color: '#22c55e' },
+                { value: 95000, suffix: '+', label: 'Students', color: '#0ea5e9' },
+                { value: 450, prefix: '₦', suffix: 'M+', label: 'Processed', color: '#8b5cf6' },
+              ].map(s => (
+                <div key={s.label}>
+                  <p className="font-display font-black text-2xl" style={{ color: s.color }}>
+                    <AnimatedCounter target={s.value} prefix={s.prefix} suffix={s.suffix} />
+                  </p>
+                  <p className="text-slate-500 text-xs mt-0.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 flex items-center gap-3">
+              <div className="flex -space-x-2">
+                {['BG', 'AG', 'CO', 'EK', 'OS'].map((s, i) => (
+                  <div key={i} className="w-8 h-8 rounded-full border-2 border-[#030712] flex items-center justify-center text-[9px] font-bold text-white"
+                    style={{ background: ['#22c55e', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ec4899'][i], zIndex: 5 - i }}>
+                    {s}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="flex items-center gap-0.5">
+                  {[...Array(5)].map((_, i) => <Star key={i} className="h-3 w-3 fill-yellow-400 text-yellow-400" />)}
+                </div>
+                <p className="text-slate-500 text-[10px]">Trusted by 300+ institutions</p>
+              </div>
             </div>
           </div>
 
-          <FloatingNotification
-            icon={Bell}
-            text="Fee Payment Received"
-            sub="₦45,000 — Adeola Okafor"
-            color="linear-gradient(135deg, #10b981, #0ea5e9)"
-            delay="0s"
-          />
-          <div className="absolute -top-4 -left-4">
-            <FloatingNotification
-              icon={CheckCircle}
-              text="Exam Published"
-              sub="JSS2 Mathematics"
-              color="linear-gradient(135deg, #8b5cf6, #ec4899)"
-              delay="1.5s"
-            />
-          </div>
-          <div className="absolute -bottom-4 right-8">
-            <FloatingNotification
-              icon={TrendingUp}
-              text="Report Cards Ready"
-              sub="Term 2 — 1,284 students"
-              color="linear-gradient(135deg, #f59e0b, #ef4444)"
-              delay="3s"
-            />
-          </div>
-        </Tilt3DCard>
+          {/* Dashboard */}
+          <div className="relative" style={{ opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(30px) translateX(20px)', transition: 'all 0.9s ease 0.2s' }}>
+            <DashboardMockup />
 
-        <div
-          className="absolute -inset-20 -z-10 rounded-full opacity-30"
-          style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.3) 0%, transparent 70%)', filter: 'blur(40px)' }}
-        />
+            {/* Floating cards */}
+            {[
+              {
+                style: { top: -24, left: -24, animationDelay: '0s', animationDuration: '4s' },
+                content: (
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(34,197,94,0.15)' }}>
+                      <DollarSign className="h-3.5 w-3.5" style={{ color: '#22c55e' }} />
+                    </div>
+                    <div><p className="text-white text-xs font-bold">₦2.4M</p><p className="text-slate-500 text-[9px]">Collected today</p></div>
+                  </div>
+                )
+              },
+              {
+                style: { top: 30, right: -16, animationDelay: '0.8s', animationDuration: '5s' },
+                content: (
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(14,165,233,0.15)' }}>
+                      <CheckCircle className="h-3.5 w-3.5" style={{ color: '#0ea5e9' }} />
+                    </div>
+                    <div><p className="text-white text-xs font-bold">127 Exams</p><p className="text-slate-500 text-[9px]">Running now</p></div>
+                  </div>
+                )
+              },
+              {
+                style: { bottom: 80, right: -12, animationDelay: '1.5s', animationDuration: '4.5s' },
+                content: (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                      <p className="text-white text-xs font-semibold">94.2% Attendance</p>
+                    </div>
+                    <div className="h-1.5 w-32 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      <div className="h-full rounded-full" style={{ width: '94%', background: 'linear-gradient(90deg, #22c55e, #0ea5e9)' }} />
+                    </div>
+                  </>
+                )
+              },
+            ].map((card, i) => (
+              <div key={i}
+                className="absolute rounded-2xl px-3 py-2.5 border border-white/8 shadow-xl animate-float"
+                style={{ background: 'rgba(10,15,30,0.9)', backdropFilter: 'blur(20px)', ...card.style as React.CSSProperties }}>
+                {card.content}
+              </div>
+            ))}
+
+            <div className="absolute inset-0 -z-10 rounded-2xl"
+              style={{ background: 'radial-gradient(ellipse at center, rgba(34,197,94,0.08) 0%, transparent 70%)', filter: 'blur(30px)', transform: 'scale(1.2)' }} />
+          </div>
+        </div>
       </div>
-
-      <style>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-12px); }
-        }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(30px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </section>
   );
 }
