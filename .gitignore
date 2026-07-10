@@ -85,3 +85,5 @@ backend/.envtc
 media.bak/
 staticfiles/
 backend/frontend/static/
+
+*.timestamp-*.mjs
