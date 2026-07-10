@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
-  X, Check, ChevronRight, School, User, Mail, Phone,
-  Cpu, DollarSign, FileText, Layers, ShieldCheck, RefreshCw, Award, Sparkles
+  X, Check, ChevronRight, Eye, ShieldCheck, RefreshCw, Award, Sparkles
 } from 'lucide-react';
 
 interface Props {
@@ -32,18 +31,10 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
   const [authPhone, setAuthPhone] = useState('');
   const [studentSize, setStudentSize] = useState(300);
 
-  const [modules, setModules] = useState({
-    cbt: true,
-    finance: true,
-    reports: true,
-    idBuilder: false,
-    kidMonitor: false,
-  });
+  const [kidMonitor, setKidMonitor] = useState(false);
   const [consent, setConsent] = useState(false);
 
-  const toggleModule = (k: keyof typeof modules) => setModules(m => ({ ...m, [k]: !m[k] }));
-
-  const regId = `SD-${Math.floor(10000 + Math.random() * 90000)}`;
+  const [schoolCode] = useState(() => `SD-SCH-${Math.floor(1000 + Math.random() * 9000)}`);
 
   if (!isOpen) return null;
 
@@ -77,23 +68,12 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
     setStep(1); setLoading(false); setSuccess(false);
     setSchoolName(''); setSchoolType('K12'); setLocationState('Lagos');
     setIsGroup(false); setAuthName(''); setAuthEmail(''); setAuthPhone('');
-    setStudentSize(300); setConsent(false);
-    setModules({ cbt: true, finance: true, reports: true, idBuilder: false, kidMonitor: false });
+    setStudentSize(300); setConsent(false); setKidMonitor(false);
     onClose();
   };
 
-  const MODULE_LIST = [
-    { key: 'cbt' as const, icon: Cpu, label: 'Hybrid Offline CBT Engine', sub: 'Exams run without internet, sync later.' },
-    { key: 'finance' as const, icon: DollarSign, label: 'Finance & Payment Gateway', sub: 'SMS invoices, Paystack integration, receipts.' },
-    { key: 'reports' as const, icon: FileText, label: 'Report Card Generation', sub: 'Compute positions, averages, export PDFs.' },
-    { key: 'idBuilder' as const, icon: Layers, label: 'Bulk ID / PVC Card Generator', sub: 'Print modern ID cards with QR codes.' },
-    ...(schoolType === 'K12' ? [
-      { key: 'kidMonitor' as const, icon: Award, label: 'Kid Monitor (+₦1,000/term)', sub: 'Real-time location, screen & activity tracking for students.' },
-    ] : []),
-  ];
-
   const pricing = schoolType === 'K12'
-    ? `₦500 / term (3 months 15 days)${modules.kidMonitor ? ' + ₦1,000 Kid Monitor = ₦1,500/term' : ''}`
+    ? `₦500 / term (3 months 15 days)${kidMonitor ? ' + ₦1,000 Kid Monitor = ₦1,500/term' : ''}`
     : '₦200 / month';
 
   return (
@@ -112,8 +92,9 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
           style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(14,165,233,0.08))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
         >
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.25)' }}>
-              <School className="h-4.5 w-4.5 text-green-400" />
+            <div className="h-9 w-9 rounded-xl overflow-hidden border border-white/10 shrink-0"
+              style={{ boxShadow: '0 0 12px rgba(34,197,94,0.15)' }}>
+              <img src="/schooldom-favicon.jpeg" alt="Schooldom" className="w-full h-full object-cover" />
             </div>
             <div>
               <p className="text-white font-bold text-sm">Schooldom Onboarding</p>
@@ -134,7 +115,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
               <div
                 key={s}
                 className="flex-1 h-1 rounded-full transition-all duration-300"
-                style={{ background: s <= step ? '#0ea5e9' : 'rgba(255,255,255,0.08)' }}
+                style={{ background: s <= step ? '#22c55e' : 'rgba(255,255,255,0.08)' }}
               />
             ))}
           </div>
@@ -145,12 +126,12 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
 
           {loading && (
             <div className="py-14 flex flex-col items-center justify-center text-center space-y-5">
-              <RefreshCw className="h-12 w-12 text-cyan-400 animate-spin" />
+              <RefreshCw className="h-12 w-12 text-green-400 animate-spin" />
               <div>
                 <h4 className="text-white font-bold text-lg mb-1">Provisioning Your Workspace</h4>
                 <p className="text-slate-500 text-xs max-w-xs mx-auto">West African server nodes are organizing your institution's database cluster.</p>
               </div>
-              <div className="px-4 py-2 rounded-xl text-xs font-mono text-cyan-400 animate-pulse" style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.15)' }}>
+              <div className="px-4 py-2 rounded-xl text-xs font-mono text-green-400 animate-pulse" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)' }}>
                 {loadingStage || 'Connecting to core cloud router...'}
               </div>
             </div>
@@ -170,20 +151,25 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                 <div className="absolute top-4 right-4 opacity-5 pointer-events-none">
                   <Award className="h-24 w-24 text-white" />
                 </div>
-                <p className="text-[9px] font-bold text-cyan-400 tracking-[0.2em] uppercase mb-3">Certification of Digital Migration</p>
-                <h5 className="text-white font-bold text-sm mb-3">{schoolName}</h5>
+                <p className="text-[9px] font-bold text-green-400 tracking-[0.2em] uppercase mb-3">Certification of Digital Migration</p>
+                <h5 className="text-white font-bold text-sm mb-1">{schoolName}</h5>
+                <p className="text-slate-500 text-[10px] font-mono tracking-wider mb-3">SCHOOL CODE: <span className="text-green-400 font-bold">{schoolCode}</span></p>
                 <div className="space-y-2 text-xs">
-                  <div className="flex justify-between"><span className="text-slate-500">Registration ID</span><span className="text-slate-300 font-mono">{regId}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Location</span><span className="text-slate-300">{locationState}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Registrar</span><span className="text-slate-300">{authName}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-500">Type</span><span className="text-cyan-400 font-semibold">{schoolType === 'K12' ? 'K-12 Termly' : 'Non-K12 Monthly'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Type</span><span className="text-green-400 font-semibold">{schoolType === 'K12' ? 'K-12 Termly' : 'Non-K12 Monthly'}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Pricing</span><span className="text-emerald-400 font-semibold">{pricing}</span></div>
                   <div className="flex justify-between"><span className="text-slate-500">Student Seats</span><span className="text-slate-300 font-mono">{studentSize}</span></div>
                 </div>
-                <div className="mt-4 p-3 rounded-xl flex items-start gap-2.5" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)' }}>
-                  <Sparkles className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5 animate-pulse" />
-                  <p className="text-emerald-400 text-[11px] leading-relaxed">
-                    Based on {studentSize} student seats, your institution is pre-qualified for up to <strong>₦{(studentSize * 5000).toLocaleString()}</strong> in school development facilities from our verified financial partners.
+                <div className="mt-4 p-3 rounded-xl space-y-1.5" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                  <div className="flex items-start gap-2.5">
+                    <Sparkles className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5 animate-pulse" />
+                    <p className="text-emerald-400 text-[11px] leading-relaxed">
+                      Based on {studentSize} student seats, your institution is pre-qualified for up to <strong>₦{(studentSize * 5000).toLocaleString()}</strong> in school development facilities from our verified financial partners.
+                    </p>
+                  </div>
+                  <p className="text-emerald-500/70 text-[8px] italic font-mono uppercase tracking-wide pl-6">
+                    *Terms and Conditions apply. Subject to final portfolio risk review.
                   </p>
                 </div>
               </div>
@@ -222,8 +208,8 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                       placeholder="e.g. Royal Heights Group of Schools"
                       value={schoolName}
                       onChange={e => setSchoolName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', focusRingColor: '#0ea5e9' }}
+                      className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
                     />
                   </Field>
 
@@ -262,7 +248,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                       type="button"
                       onClick={() => setIsGroup(g => !g)}
                       className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
-                      style={{ background: isGroup ? '#0ea5e9' : 'rgba(255,255,255,0.1)' }}
+                      style={{ background: isGroup ? '#22c55e' : 'rgba(255,255,255,0.1)' }}
                     >
                       <div className="absolute top-1 h-4 w-4 rounded-full bg-white transition-all duration-200" style={{ left: isGroup ? '24px' : '4px' }} />
                     </button>
@@ -312,15 +298,15 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                     </Field>
                   </div>
 
-                  <div className="p-4 rounded-xl space-y-3" style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.15)' }}>
+                  <div className="p-4 rounded-xl space-y-3" style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.15)' }}>
                     <div className="flex justify-between items-center">
                       <label className="text-white text-sm font-medium">Estimated Student Count</label>
-                      <span className="text-cyan-400 font-mono font-bold text-sm">{studentSize}</span>
+                      <span className="text-green-400 font-mono font-bold text-sm">{studentSize}</span>
                     </div>
                     <input type="range" min="50" max="3000" step="50" value={studentSize}
                       onChange={e => setStudentSize(parseInt(e.target.value))}
-                      className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                      style={{ background: 'rgba(14,165,233,0.2)' }} />
+                      className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-green-500"
+                      style={{ background: 'rgba(34,197,94,0.2)' }} />
                     <p className="text-slate-500 text-[10px]">Staff and teachers are always free. This only estimates platform provisioning scale.</p>
                   </div>
 
@@ -331,7 +317,7 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                     <button type="button" disabled={!canStep2} onClick={() => setStep(3)}
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all cursor-pointer disabled:opacity-40"
                       style={{ background: 'linear-gradient(135deg, #22c55e, #0ea5e9)' }}>
-                      Select Modules <ChevronRight className="h-4 w-4" />
+                      Review & Confirm <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -341,38 +327,56 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
               {step === 3 && (
                 <div className="space-y-5">
                   <div>
-                    <h4 className="text-white font-bold text-base mb-0.5">Choose Your Modules</h4>
-                    <p className="text-slate-500 text-xs">Select what to activate on your initial workspace.</p>
+                    <h4 className="text-white font-bold text-base mb-0.5">Review & Confirm</h4>
+                    <p className="text-slate-500 text-xs">Confirm your plan details before provisioning your workspace.</p>
                   </div>
 
-                  <div className="space-y-2">
-                    {MODULE_LIST.map(({ key, icon: Icon, label, sub }) => (
-                      <div
-                        key={key}
-                        onClick={() => toggleModule(key)}
-                        className="flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all"
-                        style={{
-                          background: modules[key] ? 'rgba(14,165,233,0.07)' : 'rgba(255,255,255,0.02)',
-                          border: `1px solid ${modules[key] ? 'rgba(14,165,233,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                        }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Icon className="h-4.5 w-4.5 shrink-0" style={{ color: modules[key] ? '#0ea5e9' : '#475569' }} />
-                          <div>
-                            <p className="text-white text-sm font-medium">{label}</p>
-                            <p className="text-slate-500 text-[10px]">{sub}</p>
-                          </div>
-                        </div>
-                        <div
-                          className="h-5 w-5 rounded flex items-center justify-center border shrink-0"
-                          style={{ background: modules[key] ? '#0ea5e9' : 'transparent', borderColor: modules[key] ? '#0ea5e9' : 'rgba(255,255,255,0.15)' }}
-                        >
-                          {modules[key] && <Check className="h-3 w-3 text-white" />}
+                  {/* Plan summary */}
+                  <div className="rounded-xl p-4 space-y-2.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Institution</span>
+                      <span className="text-white font-medium">{schoolName}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Type</span>
+                      <span className="text-white font-medium">{schoolType === 'K12' ? 'K-12 (Termly)' : 'Non-K12 (Monthly)'}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">State</span>
+                      <span className="text-white font-medium">{locationState}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Student Seats</span>
+                      <span className="text-white font-mono font-medium">{studentSize}</span>
+                    </div>
+                  </div>
+
+                  {/* Kid Monitor add-on (K-12 only) */}
+                  {schoolType === 'K12' && (
+                    <div className="flex items-center justify-between p-4 rounded-xl transition-all"
+                      style={{
+                        background: kidMonitor ? 'rgba(34,197,94,0.06)' : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${kidMonitor ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                      }}>
+                      <div className="flex items-center gap-3">
+                        <Eye className="h-4 w-4 shrink-0" style={{ color: kidMonitor ? '#22c55e' : '#475569' }} />
+                        <div>
+                          <p className="text-white text-sm font-medium">Kid Monitor <span className="text-green-400 text-xs font-mono">+₦1,000/term</span></p>
+                          <p className="text-slate-500 text-[10px] mt-0.5">Optional — real-time location, screen & activity tracking.</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => setKidMonitor(k => !k)}
+                        className="relative h-6 w-11 rounded-full transition-all cursor-pointer shrink-0"
+                        style={{ background: kidMonitor ? '#22c55e' : 'rgba(255,255,255,0.1)' }}
+                      >
+                        <div className="absolute top-1 h-4 w-4 rounded-full bg-white transition-all duration-200" style={{ left: kidMonitor ? '24px' : '4px' }} />
+                      </button>
+                    </div>
+                  )}
 
+                  {/* Pricing line */}
                   <div className="p-3.5 rounded-xl" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 text-xs">Your pricing plan</span>
@@ -380,17 +384,18 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
                     </div>
                   </div>
 
+                  {/* Terms & Conditions consent */}
                   <div className="p-3.5 rounded-xl flex items-start gap-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
                     <input id="wiz-consent" type="checkbox" required checked={consent}
                       onChange={e => setConsent(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded cursor-pointer accent-cyan-500 shrink-0" />
+                      className="mt-0.5 h-4 w-4 rounded cursor-pointer accent-green-500 shrink-0" />
                     <label htmlFor="wiz-consent" className="text-slate-400 text-[11px] leading-relaxed cursor-pointer">
-                      I confirm this institution consents to student record processing in compliance with the <strong className="text-slate-300">Nigeria Data Protection Act (NDPA)</strong> and Schooldom's Privacy Charter & Terms of Service.
+                      I agree to Schooldom's <strong className="text-slate-300">Terms &amp; Conditions</strong> and Privacy Charter, and confirm this institution consents to student record processing in compliance with the <strong className="text-slate-300">Nigeria Data Protection Act (NDPA)</strong>.
                     </label>
                   </div>
 
-                  <div className="p-3 rounded-xl flex items-start gap-2.5" style={{ background: 'rgba(14,165,233,0.05)', border: '1px solid rgba(14,165,233,0.12)' }}>
-                    <ShieldCheck className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl flex items-start gap-2.5" style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.12)' }}>
+                    <ShieldCheck className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
                     <p className="text-slate-400 text-[11px] leading-relaxed">
                       No subscription fees are charged until Term 1 classes resume. Confirming provisions your secure cloud sandbox.
                     </p>
