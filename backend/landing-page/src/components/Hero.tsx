@@ -247,10 +247,10 @@ export default function Hero({ onGetStarted, onDemo }: HeroProps) {
         {/* Headline */}
         <div style={anim(100)}>
           <h1 className="font-display font-black leading-[1.08] tracking-tight mb-6"
-            style={{ fontSize: 'clamp(36px, 6vw, 80px)' }}>
+            style={{ fontSize: 'clamp(30px, 6vw, 80px)' }}>
             <span className="text-white block">The Complete</span>
             <span className="text-white block">School Platform for</span>
-            <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(28px, 5vw, 72px)', minHeight: '1.25em' }}>
+            <span className="block whitespace-nowrap" style={{ fontSize: 'clamp(22px, 5vw, 72px)', minHeight: '1.25em' }}>
               <TypewriterCycle />
             </span>
           </h1>

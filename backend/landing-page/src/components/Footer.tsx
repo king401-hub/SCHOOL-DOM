@@ -14,7 +14,7 @@ export default function Footer({ onGetStarted }: FooterProps) {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="relative border-t border-white/5 pt-20 pb-8 px-4">
+    <footer className="relative border-t border-white/5 pt-20 pb-8 px-4 overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[1px]"
         style={{ background: 'linear-gradient(90deg, transparent, rgba(34,197,94,0.4), rgba(14,165,233,0.4), transparent)' }} />
       <div className="absolute top-0 inset-x-0 pointer-events-none"
