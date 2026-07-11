@@ -92,6 +92,7 @@ import {
   GlobalNotificationBell,
   GlobalHomeButton,
   StudentOfflineExamPage,
+  TimetableGridTable,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer } from "./TeacherExamPanels";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
@@ -570,6 +571,31 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
   );
 }
 
+function sameOriginMediaUrl(url) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.pathname.startsWith("/media/")) return parsed.pathname + parsed.search;
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+function StudentAvatar({ src, name, initials, className = "student-avatar" }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
+  return (
+    <div className={className}>
+      {src && !failed ? (
+        <img src={src} alt={`${name} avatar`} onError={() => setFailed(true)} />
+      ) : (
+        <span aria-hidden="true">{initials}</span>
+      )}
+    </div>
+  );
+}
+
 function StudentDashboard({
   data = {},
   student = {},
@@ -644,7 +670,7 @@ function StudentDashboard({
 
   const studentName = student.name || "Student";
   const schoolMotto = school.motto || school.tagline || "";
-  const profilePicture = student.profile_picture;
+  const profilePicture = sameOriginMediaUrl(student.profile_picture);
   const initials = userInitials({ full_name: studentName });
   const activityRole = student.extra_curricular_activity_title || "";
   const activityStars = student.extra_curricular_activity_star_label || (student.extra_curricular_activity_stars ? `${student.extra_curricular_activity_stars} stars` : "");
@@ -798,7 +824,20 @@ function StudentDashboard({
     <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
       <aside className="student-sidebar">
         <div className="student-sidebar-head">
-          <span>Student Workspace</span>
+          <div className="student-sidebar-head-row">
+            <span>Student Workspace</span>
+            {onThemeChange ? (
+              <button
+                type="button"
+                className="student-sidebar-theme-btn"
+                onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+                aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+              >
+                <ThemeModeIcon mode={themePreference} className="inline-icon" />
+              </button>
+            ) : null}
+          </div>
           <strong>{studentName}</strong>
           <small>{student.class_name || groupLabels.unassigned} - {activityRoleLabel || school?.name || "SchoolDom"}</small>
         </div>
@@ -899,13 +938,7 @@ function StudentDashboard({
             aria-label="View profile information"
             title="View profile information"
           >
-            <div className="student-avatar">
-              {profilePicture ? (
-                <img src={profilePicture} alt={`${studentName} avatar`} />
-              ) : (
-                <span aria-hidden="true">{initials}</span>
-              )}
-            </div>
+            <StudentAvatar src={profilePicture} name={studentName} initials={initials} />
             <div>
               <strong>{studentName}</strong>
               <small>{student.email || "Student"}</small>
@@ -1287,9 +1320,7 @@ function StudentDashboard({
         <section className="student-profile-modal" role="dialog" aria-modal="true" aria-label="Student profile information">
           <article className="student-profile-card">
             <header className="student-profile-card-head">
-              <div className="student-profile-photo">
-                {profilePicture ? <img src={profilePicture} alt={`${studentName} profile`} /> : <span>{initials}</span>}
-              </div>
+              <StudentAvatar src={profilePicture} name={studentName} initials={initials} className="student-profile-photo" />
               <div>
                 <p className="topbar-kicker">Read-only profile</p>
                 <h3>{studentName}</h3>
@@ -1337,9 +1368,22 @@ function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTi
               <strong>{schoolName}</strong>
               <span>Student Portal</span>
             </div>
-            <button type="button" className="sidebar-close-btn" onClick={() => setNavOpen(false)} aria-label="Close menu">
-              <X size={18} />
-            </button>
+            <div className="student-sidebar-head-actions">
+              {onThemeChange ? (
+                <button
+                  type="button"
+                  className="student-sidebar-theme-btn"
+                  onClick={() => onThemeChange(themePreference === "dark" ? "light" : "dark")}
+                  aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                  title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
+                >
+                  <ThemeModeIcon mode={themePreference} className="inline-icon" />
+                </button>
+              ) : null}
+              <button type="button" className="sidebar-close-btn" onClick={() => setNavOpen(false)} aria-label="Close menu">
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="student-nav-group-label">Navigation</div>
@@ -3488,20 +3532,6 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
     if (session) loadTimetable();
   }, [loadTimetable, session]);
 
-  const dayLabel = (value) => days.find((item) => String(item.value) === String(value))?.label || "-";
-
-  const entriesByDay = useMemo(() => {
-    const groups = new Map();
-    [...entries]
-      .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
-      .forEach((entry) => {
-        const key = entry.day_of_week;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(entry);
-      });
-    return Array.from(groups.entries()).sort((a, b) => a[0] - b[0]);
-  }, [entries]);
-
   return (
     <section className="workspace-timetable">
       <div className="panel-head">
@@ -3509,38 +3539,20 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
         <small>{subtitle}</small>
       </div>
       <ScreenState loading={loading && !entries.length} error={error} onRetry={loadTimetable} />
-      {!loading && !error && !entriesByDay.length ? (
-        <p className="panel-empty">{emptyMessage}</p>
+      {!loading ? (
+        <TimetableGridTable
+          entries={entries}
+          days={days}
+          emptyMessage={emptyMessage}
+          renderCell={(entry) => (
+            <>
+              <strong>{entry.subject_name}</strong>
+              {showClassColumn ? <span>{entry.class_name}</span> : <span>{entry.teacher_name || "Unassigned"}</span>}
+              {entry.room ? <span className="timetable-grid-room">{entry.room}</span> : null}
+            </>
+          )}
+        />
       ) : null}
-      {entriesByDay.map(([day, dayEntries]) => (
-        <article key={day} className="app-panel timetable-day-card">
-          <h4>{dayLabel(day)}</h4>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  {showClassColumn ? <th>Class</th> : null}
-                  <th>Subject</th>
-                  {!showClassColumn ? <th>Teacher</th> : null}
-                  <th>Room</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dayEntries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.start_time} - {entry.end_time}</td>
-                    {showClassColumn ? <td>{entry.class_name}</td> : null}
-                    <td>{entry.subject_name}</td>
-                    {!showClassColumn ? <td>{entry.teacher_name || "Unassigned"}</td> : null}
-                    <td>{entry.room || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      ))}
     </section>
   );
 }

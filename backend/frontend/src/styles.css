@@ -4038,6 +4038,119 @@ body[data-theme="dark"] .data-table tbody tr:hover { background: #0f2040 !import
 
 .data-table tbody tr:last-child td { border-bottom: none; }
 
+/* ── Timetable grid ──────────────────────────────────────────────────────── */
+
+.timetable-grid-wrap {
+  overflow-x: auto;
+}
+
+.timetable-grid-table {
+  min-width: 720px;
+  table-layout: fixed;
+}
+
+.timetable-grid-table th {
+  text-align: center;
+}
+
+.timetable-grid-time-col {
+  width: 108px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #475569;
+  background: #f8fafc;
+}
+
+body[data-theme="dark"] .timetable-grid-time-col {
+  color: #cbd5e1;
+  background: #0f1623;
+}
+
+.timetable-grid-cell {
+  vertical-align: top;
+  padding: 0.4rem !important;
+}
+
+.timetable-grid-blank {
+  display: block;
+  text-align: center;
+  color: #cbd5e1;
+}
+
+body[data-theme="dark"] .timetable-grid-blank {
+  color: #334155;
+}
+
+.timetable-grid-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  color: #1e3a8a;
+  margin-bottom: 0.3rem;
+}
+
+.timetable-grid-entry:last-child { margin-bottom: 0; }
+
+.timetable-grid-entry strong {
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .timetable-grid-entry {
+  background: rgba(37, 99, 235, 0.14);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #bfdbfe;
+}
+
+body[data-theme="dark"] .timetable-grid-entry strong {
+  color: #f8fafc;
+}
+
+.timetable-grid-room {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.timetable-grid-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.timetable-grid-entry-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.timetable-grid-entry-actions button {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.timetable-grid-entry-actions button:last-child {
+  color: #dc2626;
+}
+
+body[data-theme="dark"] .timetable-grid-entry-actions button {
+  color: #60a5fa;
+}
+
+body[data-theme="dark"] .timetable-grid-entry-actions button:last-child {
+  color: #f87171;
+}
+
 /* ── Forms ───────────────────────────────────────────────────────────────── */
 
 .panel-form {
@@ -5463,10 +5576,44 @@ body[data-dashboard-role="student"] .student-sidebar {
   border: none;
   border-right: 1px solid rgba(30, 41, 59, 0.8);
   border-radius: 0;
-  background: #0f172a;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   color: #eaf1fb;
   padding: 1rem;
   box-shadow: 4px 0 24px rgba(15, 23, 42, 0.22);
+}
+
+.student-sidebar-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.student-sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.student-sidebar-theme-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.student-sidebar-theme-btn:hover {
+  background: rgba(148, 163, 184, 0.24);
+  color: #ffffff;
 }
 
 .student-sidebar-head {
@@ -6328,6 +6475,10 @@ body[data-theme="dark"] .teacher-dashboard .screen-hero.teacher-overview-hero p 
     width: min(82vw, 310px);
     min-height: 100vh;
     border-radius: 0 20px 20px 0;
+    background: rgba(15, 23, 42, 0.9);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: 12px 0 40px rgba(2, 6, 23, 0.45);
     transform: translateX(-105%);
     transition: transform 180ms ease;
   }
@@ -22522,6 +22673,11 @@ body[data-theme="dark"] .cbt-session-list button.active {
     min-height: 100vh !important;
     border-radius: 0 20px 20px 0 !important;
     padding: 1rem !important;
+    background: rgba(15, 23, 42, 0.9) !important;
+    backdrop-filter: blur(20px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+    box-shadow: 12px 0 40px rgba(2, 6, 23, 0.45) !important;
+    overflow-y: auto !important;
     transform: translateX(-105%) !important;
     transition: transform 180ms ease !important;
   }
