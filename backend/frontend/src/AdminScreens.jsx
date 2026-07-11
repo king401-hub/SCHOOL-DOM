@@ -23,6 +23,7 @@ import {
   MetricCard,
   MessageInboxPanel,
   ScreenState,
+  TimetableGridTable,
 } from "./AppShared";
 import { TeacherExamBuilder } from "./TeacherExamPanels";
 
@@ -3390,43 +3391,23 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
             </select>
           </label>
         </div>
-        {filteredEntries.length ? (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Day</th>
-                  <th>Time</th>
-                  <th>Class</th>
-                  <th>Subject</th>
-                  <th>Teacher</th>
-                  <th>Room</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEntries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{dayLabel(entry.day_of_week)}</td>
-                    <td>{entry.start_time} - {entry.end_time}</td>
-                    <td>{entry.class_name}</td>
-                    <td>{entry.subject_name}</td>
-                    <td>{entry.teacher_name || "Unassigned"}</td>
-                    <td>{entry.room || "-"}</td>
-                    <td>
-                      <div className="table-actions-inline">
-                        <button type="button" className="table-action" onClick={() => handleEdit(entry)}>Edit</button>
-                        <button type="button" className="table-action danger" onClick={() => handleDelete(entry)}>Remove</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="panel-empty">No timetable entries yet. Add one above to get started.</p>
-        )}
+        <TimetableGridTable
+          entries={filteredEntries}
+          days={days}
+          emptyMessage="No timetable entries yet. Add one above to get started."
+          renderCell={(entry) => (
+            <div className="timetable-grid-entry-body">
+              <strong>{entry.subject_name}</strong>
+              {!filterClassId ? <span>{entry.class_name}</span> : null}
+              <span>{entry.teacher_name || "Unassigned"}</span>
+              {entry.room ? <span className="timetable-grid-room">{entry.room}</span> : null}
+              <div className="timetable-grid-entry-actions">
+                <button type="button" onClick={() => handleEdit(entry)}>Edit</button>
+                <button type="button" onClick={() => handleDelete(entry)}>Remove</button>
+              </div>
+            </div>
+          )}
+        />
       </article>
 
       {confirmDialog}

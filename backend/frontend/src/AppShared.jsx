@@ -733,6 +733,66 @@ export function ScreenState({ loading, error, onRetry }) {
   );
 }
 
+export function TimetableGridTable({ entries = [], days = [], renderCell, emptyMessage = "No timetable entries yet." }) {
+  const timeSlots = useMemo(() => {
+    const seen = new Map();
+    entries.forEach((entry) => {
+      const key = `${entry.start_time}|${entry.end_time}`;
+      if (!seen.has(key)) {
+        seen.set(key, { start_time: entry.start_time, end_time: entry.end_time });
+      }
+    });
+    return Array.from(seen.values()).sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
+  }, [entries]);
+
+  if (!entries.length) {
+    return <p className="panel-empty">{emptyMessage}</p>;
+  }
+
+  return (
+    <div className="table-wrap timetable-grid-wrap">
+      <table className="data-table timetable-grid-table">
+        <thead>
+          <tr>
+            <th className="timetable-grid-time-col">Time</th>
+            {days.map((day) => (
+              <th key={day.value}>{day.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {timeSlots.map((slot) => (
+            <tr key={`${slot.start_time}-${slot.end_time}`}>
+              <td className="timetable-grid-time-col">{slot.start_time} - {slot.end_time}</td>
+              {days.map((day) => {
+                const cellEntries = entries.filter(
+                  (entry) =>
+                    String(entry.day_of_week) === String(day.value) &&
+                    entry.start_time === slot.start_time &&
+                    entry.end_time === slot.end_time
+                );
+                return (
+                  <td key={day.value} className="timetable-grid-cell">
+                    {cellEntries.length ? (
+                      cellEntries.map((entry) => (
+                        <div key={entry.id} className="timetable-grid-entry">
+                          {renderCell(entry)}
+                        </div>
+                      ))
+                    ) : (
+                      <span className="timetable-grid-blank">-</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export const OFFLINE_DRAFTS_KEY = "schooldom.offline_exam_drafts";
 export const OFFLINE_EXAM_CREATE_QUEUE_KEY = "schooldom.offline_exam_create_queue";
 export const LOCAL_SENT_MESSAGES_KEY = "schooldom.local_sent_messages";
