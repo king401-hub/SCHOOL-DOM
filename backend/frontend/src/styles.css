@@ -5616,6 +5616,26 @@ body[data-dashboard-role="student"] .student-sidebar {
   color: #ffffff;
 }
 
+/* AI chat stop-response button (shown in place of send while streaming) */
+.ai-chat-stop,
+.ai-chat-send.ai-chat-stop,
+.sec-send.ai-chat-stop {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  cursor: pointer;
+  animation: ai-stop-pulse 1.6s ease-in-out infinite;
+}
+
+.ai-chat-send.ai-chat-stop:hover,
+.sec-send.ai-chat-stop:hover {
+  background: #b91c1c !important;
+}
+
+@keyframes ai-stop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
+
 .student-sidebar-head {
   display: grid;
   gap: 0.25rem;

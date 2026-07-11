@@ -150,6 +150,8 @@ export default function AiChatWidget({ session }) {
   const listRef = useRef(null);
   const textareaRef = useRef(null);
   const taskInputRef = useRef(null);
+  const abortRef = useRef(null);
+  const secAbortRef = useRef(null);
 
   useEffect(() => {
     setConversations(loadHistory());
@@ -332,6 +334,7 @@ export default function AiChatWidget({ session }) {
     setSecBusy(true);
     setSecBusySeconds(0);
     secTimerRef.current = setInterval(() => setSecBusySeconds((s) => s + 1), 1000);
+    secAbortRef.current = new AbortController();
 
     const headers = { "Content-Type": "application/json" };
     if (session?.access) headers.Authorization = `Bearer ${session.access}`;
@@ -340,6 +343,7 @@ export default function AiChatWidget({ session }) {
       const res = await fetch(`${API_BASE_URL}/api/secretary/chat/`, {
         method: "POST",
         headers,
+        signal: secAbortRef.current?.signal,
         body: JSON.stringify({
           message: text,
           history: buildSecHistory(secMessages),
@@ -372,12 +376,19 @@ export default function AiChatWidget({ session }) {
       });
     } catch (err) {
       setSecMessages((prev) => prev.filter((m) => !m.thinking));
-      setSecError(err.message || "Something went wrong.");
+      if (err?.name !== "AbortError") {
+        setSecError(err.message || "Something went wrong.");
+      }
     } finally {
       setSecBusy(false);
       setSecBusySeconds(0);
       clearInterval(secTimerRef.current);
+      secAbortRef.current = null;
     }
+  }
+
+  function stopSecResponse() {
+    secAbortRef.current?.abort();
   }
 
   function handleSecKeyDown(e) {
@@ -398,11 +409,13 @@ export default function AiChatWidget({ session }) {
       response = await fetch(`${API_BASE_URL}/api/ai/chat/`, {
         method: "POST",
         headers,
+        signal: abortRef.current?.signal,
         body: JSON.stringify({
           messages: history.map(({ role, content }) => ({ role, content })),
         }),
       });
-    } catch {
+    } catch (err) {
+      if (err?.name === "AbortError") throw err;
       throw new Error("Network error. Check your connection.");
     }
 
@@ -450,6 +463,7 @@ export default function AiChatWidget({ session }) {
     setError(null);
     setBusy(true);
     setDailyUsed(incrementDailyUsage());
+    abortRef.current = new AbortController();
 
     const savedId = currentId;
     try {
@@ -459,11 +473,26 @@ export default function AiChatWidget({ session }) {
         return prev;
       });
     } catch (err) {
-      setMessages((prev) => prev.slice(0, -1));
-      setError(err.message || "Something went wrong.");
+      if (err?.name === "AbortError") {
+        // User stopped the response — keep whatever was already written.
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          const kept = last && last.role === "assistant" && !last.content ? prev.slice(0, -1) : prev;
+          if (kept.length) saveConversation(kept, savedId);
+          return kept;
+        });
+      } else {
+        setMessages((prev) => prev.slice(0, -1));
+        setError(err.message || "Something went wrong.");
+      }
     } finally {
       setBusy(false);
+      abortRef.current = null;
     }
+  }
+
+  function stopResponse() {
+    abortRef.current?.abort();
   }
 
   function handleKeyDown(e) {
@@ -738,18 +767,32 @@ export default function AiChatWidget({ session }) {
                       rows={1}
                       disabled={secBusy}
                     />
-                    <button
-                      type="button"
-                      className="sec-send"
-                      onClick={() => handleSecSend()}
-                      disabled={!secInput.trim() || secBusy}
-                      title="Send (Enter)"
-                    >
-                      <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                        <line x1="22" y1="2" x2="11" y2="13" />
-                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                      </svg>
-                    </button>
+                    {secBusy ? (
+                      <button
+                        type="button"
+                        className="sec-send ai-chat-stop"
+                        onClick={stopSecResponse}
+                        title="Stop response"
+                        aria-label="Stop response"
+                      >
+                        <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24">
+                          <rect x="6" y="6" width="12" height="12" rx="2.5" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="sec-send"
+                        onClick={() => handleSecSend()}
+                        disabled={!secInput.trim()}
+                        title="Send (Enter)"
+                      >
+                        <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                          <line x1="22" y1="2" x2="11" y2="13" />
+                          <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </>
@@ -949,18 +992,32 @@ export default function AiChatWidget({ session }) {
                     rows={1}
                     disabled={busy || remaining <= 0}
                   />
-                  <button
-                    type="button"
-                    className="ai-chat-send"
-                    onClick={() => handleSend()}
-                    disabled={!canSend}
-                    title="Send (Enter)"
-                  >
-                    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
-                  </button>
+                  {busy ? (
+                    <button
+                      type="button"
+                      className="ai-chat-send ai-chat-stop"
+                      onClick={stopResponse}
+                      title="Stop response"
+                      aria-label="Stop response"
+                    >
+                      <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="6" y="6" width="12" height="12" rx="2.5" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="ai-chat-send"
+                      onClick={() => handleSend()}
+                      disabled={!canSend}
+                      title="Send (Enter)"
+                    >
+                      <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
             </>
