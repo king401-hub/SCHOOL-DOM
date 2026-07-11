@@ -659,8 +659,29 @@ def send_sendchamp_sms(to_phone: str, message: str) -> dict:
         return {"status": "error", "reason": str(exc)}
 
 
+_SMS_CHAR_MAP = {
+    "₦": "NGN ",   # ₦ naira sign
+    "‘": "'", "’": "'",
+    "“": '"', "”": '"',
+    "–": "-", "—": "-",
+    "…": "...",
+    "•": "-",
+    " ": " ",
+}
+
+
+def _sms_safe_text(text: str) -> str:
+    """Transliterate/strip characters GSM handsets can't render (avoids '?' and mojibake in SMS)."""
+    out = str(text or "")
+    for bad, good in _SMS_CHAR_MAP.items():
+        out = out.replace(bad, good)
+    out = out.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[ \t]{2,}", " ", out).strip()
+
+
 def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
     """Send SMS via eBulkSMS JSON API."""
+    message = _sms_safe_text(message)
     username = getattr(settings, "EBULKSMS_USERNAME", "")
     apikey = getattr(settings, "EBULKSMS_APIKEY", "")
     if not username or not apikey:
@@ -819,7 +840,7 @@ def build_paystack_receipt_message(
     remaining = fee_total - amount_paid
     return (
         f"{prefix}: ₦{amount_paid:,.2f} received for {student_name} ({class_name}){school_tag}. "
-        f"Balance: ₦{remaining:,.2f} remaining."
+        f"Outstanding balance: ₦{remaining:,.2f}."
     )
 
 

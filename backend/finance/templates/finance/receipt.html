@@ -185,7 +185,7 @@
     <h1>{{ data.school_name|default:"School" }}</h1>
     <p>
       {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% else %}Fee Statement{% endif %}
-      &bull; {{ data.payment_date|default:data.generated_at|default:"" }}
+      &bull; {% firstof data.payment_date data.generated_at "" %}
     </p>
   </div>
 
