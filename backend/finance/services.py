@@ -803,6 +803,7 @@ def send_payment_receipt(
         plain_body = message
         if receipt_url:
             plain_body += f"\nView online: {receipt_url}"
+        plain_body += "\n\nPowered by Schooldom — https://schooldom.academy"
 
         em = EmailMultiAlternatives(
             subject=subject,

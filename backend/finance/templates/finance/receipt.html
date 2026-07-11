@@ -387,10 +387,15 @@
   </div>
 
   <div class="footer">
-    <p>Generated {{ link.created_at|date:"d M Y" }} &bull; {{ data.school_name|default:"School" }}</p>
+    <p>Generated {% firstof link.created_at|date:"d M Y" "" %} &bull; {{ data.school_name|default:"School" }}</p>
     {% if link.expires_at %}
       <p style="margin-top:4px">This link expires {{ link.expires_at|date:"d M Y" }}</p>
     {% endif %}
+    <p style="margin-top:10px">
+      <a href="https://schooldom.academy" target="_blank" rel="noopener" style="color:#0f766e;font-weight:600;text-decoration:none">
+        Powered by Schooldom
+      </a>
+    </p>
   </div>
 
 </div>
