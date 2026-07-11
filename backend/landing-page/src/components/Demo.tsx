@@ -38,7 +38,7 @@ function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number;
 const STATS = [
   { icon: Users, value: 300, suffix: '+', label: 'Schools Onboarded', desc: 'Across 26 Nigerian states', color: '#22c55e' },
   { icon: BookOpen, value: 95000, suffix: '+', label: 'Active Students', desc: 'Managed on the platform', color: '#0ea5e9' },
-  { icon: DollarSign, value: 450, prefix: '₦', suffix: 'M+', label: 'Fees Processed', desc: 'Through Paystack & transfers', color: '#8b5cf6' },
+  { icon: DollarSign, value: 450, prefix: '₦', suffix: 'M+', label: 'Fees Processed', desc: 'Through secure payment processors', color: '#8b5cf6' },
   { icon: TrendingUp, value: 15000, suffix: '+', label: 'Exams Conducted', desc: 'Online and offline CBT', color: '#f59e0b' },
   { icon: Award, value: 98, suffix: '%', label: 'School Retention', desc: 'Schools that renewed', color: '#10b981' },
   { icon: Zap, value: 4, suffix: 'min', label: 'Setup Time', desc: 'Average onboarding time', color: '#ec4899' },

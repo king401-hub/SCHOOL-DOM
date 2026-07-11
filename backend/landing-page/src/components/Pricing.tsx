@@ -19,12 +19,11 @@ function useVisible(threshold = 0.15) {
 const K12_FEATURES = [
   'Full student management & admissions',
   'Hybrid CBT exam engine (online + offline)',
-  'Fee collection with Paystack integration',
+  'Fee collection with secure payment processors',
   'QR attendance tracking',
   'Auto-generated report cards & transcripts',
   'Parent portal (mobile-friendly)',
   'HR & staff payroll management',
-  'AI school secretary assistant',
   'Bulk ID / PVC card generator',
   'Multi-campus central dashboard',
   'NDPA compliant data handling',
@@ -219,7 +218,7 @@ export default function Pricing({ onGetStarted }: PricingProps) {
             { icon: Shield, label: 'No setup fee', color: '#22c55e' },
             { icon: Zap, label: 'Start in 4 minutes', color: '#0ea5e9' },
             { icon: Users, label: 'Unlimited users', color: '#8b5cf6' },
-            { icon: Star, label: '30-day free trial', color: '#f59e0b' },
+            { icon: Star, label: 'Cancel anytime', color: '#f59e0b' },
           ].map(g => {
             const Icon = g.icon;
             return (

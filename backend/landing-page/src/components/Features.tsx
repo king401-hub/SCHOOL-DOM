@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import {
   BookOpen, DollarSign, Users, FileText, MessageSquare,
-  Brain, Briefcase, Monitor, ArrowRight, CheckCircle, QrCode
+  Briefcase, Monitor, ArrowRight, CheckCircle, QrCode
 } from 'lucide-react';
 
 function goTo(link: string) {
@@ -25,12 +25,11 @@ function useVisible(threshold = 0.15) {
 
 const FEATURES_GRID = [
   { icon: BookOpen, title: 'Hybrid CBT Engine', desc: 'Offline-first exam system. Students sit exams without internet. Auto-syncs when online.', color: '#0ea5e9', glow: 'rgba(14,165,233,0.2)', link: '#cbt' },
-  { icon: DollarSign, title: 'Fee & Finance Ledger', desc: 'Complete bursary suite — collect fees, generate receipts, track balances, Paystack integration.', color: '#22c55e', glow: 'rgba(34,197,94,0.2)', link: '/#/faq?cat=finance' },
+  { icon: DollarSign, title: 'Fee & Finance Ledger', desc: 'Complete bursary suite — collect fees, generate receipts, track balances, secure payment processing.', color: '#22c55e', glow: 'rgba(34,197,94,0.2)', link: '/#/faq?cat=finance' },
   { icon: Users, title: 'Student Management', desc: 'Full student lifecycle from admission to graduation. Profiles, enrollments, transcripts.', color: '#8b5cf6', glow: 'rgba(139,92,246,0.2)', link: '/#/faq?cat=setup' },
   { icon: QrCode, title: 'QR Attendance', desc: 'QR code scanning. Real-time attendance dashboards. Parent SMS alerts.', color: '#f59e0b', glow: 'rgba(245,158,11,0.2)', link: '/#/faq' },
   { icon: FileText, title: 'Auto Report Cards', desc: 'Generate professional report cards in seconds. Custom grading scales, remarks, PDFs.', color: '#ec4899', glow: 'rgba(236,72,153,0.2)', link: '/#/faq' },
   { icon: MessageSquare, title: 'Parent Portal', desc: 'Parents track fees, results, attendance and communicate with teachers from mobile.', color: '#06b6d4', glow: 'rgba(6,182,212,0.2)', link: '/#/faq' },
-  { icon: Brain, title: 'AI Secretary', desc: 'AI-powered school assistant. Answers queries, schedules, generates documents automatically.', color: '#a855f7', glow: 'rgba(168,85,247,0.2)', link: '/#/faq' },
   { icon: Briefcase, title: 'HR & Payroll', desc: 'Staff management, leave tracking, payroll computation, performance reviews.', color: '#14b8a6', glow: 'rgba(20,184,166,0.2)', link: '/#/faq' },
   { icon: Monitor, title: 'Desktop CBT App', desc: 'Win7-compatible offline CBT app for schools with no internet infrastructure.', color: '#f97316', glow: 'rgba(249,115,22,0.2)', link: '#cbt' },
 ];
@@ -41,8 +40,8 @@ const SHOWCASE_SECTIONS = [
     badgeColor: '#22c55e',
     link: '/#/faq?cat=finance',
     title: 'Collect fees, track every naira',
-    desc: "Complete bursary management — generate invoices via SMS, collect payments through Paystack, issue receipts instantly, and track outstanding balances across every student.",
-    points: ['Paystack + bank transfer integration', 'SMS invoice delivery', 'Automatic receipt generation', 'Outstanding balance alerts', 'Multi-term ledger history'],
+    desc: "Complete bursary management — generate invoices via SMS, collect payments through secure payment processors, issue receipts instantly, and track outstanding balances across every student.",
+    points: ['Card & bank transfer payments', 'SMS invoice delivery', 'Automatic receipt generation', 'Outstanding balance alerts', 'Multi-term ledger history'],
     color: '#22c55e',
     preview: (
       <div className="rounded-2xl overflow-hidden sd-card">

@@ -17,7 +17,6 @@ const FAQS = [
     items: [
       { q: 'How much does Schooldom cost?', a: 'K-12 schools pay ₦500 per term (3 months 15 days). Non-K12 institutions pay ₦200 per month. Both plans are flat rates — no per-student charges, no hidden fees.' },
       { q: 'What is the Child Monitor add-on?', a: 'Child Monitor is an optional add-on for K-12 schools at ₦1,000 per term. It provides real-time location tracking, screen activity monitoring, and safety alerts for students.' },
-      { q: 'Is there a free trial?', a: 'Yes! New schools get a 30-day free trial with full access to all features. No credit card required to start.' },
       { q: 'Are there setup fees or per-student charges?', a: 'No. Our pricing is completely flat. You pay one rate for the entire school regardless of how many students or staff members you add.' },
     ]
   },
@@ -35,7 +34,7 @@ const FAQS = [
     category: 'Finance & Fees',
     color: '#8b5cf6',
     items: [
-      { q: 'How do parents pay school fees?', a: "Parents can pay via Paystack (card/bank transfer/USSD), direct bank transfer with automated reconciliation, or in-person cash (recorded by the bursary). All payments generate instant digital receipts sent via SMS." },
+      { q: 'How do parents pay school fees?', a: "Parents can pay via card, bank transfer, or USSD through our secure payment processors, direct bank transfer with automated reconciliation, or in-person cash (recorded by the bursary). All payments generate instant digital receipts sent via SMS." },
       { q: 'Can Schooldom send invoice SMS to parents?', a: 'Yes. When a new term begins or a payment is due, Schooldom automatically sends invoice SMS messages to parents with payment links.' },
       { q: 'What happens to unpaid fees?', a: 'The system tracks outstanding balances per student, generates aging reports, and can automatically restrict portal access for students with unpaid fees — configurable by the school.' },
       { q: 'Does Schooldom support multi-term or full-year invoicing?', a: "Yes. You can create invoices for individual terms, the full academic year, or any custom period. Split-payment installments are also supported." },
