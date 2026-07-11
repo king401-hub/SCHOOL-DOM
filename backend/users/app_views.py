@@ -3743,7 +3743,7 @@ def student_qr_mark_attendance(request):
         )
 
     try:
-        location = _attendance_location_payload(request, require_location=True)
+        location = _attendance_location_payload(request, require_location=False)
     except ValueError as exc:
         return Response(
             {"success": False, "message": str(exc)},

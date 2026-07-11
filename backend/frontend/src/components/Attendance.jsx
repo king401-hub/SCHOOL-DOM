@@ -381,6 +381,7 @@ export function StudentQrAttendanceScanner({ session, onRefresh, attendanceToday
         submitLabel="Mark attendance"
         scanningLabel="Point the camera at the school attendance QR code."
         onScan={handleScan}
+        requireLocation={false}
         statusPill={
           <span className={`student-status-pill status-${attendanceToday?.status || "unmarked"}`}>
             {attendanceToday ? `Marked ${attendanceToday.status}` : "Not marked"}
