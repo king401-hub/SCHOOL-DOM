@@ -103,9 +103,16 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/5 text-slate-500 hover:text-white transition-colors cursor-pointer">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:block text-right px-3 py-1.5 rounded-xl"
+              style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}>
+              <p className="text-slate-500 text-[8px] uppercase tracking-widest">School Code</p>
+              <p className="font-mono font-bold text-xs" style={{ color: '#22c55e' }}>{schoolCode}</p>
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-white/5 text-slate-500 hover:text-white transition-colors cursor-pointer">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Step indicators */}
@@ -327,6 +334,10 @@ export default function OnboardingWizard({ isOpen, onClose }: Props) {
 
                   {/* Plan summary */}
                   <div className="rounded-xl p-4 space-y-2.5 sd-card">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">School Code</span>
+                      <span className="font-mono font-bold" style={{ color: '#22c55e' }}>{schoolCode}</span>
+                    </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Institution</span>
                       <span className="text-white font-medium">{schoolName}</span>
