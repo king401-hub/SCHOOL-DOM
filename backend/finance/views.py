@@ -95,6 +95,7 @@ from finance.services import (
     normalize_phone_number,
     allocate_split_payment,
     create_paystack_subaccount,
+    sync_school_subaccount_with_paystack,
     list_paystack_banks,
     resolve_paystack_account,
     get_fee_payment_breakdown,
@@ -2212,11 +2213,23 @@ def admin_paystack_split_setup(request):
         admin_wallet.save(update_fields=changed)
 
     if admin_wallet.subaccount_code:
-        return Response({
-            "success": True,
-            "message": "Subaccount already exists.",
-            "subaccount_code": admin_wallet.subaccount_code,
-        })
+        # The subaccount may have been deleted on the Paystack dashboard —
+        # verify and clear the stale code so setup can proceed.
+        sync = sync_school_subaccount_with_paystack(user.tenant)
+        if sync.get("cleared"):
+            admin_wallet.refresh_from_db()
+            record_finance_activity(
+                user.tenant, user,
+                "paystack_subaccount_cleared",
+                "Paystack subaccount was deleted on Paystack; cleared stale code.",
+                reference=sync.get("old_code", ""),
+            )
+        else:
+            return Response({
+                "success": True,
+                "message": "Subaccount already exists.",
+                "subaccount_code": admin_wallet.subaccount_code,
+            })
 
     try:
         subaccount = create_paystack_subaccount(

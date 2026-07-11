@@ -273,6 +273,50 @@ def create_paystack_subaccount(
     return data["data"]
 
 
+def verify_paystack_subaccount(subaccount_code: str):
+    """
+    Check whether a subaccount still exists (and is active) on Paystack.
+
+    Returns:
+        True  - subaccount exists and is active
+        False - Paystack reports it deleted/not found/inactive
+        None  - could not reach Paystack (unknown; do not clear anything)
+    """
+    if not subaccount_code:
+        return False
+    url = f"{_paystack_base_url()}/subaccount/{subaccount_code}"
+    try:
+        response = requests.get(url, headers=_paystack_headers(), timeout=20)
+    except requests.RequestException:
+        return None
+    data = _paystack_json(response)
+    if response.status_code == 200 and data.get("status") is True:
+        return bool(data.get("data", {}).get("active", True))
+    if response.status_code in (400, 404):
+        return False
+    return None
+
+
+def sync_school_subaccount_with_paystack(school) -> dict:
+    """
+    If the school's Paystack subaccount was deleted or deactivated on the
+    Paystack dashboard, clear the stale subaccount/split codes locally so
+    split setup can run again with fresh bank details.
+    """
+    wallet = get_or_create_admin_wallet(school)
+    if not wallet.subaccount_code:
+        return {"cleared": False, "verified": False}
+    exists = verify_paystack_subaccount(wallet.subaccount_code)
+    if exists is False:
+        old_code = wallet.subaccount_code
+        wallet.subaccount_code = ""
+        wallet.split_code = ""
+        wallet.dva_split_code = ""
+        wallet.save(update_fields=["subaccount_code", "split_code", "dva_split_code", "updated_at"])
+        return {"cleared": True, "verified": True, "old_code": old_code}
+    return {"cleared": False, "verified": exists is True}
+
+
 def create_paystack_customer(email: str, first_name: str, last_name: str, phone: str = "") -> dict:
     """Get or create a Paystack customer for a parent. Returns customer data including customer_code."""
     url = f"{_paystack_base_url()}/customer"
@@ -1130,6 +1174,13 @@ def initialize_paystack_school_fee_payment(
     # Get or create admin wallet — ensure school subaccount exists
     admin_wallet = get_or_create_admin_wallet(school)
 
+    # Clear a subaccount that was deleted on the Paystack dashboard so a
+    # fresh one is recreated below instead of failing the payment.
+    if admin_wallet.subaccount_code:
+        sync = sync_school_subaccount_with_paystack(school)
+        if sync.get("cleared"):
+            admin_wallet.refresh_from_db()
+
     if not admin_wallet.subaccount_code:
         if not admin_wallet.bank_account_number or not admin_wallet.bank_code:
             raise ValueError("School bank account not configured. Set up the school's bank details first.")
@@ -1206,9 +1257,18 @@ def get_school_payment_split_status(school) -> dict:
         dict: Split configuration status
     """
     admin_wallet = get_or_create_admin_wallet(school)
-    
+
+    # If the subaccount was deleted on the Paystack dashboard, clear it locally
+    # so the setup screen offers a fresh setup instead of a dead code.
+    sync = {"cleared": False}
+    if admin_wallet.subaccount_code:
+        sync = sync_school_subaccount_with_paystack(school)
+        if sync.get("cleared"):
+            admin_wallet.refresh_from_db()
+
     return {
         'school_name': school.name,
+        'subaccount_cleared': sync.get('cleared', False),
         'has_subaccount': bool(admin_wallet.subaccount_code),
         'has_split': bool(admin_wallet.split_code),
         'subaccount_code': admin_wallet.subaccount_code,
