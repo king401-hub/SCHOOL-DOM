@@ -3659,46 +3659,52 @@ def process_virtual_account_payment(
         })
         remaining -= allocated
 
-        # Send receipt via email
+        # Send receipt — email (if available) + SMS with receipt link via eBulkSMS
         student = fee.student
-        recipient_email = (parent_user.email or "").strip()
-        if recipient_email:
-            student_name = student.user.get_full_name() if student and student.user else ""
-            class_obj = getattr(student, "current_class", None)
-            class_name = class_obj.name if class_obj else ""
-            school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
-            school_name = getattr(school_name, "name", "") if school_name else (tenant.name if tenant else "")
-            try:
-                balance_left = float(fee.amount) - float(fee.amount_paid or 0)
-                receipt_data = {
-                    "type": "receipt",
-                    "school_name": school_name,
-                    "student_name": student_name,
-                    "class_name": class_name,
-                    "amount_paid": str(allocated),
-                    "fee_total": str(fee.amount),
-                    "balance_remaining": "0.00" if fully_paid else str(max(0, balance_left)),
-                    "payment_status": "paid" if fully_paid else "partial",
-                    "payment_date": timezone.now().strftime("%d %b %Y"),
-                    "reference": paystack_reference,
-                }
-                receipt_url = create_receipt_link(receipt_data, tenant=tenant)
+        student_name = student.user.get_full_name() if student and student.user else ""
+        class_obj = getattr(student, "current_class", None)
+        class_name = class_obj.name if class_obj else ""
+        school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
+        school_name = getattr(school_name, "name", "") if school_name else (tenant.name if tenant else "")
+        try:
+            balance_left = float(fee.amount) - float(fee.amount_paid or 0)
+            receipt_data = {
+                "type": "receipt",
+                "school_name": school_name,
+                "student_name": student_name,
+                "class_name": class_name,
+                "amount_paid": str(allocated),
+                "fee_total": str(fee.amount),
+                "balance_remaining": "0.00" if fully_paid else str(max(0, balance_left)),
+                "payment_status": "paid" if fully_paid else "partial",
+                "payment_date": timezone.now().strftime("%d %b %Y"),
+                "reference": paystack_reference,
+            }
+            receipt_url = create_receipt_link(receipt_data, tenant=tenant)
+            receipt_message = build_paystack_receipt_message(
+                student_name=student_name,
+                class_name=class_name,
+                amount_paid=float(allocated),
+                fee_total=float(fee.amount),
+                payment_status="paid" if fully_paid else "partial",
+                school_name=school_name,
+            )
+
+            recipient_email = (parent_user.email or "").strip()
+            if recipient_email:
                 send_payment_receipt(
                     recipient_email,
-                    build_paystack_receipt_message(
-                        student_name=student_name,
-                        class_name=class_name,
-                        amount_paid=float(allocated),
-                        fee_total=float(fee.amount),
-                        payment_status="paid" if fully_paid else "partial",
-                        school_name=school_name,
-                    ),
+                    receipt_message,
                     receipt_url=receipt_url,
                     data=receipt_data,
                     receipt_type="receipt",
                 )
-            except Exception:
-                pass
+
+            parent_phone = (getattr(parent_user, "phone", "") or "").strip()
+            if parent_phone:
+                send_ebulksms(parent_phone, f"{receipt_message} Receipt: {receipt_url}")
+        except Exception:
+            logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 
     tx.allocation_status = (
         Transaction.ALLOCATION_OVERPAID if remaining > 0 and not unpaid_fees
