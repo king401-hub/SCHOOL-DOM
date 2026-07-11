@@ -39,6 +39,6 @@ class StudentClassPromotionAdmin(admin.ModelAdmin):
 
 @admin.register(TimetableEntry)
 class TimetableEntryAdmin(admin.ModelAdmin):
-    list_display = ("class_group", "subject", "teacher", "day_of_week", "start_time", "end_time", "room", "tenant")
+    list_display = ("class_group", "display_label", "teacher", "day_of_week", "start_time", "end_time", "room", "tenant")
     list_filter = ("tenant", "day_of_week", "class_group")
-    search_fields = ("class_group__name", "subject__name", "teacher__first_name", "teacher__last_name", "room")
+    search_fields = ("class_group__name", "subject__name", "title", "teacher__first_name", "teacher__last_name", "room")

@@ -3546,7 +3546,7 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
           emptyMessage={emptyMessage}
           renderCell={(entry) => (
             <>
-              <strong>{entry.subject_name}</strong>
+              <strong>{entry.display_label || entry.subject_name}</strong>
               {showClassColumn ? <span>{entry.class_name}</span> : <span>{entry.teacher_name || "Unassigned"}</span>}
               {entry.room ? <span className="timetable-grid-room">{entry.room}</span> : null}
             </>

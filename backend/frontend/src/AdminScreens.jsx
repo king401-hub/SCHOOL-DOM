@@ -3214,7 +3214,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
 
   const [filterClassId, setFilterClassId] = useState("");
   const [form, setForm] = useState({
-    class_id: "", subject_id: "", teacher_id: "", day_of_week: "0",
+    class_id: "", subject_id: "", title: "", teacher_id: "", day_of_week: "0",
     start_time: "", end_time: "", room: "",
   });
   const [editingEntry, setEditingEntry] = useState(null);
@@ -3234,7 +3234,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   }, [entries, filterClassId]);
 
   const resetForm = () => {
-    setForm({ class_id: "", subject_id: "", teacher_id: "", day_of_week: "0", start_time: "", end_time: "", room: "" });
+    setForm({ class_id: "", subject_id: "", title: "", teacher_id: "", day_of_week: "0", start_time: "", end_time: "", room: "" });
     setEditingEntry(null);
   };
 
@@ -3243,6 +3243,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     setForm({
       class_id: String(entry.class_id || ""),
       subject_id: String(entry.subject_id || ""),
+      title: entry.title || "",
       teacher_id: entry.teacher_id || "",
       day_of_week: String(entry.day_of_week),
       start_time: entry.start_time || "",
@@ -3257,8 +3258,12 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     event.preventDefault();
     setFormError("");
     setFormSuccess("");
-    if (!form.class_id || !form.subject_id) {
-      setFormError("Select a class and subject.");
+    if (!form.class_id) {
+      setFormError("Select a class.");
+      return;
+    }
+    if (!form.subject_id && !form.title.trim()) {
+      setFormError("Select a subject or enter a title (e.g. Break, Assembly) for this slot.");
       return;
     }
     if (!form.start_time || !form.end_time) {
@@ -3269,7 +3274,8 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     try {
       const payload = {
         class_id: form.class_id,
-        subject_id: form.subject_id,
+        subject_id: form.subject_id || null,
+        title: form.title.trim(),
         teacher_id: form.teacher_id || null,
         day_of_week: Number(form.day_of_week),
         start_time: form.start_time,
@@ -3289,7 +3295,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   const handleDelete = async (entry) => {
     const ok = await confirm({
       title: "Remove Timetable Entry",
-      message: `Remove ${entry.subject_name} for ${entry.class_name} on ${dayLabel(entry.day_of_week)}?`,
+      message: `Remove ${entry.display_label || entry.subject_name} for ${entry.class_name} on ${dayLabel(entry.day_of_week)}?`,
       confirmLabel: "Remove",
       danger: true,
     });
@@ -3329,13 +3335,18 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
               </select>
             </label>
             <label className="panel-field">
-              Subject
+              Subject (optional)
               <select value={form.subject_id} onChange={(event) => setForm((current) => ({ ...current, subject_id: event.target.value }))} disabled={busy}>
-                <option value="">Select subject</option>
+                <option value="">No subject</option>
                 {subjects.map((item) => (
                   <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
               </select>
+            </label>
+            <label className="panel-field">
+              Title
+              <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Break, Assembly, Lunch" disabled={busy} />
+              <span className="field-note">Used for breaks or non-subject slots. Falls back to the subject name if left blank.</span>
             </label>
             <label className="panel-field">
               Teacher
@@ -3397,7 +3408,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
           emptyMessage="No timetable entries yet. Add one above to get started."
           renderCell={(entry) => (
             <div className="timetable-grid-entry-body">
-              <strong>{entry.subject_name}</strong>
+              <strong>{entry.display_label || entry.subject_name}</strong>
               {!filterClassId ? <span>{entry.class_name}</span> : null}
               <span>{entry.teacher_name || "Unassigned"}</span>
               {entry.room ? <span className="timetable-grid-room">{entry.room}</span> : null}

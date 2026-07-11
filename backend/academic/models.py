@@ -439,7 +439,8 @@ class TimetableEntry(TenantAwareModel, TimeStampedModel):
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
     term = models.ForeignKey(Term, on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
     class_group = models.ForeignKey(Class, on_delete=models.CASCADE, related_name="timetable_entries")
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="timetable_entries")
+    subject = models.ForeignKey(Subject, on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
+    title = models.CharField(max_length=150, blank=True, default="")
     teacher = models.ForeignKey("users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="timetable_entries")
     day_of_week = models.PositiveSmallIntegerField(choices=DAY_CHOICES)
     start_time = models.TimeField()
@@ -453,5 +454,9 @@ class TimetableEntry(TenantAwareModel, TimeStampedModel):
             models.Index(fields=["tenant", "teacher", "day_of_week"]),
         ]
 
+    @property
+    def display_label(self):
+        return self.title or (self.subject.name if self.subject_id else "")
+
     def __str__(self):
-        return f"{self.get_day_of_week_display()} {self.start_time}-{self.end_time}: {self.subject} ({self.class_group})"
+        return f"{self.get_day_of_week_display()} {self.start_time}-{self.end_time}: {self.display_label} ({self.class_group})"

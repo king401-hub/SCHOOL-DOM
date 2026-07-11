@@ -7886,12 +7886,15 @@ def class_detail(request, class_id):
 
 
 def _timetable_entry_payload(entry):
+    subject_name = entry.subject.name if entry.subject_id else ""
     return {
         "id": entry.id,
         "class_id": entry.class_group_id,
         "class_name": _class_label(entry.class_group) if entry.class_group_id else "",
         "subject_id": entry.subject_id,
-        "subject_name": entry.subject.name if entry.subject_id else "",
+        "subject_name": subject_name,
+        "title": entry.title or "",
+        "display_label": entry.title or subject_name,
         "teacher_id": str(entry.teacher_id) if entry.teacher_id else None,
         "teacher_name": entry.teacher.get_full_name() if entry.teacher_id else "",
         "day_of_week": entry.day_of_week,
@@ -7972,6 +7975,7 @@ def create_timetable_entry(request):
 
     class_id = request.data.get("class_id")
     subject_id = request.data.get("subject_id")
+    title = str(request.data.get("title") or "").strip()
     try:
         day_of_week = int(request.data.get("day_of_week"))
     except (TypeError, ValueError):
@@ -7990,9 +7994,17 @@ def create_timetable_entry(request):
     if not class_obj:
         return Response({"success": False, "message": "Select a valid class."}, status=status.HTTP_400_BAD_REQUEST)
 
-    subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=subject_id).first()
-    if not subject_obj:
-        return Response({"success": False, "message": "Select a valid subject."}, status=status.HTTP_400_BAD_REQUEST)
+    subject_obj = None
+    if subject_id:
+        subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=subject_id).first()
+        if not subject_obj:
+            return Response({"success": False, "message": "Select a valid subject."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not subject_obj and not title:
+        return Response(
+            {"success": False, "message": "Select a subject or enter a title (e.g. Break, Assembly)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     teacher_id = request.data.get("teacher_id")
     teacher_obj = None
@@ -8018,6 +8030,7 @@ def create_timetable_entry(request):
         tenant=tenant_obj,
         class_group=class_obj,
         subject=subject_obj,
+        title=title,
         teacher=teacher_obj,
         day_of_week=day_of_week,
         start_time=start_time,
@@ -8059,11 +8072,25 @@ def timetable_entry_detail(request, entry_id):
         update_fields.append("class_group")
 
     if "subject_id" in request.data:
-        subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=request.data.get("subject_id")).first()
-        if not subject_obj:
-            return Response({"success": False, "message": "Select a valid subject."}, status=status.HTTP_400_BAD_REQUEST)
-        entry.subject = subject_obj
+        subject_id = request.data.get("subject_id")
+        if subject_id:
+            subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=subject_id).first()
+            if not subject_obj:
+                return Response({"success": False, "message": "Select a valid subject."}, status=status.HTTP_400_BAD_REQUEST)
+            entry.subject = subject_obj
+        else:
+            entry.subject = None
         update_fields.append("subject")
+
+    if "title" in request.data:
+        entry.title = str(request.data.get("title") or "").strip()
+        update_fields.append("title")
+
+    if not entry.subject_id and not entry.title:
+        return Response(
+            {"success": False, "message": "Select a subject or enter a title (e.g. Break, Assembly)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if "teacher_id" in request.data:
         teacher_id = request.data.get("teacher_id")
