@@ -7,9 +7,6 @@ import {
   Banknote, LifeBuoy, CalendarClock,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
-import LandingPage from "./Schooldom/src/App";
-
-const SchooldomLanding = LandingPage;
 
 import ResourceCenter from "./ResourceCenter";
 
@@ -8464,7 +8461,14 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       );
     }
     if (currentPath === "/") {
-      return withGlobalHome(<LandingPage onGetStarted={() => navigate("/signin")} />);
+      if (import.meta.env.PROD) {
+        // The public landing page is a separate app served by nginx at the site
+        // root; leave the SPA entirely so client-side "back" can't resurrect
+        // the old embedded landing page.
+        window.location.replace("/");
+        return null;
+      }
+      return withGlobalHome(<Signin onAuthenticated={handleAuthenticated} onBack={() => navigate("/")} />);
     }
     if (currentPath === "/resource") {
       return withGlobalHome(<ResourceCenter onNavigate={navigate} />);
