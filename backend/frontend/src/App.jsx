@@ -128,6 +128,7 @@ const NAIRA_SYMBOL = "\u20A6";
 const DAILY_PERSONAL_QUESTION_LIMIT = 20;
 const ADMIN_ACTIVITY_LOG_KEY = "schooldom.admin_activity_notifications";
 const STUDENT_CBT_DESKTOP_PATH = "/student-cbt";
+const TEACHER_TAB_STORAGE_KEY = "schooldom.teacher_active_tab";
 
 function isMobileQuizViewport() {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -4364,14 +4365,22 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
   const [classId, setClassId] = useState("");
   const [students, setStudents] = useState([]);
   const [history, setHistory] = useState([]);
-  const [index, setIndex] = useState(0);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rosterSearch, setRosterSearch] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [locationStatus, setLocationStatus] = useState("");
   const [savingStatus, setSavingStatus] = useState("");
-  const activeStudent = students[index];
+  // Students already marked for the selected date (from the server, or just-saved locally)
+  // are removed from the tap queue automatically — this also means a page reload never
+  // "loses" progress: already-marked students simply won't reappear.
+  const markedIds = useMemo(() => new Set(history.map((item) => item.student_id)), [history]);
+  const pendingStudents = useMemo(
+    () => students.filter((student) => !markedIds.has(student.student_id)),
+    [students, markedIds]
+  );
+  const activeStudent = pendingStudents[0];
+  const markedCount = students.length - pendingStudents.length;
   const selectedClass = classOptions.find((item) => String(item.id) === String(classId));
   const filteredRoster = useMemo(() => {
     const query = rosterSearch.trim().toLowerCase();
@@ -4397,7 +4406,7 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
     setError("");
     if (!classId) {
       setStudents([]);
-      setIndex(0);
+      setHistory([]);
       return;
     }
     try {
@@ -4405,7 +4414,6 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
       const result = await requestJson(session, "GET", `/api/app/attendance/class-students/?${params.toString()}`);
       setStudents(result.students || []);
       setHistory(result.attendance_records || []);
-      setIndex(0);
     } catch (loadError) {
       setError(loadError.message || "Could not load class students.");
     }
@@ -4433,9 +4441,8 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
       setHistory((previous) => [
         result.attendance,
         ...previous.filter((item) => item.id !== result.attendance?.id && item.student_id !== result.attendance?.student_id),
-      ].slice(0, 20));
+      ]);
       setFeedback(result.message || "Attendance saved.");
-      setIndex((previous) => Math.min(previous + 1, students.length));
       setLocationStatus("");
     } catch (markError) {
       setError(markError.message || "Could not save attendance.");
@@ -4532,7 +4539,7 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
         <article className="swipe-student-card tap-attendance-card">
           {activeStudent ? (
             <>
-              <span className="pill muted">{index + 1} / {students.length}</span>
+              <span className="pill muted">{markedCount} / {students.length} marked</span>
               <div className="swipe-avatar">{activeStudent.name?.slice(0, 2).toUpperCase()}</div>
               <h3>{activeStudent.name}</h3>
               <p>{activeStudent.student_id} - {activeStudent.class_name}</p>
@@ -4541,20 +4548,20 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
                 <button type="button" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? "Saving..." : "Late"}</button>
                 <button type="button" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? "Saving..." : "Present"}</button>
               </div>
-              <small>Tap once to capture GPS, save, and move to the next student.</small>
+              <small>Tap a status to save and move to the next student. Already-marked students won't reappear, even after a refresh.</small>
             </>
           ) : (
-            <p className="panel-empty">{classId ? "No more students to mark." : "Select an assigned class to begin."}</p>
+            <p className="panel-empty">{classId ? (students.length ? "All students marked for this date." : "No students are in this class yet.") : "Select an assigned class to begin."}</p>
           )}
           {locationStatus ? <p className="panel-empty">{locationStatus}</p> : null}
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {error ? <p className="form-feedback error">{error}</p> : null}
         </article>
         <article className="app-panel">
-          <div className="panel-head"><h3>Daily records</h3><small>{history.length} marked this session</small></div>
+          <div className="panel-head"><h3>Daily records</h3><small>{history.length} marked today</small></div>
           {history.length ? (
             <ul className="panel-list">
-              {history.map((item) => <li key={item.id}>{item.student_name} - {item.class_name} - {item.date} - {item.status}</li>)}
+              {history.slice(0, 20).map((item) => <li key={item.id}>{item.student_name} - {item.class_name} - {item.date} - {item.status}</li>)}
             </ul>
           ) : <p className="panel-empty">Attendance records will appear after marking.</p>}
         </article>
@@ -5005,7 +5012,19 @@ function TeacherWorkspace({
   onNavigate,
   onSignOut,
 }) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTabState] = useState(() => {
+    try {
+      return localStorage.getItem(TEACHER_TAB_STORAGE_KEY) || "overview";
+    } catch {
+      return "overview";
+    }
+  });
+  const setActiveTab = useCallback((tab) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem(TEACHER_TAB_STORAGE_KEY, tab);
+    } catch {}
+  }, []);
   const [navOpen, setNavOpen] = useState(false);
   const [editingExam, setEditingExam] = useState(null);
   const [loadingExamId, setLoadingExamId] = useState("");
@@ -5037,6 +5056,14 @@ function TeacherWorkspace({
     ["results", "Results", "results"],
     ["requests", "HR System", "requests"],
   ];
+
+  useEffect(() => {
+    if (!teacherTabs.some(([key]) => key === activeTab)) {
+      setActiveTab("overview");
+    }
+    // Only re-validate when the available tab set changes (e.g. nonK12 toggles attendance/attendance-info).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nonK12]);
 
   const recipientOptions = useMemo(
     () =>

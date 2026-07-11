@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import threading
 import uuid
 import zipfile
 from datetime import date, datetime, timedelta
@@ -10037,19 +10038,35 @@ def kids_monitor_deactivate(request, parent_id):
     })
 
 
+def _send_attendance_sms_batch(phones_and_messages):
+    """Runs in a background thread — sends SMS without blocking the attendance request/response."""
+    from finance.services import send_ebulksms
+    for phone, message in phones_and_messages:
+        try:
+            send_ebulksms(phone, message, sender="SchoolDom")
+        except Exception:
+            logger.exception("Attendance SMS to %s failed", phone)
+
+
 def _notify_parents_on_attendance(student_user, attendance_status, attendance_date, school_name):
-    """Send SMS to parents who have Kids Monitor active when attendance is marked."""
+    """
+    Queue SMS to parents who have Child Monitor active when attendance is marked.
+    Only parents with an active KidsMonitorSubscription receive anything — this is
+    the paid opt-in gate, checked per parent below.
+    Sends happen on a background thread so marking attendance stays instant for the teacher.
+    """
     try:
         student_profile = student_user.student_profile
     except Exception:
         return
 
-    parents = ParentProfile.objects.filter(children=student_profile).select_related("user")
+    parents = ParentProfile.objects.filter(children=student_profile).select_related("user", "kids_monitor")
     student_name = student_user.get_full_name() or student_user.email
     status_label = {"present": "present", "absent": "ABSENT", "late": "late"}.get(attendance_status, attendance_status)
     date_str = attendance_date.strftime("%d/%m/%Y")
     message = f"{student_name} was marked {status_label} on {date_str}. -SchoolDom"
 
+    to_send = []
     for parent_profile in parents:
         try:
             if not parent_profile.kids_monitor.is_active:
@@ -10060,9 +10077,7 @@ def _notify_parents_on_attendance(student_user, attendance_status, attendance_da
         phone = parent_profile.user.phone
         if not phone:
             continue
+        to_send.append((phone, message))
 
-        try:
-            from finance.services import send_ebulksms
-            send_ebulksms(phone, message, sender="SchoolDom")
-        except Exception:
-            pass
+    if to_send:
+        threading.Thread(target=_send_attendance_sms_batch, args=(to_send,), daemon=True).start()

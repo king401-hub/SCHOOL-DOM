@@ -95,8 +95,10 @@ function collectDeviceInfo() {
 }
 
 async function reverseGeocode(latitude, longitude) {
+  // Address is cosmetic only (shown for audit purposes) — kept short so it never
+  // holds up attendance submission. The GPS coordinates are what's actually recorded.
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 4500);
+  const timer = window.setTimeout(() => controller.abort(), 1800);
   try {
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
@@ -120,8 +122,10 @@ function requestBrowserPosition() {
     }
     navigator.geolocation.getCurrentPosition(resolve, reject, {
       enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
+      timeout: 10000,
+      // Reuse a GPS fix from the last 20s (e.g. a retry, or clock-in immediately
+      // followed by clock-out) instead of forcing the device to re-acquire a fix.
+      maximumAge: 20000,
     });
   });
 }
