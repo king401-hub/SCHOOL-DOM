@@ -9889,12 +9889,33 @@ def kids_monitor_initiate(request, parent_id):
     )
 
     # If already active, return early
+    existing_sub = None
     try:
-        sub = parent_profile.kids_monitor
-        if sub.is_active:
+        existing_sub = parent_profile.kids_monitor
+        if existing_sub.is_active:
             return Response({"success": False, "message": "Kids Monitor is already active for this parent."}, status=status.HTTP_400_BAD_REQUEST)
     except KidsMonitorSubscription.DoesNotExist:
         pass
+
+    # A previous payment may have succeeded without the popup callback firing
+    # (closed tab, network drop). Verify it before charging again.
+    if existing_sub and existing_sub.paystack_ref:
+        from finance.services import verify_paystack_transaction
+        try:
+            prev_tx = verify_paystack_transaction(existing_sub.paystack_ref)
+            if prev_tx.get("status") in ("success", "successful"):
+                existing_sub.is_active = True
+                existing_sub.activated_at = timezone.now()
+                existing_sub.save(update_fields=["is_active", "activated_at", "updated_at"])
+                return Response({
+                    "success": True,
+                    "already_paid": True,
+                    "monitor_active": True,
+                    "reference": existing_sub.paystack_ref,
+                    "message": f"Previous payment found — Kids Monitor activated for {parent_profile.user.get_full_name()} without charging again.",
+                })
+        except Exception:
+            pass
 
     from finance.services import _paystack_base_url, _paystack_headers, _paystack_json
     import requests as _requests

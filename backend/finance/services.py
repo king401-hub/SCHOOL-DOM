@@ -1059,6 +1059,28 @@ def process_paystack_webhook(data: dict) -> dict:
     transaction_data = data.get('data', {})
     reference = transaction_data.get('reference')
     channel = transaction_data.get('channel', '')
+    metadata = transaction_data.get('metadata') or {}
+
+    # Kids/Child Monitor subscription payment — activate even if the browser
+    # popup callback never fired (closed tab, network drop, etc.)
+    if metadata.get('type') == 'kids_monitor' or str(reference or '').startswith('km-'):
+        from users.models import KidsMonitorSubscription
+        sub = KidsMonitorSubscription.objects.filter(paystack_ref=reference).first()
+        if not sub and metadata.get('parent_id'):
+            from users.models import ParentProfile
+            parent = ParentProfile.objects.filter(id=metadata['parent_id']).first()
+            if parent:
+                sub = KidsMonitorSubscription.objects.filter(parent=parent).first()
+        if sub:
+            if not sub.is_active:
+                sub.is_active = True
+                sub.paystack_ref = reference or sub.paystack_ref
+                sub.activated_at = timezone.now()
+                sub.save(update_fields=['is_active', 'paystack_ref', 'activated_at', 'updated_at'])
+                logger.info("Kids Monitor activated via webhook: ref=%s parent=%s", reference, sub.parent_id)
+            return {'status': 'success', 'type': 'kids_monitor', 'reference': reference}
+        logger.warning("Kids Monitor webhook %s: no matching subscription", reference)
+        return {'status': 'ignored', 'type': 'kids_monitor', 'reference': reference}
 
     # Dedicated virtual account payment (DVA / dedicated_nuban)
     if channel == 'dedicated_nuban':

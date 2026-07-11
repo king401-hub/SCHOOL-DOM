@@ -7135,16 +7135,27 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
     try {
       const result = await onChildMonitorInitiate(parent.id);
       if (!result?.success) { alert(result?.message || "Failed to initiate payment."); return; }
+      if (result.already_paid && result.monitor_active) {
+        // A previous payment went through — backend activated without charging again.
+        alert(result.message || "Child Monitor activated from your previous payment.");
+        await onChildMonitorVerify(parent.id, result.reference);
+        return;
+      }
+      const verifyPayment = (tx) => {
+        const ref = tx?.reference || result.reference;
+        onChildMonitorVerify(parent.id, ref).then((verifyResult) => {
+          if (!verifyResult?.success) alert(verifyResult?.message || "Payment verification failed. Contact support.");
+        });
+      };
       const handler = window.PaystackPop.setup({
         key: data.paystack_public_key,
         email: parent.email,
         amount: (data.child_monitor_price || 1000) * 100,
         ref: result.reference,
-        onSuccess: async (tx) => {
-          const ref = tx.reference || result.reference;
-          const verifyResult = await onChildMonitorVerify(parent.id, ref);
-          if (!verifyResult?.success) alert(verifyResult?.message || "Payment verification failed. Contact support.");
-        },
+        // Paystack inline v1 fires `callback`; keep onSuccess for v2 compatibility.
+        callback: verifyPayment,
+        onSuccess: verifyPayment,
+        onClose: () => {},
         onCancel: () => {},
       });
       handler.openIframe();
@@ -10162,19 +10173,29 @@ function AdminKidsMonitorScreen({ data, loading, error, onRetry, onInitiate, onV
         alert(result?.message || "Failed to initiate payment.");
         return;
       }
+      if (result.already_paid && result.monitor_active) {
+        alert(result.message || "Child Monitor activated from your previous payment.");
+        await onVerify(parent.id, result.reference);
+        return;
+      }
+      const verifyPayment = (tx) => {
+        const ref = tx?.reference || result.reference;
+        onVerify(parent.id, ref).then((verifyResult) => {
+          if (!verifyResult?.success) {
+            alert(verifyResult?.message || "Payment verification failed. Contact support.");
+          }
+        });
+      };
       const handler = window.PaystackPop.setup({
         key: publicKey,
         email: parent.email,
         amount: price * 100,
         ref: result.reference,
         metadata: { parent_id: parent.id, type: "kids_monitor" },
-        onSuccess: async (tx) => {
-          const ref = tx.reference || result.reference;
-          const verifyResult = await onVerify(parent.id, ref);
-          if (!verifyResult?.success) {
-            alert(verifyResult?.message || "Payment verification failed. Contact support.");
-          }
-        },
+        // Paystack inline v1 fires `callback`; keep onSuccess for v2 compatibility.
+        callback: verifyPayment,
+        onSuccess: verifyPayment,
+        onClose: () => {},
         onCancel: () => {},
       });
       handler.openIframe();
