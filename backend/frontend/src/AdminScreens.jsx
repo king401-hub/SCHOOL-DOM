@@ -6984,6 +6984,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkChannel, setBulkChannel] = useState("sms");
   const [bulkMessage, setBulkMessage] = useState("");
+  const [bulkTemplate, setBulkTemplate] = useState(null);
   const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
@@ -7056,6 +7057,21 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   const buildTemplate = (tpl) => {
     const schoolName = data?.school?.name || school?.name || "School";
     const now = new Date();
+
+    // SMS has a 160-char budget, so it gets its own compact, single-line copy
+    // instead of the longer email/WhatsApp wording sliced mid-sentence.
+    if (bulkChannel === "sms") {
+      const shortDate = now.toLocaleDateString("en-NG", { day: "numeric", month: "short" });
+      const shortTime = now.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit", hour12: true });
+      const smsTpls = {
+        fee_reminder: `${schoolName}: School fees for your ward are outstanding. Please pay via the school portal or contact the office. Thank you.`,
+        meeting: `${schoolName}: You're invited to a parent-teacher meeting on ${shortDate} at ${shortTime}. Please endeavour to attend.`,
+        general: `${schoolName}: Important notice - please check the school portal or contact the office for details.`,
+        resumption: `${schoolName}: Reminder - school resumes on ${shortDate}. Kindly ensure your ward is present. Thank you.`,
+      };
+      return (smsTpls[tpl] || smsTpls.general).slice(0, 160);
+    }
+
     const date = now.toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
     const time = now.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: true });
     const tpls = {
@@ -7092,6 +7108,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
         parent_ids: Array.from(bulkSelectedIds),
         channel: bulkChannel,
         message: bulkMessage,
+        personalize: bulkTemplate === "fee_reminder",
       });
       setBulkResult(result);
     } catch (err) {
@@ -7383,6 +7400,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                       onClick={() => {
                         const text = buildTemplate(tpl);
                         setBulkMessage(bulkChannel === "sms" ? text.slice(0, 160) : text);
+                        setBulkTemplate(tpl);
                       }}
                     >
                       {lbl}
@@ -7397,13 +7415,21 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                     className="bulk-message-field"
                     rows={6}
                     value={bulkMessage}
-                    onChange={(e) => setBulkMessage(bulkChannel === "sms" ? e.target.value.slice(0, 160) : e.target.value)}
+                    onChange={(e) => {
+                      setBulkMessage(bulkChannel === "sms" ? e.target.value.slice(0, 160) : e.target.value);
+                      setBulkTemplate(null);
+                    }}
                     maxLength={bulkChannel === "sms" ? 160 : undefined}
                     placeholder="Type your message or pick a template above…"
                   />
                   {bulkChannel === "sms" && (
                     <span className={`bulk-sms-counter${bulkMessage.length >= 160 ? " bulk-sms-counter--limit" : ""}`}>
                       {bulkMessage.length}/160 characters (SMS limit)
+                    </span>
+                  )}
+                  {bulkTemplate === "fee_reminder" && (
+                    <span className="bulk-message-hint">
+                      Each parent will get their own children's names, outstanding balance, and payment account instead of this preview text.
                     </span>
                   )}
                 </label>
@@ -7439,7 +7465,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                 {bulkResult && (
                   <div className={`bulk-result ${bulkResult.success ? "success" : "error"}`}>
                     {bulkResult.success
-                      ? `Sent to ${bulkResult.sent} parent${bulkResult.sent !== 1 ? "s" : ""}${bulkResult.failed > 0 ? `, ${bulkResult.failed} failed` : ""}.`
+                      ? `Sent to ${bulkResult.sent} parent${bulkResult.sent !== 1 ? "s" : ""}${bulkResult.failed > 0 ? `, ${bulkResult.failed} failed` : ""}${bulkResult.skipped > 0 ? `, ${bulkResult.skipped} skipped (no outstanding balance)` : ""}.`
                       : bulkResult.message || "Send failed."}
                     {bulkResult.errors?.length > 0 && (
                       <ul>{bulkResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>

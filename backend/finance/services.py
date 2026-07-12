@@ -2994,17 +2994,79 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
         return {"success": False, "message": str(exc)}
 
 
-def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, message: str) -> dict:
+def _build_personalized_fee_reminder(parent_user, channel: str):
+    """
+    Build a fee reminder personalized with this parent's linked children's
+    outstanding balances and their virtual account (if provisioned).
+    Returns (message, has_outstanding). SMS is kept within the 160-char limit;
+    WhatsApp/email have no such constraint so get the fuller per-child breakdown.
+    """
+    from finance.models import ParentVirtualAccount
+    from users.models import ParentProfile
+
+    school_name = getattr(getattr(parent_user, "tenant", None), "name", "") or "School"
+
+    students = []
+    try:
+        parent_profile = ParentProfile.objects.prefetch_related("children__user").get(user=parent_user)
+        students = list(parent_profile.children.all())
+    except ParentProfile.DoesNotExist:
+        pass
+
+    per_child = []
+    total_outstanding = Decimal("0")
+    for student in students:
+        unpaid = SchoolFee.objects.filter(
+            student=student,
+            status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
+        )
+        balance = sum((f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid)
+        if balance > 0:
+            child_name = student.user.get_full_name() if student.user else "Child"
+            per_child.append((child_name, balance))
+            total_outstanding += balance
+
+    if not per_child:
+        return "", False
+
+    virtual_account = ParentVirtualAccount.objects.filter(parent=parent_user, is_active=True).first()
+
+    if channel == "sms":
+        child_part = per_child[0][0] if len(per_child) == 1 else (
+            f"{per_child[0][0]} & {len(per_child) - 1} other{'s' if len(per_child) > 2 else ''}"
+        )
+        parts = [f"{school_name}: {child_part} fees outstanding: {_plain_amount(total_outstanding)}."]
+        if virtual_account:
+            parts.append(f"Pay {virtual_account.account_number} {virtual_account.bank_name}.")
+        else:
+            parts.append("Contact school office to pay.")
+        return " ".join(parts)[:160], True
+
+    lines = [f"{school_name} Fee Reminder"]
+    for child_name, balance in per_child:
+        lines.append(f"{child_name}: {_format_naira(balance)} outstanding")
+    if virtual_account:
+        lines.append(f"\nPay to: {virtual_account.account_number} ({virtual_account.bank_name}), {virtual_account.account_name}")
+        lines.append("Payments are matched automatically.")
+    else:
+        lines.append("\nContact school office for payment details.")
+    return "\n".join(lines), True
+
+
+def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, message: str, personalize: bool = False) -> dict:
     """
     Send bulk SMS / WhatsApp / Email to a list of parents (User UUIDs).
     channel: "sms" | "whatsapp" | "email"
-    Returns: {"sent": int, "failed": int, "errors": list[str]}
+    personalize: when True (fee-reminder bulk sends), ignores `message` and builds a
+    per-parent message from their own children's balances + virtual account instead.
+    Parents with no outstanding balance are skipped rather than sent a blank reminder.
+    Returns: {"sent": int, "failed": int, "skipped": int, "errors": list[str]}
     """
     from django.conf import settings
     from django.core.mail import send_mail
     from users.models import User
 
-    results: dict = {"sent": 0, "failed": 0, "errors": []}
+    results: dict = {"sent": 0, "failed": 0, "skipped": 0, "errors": []}
     school_name = getattr(tenant, "name", "School") if tenant else "School"
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@schooldom.academy")
 
@@ -3016,6 +3078,14 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
         email = getattr(parent, "email", "") or ""
         name = parent.get_full_name() or email
 
+        if personalize:
+            outgoing_message, has_outstanding = _build_personalized_fee_reminder(parent, channel)
+            if not has_outstanding:
+                results["skipped"] += 1
+                continue
+        else:
+            outgoing_message = message
+
         if channel == "email":
             if not email or "@schooldom.local" in email:
                 results["failed"] += 1
@@ -3024,7 +3094,7 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
             try:
                 send_mail(
                     subject=f"Message from {school_name}",
-                    message=message,
+                    message=outgoing_message,
                     from_email=from_email,
                     recipient_list=[email],
                     fail_silently=False,
@@ -3039,13 +3109,13 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 results["failed"] += 1
                 results["errors"].append(f"{name}: no phone number")
                 continue
-            wa_result = send_termii_whatsapp(phone, message)
+            wa_result = send_termii_whatsapp(phone, outgoing_message)
             wa_ok = wa_result.get("status") == "success"
             if wa_ok:
                 results["sent"] += 1
             else:
                 # Fallback to eBulkSMS
-                sms_result = send_ebulksms(phone, message)
+                sms_result = send_ebulksms(phone, outgoing_message)
                 sms_ok = sms_result.get("status") not in ("error", "skipped")
                 if sms_ok:
                     results["sent"] += 1
@@ -3058,7 +3128,7 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 results["failed"] += 1
                 results["errors"].append(f"{name}: no phone number")
                 continue
-            sms_result = send_ebulksms(phone, message)
+            sms_result = send_ebulksms(phone, outgoing_message)
             sms_ok = sms_result.get("status") not in ("error", "skipped")
             if sms_ok:
                 results["sent"] += 1

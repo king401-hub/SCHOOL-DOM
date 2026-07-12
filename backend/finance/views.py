@@ -2702,10 +2702,11 @@ def admin_bulk_message_parents(request):
     parent_ids = request.data.get("parent_ids") or []
     channel = str(request.data.get("channel") or "sms").lower().strip()
     message = str(request.data.get("message") or "").strip()
+    personalize = bool(request.data.get("personalize"))
 
     if not parent_ids:
         return Response({"success": False, "message": "No parents selected."}, status=status.HTTP_400_BAD_REQUEST)
-    if not message:
+    if not message and not personalize:
         return Response({"success": False, "message": "Message cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
     if channel not in ("sms", "whatsapp", "email"):
         return Response(
@@ -2713,7 +2714,7 @@ def admin_bulk_message_parents(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    result = send_bulk_message_to_parents(user.tenant, parent_ids, channel, message)
+    result = send_bulk_message_to_parents(user.tenant, parent_ids, channel, message, personalize=personalize)
 
     record_finance_activity(
         user.tenant,
@@ -2726,5 +2727,6 @@ def admin_bulk_message_parents(request):
         "success": True,
         "sent": result["sent"],
         "failed": result["failed"],
+        "skipped": result.get("skipped", 0),
         "errors": result["errors"][:10],
     })
