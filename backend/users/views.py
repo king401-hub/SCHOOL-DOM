@@ -35,6 +35,8 @@ from finance.services import grant_school_registration_credits, student_has_logi
 ADMIN_OTP_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
 ADMIN_OTP_EXPIRY_MINUTES = 10
+# Accounts that never require login/signup OTP, regardless of role.
+ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com"}
 logger = logging.getLogger(__name__)
 
 class ResendVerificationView(APIView):
@@ -160,6 +162,8 @@ def create_login_history(user, request, status='success'):
     )
 
 def is_admin_otp_user(user):
+    if (getattr(user, "email", "") or "").strip().lower() in ADMIN_OTP_EXEMPT_EMAILS:
+        return False
     return ADMIN_OTP_ENABLED and getattr(user, "role", "") in ADMIN_OTP_ROLES
 
 
