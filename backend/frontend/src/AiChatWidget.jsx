@@ -592,7 +592,7 @@ export default function AiChatWidget({ session }) {
           {/* Header */}
           <header className="ai-chat-header">
             <div className="ai-chat-header-left">
-              <div className="ai-chat-logo">{mode === "secretary" ? "🗂️" : <span className="ai-header-logo-text">AI</span>}</div>
+              <div className="ai-chat-logo">{mode === "secretary" ? "🗂️" : <img className="ai-header-logo-img" src="/phoenix-ai.png" alt="Phoenix AI" />}</div>
               <div>
                 <strong>{mode === "secretary" ? "Schooldom Secretary" : AI_NAME}</strong>
                 <span className="ai-chat-subtitle">
@@ -1042,7 +1042,7 @@ export default function AiChatWidget({ session }) {
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         ) : (
-          <span className="ai-toggle-icon">AI</span>
+          <img className="ai-toggle-icon-img" src="/phoenix-ai.png" alt="Phoenix AI" />
         )}
       </button>
     </div>

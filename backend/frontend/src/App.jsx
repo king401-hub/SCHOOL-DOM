@@ -5533,7 +5533,7 @@ const ADMIN_ROUTE_ICONS = {
   "/teachers": BookOpen,
   "/non-teaching-staff": Briefcase,
   "/classes": School,
-  "/exams-group": FileCheck,
+  "/academics-group": School,
   "/exams": FileCheck,
   "/timetables": CalendarClock,
   "/results": BarChart2,
@@ -5545,7 +5545,7 @@ const ADMIN_ROUTE_ICONS = {
 
 const ADMIN_NAV_SECTIONS = [
   { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
-  { label: "Academics", paths: ["/classes", "/attendance", "/exams-group", "/results"] },
+  { label: "Academics", paths: ["/academics-group"] },
   { label: "People", paths: ["/students", "/parents", "/staff"] },
   { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr/activity", "/hr-self-service", "/loan-application"] },
   { label: "Administration", paths: ["/id-cards", "/documents", "/database-import", "/messages", "/settings"] },
@@ -7272,12 +7272,15 @@ const unreadNotificationsCount =
         </div>
 
         <nav className="app-nav" aria-label="Main navigation">
-          {sectionedNav.map(({ label, routes }) => (
-            <div key={label} className="nav-section">
-              <p className="nav-section-label">{label}</p>
-              {routes.map((route) => renderNavRoute(route))}
-            </div>
-          ))}
+          {sectionedNav.map(({ label, routes }) => {
+            const hideLabel = routes.length === 1 && routes[0].label === label;
+            return (
+              <div key={label} className="nav-section">
+                {!hideLabel ? <p className="nav-section-label">{label}</p> : null}
+                {routes.map((route) => renderNavRoute(route))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-help-card">

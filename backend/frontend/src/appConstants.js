@@ -27,7 +27,6 @@ export const ADMIN_ROUTES = [
   { path: "/performance-heatmap", label: "Performance Analytics" },
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
-  { path: "/attendance", label: "Attendance" },
   { path: "/hr/activity", label: "HR Management" },
   { path: "/students", label: "Students" },
   { path: "/parents", label: "Parent Directory" },
@@ -41,16 +40,17 @@ export const ADMIN_ROUTES = [
       { path: "/non-teaching-staff", label: "Non-Teaching Staff" },
     ]
   },
-  { path: "/classes", label: "Classes" },
   {
-    path: "/exams-group",
-    label: "Exams",
+    path: "/academics-group",
+    label: "Academics",
     children: [
+      { path: "/classes", label: "Classes" },
+      { path: "/attendance", label: "Attendance" },
       { path: "/exams", label: "CBT Exams" },
       { path: "/timetables", label: "Timetables" },
+      { path: "/results", label: "Results" },
     ]
   },
-  { path: "/results", label: "Results" },
   { path: "/database-import", label: "Database Import" },
   { path: "/messages", label: "Messages" },
   { path: "/loan-application", label: "Loan Application" },
@@ -70,7 +70,7 @@ export const ADMIN_ROUTE_SET = new Set([
 export const ADMIN_ROUTE_REDIRECTS = {
   "/hr": "/hr/activity",
   "/staff": "/teachers",
-  "/exams-group": "/exams",
+  "/academics-group": "/classes",
 };
 export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",
