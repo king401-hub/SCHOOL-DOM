@@ -10193,6 +10193,7 @@ export {
   AdminMessagesScreen,
   AdminDatabaseImportScreen,
   AdminLoanApplicationScreen,
+  AdminSmsWalletScreen,
 };
 
 // ─── Child Monitor (standalone, kept for reference) ──────────────────────────
