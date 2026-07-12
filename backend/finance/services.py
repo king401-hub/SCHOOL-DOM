@@ -743,16 +743,21 @@ def send_wallet_sms(
     sender: str = "SchoolDom",
 ) -> "SmsMessageLog":
     """
-    Charge the school's SMS wallet and send via eBulkSMS, synchronously. Refunds the
-    credit automatically if the send fails. Raises InsufficientSmsCreditsError /
-    SmsWalletLockedError *before* anything is sent or logged - callers must catch
-    these so one recipient's empty wallet never breaks a whole batch.
+    Charge the school's SMS wallet (SMS_CREDITS_PER_MESSAGE credits) and send via
+    eBulkSMS, synchronously. Refunds the credits automatically if the send fails.
+    Raises InsufficientSmsCreditsError / SmsWalletLockedError *before* anything is
+    sent or logged - callers must catch these so one recipient's empty wallet never
+    breaks a whole batch.
+
+    Only for school-initiated messages billed to the school's own wallet (fee
+    reminders, bulk messages, guardian SMS) - Kids Monitor attendance alerts are
+    funded by the parent's own subscription and must never call this.
 
     Sent synchronously rather than via Celery: this codebase has no confirmed Celery
     worker running in production (users/signals.py falls back to sync for the same
     reason), so queuing SMS there risks messages silently never sending.
     """
-    debit_tx = charge_sms_wallet(tenant, 1, category, narration=narration, actor=actor, metadata=metadata)
+    debit_tx = charge_sms_wallet(tenant, SMS_CREDITS_PER_MESSAGE, category, narration=narration, actor=actor, metadata=metadata)
 
     log = SmsMessageLog.objects.create(
         tenant=tenant,
@@ -760,7 +765,7 @@ def send_wallet_sms(
         category=category,
         recipient_phone=phone,
         message=message,
-        credits_charged=1,
+        credits_charged=SMS_CREDITS_PER_MESSAGE,
         created_by=actor,
     )
     debit_tx.related_message_log = log
@@ -2028,6 +2033,8 @@ SMS_UNIT_BLOCK_PRICE = Decimal("1000.00")
 SMS_UNIT_CURRENCY = "NGN"
 # Every school's SMS wallet starts with this many free credits.
 SMS_WELCOME_CREDITS = 100
+# Each outbound SMS costs this many wallet credits.
+SMS_CREDITS_PER_MESSAGE = 10
 
 
 class InsufficientSmsCreditsError(Exception):

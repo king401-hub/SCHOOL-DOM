@@ -7932,7 +7932,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                   {blockSize.toLocaleString()} credits = ₦{blockPrice.toLocaleString()}. Sold in blocks of {blockSize} - minimum {pricing.minimum_units.toLocaleString()} credits.
                 </p>
                 <div className="cm-pricing-body" style={{ alignItems: "center" }}>
-                  <button type="button" className="table-action" onClick={() => adjustUnits(-blockSize)} disabled={units <= blockSize}>
+                  <button type="button" className="table-action sms-wallet-btn" onClick={() => adjustUnits(-blockSize)} disabled={units <= blockSize}>
                     − {blockSize}
                   </button>
                   <input
@@ -7941,10 +7941,10 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                     min={blockSize}
                     value={units}
                     onChange={(e) => handleUnitsInput(e.target.value)}
-                    style={{ width: "110px", textAlign: "center" }}
+                    className="sms-wallet-units-input"
                     aria-label="SMS credits to buy"
                   />
-                  <button type="button" className="table-action" onClick={() => adjustUnits(blockSize)}>
+                  <button type="button" className="table-action sms-wallet-btn" onClick={() => adjustUnits(blockSize)}>
                     + {blockSize}
                   </button>
                   <div className="cm-pricing-tag">
@@ -7952,7 +7952,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                   </div>
                 </div>
                 <div className="cm-pricing-meta">
-                  <button type="button" className="table-action" disabled={paying} onClick={handleBuyCredits}>
+                  <button type="button" className="table-action sms-wallet-btn sms-wallet-btn--primary" disabled={paying} onClick={handleBuyCredits}>
                     {paying ? "Processing…" : `Buy ${units.toLocaleString()} credits`}
                   </button>
                 </div>

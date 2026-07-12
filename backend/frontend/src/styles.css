@@ -24029,3 +24029,30 @@ body[data-theme="dark"] .dl-text { color: #94a3b8; }
   .cm-pricing-meta { border-top-color: rgba(255,255,255,.1); }
 }
 :root[data-theme="dark"] .cm-pricing-meta { border-top-color: rgba(255,255,255,.1); }
+
+.sms-wallet-btn {
+  padding: 0.7rem 1.3rem;
+  font-size: 0.98rem;
+  border-radius: 12px;
+}
+.sms-wallet-btn--primary {
+  background: #6366f1;
+  color: #fff;
+  border-color: #6366f1;
+}
+.sms-wallet-btn--primary:hover {
+  background: #4f46e5;
+}
+.sms-wallet-btn--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.sms-wallet-units-input {
+  width: 130px;
+  padding: 0.65rem 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 12px;
+  border: 1px solid #cbd7e6;
+}

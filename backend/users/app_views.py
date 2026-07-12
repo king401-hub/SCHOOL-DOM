@@ -10084,17 +10084,14 @@ def kids_monitor_deactivate(request, parent_id):
     })
 
 
-def _send_attendance_sms_batch(tenant, phones_and_messages):
+def _send_attendance_sms_batch(phones_and_messages):
     """Runs in a background thread — sends SMS without blocking the attendance request/response.
-    The wallet charge itself is a fast local DB operation, so doing it here (rather than
-    synchronously in the request) doesn't reintroduce the latency this thread exists to avoid."""
-    from finance.models import SmsMessageLog
-    from finance.services import send_wallet_sms, InsufficientSmsCreditsError, SmsWalletLockedError
+    Kids Monitor alerts are funded by the parent's own paid subscription, not the school's
+    SMS wallet, so this intentionally calls send_ebulksms directly rather than send_wallet_sms."""
+    from finance.services import send_ebulksms
     for phone, message in phones_and_messages:
         try:
-            send_wallet_sms(tenant, phone, message, category=SmsMessageLog.ATTENDANCE, narration="Attendance notification")
-        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
-            logger.warning("Attendance SMS to %s skipped: %s", phone, exc)
+            send_ebulksms(phone, message, sender="SchoolDom")
         except Exception:
             logger.exception("Attendance SMS to %s failed", phone)
 
@@ -10131,4 +10128,4 @@ def _notify_parents_on_attendance(student_user, attendance_status, attendance_da
         to_send.append((phone, message))
 
     if to_send:
-        threading.Thread(target=_send_attendance_sms_batch, args=(student_user.tenant, to_send), daemon=True).start()
+        threading.Thread(target=_send_attendance_sms_batch, args=(to_send,), daemon=True).start()
