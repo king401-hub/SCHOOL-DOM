@@ -125,6 +125,17 @@ ADMIN_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
 FINANCE_ROLES = ADMIN_ROLES | {"accountant"}
 
 
+def _get_tenant_scoped_or_404(queryset, tenant, tenant_field="tenant", **lookup):
+    """
+    Fetch a single object by `lookup` (e.g. id=x, reference=y), 404ing unless it
+    belongs to `tenant`. The tenant filter is applied to the DB query itself (not
+    checked after fetching), so a wrong-tenant id is indistinguishable from a
+    non-existent one - never fetch a tenant-owned model by id/reference alone.
+    `tenant_field` supports indirect paths, e.g. "student__user__tenant".
+    """
+    return get_object_or_404(queryset.filter(**{tenant_field: tenant}), **lookup)
+
+
 def _parse_amount(raw_amount):
     try:
         amount = Decimal(str(raw_amount))
@@ -642,6 +653,7 @@ def _get_parent_virtual_account_for_student(user):
             return None
         vac = ParentVirtualAccount.objects.filter(
             parent__parent_profile__children=student_profile,
+            tenant=user.tenant,
             is_active=True,
         ).first()
         if vac:
@@ -2027,9 +2039,15 @@ def paystack_verify_payment(request):
     if not reference:
         return Response({"success": False, "message": "reference is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+    user = request.user
     try:
         tx = Transaction.objects.get(paystack_ref=reference)
     except Transaction.DoesNotExist:
+        return Response({"success": False, "message": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    is_owner = tx.parent_id == user.id
+    is_school_finance = user.role in FINANCE_ROLES and user.tenant_id and str(tx.school_id) == str(user.tenant_id)
+    if not (is_owner or is_school_finance):
         return Response({"success": False, "message": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
 
     if tx.status == Transaction.STATUS_SUCCESS:
@@ -2105,8 +2123,15 @@ def paystack_payment_breakdown(request):
     if not fee_ids:
         return Response({"success": False, "message": "fee_ids is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+    from users.models import ParentProfile
     try:
-        breakdown = get_fee_payment_breakdown(fee_ids)
+        parent_profile = ParentProfile.objects.get(user=request.user)
+    except ParentProfile.DoesNotExist:
+        return Response({"success": False, "message": "Parent profile not found."}, status=status.HTTP_403_FORBIDDEN)
+    student_ids = list(parent_profile.children.values_list("id", flat=True))
+
+    try:
+        breakdown = get_fee_payment_breakdown(fee_ids, student_ids)
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
@@ -2535,13 +2560,13 @@ def admin_manage_virtual_account(request, parent_id):
         return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        parent_user = User.objects.get(id=parent_id)
+        parent_user = User.objects.get(id=parent_id, tenant=user.tenant, role="parent")
     except User.DoesNotExist:
         return Response({"success": False, "message": "Parent not found."}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == "GET":
         try:
-            vac = ParentVirtualAccount.objects.get(parent=parent_user)
+            vac = ParentVirtualAccount.objects.get(parent=parent_user, tenant=user.tenant)
             return Response({
                 "success": True,
                 "virtual_account": {
@@ -2561,7 +2586,7 @@ def admin_manage_virtual_account(request, parent_id):
 
     if request.method == "DELETE":
         try:
-            vac = ParentVirtualAccount.objects.get(parent=parent_user)
+            vac = ParentVirtualAccount.objects.get(parent=parent_user, tenant=user.tenant)
             vac.is_active = False
             vac.save(update_fields=["is_active", "updated_at"])
             return Response({"success": True, "message": "Virtual account deactivated."})
@@ -2585,8 +2610,8 @@ def admin_manage_virtual_account(request, parent_id):
 
     vac, created = ParentVirtualAccount.objects.update_or_create(
         parent=parent_user,
+        tenant=user.tenant,
         defaults={
-            "tenant": user.tenant,
             "account_number": account_number,
             "bank_name": bank_name,
             "account_name": account_name,
@@ -2634,7 +2659,7 @@ def admin_provision_paystack_virtual_account(request, parent_id):
         return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        parent_user = User.objects.get(id=parent_id)
+        parent_user = User.objects.get(id=parent_id, tenant=user.tenant, role="parent")
     except User.DoesNotExist:
         return Response({"success": False, "message": "Parent not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -2679,7 +2704,7 @@ def admin_send_fee_reminder(request, parent_id):
         return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        parent_user = User.objects.get(id=parent_id)
+        parent_user = User.objects.get(id=parent_id, tenant=user.tenant, role="parent")
     except User.DoesNotExist:
         return Response({"success": False, "message": "Parent not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -2828,10 +2853,17 @@ def sms_wallet_verify(request, reference):
     if not user.tenant:
         return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Check tenant ownership BEFORE crediting - never let a guessed cross-tenant
+    # reference actually credit the wrong school's wallet.
     try:
-        tx = credit_sms_wallet_from_purchase(reference)
+        tx_lookup = SmsWalletTransaction.objects.select_related("wallet").get(reference=reference)
     except SmsWalletTransaction.DoesNotExist:
         return Response({"success": False, "message": "Purchase reference not found."}, status=status.HTTP_404_NOT_FOUND)
+    if tx_lookup.wallet.tenant_id != user.tenant_id:
+        return Response({"success": False, "message": "Purchase reference not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        tx = credit_sms_wallet_from_purchase(reference)
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

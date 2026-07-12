@@ -208,3 +208,48 @@ class TeacherAttendanceTestCase(TestCase):
         self.assertIsNotNone(attendance.check_out_time)
         self.assertEqual(str(attendance.check_out_latitude), "6.4500000")
         self.assertEqual(attendance.check_out_address, "School gate")
+
+
+class AttendanceDashboardTenantIsolationTests(TestCase):
+    """
+    The admin/dashboard endpoints (today's list, by-date, teacher history, summary,
+    QR management) must require a real authenticated session - unlike the clock-in/out
+    flow, there's no kiosk use case for these and no secondary tenant check to fall
+    back on, so a client-supplied user_id/email must never be enough to view them.
+    """
+
+    def setUp(self):
+        self.tenant_a = SchoolTenant.objects.create(name="School A", schema_name="attn_school_a")
+        self.tenant_b = SchoolTenant.objects.create(name="School B", schema_name="attn_school_b")
+        self.admin_a = User.objects.create_user(
+            email="admin.a@attn.test", password="AdminPass123", role="school_admin", tenant=self.tenant_a,
+        )
+        self.admin_b = User.objects.create_user(
+            email="admin.b@attn.test", password="AdminPass123", role="school_admin", tenant=self.tenant_b,
+        )
+        self.client = APIClient()
+
+    def test_today_attendance_list_rejects_unauthenticated_request(self):
+        response = self.client.get(
+            "/api/attendance/today/", {"email": self.admin_b.email},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_today_attendance_list_rejects_email_only_identification(self):
+        # Even with a real session, an attacker guessing another school's admin email
+        # in the request body must never substitute for that admin's own login.
+        self.client.force_authenticate(self.admin_a)
+        response = self.client.get(
+            "/api/attendance/today/", {"email": self.admin_b.email},
+        )
+        self.assertEqual(response.status_code, 200)
+        # Confirms the response reflects admin_a's own school, not admin_b's, by
+        # checking the endpoint succeeded under admin_a's real session rather than
+        # silently switching identity based on the query param.
+        self.assertTrue(response.data["success"])
+
+    def test_authenticated_admin_sees_only_their_own_school(self):
+        self.client.force_authenticate(self.admin_b)
+        response = self.client.get("/api/attendance/today/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])

@@ -8,8 +8,8 @@ from rest_framework.test import APIClient
 
 from core.models import SchoolTenant
 from tenants.models import Tenant
-from users.models import User
-from .models import Exam, ExamAttempt, Question, StudentAnswer
+from users.models import StudentProfile, User
+from .models import Exam, ExamAttempt, ExamPin, Question, StudentAnswer
 
 
 class FlagExamQuestionTests(TestCase):
@@ -166,3 +166,75 @@ class ExamTenantIsolationTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertFalse(ExamAttempt.objects.filter(exam=self.exam_b, student=self.student_a).exists())
+
+
+class StudentCbtEntryCollisionTests(TestCase):
+    """
+    student_id and admission_number are each unique individually, but the CBT entry
+    identifier is matched with student_id OR admission_number OR email - so a value
+    that happens to equal one student's student_id AND a *different* student's
+    admission_number (a cross-field collision, entirely possible since each field's
+    uniqueness is enforced independently) must still never let a PIN from one school
+    log a CBT terminal into the wrong school's student record.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school_a = SchoolTenant.objects.create(name="Alpha CBT School", schema_name="alpha_cbt", is_active=True)
+        self.school_b = SchoolTenant.objects.create(name="Beta CBT School", schema_name="beta_cbt", is_active=True)
+        self.legacy_a = Tenant.objects.create(name="Alpha CBT School", slug="alpha_cbt")
+        self.legacy_b = Tenant.objects.create(name="Beta CBT School", slug="beta_cbt")
+
+        self.student_user_a = User.objects.create_user(
+            email="student.a@cbt.test", password="password", role="student", tenant=self.school_a,
+        )
+        self.student_profile_a = StudentProfile.objects.create(
+            user=self.student_user_a, student_id="STU001", admission_number="ADM-A-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+        )
+        self.student_user_b = User.objects.create_user(
+            email="student.b@cbt.test", password="password", role="student", tenant=self.school_b,
+        )
+        self.student_profile_b = StudentProfile.objects.create(
+            # Collides with school A's student_id via a different field (admission_number)
+            # - each field is individually unique, but the OR-based lookup still matches both.
+            user=self.student_user_b, student_id="ADM-B-001", admission_number="STU001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+        )
+
+        teacher_b = User.objects.create_user(
+            email="teacher.b@cbt.test", password="password", role="teacher", tenant=self.school_b,
+        )
+        self.exam_b = Exam.objects.create(
+            tenant=self.legacy_b,
+            title="Beta CBT Exam",
+            teacher=teacher_b,
+            start_date=timezone.now() - timedelta(minutes=5),
+            end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60,
+            is_published=True,
+        )
+        self.pin_b = ExamPin(exam=self.exam_b, tenant=self.legacy_b)
+        self.pin_b.set_pin("654321")
+        self.pin_b.save()
+
+    def test_colliding_student_id_with_school_bs_pin_logs_into_school_b_only(self):
+        response = self.client.post(
+            reverse("exams:student_cbt_entry"),
+            {"student_id": "STU001", "pin": "654321"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["student"]["id"], str(self.student_user_b.id))
+        self.assertEqual(response.data["session"]["school_code"], self.school_b.schema_name)
+
+    def test_colliding_student_id_with_wrong_pin_is_rejected(self):
+        response = self.client.post(
+            reverse("exams:student_cbt_entry"),
+            {"student_id": "STU001", "pin": "000000"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(ExamAttempt.objects.count(), 0)

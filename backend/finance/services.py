@@ -559,17 +559,21 @@ def verify_paystack_webhook_signature(signature: str, payload: bytes) -> bool:
     return hmac.compare_digest(signature, expected_signature)
 
 
-def get_fee_payment_breakdown(fee_ids: list) -> dict:
+def get_fee_payment_breakdown(fee_ids: list, student_ids: list) -> dict:
     """
     Get payment breakdown for a list of fees including Schooldom and Paystack fees.
-    
+
     Args:
         fee_ids: List of SchoolFee IDs
-        
+        student_ids: List of StudentProfile IDs the caller is allowed to see fees for
+            (e.g. a parent's own children) - fee_ids not among these are silently
+            excluded rather than returned, so a guessed/foreign fee id can't leak
+            another family's student name/class/amount.
+
     Returns:
         dict: Payment breakdown with totals
     """
-    fees = SchoolFee.objects.filter(id__in=fee_ids).select_related('student', 'student__user')
+    fees = SchoolFee.objects.filter(id__in=fee_ids, student_id__in=student_ids).select_related('student', 'student__user')
 
     if not fees.exists():
         raise ValueError("No fees found")

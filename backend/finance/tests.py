@@ -12,6 +12,7 @@ from finance.models import (
     AdminWallet,
     ClassFee,
     DocumentGenerationCreditTransaction,
+    ParentVirtualAccount,
     SchoolFee,
     SmsWalletTransaction,
     StudentPaymentReference,
@@ -674,3 +675,116 @@ class SmsWalletTests(TestCase):
 
         mock_send.assert_not_called()
         self.assertEqual(SmsMessageLog.objects.filter(wallet=wallet).count(), 0)
+
+
+class CrossTenantIsolationTests(TestCase):
+    """
+    Every test here proves a School A finance admin cannot read or act on School B's
+    data by passing a School-B id/reference into a School-A-authenticated request.
+    """
+
+    def setUp(self):
+        self.school_a = SchoolTenant.objects.create(name="School A", schema_name="school_a_iso", is_active=True)
+        self.school_b = SchoolTenant.objects.create(name="School B", schema_name="school_b_iso", is_active=True)
+
+        self.admin_a = User.objects.create_user(
+            email="admin@a.test", password="AdminPass123", first_name="Admin", last_name="A",
+            role="school_admin", tenant=self.school_a, is_active=True, is_verified=True,
+        )
+        self.admin_b = User.objects.create_user(
+            email="admin@b.test", password="AdminPass123", first_name="Admin", last_name="B",
+            role="school_admin", tenant=self.school_b, is_active=True, is_verified=True,
+        )
+        self.parent_b = User.objects.create_user(
+            email="parent@b.test", password="ParentPass123", first_name="Parent", last_name="B",
+            role="parent", tenant=self.school_b, is_active=True, is_verified=True,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin_a)
+
+    def test_admin_cannot_manage_another_schools_parent_virtual_account(self):
+        response = self.client.get(f"/api/finance/admin/virtual-accounts/{self.parent_b.id}/")
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.post(
+            f"/api/finance/admin/virtual-accounts/{self.parent_b.id}/",
+            {"account_number": "0123456789", "bank_name": "Fake Bank", "account_name": "Attacker"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(ParentVirtualAccount.objects.filter(parent=self.parent_b).exists())
+
+    def test_admin_cannot_provision_dva_for_another_schools_parent(self):
+        response = self.client.post(f"/api/finance/admin/virtual-accounts/{self.parent_b.id}/provision/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_cannot_send_fee_reminder_to_another_schools_parent(self):
+        response = self.client.post(f"/api/finance/admin/virtual-accounts/{self.parent_b.id}/remind/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_cannot_view_another_schools_transaction(self):
+        tx = Transaction.objects.create(
+            amount=Decimal("1000.00"),
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+            reference="PAYCROSSTENANT001",
+            paystack_ref="PAYCROSSTENANT001",
+            school_id=self.school_b.id,
+            parent_id=self.parent_b.id,
+        )
+        response = self.client.get(f"/api/finance/paystack/verify/?reference={tx.paystack_ref}")
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_cannot_credit_another_schools_sms_wallet_via_guessed_reference(self):
+        from finance.models import SmsWallet
+        wallet_b = SmsWallet.objects.create(tenant=self.school_b, balance=0)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet_b,
+            tx_type=SmsWalletTransaction.PURCHASE,
+            status=SmsWalletTransaction.STATUS_PENDING,
+            credits=100,
+            amount=Decimal("1000.00"),
+            reference="SMSWCROSSTENANT01",
+        )
+        response = self.client.post(f"/api/finance/admin/sms-wallet/verify/{tx.reference}/")
+        self.assertEqual(response.status_code, 404)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_PENDING)
+        wallet_b.refresh_from_db()
+        self.assertEqual(wallet_b.balance, 0)
+
+    def test_parent_cannot_see_another_familys_fee_breakdown(self):
+        from academic.models import Class
+        from tenants.models import Tenant as LegacyTenant
+        from users.models import ParentProfile, StudentProfile
+
+        legacy_tenant_b = LegacyTenant.objects.create(name=self.school_b.name, slug=self.school_b.schema_name)
+        school_class = Class.objects.create(tenant=legacy_tenant_b, name="Basic 1", section="A")
+        student_user_b = User.objects.create_user(
+            email="student@b.test", password="StudentPass123", first_name="Student", last_name="B",
+            role="student", tenant=self.school_b, is_active=True, is_verified=True,
+        )
+        student_b = StudentProfile.objects.create(
+            user=student_user_b, student_id="STB001", admission_number="ADM-B-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=school_class,
+        )
+        fee_b = SchoolFee.objects.create(
+            student=student_b, title="Tuition", amount=Decimal("5000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+        parent_a = User.objects.create_user(
+            email="parent@a.test", password="ParentPass123", first_name="Parent", last_name="A",
+            role="parent", tenant=self.school_a, is_active=True, is_verified=True,
+        )
+        ParentProfile.objects.create(user=parent_a)
+        self.client.force_authenticate(parent_a)
+
+        response = self.client.post(
+            "/api/finance/paystack/breakdown/",
+            {"fee_ids": [str(fee_b.id)]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)

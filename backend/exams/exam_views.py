@@ -64,10 +64,19 @@ def _student_session_payload(user):
     }
 
 
-def _find_student_by_identifier(identifier):
+def _find_students_by_identifier(identifier):
+    """
+    Return every student matching this identifier, across all tenants.
+    student_id/admission_number are school-assigned, not globally unique, so a bare
+    `.first()` here would let an identifier collision (e.g. two schools both using
+    "1", "2", "3"...) resolve to the wrong tenant's student. Callers must pick the
+    correct candidate by cross-checking against a tenant-scoped context (a PIN valid
+    for that candidate's own school, or an already tenant-scoped exam) - never treat
+    the first match as authoritative.
+    """
     value = str(identifier or "").strip()
     if not value:
-        return None
+        return User.objects.none()
     return (
         User.objects.filter(role="student", is_active=True)
         .filter(
@@ -76,7 +85,6 @@ def _find_student_by_identifier(identifier):
             | Q(email__iexact=value)
         )
         .select_related("tenant", "student_profile", "student_profile__current_class")
-        .first()
     )
 
 
@@ -113,9 +121,9 @@ def _exams_for_student(student, *, pin):
         exams = exams.filter(class_group__isnull=True)
 
     legacy_tenant = resolve_legacy_tenant_for_school(getattr(student, "tenant", None))
-    if legacy_tenant:
-        exams = exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant))
-    return exams.order_by("start_date")
+    if not legacy_tenant:
+        return exams.none()
+    return exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant)).order_by("start_date")
 
 
 def _published_exam_queryset_for_user(user):
@@ -468,15 +476,14 @@ class ExamListView(APIView):
 
     def get(self, request):
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        if not legacy_tenant:
+            return Response([])
         now = timezone.now()
-        
+
         exams = Exam.objects.filter(
             is_published=True,
             end_date__gte=now,
-        )
-        
-        if legacy_tenant:
-            exams = exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant))
+        ).filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant))
 
         student_profile = getattr(request.user, "student_profile", None)
         enrolled_exam_ids = []
@@ -533,14 +540,22 @@ class StudentCbtEntryView(APIView):
     def post(self, request):
         student_identifier = request.data.get("student_id") or request.data.get("admission_number") or request.data.get("student")
         entered_pin = ExamPin.normalize_pin(request.data.get("pin") or request.data.get("exam_pin") or "")
-        student = _find_student_by_identifier(student_identifier)
-        if not student:
+        candidates = _find_students_by_identifier(student_identifier)
+        if not candidates.exists():
             return Response({"success": False, "message": "Student ID was not found."}, status=status.HTTP_404_NOT_FOUND)
         if not entered_pin:
             return Response({"success": False, "message": "Enter the exam PIN."}, status=status.HTTP_400_BAD_REQUEST)
 
-        exam = _exams_for_student(student, pin=entered_pin).first()
-        if not exam:
+        # student_id/admission_number can collide across schools - only accept a candidate
+        # whose OWN tenant has an exam this PIN actually unlocks, never the first match.
+        student = None
+        exam = None
+        for candidate in candidates:
+            candidate_exam = _exams_for_student(candidate, pin=entered_pin).first()
+            if candidate_exam:
+                student, exam = candidate, candidate_exam
+                break
+        if not student or not exam:
             return Response({"success": False, "message": "No open exam matches this Student ID and PIN."}, status=status.HTTP_404_NOT_FOUND)
 
         submitted_count = ExamAttempt.objects.filter(exam=exam, student=student, is_submitted=True).count()
@@ -1151,6 +1166,8 @@ def cbt_offline_sync_package(request):
     student_queryset = User.objects.filter(role="student", is_active=True).select_related("tenant", "student_profile", "student_profile__current_class")
     if getattr(request.user, "tenant", None):
         student_queryset = student_queryset.filter(tenant=request.user.tenant)
+    else:
+        student_queryset = student_queryset.none()
 
     exam_rows = []
     for exam in exams.order_by("start_date"):
@@ -1285,11 +1302,20 @@ def cbt_delete_offline_result(request):
     if not exam_id or not student_identifier:
         return Response({"success": False, "message": "exam_id and student_id are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    student = _find_student_by_identifier(student_identifier)
+    exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
+    # student_id/admission_number can collide across schools - only accept a candidate
+    # from the same tenant as the admin/teacher performing this action.
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+    student = None
+    if legacy_tenant:
+        student = next(
+            (c for c in _find_students_by_identifier(student_identifier)
+             if resolve_legacy_tenant_for_school(getattr(c, "tenant", None)) == legacy_tenant),
+            None,
+        )
     if not student:
         return Response({"success": False, "message": "Student was not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
     attempts = ExamAttempt.objects.filter(exam=exam, student=student)
     if offline_session_id:
         session_filter = Q(device_id=offline_session_id)
@@ -1357,11 +1383,19 @@ def _ingest_cbt_offline_result(actor, payload):
     if not isinstance(answers, dict):
         return {"success": False, "message": "answers must be an object keyed by question id."}, status.HTTP_400_BAD_REQUEST
 
-    student = _find_student_by_identifier(student_identifier)
+    exam = get_object_or_404(_published_exam_queryset_for_user(actor), id=exam_id)
+    # student_id/admission_number can collide across schools - only accept a candidate
+    # from the same tenant as the actor (admin/teacher) syncing this result.
+    legacy_tenant = resolve_legacy_tenant_for_school(getattr(actor, "tenant", None))
+    student = None
+    if legacy_tenant:
+        student = next(
+            (c for c in _find_students_by_identifier(student_identifier)
+             if resolve_legacy_tenant_for_school(getattr(c, "tenant", None)) == legacy_tenant),
+            None,
+        )
     if not student:
         return {"success": False, "message": "Student was not found."}, status.HTTP_404_NOT_FOUND
-
-    exam = get_object_or_404(_published_exam_queryset_for_user(actor), id=exam_id)
     sync_device_id = str(payload.get("device_id") or envelope.get("device_id") or "").strip()
     sync_package_id = str(payload.get("package_id") or envelope.get("package_id") or "").strip()
     if offline_session_id:

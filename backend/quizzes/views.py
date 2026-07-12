@@ -162,36 +162,36 @@ def _percentage(score, total):
 
 def _active_academic_year(user):
     legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
-    years = AcademicYear.objects.filter(is_active=True).order_by("-start_date")
-    if legacy_tenant:
-        years = years.filter(tenant=legacy_tenant)
-    return years.first()
+    if not legacy_tenant:
+        return None
+    return AcademicYear.objects.filter(is_active=True, tenant=legacy_tenant).order_by("-start_date").first()
 
 
 def _active_term(user):
     legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
-    terms = Term.objects.select_related("academic_year").filter(is_active=True).order_by("-start_date")
-    if legacy_tenant:
-        terms = terms.filter(tenant=legacy_tenant)
-    return terms.first()
+    if not legacy_tenant:
+        return None
+    return Term.objects.select_related("academic_year").filter(is_active=True, tenant=legacy_tenant).order_by("-start_date").first()
 
 
 def _term_for_date(user, value):
     legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
-    terms = Term.objects.select_related("academic_year").filter(start_date__lte=value, end_date__gte=value).order_by("-start_date")
-    if legacy_tenant:
-        terms = terms.filter(tenant=legacy_tenant)
-    return terms.first() or _active_term(user)
+    if not legacy_tenant:
+        return None
+    term = Term.objects.select_related("academic_year").filter(
+        start_date__lte=value, end_date__gte=value, tenant=legacy_tenant
+    ).order_by("-start_date").first()
+    return term or _active_term(user)
 
 
 def _year_for_date(user, value, term=None):
     if term and term.academic_year_id:
         return term.academic_year
     legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
-    years = AcademicYear.objects.filter(start_date__lte=value, end_date__gte=value).order_by("-start_date")
-    if legacy_tenant:
-        years = years.filter(tenant=legacy_tenant)
-    return years.first() or _active_academic_year(user)
+    if not legacy_tenant:
+        return None
+    year = AcademicYear.objects.filter(start_date__lte=value, end_date__gte=value, tenant=legacy_tenant).order_by("-start_date").first()
+    return year or _active_academic_year(user)
 
 
 def _attempt_due_at(attempt):
@@ -324,8 +324,7 @@ def _subject_queryset_for_student(user, profile=None):
     profile = profile or _student_profile(user)
     legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
     subjects = Subject.objects.all().order_by("name")
-    if legacy_tenant:
-        subjects = subjects.filter(tenant=legacy_tenant)
+    subjects = subjects.filter(tenant=legacy_tenant) if legacy_tenant else subjects.none()
     if profile and profile.current_class_id and profile.current_class.subjects.exists():
         subjects = subjects.filter(classes=profile.current_class)
     return subjects.distinct()
@@ -868,8 +867,7 @@ class TeacherQuizListCreate(APIView):
             .prefetch_related("questions__choices", "submissions")
             .order_by("-created_at")
         )
-        if legacy_tenant:
-            quizzes = quizzes.filter(tenant=legacy_tenant)
+        quizzes = quizzes.filter(tenant=legacy_tenant) if legacy_tenant else quizzes.none()
         return Response(QuizListSerializer(quizzes, many=True).data)
 
     def post(self, request):
@@ -930,8 +928,10 @@ class PersonalQuizResourceFolder(APIView):
             return Response({"detail": "Personal quiz question pools are not available to this account."}, status=status.HTTP_403_FORBIDDEN)
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
         folders = PersonalQuizFolder.objects.filter(is_active=True).prefetch_related("folder_questions")
-        if legacy_tenant:
-            folders = folders.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True))
+        # Global (tenant__isnull=True) folders are always visible by design; when this
+        # admin's own school tenant can't be resolved, show only those - never every
+        # other school's folders.
+        folders = folders.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True)) if legacy_tenant else folders.filter(tenant__isnull=True)
         payload = [
             {
                 "id": folder.id,
@@ -959,7 +959,15 @@ class PersonalQuizResourceFolder(APIView):
         if request.user.role not in {"school_admin", "principal", "super_admin"}:
             return Response({"detail": "Only school administrators can manage personal quiz folders."}, status=status.HTTP_403_FORBIDDEN)
         is_global = bool(request.data.get("is_global")) and request.user.role == "super_admin"
-        legacy_tenant = None if is_global else resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        if is_global:
+            legacy_tenant = None
+        else:
+            legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+            if not legacy_tenant:
+                # Never silently fall back to a global (tenant=None) folder just because
+                # this admin's school has no legacy tenant mapping - that would make a
+                # school-specific folder visible to every other school by accident.
+                return Response({"detail": "Your school is not fully set up yet. Contact support."}, status=status.HTTP_400_BAD_REQUEST)
         folder = PersonalQuizFolder.objects.create(
             tenant=legacy_tenant,
             name=str(request.data.get("name") or "Personal Quiz Questions").strip(),
@@ -978,8 +986,10 @@ class PersonalQuizResourceQuestion(APIView):
         folder_query = PersonalQuizFolder.objects.filter(id=folder_id, is_active=True)
         if request.user.role == "super_admin":
             folder_query = folder_query.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True))
-        else:
+        elif legacy_tenant:
             folder_query = folder_query.filter(tenant=legacy_tenant)
+        else:
+            folder_query = folder_query.none()
         folder = get_object_or_404(folder_query)
         prompt = str(request.data.get("prompt") or "").strip()
         correct_answer = str(request.data.get("correct_answer") or "").strip()
@@ -1003,10 +1013,9 @@ class StudentQuizList(APIView):
 
     def get(self, request):
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
-        quizzes = Quiz.objects.filter(is_published=True)
-        if legacy_tenant:
-            quizzes = quizzes.filter(tenant=legacy_tenant)
-        quizzes = quizzes.prefetch_related("questions__choices")
+        if not legacy_tenant:
+            return Response([])
+        quizzes = Quiz.objects.filter(is_published=True, tenant=legacy_tenant).prefetch_related("questions__choices")
         return Response(StudentQuizSerializer(quizzes, many=True).data)
 
 
@@ -1016,8 +1025,7 @@ class StudentQuizDetail(APIView):
     def get(self, request, quiz_id):
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
         queryset = Quiz.objects.prefetch_related("questions__choices").filter(is_published=True)
-        if legacy_tenant:
-            queryset = queryset.filter(tenant=legacy_tenant)
+        queryset = queryset.filter(tenant=legacy_tenant) if legacy_tenant else queryset.none()
         quiz = get_object_or_404(queryset, id=quiz_id)
         return Response(StudentQuizSerializer(quiz).data)
 
@@ -1028,8 +1036,7 @@ class StudentQuizSubmit(APIView):
     def post(self, request, quiz_id):
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
         queryset = Quiz.objects.prefetch_related("questions__choices").filter(is_published=True)
-        if legacy_tenant:
-            queryset = queryset.filter(tenant=legacy_tenant)
+        queryset = queryset.filter(tenant=legacy_tenant) if legacy_tenant else queryset.none()
         quiz = get_object_or_404(queryset, id=quiz_id)
         serializer = SubmissionSerializer(data=request.data, context={"request": request, "quiz": quiz})
         serializer.is_valid(raise_exception=True)
@@ -1043,8 +1050,7 @@ class StudentQuizFlagQuestion(APIView):
     def post(self, request, quiz_id):
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
         quiz_query = Quiz.objects.select_related("teacher").prefetch_related("questions__choices").filter(is_published=True)
-        if legacy_tenant:
-            quiz_query = quiz_query.filter(tenant=legacy_tenant)
+        quiz_query = quiz_query.filter(tenant=legacy_tenant) if legacy_tenant else quiz_query.none()
         quiz = get_object_or_404(quiz_query, id=quiz_id)
         question = get_object_or_404(QuizQuestion.objects.prefetch_related("choices"), quiz=quiz, id=request.data.get("question_id"))
         reason = str(request.data.get("reason") or "").strip()
@@ -1096,8 +1102,7 @@ class StudentQuizResult(APIView):
     def get(self, request, quiz_id):
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
         quiz_query = Quiz.objects.all()
-        if legacy_tenant:
-            quiz_query = quiz_query.filter(tenant=legacy_tenant)
+        quiz_query = quiz_query.filter(tenant=legacy_tenant) if legacy_tenant else quiz_query.none()
         quiz = get_object_or_404(quiz_query, id=quiz_id)
         submission = get_object_or_404(
             Submission.objects.prefetch_related("answers__question__choices", "answers__choice"),
