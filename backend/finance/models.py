@@ -848,5 +848,186 @@ class PaymentReceiptLink(models.Model):
             self.short_code = code
         super().save(*args, **kwargs)
 
+
+class SmsBundle(models.Model):
+    """Purchasable SMS credit package. Managed by SchoolDom staff, bought by schools."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    credits = models.PositiveIntegerField(help_text="Number of SMS credits (1 credit = 1 SMS, up to 160 chars).")
+    bonus_credits = models.PositiveIntegerField(default=0)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=5, default="NGN")
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "credits"]
+
     def __str__(self):
-        return f"ReceiptLink({self.receipt_type} {self.token})"
+        return f"SmsBundle({self.name}: {self.credits}+{self.bonus_credits} credits, {self.currency} {self.price})"
+
+
+class SmsWallet(models.Model):
+    """Per-school prepaid SMS credit balance. SchoolDom uses a single shared eBulkSMS
+    account/API key; this wallet is what actually meters and caps each school's usage."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(
+        "core.SchoolTenant",
+        on_delete=models.CASCADE,
+        related_name="sms_wallet",
+        null=True,
+        blank=True,
+    )
+    balance = models.PositiveIntegerField(default=0)
+    low_balance_threshold = models.PositiveIntegerField(default=50)
+    is_locked = models.BooleanField(default=False, help_text="Kill switch - blocks all sends for this school.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        code = self.tenant.schema_name if self.tenant else "public"
+        return f"SmsWallet({code}: {self.balance})"
+
+
+class SmsWalletTransaction(models.Model):
+    """Immutable ledger for every SMS wallet balance movement. Every row records a unique
+    reference and the balance before/after the movement - balances must never be mutated
+    without a matching row here."""
+
+    PURCHASE = "purchase"
+    DEBIT = "debit"
+    REFUND = "refund"
+    ADMIN_CREDIT = "admin_credit"
+    ADJUSTMENT = "adjustment"
+    TYPE_CHOICES = [
+        (PURCHASE, "Purchase"),
+        (DEBIT, "Debit"),
+        (REFUND, "Refund"),
+        (ADMIN_CREDIT, "Admin Credit"),
+        (ADJUSTMENT, "Adjustment"),
+    ]
+    STATUS_PENDING = "pending"
+    STATUS_SUCCESS = "successful"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SUCCESS, "Successful"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wallet = models.ForeignKey(SmsWallet, on_delete=models.CASCADE, related_name="transactions")
+    tx_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_SUCCESS)
+    credits = models.IntegerField(help_text="Signed: positive for purchase/refund/admin_credit, negative for debit.")
+    balance_before = models.PositiveIntegerField(null=True, blank=True)
+    balance_after = models.PositiveIntegerField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    reference = models.CharField(max_length=64, unique=True)
+    bundle = models.ForeignKey(SmsBundle, on_delete=models.SET_NULL, null=True, blank=True, related_name="purchases")
+    related_message_log = models.ForeignKey(
+        "finance.SmsMessageLog",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="wallet_transactions",
+    )
+    narration = models.CharField(max_length=255, blank=True)
+    provider = models.CharField(max_length=30, default="paystack")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sms_wallet_transactions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["wallet", "tx_type"], name="finance_smswtx_wt_idx"),
+            models.Index(fields=["created_at"], name="finance_smswtx_ca_idx"),
+        ]
+
+    def __str__(self):
+        return f"SmsWalletTransaction({self.tx_type}: {self.credits})"
+
+
+class SmsMessageLog(models.Model):
+    """Per-SMS delivery record - every message sent through the wallet-metered pipeline
+    gets a row here, regardless of which part of the app triggered it."""
+
+    ATTENDANCE = "attendance"
+    FEE_REMINDER = "fee_reminder"
+    RESULTS = "results"
+    OTP = "otp"
+    PARENT_ALERT = "parent_alert"
+    TEACHER_NOTICE = "teacher_notice"
+    BULK = "bulk"
+    OTHER = "other"
+    CATEGORY_CHOICES = [
+        (ATTENDANCE, "Attendance"),
+        (FEE_REMINDER, "Fee Reminder"),
+        (RESULTS, "Results"),
+        (OTP, "OTP"),
+        (PARENT_ALERT, "Parent Alert"),
+        (TEACHER_NOTICE, "Teacher Notice"),
+        (BULK, "Bulk Message"),
+        (OTHER, "Other"),
+    ]
+    QUEUED = "queued"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+    DELIVERY_STATUS_CHOICES = [
+        (QUEUED, "Queued"),
+        (SENT, "Sent"),
+        (DELIVERED, "Delivered"),
+        (FAILED, "Failed"),
+        (REFUNDED, "Refunded"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.SchoolTenant",
+        on_delete=models.CASCADE,
+        related_name="sms_message_logs",
+        null=True,
+        blank=True,
+    )
+    wallet = models.ForeignKey(SmsWallet, on_delete=models.CASCADE, related_name="message_logs")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default=OTHER)
+    recipient_phone = models.CharField(max_length=20)
+    message = models.TextField()
+    credits_charged = models.PositiveIntegerField(default=1)
+    delivery_status = models.CharField(max_length=16, choices=DELIVERY_STATUS_CHOICES, default=QUEUED)
+    provider_response = models.JSONField(default=dict, blank=True)
+    provider_message_id = models.CharField(max_length=100, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sms_message_logs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "created_at"], name="finance_smsmsg_tc_idx"),
+            models.Index(fields=["wallet", "delivery_status"], name="finance_smsmsg_wds_idx"),
+            models.Index(fields=["category"], name="finance_smsmsg_cat_idx"),
+        ]
+
+    def __str__(self):
+        return f"SmsMessageLog({self.recipient_phone}: {self.delivery_status})"

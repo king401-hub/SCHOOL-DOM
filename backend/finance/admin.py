@@ -10,6 +10,10 @@ from finance.models import (
     ExpenseRecord,
     FinanceLedgerLog,
     SchoolFee,
+    SmsBundle,
+    SmsMessageLog,
+    SmsWallet,
+    SmsWalletTransaction,
     StudentActivationCredit,
     Transaction,
     Wallet,
@@ -180,3 +184,48 @@ class ActivationCreditTransactionAdmin(admin.ModelAdmin):
     list_filter = ("tx_type", "created_at")
     search_fields = ("reference", "narration", "student_credit__student__user__email")
     readonly_fields = ("created_at",)
+
+
+@admin.register(SmsBundle)
+class SmsBundleAdmin(admin.ModelAdmin):
+    list_display = ("name", "credits", "bonus_credits", "price", "currency", "is_active", "sort_order")
+    list_filter = ("is_active", "currency")
+    search_fields = ("name",)
+
+
+@admin.register(SmsWallet)
+class SmsWalletAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "balance", "low_balance_threshold", "is_locked", "updated_at")
+    list_filter = ("is_locked",)
+    search_fields = ("tenant__name", "tenant__schema_name")
+    readonly_fields = ("balance", "created_at", "updated_at")
+
+
+@admin.register(SmsWalletTransaction)
+class SmsWalletTransactionAdmin(admin.ModelAdmin):
+    list_display = ("reference", "wallet", "tx_type", "status", "credits", "balance_before", "balance_after", "created_at")
+    list_filter = ("tx_type", "status", "provider")
+    search_fields = ("reference", "narration", "wallet__tenant__name")
+    readonly_fields = (
+        "wallet", "tx_type", "status", "credits", "balance_before", "balance_after",
+        "amount", "reference", "bundle", "related_message_log", "narration",
+        "provider", "metadata", "created_by", "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(SmsMessageLog)
+class SmsMessageLogAdmin(admin.ModelAdmin):
+    list_display = ("recipient_phone", "wallet", "category", "delivery_status", "credits_charged", "created_at")
+    list_filter = ("category", "delivery_status")
+    search_fields = ("recipient_phone", "message", "wallet__tenant__name")
+    readonly_fields = (
+        "tenant", "wallet", "category", "recipient_phone", "message", "credits_charged",
+        "delivery_status", "provider_response", "provider_message_id", "sent_at",
+        "refunded_at", "created_by", "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False

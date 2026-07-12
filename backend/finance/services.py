@@ -28,6 +28,10 @@ from finance.models import (
     FinanceLedgerLog,
     PaymentReceiptLink,
     SchoolFee,
+    SmsBundle,
+    SmsMessageLog,
+    SmsWallet,
+    SmsWalletTransaction,
     StudentActivationCredit,
     StudentPaymentReference,
     Transaction,
@@ -1103,6 +1107,16 @@ def process_paystack_webhook(data: dict) -> dict:
         logger.warning("Kids Monitor webhook %s: no matching subscription", reference)
         return {'status': 'ignored', 'type': 'kids_monitor', 'reference': reference}
 
+    # SMS bundle purchase — credit the school's SMS wallet even if the browser
+    # popup callback never fired.
+    if metadata.get('type') == 'sms_bundle' or str(reference or '').startswith('SMSW'):
+        try:
+            credit_sms_wallet_from_purchase(reference, verification=transaction_data)
+            return {'status': 'success', 'type': 'sms_bundle', 'reference': reference}
+        except Exception as exc:
+            logger.warning("SMS bundle webhook %s failed: %s", reference, exc)
+            return {'status': 'ignored', 'type': 'sms_bundle', 'reference': reference}
+
     # Dedicated virtual account payment (DVA / dedicated_nuban)
     if channel == 'dedicated_nuban':
         account_number = (
@@ -1941,6 +1955,235 @@ def verify_activation_credit_purchase(reference, actor=None, verification: Optio
             locked_tx.save(update_fields=["status", "metadata"])
     tx.pool.refresh_from_db()
     return tx.pool
+
+
+# ============================================================
+# SMS WALLET ENGINE
+#
+# SchoolDom uses one shared eBulkSMS account/API key for every school; these
+# functions meter each school's own usage against a prepaid credit balance
+# funded via Paystack. Mirrors the ActivationCreditPool/ActivationCreditTransaction
+# pattern above, with balance_before/balance_after added to every ledger row.
+# ============================================================
+
+class InsufficientSmsCreditsError(Exception):
+    """Raised when a school's SMS wallet doesn't have enough credits for a send."""
+
+
+class SmsWalletLockedError(Exception):
+    """Raised when a school's SMS wallet has been locked (kill switch)."""
+
+
+def get_or_create_sms_wallet(tenant) -> SmsWallet:
+    wallet, _ = SmsWallet.objects.get_or_create(tenant=tenant)
+    return wallet
+
+
+def initialize_sms_bundle_purchase(tenant, bundle_id, actor) -> dict:
+    """Start a Paystack-funded SMS bundle purchase. Paystack-only (like Child Monitor),
+    not routed through the multi-provider initialize_payment_transaction dispatcher."""
+    bundle = SmsBundle.objects.get(pk=bundle_id, is_active=True)
+    wallet = get_or_create_sms_wallet(tenant)
+    total_credits = bundle.credits + bundle.bonus_credits
+    reference = generate_reference("SMSW")
+
+    tx = SmsWalletTransaction.objects.create(
+        wallet=wallet,
+        tx_type=SmsWalletTransaction.PURCHASE,
+        status=SmsWalletTransaction.STATUS_PENDING,
+        credits=total_credits,
+        amount=bundle.price,
+        reference=reference,
+        bundle=bundle,
+        narration=f"SMS bundle purchase: {bundle.name}",
+        provider="paystack",
+        metadata={
+            "tenant_id": str(tenant.id) if tenant else "",
+            "bundle_id": str(bundle.id),
+            "purchased_credits": bundle.credits,
+            "bonus_credits": bundle.bonus_credits,
+            "total_credits": total_credits,
+        },
+        created_by=actor,
+    )
+
+    email = getattr(actor, "email", "") or "billing@schooldom.academy"
+    url = f"{_paystack_base_url()}/transaction/initialize"
+    payload = {
+        "email": email,
+        "amount": int(bundle.price * 100),
+        "reference": reference,
+        "metadata": {
+            "type": "sms_bundle",
+            "tenant_id": str(tenant.id) if tenant else "",
+            "bundle_id": str(bundle.id),
+            "reference": reference,
+        },
+    }
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    if not data.get("status"):
+        tx.status = SmsWalletTransaction.STATUS_FAILED
+        tx.metadata = {**tx.metadata, "init_error": data.get("message", "Paystack initialization failed.")}
+        tx.save(update_fields=["status", "metadata"])
+        raise RuntimeError(data.get("message", "Paystack initialization failed."))
+
+    tx_data = data["data"]
+    tx.metadata = {**tx.metadata, "authorization_url": tx_data.get("authorization_url"), "access_code": tx_data.get("access_code")}
+    tx.save(update_fields=["metadata"])
+
+    return {
+        "reference": reference,
+        "authorization_url": tx_data.get("authorization_url"),
+        "access_code": tx_data.get("access_code"),
+        "amount": bundle.price,
+        "credits": total_credits,
+    }
+
+
+def credit_sms_wallet_from_purchase(reference, verification: Optional[dict] = None) -> SmsWalletTransaction:
+    """Verify a Paystack SMS bundle payment and credit the wallet. Idempotent - safe to
+    call from both the webhook and the client-side verify request for the same payment."""
+    tx = SmsWalletTransaction.objects.select_related("wallet", "wallet__tenant").get(reference=reference)
+    if tx.tx_type != SmsWalletTransaction.PURCHASE:
+        raise ValueError("Invalid SMS bundle purchase reference.")
+    if tx.status == SmsWalletTransaction.STATUS_SUCCESS:
+        return tx
+
+    verification = verification or verify_paystack_transaction(reference)
+    status_value = str(verification.get("status") or "").lower()
+    # Paystack reports amount in kobo; tx.amount is stored in Naira.
+    amount_major = Decimal(str(verification.get("amount") or 0)) / Decimal("100")
+    if status_value != "success":
+        tx.status = SmsWalletTransaction.STATUS_FAILED
+        tx.metadata = {**tx.metadata, "verification": verification}
+        tx.save(update_fields=["status", "metadata"])
+        raise ValueError("Payment not successful.")
+    if amount_major < tx.amount:
+        tx.status = SmsWalletTransaction.STATUS_FAILED
+        tx.metadata = {**tx.metadata, "verification": verification, "reason": "amount_mismatch"}
+        tx.save(update_fields=["status", "metadata"])
+        raise ValueError("Payment amount mismatch.")
+
+    with transaction.atomic():
+        locked_wallet = SmsWallet.objects.select_for_update().get(pk=tx.wallet_id)
+        locked_tx = SmsWalletTransaction.objects.select_for_update().get(pk=tx.pk)
+        if locked_tx.status != SmsWalletTransaction.STATUS_SUCCESS:
+            balance_before = locked_wallet.balance
+            locked_wallet.balance += locked_tx.credits
+            locked_wallet.save(update_fields=["balance", "updated_at"])
+            locked_tx.status = SmsWalletTransaction.STATUS_SUCCESS
+            locked_tx.balance_before = balance_before
+            locked_tx.balance_after = locked_wallet.balance
+            locked_tx.metadata = {**locked_tx.metadata, "verification": verification}
+            locked_tx.save(update_fields=["status", "balance_before", "balance_after", "metadata"])
+
+    record_finance_activity(
+        tx.wallet.tenant,
+        None,
+        "sms_wallet_credited",
+        f"SMS wallet credited with {tx.credits} credits ({reference}).",
+        amount=tx.amount,
+        reference=reference,
+    )
+    tx.refresh_from_db()
+    return tx
+
+
+def charge_sms_wallet(tenant, credits_needed: int, category: str, narration: str = "", actor=None, metadata=None) -> SmsWalletTransaction:
+    """Debit a school's SMS wallet before sending. Raises InsufficientSmsCreditsError /
+    SmsWalletLockedError instead of ever letting the balance go negative."""
+    credits_needed = int(credits_needed or 0)
+    if credits_needed <= 0:
+        raise ValueError("credits_needed must be a positive number.")
+
+    with transaction.atomic():
+        wallet = get_or_create_sms_wallet(tenant)
+        locked_wallet = SmsWallet.objects.select_for_update().get(pk=wallet.pk)
+        if locked_wallet.is_locked:
+            raise SmsWalletLockedError("This school's SMS wallet is locked.")
+        if locked_wallet.balance < credits_needed:
+            raise InsufficientSmsCreditsError(
+                f"Insufficient SMS credits: need {credits_needed}, have {locked_wallet.balance}."
+            )
+        balance_before = locked_wallet.balance
+        locked_wallet.balance -= credits_needed
+        locked_wallet.save(update_fields=["balance", "updated_at"])
+
+        tx = SmsWalletTransaction.objects.create(
+            wallet=locked_wallet,
+            tx_type=SmsWalletTransaction.DEBIT,
+            status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=-credits_needed,
+            balance_before=balance_before,
+            balance_after=locked_wallet.balance,
+            reference=generate_reference("SMSD"),
+            narration=narration,
+            metadata={"category": category, **(metadata or {})},
+            created_by=actor,
+        )
+    return tx
+
+
+def refund_sms_wallet(original_debit_tx: SmsWalletTransaction, reason: str = "") -> SmsWalletTransaction:
+    """Reverse a charge_sms_wallet() debit (e.g. permanent provider delivery failure)."""
+    credits_to_restore = abs(original_debit_tx.credits)
+    with transaction.atomic():
+        locked_wallet = SmsWallet.objects.select_for_update().get(pk=original_debit_tx.wallet_id)
+        balance_before = locked_wallet.balance
+        locked_wallet.balance += credits_to_restore
+        locked_wallet.save(update_fields=["balance", "updated_at"])
+
+        tx = SmsWalletTransaction.objects.create(
+            wallet=locked_wallet,
+            tx_type=SmsWalletTransaction.REFUND,
+            status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=credits_to_restore,
+            balance_before=balance_before,
+            balance_after=locked_wallet.balance,
+            reference=generate_reference("SMSR"),
+            narration=f"Refund of {original_debit_tx.reference}: {reason}".strip(": "),
+            metadata={"refund_of": str(original_debit_tx.id), "reason": reason},
+        )
+    return tx
+
+
+def adjust_sms_wallet(tenant, credits_delta: int, reason: str, actor=None) -> SmsWalletTransaction:
+    """Manual staff credit/debit adjustment to a school's SMS wallet."""
+    credits_delta = int(credits_delta or 0)
+    if credits_delta == 0:
+        raise ValueError("credits_delta must be non-zero.")
+
+    with transaction.atomic():
+        wallet = get_or_create_sms_wallet(tenant)
+        locked_wallet = SmsWallet.objects.select_for_update().get(pk=wallet.pk)
+        if credits_delta < 0 and locked_wallet.balance < abs(credits_delta):
+            raise InsufficientSmsCreditsError(
+                f"Cannot deduct {abs(credits_delta)} credits: wallet only has {locked_wallet.balance}."
+            )
+        balance_before = locked_wallet.balance
+        locked_wallet.balance += credits_delta
+        locked_wallet.save(update_fields=["balance", "updated_at"])
+
+        tx = SmsWalletTransaction.objects.create(
+            wallet=locked_wallet,
+            tx_type=SmsWalletTransaction.ADJUSTMENT,
+            status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=credits_delta,
+            balance_before=balance_before,
+            balance_after=locked_wallet.balance,
+            reference=generate_reference("SMSA"),
+            narration=reason,
+            created_by=actor,
+        )
+    record_finance_activity(
+        tenant,
+        actor,
+        "sms_wallet_adjusted",
+        f"SMS wallet adjusted by {credits_delta:+d} credits: {reason}",
+        reference=tx.reference,
+    )
+    return tx
 
 
 def _sweep_student_wallet_to_admin(wallet: Wallet, actor=None, source_reference: str = ""):

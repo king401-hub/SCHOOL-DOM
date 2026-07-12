@@ -13,18 +13,29 @@ from finance.models import (
     ClassFee,
     DocumentGenerationCreditTransaction,
     SchoolFee,
+    SmsBundle,
+    SmsWallet,
+    SmsWalletTransaction,
     StudentPaymentReference,
     Transaction,
 )
 from finance.services import (
     ACTIVATION_CREDIT_PRICE,
+    InsufficientSmsCreditsError,
+    SmsWalletLockedError,
     activation_credit_bonus_for_purchase,
+    adjust_sms_wallet,
+    charge_sms_wallet,
     complete_wallet_funding,
+    credit_sms_wallet_from_purchase,
     deduct_document_generation_credit,
     ensure_student_wallet,
     fee_paid_amount,
     get_or_create_activation_credit_pool,
+    get_or_create_sms_wallet,
     get_or_create_student_payment_reference,
+    initialize_sms_bundle_purchase,
+    refund_sms_wallet,
     sync_class_fee_assignments,
     verify_activation_credit_purchase,
 )
@@ -415,3 +426,196 @@ class ManualFeeEditingTests(TestCase):
         self.assertNotEqual(fee.status, SchoolFee.STATUS_PAID)
         self.assertEqual(fee_paid_amount(fee), Decimal("1000.00"))
         self.assertEqual(Decimal(str(response.data["fee"]["remaining_balance"])), Decimal("500.00"))
+
+
+class SmsWalletTests(TestCase):
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="SMS School", schema_name="sms_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@sms.test",
+            password="AdminPass123",
+            first_name="Sms",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.bundle = SmsBundle.objects.create(
+            name="Starter",
+            credits=500,
+            bonus_credits=50,
+            price=Decimal("5000.00"),
+        )
+
+    def test_get_or_create_sms_wallet_is_idempotent(self):
+        wallet_a = get_or_create_sms_wallet(self.school)
+        wallet_b = get_or_create_sms_wallet(self.school)
+        self.assertEqual(wallet_a.id, wallet_b.id)
+        self.assertEqual(wallet_a.balance, 0)
+
+    @patch("finance.services.requests.post")
+    def test_initialize_purchase_creates_pending_transaction(self, mock_post):
+        mock_post.return_value.json.return_value = {
+            "status": True,
+            "data": {"authorization_url": "https://paystack.test/pay", "access_code": "abc123"},
+        }
+
+        result = initialize_sms_bundle_purchase(self.school, self.bundle.id, self.admin)
+
+        tx = SmsWalletTransaction.objects.get(reference=result["reference"])
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_PENDING)
+        self.assertEqual(tx.credits, 550)
+        self.assertEqual(tx.amount, Decimal("5000.00"))
+        self.assertEqual(result["authorization_url"], "https://paystack.test/pay")
+        sent_amount_kobo = mock_post.call_args.kwargs["json"]["amount"]
+        self.assertEqual(sent_amount_kobo, 500000)
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_credit_from_purchase_adds_bundle_plus_bonus_and_records_before_after(self, mock_verify):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet,
+            tx_type=SmsWalletTransaction.PURCHASE,
+            status=SmsWalletTransaction.STATUS_PENDING,
+            credits=550,
+            amount=Decimal("5000.00"),
+            reference="SMSWTEST0001",
+            bundle=self.bundle,
+            created_by=self.admin,
+        )
+        mock_verify.return_value = {"status": "success", "amount": 500000}  # kobo
+
+        credited_tx = credit_sms_wallet_from_purchase(tx.reference)
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 550)
+        self.assertEqual(credited_tx.status, SmsWalletTransaction.STATUS_SUCCESS)
+        self.assertEqual(credited_tx.balance_before, 0)
+        self.assertEqual(credited_tx.balance_after, 550)
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_credit_from_purchase_is_idempotent(self, mock_verify):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet,
+            tx_type=SmsWalletTransaction.PURCHASE,
+            status=SmsWalletTransaction.STATUS_PENDING,
+            credits=550,
+            amount=Decimal("5000.00"),
+            reference="SMSWTEST0002",
+            bundle=self.bundle,
+            created_by=self.admin,
+        )
+        mock_verify.return_value = {"status": "success", "amount": 500000}
+
+        credit_sms_wallet_from_purchase(tx.reference)
+        # Simulates the webhook and the client-side verify call both firing for the
+        # same payment - balance must only be credited once.
+        credit_sms_wallet_from_purchase(tx.reference)
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 550)
+        self.assertEqual(SmsWalletTransaction.objects.filter(reference=tx.reference).count(), 1)
+
+    @patch("finance.services.verify_paystack_transaction")
+    def test_credit_from_purchase_fails_on_amount_mismatch(self, mock_verify):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet,
+            tx_type=SmsWalletTransaction.PURCHASE,
+            status=SmsWalletTransaction.STATUS_PENDING,
+            credits=550,
+            amount=Decimal("5000.00"),
+            reference="SMSWTEST0003",
+            bundle=self.bundle,
+            created_by=self.admin,
+        )
+        mock_verify.return_value = {"status": "success", "amount": 100000}  # only NGN1000 paid
+
+        with self.assertRaises(ValueError):
+            credit_sms_wallet_from_purchase(tx.reference)
+
+        wallet.refresh_from_db()
+        tx.refresh_from_db()
+        self.assertEqual(wallet.balance, 0)
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_FAILED)
+
+    def test_charge_debits_wallet_and_records_before_after(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 100
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        tx = charge_sms_wallet(self.school, 5, category="attendance", narration="Attendance alert")
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 95)
+        self.assertEqual(tx.tx_type, SmsWalletTransaction.DEBIT)
+        self.assertEqual(tx.credits, -5)
+        self.assertEqual(tx.balance_before, 100)
+        self.assertEqual(tx.balance_after, 95)
+        self.assertEqual(tx.metadata["category"], "attendance")
+
+    def test_charge_raises_when_balance_insufficient(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 2
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with self.assertRaises(InsufficientSmsCreditsError):
+            charge_sms_wallet(self.school, 5, category="attendance")
+
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 2)
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet).count(), 0)
+
+    def test_charge_raises_when_wallet_locked(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 100
+        wallet.is_locked = True
+        wallet.save(update_fields=["balance", "is_locked", "updated_at"])
+
+        with self.assertRaises(SmsWalletLockedError):
+            charge_sms_wallet(self.school, 5, category="attendance")
+
+    def test_refund_restores_exact_amount_and_records_before_after(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 100
+        wallet.save(update_fields=["balance", "updated_at"])
+        debit_tx = charge_sms_wallet(self.school, 5, category="attendance")
+
+        refund_tx = refund_sms_wallet(debit_tx, reason="Delivery permanently failed")
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 100)
+        self.assertEqual(refund_tx.tx_type, SmsWalletTransaction.REFUND)
+        self.assertEqual(refund_tx.credits, 5)
+        self.assertEqual(refund_tx.balance_before, 95)
+        self.assertEqual(refund_tx.balance_after, 100)
+        self.assertEqual(refund_tx.metadata["refund_of"], str(debit_tx.id))
+
+    def test_adjust_can_credit_and_debit_with_ledger_entry(self):
+        wallet = get_or_create_sms_wallet(self.school)
+
+        credit_tx = adjust_sms_wallet(self.school, 20, reason="Goodwill credit", actor=self.admin)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 20)
+        self.assertEqual(credit_tx.tx_type, SmsWalletTransaction.ADJUSTMENT)
+        self.assertEqual(credit_tx.balance_before, 0)
+        self.assertEqual(credit_tx.balance_after, 20)
+
+        debit_tx = adjust_sms_wallet(self.school, -5, reason="Correction", actor=self.admin)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 15)
+        self.assertEqual(debit_tx.balance_before, 20)
+        self.assertEqual(debit_tx.balance_after, 15)
+
+    def test_adjust_raises_rather_than_going_negative(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 3
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with self.assertRaises(InsufficientSmsCreditsError):
+            adjust_sms_wallet(self.school, -10, reason="Bad correction", actor=self.admin)
+
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 3)
