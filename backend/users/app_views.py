@@ -9437,7 +9437,8 @@ def send_message(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from finance.services import send_ebulksms, normalize_phone_number
+        from finance.models import SmsMessageLog
+        from finance.services import send_wallet_sms, normalize_phone_number, InsufficientSmsCreditsError, SmsWalletLockedError
         sent, failed = 0, 0
         seen = set()
         for raw_phone in raw_recipients:
@@ -9445,8 +9446,12 @@ def send_message(request):
             if not phone or phone in seen:
                 continue
             seen.add(phone)
-            result = send_ebulksms(phone, body)
-            if result.get("status") not in ("error", "skipped"):
+            try:
+                log = send_wallet_sms(request.user.tenant, phone, body, category=SmsMessageLog.BULK, actor=request.user, narration="Guardian SMS")
+            except (InsufficientSmsCreditsError, SmsWalletLockedError):
+                failed += 1
+                continue
+            if log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
                 sent += 1
             else:
                 failed += 1
@@ -10079,12 +10084,17 @@ def kids_monitor_deactivate(request, parent_id):
     })
 
 
-def _send_attendance_sms_batch(phones_and_messages):
-    """Runs in a background thread — sends SMS without blocking the attendance request/response."""
-    from finance.services import send_ebulksms
+def _send_attendance_sms_batch(tenant, phones_and_messages):
+    """Runs in a background thread — sends SMS without blocking the attendance request/response.
+    The wallet charge itself is a fast local DB operation, so doing it here (rather than
+    synchronously in the request) doesn't reintroduce the latency this thread exists to avoid."""
+    from finance.models import SmsMessageLog
+    from finance.services import send_wallet_sms, InsufficientSmsCreditsError, SmsWalletLockedError
     for phone, message in phones_and_messages:
         try:
-            send_ebulksms(phone, message, sender="SchoolDom")
+            send_wallet_sms(tenant, phone, message, category=SmsMessageLog.ATTENDANCE, narration="Attendance notification")
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            logger.warning("Attendance SMS to %s skipped: %s", phone, exc)
         except Exception:
             logger.exception("Attendance SMS to %s failed", phone)
 
@@ -10121,4 +10131,4 @@ def _notify_parents_on_attendance(student_user, attendance_status, attendance_da
         to_send.append((phone, message))
 
     if to_send:
-        threading.Thread(target=_send_attendance_sms_batch, args=(to_send,), daemon=True).start()
+        threading.Thread(target=_send_attendance_sms_batch, args=(student_user.tenant, to_send), daemon=True).start()

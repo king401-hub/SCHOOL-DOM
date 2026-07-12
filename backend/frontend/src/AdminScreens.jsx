@@ -7829,6 +7829,162 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   );
 }
 
+function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase }) {
+  const [payingBundleId, setPayingBundleId] = useState(null);
+
+  useEffect(() => {
+    if (window.PaystackPop || !data?.paystack_public_key) return;
+    const existing = document.querySelector('script[src*="paystack.co"]');
+    if (existing) return;
+    const s = document.createElement("script");
+    s.src = "https://js.paystack.co/v1/inline.js";
+    document.head.appendChild(s);
+  }, [data?.paystack_public_key]);
+
+  const handleBuyBundle = async (bundle) => {
+    if (!window.PaystackPop) {
+      await new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[src*="paystack.co"]');
+        if (existing) { existing.addEventListener("load", resolve, { once: true }); return; }
+        const s = document.createElement("script");
+        s.src = "https://js.paystack.co/v1/inline.js";
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Could not load payment system. Check your internet connection."));
+        document.head.appendChild(s);
+      }).catch((err) => { alert(err.message); });
+    }
+    if (!window.PaystackPop) { alert("Payment system unavailable. Try again."); return; }
+    setPayingBundleId(bundle.id);
+    try {
+      const result = await onPurchase(bundle.id);
+      if (!result?.success) { alert(result?.message || "Failed to initiate purchase."); return; }
+      const verifyPayment = (tx) => {
+        const ref = tx?.reference || result.reference;
+        onVerifyPurchase(ref).then((verifyResult) => {
+          if (!verifyResult?.success) alert(verifyResult?.message || "Payment verification failed. Contact support.");
+        });
+      };
+      const handler = window.PaystackPop.setup({
+        key: data.paystack_public_key,
+        email: "billing@schooldom.academy",
+        amount: Math.round(Number(result.amount) * 100),
+        ref: result.reference,
+        // Paystack inline v1 fires `callback`; keep onSuccess for v2 compatibility.
+        callback: verifyPayment,
+        onSuccess: verifyPayment,
+        onClose: () => {},
+        onCancel: () => {},
+      });
+      handler.openIframe();
+    } catch {
+      alert("An error occurred. Please try again.");
+    } finally {
+      setPayingBundleId(null);
+    }
+  };
+
+  const wallet = data?.wallet || {};
+  const bundles = data?.bundles || [];
+  const transactions = data?.recent_transactions || [];
+  const lowBalance = wallet.balance < (wallet.low_balance_threshold || 50);
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <h2>SMS Wallet</h2>
+        <p>Buy SMS credits to cover attendance alerts, fee reminders, and bulk messages sent to guardians.</p>
+      </div>
+
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+
+      {data ? (
+        <>
+          <div className="metric-grid">
+            <MetricCard label="SMS Credits" value={wallet.balance ?? 0} helper={wallet.is_locked ? "Wallet locked" : "Available to send"} />
+            <MetricCard label="Recent Purchases" value={transactions.filter((t) => t.tx_type === "purchase").length} helper="Last 20 transactions" />
+          </div>
+
+          {lowBalance ? (
+            <div className="bulk-result error" role="alert">
+              SMS credits are running low. Buy a bundle below to avoid interrupted alerts.
+            </div>
+          ) : null}
+
+          <article className="app-panel">
+            <h3>Buy SMS Credits</h3>
+            {data.paystack_public_key ? (
+              <div className="metric-grid">
+                {bundles.map((bundle) => (
+                  <article key={bundle.id} className="app-panel cm-pricing-card">
+                    <div className="cm-pricing-body">
+                      <div className="cm-pricing-icon">💬</div>
+                      <div className="cm-pricing-info">
+                        <h3 className="cm-pricing-title">{bundle.name}</h3>
+                        <p className="cm-pricing-desc">
+                          {bundle.credits.toLocaleString()} credits
+                          {bundle.bonus_credits > 0 ? ` + ${bundle.bonus_credits.toLocaleString()} bonus` : ""}
+                        </p>
+                      </div>
+                      <div className="cm-pricing-tag">
+                        ₦{Number(bundle.price).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="cm-pricing-meta">
+                      <button
+                        type="button"
+                        className="table-action"
+                        disabled={payingBundleId === bundle.id}
+                        onClick={() => handleBuyBundle(bundle)}
+                      >
+                        {payingBundleId === bundle.id ? "Processing…" : "Buy"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {bundles.length === 0 ? <p className="panel-empty compact">No SMS bundles available yet. Contact SchoolDom support.</p> : null}
+              </div>
+            ) : (
+              <p className="panel-empty compact">Payments are not configured for this school yet.</p>
+            )}
+          </article>
+
+          <article className="app-panel">
+            <h3>Recent Transactions</h3>
+            {transactions.length > 0 ? (
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Reference</th>
+                      <th>Type</th>
+                      <th>Credits</th>
+                      <th>Balance After</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map((tx) => (
+                      <tr key={tx.id}>
+                        <td>{tx.reference}</td>
+                        <td style={{ textTransform: "capitalize" }}>{tx.tx_type}</td>
+                        <td>{tx.credits > 0 ? `+${tx.credits}` : tx.credits}</td>
+                        <td>{tx.balance_after ?? "—"}</td>
+                        <td>{tx.created_at ? new Date(tx.created_at).toLocaleString() : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="panel-empty compact">No SMS wallet activity yet.</p>
+            )}
+          </article>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];

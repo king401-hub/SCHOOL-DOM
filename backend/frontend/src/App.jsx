@@ -4,7 +4,7 @@ import {
   Briefcase, UserCheck, GraduationCap, Users, CreditCard, FileText,
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
-  Banknote, LifeBuoy, CalendarClock,
+  Banknote, LifeBuoy, CalendarClock, MessageCircle,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -122,6 +122,7 @@ const AdminEnrollmentsScreen = lazyAdminScreen("AdminEnrollmentsScreen");
 const AdminMessagesScreen = lazyAdminScreen("AdminMessagesScreen");
 const AdminDatabaseImportScreen = lazyAdminScreen("AdminDatabaseImportScreen");
 const AdminLoanApplicationScreen = lazyAdminScreen("AdminLoanApplicationScreen");
+const AdminSmsWalletScreen = lazyAdminScreen("AdminSmsWalletScreen");
 const SupportCenterPanel = lazyAdminScreen("SupportCenterPanel");
 
 const NAIRA_SYMBOL = "\u20A6";
@@ -5533,6 +5534,7 @@ const ADMIN_ROUTE_ICONS = {
   "/performance-heatmap": TrendingUp,
   "/finance": DollarSign,
   "/expenses": Receipt,
+  "/sms-wallet": MessageCircle,
   "/attendance": CalendarCheck,
   "/hr/activity": Briefcase,
   "/hr-self-service": UserCheck,
@@ -6486,6 +6488,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleSmsBundlePurchase = useCallback(
+    async (bundleId) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/sms-wallet/purchase/${bundleId}/`);
+      return result;
+    },
+    [session]
+  );
+
+  const handleSmsBundleVerify = useCallback(
+    async (reference) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/sms-wallet/verify/${reference}/`);
+      await loadScreen("/sms-wallet", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
   const handleUpdateTeacher = useCallback(
     async (teacherId, payload) => {
       const result = await requestJson(session, "PATCH", `/api/app/teachers/${teacherId}/`, payload);
@@ -7042,6 +7061,17 @@ const unreadNotificationsCount =
         onChildMonitorDeactivate={handleKidsMonitorDeactivate}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         session={session}
+      />
+    );
+  } else if (activePath === "/sms-wallet") {
+    content = (
+      <AdminSmsWalletScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onPurchase={handleSmsBundlePurchase}
+        onVerifyPurchase={handleSmsBundleVerify}
       />
     );
   } else if (activePath === "/id-cards") {

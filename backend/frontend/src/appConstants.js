@@ -52,6 +52,7 @@ export const ADMIN_ROUTES = [
     children: [
       { path: "/finance", label: "Finance" },
       { path: "/expenses", label: "Expenses" },
+      { path: "/sms-wallet", label: "SMS Wallet" },
       { path: "/hr/activity", label: "HR Management" },
       { path: "/loan-application", label: "Loan Application" },
     ]
@@ -91,6 +92,7 @@ export const ADMIN_ENDPOINTS = {
   "/performance-heatmap": "/api/app/performance-heatmap/",
   "/finance": "/api/finance/admin/overview/",
   "/expenses": "/api/finance/admin/expenses/",
+  "/sms-wallet": "/api/finance/admin/sms-wallet/",
   "/hr-self-service": "/api/hr/self-service/",
   "/hr/activity": "/api/hr/overview/",
   "/non-teaching-staff": "/api/hr/overview/",

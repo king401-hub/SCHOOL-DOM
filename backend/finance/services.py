@@ -732,6 +732,62 @@ def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dic
         return {"status": "error", "reason": str(exc)}
 
 
+def send_wallet_sms(
+    tenant,
+    phone: str,
+    message: str,
+    category: str,
+    actor=None,
+    narration: str = "",
+    metadata=None,
+    sender: str = "SchoolDom",
+) -> "SmsMessageLog":
+    """
+    Charge the school's SMS wallet and send via eBulkSMS, synchronously. Refunds the
+    credit automatically if the send fails. Raises InsufficientSmsCreditsError /
+    SmsWalletLockedError *before* anything is sent or logged - callers must catch
+    these so one recipient's empty wallet never breaks a whole batch.
+
+    Sent synchronously rather than via Celery: this codebase has no confirmed Celery
+    worker running in production (users/signals.py falls back to sync for the same
+    reason), so queuing SMS there risks messages silently never sending.
+    """
+    debit_tx = charge_sms_wallet(tenant, 1, category, narration=narration, actor=actor, metadata=metadata)
+
+    log = SmsMessageLog.objects.create(
+        tenant=tenant,
+        wallet=debit_tx.wallet,
+        category=category,
+        recipient_phone=phone,
+        message=message,
+        credits_charged=1,
+        created_by=actor,
+    )
+    debit_tx.related_message_log = log
+    debit_tx.save(update_fields=["related_message_log"])
+
+    try:
+        result = send_ebulksms(phone, message, sender=sender)
+    except Exception as exc:
+        result = {"status": "error", "reason": str(exc)}
+
+    ok = result.get("status") not in ("error", "skipped")
+    log.provider_response = result
+    if ok:
+        log.delivery_status = SmsMessageLog.SENT
+        log.sent_at = timezone.now()
+        log.save(update_fields=["delivery_status", "provider_response", "sent_at"])
+    else:
+        log.delivery_status = SmsMessageLog.FAILED
+        log.save(update_fields=["delivery_status", "provider_response"])
+        refund_sms_wallet(debit_tx, reason=str(result.get("reason", "SMS send failed"))[:200])
+        log.delivery_status = SmsMessageLog.REFUNDED
+        log.refunded_at = timezone.now()
+        log.save(update_fields=["delivery_status", "refunded_at"])
+
+    return log
+
+
 def send_termii_whatsapp(to_phone: str, message: str) -> dict:
     """Send WhatsApp message via Termii."""
     api_key = getattr(settings, "TERMII_API_KEY", "")
@@ -3161,14 +3217,19 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
 
     message = "\n".join(lines)
 
+    tenant = getattr(parent_user, "tenant", None)
+
     # ── Route by preferred contact ────────────────────────────
     if preferred == "sms":
         phone = (parent_user.phone or "").strip()
         if not phone:
             return {"success": False, "message": "Parent has no phone number on file."}
-        result = send_ebulksms(phone, message, sender="SchoolDom")
-        ok = result.get("status") not in ("error", "skipped")
-        return {"success": ok, "message": "SMS reminder sent." if ok else f"SMS failed: {result.get('reason', result)}"}
+        try:
+            log = send_wallet_sms(tenant, phone, message, category=SmsMessageLog.FEE_REMINDER, narration="Fee reminder")
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            return {"success": False, "message": str(exc)}
+        ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
+        return {"success": ok, "message": "SMS reminder sent." if ok else "SMS failed to send."}
 
     if preferred == "whatsapp":
         phone = (parent_user.phone or "").strip()
@@ -3177,8 +3238,11 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
         wa_result = send_termii_whatsapp(phone, message)
         if wa_result.get("status") == "success":
             return {"success": True, "message": "WhatsApp reminder sent."}
-        sms_result = send_ebulksms(phone, message, sender="SchoolDom")
-        ok = sms_result.get("status") not in ("error", "skipped")
+        try:
+            log = send_wallet_sms(tenant, phone, message, category=SmsMessageLog.FEE_REMINDER, narration="Fee reminder (WhatsApp fallback)")
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            return {"success": False, "message": f"WhatsApp failed, and SMS fallback failed: {exc}"}
+        ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
         return {"success": ok, "message": "SMS reminder sent (WhatsApp unavailable)." if ok else "WhatsApp and SMS both failed."}
 
     # ── Email (default) ───────────────────────────────────────
@@ -3358,8 +3422,11 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 results["sent"] += 1
             else:
                 # Fallback to eBulkSMS
-                sms_result = send_ebulksms(phone, outgoing_message)
-                sms_ok = sms_result.get("status") not in ("error", "skipped")
+                try:
+                    log = send_wallet_sms(tenant, phone, outgoing_message, category=SmsMessageLog.BULK, narration="Bulk message (WhatsApp fallback)")
+                    sms_ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
+                except (InsufficientSmsCreditsError, SmsWalletLockedError):
+                    sms_ok = False
                 if sms_ok:
                     results["sent"] += 1
                 else:
@@ -3371,13 +3438,18 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 results["failed"] += 1
                 results["errors"].append(f"{name}: no phone number")
                 continue
-            sms_result = send_ebulksms(phone, outgoing_message)
-            sms_ok = sms_result.get("status") not in ("error", "skipped")
+            try:
+                log = send_wallet_sms(tenant, phone, outgoing_message, category=SmsMessageLog.BULK, narration="Bulk message")
+            except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+                results["failed"] += 1
+                results["errors"].append(f"{name}: {exc}")
+                continue
+            sms_ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
             if sms_ok:
                 results["sent"] += 1
             else:
                 results["failed"] += 1
-                results["errors"].append(f"{name}: {sms_result.get('reason', 'SMS failed')}")
+                results["errors"].append(f"{name}: SMS failed to send")
 
     return results
 

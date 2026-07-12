@@ -77,7 +77,12 @@ urlpatterns = [
 
     # Admin: bulk SMS/WhatsApp/Email to selected parents
     path("admin/parents/bulk-message/", views.admin_bulk_message_parents, name="admin_bulk_message_parents"),
-    
+
+    # Admin: SMS wallet (balance, bundle purchase via Paystack, transaction history)
+    path("admin/sms-wallet/", views.sms_wallet_overview, name="sms_wallet_overview"),
+    path("admin/sms-wallet/purchase/<uuid:bundle_id>/", views.sms_wallet_purchase, name="sms_wallet_purchase"),
+    path("admin/sms-wallet/verify/<str:reference>/", views.sms_wallet_verify, name="sms_wallet_verify"),
+
     # ============================================================
     # EXISTING ADMIN ENDPOINTS
     # ============================================================

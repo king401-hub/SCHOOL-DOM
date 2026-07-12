@@ -36,9 +36,11 @@ from finance.services import (
     get_or_create_student_payment_reference,
     initialize_sms_bundle_purchase,
     refund_sms_wallet,
+    send_wallet_sms,
     sync_class_fee_assignments,
     verify_activation_credit_purchase,
 )
+from finance.models import SmsMessageLog
 from notifications.models import Notification
 from tenants.models import Tenant
 from users.models import StudentProfile, User, generate_short_student_id, generate_short_teacher_id
@@ -619,3 +621,51 @@ class SmsWalletTests(TestCase):
 
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, 3)
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_wallet_sms_charges_one_credit_and_logs_sent(self, mock_send):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"status": "success"}
+
+        log = send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.ATTENDANCE)
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 9)
+        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
+        self.assertEqual(log.credits_charged, 1)
+        self.assertIsNotNone(log.sent_at)
+        debit_tx = SmsWalletTransaction.objects.get(related_message_log=log)
+        self.assertEqual(debit_tx.tx_type, SmsWalletTransaction.DEBIT)
+        self.assertEqual(debit_tx.balance_before, 10)
+        self.assertEqual(debit_tx.balance_after, 9)
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_wallet_sms_refunds_on_provider_failure(self, mock_send):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"status": "error", "reason": "Invalid phone format"}
+
+        log = send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.ATTENDANCE)
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 10)
+        self.assertEqual(log.delivery_status, SmsMessageLog.REFUNDED)
+        self.assertIsNotNone(log.refunded_at)
+        self.assertEqual(
+            SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.REFUND).count(), 1
+        )
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_wallet_sms_raises_before_sending_when_balance_insufficient(self, mock_send):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        with self.assertRaises(InsufficientSmsCreditsError):
+            send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.ATTENDANCE)
+
+        mock_send.assert_not_called()
+        self.assertEqual(SmsMessageLog.objects.filter(wallet=wallet).count(), 0)

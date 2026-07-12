@@ -30,6 +30,8 @@ from finance.models import (
     FinanceLedgerLog,
     ParentVirtualAccount,
     SchoolFee,
+    SmsBundle,
+    SmsWalletTransaction,
     StudentActivationCredit,
     StudentPaymentReference,
     Transaction,
@@ -105,6 +107,12 @@ from finance.services import (
     provision_parent_virtual_account,
     verify_paystack_transaction,
     verify_paystack_webhook_signature,
+    # SMS wallet
+    get_or_create_sms_wallet,
+    initialize_sms_bundle_purchase,
+    credit_sms_wallet_from_purchase,
+    InsufficientSmsCreditsError,
+    SmsWalletLockedError,
 )
 from hr.models import PayrollRecord, StaffProfile
 from tenants.models import Tenant
@@ -2729,4 +2737,110 @@ def admin_bulk_message_parents(request):
         "failed": result["failed"],
         "skipped": result.get("skipped", 0),
         "errors": result["errors"][:10],
+    })
+
+
+def _sms_wallet_transaction_payload(tx):
+    return {
+        "id": str(tx.id),
+        "reference": tx.reference,
+        "tx_type": tx.tx_type,
+        "status": tx.status,
+        "credits": tx.credits,
+        "balance_before": tx.balance_before,
+        "balance_after": tx.balance_after,
+        "amount": str(tx.amount),
+        "narration": tx.narration,
+        "created_at": tx.created_at,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sms_wallet_overview(request):
+    """SMS wallet balance + purchasable bundles + recent transactions for the admin's school."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    wallet = get_or_create_sms_wallet(user.tenant)
+    bundles = SmsBundle.objects.filter(is_active=True)
+    recent_transactions = wallet.transactions.all()[:20]
+
+    return Response({
+        "success": True,
+        "wallet": {
+            "balance": wallet.balance,
+            "low_balance_threshold": wallet.low_balance_threshold,
+            "is_locked": wallet.is_locked,
+        },
+        "bundles": [
+            {
+                "id": str(b.id),
+                "name": b.name,
+                "credits": b.credits,
+                "bonus_credits": b.bonus_credits,
+                "price": str(b.price),
+                "currency": b.currency,
+            }
+            for b in bundles
+        ],
+        "recent_transactions": [_sms_wallet_transaction_payload(tx) for tx in recent_transactions],
+        "paystack_public_key": getattr(settings, "PAYSTACK_PUBLIC_KEY", ""),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def sms_wallet_purchase(request, bundle_id):
+    """Start a Paystack-funded SMS bundle purchase."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        result = initialize_sms_bundle_purchase(user.tenant, bundle_id, actor=user)
+    except SmsBundle.DoesNotExist:
+        return Response({"success": False, "message": "SMS bundle not found or no longer active."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    return Response({
+        "success": True,
+        "reference": result["reference"],
+        "authorization_url": result["authorization_url"],
+        "access_code": result["access_code"],
+        "amount": str(result["amount"]),
+        "credits": result["credits"],
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def sms_wallet_verify(request, reference):
+    """Verify a Paystack SMS bundle payment and credit the wallet (also self-heals if the
+    webhook already credited it — credit_sms_wallet_from_purchase is idempotent)."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        tx = credit_sms_wallet_from_purchase(reference)
+    except SmsWalletTransaction.DoesNotExist:
+        return Response({"success": False, "message": "Purchase reference not found."}, status=status.HTTP_404_NOT_FOUND)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    wallet = get_or_create_sms_wallet(user.tenant)
+    return Response({
+        "success": True,
+        "message": "SMS wallet credited.",
+        "wallet": {"balance": wallet.balance},
+        "transaction": _sms_wallet_transaction_payload(tx),
     })
