@@ -4271,6 +4271,32 @@ def students_snapshot(request):
     )
 
 
+def _reconcile_stuck_child_monitor_payments(parents):
+    """
+    Self-heal Child Monitor subscriptions that were paid for but never activated
+    (e.g. the popup callback never fired and the webhook was missed). Only checks
+    parents with a pending reference and no active subscription — a small, bounded
+    set — so this stays cheap on every parent-directory page load.
+    """
+    from finance.services import verify_paystack_transaction
+
+    for parent in parents:
+        try:
+            sub = parent.kids_monitor
+        except KidsMonitorSubscription.DoesNotExist:
+            continue
+        if sub.is_active or not sub.paystack_ref:
+            continue
+        try:
+            tx = verify_paystack_transaction(sub.paystack_ref)
+        except Exception:
+            continue
+        if tx.get("status") in ("success", "successful"):
+            sub.is_active = True
+            sub.activated_at = timezone.now()
+            sub.save(update_fields=["is_active", "activated_at", "updated_at"])
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def parents_snapshot(request):
@@ -4295,6 +4321,9 @@ def parents_snapshot(request):
     total = parents.count()
     with_children = parents.filter(children__isnull=False).distinct().count()
 
+    parents_list = list(parents[:200])
+    _reconcile_stuck_child_monitor_payments(parents_list)
+
     return Response(
         {
             "success": True,
@@ -4305,8 +4334,8 @@ def parents_snapshot(request):
                 "without_children": max(total - with_children, 0),
             },
             "paystack_public_key": getattr(settings, "PAYSTACK_PUBLIC_KEY", ""),
-            "child_monitor_price": 1000,
-            "parents": [_parent_payload(parent, request=request) for parent in parents[:200]],
+            "child_monitor_price": KIDS_MONITOR_PRICE,
+            "parents": [_parent_payload(parent, request=request) for parent in parents_list],
         }
     )
 
@@ -9816,7 +9845,7 @@ def delete_message(request, message_id):
 # Kids Monitor
 # ─────────────────────────────────────────────
 
-KIDS_MONITOR_PRICE = 1000  # ₦1,000 in naira
+KIDS_MONITOR_PRICE = 100  # ₦100 in naira
 
 
 def _kids_monitor_parent_payload(parent_profile):
