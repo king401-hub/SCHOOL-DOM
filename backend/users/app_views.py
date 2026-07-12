@@ -9845,7 +9845,7 @@ def delete_message(request, message_id):
 # Kids Monitor
 # ─────────────────────────────────────────────
 
-KIDS_MONITOR_PRICE = 100  # ₦100 in naira
+KIDS_MONITOR_PRICE = 1000  # ₦1,000 in naira
 
 
 def _kids_monitor_parent_payload(parent_profile):
