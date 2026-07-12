@@ -23020,6 +23020,19 @@ body[data-dashboard-role="student"] .student-subject-card span {
   margin-left: 0.35rem;
 }
 
+.bulk-sms-counter {
+  display: block;
+  font-weight: 400;
+  color: #94a3b8;
+  font-size: 0.76rem;
+  margin-top: 0.35rem;
+}
+
+.bulk-sms-counter--limit {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 /* Controls row */
 .bulk-controls-row {
   display: flex;

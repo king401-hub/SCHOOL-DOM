@@ -820,6 +820,7 @@ class PaymentReceiptLink(models.Model):
     TYPE_CHOICES = [(RECEIPT, "Receipt"), (BILL, "Bill")]
 
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    short_code = models.CharField(max_length=12, unique=True, null=True, blank=True, editable=False)
     receipt_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=RECEIPT)
     tenant = models.ForeignKey(
         "core.SchoolTenant",
@@ -834,7 +835,18 @@ class PaymentReceiptLink(models.Model):
     expires_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        indexes = [models.Index(fields=["token"])]
+        indexes = [
+            models.Index(fields=["token"]),
+            models.Index(fields=["short_code"], name="finance_pay_short_c_5f6a89_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.short_code:
+            code = uuid.uuid4().hex[:8]
+            while PaymentReceiptLink.objects.filter(short_code=code).exists():
+                code = uuid.uuid4().hex[:8]
+            self.short_code = code
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"ReceiptLink({self.receipt_type} {self.token})"

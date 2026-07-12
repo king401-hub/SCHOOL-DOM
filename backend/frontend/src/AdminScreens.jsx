@@ -355,7 +355,16 @@ function GuardianSmsComposer({ recipients = [], smsConfigured = false, onSend })
       <form className="panel-form" onSubmit={handleSubmit}>
         <label className="panel-field full">
           Message
-          <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows="4" placeholder="Type the SMS parents should receive." />
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value.slice(0, 160))}
+            maxLength={160}
+            rows="4"
+            placeholder="Type the SMS parents should receive."
+          />
+          <span className={`bulk-sms-counter${message.length >= 160 ? " bulk-sms-counter--limit" : ""}`}>
+            {message.length}/160 characters (SMS limit)
+          </span>
         </label>
         <div className="panel-form-grid">
           <label className="panel-field">
@@ -7482,7 +7491,10 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                       key={val}
                       type="button"
                       className={`bulk-channel-btn${bulkChannel === val ? " active" : ""}`}
-                      onClick={() => setBulkChannel(val)}
+                      onClick={() => {
+                        setBulkChannel(val);
+                        if (val === "sms") setBulkMessage((prev) => prev.slice(0, 160));
+                      }}
                     >
                       {label}
                     </button>
@@ -7497,7 +7509,10 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                       key={tpl}
                       type="button"
                       className="bulk-template-btn"
-                      onClick={() => setBulkMessage(buildTemplate(tpl))}
+                      onClick={() => {
+                        const text = buildTemplate(tpl);
+                        setBulkMessage(bulkChannel === "sms" ? text.slice(0, 160) : text);
+                      }}
                     >
                       {lbl}
                     </button>
@@ -7511,9 +7526,15 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                     className="bulk-message-field"
                     rows={6}
                     value={bulkMessage}
-                    onChange={(e) => setBulkMessage(e.target.value)}
+                    onChange={(e) => setBulkMessage(bulkChannel === "sms" ? e.target.value.slice(0, 160) : e.target.value)}
+                    maxLength={bulkChannel === "sms" ? 160 : undefined}
                     placeholder="Type your message or pick a template above…"
                   />
+                  {bulkChannel === "sms" && (
+                    <span className={`bulk-sms-counter${bulkMessage.length >= 160 ? " bulk-sms-counter--limit" : ""}`}>
+                      {bulkMessage.length}/160 characters (SMS limit)
+                    </span>
+                  )}
                 </label>
 
                 {/* Select controls + send */}

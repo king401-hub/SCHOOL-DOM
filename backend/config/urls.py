@@ -24,12 +24,14 @@ from django.views.generic import RedirectView
 from django.views.generic import TemplateView
 from django.views.decorators.csrf import csrf_exempt
 from apps.auth.views import LoginView, LogoutView, RegisterView, school_superadmin_dashboard
+from finance.views import receipt_page_short
 from apps.app.views import AppDownloadView, admin_app_download_version, download_admin_app, download_android_apk, download_student_cbt_app, download_student_cbt_win7_app, download_student_cbt_win7_student_app, redirect_student_cbt, student_cbt_app_version, student_cbt_win7_app_version, student_cbt_win7_student_app_version
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
 urlpatterns = [
     path('favicon.ico', RedirectView.as_view(url=static('img/schooldom-favicon.jpeg'), permanent=True)),
+    path('r/<str:short_code>', receipt_page_short, name='receipt_page_short'),
     path('admin/', admin.site.urls),
     path('api/auth/', include('users.urls')),
     path('api/finance/', include('finance.urls')),

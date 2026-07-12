@@ -679,9 +679,16 @@ def _sms_safe_text(text: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", out).strip()
 
 
+SMS_CHAR_LIMIT = 160
+
+
 def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
-    """Send SMS via eBulkSMS JSON API."""
+    """Send SMS via eBulkSMS JSON API. Hard-caps every message at SMS_CHAR_LIMIT
+    chars (single-segment SMS) regardless of which caller composed it."""
     message = _sms_safe_text(message)
+    if len(message) > SMS_CHAR_LIMIT:
+        logger.warning("eBulkSMS message truncated from %d to %d chars", len(message), SMS_CHAR_LIMIT)
+        message = message[: SMS_CHAR_LIMIT - 3].rstrip() + "..."
     username = getattr(settings, "EBULKSMS_USERNAME", "")
     apikey = getattr(settings, "EBULKSMS_APIKEY", "")
     if not username or not apikey:
@@ -756,16 +763,23 @@ def create_receipt_link(
     data: dict,
     tenant=None,
     receipt_type: str = "receipt",
+    phone: str = "",
 ) -> str:
     """Persist receipt/bill data and return a public URL the parent can open."""
     link = PaymentReceiptLink.objects.create(
         data=data,
         tenant=tenant,
         receipt_type=receipt_type,
+        phone=phone,
         expires_at=timezone.now() + timedelta(days=90),
     )
     base_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
-    return f"{base_url}/api/finance/receipt/{link.token}/"
+    return f"{base_url}/r/{link.short_code}"
+
+
+def sms_compact_url(url: str) -> str:
+    """Strip the scheme for compact SMS display, e.g. 'schooldom.academy/r/0c439bc8'."""
+    return re.sub(r"^https?://", "", url)
 
 
 def send_payment_receipt(
@@ -822,6 +836,18 @@ def send_payment_receipt(
         return {"sent": False, "channel": "none", "email_error": str(exc)}
 
 
+def _plain_amount(value) -> str:
+    """Format an amount without a currency symbol or decorative decimals.
+
+    Keeps SMS receipts short - the ₦ sign is non-ASCII and gets stripped by
+    _sms_safe_text anyway, so writing plain numbers avoids relying on that.
+    """
+    d = Decimal(str(value))
+    if d == d.to_integral_value():
+        return f"{d:,.0f}"
+    return f"{d:,.2f}"
+
+
 def build_paystack_receipt_message(
     student_name: str,
     class_name: str,
@@ -830,19 +856,14 @@ def build_paystack_receipt_message(
     payment_status: str,
     school_name: str = "",
 ) -> str:
-    """Build SMS/WhatsApp receipt for a Paystack payment."""
+    """Build a compact SMS/WhatsApp receipt for a Paystack payment (kept short to fit
+    within the 160-char SMS limit alongside the receipt link)."""
     prefix = school_name if school_name else "School"
-    school_tag = f" at {school_name}" if school_name else ""
+    class_tag = f" ({class_name})" if class_name else ""
     if payment_status == "paid":
-        return (
-            f"{prefix}: Payment confirmed! ₦{amount_paid:,.2f} received for "
-            f"{student_name} ({class_name}){school_tag}. Fees FULLY PAID."
-        )
-    remaining = fee_total - amount_paid
-    return (
-        f"{prefix}: ₦{amount_paid:,.2f} received for {student_name} ({class_name}){school_tag}. "
-        f"Outstanding balance: ₦{remaining:,.2f}."
-    )
+        return f"{prefix}: {_plain_amount(amount_paid)} received for {student_name}{class_tag}. Fees FULLY PAID."
+    remaining = Decimal(str(fee_total)) - Decimal(str(amount_paid))
+    return f"{prefix}: {_plain_amount(amount_paid)} received for {student_name}{class_tag}. Outstanding: {_plain_amount(remaining)}."
 
 
 def allocate_split_payment(
@@ -3746,7 +3767,7 @@ def process_virtual_account_payment(
 
             parent_phone = (getattr(parent_user, "phone", "") or "").strip()
             if parent_phone:
-                send_ebulksms(parent_phone, f"{receipt_message} Receipt: {receipt_url}")
+                send_ebulksms(parent_phone, f"{receipt_message} Receipt: {sms_compact_url(receipt_url)}")
         except Exception:
             logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 

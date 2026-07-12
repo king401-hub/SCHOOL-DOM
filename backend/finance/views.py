@@ -366,11 +366,7 @@ def payment_fallback_page(request, student_ref):
     return HttpResponse(html)
 
 
-def receipt_page(request, token):
-    """Public receipt/bill page linked in SMS. No authentication required."""
-    from django.shortcuts import render as django_render
-    from finance.models import PaymentReceiptLink
-    link = get_object_or_404(PaymentReceiptLink, token=token)
+def _render_receipt_link(request, link):
     if link.expires_at and link.expires_at < timezone.now():
         return HttpResponse(
             "<html><body style='font-family:sans-serif;text-align:center;padding:40px'>"
@@ -378,7 +374,22 @@ def receipt_page(request, token):
             "<p>Please contact your school for a copy.</p></body></html>",
             status=410,
         )
+    from django.shortcuts import render as django_render
     return django_render(request, "finance/receipt.html", {"link": link, "data": link.data})
+
+
+def receipt_page(request, token):
+    """Public receipt/bill page linked in SMS (legacy long-token URL). No authentication required."""
+    from finance.models import PaymentReceiptLink
+    link = get_object_or_404(PaymentReceiptLink, token=token)
+    return _render_receipt_link(request, link)
+
+
+def receipt_page_short(request, short_code):
+    """Public receipt/bill page via the compact /r/<code> link used in SMS. No authentication required."""
+    from finance.models import PaymentReceiptLink
+    link = get_object_or_404(PaymentReceiptLink, short_code=short_code)
+    return _render_receipt_link(request, link)
 
 
 def _classes_for_user(user):

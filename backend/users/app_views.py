@@ -9507,13 +9507,14 @@ def send_message(request):
             receipt_type="report_card",
         )
 
+        from finance.services import sms_compact_url
         sms_parts = [f"{school_name} Report Card: {student_name}."]
         if class_name:
             sms_parts.append(f"Class: {class_name}.")
-        sms_parts.append(f"Total: {total_score}, Avg: {average_score}.")
+        sms_parts.append(f"Avg: {average_score}.")
         if class_position:
             sms_parts.append(f"Position: {class_position}/{class_size}.")
-        sms_parts.append(f"View: {report_url}")
+        sms_parts.append(f"View: {sms_compact_url(report_url)}")
         sms_body = " ".join(sms_parts)
 
         try:
