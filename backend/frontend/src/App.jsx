@@ -4282,6 +4282,17 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             icon="results"
             tone="emerald"
           />
+          <MetricCard
+            label="Pending Advances"
+            value={metrics.pending_advances ?? 0}
+            trend={
+              teacherProfile.salary_balance != null
+                ? `Balance: ${NAIRA_SYMBOL}${Number(teacherProfile.salary_balance).toLocaleString()}`
+                : "Request via HR System"
+            }
+            icon="requests"
+            tone="rose"
+          />
         </div>
 
         <article className="app-panel">

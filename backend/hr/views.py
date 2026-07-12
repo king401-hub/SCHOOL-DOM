@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from attendance.models import AttendanceQRCode
 from users.models import User, generate_short_teacher_id, random_code_digits, school_code_letters
 from users.models import TeacherProfile
+from finance.models import ExpenseRecord
 from finance.services import generate_reference, get_or_create_admin_wallet, initiate_admin_withdrawal, record_finance_activity
 from .models import (
     LeaveRequest,
@@ -881,6 +882,7 @@ def review_advance_request(request, advance_id):
     decision = str(request.data.get("status") or "").strip().lower()
     if decision not in {SalaryAdvanceRequest.APPROVED, SalaryAdvanceRequest.REJECTED, SalaryAdvanceRequest.PAID}:
         return Response({"success": False, "message": "status must be approved, rejected, or paid."}, status=status.HTTP_400_BAD_REQUEST)
+    previous_status = advance.status
     advance.status = decision
     advance.approved_by = request.user
     advance.approved_at = timezone.now()
@@ -889,6 +891,30 @@ def review_advance_request(request, advance_id):
         advance.staff.salary_balance -= advance.amount
         advance.staff.save(update_fields=["salary_balance", "updated_at"])
     advance.save(update_fields=["status", "approved_by", "approved_at", "paid_at", "updated_at"])
+    if decision == SalaryAdvanceRequest.PAID and previous_status != SalaryAdvanceRequest.PAID:
+        # Record the payout as a school expense so it deducts from the Expenses ledger immediately;
+        # it is separately netted off the staff member's next payroll run via PayrollRecord.advances_applied.
+        ExpenseRecord.objects.create(
+            tenant=advance.staff.tenant,
+            title=f"Salary advance - {advance.staff.full_name}",
+            vendor=advance.staff.full_name,
+            amount=advance.amount,
+            record_type=ExpenseRecord.TYPE_EXPENSE,
+            category="Salary Advance",
+            status=ExpenseRecord.STATUS_PAID,
+            record_date=timezone.localdate(),
+            note=advance.reason or f"Salary advance paid to {advance.staff.full_name}",
+            created_by=request.user,
+        )
+        record_finance_activity(
+            advance.staff.tenant,
+            request.user,
+            "salary_advance_paid",
+            f"Salary advance of {advance.amount} paid to {advance.staff.full_name}.",
+            amount=advance.amount,
+            reference=str(advance.id),
+            metadata={"staff_id": str(advance.staff_id)},
+        )
     _activity(advance.staff.tenant, advance.staff, request.user, f"advance_{decision}", f"Salary advance {decision}: {advance.amount}")
     return Response({"success": True, "message": f"Salary advance {decision}.", "advance": _advance_payload(advance)})
 

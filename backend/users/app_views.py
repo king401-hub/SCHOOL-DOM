@@ -62,9 +62,10 @@ from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplica
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
 
 try:
-    from hr.models import StaffProfile
+    from hr.models import StaffProfile, SalaryAdvanceRequest as HrSalaryAdvanceRequest
 except Exception:  # pragma: no cover - HR app is optional in older installs
     StaffProfile = None
+    HrSalaryAdvanceRequest = None
 
 logger = logging.getLogger(__name__)
 
@@ -4046,6 +4047,14 @@ def teacher_dashboard(request):
     now = timezone.now()
     teacher_profile = TeacherProfile.objects.select_related("user").filter(user=user).first()
 
+    staff_profile = StaffProfile.objects.filter(tenant=school, user=user).first() if StaffProfile is not None else None
+    salary_balance = staff_profile.salary_balance if staff_profile else None
+    pending_advances_count = (
+        staff_profile.salary_advances.filter(status=HrSalaryAdvanceRequest.PENDING).count()
+        if staff_profile and HrSalaryAdvanceRequest is not None
+        else 0
+    )
+
     exams_qs = _scope_to_user_tenant(
         Exam.objects.select_related("subject", "class_group", "exam_type"),
         user,
@@ -4107,6 +4116,7 @@ def teacher_dashboard(request):
                 "years_of_experience": teacher_profile.years_of_experience if teacher_profile else 0,
                 "subjects_taught": subject_names,
                 "subjects": subjects_payload,
+                "salary_balance": salary_balance,
             },
             "school": _school_payload(school, request),
             "metrics": {
@@ -4119,6 +4129,7 @@ def teacher_dashboard(request):
                 "exams_created": exams_qs.exclude(exam_type__name__iexact="Test").count(),
                 "submitted_results": submitted_attempts_qs.count(),
                 "average_cbt_score": round(float(average_percentage), 1),
+                "pending_advances": pending_advances_count,
             },
             "cbt_results": [
                 {
