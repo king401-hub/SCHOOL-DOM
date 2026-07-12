@@ -30,7 +30,6 @@ from finance.models import (
     FinanceLedgerLog,
     ParentVirtualAccount,
     SchoolFee,
-    SmsBundle,
     SmsWalletTransaction,
     StudentActivationCredit,
     StudentPaymentReference,
@@ -109,10 +108,13 @@ from finance.services import (
     verify_paystack_webhook_signature,
     # SMS wallet
     get_or_create_sms_wallet,
-    initialize_sms_bundle_purchase,
+    initialize_sms_credit_purchase,
     credit_sms_wallet_from_purchase,
     InsufficientSmsCreditsError,
     SmsWalletLockedError,
+    SMS_UNIT_BLOCK_SIZE,
+    SMS_UNIT_BLOCK_PRICE,
+    SMS_UNIT_CURRENCY,
 )
 from hr.models import PayrollRecord, StaffProfile
 from tenants.models import Tenant
@@ -2758,7 +2760,7 @@ def _sms_wallet_transaction_payload(tx):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def sms_wallet_overview(request):
-    """SMS wallet balance + purchasable bundles + recent transactions for the admin's school."""
+    """SMS wallet balance + unit pricing + recent transactions for the admin's school."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
@@ -2766,7 +2768,6 @@ def sms_wallet_overview(request):
         return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
 
     wallet = get_or_create_sms_wallet(user.tenant)
-    bundles = SmsBundle.objects.filter(is_active=True)
     recent_transactions = wallet.transactions.all()[:20]
 
     return Response({
@@ -2776,17 +2777,12 @@ def sms_wallet_overview(request):
             "low_balance_threshold": wallet.low_balance_threshold,
             "is_locked": wallet.is_locked,
         },
-        "bundles": [
-            {
-                "id": str(b.id),
-                "name": b.name,
-                "credits": b.credits,
-                "bonus_credits": b.bonus_credits,
-                "price": str(b.price),
-                "currency": b.currency,
-            }
-            for b in bundles
-        ],
+        "unit_pricing": {
+            "block_size": SMS_UNIT_BLOCK_SIZE,
+            "block_price": str(SMS_UNIT_BLOCK_PRICE),
+            "minimum_units": SMS_UNIT_BLOCK_SIZE,
+            "currency": SMS_UNIT_CURRENCY,
+        },
         "recent_transactions": [_sms_wallet_transaction_payload(tx) for tx in recent_transactions],
         "paystack_public_key": getattr(settings, "PAYSTACK_PUBLIC_KEY", ""),
     })
@@ -2794,18 +2790,20 @@ def sms_wallet_overview(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def sms_wallet_purchase(request, bundle_id):
-    """Start a Paystack-funded SMS bundle purchase."""
+def sms_wallet_purchase(request):
+    """Start a Paystack-funded SMS credit purchase. Body: { units: int } - must be a
+    positive multiple of SMS_UNIT_BLOCK_SIZE."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
     if not user.tenant:
         return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
 
+    units = request.data.get("units")
     try:
-        result = initialize_sms_bundle_purchase(user.tenant, bundle_id, actor=user)
-    except SmsBundle.DoesNotExist:
-        return Response({"success": False, "message": "SMS bundle not found or no longer active."}, status=status.HTTP_404_NOT_FOUND)
+        result = initialize_sms_credit_purchase(user.tenant, units, actor=user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 

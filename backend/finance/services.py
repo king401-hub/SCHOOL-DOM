@@ -2022,6 +2022,14 @@ def verify_activation_credit_purchase(reference, actor=None, verification: Optio
 # pattern above, with balance_before/balance_after added to every ledger row.
 # ============================================================
 
+# Credits are sold in blocks of 100 at a fixed rate - no partial blocks.
+SMS_UNIT_BLOCK_SIZE = 100
+SMS_UNIT_BLOCK_PRICE = Decimal("1000.00")
+SMS_UNIT_CURRENCY = "NGN"
+# Every school's SMS wallet starts with this many free credits.
+SMS_WELCOME_CREDITS = 100
+
+
 class InsufficientSmsCreditsError(Exception):
     """Raised when a school's SMS wallet doesn't have enough credits for a send."""
 
@@ -2031,34 +2039,46 @@ class SmsWalletLockedError(Exception):
 
 
 def get_or_create_sms_wallet(tenant) -> SmsWallet:
-    wallet, _ = SmsWallet.objects.get_or_create(tenant=tenant)
+    wallet, created = SmsWallet.objects.get_or_create(tenant=tenant, defaults={"balance": SMS_WELCOME_CREDITS})
+    if created and SMS_WELCOME_CREDITS:
+        SmsWalletTransaction.objects.create(
+            wallet=wallet,
+            tx_type=SmsWalletTransaction.ADMIN_CREDIT,
+            status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=SMS_WELCOME_CREDITS,
+            balance_before=0,
+            balance_after=wallet.balance,
+            reference=generate_reference("SMSF"),
+            narration="Welcome credit - free SMS units for new schools",
+        )
     return wallet
 
 
-def initialize_sms_bundle_purchase(tenant, bundle_id, actor) -> dict:
-    """Start a Paystack-funded SMS bundle purchase. Paystack-only (like Child Monitor),
-    not routed through the multi-provider initialize_payment_transaction dispatcher."""
-    bundle = SmsBundle.objects.get(pk=bundle_id, is_active=True)
+def initialize_sms_credit_purchase(tenant, units: int, actor) -> dict:
+    """Start a Paystack-funded SMS credit purchase. Credits are sold in fixed blocks of
+    SMS_UNIT_BLOCK_SIZE at SMS_UNIT_BLOCK_PRICE each - no partial blocks, no per-school
+    pricing. Paystack-only (like Child Monitor), not routed through the multi-provider
+    initialize_payment_transaction dispatcher."""
+    units = int(units or 0)
+    if units < SMS_UNIT_BLOCK_SIZE or units % SMS_UNIT_BLOCK_SIZE != 0:
+        raise ValueError(f"SMS credits must be purchased in blocks of {SMS_UNIT_BLOCK_SIZE}, minimum {SMS_UNIT_BLOCK_SIZE}.")
+
     wallet = get_or_create_sms_wallet(tenant)
-    total_credits = bundle.credits + bundle.bonus_credits
+    amount = (Decimal(units) / SMS_UNIT_BLOCK_SIZE) * SMS_UNIT_BLOCK_PRICE
     reference = generate_reference("SMSW")
 
     tx = SmsWalletTransaction.objects.create(
         wallet=wallet,
         tx_type=SmsWalletTransaction.PURCHASE,
         status=SmsWalletTransaction.STATUS_PENDING,
-        credits=total_credits,
-        amount=bundle.price,
+        credits=units,
+        amount=amount,
         reference=reference,
-        bundle=bundle,
-        narration=f"SMS bundle purchase: {bundle.name}",
+        narration=f"SMS credit purchase: {units} units",
         provider="paystack",
         metadata={
             "tenant_id": str(tenant.id) if tenant else "",
-            "bundle_id": str(bundle.id),
-            "purchased_credits": bundle.credits,
-            "bonus_credits": bundle.bonus_credits,
-            "total_credits": total_credits,
+            "units": units,
         },
         created_by=actor,
     )
@@ -2067,12 +2087,12 @@ def initialize_sms_bundle_purchase(tenant, bundle_id, actor) -> dict:
     url = f"{_paystack_base_url()}/transaction/initialize"
     payload = {
         "email": email,
-        "amount": int(bundle.price * 100),
+        "amount": int(amount * 100),
         "reference": reference,
         "metadata": {
             "type": "sms_bundle",
             "tenant_id": str(tenant.id) if tenant else "",
-            "bundle_id": str(bundle.id),
+            "units": units,
             "reference": reference,
         },
     }
@@ -2092,8 +2112,8 @@ def initialize_sms_bundle_purchase(tenant, bundle_id, actor) -> dict:
         "reference": reference,
         "authorization_url": tx_data.get("authorization_url"),
         "access_code": tx_data.get("access_code"),
-        "amount": bundle.price,
-        "credits": total_credits,
+        "amount": amount,
+        "credits": units,
     }
 
 

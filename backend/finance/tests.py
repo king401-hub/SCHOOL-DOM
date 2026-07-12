@@ -13,8 +13,6 @@ from finance.models import (
     ClassFee,
     DocumentGenerationCreditTransaction,
     SchoolFee,
-    SmsBundle,
-    SmsWallet,
     SmsWalletTransaction,
     StudentPaymentReference,
     Transaction,
@@ -34,7 +32,7 @@ from finance.services import (
     get_or_create_activation_credit_pool,
     get_or_create_sms_wallet,
     get_or_create_student_payment_reference,
-    initialize_sms_bundle_purchase,
+    initialize_sms_credit_purchase,
     refund_sms_wallet,
     send_wallet_sms,
     sync_class_fee_assignments,
@@ -443,58 +441,67 @@ class SmsWalletTests(TestCase):
             is_active=True,
             is_verified=True,
         )
-        self.bundle = SmsBundle.objects.create(
-            name="Starter",
-            credits=500,
-            bonus_credits=50,
-            price=Decimal("5000.00"),
-        )
 
-    def test_get_or_create_sms_wallet_is_idempotent(self):
+    def test_get_or_create_sms_wallet_grants_welcome_credit_once(self):
         wallet_a = get_or_create_sms_wallet(self.school)
+        self.assertEqual(wallet_a.balance, 100)
+        welcome_tx = SmsWalletTransaction.objects.get(wallet=wallet_a, tx_type=SmsWalletTransaction.ADMIN_CREDIT)
+        self.assertEqual(welcome_tx.credits, 100)
+        self.assertEqual(welcome_tx.balance_before, 0)
+        self.assertEqual(welcome_tx.balance_after, 100)
+
+        wallet_a.balance = 250
+        wallet_a.save(update_fields=["balance", "updated_at"])
         wallet_b = get_or_create_sms_wallet(self.school)
+
         self.assertEqual(wallet_a.id, wallet_b.id)
-        self.assertEqual(wallet_a.balance, 0)
+        self.assertEqual(wallet_b.balance, 250)  # unchanged - welcome credit only applies once
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet_a, tx_type=SmsWalletTransaction.ADMIN_CREDIT).count(), 1)
+
+    def test_initialize_purchase_rejects_units_not_a_multiple_of_100(self):
+        with self.assertRaises(ValueError):
+            initialize_sms_credit_purchase(self.school, 150, self.admin)
+        with self.assertRaises(ValueError):
+            initialize_sms_credit_purchase(self.school, 50, self.admin)  # below minimum
 
     @patch("finance.services.requests.post")
-    def test_initialize_purchase_creates_pending_transaction(self, mock_post):
+    def test_initialize_purchase_creates_pending_transaction_at_100_per_1000(self, mock_post):
         mock_post.return_value.json.return_value = {
             "status": True,
             "data": {"authorization_url": "https://paystack.test/pay", "access_code": "abc123"},
         }
 
-        result = initialize_sms_bundle_purchase(self.school, self.bundle.id, self.admin)
+        result = initialize_sms_credit_purchase(self.school, 300, self.admin)
 
         tx = SmsWalletTransaction.objects.get(reference=result["reference"])
         self.assertEqual(tx.status, SmsWalletTransaction.STATUS_PENDING)
-        self.assertEqual(tx.credits, 550)
-        self.assertEqual(tx.amount, Decimal("5000.00"))
+        self.assertEqual(tx.credits, 300)
+        self.assertEqual(tx.amount, Decimal("3000.00"))
         self.assertEqual(result["authorization_url"], "https://paystack.test/pay")
         sent_amount_kobo = mock_post.call_args.kwargs["json"]["amount"]
-        self.assertEqual(sent_amount_kobo, 500000)
+        self.assertEqual(sent_amount_kobo, 300000)
 
     @patch("finance.services.verify_paystack_transaction")
-    def test_credit_from_purchase_adds_bundle_plus_bonus_and_records_before_after(self, mock_verify):
-        wallet = get_or_create_sms_wallet(self.school)
+    def test_credit_from_purchase_adds_units_on_top_of_welcome_credit(self, mock_verify):
+        wallet = get_or_create_sms_wallet(self.school)  # starts at 100 (welcome credit)
         tx = SmsWalletTransaction.objects.create(
             wallet=wallet,
             tx_type=SmsWalletTransaction.PURCHASE,
             status=SmsWalletTransaction.STATUS_PENDING,
-            credits=550,
-            amount=Decimal("5000.00"),
+            credits=200,
+            amount=Decimal("2000.00"),
             reference="SMSWTEST0001",
-            bundle=self.bundle,
             created_by=self.admin,
         )
-        mock_verify.return_value = {"status": "success", "amount": 500000}  # kobo
+        mock_verify.return_value = {"status": "success", "amount": 200000}  # kobo
 
         credited_tx = credit_sms_wallet_from_purchase(tx.reference)
         wallet.refresh_from_db()
 
-        self.assertEqual(wallet.balance, 550)
+        self.assertEqual(wallet.balance, 300)
         self.assertEqual(credited_tx.status, SmsWalletTransaction.STATUS_SUCCESS)
-        self.assertEqual(credited_tx.balance_before, 0)
-        self.assertEqual(credited_tx.balance_after, 550)
+        self.assertEqual(credited_tx.balance_before, 100)
+        self.assertEqual(credited_tx.balance_after, 300)
 
     @patch("finance.services.verify_paystack_transaction")
     def test_credit_from_purchase_is_idempotent(self, mock_verify):
@@ -503,13 +510,12 @@ class SmsWalletTests(TestCase):
             wallet=wallet,
             tx_type=SmsWalletTransaction.PURCHASE,
             status=SmsWalletTransaction.STATUS_PENDING,
-            credits=550,
-            amount=Decimal("5000.00"),
+            credits=200,
+            amount=Decimal("2000.00"),
             reference="SMSWTEST0002",
-            bundle=self.bundle,
             created_by=self.admin,
         )
-        mock_verify.return_value = {"status": "success", "amount": 500000}
+        mock_verify.return_value = {"status": "success", "amount": 200000}
 
         credit_sms_wallet_from_purchase(tx.reference)
         # Simulates the webhook and the client-side verify call both firing for the
@@ -517,7 +523,7 @@ class SmsWalletTests(TestCase):
         credit_sms_wallet_from_purchase(tx.reference)
         wallet.refresh_from_db()
 
-        self.assertEqual(wallet.balance, 550)
+        self.assertEqual(wallet.balance, 300)
         self.assertEqual(SmsWalletTransaction.objects.filter(reference=tx.reference).count(), 1)
 
     @patch("finance.services.verify_paystack_transaction")
@@ -527,20 +533,19 @@ class SmsWalletTests(TestCase):
             wallet=wallet,
             tx_type=SmsWalletTransaction.PURCHASE,
             status=SmsWalletTransaction.STATUS_PENDING,
-            credits=550,
-            amount=Decimal("5000.00"),
+            credits=200,
+            amount=Decimal("2000.00"),
             reference="SMSWTEST0003",
-            bundle=self.bundle,
             created_by=self.admin,
         )
-        mock_verify.return_value = {"status": "success", "amount": 100000}  # only NGN1000 paid
+        mock_verify.return_value = {"status": "success", "amount": 100000}  # only NGN1000 paid, needed NGN2000
 
         with self.assertRaises(ValueError):
             credit_sms_wallet_from_purchase(tx.reference)
 
         wallet.refresh_from_db()
         tx.refresh_from_db()
-        self.assertEqual(wallet.balance, 0)
+        self.assertEqual(wallet.balance, 100)  # unchanged from welcome credit
         self.assertEqual(tx.status, SmsWalletTransaction.STATUS_FAILED)
 
     def test_charge_debits_wallet_and_records_before_after(self):
@@ -568,7 +573,7 @@ class SmsWalletTests(TestCase):
 
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, 2)
-        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet).count(), 0)
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.DEBIT).count(), 0)
 
     def test_charge_raises_when_wallet_locked(self):
         wallet = get_or_create_sms_wallet(self.school)
@@ -596,20 +601,20 @@ class SmsWalletTests(TestCase):
         self.assertEqual(refund_tx.metadata["refund_of"], str(debit_tx.id))
 
     def test_adjust_can_credit_and_debit_with_ledger_entry(self):
-        wallet = get_or_create_sms_wallet(self.school)
+        wallet = get_or_create_sms_wallet(self.school)  # starts at 100 (welcome credit)
 
         credit_tx = adjust_sms_wallet(self.school, 20, reason="Goodwill credit", actor=self.admin)
         wallet.refresh_from_db()
-        self.assertEqual(wallet.balance, 20)
+        self.assertEqual(wallet.balance, 120)
         self.assertEqual(credit_tx.tx_type, SmsWalletTransaction.ADJUSTMENT)
-        self.assertEqual(credit_tx.balance_before, 0)
-        self.assertEqual(credit_tx.balance_after, 20)
+        self.assertEqual(credit_tx.balance_before, 100)
+        self.assertEqual(credit_tx.balance_after, 120)
 
         debit_tx = adjust_sms_wallet(self.school, -5, reason="Correction", actor=self.admin)
         wallet.refresh_from_db()
-        self.assertEqual(wallet.balance, 15)
-        self.assertEqual(debit_tx.balance_before, 20)
-        self.assertEqual(debit_tx.balance_after, 15)
+        self.assertEqual(wallet.balance, 115)
+        self.assertEqual(debit_tx.balance_before, 120)
+        self.assertEqual(debit_tx.balance_after, 115)
 
     def test_adjust_raises_rather_than_going_negative(self):
         wallet = get_or_create_sms_wallet(self.school)

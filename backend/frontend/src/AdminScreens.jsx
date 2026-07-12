@@ -7830,7 +7830,11 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
 }
 
 function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase }) {
-  const [payingBundleId, setPayingBundleId] = useState(null);
+  const pricing = data?.unit_pricing || { block_size: 100, block_price: "1000.00", minimum_units: 100, currency: "NGN" };
+  const blockSize = pricing.block_size || 100;
+  const blockPrice = Number(pricing.block_price || 1000);
+  const [units, setUnits] = useState(blockSize);
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     if (window.PaystackPop || !data?.paystack_public_key) return;
@@ -7841,7 +7845,18 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
     document.head.appendChild(s);
   }, [data?.paystack_public_key]);
 
-  const handleBuyBundle = async (bundle) => {
+  const adjustUnits = (delta) => {
+    setUnits((prev) => Math.max(blockSize, prev + delta));
+  };
+
+  const handleUnitsInput = (value) => {
+    const parsed = Math.max(blockSize, Math.round((Number(value) || blockSize) / blockSize) * blockSize);
+    setUnits(parsed);
+  };
+
+  const priceForUnits = (units / blockSize) * blockPrice;
+
+  const handleBuyCredits = async () => {
     if (!window.PaystackPop) {
       await new Promise((resolve, reject) => {
         const existing = document.querySelector('script[src*="paystack.co"]');
@@ -7854,9 +7869,9 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
       }).catch((err) => { alert(err.message); });
     }
     if (!window.PaystackPop) { alert("Payment system unavailable. Try again."); return; }
-    setPayingBundleId(bundle.id);
+    setPaying(true);
     try {
-      const result = await onPurchase(bundle.id);
+      const result = await onPurchase(units);
       if (!result?.success) { alert(result?.message || "Failed to initiate purchase."); return; }
       const verifyPayment = (tx) => {
         const ref = tx?.reference || result.reference;
@@ -7879,12 +7894,11 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
     } catch {
       alert("An error occurred. Please try again.");
     } finally {
-      setPayingBundleId(null);
+      setPaying(false);
     }
   };
 
   const wallet = data?.wallet || {};
-  const bundles = data?.bundles || [];
   const transactions = data?.recent_transactions || [];
   const lowBalance = wallet.balance < (wallet.low_balance_threshold || 50);
 
@@ -7906,43 +7920,43 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
 
           {lowBalance ? (
             <div className="bulk-result error" role="alert">
-              SMS credits are running low. Buy a bundle below to avoid interrupted alerts.
+              SMS credits are running low. Buy more below to avoid interrupted alerts.
             </div>
           ) : null}
 
-          <article className="app-panel">
+          <article className="app-panel cm-pricing-card">
             <h3>Buy SMS Credits</h3>
             {data.paystack_public_key ? (
-              <div className="metric-grid">
-                {bundles.map((bundle) => (
-                  <article key={bundle.id} className="app-panel cm-pricing-card">
-                    <div className="cm-pricing-body">
-                      <div className="cm-pricing-icon">💬</div>
-                      <div className="cm-pricing-info">
-                        <h3 className="cm-pricing-title">{bundle.name}</h3>
-                        <p className="cm-pricing-desc">
-                          {bundle.credits.toLocaleString()} credits
-                          {bundle.bonus_credits > 0 ? ` + ${bundle.bonus_credits.toLocaleString()} bonus` : ""}
-                        </p>
-                      </div>
-                      <div className="cm-pricing-tag">
-                        ₦{Number(bundle.price).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="cm-pricing-meta">
-                      <button
-                        type="button"
-                        className="table-action"
-                        disabled={payingBundleId === bundle.id}
-                        onClick={() => handleBuyBundle(bundle)}
-                      >
-                        {payingBundleId === bundle.id ? "Processing…" : "Buy"}
-                      </button>
-                    </div>
-                  </article>
-                ))}
-                {bundles.length === 0 ? <p className="panel-empty compact">No SMS bundles available yet. Contact SchoolDom support.</p> : null}
-              </div>
+              <>
+                <p className="cm-pricing-desc">
+                  {blockSize.toLocaleString()} credits = ₦{blockPrice.toLocaleString()}. Sold in blocks of {blockSize} - minimum {pricing.minimum_units.toLocaleString()} credits.
+                </p>
+                <div className="cm-pricing-body" style={{ alignItems: "center" }}>
+                  <button type="button" className="table-action" onClick={() => adjustUnits(-blockSize)} disabled={units <= blockSize}>
+                    − {blockSize}
+                  </button>
+                  <input
+                    type="number"
+                    step={blockSize}
+                    min={blockSize}
+                    value={units}
+                    onChange={(e) => handleUnitsInput(e.target.value)}
+                    style={{ width: "110px", textAlign: "center" }}
+                    aria-label="SMS credits to buy"
+                  />
+                  <button type="button" className="table-action" onClick={() => adjustUnits(blockSize)}>
+                    + {blockSize}
+                  </button>
+                  <div className="cm-pricing-tag">
+                    ₦{priceForUnits.toLocaleString()}
+                  </div>
+                </div>
+                <div className="cm-pricing-meta">
+                  <button type="button" className="table-action" disabled={paying} onClick={handleBuyCredits}>
+                    {paying ? "Processing…" : `Buy ${units.toLocaleString()} credits`}
+                  </button>
+                </div>
+              </>
             ) : (
               <p className="panel-empty compact">Payments are not configured for this school yet.</p>
             )}

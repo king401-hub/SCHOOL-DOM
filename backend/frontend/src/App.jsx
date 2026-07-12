@@ -6489,8 +6489,8 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   );
 
   const handleSmsBundlePurchase = useCallback(
-    async (bundleId) => {
-      const result = await requestJson(session, "POST", `/api/finance/admin/sms-wallet/purchase/${bundleId}/`);
+    async (units) => {
+      const result = await requestJson(session, "POST", "/api/finance/admin/sms-wallet/purchase/", { units });
       return result;
     },
     [session]
