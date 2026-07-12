@@ -585,7 +585,8 @@ export default function AiChatWidget({ session }) {
   const historyActive = mode === "secretary" ? secShowHistory : mode === "history";
 
   // If the toggle button has been dragged too close to the top for the panel to fit
-  // above it, open the panel downward instead so it stays fully on-screen.
+  // above it, open the panel downward instead so it stays fully on-screen. The button
+  // itself always stays exactly where it was dragged - only the panel's anchor flips.
   const PANEL_HEIGHT_ESTIMATE = typeof window !== "undefined" ? Math.min(580, window.innerHeight - 112) : 580;
   const TOGGLE_SIZE = 54;
   const SHELL_GAP = 12;
@@ -593,12 +594,9 @@ export default function AiChatWidget({ session }) {
   const openBelow = open && spaceAbove < PANEL_HEIGHT_ESTIMATE + SHELL_GAP;
 
   return (
-    <div
-      className="ai-chat-shell"
-      style={{ right: pos.right, bottom: pos.bottom, flexDirection: openBelow ? "column-reverse" : "column" }}
-    >
+    <div className="ai-chat-shell" style={{ right: pos.right, bottom: pos.bottom }}>
       {open && (
-        <div className="ai-chat-panel" role="dialog" aria-label="Phoenix AI">
+        <div className={`ai-chat-panel${openBelow ? " ai-chat-panel--below" : ""}`} role="dialog" aria-label="Phoenix AI">
 
           {/* Header */}
           <header className="ai-chat-header">

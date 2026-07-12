@@ -2340,12 +2340,10 @@ body[data-dashboard-role="student"] .global-notification-button {
 }
 
 .ai-chat-shell {
+  /* Shell's box == the toggle button's box; the panel is positioned absolutely
+     off it (above or below) so dragging the button never moves the panel's anchor. */
   position: fixed;
   z-index: 1300;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.75rem;
 }
 
 /* Toggle button */
@@ -2407,6 +2405,9 @@ body[data-dashboard-role="student"] .global-notification-button {
 
 /* Panel */
 .ai-chat-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.75rem);
   width: min(380px, calc(100vw - 2rem));
   height: min(580px, calc(100vh - 7rem));
   background: #ffffff;
@@ -2417,6 +2418,10 @@ body[data-dashboard-role="student"] .global-notification-button {
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
   animation: ai-panel-in 230ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ai-chat-panel.ai-chat-panel--below {
+  bottom: auto;
+  top: calc(100% + 0.75rem);
 }
 
 /* Header */
