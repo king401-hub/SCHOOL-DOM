@@ -5529,7 +5529,7 @@ const ADMIN_ROUTE_ICONS = {
   "/parents": Users,
   "/id-cards": CreditCard,
   "/documents": FileText,
-  "/staff": Users,
+  "/people-group": Users,
   "/teachers": BookOpen,
   "/non-teaching-staff": Briefcase,
   "/classes": School,
@@ -5541,14 +5541,21 @@ const ADMIN_ROUTE_ICONS = {
   "/messages": MessageSquare,
   "/loan-application": Banknote,
   "/settings": Settings,
+  "/finance-group": DollarSign,
+  "/admin-group": CreditCard,
 };
 
 const ADMIN_NAV_SECTIONS = [
   { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
+  { label: "People", paths: ["/people-group"] },
   { label: "Academics", paths: ["/academics-group"] },
-  { label: "People", paths: ["/students", "/parents", "/staff"] },
-  { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr/activity", "/hr-self-service", "/loan-application"] },
-  { label: "Administration", paths: ["/id-cards", "/documents", "/database-import", "/messages", "/settings"] },
+  { label: "Finance & HR", paths: ["/finance-group"] },
+  { label: "Administration", paths: ["/admin-group"] },
+];
+
+const ACCOUNTANT_NAV_SECTIONS = [
+  { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr-self-service"] },
+  { label: "Administration", paths: ["/messages"] },
 ];
 
 function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreference, onThemeChange, onSessionUpdate }) {
@@ -7190,7 +7197,8 @@ const unreadNotificationsCount =
 
   const sectionedNav = useMemo(() => {
     const used = new Set();
-    const sections = ADMIN_NAV_SECTIONS.map(({ label, paths }) => {
+    const navSections = isAccountant ? ACCOUNTANT_NAV_SECTIONS : ADMIN_NAV_SECTIONS;
+    const sections = navSections.map(({ label, paths }) => {
       const routes = paths.map((p) => routeByPath[p]).filter(Boolean);
       routes.forEach((r) => used.add(r.path));
       return { label, routes };
@@ -7205,6 +7213,7 @@ const unreadNotificationsCount =
     if (route.children) {
       const isOpen = dropdownOpen === route.path;
       const hasActive = route.children.some((c) => activePath === c.path);
+      const hasUnreadMessages = route.children.some((c) => c.path === "/messages") && unreadNotificationsCount > 0;
       return (
         <div key={route.path} className="nav-dropdown">
           <button
@@ -7216,6 +7225,9 @@ const unreadNotificationsCount =
               {IconComp ? <IconComp size={17} strokeWidth={1.8} /> : null}
             </span>
             <span className="nav-item-label">{route.label}</span>
+            {hasUnreadMessages ? (
+              <strong className="nav-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
+            ) : null}
             <span className="nav-chevron">
               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </span>
@@ -7235,6 +7247,9 @@ const unreadNotificationsCount =
                       {ChildIcon ? <ChildIcon size={15} strokeWidth={1.8} /> : null}
                     </span>
                     <span className="nav-item-label">{child.label}</span>
+                    {child.path === "/messages" && unreadNotificationsCount > 0 ? (
+                      <strong className="nav-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
+                    ) : null}
                   </button>
                 );
               })}

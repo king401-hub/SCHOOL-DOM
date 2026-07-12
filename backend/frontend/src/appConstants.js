@@ -25,17 +25,12 @@ export const TEACHER_ATTENDANCE_PREFIX = "/attendance/scan/";
 export const ADMIN_ROUTES = [
   { path: "/dashboard", label: "Dashboard" },
   { path: "/performance-heatmap", label: "Performance Analytics" },
-  { path: "/finance", label: "Finance" },
-  { path: "/expenses", label: "Expenses" },
-  { path: "/hr/activity", label: "HR Management" },
-  { path: "/students", label: "Students" },
-  { path: "/parents", label: "Parent Directory" },
-  { path: "/id-cards", label: "ID Cards" },
-  { path: "/documents", label: "Transcripts & Testimonials" },
   {
-    path: "/staff",
-    label: "Staffs",
+    path: "/people-group",
+    label: "People",
     children: [
+      { path: "/students", label: "Students" },
+      { path: "/parents", label: "Parent Directory" },
       { path: "/teachers", label: "Teachers" },
       { path: "/non-teaching-staff", label: "Non-Teaching Staff" },
     ]
@@ -51,10 +46,27 @@ export const ADMIN_ROUTES = [
       { path: "/results", label: "Results" },
     ]
   },
-  { path: "/database-import", label: "Database Import" },
-  { path: "/messages", label: "Messages" },
-  { path: "/loan-application", label: "Loan Application" },
-  { path: "/settings", label: "Settings" },
+  {
+    path: "/finance-group",
+    label: "Finance & HR",
+    children: [
+      { path: "/finance", label: "Finance" },
+      { path: "/expenses", label: "Expenses" },
+      { path: "/hr/activity", label: "HR Management" },
+      { path: "/loan-application", label: "Loan Application" },
+    ]
+  },
+  {
+    path: "/admin-group",
+    label: "Administration",
+    children: [
+      { path: "/id-cards", label: "ID Cards" },
+      { path: "/documents", label: "Transcripts & Testimonials" },
+      { path: "/database-import", label: "Database Import" },
+      { path: "/messages", label: "Messages" },
+      { path: "/settings", label: "Settings" },
+    ]
+  },
 ];
 export const ACCOUNTANT_ROUTES = [
   { path: "/finance", label: "Finance" },
@@ -69,8 +81,10 @@ export const ADMIN_ROUTE_SET = new Set([
 ]);
 export const ADMIN_ROUTE_REDIRECTS = {
   "/hr": "/hr/activity",
-  "/staff": "/teachers",
+  "/people-group": "/students",
   "/academics-group": "/classes",
+  "/finance-group": "/finance",
+  "/admin-group": "/id-cards",
 };
 export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",

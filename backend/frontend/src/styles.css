@@ -2342,8 +2342,9 @@ body[data-dashboard-role="student"] .global-notification-button {
 .ai-chat-shell {
   position: fixed;
   z-index: 1300;
-  display: grid;
-  justify-items: end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 0.75rem;
 }
 

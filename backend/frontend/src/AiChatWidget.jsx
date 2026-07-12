@@ -584,8 +584,19 @@ export default function AiChatWidget({ session }) {
 
   const historyActive = mode === "secretary" ? secShowHistory : mode === "history";
 
+  // If the toggle button has been dragged too close to the top for the panel to fit
+  // above it, open the panel downward instead so it stays fully on-screen.
+  const PANEL_HEIGHT_ESTIMATE = typeof window !== "undefined" ? Math.min(580, window.innerHeight - 112) : 580;
+  const TOGGLE_SIZE = 54;
+  const SHELL_GAP = 12;
+  const spaceAbove = typeof window !== "undefined" ? window.innerHeight - pos.bottom - TOGGLE_SIZE : Infinity;
+  const openBelow = open && spaceAbove < PANEL_HEIGHT_ESTIMATE + SHELL_GAP;
+
   return (
-    <div className="ai-chat-shell" style={{ right: pos.right, bottom: pos.bottom }}>
+    <div
+      className="ai-chat-shell"
+      style={{ right: pos.right, bottom: pos.bottom, flexDirection: openBelow ? "column-reverse" : "column" }}
+    >
       {open && (
         <div className="ai-chat-panel" role="dialog" aria-label="Phoenix AI">
 
