@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
+import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
 
 interface HeroProps {
   onSignIn: () => void;
@@ -264,7 +264,10 @@ export default function Hero({ onDemo }: HeroProps) {
 
         {/* CTAs */}
         <div style={anim(300)} className="flex flex-wrap gap-4 justify-center mb-12">
-          <button onClick={onDemo} className="btn-primary text-base px-8 py-4">
+          <a href="/#/signup" className="btn-primary text-base px-8 py-4">
+            Get Started Free <ArrowRight className="h-4 w-4" />
+          </a>
+          <button onClick={onDemo} className="btn-ghost text-base px-8 py-4">
             <Play className="h-4 w-4" /> See Live Demo
           </button>
         </div>

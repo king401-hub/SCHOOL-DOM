@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { CheckCircle, Star, Zap, Shield, Users, Eye } from 'lucide-react';
+import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye } from 'lucide-react';
 
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
@@ -137,6 +137,10 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
+
+              <a href="/#/signup?tier=k12" className="w-full btn-primary justify-center py-4 text-base">
+                Start with K-12 <ArrowRight className="h-4 w-4" />
+              </a>
             </div>
           </div>
 
@@ -193,6 +197,12 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
+
+              <a href="/#/signup?tier=non_k12"
+                className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
+                style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)' }}>
+                Start with Non-K12 <ArrowRight className="h-4 w-4 inline ml-2" />
+              </a>
             </div>
           </div>
         </div>

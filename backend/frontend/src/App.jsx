@@ -130,6 +130,7 @@ const DAILY_PERSONAL_QUESTION_LIMIT = 20;
 const ADMIN_ACTIVITY_LOG_KEY = "schooldom.admin_activity_notifications";
 const STUDENT_CBT_DESKTOP_PATH = "/student-cbt";
 const TEACHER_TAB_STORAGE_KEY = "schooldom.teacher_active_tab";
+const LANDING_PAGE_URL = import.meta.env.VITE_LANDING_PAGE_URL || (import.meta.env.PROD ? "/" : "http://localhost:5174");
 
 function isMobileQuizViewport() {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -8688,14 +8689,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       );
     }
     if (currentPath === "/") {
-      if (import.meta.env.PROD) {
-        // The public landing page is a separate app served by nginx at the site
-        // root; leave the SPA entirely so client-side "back" can't resurrect
-        // the old embedded landing page.
-        window.location.replace("/");
-        return null;
-      }
-      return withGlobalHome(<Signin onAuthenticated={handleAuthenticated} onBack={() => navigate("/")} />);
+      // The public landing page is a separate app (served by nginx at the site
+      // root in production, or its own dev server locally); leave the SPA
+      // entirely so client-side "back" can't resurrect the old embedded
+      // landing page or just re-render this same Signin screen.
+      window.location.replace(LANDING_PAGE_URL);
+      return null;
     }
     if (currentPath === "/resource") {
       return withGlobalHome(<ResourceCenter onNavigate={navigate} />);

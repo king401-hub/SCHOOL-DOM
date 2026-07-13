@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { AuroraBackground, ParticleField, CursorSpotlight, ScrollProgress, IconConstellation } from './components/Background';
 import Navbar from './components/Navbar';
@@ -10,6 +11,10 @@ import Pricing from './components/Pricing';
 import Footer from './components/Footer';
 import FAQPage from './pages/FAQ';
 import ContactPage from './pages/Contact';
+
+const SignUpPage = lazy(() => import('./pages/SignUp'));
+
+const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || ((import.meta as any).env?.PROD ? '/app/' : 'http://localhost:5173/');
 
 function WhatsAppButton() {
   return (
@@ -30,7 +35,7 @@ function WhatsAppButton() {
 }
 
 function HomePage() {
-  const handleSignIn = () => { window.location.href = '/app/sign-in'; };
+  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}sign-in`; };
   const handleDemo = () => { document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }); };
 
   return (
@@ -46,7 +51,7 @@ function HomePage() {
 }
 
 export default function App() {
-  const handleSignIn = () => { window.location.href = '/app/sign-in'; };
+  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}sign-in`; };
 
   return (
     <HashRouter>
@@ -64,6 +69,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/faq" element={<FAQPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="/signup" element={<Suspense fallback={null}><SignUpPage /></Suspense>} />
           </Routes>
         </main>
 

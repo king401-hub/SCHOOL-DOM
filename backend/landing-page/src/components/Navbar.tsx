@@ -132,7 +132,8 @@ export default function Navbar({ onSignIn }: NavbarProps) {
 
           <div className="hidden md:flex items-center gap-3">
             <ThemeToggle />
-            <button onClick={onSignIn} className="btn-primary text-sm px-5 py-2">Sign In</button>
+            <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">Sign In</button>
+            <a href="/#/signup" className="btn-primary text-sm px-5 py-2">Get Started Free</a>
           </div>
 
           <div className="md:hidden flex items-center gap-2">
@@ -164,8 +165,9 @@ export default function Navbar({ onSignIn }: NavbarProps) {
               <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">FAQ</a>
               <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">Contact</a>
             </div>
-            <div className="p-4 border-t border-white/5">
-              <button onClick={onSignIn} className="w-full btn-primary text-sm py-2.5 justify-center">Sign In</button>
+            <div className="p-4 border-t border-white/5 space-y-2">
+              <a href="/#/signup" className="w-full btn-primary text-sm py-2.5 justify-center">Get Started Free</a>
+              <button onClick={onSignIn} className="w-full btn-ghost text-sm py-2.5 justify-center">Sign In</button>
             </div>
           </div>
         </div>

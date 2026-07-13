@@ -382,3 +382,22 @@ input:focus, select:focus, textarea:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(34,197,94,0.3);
 }
+
+/* --- Spinner (uses currentColor so it matches whatever button/text it sits in) --- */
+@keyframes sd-spin { to { transform: rotate(360deg); } }
+.sd-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2.5px solid currentColor;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  opacity: 0.9;
+  animation: sd-spin 0.65s linear infinite;
+}
+
+/* --- Sign-up page: a touch duller/less stark than the standard light theme --- */
+.light .signup-shell .sd-card { background: #eef1f6; border-color: rgba(15, 23, 42, 0.09); }
+.light .signup-shell .sd-input { background: #f3f5f9; border-color: rgba(15, 23, 42, 0.13); }
+.light .signup-shell { background: #e4e9f0; }
