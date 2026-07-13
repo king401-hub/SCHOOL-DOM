@@ -174,8 +174,6 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [mode, setMode] = useState(() => {
     const path = window.location.pathname;
     const query = new URLSearchParams(window.location.search);
-    const token = query.get("token");
-    if (path === "/reset-password" || token) return "reset";
     if (path === "/forgot-password") return "forgot";
     if (query.get("mode") === "signup") return "signup";
     return initialMode || "signin";
@@ -207,11 +205,12 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [otpDebugCode, setOtpDebugCode] = useState("");
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
-  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token") || "");
+  const [resetOtpCode, setResetOtpCode] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
+  const [isResendingReset, setIsResendingReset] = useState(false);
 
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showCreateSchool, setShowCreateSchool] = useState(false);
@@ -326,8 +325,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const canCreateSchool = useMemo(() => schoolName.trim().length >= 3, [schoolName]);
   const canRequestReset = useMemo(() => forgotEmail.trim().length > 0, [forgotEmail]);
   const canResetPassword = useMemo(
-    () => resetToken.trim().length > 0 && resetPassword.length >= 8 && resetPassword === resetConfirmPassword,
-    [resetConfirmPassword, resetPassword, resetToken]
+    () => resetOtpCode.trim().length === 6 && resetPassword.length >= 8 && resetPassword === resetConfirmPassword,
+    [resetConfirmPassword, resetOtpCode, resetPassword]
   );
 
   const clearSession = () => {
@@ -643,11 +642,40 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       const data = await postAuth("/api/auth/password-reset/", {
         email: forgotEmail.trim(),
       });
-      setSuccessMessage(data.message || "If that account exists, a reset link has been sent.");
+      if (data.requires_otp) {
+        setOtpChallenge(data.otp_challenge);
+        setOtpExpiresIn(data.otp_expires_in || 600);
+        setOtpDebugCode(data.debug_otp || "");
+        setResetOtpCode("");
+        setMode("reset");
+      }
+      setSuccessMessage(data.message || "If that account exists, a 6-digit code has been sent.");
     } catch (requestError: any) {
-      setError(requestError.message || "Could not send reset email.");
+      setError(requestError.message || "Could not send the reset code.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleResendResetOtp = async () => {
+    if (!forgotEmail || isResendingReset) return;
+    setError("");
+    setSuccessMessage("");
+    setIsResendingReset(true);
+    try {
+      const data = await postAuth("/api/auth/password-reset/resend/", {
+        email: forgotEmail.trim(),
+        challenge: otpChallenge,
+      });
+      setOtpChallenge(data.otp_challenge || otpChallenge);
+      setOtpExpiresIn(data.otp_expires_in || 600);
+      setOtpDebugCode(data.debug_otp || "");
+      setResetOtpCode("");
+      setSuccessMessage(data.message || "A new code has been sent.");
+    } catch (requestError: any) {
+      setError(requestError.message || "Could not resend the code.");
+    } finally {
+      setIsResendingReset(false);
     }
   };
 
@@ -658,10 +686,13 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
     setIsSubmitting(true);
     try {
       const data = await postAuth("/api/auth/password-reset/confirm/", {
-        token: resetToken.trim(),
+        email: forgotEmail.trim(),
+        code: resetOtpCode.trim(),
+        challenge: otpChallenge,
         password: resetPassword,
         confirm_password: resetConfirmPassword,
       });
+      setResetOtpCode("");
       setResetPassword("");
       setResetConfirmPassword("");
       setPassword("");
@@ -670,7 +701,6 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       setSchoolError("");
       setSchoolSuccess("");
       setSuccessMessage(data.message || "Password reset successful. You can sign in now.");
-      window.history.replaceState({}, "", "/signin");
     } catch (requestError: any) {
       setError(requestError.message || "Password reset failed.");
     } finally {
@@ -815,7 +845,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                 </div>
                 {mode === "forgot" ? (
                   <form className="signup-form" onSubmit={handleForgotPassword} noValidate>
-                    <p className="help-text">Enter your account email and we will send a secure reset link.</p>
+                    <p className="help-text">Enter your account email and we will send a 6-digit code to reset your password.</p>
                     <label htmlFor="forgot-email">Email address</label>
                     <div className="input-wrap">
                       <span className="input-icon">@</span>
@@ -832,7 +862,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                     {error ? <p className="error-text">{error}</p> : null}
                     {successMessage ? <p className="success-text">{successMessage}</p> : null}
                     <button type="submit" className="signup-button" disabled={!canRequestReset || isSubmitting}>
-                      {isSubmitting ? "Sending reset link..." : "Send reset link"}
+                      {isSubmitting ? "Sending code..." : "Send reset code"}
                     </button>
                     <button type="button" className="create-school-trigger" onClick={() => switchMode("signin")}>
                       Back to sign in
@@ -840,19 +870,33 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                   </form>
                 ) : mode === "reset" ? (
                   <form className="signup-form" onSubmit={handleResetPassword} noValidate>
-                    <label htmlFor="reset-token">Reset token</label>
+                    <p className="help-text">
+                      We sent a 6-digit code to <strong>{forgotEmail}</strong>. Enter it below with your new password.
+                    </p>
+                    <label htmlFor="reset-otp-code">Verification code</label>
                     <div className="input-wrap">
-                      <span className="input-icon">T</span>
+                      <span className="input-icon">#</span>
                       <input
-                        id="reset-token"
+                        id="reset-otp-code"
                         type="text"
-                        value={resetToken}
-                        onChange={(event) => setResetToken(event.target.value)}
-                        placeholder="Paste reset token"
-                        autoComplete="off"
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        value={resetOtpCode}
+                        onChange={(event) => setResetOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="000000"
+                        autoComplete="one-time-code"
                         required
                       />
                     </div>
+                    <p className="help-text">
+                      Code expires in about {Math.max(Math.ceil(Number(otpExpiresIn || 0) / 60), 1)} minutes.
+                    </p>
+                    {otpDebugCode ? (
+                      <p className="success-text">
+                        Local development code: <strong>{otpDebugCode}</strong>
+                      </p>
+                    ) : null}
                     <label htmlFor="reset-password">New password</label>
                     <div className="input-wrap password-wrap">
                       <span className="input-icon">#</span>
@@ -902,6 +946,9 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                     {successMessage ? <p className="success-text">{successMessage}</p> : null}
                     <button type="submit" className="signup-button" disabled={!canResetPassword || isSubmitting}>
                       {isSubmitting ? "Updating password..." : "Update password"}
+                    </button>
+                    <button type="button" className="create-school-trigger" disabled={isResendingReset} onClick={handleResendResetOtp}>
+                      {isResendingReset ? "Sending..." : "Resend code"}
                     </button>
                     <button type="button" className="create-school-trigger" onClick={() => switchMode("signin")}>
                       Back to sign in

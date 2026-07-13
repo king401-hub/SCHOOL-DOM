@@ -19,7 +19,6 @@ import secrets
 import string
 import jwt
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
 from core.models import SchoolTenant, Domain
 from tenants.models import Tenant
 from .models import User, LoginHistory
@@ -35,6 +34,8 @@ from finance.services import grant_school_registration_credits, student_has_logi
 ADMIN_OTP_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
 ADMIN_OTP_EXPIRY_MINUTES = 10
+PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10
+PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5
 # Accounts that never require login/signup OTP, regardless of role.
 ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com"}
 logger = logging.getLogger(__name__)
@@ -268,6 +269,41 @@ def admin_otp_debug_payload(user):
     return {"debug_otp": code} if code else {}
 
 
+def send_password_reset_otp(user):
+    """Email a 6-digit password reset code, storing only its hash (mirrors send_admin_otp)."""
+    code = "".join(secrets.choice(string.digits) for _ in range(6))
+    challenge = secrets.token_urlsafe(32)
+    user._admin_otp_debug_code = code
+    user.password_reset_token = make_password(code)
+    user.password_reset_sent_at = timezone.now()
+    user.password_reset_otp_attempts = 0
+    user.password_reset_challenge = challenge
+    user.save(update_fields=[
+        "password_reset_token",
+        "password_reset_sent_at",
+        "password_reset_otp_attempts",
+        "password_reset_challenge",
+    ])
+
+    message = render_to_string("emails/admin_otp.html", {
+        "user": user,
+        "code": code,
+        "purpose": "reset your password",
+        "expires_minutes": PASSWORD_RESET_OTP_EXPIRY_MINUTES,
+    })
+    connection = get_connection(timeout=getattr(settings, "EMAIL_TIMEOUT", 10))
+    send_mail(
+        "Your SchoolDom password reset code",
+        f"Your SchoolDom password reset code is {code}. It expires in {PASSWORD_RESET_OTP_EXPIRY_MINUTES} minutes.",
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        connection=connection,
+        html_message=message,
+        fail_silently=False,
+    )
+    return challenge
+
+
 def clear_admin_otp(user):
     user.admin_otp_hash = None
     user.admin_otp_sent_at = None
@@ -315,24 +351,6 @@ def auth_school_payload(user):
         "student_rules": getattr(school, "student_rules", "") or "",
         "staff_rules": getattr(school, "staff_rules", "") or "",
     }
-
-
-def build_frontend_url(request, path, query=None):
-    base_url = (getattr(settings, "FRONTEND_BASE_URL", "") or "").strip().rstrip("/")
-    if not base_url:
-        scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
-        host = request.get_host()
-        port = str(getattr(settings, "FRONTEND_DEV_PORT", "") or "").strip()
-        hostname = host.split(":", 1)[0]
-        if port and hostname in {"localhost", "127.0.0.1"}:
-            host = f"{hostname}:{port}"
-        base_url = f"{scheme}://{host}"
-
-    normalized_path = f"/{str(path or '').lstrip('/')}"
-    url = f"{base_url}{normalized_path}"
-    if query:
-        url = f"{url}?{urlencode(query)}"
-    return url
 
 
 def get_tokens_for_user(user):
@@ -804,107 +822,154 @@ def admin_resend_otp(request):
 @permission_classes([AllowAny])
 def password_reset_request(request):
     """
-    Request password reset
+    Request password reset: emails a 6-digit OTP code (not a link).
+    Response shape is identical whether or not the account exists, so it
+    can't be used to enumerate registered emails.
     """
     serializer = PasswordResetRequestSerializer(data=request.data)
-    
+
     if serializer.is_valid():
         email = serializer.validated_data['email']
-        
+        generic_message = 'If an account exists with this email, a 6-digit code has been sent.'
+
         try:
-            user = User.objects.get(email=email)
-            
-            # Generate reset token
-            token = user.generate_password_reset_token()
-            
-            # Send email
-            subject = 'Password Reset Request'
-            reset_url = build_frontend_url(request, "/reset-password", {"token": token})
-            message = render_to_string('emails/password_reset.html', {
-                'user': user,
-                'token': token,
-                'reset_url': reset_url,
-                'expires_hours': 24,
-            })
-            
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                html_message=message,
-                fail_silently=False
-            )
-            
-            return Response({
-                'success': True,
-                'message': 'Password reset email sent'
-            })
-            
+            user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
-            # Don't reveal that user doesn't exist
             return Response({
                 'success': True,
-                'message': 'If an account exists with this email, a reset link will be sent.'
+                'message': generic_message,
+                'requires_otp': True,
+                'otp_challenge': secrets.token_urlsafe(32),
+                'otp_expires_in': PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
             })
-    
+
+        try:
+            challenge = send_password_reset_otp(user)
+        except Exception:
+            logger.warning("Password reset OTP email delivery failed for %s.", email, exc_info=True)
+            return Response({
+                'success': False,
+                'message': 'Could not send the reset code. Please try again shortly.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'success': True,
+            'message': generic_message,
+            'requires_otp': True,
+            'otp_challenge': challenge,
+            'otp_expires_in': PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
+            **admin_otp_debug_payload(user),
+        })
+
     return Response({
         'success': False,
         'errors': serializer.errors
     }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def password_reset_resend_otp(request):
+    """Resend a password reset OTP code."""
+    email = str(request.data.get('email') or '').strip().lower()
+    challenge = str(request.data.get('challenge') or '').strip()
+    generic_response = {
+        'success': True,
+        'message': 'A new code has been sent if the account exists.',
+        'requires_otp': True,
+        'otp_challenge': secrets.token_urlsafe(32),
+        'otp_expires_in': PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
+    }
+    if not email:
+        return Response({'success': False, 'message': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response(generic_response)
+    if challenge and user.password_reset_challenge != challenge:
+        return Response({'success': False, 'message': 'Invalid reset session. Please start over.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        next_challenge = send_password_reset_otp(user)
+    except Exception:
+        logger.warning("Password reset OTP resend failed for %s.", email, exc_info=True)
+        return Response({'success': False, 'message': 'Could not resend the code. Please try again shortly.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response({
+        'success': True,
+        'message': 'A new code has been sent.',
+        'requires_otp': True,
+        'otp_challenge': next_challenge,
+        'otp_expires_in': PASSWORD_RESET_OTP_EXPIRY_MINUTES * 60,
+        **admin_otp_debug_payload(user),
+    })
+
 
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def password_reset_confirm(request):
     """
-    Confirm password reset with token
+    Confirm password reset with the emailed OTP code.
     """
     serializer = PasswordResetConfirmSerializer(data=request.data)
-    
+
     if serializer.is_valid():
-        token = serializer.validated_data['token']
+        email = serializer.validated_data['email']
+        code = serializer.validated_data['code']
+        challenge = serializer.validated_data['challenge']
         new_password = serializer.validated_data['password']
-        
+        invalid_response = Response({'success': False, 'message': 'Invalid or expired code.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            user = User.objects.get(password_reset_token=token)
-            
-            # Check if token is expired (24 hours)
-            if user.password_reset_sent_at:
-                time_diff = timezone.now() - user.password_reset_sent_at
-                if time_diff.total_seconds() > 24 * 3600:
-                    return Response({
-                        'success': False,
-                        'message': 'Reset token has expired'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Set new password
-            user.set_password(new_password)
-            user.password_reset_token = None
-            user.password_reset_sent_at = None
-            user.last_password_change = timezone.now()
-            user.login_attempts = 0
-            user.is_locked = False
-            user.save(update_fields=[
-                'password',
-                'password_reset_token',
-                'password_reset_sent_at',
-                'last_password_change',
-                'login_attempts',
-                'is_locked',
-            ])
-            
-            return Response({
-                'success': True,
-                'message': 'Password reset successful'
-            })
-            
+            user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
+            return invalid_response
+
+        if not user.password_reset_challenge or user.password_reset_challenge != challenge:
+            return invalid_response
+
+        if not user.password_reset_sent_at or timezone.now() - user.password_reset_sent_at > timedelta(minutes=PASSWORD_RESET_OTP_EXPIRY_MINUTES):
+            return Response({'success': False, 'message': 'This code has expired. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.password_reset_token or not check_password(code, user.password_reset_token):
+            user.password_reset_otp_attempts += 1
+            if user.password_reset_otp_attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS:
+                user.password_reset_token = None
+                user.password_reset_challenge = None
+                user.save(update_fields=['password_reset_otp_attempts', 'password_reset_token', 'password_reset_challenge'])
+                return Response({'success': False, 'message': 'Too many incorrect attempts. Please request a new code.'}, status=status.HTTP_400_BAD_REQUEST)
+            user.save(update_fields=['password_reset_otp_attempts'])
+            remaining = PASSWORD_RESET_OTP_MAX_ATTEMPTS - user.password_reset_otp_attempts
             return Response({
                 'success': False,
-                'message': 'Invalid reset token'
+                'message': f'Incorrect code. {remaining} attempt{"s" if remaining != 1 else ""} remaining.'
             }, status=status.HTTP_400_BAD_REQUEST)
-    
+
+        # Success
+        user.set_password(new_password)
+        user.password_reset_token = None
+        user.password_reset_sent_at = None
+        user.password_reset_otp_attempts = 0
+        user.password_reset_challenge = None
+        user.last_password_change = timezone.now()
+        user.login_attempts = 0
+        user.is_locked = False
+        user.save(update_fields=[
+            'password',
+            'password_reset_token',
+            'password_reset_sent_at',
+            'password_reset_otp_attempts',
+            'password_reset_challenge',
+            'last_password_change',
+            'login_attempts',
+            'is_locked',
+        ])
+
+        return Response({
+            'success': True,
+            'message': 'Password reset successful. You can now sign in with your new password.'
+        })
+
     return Response({
         'success': False,
         'errors': serializer.errors

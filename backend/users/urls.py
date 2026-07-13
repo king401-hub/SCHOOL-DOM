@@ -16,6 +16,7 @@ urlpatterns = [
     path("admin/verify-otp/", views.admin_verify_otp, name="admin_verify_otp"),
     path("admin/resend-otp/", views.admin_resend_otp, name="admin_resend_otp"),
     path("password-reset/", views.password_reset_request, name="password_reset_request"),
+    path("password-reset/resend/", views.password_reset_resend_otp, name="password_reset_resend_otp"),
     path("password-reset/confirm/", views.password_reset_confirm, name="password_reset_confirm"),
     path("contact/", app_views.public_contact_email, name="public_contact_email"),
     path("change-password/", views.change_password, name="api_change_password"),

@@ -125,9 +125,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     email_verification_sent_at = models.DateTimeField(null=True, blank=True)
     email_verified_at = models.DateTimeField(null=True, blank=True)
     
-    # Password reset
+    # Password reset (OTP-based: password_reset_token stores a hashed 6-digit code)
     password_reset_token = models.CharField(max_length=255, blank=True, null=True)
     password_reset_sent_at = models.DateTimeField(null=True, blank=True)
+    password_reset_challenge = models.CharField(max_length=64, blank=True, null=True)
+    password_reset_otp_attempts = models.PositiveIntegerField(default=0)
     
     # Admin OTP
     admin_otp_hash = models.CharField(max_length=128, blank=True, null=True)
@@ -204,13 +206,6 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.email_verification_sent_at = timezone.now()
         self.save(update_fields=['email_verification_token', 'email_verification_sent_at'])
         return self.email_verification_token
-    
-    def generate_password_reset_token(self):
-        """Generate password reset token"""
-        self.password_reset_token = str(uuid.uuid4())
-        self.password_reset_sent_at = timezone.now()
-        self.save(update_fields=['password_reset_token', 'password_reset_sent_at'])
-        return self.password_reset_token
     
     def verify_email(self, token):
         """Verify user's email"""

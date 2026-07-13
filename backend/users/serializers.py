@@ -352,12 +352,14 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
     """
-    Serializer for confirming password reset
+    Serializer for confirming password reset via emailed OTP code
     """
-    token = serializers.CharField()
+    email = serializers.EmailField()
+    code = serializers.CharField()
+    challenge = serializers.CharField()
     password = serializers.CharField(min_length=8, write_only=True)
     confirm_password = serializers.CharField(min_length=8, write_only=True)
-    
+
     def validate(self, data):
         if data['password'] != data['confirm_password']:
             raise serializers.ValidationError({

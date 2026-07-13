@@ -3084,3 +3084,165 @@ class AuthSchoolScopeTests(TestCase):
 
         self.assertEqual(refresh_response.status_code, 200)
         self.assertIn("access", refresh_response.data)
+
+
+@override_settings(ADMIN_OTP_DEBUG_CODE_ENABLED=True)
+class PasswordResetOtpTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        # Unique-per-test email: the IdempotencyMiddleware dedupes identical
+        # (anon user, method, path, body) requests for 10s, so reusing the
+        # same email across test methods would replay a stale cached response.
+        # role="parent" avoids the strict school_code-at-login requirement that
+        # applies to teacher/student/staff/accountant roles — irrelevant here
+        # since password reset itself is role-agnostic.
+        self.user = User.objects.create_user(
+            email=f"reset.{self._testMethodName}@school.edu",
+            password="OldPass123",
+            first_name="Reset",
+            last_name="Me",
+            role="parent",
+            is_active=True,
+            is_verified=True,
+        )
+
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def _request_otp(self, _render_to_string, _send_mail):
+        response = self.client.post(
+            "/api/auth/password-reset/",
+            data={"email": self.user.email},
+            format="json",
+        )
+        return response
+
+    def test_request_reset_sends_otp_and_matches_shape_for_unknown_email(self):
+        real_response = self._request_otp()
+        self.assertEqual(real_response.status_code, 200)
+        self.assertTrue(real_response.data["success"])
+        self.assertTrue(real_response.data["requires_otp"])
+        self.assertTrue(real_response.data["otp_challenge"])
+        self.assertIn("debug_otp", real_response.data)
+
+        fake_response = self.client.post(
+            "/api/auth/password-reset/",
+            data={"email": "no.such.user@school.edu"},
+            format="json",
+        )
+        self.assertEqual(fake_response.status_code, 200)
+        self.assertTrue(fake_response.data["success"])
+        self.assertTrue(fake_response.data["requires_otp"])
+        self.assertTrue(fake_response.data["otp_challenge"])
+        # Anti-enumeration: identical message regardless of whether the account exists.
+        self.assertEqual(fake_response.data["message"], real_response.data["message"])
+        self.assertNotIn("debug_otp", fake_response.data)
+
+    def test_confirm_with_correct_code_resets_password(self):
+        otp_response = self._request_otp()
+        code = otp_response.data["debug_otp"]
+        challenge = otp_response.data["otp_challenge"]
+
+        confirm_response = self.client.post(
+            "/api/auth/password-reset/confirm/",
+            data={
+                "email": self.user.email,
+                "code": code,
+                "challenge": challenge,
+                "password": "BrandNewPass123",
+                "confirm_password": "BrandNewPass123",
+            },
+            format="json",
+        )
+        self.assertEqual(confirm_response.status_code, 200)
+        self.assertTrue(confirm_response.data["success"])
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("BrandNewPass123"))
+        self.assertIsNone(self.user.password_reset_token)
+        self.assertIsNone(self.user.password_reset_challenge)
+
+    def test_confirm_with_wrong_code_decrements_attempts_and_eventually_locks_code(self):
+        otp_response = self._request_otp()
+        challenge = otp_response.data["otp_challenge"]
+
+        last_response = None
+        for _ in range(5):
+            last_response = self.client.post(
+                "/api/auth/password-reset/confirm/",
+                data={
+                    "email": self.user.email,
+                    "code": "000000",
+                    "challenge": challenge,
+                    "password": "BrandNewPass123",
+                    "confirm_password": "BrandNewPass123",
+                },
+                format="json",
+            )
+            self.assertEqual(last_response.status_code, 400)
+            self.assertFalse(last_response.data["success"])
+
+        self.assertIn("too many", last_response.data["message"].lower())
+
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.password_reset_token)
+
+        # Old password must still work — nothing was actually reset.
+        self.assertTrue(self.user.check_password("OldPass123"))
+
+    def test_confirm_rejects_expired_code(self):
+        otp_response = self._request_otp()
+        code = otp_response.data["debug_otp"]
+        challenge = otp_response.data["otp_challenge"]
+
+        self.user.refresh_from_db()
+        self.user.password_reset_sent_at = timezone.now() - timedelta(minutes=11)
+        self.user.save(update_fields=["password_reset_sent_at"])
+
+        response = self.client.post(
+            "/api/auth/password-reset/confirm/",
+            data={
+                "email": self.user.email,
+                "code": code,
+                "challenge": challenge,
+                "password": "BrandNewPass123",
+                "confirm_password": "BrandNewPass123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("expired", response.data["message"].lower())
+
+    def test_confirm_rejects_mismatched_challenge(self):
+        otp_response = self._request_otp()
+        code = otp_response.data["debug_otp"]
+
+        response = self.client.post(
+            "/api/auth/password-reset/confirm/",
+            data={
+                "email": self.user.email,
+                "code": code,
+                "challenge": "not-the-right-challenge",
+                "password": "BrandNewPass123",
+                "confirm_password": "BrandNewPass123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+
+    @patch("users.views.send_mail", return_value=1)
+    @patch("users.views.render_to_string", return_value="<p>code</p>")
+    def test_resend_issues_a_new_challenge(self, _render_to_string, _send_mail):
+        otp_response = self._request_otp()
+        first_challenge = otp_response.data["otp_challenge"]
+
+        resend_response = self.client.post(
+            "/api/auth/password-reset/resend/",
+            data={"email": self.user.email, "challenge": first_challenge},
+            format="json",
+        )
+        self.assertEqual(resend_response.status_code, 200)
+        self.assertTrue(resend_response.data["success"])
+        self.assertTrue(resend_response.data["otp_challenge"])
+        self.assertNotEqual(resend_response.data["otp_challenge"], first_challenge)
