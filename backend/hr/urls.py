@@ -7,6 +7,7 @@ urlpatterns = [
     path("overview/", views.hr_snapshot, name="hr_snapshot"),
     path("activity/", views.activity_snapshot, name="hr_activity"),
     path("me/", views.staff_self_service_snapshot, name="hr_staff_self_service"),
+    path("me/employment-letter/", views.staff_employment_letter, name="hr_staff_employment_letter"),
     path("staff/download/", views.download_staff_csv, name="hr_download_staff"),
     path("staff/create/", views.create_staff, name="hr_create_staff"),
     path("staff/<uuid:staff_id>/qr/download/", views.download_staff_qr, name="hr_staff_qr_download"),

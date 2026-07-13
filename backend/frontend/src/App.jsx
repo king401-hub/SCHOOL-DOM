@@ -3793,8 +3793,85 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   );
 }
 
+const escapeEmploymentLetterHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+
+function openPrintableDocument(elementId, title) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    throw new Error("The document preview is not ready yet.");
+  }
+  const printStyles = "body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;padding:40px;} .print-letterhead{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1f2937;padding-bottom:14px;margin-bottom:24px;} .print-letterhead img{width:56px;height:56px;object-fit:contain;} .print-letterhead h1{font-size:1.15rem;margin:0;} .print-letterhead p{margin:2px 0 0;font-size:0.85rem;color:#4b5563;} .print-body p{line-height:1.7;font-size:0.95rem;} .print-meta{margin-bottom:18px;font-size:0.85rem;color:#4b5563;} .print-signature{margin-top:48px;font-size:0.9rem;}";
+  const content = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${escapeEmploymentLetterHtml(title)}</title><style>${printStyles}</style></head><body>${element.outerHTML}<script>window.onload=()=>{window.focus();window.print();};</script></body></html>`;
+
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=1100");
+  if (printWindow) {
+    printWindow.document.write(content);
+    printWindow.document.close();
+    return;
+  }
+
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+  const iframeDoc = iframe.contentWindow?.document;
+  if (!iframeDoc) {
+    iframe.remove();
+    throw new Error("Unable to open print preview.");
+  }
+  iframeDoc.open();
+  iframeDoc.write(content);
+  iframeDoc.close();
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    setTimeout(() => iframe.remove(), 1000);
+  };
+}
+
+function EmploymentLetterPreview({ letter }) {
+  if (!letter) return null;
+  const school = letter.school || {};
+  const staff = letter.staff || {};
+  const generatedAt = letter.generated_at ? formatDate(letter.generated_at) : formatDate(new Date().toISOString());
+  return (
+    <div id="employment-letter-preview" style={{ display: "none" }}>
+      <div className="print-letterhead">
+        {school.logo ? <img src={school.logo} alt={`${school.name} logo`} /> : null}
+        <div>
+          <h1>{school.name}</h1>
+          <p>{[school.address, school.phone, school.email].filter(Boolean).join(" | ")}</p>
+        </div>
+      </div>
+      <p className="print-meta">Date: {generatedAt}</p>
+      <h2 style={{ fontSize: "1rem", textDecoration: "underline" }}>TO WHOM IT MAY CONCERN</h2>
+      <div className="print-body">
+        <p>
+          This is to confirm that <strong>{staff.name}</strong> (Staff ID: {staff.staff_code}) is a
+          {" "}{staff.employment_type ? staff.employment_type.toLowerCase() : ""} staff member of {school.name},
+          employed as <strong>{staff.role}</strong>{staff.department ? ` in the ${staff.department} department` : ""},
+          since {staff.hire_date ? formatDate(staff.hire_date) : "the date of engagement"}.
+        </p>
+        <p>Current employment status: <strong>{staff.employment_status}</strong>.</p>
+        <p>This letter is issued upon request for whatever legitimate purpose it may serve.</p>
+      </div>
+      <div className="print-signature">
+        <p>_____________________________</p>
+        <p>For: {school.name}</p>
+      </div>
+    </div>
+  );
+}
+
 function StaffSelfServicePanel({ session, initialData = null, standalone = false, showAttendance = true, onRefresh }) {
   const [snapshot, setSnapshot] = useState(initialData || null);
+  const [employmentLetter, setEmploymentLetter] = useState(null);
+  const [letterBusy, setLetterBusy] = useState(false);
   const [profileForm, setProfileForm] = useState({
     phone: "",
     gender: "",
@@ -3868,6 +3945,22 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
     }, MESSAGE_POLL_INTERVAL_MS);
     return () => window.clearInterval(pollId);
   }, [loadMessages, session]);
+
+  const handleDownloadEmploymentLetter = async () => {
+    setLetterBusy(true);
+    setFeedback("");
+    setError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/hr/me/employment-letter/");
+      setEmploymentLetter(result);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      openPrintableDocument("employment-letter-preview", `${result?.staff?.name || "Employment"} - Employment Letter`);
+    } catch (letterError) {
+      setError(letterError.message || "Could not generate employment letter.");
+    } finally {
+      setLetterBusy(false);
+    }
+  };
 
   const runAction = async (key, action, reset) => {
     setBusy(key);
@@ -3980,13 +4073,19 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
         <div className="panel-head">
           <div>
             <h3>My profile</h3>
-            <small>Update biodata, profile picture, next of kin, and CV.</small>
+            <small>Update biodata, credentials, guarantor's form, and download your employment letter.</small>
           </div>
-          <button type="button" className="table-action" onClick={() => setProfileOpen(true)}>
-            Edit biodata
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button type="button" className="table-action" onClick={handleDownloadEmploymentLetter} disabled={letterBusy}>
+              {letterBusy ? "Preparing…" : "Download Employment Letter"}
+            </button>
+            <button type="button" className="table-action" onClick={() => setProfileOpen(true)}>
+              Edit biodata
+            </button>
+          </div>
         </div>
       </article>
+      <EmploymentLetterPreview letter={employmentLetter} />
 
       <EditableStaffBioProfile
         session={session}
@@ -4055,11 +4154,20 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
     gender: "",
     date_of_birth: "",
     address: "",
+    nationality: "",
+    marital_status: "",
+    email: "",
     emergency_contact_name: "",
     emergency_contact_phone: "",
     emergency_contact_relation: "",
+    guarantor_name: "",
+    guarantor_phone: "",
+    guarantor_address: "",
+    guarantor_relationship: "",
     profile_picture: null,
     cv: null,
+    credentials: null,
+    guarantor_form: null,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -4086,11 +4194,20 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
           gender: staff.gender || "",
           date_of_birth: String(staff.date_of_birth || "").slice(0, 10),
           address: staff.address || "",
+          nationality: staff.nationality || "",
+          marital_status: staff.marital_status || "",
+          email: staff.email || "",
           emergency_contact_name: staff.emergency_contact_name || "",
           emergency_contact_phone: staff.emergency_contact_phone || "",
           emergency_contact_relation: staff.emergency_contact_relation || "",
+          guarantor_name: staff.guarantor_name || "",
+          guarantor_phone: staff.guarantor_phone || "",
+          guarantor_address: staff.guarantor_address || "",
+          guarantor_relationship: staff.guarantor_relationship || "",
           profile_picture: null,
           cv: null,
+          credentials: null,
+          guarantor_form: null,
         }));
       })
       .catch((loadError) => setError(loadError.message || "Could not load profile."))
@@ -4104,9 +4221,10 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
     setSaving(true);
     setFeedback("");
     setError("");
+    const fileKeys = new Set(["cv", "profile_picture", "credentials", "guarantor_form"]);
     const formData = new FormData();
     Object.entries(profileForm).forEach(([key, value]) => {
-      if (key === "cv" || key === "profile_picture") {
+      if (fileKeys.has(key)) {
         if (value) formData.append(key, value);
         return;
       }
@@ -4115,7 +4233,7 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
     try {
       const result = await requestJson(session, "PATCH", "/api/hr/me/", formData);
       setStaffSnapshot((prev) => ({ ...(prev || {}), staff: result?.staff || prev?.staff }));
-      setProfileForm((prev) => ({ ...prev, profile_picture: null, cv: null }));
+      setProfileForm((prev) => ({ ...prev, profile_picture: null, cv: null, credentials: null, guarantor_form: null }));
       setFeedback(result?.message || "Profile saved.");
       await onSaved?.();
     } catch (saveError) {
@@ -4148,13 +4266,24 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
             <label className="panel-field">Gender<select value={profileForm.gender} onChange={(event) => setProfileForm((prev) => ({ ...prev, gender: event.target.value }))}><option value="">Select gender</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option><option value="N">Prefer not to say</option></select></label>
             <label className="panel-field">Date of birth<input type="date" value={profileForm.date_of_birth} onChange={(event) => setProfileForm((prev) => ({ ...prev, date_of_birth: event.target.value }))} /></label>
             <label className="panel-field full">Address<textarea rows="2" value={profileForm.address} onChange={(event) => setProfileForm((prev) => ({ ...prev, address: event.target.value }))} /></label>
+            <label className="panel-field">Email address<input type="email" value={profileForm.email} onChange={(event) => setProfileForm((prev) => ({ ...prev, email: event.target.value }))} /></label>
+            <label className="panel-field">Nationality<input value={profileForm.nationality} onChange={(event) => setProfileForm((prev) => ({ ...prev, nationality: event.target.value }))} /></label>
+            <label className="panel-field">Marital status<select value={profileForm.marital_status} onChange={(event) => setProfileForm((prev) => ({ ...prev, marital_status: event.target.value }))}><option value="">Select status</option><option value="single">Single</option><option value="married">Married</option><option value="divorced">Divorced</option><option value="widowed">Widowed</option><option value="separated">Separated</option></select></label>
             <label className="panel-field">Next of kin<input value={profileForm.emergency_contact_name} onChange={(event) => setProfileForm((prev) => ({ ...prev, emergency_contact_name: event.target.value }))} /></label>
             <label className="panel-field">Next of kin phone<input value={profileForm.emergency_contact_phone} onChange={(event) => setProfileForm((prev) => ({ ...prev, emergency_contact_phone: event.target.value }))} /></label>
             <label className="panel-field">Relationship<input value={profileForm.emergency_contact_relation} onChange={(event) => setProfileForm((prev) => ({ ...prev, emergency_contact_relation: event.target.value }))} /></label>
+            <label className="panel-field">Guarantor's name<input value={profileForm.guarantor_name} onChange={(event) => setProfileForm((prev) => ({ ...prev, guarantor_name: event.target.value }))} /></label>
+            <label className="panel-field">Guarantor's phone<input value={profileForm.guarantor_phone} onChange={(event) => setProfileForm((prev) => ({ ...prev, guarantor_phone: event.target.value }))} /></label>
+            <label className="panel-field">Guarantor's relationship<input value={profileForm.guarantor_relationship} onChange={(event) => setProfileForm((prev) => ({ ...prev, guarantor_relationship: event.target.value }))} /></label>
+            <label className="panel-field full">Guarantor's address<textarea rows="2" value={profileForm.guarantor_address} onChange={(event) => setProfileForm((prev) => ({ ...prev, guarantor_address: event.target.value }))} /></label>
             <label className="panel-field full">Profile picture<input type="file" accept="image/*" onChange={(event) => setProfileForm((prev) => ({ ...prev, profile_picture: event.target.files?.[0] || null }))} /></label>
             <label className="panel-field full">CV<input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(event) => setProfileForm((prev) => ({ ...prev, cv: event.target.files?.[0] || null }))} /></label>
+            <label className="panel-field full">Credentials (certificates/qualifications)<input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(event) => setProfileForm((prev) => ({ ...prev, credentials: event.target.files?.[0] || null }))} /></label>
+            <label className="panel-field full">Guarantor's form (completed/signed)<input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(event) => setProfileForm((prev) => ({ ...prev, guarantor_form: event.target.files?.[0] || null }))} /></label>
           </div>
           {profile.cv_url || profile.cv || profile.resume ? <p className="field-note">Current CV: <a href={profile.cv_url || profile.cv || profile.resume} target="_blank" rel="noreferrer">Open uploaded CV</a></p> : null}
+          {profile.credentials_url ? <p className="field-note">Current credentials: <a href={profile.credentials_url} target="_blank" rel="noreferrer">Open uploaded credentials</a></p> : null}
+          {profile.guarantor_form_url ? <p className="field-note">Current guarantor's form: <a href={profile.guarantor_form_url} target="_blank" rel="noreferrer">Open uploaded form</a></p> : null}
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {error ? <p className="form-feedback error">{error}</p> : null}
           <div className="panel-form-actions">

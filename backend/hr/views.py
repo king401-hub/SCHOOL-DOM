@@ -228,6 +228,8 @@ def _staff_payload(staff, request=None):
     date_of_birth = staff.date_of_birth or (getattr(linked_user, "date_of_birth", None) if linked_user else None)
     gender = staff.gender or (getattr(linked_user, "gender", "") if linked_user else "")
     cv_url = _media_url(request, staff.cv)
+    credentials_url = _media_url(request, staff.credentials)
+    guarantor_form_url = _media_url(request, staff.guarantor_form)
     profile_picture_url = _media_url(request, getattr(linked_user, "profile_picture", None)) if linked_user else ""
     teacher_profile = TeacherProfile.objects.filter(user=linked_user).first() if linked_user and getattr(linked_user, "role", "") == "teacher" else None
     if teacher_profile and not cv_url:
@@ -245,8 +247,11 @@ def _staff_payload(staff, request=None):
         "date_of_birth": date_of_birth,
         "profile_picture": profile_picture_url,
         "address": staff.address,
+        "nationality": staff.nationality,
+        "marital_status": staff.marital_status,
         "cv": cv_url,
         "cv_url": cv_url,
+        "credentials_url": credentials_url,
         "staff_type": staff.staff_type,
         "role": staff.role,
         "department": staff.department,
@@ -262,6 +267,11 @@ def _staff_payload(staff, request=None):
         "emergency_contact_name": staff.emergency_contact_name,
         "emergency_contact_phone": staff.emergency_contact_phone,
         "emergency_contact_relation": staff.emergency_contact_relation,
+        "guarantor_name": staff.guarantor_name,
+        "guarantor_phone": staff.guarantor_phone,
+        "guarantor_address": staff.guarantor_address,
+        "guarantor_relationship": staff.guarantor_relationship,
+        "guarantor_form_url": guarantor_form_url,
         "notes": staff.notes,
         "attendance_rate": round((present_count / total_attendance) * 100, 1) if total_attendance else 0,
         "absent_count": absent_count,
@@ -787,12 +797,37 @@ def _update_self_biodata(request, staff):
         user.profile_picture = profile_picture
         update_user_fields.append("profile_picture")
 
+    credentials_file = request.FILES.get("credentials")
+    if credentials_file:
+        staff.credentials = credentials_file
+        update_staff_fields.append("credentials")
+
+    guarantor_form_file = request.FILES.get("guarantor_form")
+    if guarantor_form_file:
+        staff.guarantor_form = guarantor_form_file
+        update_staff_fields.append("guarantor_form")
+
+    if "marital_status" in data:
+        marital_status = str(data.get("marital_status") or "").strip().lower()
+        valid_marital_statuses = {choice[0] for choice in StaffProfile.MARITAL_STATUS_CHOICES}
+        if marital_status and marital_status not in valid_marital_statuses:
+            return "marital_status must be one of: " + ", ".join(sorted(valid_marital_statuses)) + "."
+        if staff.marital_status != marital_status:
+            staff.marital_status = marital_status
+            update_staff_fields.append("marital_status")
+
     text_fields = {
         "phone": "phone",
         "address": "address",
+        "email": "email",
+        "nationality": "nationality",
         "emergency_contact_name": "emergency_contact_name",
         "emergency_contact_phone": "emergency_contact_phone",
         "emergency_contact_relation": "emergency_contact_relation",
+        "guarantor_name": "guarantor_name",
+        "guarantor_phone": "guarantor_phone",
+        "guarantor_address": "guarantor_address",
+        "guarantor_relationship": "guarantor_relationship",
     }
     for payload_field, model_field in text_fields.items():
         if payload_field in data:
@@ -869,6 +904,48 @@ def staff_self_service_snapshot(request):
             "advances": [_advance_payload(item) for item in advances[:20]],
             "payroll": [_payroll_payload(item) for item in payroll[:12]],
             "attendance": [_attendance_payload(item) for item in attendance[:20]],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def staff_employment_letter(request):
+    """Employment confirmation letter data for the caller's own HR record. No PDF
+    generation server-side - the frontend renders this into a print-styled preview
+    and uses the browser's print/save-as-PDF dialog, same as transcripts/testimonials."""
+    staff = _self_staff_profile(request.user)
+    if not staff:
+        return Response({"success": False, "message": "Your account is not linked to a staff profile."}, status=status.HTTP_403_FORBIDDEN)
+
+    tenant = staff.tenant
+    employment_type_labels = {
+        "full_time": "Full-time",
+        "part_time": "Part-time",
+        "contract": "Contract",
+    }
+    staff_type_labels = dict(StaffProfile.STAFF_TYPE_CHOICES)
+
+    return Response(
+        {
+            "success": True,
+            "school": {
+                "name": getattr(tenant, "name", "") or "School",
+                "address": getattr(tenant, "address", "") or "",
+                "phone": getattr(tenant, "phone", "") or "",
+                "email": getattr(tenant, "email", "") or "",
+                "logo": _media_url(request, getattr(tenant, "logo", None)),
+            },
+            "staff": {
+                "name": staff.full_name,
+                "staff_code": staff.staff_code,
+                "role": staff.role or staff_type_labels.get(staff.staff_type, ""),
+                "department": staff.department,
+                "employment_type": employment_type_labels.get(staff.employment_type, staff.employment_type),
+                "employment_status": staff.get_employment_status_display(),
+                "hire_date": staff.hire_date,
+            },
+            "generated_at": timezone.now(),
         }
     )
 

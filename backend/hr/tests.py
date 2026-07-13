@@ -311,3 +311,132 @@ class HRManagementAPITests(TestCase):
         )
         self.assertEqual(advance_response.status_code, 201)
         self.assertEqual(SalaryAdvanceRequest.objects.filter(staff=staff).count(), 1)
+
+    def test_teacher_can_update_extended_profile_fields_and_documents(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.ext@school.edu",
+            password="TeacherPass123",
+            first_name="Ngozi",
+            last_name="Umeh",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StaffProfile.objects.create(
+            tenant=self.school,
+            user=teacher_user,
+            staff_code="TCH950",
+            first_name="Ngozi",
+            last_name="Umeh",
+            email=teacher_user.email,
+            staff_type=StaffProfile.TEACHING,
+            role="Teacher",
+        )
+        self.client.force_authenticate(user=teacher_user)
+
+        response = self.client.patch(
+            "/api/hr/me/",
+            data={
+                "email": "ngozi.updated@school.edu",
+                "nationality": "Nigerian",
+                "marital_status": "married",
+                "guarantor_name": "Chief Umeh",
+                "guarantor_phone": "+2348011112222",
+                "guarantor_address": "5 Guarantor Street, Enugu",
+                "guarantor_relationship": "Uncle",
+                "credentials": SimpleUploadedFile("ngozi-cert.pdf", b"certificate", content_type="application/pdf"),
+                "guarantor_form": SimpleUploadedFile("ngozi-guarantor.pdf", b"guarantor form", content_type="application/pdf"),
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        staff = StaffProfile.objects.get(user=teacher_user)
+        self.assertEqual(staff.email, "ngozi.updated@school.edu")
+        self.assertEqual(staff.nationality, "Nigerian")
+        self.assertEqual(staff.marital_status, "married")
+        self.assertEqual(staff.guarantor_name, "Chief Umeh")
+        self.assertEqual(staff.guarantor_phone, "+2348011112222")
+        self.assertEqual(staff.guarantor_relationship, "Uncle")
+        self.assertTrue(staff.credentials.name.endswith(".pdf"))
+        self.assertTrue(staff.guarantor_form.name.endswith(".pdf"))
+
+        snapshot = self.client.get("/api/hr/me/")
+        self.assertEqual(snapshot.status_code, 200)
+        self.assertEqual(snapshot.data["staff"]["nationality"], "Nigerian")
+        self.assertEqual(snapshot.data["staff"]["marital_status"], "married")
+        self.assertEqual(snapshot.data["staff"]["guarantor_name"], "Chief Umeh")
+        self.assertTrue(snapshot.data["staff"]["credentials_url"])
+        self.assertTrue(snapshot.data["staff"]["guarantor_form_url"])
+
+    def test_update_rejects_invalid_marital_status(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.badmarital@school.edu",
+            password="TeacherPass123",
+            first_name="Femi",
+            last_name="Ola",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StaffProfile.objects.create(
+            tenant=self.school,
+            user=teacher_user,
+            staff_code="TCH951",
+            first_name="Femi",
+            last_name="Ola",
+            email=teacher_user.email,
+            staff_type=StaffProfile.TEACHING,
+            role="Teacher",
+        )
+        self.client.force_authenticate(user=teacher_user)
+        response = self.client.patch("/api/hr/me/", data={"marital_status": "not-a-real-status"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_teacher_can_download_employment_letter(self):
+        teacher_user = User.objects.create_user(
+            email="teacher.letter@school.edu",
+            password="TeacherPass123",
+            first_name="Grace",
+            last_name="Eze",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        StaffProfile.objects.create(
+            tenant=self.school,
+            user=teacher_user,
+            staff_code="TCH952",
+            first_name="Grace",
+            last_name="Eze",
+            email=teacher_user.email,
+            staff_type=StaffProfile.TEACHING,
+            role="Teacher",
+            department="Science",
+            employment_type="full_time",
+        )
+        self.client.force_authenticate(user=teacher_user)
+        response = self.client.get("/api/hr/me/employment-letter/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["staff"]["name"], "Grace Eze")
+        self.assertEqual(response.data["staff"]["role"], "Teacher")
+        self.assertEqual(response.data["staff"]["department"], "Science")
+        self.assertEqual(response.data["school"]["name"], self.school.name)
+
+    def test_employment_letter_rejects_user_without_staff_profile(self):
+        parent_user = User.objects.create_user(
+            email="parent.noletter@school.edu",
+            password="ParentPass123",
+            first_name="No",
+            last_name="Profile",
+            role="parent",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=parent_user)
+        response = self.client.get("/api/hr/me/employment-letter/")
+        self.assertEqual(response.status_code, 403)

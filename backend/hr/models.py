@@ -24,6 +24,13 @@ class StaffProfile(models.Model):
         (SUSPENDED, "Suspended"),
         (EXITED, "Exited"),
     ]
+    MARITAL_STATUS_CHOICES = [
+        ("single", "Single"),
+        ("married", "Married"),
+        ("divorced", "Divorced"),
+        ("widowed", "Widowed"),
+        ("separated", "Separated"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey("core.SchoolTenant", on_delete=models.CASCADE, related_name="staff_profiles")
@@ -43,7 +50,9 @@ class StaffProfile(models.Model):
     gender = models.CharField(max_length=20, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
     address = models.TextField(blank=True)
+    nationality = models.CharField(max_length=100, blank=True)
     cv = models.FileField(upload_to="staff/documents/", null=True, blank=True)
+    credentials = models.FileField(upload_to="staff/credentials/", null=True, blank=True)
     staff_type = models.CharField(max_length=20, choices=STAFF_TYPE_CHOICES, default=TEACHING)
     role = models.CharField(max_length=120)
     department = models.CharField(max_length=120, blank=True)
@@ -59,6 +68,12 @@ class StaffProfile(models.Model):
     emergency_contact_name = models.CharField(max_length=150, blank=True)
     emergency_contact_phone = models.CharField(max_length=30, blank=True)
     emergency_contact_relation = models.CharField(max_length=100, blank=True)
+    marital_status = models.CharField(max_length=20, blank=True, choices=MARITAL_STATUS_CHOICES)
+    guarantor_name = models.CharField(max_length=150, blank=True)
+    guarantor_phone = models.CharField(max_length=30, blank=True)
+    guarantor_address = models.TextField(blank=True)
+    guarantor_relationship = models.CharField(max_length=100, blank=True)
+    guarantor_form = models.FileField(upload_to="staff/guarantor/", null=True, blank=True)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
