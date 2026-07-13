@@ -1,4 +1,4 @@
-import { Mail, MapPin, Twitter, Youtube, Facebook, ArrowRight, Phone } from 'lucide-react';
+import { Mail, MapPin, Twitter, Youtube, Facebook, Phone } from 'lucide-react';
 
 const LINKS = {
   Product: ['Features', 'CBT Engine', 'Finance Ledger', 'Parent Portal', 'Child Monitor'],
@@ -6,11 +6,7 @@ const LINKS = {
   Support: ['Documentation', 'Help Center', 'Status Page', 'Contact Us', 'API Reference'],
 };
 
-interface FooterProps {
-  onGetStarted: () => void;
-}
-
-export default function Footer({ onGetStarted }: FooterProps) {
+export default function Footer() {
   const year = new Date().getFullYear();
 
   return (
@@ -82,22 +78,6 @@ export default function Footer({ onGetStarted }: FooterProps) {
               </ul>
             </div>
           ))}
-        </div>
-
-        {/* CTA block */}
-        <div className="rounded-3xl p-10 mb-10 text-center relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.08), rgba(14,165,233,0.08))', border: '1px solid rgba(34,197,94,0.15)' }}>
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(34,197,94,0.06) 0%, transparent 60%)' }} />
-          <div className="relative">
-            <h3 className="font-display font-black text-white text-2xl sm:text-3xl mb-3">
-              Ready to digitize your school?
-            </h3>
-            <p className="text-slate-400 text-sm mb-6">Join 300+ Nigerian schools running on Schooldom. Set up in under 4 minutes.</p>
-            <button onClick={onGetStarted} className="btn-primary text-base px-8 py-4">
-              Onboard Your School <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
         </div>
 
         {/* Bottom bar */}

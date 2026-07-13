@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, ArrowRight, ChevronDown, Sun, Moon } from 'lucide-react';
+import { Menu, X, ChevronDown, Sun, Moon } from 'lucide-react';
 
 function ThemeToggle() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
@@ -22,7 +22,6 @@ function ThemeToggle() {
 
 interface NavbarProps {
   onSignIn: () => void;
-  onSignUp: () => void;
 }
 
 const NAV_LINKS = [
@@ -39,12 +38,11 @@ const NAV_LINKS = [
   },
 ];
 
-export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
+export default function Navbar({ onSignIn }: NavbarProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [activeLink, setActiveLink] = useState('');
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -61,16 +59,6 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
     sections.forEach(id => { const el = document.getElementById(id); if (el) obs.observe(el); });
     return () => obs.disconnect();
   }, []);
-
-  const handleMagnet = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const btn = btnRef.current;
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width - 0.5) * 8;
-    const y = ((e.clientY - rect.top) / rect.height - 0.5) * 8;
-    btn.style.transform = `translate(${x}px, ${y}px)`;
-  };
-  const resetMagnet = () => { if (btnRef.current) btnRef.current.style.transform = ''; };
 
   const scrollTo = (href: string) => {
     setMobileOpen(false);
@@ -144,17 +132,7 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
 
           <div className="hidden md:flex items-center gap-3">
             <ThemeToggle />
-            <button onClick={onSignIn} className="btn-ghost text-sm px-5 py-2">Sign In</button>
-            <button
-              ref={btnRef}
-              onClick={onSignUp}
-              onMouseMove={handleMagnet}
-              onMouseLeave={resetMagnet}
-              className="btn-primary text-sm px-5 py-2"
-              style={{ transition: 'transform 0.15s ease, opacity 0.2s, box-shadow 0.2s' }}
-            >
-              Get Started Free <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+            <button onClick={onSignIn} className="btn-primary text-sm px-5 py-2">Sign In</button>
           </div>
 
           <div className="md:hidden flex items-center gap-2">
@@ -186,9 +164,8 @@ export default function Navbar({ onSignIn, onSignUp }: NavbarProps) {
               <a href="/#/faq" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">FAQ</a>
               <a href="/#/contact" className="block px-4 py-3 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">Contact</a>
             </div>
-            <div className="p-4 border-t border-white/5 flex gap-3">
-              <button onClick={onSignIn} className="flex-1 btn-ghost text-sm py-2.5">Sign In</button>
-              <button onClick={onSignUp} className="flex-1 btn-primary text-sm py-2.5 justify-center">Get Started</button>
+            <div className="p-4 border-t border-white/5">
+              <button onClick={onSignIn} className="w-full btn-primary text-sm py-2.5 justify-center">Sign In</button>
             </div>
           </div>
         </div>

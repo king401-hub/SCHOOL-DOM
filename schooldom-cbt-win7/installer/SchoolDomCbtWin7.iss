@@ -21,7 +21,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=
 PrivilegesRequired=lowest
-MinVersion=6.1sp1
+MinVersion=6.1
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

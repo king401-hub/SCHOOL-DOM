@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowRight, Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
+import { Play, TrendingUp, Users, DollarSign, BookOpen, CheckCircle, Bell, Star, BarChart3 } from 'lucide-react';
 
 interface HeroProps {
-  onGetStarted: () => void;
   onSignIn: () => void;
   onDemo: () => void;
 }
@@ -217,7 +216,7 @@ function DashboardFrame() {
   );
 }
 
-export default function Hero({ onGetStarted, onDemo }: HeroProps) {
+export default function Hero({ onDemo }: HeroProps) {
   const [in_, setIn] = useState(false);
   useEffect(() => { setTimeout(() => setIn(true), 80); }, []);
 
@@ -265,10 +264,7 @@ export default function Hero({ onGetStarted, onDemo }: HeroProps) {
 
         {/* CTAs */}
         <div style={anim(300)} className="flex flex-wrap gap-4 justify-center mb-12">
-          <button onClick={onGetStarted} className="btn-primary text-base px-8 py-4">
-            Get Started Free <ArrowRight className="h-4 w-4" />
-          </button>
-          <button onClick={onDemo} className="btn-ghost text-base px-8 py-4">
+          <button onClick={onDemo} className="btn-primary text-base px-8 py-4">
             <Play className="h-4 w-4" /> See Live Demo
           </button>
         </div>
