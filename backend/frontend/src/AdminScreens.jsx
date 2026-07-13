@@ -2862,97 +2862,146 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
               </button>
             </div>
           </div>
-          <div className="report-print-brand print-only">
-            <SchoolBrand school={report.school} subtitle="Official report card" compact />
-          </div>
-          <div className="panel-head">
-            <div className="report-meta">
-              <h3>Report Card</h3>
-              <p>Class position: {report.class_position ? `#${report.class_position} of ${report.class_size}` : "N/A"}</p>
-            </div>
-            <div
-              className="report-student"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "16px",
-                flexWrap: "wrap",
-              }}
-            >
-              <div
-                className="avatar"
-                style={{
-                  width: "140px",
-                  height: "140px",
-                  overflow: "hidden",
-                  borderRadius: "14px",
-                  flexShrink: 0,
-                  background: "#111827",
-                }}
-              >
-                {report.student?.profile_picture ? (
-                  <img
-                    src={report.student.profile_picture}
-                    alt={report.student.name || "Student"}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
-                ) : (
-                  (report.student?.name || "Student").slice(0, 2).toUpperCase()
-                )}
+          {(() => {
+            const brand = resolveSchoolBrand(report.school);
+            const student = report.student || {};
+            const scores = report.scores || [];
+            const termLabel = scores.find((row) => row.term)?.term || "";
+            const gradeScales = data?.grade_scales || [];
+            const gradeTone = (letter) => {
+              const first = (letter || "").trim().charAt(0).toUpperCase();
+              if (first === "A") return "excellent";
+              if (first === "B") return "good";
+              if (first === "C") return "average";
+              if (first === "D") return "weak";
+              return "poor";
+            };
+            return (
+              <div className="report-sheet">
+                <div className="report-sheet-inner">
+                  <header className="report-letterhead">
+                    <div className="report-letterhead-logo">
+                      {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
+                    </div>
+                    <div className="report-letterhead-text">
+                      <h1>{brand.name}</h1>
+                      {brand.address ? <p className="report-letterhead-line">{brand.address}</p> : null}
+                      {(brand.phone || brand.email) ? (
+                        <p className="report-letterhead-line">
+                          {[brand.phone, brand.email].filter(Boolean).join("  ·  ")}
+                        </p>
+                      ) : null}
+                      {brand.motto ? <p className="report-letterhead-motto">&ldquo;{brand.motto}&rdquo;</p> : null}
+                    </div>
+                    <div className="report-letterhead-seal">
+                      <div className="report-seal-ring">
+                        <span>Academic<br />Report</span>
+                      </div>
+                    </div>
+                  </header>
+
+                  <div className="report-title-bar">
+                    <span>Student Academic Report</span>
+                    <span>{termLabel || "Current Term"}</span>
+                  </div>
+
+                  <section className="report-student-block">
+                    <div className="report-student-photo">
+                      {student.profile_picture ? (
+                        <img src={student.profile_picture} alt={student.name || "Student"} />
+                      ) : (
+                        <span>{(student.name || "Student").slice(0, 2).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <dl className="report-student-info">
+                      <div><dt>Name</dt><dd>{student.name || "-"}</dd></div>
+                      <div><dt>Student ID</dt><dd>{student.student_id || "-"}</dd></div>
+                      <div><dt>Class</dt><dd>{student.class_name || "-"}</dd></div>
+                      <div><dt>Gender</dt><dd>{student.gender || "-"}</dd></div>
+                      <div><dt>Term</dt><dd>{termLabel || "-"}</dd></div>
+                      <div><dt>Position</dt><dd>{report.class_position ? `${report.class_position} of ${report.class_size}` : "N/A"}</dd></div>
+                    </dl>
+                  </section>
+
+                  <div className="report-table-scroll">
+                    <table className="report-subject-table">
+                      <thead>
+                        <tr>
+                          <th>S/N</th>
+                          <th>Subject</th>
+                          <th>Score</th>
+                          <th>Max</th>
+                          <th>%</th>
+                          <th>Grade</th>
+                          <th>Teacher</th>
+                          <th>Remark</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scores.length ? (
+                          scores.map((row, index) => (
+                            <tr key={row.id}>
+                              <td>{index + 1}</td>
+                              <td className="report-subject-name">{row.subject}</td>
+                              <td>{row.score}</td>
+                              <td>{row.max_score}</td>
+                              <td>{row.percentage != null ? `${row.percentage}%` : "-"}</td>
+                              <td>
+                                <span className={`report-grade-badge tone-${gradeTone(row.grade)}`}>{row.grade || "-"}</span>
+                              </td>
+                              <td>{row.teacher || "-"}</td>
+                              <td>{row.performance_remark || "-"}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan="8">No subject scores found.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="report-summary-strip">
+                    <div><span>Grand Total</span><strong>{report.total_score ?? 0}</strong></div>
+                    <div><span>Average</span><strong>{report.average_score ?? 0}%</strong></div>
+                    <div><span>Subjects</span><strong>{scores.length}</strong></div>
+                    <div><span>Class Position</span><strong>{report.class_position ? `${report.class_position} / ${report.class_size}` : "N/A"}</strong></div>
+                  </div>
+
+                  <div className="report-key-remarks-grid">
+                    <div className="report-grade-key">
+                      <h4>Grading Key</h4>
+                      {gradeScales.length ? (
+                        <table>
+                          <tbody>
+                            {gradeScales.map((scale) => (
+                              <tr key={scale.letter}>
+                                <td><span className={`report-grade-badge tone-${gradeTone(scale.letter)}`}>{scale.letter}</span></td>
+                                <td>{scale.min_percentage}&ndash;{scale.max_percentage}%</td>
+                                <td>{scale.remark || ""}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="report-grade-key-empty">No grading scale configured.</p>
+                      )}
+                    </div>
+                    <div className="report-signature-block">
+                      <div className="report-signature-line"><span>Class Teacher&apos;s Signature</span></div>
+                      <div className="report-signature-line"><span>Head Teacher&apos;s Signature</span></div>
+                      <div className="report-date-line"><span>Date Issued: {formatDate(new Date())}</span></div>
+                    </div>
+                  </div>
+
+                  <footer className="report-sheet-footer">
+                    {brand.motto || `${brand.name} · Excellence in Education`}
+                  </footer>
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <p className="strong">{report.student?.name}</p>
-                <small>Sex: {report.student?.gender || "N/A"}</small>
-                <small>ID: {report.student?.student_id}</small>
-                <small>{report.student?.class_name}</small>
-              </div>
-            </div>
-          </div>
-          <div className="metric-grid">
-            <MetricCard label="Total Score" value={report.total_score ?? 0} trend="Sum of subjects" />
-            <MetricCard label="Average" value={report.average_score ?? 0} trend="Across recorded subjects" />
-            <MetricCard
-              label="Subjects"
-              value={report.scores?.length ?? 0}
-              trend="Subjects graded"
-            />
-          </div>
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Subject</th>
-                  <th>Score</th>
-                  <th>Max</th>
-                  <th>Teacher</th>
-                  <th>Grade</th>
-                  <th>Remark</th>
-                  <th>Status</th>
-                  <th>Recorded</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.scores?.length ? (
-                  report.scores.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.subject}</td>
-                      <td>{row.score}</td>
-                      <td>{row.max_score}</td>
-                      <td>{row.teacher || "-"}</td>
-                      <td>{row.grade || "-"}</td>
-                      <td>{row.performance_remark || "-"}</td>
-                      <td>{row.approval_status || "-"}</td>
-                      <td>{formatDate(row.recorded_at)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="8">No subject scores found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+            );
+          })()}
         </article>
       ) : null}
 
