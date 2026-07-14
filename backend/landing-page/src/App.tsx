@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AuroraBackground, ParticleField, CursorSpotlight, ScrollProgress, IconConstellation } from './components/Background';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -35,6 +35,17 @@ function WhatsAppButton() {
   );
 }
 
+// The constellation icons drift across the whole fixed viewport at low opacity.
+// On the tall homepage the Navbar and Footer are never on screen together, so it
+// reads as ambient background. On short utility pages (signup, faq, contact,
+// privacy) both are visible at once, so the icons end up drifting right over
+// real UI text. Keep it home-only.
+function AmbientIcons() {
+  const location = useLocation();
+  if (location.pathname !== '/') return null;
+  return <IconConstellation count={14} />;
+}
+
 function HomePage() {
   const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}sign-in`; };
   const handleDemo = () => { document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }); };
@@ -58,7 +69,7 @@ export default function App() {
     <HashRouter>
       <div className="app-root">
         <AuroraBackground />
-        <IconConstellation count={14} />
+        <AmbientIcons />
         <ParticleField count={40} />
         <CursorSpotlight />
         <ScrollProgress />
