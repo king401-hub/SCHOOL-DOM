@@ -1015,10 +1015,12 @@ def _parent_payload(parent_profile, request=None):
 
     child_monitor_active = False
     child_monitor_ref = ""
+    child_monitor_expires_at = None
     try:
         km = parent_profile.kids_monitor
-        child_monitor_active = km.is_active
+        child_monitor_active = km.is_currently_active
         child_monitor_ref = km.paystack_ref or ""
+        child_monitor_expires_at = km.expires_at.isoformat() if km.expires_at else None
     except Exception:
         pass
 
@@ -1047,6 +1049,7 @@ def _parent_payload(parent_profile, request=None):
         "virtual_account": virtual_account,
         "child_monitor_active": child_monitor_active,
         "child_monitor_ref": child_monitor_ref,
+        "child_monitor_expires_at": child_monitor_expires_at,
         "created_at": parent_profile.created_at,
     }
 
@@ -4303,9 +4306,8 @@ def _reconcile_stuck_child_monitor_payments(parents):
         except Exception:
             continue
         if tx.get("status") in ("success", "successful"):
-            sub.is_active = True
-            sub.activated_at = timezone.now()
-            sub.save(update_fields=["is_active", "activated_at", "updated_at"])
+            from finance.services import activate_kids_monitor_subscription
+            activate_kids_monitor_subscription(sub.parent, sub.school, reference=sub.paystack_ref)
 
 
 @api_view(["GET"])
@@ -9878,11 +9880,13 @@ def _kids_monitor_parent_payload(parent_profile):
     ]
     try:
         sub = parent_profile.kids_monitor
-        monitor_active = sub.is_active
+        monitor_active = sub.is_currently_active
         monitor_ref = sub.paystack_ref
+        monitor_expires_at = sub.expires_at.isoformat() if sub.expires_at else None
     except KidsMonitorSubscription.DoesNotExist:
         monitor_active = False
         monitor_ref = ""
+        monitor_expires_at = None
     return {
         "id": str(parent_profile.id),
         "name": parent_user.get_full_name() or parent_user.email,
@@ -9891,6 +9895,7 @@ def _kids_monitor_parent_payload(parent_profile):
         "wards": wards,
         "monitor_active": monitor_active,
         "monitor_ref": monitor_ref,
+        "monitor_expires_at": monitor_expires_at,
     }
 
 
@@ -9935,11 +9940,11 @@ def kids_monitor_initiate(request, parent_id):
         id=parent_id,
     )
 
-    # If already active, return early
+    # If already active (and not expired), return early
     existing_sub = None
     try:
         existing_sub = parent_profile.kids_monitor
-        if existing_sub.is_active:
+        if existing_sub.is_currently_active:
             return Response({"success": False, "message": "Kids Monitor is already active for this parent."}, status=status.HTTP_400_BAD_REQUEST)
     except KidsMonitorSubscription.DoesNotExist:
         pass
@@ -9947,13 +9952,11 @@ def kids_monitor_initiate(request, parent_id):
     # A previous payment may have succeeded without the popup callback firing
     # (closed tab, network drop). Verify it before charging again.
     if existing_sub and existing_sub.paystack_ref:
-        from finance.services import verify_paystack_transaction
+        from finance.services import activate_kids_monitor_subscription, verify_paystack_transaction
         try:
             prev_tx = verify_paystack_transaction(existing_sub.paystack_ref)
             if prev_tx.get("status") in ("success", "successful"):
-                existing_sub.is_active = True
-                existing_sub.activated_at = timezone.now()
-                existing_sub.save(update_fields=["is_active", "activated_at", "updated_at"])
+                existing_sub = activate_kids_monitor_subscription(parent_profile, user.tenant, reference=existing_sub.paystack_ref)
                 return Response({
                     "success": True,
                     "already_paid": True,
@@ -10031,7 +10034,7 @@ def kids_monitor_verify(request, parent_id):
         id=parent_id,
     )
 
-    from finance.services import verify_paystack_transaction
+    from finance.services import activate_kids_monitor_subscription, verify_paystack_transaction
     try:
         tx = verify_paystack_transaction(reference)
     except Exception as exc:
@@ -10040,20 +10043,13 @@ def kids_monitor_verify(request, parent_id):
     if tx.get("status") not in ("success", "successful"):
         return Response({"success": False, "message": "Payment has not been completed."}, status=status.HTTP_402_PAYMENT_REQUIRED)
 
-    sub, _ = KidsMonitorSubscription.objects.update_or_create(
-        parent=parent_profile,
-        defaults={
-            "school": user.tenant,
-            "is_active": True,
-            "paystack_ref": reference,
-            "activated_at": timezone.now(),
-        },
-    )
+    sub = activate_kids_monitor_subscription(parent_profile, user.tenant, reference=reference)
 
     return Response({
         "success": True,
         "message": f"Kids Monitor activated for {parent_profile.user.get_full_name()}.",
         "monitor_active": True,
+        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
     })
 
 
@@ -10117,7 +10113,7 @@ def _notify_parents_on_attendance(student_user, attendance_status, attendance_da
     to_send = []
     for parent_profile in parents:
         try:
-            if not parent_profile.kids_monitor.is_active:
+            if not parent_profile.kids_monitor.is_currently_active:
                 continue
         except KidsMonitorSubscription.DoesNotExist:
             continue

@@ -859,7 +859,9 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
   const [locationStatus, setLocationStatus] = useState("");
 
   const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
-  const canUseAttendance = nonK12 ? session?.user?.role === "teacher" : ATTENDANCE_ROLES.has(session?.user?.role);
+  // Non-K12 schools don't use staff QR clock-in at all — students mark their
+  // own attendance instead (see StudentQrAttendanceScanner).
+  const canUseAttendance = nonK12 ? false : ATTENDANCE_ROLES.has(session?.user?.role);
 
   const loadPage = useCallback(async () => {
     if (!token) {
@@ -939,8 +941,8 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
       <main className="signup-page dashboard-page">
         <section className="dashboard-shell">
           <article className="app-panel state-panel">
-            <h3>{nonK12 ? "Teacher Attendance Only" : "Staff Attendance Only"}</h3>
-            <p>{nonK12 ? "This QR code can only be used by authenticated teacher accounts." : "This QR code can only be used by authenticated staff, teacher, or admin accounts."}</p>
+            <h3>{nonK12 ? "Not Used at Your School" : "Staff Attendance Only"}</h3>
+            <p>{nonK12 ? "Non-K12 schools don't use staff QR clock-in — students mark their own attendance instead." : "This QR code can only be used by authenticated staff, teacher, or admin accounts."}</p>
             <div className="panel-form-actions">
               <button type="button" onClick={() => onNavigate?.("/dashboard")}>
                 Back to Dashboard

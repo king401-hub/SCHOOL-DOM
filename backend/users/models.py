@@ -837,6 +837,9 @@ class KidsMonitorSubscription(models.Model):
     is_active = models.BooleanField(default=False)
     paystack_ref = models.CharField(max_length=100, blank=True)
     activated_at = models.DateTimeField(null=True, blank=True)
+    # Non-K12 schools renew Child Monitor monthly (like activation credits);
+    # K12 leaves this null and stays active until an admin manually turns it off.
+    expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -847,3 +850,11 @@ class KidsMonitorSubscription(models.Model):
 
     def __str__(self):
         return f"KidsMonitor({self.parent.user.email}, active={self.is_active})"
+
+    @property
+    def is_currently_active(self):
+        if not self.is_active:
+            return False
+        if self.expires_at and self.expires_at < timezone.now():
+            return False
+        return True

@@ -1162,11 +1162,8 @@ def process_paystack_webhook(data: dict) -> dict:
             if parent:
                 sub = KidsMonitorSubscription.objects.filter(parent=parent).first()
         if sub:
-            if not sub.is_active:
-                sub.is_active = True
-                sub.paystack_ref = reference or sub.paystack_ref
-                sub.activated_at = timezone.now()
-                sub.save(update_fields=['is_active', 'paystack_ref', 'activated_at', 'updated_at'])
+            if not sub.is_currently_active:
+                activate_kids_monitor_subscription(sub.parent, sub.school, reference=reference or sub.paystack_ref)
                 logger.info("Kids Monitor activated via webhook: ref=%s parent=%s", reference, sub.parent_id)
             return {'status': 'success', 'type': 'kids_monitor', 'reference': reference}
         logger.warning("Kids Monitor webhook %s: no matching subscription", reference)
@@ -2569,6 +2566,31 @@ def _add_activation_token_duration(source_date, tenant, token_units):
     if duration_days:
         next_date += timedelta(days=duration_days * token_units)
     return next_date
+
+
+def kids_monitor_expiry_for_tenant(tenant, from_dt=None):
+    """Non-K12 Child Monitor subscriptions renew monthly, like activation credits.
+    K12 stays indefinite (manual deactivation only) — returns None there."""
+    if not is_non_k12_tenant(tenant):
+        return None
+    return _add_months(from_dt or timezone.now(), 1)
+
+
+def activate_kids_monitor_subscription(parent_profile, tenant, reference=None):
+    """Activate (or renew) a parent's Child Monitor subscription for the given school."""
+    from users.models import KidsMonitorSubscription
+
+    now = timezone.now()
+    defaults = {
+        "school": tenant,
+        "is_active": True,
+        "activated_at": now,
+        "expires_at": kids_monitor_expiry_for_tenant(tenant, now),
+    }
+    if reference:
+        defaults["paystack_ref"] = reference
+    sub, _ = KidsMonitorSubscription.objects.update_or_create(parent=parent_profile, defaults=defaults)
+    return sub
 
 
 def _student_paid_ratio(student_profile):

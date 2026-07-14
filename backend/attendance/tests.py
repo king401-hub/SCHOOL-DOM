@@ -210,6 +210,72 @@ class TeacherAttendanceTestCase(TestCase):
         self.assertEqual(attendance.check_out_address, "School gate")
 
 
+class NonK12StaffAttendanceLockedOutTests(TestCase):
+    """
+    Non-K12 schools don't use the staff QR clock-in system at all — students mark
+    their own attendance instead. Verify every role, including teachers (who used
+    to be the one role allowed here), is now rejected for a Non-K12 tenant, and
+    that K12 behavior (covered by TeacherAttendanceTestCase) is untouched.
+    """
+
+    def setUp(self):
+        self.tenant = SchoolTenant.objects.create(
+            name="Vocational Academy",
+            schema_name="attn_non_k12_school",
+            school_type=SchoolTenant.NON_K12,
+        )
+        self.qr_code, _ = AttendanceQRCode.get_or_create_for_tenant(self.tenant)
+        self.client = APIClient()
+        self.location_payload = {
+            "latitude": 6.5243793,
+            "longitude": 3.3792057,
+            "accuracy": 12.5,
+            "address": "Lagos, Nigeria",
+            "device_info": "Test browser | platform=test",
+        }
+
+    def _assert_role_locked_out(self, role):
+        user = User.objects.create_user(
+            email=f"{role}@nonk12.test",
+            password="testpass123",
+            role=role,
+            tenant=self.tenant,
+        )
+        response = self.client.post(
+            f"/api/attendance/scan/{self.qr_code.token}/",
+            {"user_id": str(user.id), "location": self.location_payload},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.data["success"])
+        self.assertIn("non-k12", response.data["message"].lower())
+        self.assertFalse(TeacherAttendance.objects.filter(teacher=user).exists())
+
+    def test_teacher_can_no_longer_mark_staff_qr_attendance(self):
+        self._assert_role_locked_out("teacher")
+
+    def test_school_admin_cannot_mark_staff_qr_attendance(self):
+        self._assert_role_locked_out("school_admin")
+
+    def test_staff_cannot_mark_staff_qr_attendance(self):
+        self._assert_role_locked_out("staff")
+
+    def test_clock_out_also_locked_out_for_non_k12(self):
+        teacher = User.objects.create_user(
+            email="clockout@nonk12.test",
+            password="testpass123",
+            role="teacher",
+            tenant=self.tenant,
+        )
+        response = self.client.post(
+            "/api/attendance/clock-out/",
+            {"user_id": str(teacher.id), "location": self.location_payload},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.data["success"])
+
+
 class AttendanceDashboardTenantIsolationTests(TestCase):
     """
     The admin/dashboard endpoints (today's list, by-date, teacher history, summary,

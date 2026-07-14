@@ -7601,6 +7601,11 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                           {parent.child_monitor_active ? (
                             <>
                               <span className="km-badge km-badge--active">Active</span>
+                              {parent.child_monitor_expires_at ? (
+                                <small style={{ color: "#94a3b8" }}>
+                                  Renews {new Date(parent.child_monitor_expires_at).toLocaleDateString()}
+                                </small>
+                              ) : null}
                               <button
                                 type="button"
                                 className="btn btn-sm btn-outline-danger"

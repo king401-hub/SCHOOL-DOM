@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.core import signing
@@ -23,11 +24,15 @@ from academic.models import (
 from core.models import Domain, SchoolTenant
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
-from finance.services import get_or_create_activation_credit_pool, get_or_create_student_activation_credit
+from finance.services import (
+    activate_kids_monitor_subscription,
+    get_or_create_activation_credit_pool,
+    get_or_create_student_activation_credit,
+)
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, Notification
 from tenants.models import Tenant
-from users.models import StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
+from users.models import KidsMonitorSubscription, ParentProfile, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
 from users.app_views import ID_CARD_SIGNING_SALT
 
 
@@ -64,6 +69,82 @@ class SchoolRegistrationCreditTests(TestCase):
                 metadata__bonus="school_registration",
             ).exists()
         )
+
+    def test_create_school_with_non_k12_tier_is_never_mixed_up_with_k12(self):
+        """Selecting Non-K12 at signup must persist as Non-K12 end-to-end — the
+        tier drives pricing (activation_credit_price_for_tenant) and downstream
+        gating (attendance, Child Monitor), so a mix-up here breaks everything."""
+        response = self.client.post(
+            "/api/auth/create-school/",
+            data={
+                "school_name": "Precision Vocational Institute",
+                "school_code": "precision_vocational",
+                "email": "admin@precisionvoc.test",
+                "school_type": "non_k12",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["school"]["school_type"], "non_k12")
+
+        school = SchoolTenant.objects.get(schema_name=response.data["school"]["school_code"])
+        self.assertEqual(school.school_type, SchoolTenant.NON_K12)
+
+        pool = get_or_create_activation_credit_pool(school)
+        self.assertEqual(pool.price_per_credit, Decimal("200.00"))
+
+    def test_create_school_with_k12_tier_is_never_mixed_up_with_non_k12(self):
+        response = self.client.post(
+            "/api/auth/create-school/",
+            data={
+                "school_name": "Precision Primary School",
+                "school_code": "precision_primary",
+                "email": "admin@precisionprimary.test",
+                "school_type": "k12",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["school"]["school_type"], "k12")
+
+        school = SchoolTenant.objects.get(schema_name=response.data["school"]["school_code"])
+        self.assertEqual(school.school_type, SchoolTenant.K12)
+
+        pool = get_or_create_activation_credit_pool(school)
+        self.assertEqual(pool.price_per_credit, Decimal("500.00"))
+
+    def test_create_school_omitting_tier_defaults_to_k12_not_non_k12(self):
+        response = self.client.post(
+            "/api/auth/create-school/",
+            data={
+                "school_name": "Default Tier Academy",
+                "school_code": "default_tier_academy",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["school"]["school_type"], "k12")
+        school = SchoolTenant.objects.get(schema_name=response.data["school"]["school_code"])
+        self.assertEqual(school.school_type, SchoolTenant.K12)
+
+    def test_create_school_rejects_invalid_tier_instead_of_silently_defaulting(self):
+        response = self.client.post(
+            "/api/auth/create-school/",
+            data={
+                "school_name": "Bogus Tier Academy",
+                "school_code": "bogus_tier_academy",
+                "school_type": "high_school",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_type", response.data["errors"])
+        self.assertFalse(SchoolTenant.objects.filter(schema_name="bogus_tier_academy").exists())
 
 
 class StudentEnrollmentTests(TestCase):
@@ -3244,6 +3325,117 @@ class NonK12StudentSelfRegistrationTests(TestCase):
         user = User.objects.get(email=f"{self._testMethodName}@school.edu")
         self.assertEqual(user.tenant_id, self.non_k12_school.id)
         self.assertNotEqual(user.tenant_id, self.k12_school.id)
+
+
+class KidsMonitorExpiryTests(TestCase):
+    """Non-K12 Child Monitor subscriptions renew monthly, like activation credits;
+    K12 stays indefinite until an admin manually deactivates it."""
+
+    def setUp(self):
+        self.non_k12_school = SchoolTenant.objects.create(
+            name="Vocational Academy",
+            schema_name="km_non_k12_20260306",
+            school_type=SchoolTenant.NON_K12,
+            is_active=True,
+        )
+        self.k12_school = SchoolTenant.objects.create(
+            name="Primary School",
+            schema_name="km_k12_20260306",
+            school_type=SchoolTenant.K12,
+            is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            email="km.admin@school.edu",
+            password="AdminPass123",
+            first_name="KM",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.non_k12_school,
+            is_active=True,
+            is_verified=True,
+        )
+        parent_user = User.objects.create_user(
+            email="km.parent@school.edu",
+            password="ParentPass123",
+            first_name="KM",
+            last_name="Parent",
+            role="parent",
+            tenant=self.non_k12_school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.parent_profile = ParentProfile.objects.create(user=parent_user)
+        self.client = APIClient()
+
+    def test_activation_sets_one_month_expiry_for_non_k12(self):
+        sub = activate_kids_monitor_subscription(self.parent_profile, self.non_k12_school, reference="km-test-1")
+        self.assertTrue(sub.is_active)
+        self.assertIsNotNone(sub.expires_at)
+        self.assertTrue(sub.is_currently_active)
+        self.assertLess(sub.expires_at, timezone.now() + timedelta(days=32))
+        self.assertGreater(sub.expires_at, timezone.now() + timedelta(days=27))
+
+    def test_activation_leaves_no_expiry_for_k12(self):
+        k12_parent_user = User.objects.create_user(
+            email="km.k12.parent@school.edu",
+            password="ParentPass123",
+            first_name="KM",
+            last_name="K12Parent",
+            role="parent",
+            tenant=self.k12_school,
+            is_active=True,
+            is_verified=True,
+        )
+        k12_parent_profile = ParentProfile.objects.create(user=k12_parent_user)
+        sub = activate_kids_monitor_subscription(k12_parent_profile, self.k12_school, reference="km-test-2")
+        self.assertTrue(sub.is_active)
+        self.assertIsNone(sub.expires_at)
+        self.assertTrue(sub.is_currently_active)
+
+    def test_is_currently_active_respects_expiry(self):
+        sub = KidsMonitorSubscription.objects.create(
+            parent=self.parent_profile,
+            school=self.non_k12_school,
+            is_active=True,
+            activated_at=timezone.now(),
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+        self.assertFalse(sub.is_currently_active)
+
+    def test_kids_monitor_verify_endpoint_sets_expiry_for_non_k12(self):
+        self.client.force_authenticate(user=self.admin)
+        with patch("finance.services.verify_paystack_transaction", return_value={"status": "success"}):
+            response = self.client.post(
+                f"/api/app/kids-monitor/{self.parent_profile.id}/verify/",
+                data={"reference": "km-endpoint-test"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["success"])
+        self.assertIsNotNone(response.data.get("expires_at"))
+        sub = KidsMonitorSubscription.objects.get(parent=self.parent_profile)
+        self.assertTrue(sub.is_active)
+        self.assertIsNotNone(sub.expires_at)
+
+    def test_kids_monitor_initiate_blocks_active_but_allows_renewal_after_expiry(self):
+        self.client.force_authenticate(user=self.admin)
+        activate_kids_monitor_subscription(self.parent_profile, self.non_k12_school, reference="km-active")
+
+        blocked = self.client.post(f"/api/app/kids-monitor/{self.parent_profile.id}/initiate/", format="json")
+        self.assertEqual(blocked.status_code, 400)
+        self.assertFalse(blocked.data["success"])
+
+        sub = self.parent_profile.kids_monitor
+        sub.expires_at = timezone.now() - timedelta(days=1)
+        sub.save(update_fields=["expires_at"])
+
+        with patch("finance.services.verify_paystack_transaction", return_value={"status": "success"}):
+            renewed = self.client.post(f"/api/app/kids-monitor/{self.parent_profile.id}/initiate/", format="json")
+        self.assertEqual(renewed.status_code, 200, renewed.data)
+        self.assertTrue(renewed.data["success"])
+        self.assertTrue(renewed.data.get("already_paid"))
+        sub.refresh_from_db()
+        self.assertTrue(sub.is_currently_active)
 
 
 @override_settings(ADMIN_OTP_DEBUG_CODE_ENABLED=True)

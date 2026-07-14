@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -109,6 +109,17 @@ export default function SignUpPage() {
   const [address, setAddress] = useState('');
   const [schoolGroupName, setSchoolGroupName] = useState('');
   const [certified, setCertified] = useState(false);
+
+  // useState's initializer only runs on mount, so if this page is ever reached
+  // twice without a full remount (e.g. browser back/forward between
+  // ?tier=k12 and ?tier=non_k12), the dropdown could silently keep showing
+  // the stale tier. Resync whenever the URL's tier param actually changes.
+  useEffect(() => {
+    const tierParam = searchParams.get('tier');
+    if (tierParam === 'k12' || tierParam === 'non_k12') {
+      setSchoolType(tierParam);
+    }
+  }, [searchParams]);
 
   const [schoolCode, setSchoolCode] = useState('');
   const [otpChallenge, setOtpChallenge] = useState('');

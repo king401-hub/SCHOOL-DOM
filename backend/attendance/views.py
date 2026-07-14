@@ -35,7 +35,9 @@ def can_mark_attendance(user):
         return False
     tenant = getattr(user, 'tenant', None)
     if tenant and (getattr(tenant, 'school_type', 'k12') or 'k12') == 'non_k12':
-        return user.role == 'teacher'
+        # Non-K12 schools don't use staff QR clock-in at all — students mark
+        # their own attendance instead (see users.app_views.student_qr_mark_attendance).
+        return False
     if user.role in ATTENDANCE_USER_ROLES:
         return True
     try:
@@ -48,6 +50,13 @@ def can_mark_attendance(user):
         ).exists()
     except Exception:
         return False
+
+
+def staff_attendance_unavailable_message(user, action):
+    tenant = getattr(user, 'tenant', None)
+    if tenant and (getattr(tenant, 'school_type', 'k12') or 'k12') == 'non_k12':
+        return f'Staff QR attendance is not used at Non-K12 schools, so you cannot {action}. Students mark their own attendance.'
+    return f'Only staff, teachers, and admins can {action}.'
 
 
 def attendance_role_label(user):
@@ -325,7 +334,7 @@ def scan_qr_code(request, token):
     # Verify user can use staff attendance.
     if not can_mark_attendance(user):
         return Response(
-            {'success': False, 'message': 'Only staff, teachers, and admins can mark attendance.'},
+            {'success': False, 'message': staff_attendance_unavailable_message(user, 'mark attendance')},
             status=status.HTTP_403_FORBIDDEN
         )
     
@@ -423,7 +432,7 @@ def check_attendance_status(request):
         return actor_required_response()
     if not can_mark_attendance(user):
         return Response(
-            {'success': False, 'message': 'Only staff, teachers, and admins can check attendance status.'},
+            {'success': False, 'message': staff_attendance_unavailable_message(user, 'check attendance status')},
             status=status.HTTP_403_FORBIDDEN
         )
     
@@ -464,7 +473,7 @@ def clock_out(request):
         return actor_required_response()
     if not can_mark_attendance(user):
         return Response(
-            {'success': False, 'message': 'Only staff, teachers, and admins can clock out.'},
+            {'success': False, 'message': staff_attendance_unavailable_message(user, 'clock out')},
             status=status.HTTP_403_FORBIDDEN
         )
 
