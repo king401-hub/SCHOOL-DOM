@@ -11,13 +11,24 @@ $OutputDir = Join-Path $ProjectDir "bin\$Configuration"
 $ReleaseDir = Join-Path $Root "release"
 $ZipPath = Join-Path $ReleaseDir "SchoolDom-Student-CBT-Win7-$Version.zip"
 
-$msbuild = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\MSBuild.exe"
-if (!(Test-Path $msbuild)) {
-    throw "MSBuild was not found at $msbuild. Install .NET Framework developer tools."
+$msbuildCandidates = @(
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+    "${env:ProgramFiles}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+    "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\MSBuild.exe"
+)
+$msbuild = $msbuildCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (!$msbuild) {
+    throw "MSBuild was not found. Install Visual Studio Build Tools or .NET Framework developer tools."
 }
+Write-Host "Using MSBuild: $msbuild"
+$net40Runtime = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319"
 
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-& $msbuild $Solution /p:Configuration=$Configuration
+& $msbuild $Solution /p:Configuration=$Configuration "/p:FrameworkPathOverride=$net40Runtime\"
 if ($LASTEXITCODE -ne 0) {
     throw "Build failed."
 }
@@ -69,6 +80,7 @@ if (!(Test-Path $inno)) {
 }
 if (Test-Path $inno) {
     & $inno (Join-Path $Root "installer\SchoolDomStudentCbtWin7.iss") "/DAppVersion=$Version"
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Inno Setup failed (exit $LASTEXITCODE) - ZIP is still available." }
 }
 
 Write-Host "Release package: $ZipPath"

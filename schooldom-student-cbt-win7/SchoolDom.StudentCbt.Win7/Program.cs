@@ -11,6 +11,12 @@ namespace SchoolDom.StudentCbt.Win7
         [STAThread]
         private static void Main()
         {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (s, e) =>
+                MessageBox.Show(e.Exception.ToString(), "SchoolDom CBT - Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                MessageBox.Show(e.ExceptionObject.ToString(), "SchoolDom CBT - Fatal Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
             BootstrapNetworkSecurity();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

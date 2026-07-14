@@ -11,6 +11,7 @@ import Pricing from './components/Pricing';
 import Footer from './components/Footer';
 import FAQPage from './pages/FAQ';
 import ContactPage from './pages/Contact';
+import PrivacyPage from './pages/Privacy';
 
 const SignUpPage = lazy(() => import('./pages/SignUp'));
 
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/faq" element={<FAQPage />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/signup" element={<Suspense fallback={null}><SignUpPage /></Suspense>} />
           </Routes>
         </main>

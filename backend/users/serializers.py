@@ -1,11 +1,12 @@
 # users/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from .models import User, StudentProfile, TeacherProfile, ParentProfile, LoginHistory, generate_short_student_id, generate_short_teacher_id
 from core.models import SchoolGroup, SchoolTenant
-from finance.services import student_has_login_credit, update_student_activation_alerts
+from finance.services import student_has_login_credit, update_student_activation_alerts, get_or_create_activation_credit_pool
 import re
 
 SCHOOL_SCOPED_ROLES = {"student", "teacher", "staff", "accountant", "parent", "school_admin", "principal"}
@@ -105,7 +106,21 @@ class RegisterSerializer(serializers.Serializer):
         # Validate role-specific fields
         if data['role'] == 'student' and not data.get('guardian_name'):
             raise serializers.ValidationError({"guardian_name": "Guardian name is required for students."})
-        
+
+        if data['role'] == 'student':
+            tenant = data.get('school_code')
+            if tenant.school_type != SchoolTenant.NON_K12:
+                raise serializers.ValidationError({
+                    "school_code": "Self-registration is only available for Non-K12 schools. "
+                                    "Please contact your school administrator to create your account."
+                })
+            pool = get_or_create_activation_credit_pool(tenant)
+            if pool.balance < 1:
+                raise serializers.ValidationError({
+                    "school_code": "This school has no available student activation credits right now. "
+                                    "Please contact your school administrator."
+                })
+
         return data
     
     def validate_school_code(self, value):
@@ -139,49 +154,69 @@ class RegisterSerializer(serializers.Serializer):
         password = validated_data.pop('password')
         user = User(**validated_data)
         user.set_password(password)
-        
+
         # Assign tenant if school code provided
         if school_code:
             user.tenant = school_code
-        
-        user.save()
 
-        if user.role == 'school_superadmin':
-            group = SchoolGroup.objects.create(name=school_group_name, owner=user)
-            user.school_group = group
-            user.save(update_fields=['school_group'])
-        
-        # Create role-specific profile
-        if user.role == 'student':
-            StudentProfile.objects.create(
-                user=user,
-                student_id=student_id or generate_short_student_id(user.id.hex, user.tenant),
-                admission_number=f"ADM{timezone.now().strftime('%Y%m%d')}{user.id.hex[:4].upper()}",
-                admission_date=timezone.now().date(),
-                guardian_name=guardian_name,
-                guardian_phone=guardian_phone or "",
-                state_of_origin=state_of_origin or "",
-                local_government=local_government or "",
-                guardian_relation="Guardian"
-            )
-            try:
-                from finance.services import ensure_student_wallet
-                ensure_student_wallet(user)
-            except Exception:
-                pass
-        elif user.role == 'teacher':
-            TeacherProfile.objects.create(
-                user=user,
-                employee_id=teacher_id or generate_short_teacher_id(user.id.hex, user.tenant),
-                qualification="Not specified",
-                specialization="Not specified",
-                hire_date=timezone.now().date(),
-                emergency_contact_name="Not provided",
-                emergency_contact_phone="Not provided",
-                emergency_contact_relation="Not provided"
-            )
-        elif user.role == 'parent':
-            ParentProfile.objects.create(user=user)
+        # Wrapped in a transaction so a failed activation-credit deduction
+        # (e.g. a race with another concurrent self-registration) rolls back
+        # the user/profile too, instead of leaving a half-created account.
+        with transaction.atomic():
+            user.save()
+
+            if user.role == 'school_superadmin':
+                group = SchoolGroup.objects.create(name=school_group_name, owner=user)
+                user.school_group = group
+                user.save(update_fields=['school_group'])
+
+            # Create role-specific profile
+            if user.role == 'student':
+                profile = StudentProfile.objects.create(
+                    user=user,
+                    student_id=student_id or generate_short_student_id(user.id.hex, user.tenant),
+                    admission_number=f"ADM{timezone.now().strftime('%Y%m%d')}{user.id.hex[:4].upper()}",
+                    admission_date=timezone.now().date(),
+                    guardian_name=guardian_name,
+                    guardian_phone=guardian_phone or "",
+                    state_of_origin=state_of_origin or "",
+                    local_government=local_government or "",
+                    guardian_relation="Guardian"
+                )
+                try:
+                    from finance.services import ensure_student_wallet
+                    ensure_student_wallet(user)
+                except Exception:
+                    pass
+
+                # Self-registration (Non-K12 only, enforced in validate()) immediately
+                # consumes one activation credit from the school's pool so the new
+                # student can log in right away, same as an admin manually assigning one.
+                if user.tenant and user.tenant.school_type == SchoolTenant.NON_K12:
+                    from finance.services import assign_monthly_activation_credits
+                    try:
+                        assign_monthly_activation_credits(
+                            user.tenant, scope="student", months=1, student_id=profile.id
+                        )
+                    except ValueError as exc:
+                        # Pool balance changed since validate() (race with another
+                        # concurrent registration) — surface as a clean 400 and
+                        # roll back the whole account instead of leaving it
+                        # half-activated.
+                        raise serializers.ValidationError({"school_code": str(exc)})
+            elif user.role == 'teacher':
+                TeacherProfile.objects.create(
+                    user=user,
+                    employee_id=teacher_id or generate_short_teacher_id(user.id.hex, user.tenant),
+                    qualification="Not specified",
+                    specialization="Not specified",
+                    hire_date=timezone.now().date(),
+                    emergency_contact_name="Not provided",
+                    emergency_contact_phone="Not provided",
+                    emergency_contact_relation="Not provided"
+                )
+            elif user.role == 'parent':
+                ParentProfile.objects.create(user=user)
         
         # Generate verification token
         user.generate_email_verification_token()

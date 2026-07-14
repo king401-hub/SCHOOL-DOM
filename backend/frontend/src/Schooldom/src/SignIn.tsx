@@ -40,10 +40,11 @@ const SESSION_KEY = "schooldom.session";
 const LEGACY_SESSION_KEY = "educonnect.session";
 const DEFAULT_SIGNUP_ROLE = "school_admin";
 const TERMS_OPENED_KEY = "schooldom.terms_opened";
-const ADMIN_SIGNUP_ROLES = [
+const SIGNUP_ROLES = [
   { value: "school_admin", title: "School Admin", label: "School Admin" },
   { value: "principal", title: "School Principal", label: "School Principal" },
   { value: "school_superadmin", title: "Proprietor/Director", label: "Proprietor/Director" },
+  { value: "student", title: "Student", label: "Student (Non-K12 schools only)" },
 ];
 
 // Fix for import.meta.env - use Vite's import.meta.env with type assertion
@@ -197,6 +198,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [phone, setPhone] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
   const [schoolGroupName, setSchoolGroupName] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
   const [otpChallenge, setOtpChallenge] = useState("");
@@ -280,10 +283,11 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
 
   const canSignIn = useMemo(() => email.trim().length > 0 && password.length > 0, [email, password]);
   const selectedSignupRole = useMemo(
-    () => ADMIN_SIGNUP_ROLES.find((item) => item.title === adminRoleTitle) || ADMIN_SIGNUP_ROLES[0],
+    () => SIGNUP_ROLES.find((item) => item.title === adminRoleTitle) || SIGNUP_ROLES[0],
     [adminRoleTitle]
   );
   const isSchoolSuperadminSignup = selectedSignupRole.value === "school_superadmin";
+  const isStudentSignup = selectedSignupRole.value === "student";
 
   const canSignUp = useMemo(() => {
     if (
@@ -305,6 +309,10 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       return false;
     }
 
+    if (isStudentSignup && guardianName.trim().length === 0) {
+      return false;
+    }
+
     if (signupPassword !== confirmPassword) {
       return false;
     }
@@ -313,7 +321,9 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   }, [
     confirmPassword,
     firstName,
+    guardianName,
     isSchoolSuperadminSignup,
+    isStudentSignup,
     lastName,
     schoolCode,
     schoolGroupName,
@@ -520,10 +530,12 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         password: signupPassword,
         confirm_password: confirmPassword,
         role: selectedSignupRole.value || DEFAULT_SIGNUP_ROLE,
-        admin_title: adminRoleTitle,
+        admin_title: isStudentSignup ? "" : adminRoleTitle,
         phone: phone.trim(),
         school_code: isSchoolSuperadminSignup ? "" : schoolCode.trim(),
         school_group_name: isSchoolSuperadminSignup ? schoolGroupName.trim() : "",
+        guardian_name: isStudentSignup ? guardianName.trim() : "",
+        guardian_phone: isStudentSignup ? guardianPhone.trim() : "",
         terms_accepted: termsAccepted,
       };
 
@@ -1076,6 +1088,13 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                     <button type="submit" className="signup-button" disabled={!canSignIn || isSubmitting}>
                       {isSubmitting ? "Signing in..." : "Sign in"}
                     </button>
+
+                    <button type="button" className="create-school-trigger" onClick={() => {
+                      setAdminRoleTitle("Student");
+                      switchMode("signup");
+                    }}>
+                      New student? Create an account with your school code
+                    </button>
                   </form>
                 ) : (
                   <form className="signup-form" onSubmit={handleSignUp} noValidate>
@@ -1176,29 +1195,38 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                     </div>
 
                     <label htmlFor="admin-role-title">Role</label>
-                    <div className="input-wrap">
-                      <span className="input-icon">R</span>
-                      <select
-                        id="admin-role-title"
-                        value={adminRoleTitle}
-                        onChange={(event) => {
-                          const nextTitle = event.target.value;
-                          setAdminRoleTitle(nextTitle);
-                          setShowCreateSchool(false);
-                          setSchoolError("");
-                          setSchoolSuccess("");
-                          if (ADMIN_SIGNUP_ROLES.find((item) => item.title === nextTitle)?.value === "school_superadmin") {
-                            setSchoolCode("");
-                          }
-                        }}
-                      >
-                        {ADMIN_SIGNUP_ROLES.map((item) => (
-                          <option key={item.title} value={item.title}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {isStudentSignup ? (
+                      <div className="input-wrap" aria-live="polite">
+                        <span className="input-icon">R</span>
+                        <span id="admin-role-title" style={{ padding: "0.75rem 0" }}>
+                          {selectedSignupRole.label}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="input-wrap">
+                        <span className="input-icon">R</span>
+                        <select
+                          id="admin-role-title"
+                          value={adminRoleTitle}
+                          onChange={(event) => {
+                            const nextTitle = event.target.value;
+                            setAdminRoleTitle(nextTitle);
+                            setShowCreateSchool(false);
+                            setSchoolError("");
+                            setSchoolSuccess("");
+                            if (SIGNUP_ROLES.find((item) => item.title === nextTitle)?.value === "school_superadmin") {
+                              setSchoolCode("");
+                            }
+                          }}
+                        >
+                          {SIGNUP_ROLES.filter((item) => item.value !== "student").map((item) => (
+                            <option key={item.title} value={item.title}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {isSchoolSuperadminSignup ? (
                       <>
@@ -1215,6 +1243,51 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                             onChange={(event) => setSchoolGroupName(event.target.value)}
                             placeholder="e.g. Xcel Schools Group"
                             required
+                          />
+                        </div>
+                      </>
+                    ) : isStudentSignup ? (
+                      <>
+                        <p className="success-text">
+                          Student self-registration is only available for Non-K12 schools (vocational,
+                          tertiary, and academy institutions). Enter your school's unique code below —
+                          ask your school administrator if you don't have it.
+                        </p>
+                        <label htmlFor="student-school-code">School code</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">S</span>
+                          <input
+                            id="student-school-code"
+                            type="text"
+                            value={schoolCode}
+                            onChange={(event) => setSchoolCode(event.target.value)}
+                            placeholder="school schema code"
+                            required
+                          />
+                        </div>
+
+                        <label htmlFor="guardian-name">Guardian name</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">G</span>
+                          <input
+                            id="guardian-name"
+                            type="text"
+                            value={guardianName}
+                            onChange={(event) => setGuardianName(event.target.value)}
+                            placeholder="Parent or guardian's full name"
+                            required
+                          />
+                        </div>
+
+                        <label htmlFor="guardian-phone">Guardian phone (optional)</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">P</span>
+                          <input
+                            id="guardian-phone"
+                            type="text"
+                            value={guardianPhone}
+                            onChange={(event) => setGuardianPhone(event.target.value)}
+                            placeholder="+1234567890"
                           />
                         </div>
                       </>

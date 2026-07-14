@@ -23,6 +23,7 @@ from academic.models import (
 from core.models import Domain, SchoolTenant
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
+from finance.services import get_or_create_activation_credit_pool, get_or_create_student_activation_credit
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, Notification
 from tenants.models import Tenant
@@ -2577,6 +2578,7 @@ class AuthSchoolScopeTests(TestCase):
                 "confirm_password": "StudentPass123",
                 "role": "student",
                 "guardian_name": "Guardian One",
+                "terms_accepted": True,
             },
             format="json",
         )
@@ -2595,6 +2597,7 @@ class AuthSchoolScopeTests(TestCase):
                 "password": "TeacherPass123",
                 "confirm_password": "TeacherPass123",
                 "role": "teacher",
+                "terms_accepted": True,
             },
             format="json",
         )
@@ -2613,6 +2616,7 @@ class AuthSchoolScopeTests(TestCase):
                 "password": "AdminPass123",
                 "confirm_password": "AdminPass123",
                 "role": "school_admin",
+                "terms_accepted": True,
             },
             format="json",
         )
@@ -2622,6 +2626,18 @@ class AuthSchoolScopeTests(TestCase):
         self.assertIn("school_code", response.data["errors"])
 
     def test_register_student_with_school_code_is_allowed(self):
+        # Student self-registration is Non-K12-only (see NonK12StudentSelfRegistrationTests);
+        # self.school defaults to K12, so this needs its own Non-K12 tenant with credits.
+        non_k12_school = SchoolTenant.objects.create(
+            name="Scoped Non-K12 School",
+            schema_name="scoped_non_k12_20260306",
+            school_type=SchoolTenant.NON_K12,
+            is_active=True,
+        )
+        pool = get_or_create_activation_credit_pool(non_k12_school)
+        pool.balance = 5
+        pool.save(update_fields=["balance", "updated_at"])
+
         response = self.client.post(
             "/api/auth/register/",
             data={
@@ -2632,7 +2648,8 @@ class AuthSchoolScopeTests(TestCase):
                 "confirm_password": "StudentPass123",
                 "role": "student",
                 "guardian_name": "Guardian Scoped",
-                "school_code": self.school.schema_name,
+                "school_code": non_k12_school.schema_name,
+                "terms_accepted": True,
             },
             format="json",
         )
@@ -2640,7 +2657,7 @@ class AuthSchoolScopeTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["success"])
         user = User.objects.get(email="scoped.learner@school.edu")
-        self.assertEqual(user.tenant_id, self.school.id)
+        self.assertEqual(user.tenant_id, non_k12_school.id)
 
     def test_student_login_requires_school_code(self):
         student = User.objects.create_user(
@@ -3084,6 +3101,149 @@ class AuthSchoolScopeTests(TestCase):
 
         self.assertEqual(refresh_response.status_code, 200)
         self.assertIn("access", refresh_response.data)
+
+
+class NonK12StudentSelfRegistrationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.non_k12_school = SchoolTenant.objects.create(
+            name="Vocational Academy",
+            schema_name="vocational_academy_20260306",
+            school_type=SchoolTenant.NON_K12,
+            is_active=True,
+        )
+        self.k12_school = SchoolTenant.objects.create(
+            name="Primary School",
+            schema_name="primary_school_20260306",
+            school_type=SchoolTenant.K12,
+            is_active=True,
+        )
+        self.inactive_non_k12_school = SchoolTenant.objects.create(
+            name="Closed Vocational Academy",
+            schema_name="closed_vocational_20260306",
+            school_type=SchoolTenant.NON_K12,
+            is_active=False,
+        )
+
+    def _register_payload(self, school_code, email=None):
+        # Unique-per-test email: the IdempotencyMiddleware dedupes identical
+        # (anon user, method, path, body) requests for 10s, so a fixed email
+        # + fixed school_code across test methods would replay a stale response.
+        return {
+            "first_name": "New",
+            "last_name": "Student",
+            "email": email or f"{self._testMethodName}@school.edu",
+            "password": "StudentPass123",
+            "confirm_password": "StudentPass123",
+            "role": "student",
+            "guardian_name": "Guardian Person",
+            "phone": "+15550001111",
+            "school_code": school_code,
+            "terms_accepted": True,
+        }
+
+    def test_self_registration_succeeds_for_active_non_k12_school_with_credits(self):
+        pool = get_or_create_activation_credit_pool(self.non_k12_school)
+        pool.balance = 3
+        pool.save(update_fields=["balance", "updated_at"])
+
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload(self.non_k12_school.schema_name),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["success"])
+        self.assertIn("access", response.data)
+
+        user = User.objects.get(email=f"{self._testMethodName}@school.edu")
+        self.assertEqual(user.role, "student")
+        self.assertEqual(user.tenant_id, self.non_k12_school.id)
+
+        profile = StudentProfile.objects.get(user=user)
+        self.assertTrue(profile.student_id)
+        self.assertTrue(profile.admission_number)
+        self.assertTrue(hasattr(user, "wallet"))
+
+        # One credit was actually consumed from the school's pool, and the
+        # student can log in immediately (mirrors an admin manually assigning one).
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 2)
+        credit = get_or_create_student_activation_credit(profile)
+        self.assertTrue(credit.has_login_credit)
+
+    def test_self_registration_rejected_for_k12_school(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload(self.k12_school.schema_name),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+        self.assertIn("non-k12", str(response.data["errors"]).lower())
+        self.assertFalse(User.objects.filter(email=f"{self._testMethodName}@school.edu").exists())
+
+    def test_self_registration_rejected_when_pool_has_no_credits(self):
+        # Fresh pool defaults to a zero balance.
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload(self.non_k12_school.schema_name),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+        self.assertIn("activation credit", str(response.data["errors"]).lower())
+        # No half-created account left behind.
+        self.assertFalse(User.objects.filter(email=f"{self._testMethodName}@school.edu").exists())
+
+    def test_self_registration_rejected_for_inactive_non_k12_school(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload(self.inactive_non_k12_school.schema_name),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+        self.assertFalse(User.objects.filter(email=f"{self._testMethodName}@school.edu").exists())
+
+    def test_self_registration_rejected_for_nonexistent_school_code(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload("does_not_exist_anywhere"),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("school_code", response.data["errors"])
+        self.assertFalse(User.objects.filter(email=f"{self._testMethodName}@school.edu").exists())
+
+    def test_self_registration_never_links_to_a_different_school_via_race(self):
+        """A student can never end up linked to a school other than the one whose code they supplied."""
+        pool = get_or_create_activation_credit_pool(self.non_k12_school)
+        pool.balance = 1
+        pool.save(update_fields=["balance", "updated_at"])
+        other_pool = get_or_create_activation_credit_pool(self.k12_school)
+        other_pool.balance = 10
+        other_pool.save(update_fields=["balance", "updated_at"])
+
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload(self.non_k12_school.schema_name),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        user = User.objects.get(email=f"{self._testMethodName}@school.edu")
+        self.assertEqual(user.tenant_id, self.non_k12_school.id)
+        self.assertNotEqual(user.tenant_id, self.k12_school.id)
 
 
 @override_settings(ADMIN_OTP_DEBUG_CODE_ENABLED=True)

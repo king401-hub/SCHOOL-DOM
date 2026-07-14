@@ -66,7 +66,7 @@ export default function Footer() {
               <h4 className="text-white font-bold text-sm mb-4">{heading}</h4>
               <ul className="space-y-2.5">
                 {items.map(item => {
-                  const href = item === 'Contact Us' ? '/#/contact' : '#';
+                  const href = item === 'Contact Us' ? '/#/contact' : item === 'Privacy Policy' ? '/#/privacy' : '#';
                   return (
                     <li key={item}>
                       <a href={href} className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
