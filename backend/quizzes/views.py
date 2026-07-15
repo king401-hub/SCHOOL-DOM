@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from academic.models import AcademicYear, GradeScale, Subject, Term
 from exams.models import Question as ExamQuestion
 from notifications.models import Notification
+from notifications.push import push_for_notifications
 from users.models import User, resolve_legacy_tenant_for_school
 from .models import (
     Question as QuizQuestion,
@@ -265,6 +266,7 @@ def _create_flag_notifications(*, school, admin_users, teacher, title, message, 
         )
     if notifications:
         Notification.objects.bulk_create(notifications)
+        push_for_notifications(notifications)
 
 
 def _recent_student_flag_count(*, student, reference_model, title):

@@ -14,3 +14,4 @@ requests==2.32.3
 qrcode[pil]==7.4.2
 celery==5.4.0
 redis==5.0.8
+pywebpush==2.3.0

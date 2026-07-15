@@ -17561,6 +17561,209 @@ body[data-theme="dark"] .lesson-plan-dialog-meta span {
   border-color: rgba(147, 197, 253, 0.22);
 }
 
+.group-chat-panel {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1rem;
+  min-height: 360px;
+}
+
+.group-chat-sidebar {
+  border-right: 1px solid var(--student-border, #e3e9f5);
+  padding-right: 1rem;
+}
+
+.group-chat-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.group-chat-sidebar-head h4 {
+  margin: 0;
+}
+
+.group-chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.group-chat-list-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--student-border, #e3e9f5);
+  border-radius: 12px;
+  background: transparent;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.group-chat-list-item.active {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.group-chat-list-name {
+  font-weight: 700;
+  color: var(--student-text-strong, #0f172a);
+}
+
+.group-chat-list-item small {
+  color: var(--student-text, #64748b);
+}
+
+.group-chat-list-item em {
+  font-style: normal;
+  color: var(--student-text, #64748b);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-chat-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+}
+
+.group-chat-main-head {
+  margin-bottom: 0.6rem;
+}
+
+.group-chat-main-head h4 {
+  margin: 0;
+}
+
+.group-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.2rem;
+}
+
+.group-chat-bubble {
+  max-width: 75%;
+  align-self: flex-start;
+  background: var(--student-surface, #f1f5f9);
+  border: 1px solid var(--student-border, #e3e9f5);
+  border-radius: 12px;
+  padding: 0.5rem 0.7rem;
+}
+
+.group-chat-bubble.outgoing {
+  align-self: flex-end;
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.group-chat-bubble strong {
+  display: block;
+  font-size: 0.75rem;
+  color: #22c55e;
+}
+
+.group-chat-bubble p {
+  margin: 0.15rem 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.group-chat-bubble small {
+  color: var(--student-text, #94a3b8);
+  font-size: 0.72rem;
+}
+
+.group-chat-composer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.group-chat-composer input {
+  flex: 1;
+  border-radius: 10px;
+  border: 1px solid var(--student-border, #dbe6f5);
+  padding: 0.6rem 0.75rem;
+}
+
+.group-chat-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0 1.25rem 1.25rem;
+}
+
+.group-chat-create-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.group-chat-create-form input[type="text"] {
+  border-radius: 10px;
+  border: 1px solid var(--student-border, #dbe6f5);
+  padding: 0.6rem 0.75rem;
+  font-weight: 400;
+}
+
+.group-chat-member-picker {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border: 1px solid var(--student-border, #e3e9f5);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.group-chat-member-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
+
+body[data-theme="dark"] .group-chat-bubble {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(147, 197, 253, 0.22);
+  color: #ffffff;
+}
+
+body[data-theme="dark"] .group-chat-list-item {
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
+body[data-theme="dark"] .group-chat-list-name {
+  color: #ffffff;
+}
+
+@media (max-width: 760px) {
+  .group-chat-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .group-chat-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--student-border, #e3e9f5);
+    padding-right: 0;
+    padding-bottom: 1rem;
+  }
+}
+
 @media (max-width: 760px) {
   .scheme-week-row {
     grid-template-columns: 1fr auto;

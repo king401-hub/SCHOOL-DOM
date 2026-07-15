@@ -439,15 +439,16 @@ function AutoGrowTextarea({ value, onChange, rows = 2, className = "", ...props 
   );
 }
 
-function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }) {
+function LessonPlanDetailDialog({ plan, onClose, itemLabel = "Lesson plan", title }) {
   if (!plan) return null;
+  const resolvedTitle = title || `${itemLabel} details`;
   const sections = [
     ["Summary", plan.description || plan.body || plan.content],
     ["Objectives", plan.objectives],
     ["Activities", plan.activities],
     ["Resources", plan.resources],
     ["Assessment", plan.assessment],
-    ["Teacher lesson plan", plan.notes],
+    [`Teacher ${itemLabel.toLowerCase()}`, plan.notes],
   ].filter(([, content]) => content);
 
   return (
@@ -462,7 +463,7 @@ function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }
         <div className="lesson-plan-dialog-head">
           <div>
             <p className="quiz-kicker">Week {plan.week_number}</p>
-            <h3 id="lesson-plan-dialog-title">{plan.title || title}</h3>
+            <h3 id="lesson-plan-dialog-title">{plan.title || resolvedTitle}</h3>
             <small>
               {[plan.subject, plan.class_name, plan.term, plan.academic_year].filter(Boolean).join(" - ")}
             </small>
@@ -471,7 +472,7 @@ function LessonPlanDetailDialog({ plan, onClose, title = "Lesson plan details" }
         </div>
         <div className="lesson-plan-dialog-meta">
           <span>{plan.status || "planned"}</span>
-          <span>{plan.teacher ? `Teacher: ${plan.teacher}` : title}</span>
+          <span>{plan.teacher ? `Teacher: ${plan.teacher}` : resolvedTitle}</span>
           {plan.updated_at ? <span>Updated: {formatDate(plan.updated_at)}</span> : null}
         </div>
         {sections.length ? (
@@ -512,6 +513,8 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
     }
   }, [loadPlanning, session]);
 
+  const nonK12 = isNonK12School(session, planning);
+  const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
   const plans = planning?.lesson_plans || [];
   const grouped = plans.reduce((acc, plan) => {
     const key = plan.subject || "General";
@@ -569,7 +572,7 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
         </div>
       )}
       </div>
-      <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} />
+      <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} itemLabel={planningItemLabel} />
     </section>
   );
 }
@@ -1862,6 +1865,259 @@ function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "
   });
 }
 
+function GroupChatPanel({ session, groups: initialGroups = [], canCreateGroups, classmateOptions = [], onGroupsChange }) {
+  const [groups, setGroups] = useState(initialGroups);
+  const [activeGroupId, setActiveGroupId] = useState(initialGroups[0]?.id || "");
+  const [groupDetail, setGroupDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [composeBody, setComposeBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createMembers, setCreateMembers] = useState([]);
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const chatBodyRef = useRef(null);
+
+  useEffect(() => {
+    setGroups(initialGroups);
+  }, [initialGroups]);
+
+  useEffect(() => {
+    if (!activeGroupId && groups[0]?.id) {
+      setActiveGroupId(groups[0].id);
+    }
+  }, [groups, activeGroupId]);
+
+  const loadGroupDetail = useCallback(async (groupId) => {
+    if (!groupId) {
+      setGroupDetail(null);
+      return;
+    }
+    setLoadingDetail(true);
+    try {
+      const response = await requestJson(session, "GET", `/api/app/messages/groups/${groupId}/`);
+      setGroupDetail(response?.group || null);
+    } catch (err) {
+      setError(err.message || "Could not load group.");
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (activeGroupId) loadGroupDetail(activeGroupId);
+  }, [activeGroupId, loadGroupDetail]);
+
+  useEffect(() => {
+    if (!activeGroupId) return undefined;
+    const pollId = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadGroupDetail(activeGroupId);
+    }, MESSAGE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(pollId);
+  }, [activeGroupId, loadGroupDetail]);
+
+  useEffect(() => {
+    if (chatBodyRef.current) {
+      chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
+    }
+  }, [groupDetail?.messages?.length]);
+
+  const handleSend = async (event) => {
+    event.preventDefault();
+    if (!composeBody.trim() || !activeGroupId || sending) return;
+    setSending(true);
+    setError("");
+    try {
+      await requestJson(session, "POST", `/api/app/messages/groups/${activeGroupId}/messages/`, {
+        body: composeBody.trim(),
+      });
+      setComposeBody("");
+      await loadGroupDetail(activeGroupId);
+      await onGroupsChange?.();
+    } catch (err) {
+      setError(err.message || "Could not send message.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const openGroup = async (groupId) => {
+    setActiveGroupId(groupId);
+    try {
+      await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/read/`);
+      await onGroupsChange?.();
+    } catch {
+      // best effort - unread badge will just clear on next poll
+    }
+  };
+
+  const toggleCreateMember = (email) => {
+    setCreateMembers((previous) =>
+      previous.includes(email) ? previous.filter((item) => item !== email) : [...previous, email]
+    );
+  };
+
+  const handleCreateGroup = async (event) => {
+    event.preventDefault();
+    if (!createName.trim() || createMembers.length === 0 || creating) {
+      setCreateError("Enter a group name and select at least one classmate.");
+      return;
+    }
+    setCreating(true);
+    setCreateError("");
+    try {
+      const response = await requestJson(session, "POST", "/api/app/messages/groups/", {
+        name: createName.trim(),
+        member_emails: createMembers,
+      });
+      setShowCreateModal(false);
+      setCreateName("");
+      setCreateMembers([]);
+      setGroups((previous) => [response.group, ...previous]);
+      setActiveGroupId(response.group.id);
+      await onGroupsChange?.();
+    } catch (err) {
+      setCreateError(err.message || "Could not create group.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const activeGroup = groups.find((group) => group.id === activeGroupId) || null;
+  const activeMembers = groupDetail?.members || activeGroup?.members || [];
+
+  return (
+    <div className="group-chat-panel">
+      <div className="group-chat-sidebar">
+        <div className="group-chat-sidebar-head">
+          <h4>Groups</h4>
+          {canCreateGroups ? (
+            <button type="button" className="table-action" onClick={() => setShowCreateModal(true)}>
+              New group
+            </button>
+          ) : null}
+        </div>
+        {groups.length === 0 ? (
+          <p className="panel-empty compact">
+            No groups yet.{canCreateGroups ? " Create one to start chatting with classmates." : ""}
+          </p>
+        ) : (
+          <ul className="group-chat-list">
+            {groups.map((group) => (
+              <li key={group.id}>
+                <button
+                  type="button"
+                  className={`group-chat-list-item${group.id === activeGroupId ? " active" : ""}`}
+                  onClick={() => openGroup(group.id)}
+                >
+                  <span className="group-chat-list-name">{group.name}</span>
+                  <small>
+                    {group.member_count} member{group.member_count === 1 ? "" : "s"}
+                  </small>
+                  {group.last_message ? <em>{group.last_message.body || "Attachment"}</em> : null}
+                  {group.unread > 0 ? <span className="student-pill">{group.unread}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="group-chat-main">
+        {!activeGroup ? (
+          <p className="panel-empty">Select a group to view the conversation.</p>
+        ) : (
+          <>
+            <div className="group-chat-main-head">
+              <div>
+                <h4>{activeGroup.name}</h4>
+                <small>{activeMembers.map((member) => member.name).join(", ")}</small>
+              </div>
+            </div>
+            <div className="group-chat-messages" ref={chatBodyRef}>
+              {loadingDetail && !groupDetail ? (
+                <p className="panel-empty compact">Loading messages...</p>
+              ) : (groupDetail?.messages || []).length === 0 ? (
+                <p className="panel-empty compact">No messages yet. Say hello!</p>
+              ) : (
+                (groupDetail?.messages || []).map((message) => (
+                  <div key={message.id} className={`group-chat-bubble${message.outgoing ? " outgoing" : ""}`}>
+                    {!message.outgoing ? <strong>{message.sender_name}</strong> : null}
+                    <p>{message.body}</p>
+                    <small>{formatDate(message.created_at)}</small>
+                  </div>
+                ))
+              )}
+            </div>
+            {error ? <p className="form-feedback error">{error}</p> : null}
+            <form className="group-chat-composer" onSubmit={handleSend}>
+              <input
+                type="text"
+                value={composeBody}
+                onChange={(event) => setComposeBody(event.target.value)}
+                placeholder="Type a message..."
+              />
+              <button type="submit" className="student-primary-btn" disabled={sending || !composeBody.trim()}>
+                {sending ? "Sending..." : "Send"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+      {showCreateModal ? (
+        <div className="lesson-plan-dialog-backdrop" role="presentation" onClick={() => setShowCreateModal(false)}>
+          <article
+            className="lesson-plan-dialog"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="lesson-plan-dialog-head">
+              <h3>Create group</h3>
+              <button type="button" className="table-action ghost" onClick={() => setShowCreateModal(false)}>
+                Close
+              </button>
+            </div>
+            <form onSubmit={handleCreateGroup} className="group-chat-create-form">
+              <label>
+                Group name
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={(event) => setCreateName(event.target.value)}
+                  placeholder="e.g. Study Squad"
+                />
+              </label>
+              <p className="panel-sub">Select classmates to add</p>
+              <div className="group-chat-member-picker">
+                {classmateOptions.length === 0 ? (
+                  <p className="panel-empty compact">No classmates found yet.</p>
+                ) : (
+                  classmateOptions.map((option) => (
+                    <label key={option.value} className="group-chat-member-option">
+                      <input
+                        type="checkbox"
+                        checked={createMembers.includes(option.value)}
+                        onChange={() => toggleCreateMember(option.value)}
+                      />
+                      {option.label}
+                    </label>
+                  ))
+                )}
+              </div>
+              {createError ? <p className="form-feedback error">{createError}</p> : null}
+              <button type="submit" className="student-primary-btn" disabled={creating}>
+                {creating ? "Creating..." : "Create group"}
+              </button>
+            </form>
+          </article>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePreference, onThemeChange }) {
   const [messageData, setMessageData] = useState(data || { inbox: [], admin_contacts: [] });
   const [messages, setMessages] = useState((data?.inbox || []).slice(0, 50));
@@ -1875,6 +2131,11 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePr
     value: item.email,
     label: `${item.name || item.email}${normalizeRecipientRole(item) ? ` - ${roleLabel(normalizeRecipientRole(item))}` : ""}`,
   }));
+  const canCreateGroups = Boolean(messageData?.can_create_groups);
+  const groups = messageData?.groups || [];
+  const classmateOptions = (messageData?.recipients || [])
+    .filter((item) => normalizeRecipientRole(item) === "student")
+    .map((item) => ({ value: item.email, label: item.name || item.email }));
   const loadMessages = useCallback(async () => {
     setLoading(true);
     try {
@@ -1929,6 +2190,17 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePr
         />
         {loading ? <p className="panel-empty compact">Checking for new messages...</p> : null}
       </section>
+      {canCreateGroups || groups.length > 0 ? (
+        <section className="student-panel">
+          <GroupChatPanel
+            session={session}
+            groups={groups}
+            canCreateGroups={canCreateGroups}
+            classmateOptions={classmateOptions}
+            onGroupsChange={loadMessages}
+          />
+        </section>
+      ) : null}
     </StudentPageShell>
   );
 }
@@ -3789,7 +4061,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         ))}
       </div>
     </article>
-    <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} title={planningItemLabel} />
+    <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} title={planningItemLabel} itemLabel={planningItemLabel} />
     </section>
   );
 }
@@ -4304,6 +4576,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
   const teacherName = teacherProfile.name || teacherProfile.full_name || teacherProfile.email || "Teacher";
   const teacherAvatar = teacherProfile.profile_picture;
   const teacherInitials = userInitials({ full_name: teacherName });
+  const planningItemLabel = isNonK12School(session, data) ? "Course Outlines" : "Lesson Plans";
   const [profileOpen, setProfileOpen] = useState(false);
   const school = resolveSchoolBrand(data.school, session?.school, session);
   const schoolMotto = school.motto || school.tagline || "";
@@ -4452,7 +4725,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             >
               <div className="quick-action-icon"><DashboardIcon name="planning" className="inline-icon" /></div>
               <div className="quick-action-content">
-                <h4>Lesson Plans</h4>
+                <h4>{planningItemLabel}</h4>
                 <p>Open scheme of work and teacher notepad</p>
               </div>
             </button>

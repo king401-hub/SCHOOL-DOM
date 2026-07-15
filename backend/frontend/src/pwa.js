@@ -1,3 +1,5 @@
+import { API_BASE_URL, LEGACY_SESSION_KEY, SESSION_KEY } from "./appConstants";
+
 const PWA_STATUS_EVENT = "schooldom-pwa-install-status";
 const PWA_BRAND_KEY = "schooldom.pwa_brand";
 const SERVICE_WORKER_ENABLED = import.meta.env.VITE_ENABLE_SERVICE_WORKER === "true";
@@ -114,6 +116,73 @@ function updateManifest(brandInput = {}) {
   currentManifestUrl = nextManifestUrl;
   updateDocumentBrand(brand);
   return brand;
+}
+
+function getStoredAccessToken() {
+  try {
+    const raw =
+      window.localStorage.getItem(SESSION_KEY) ||
+      window.sessionStorage.getItem(SESSION_KEY) ||
+      window.localStorage.getItem(LEGACY_SESSION_KEY) ||
+      window.sessionStorage.getItem(LEGACY_SESSION_KEY);
+    if (!raw) return "";
+    return JSON.parse(raw)?.access || "";
+  } catch {
+    return "";
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function subscribeToPush(registration) {
+  const token = getStoredAccessToken();
+  if (!token) {
+    return { subscribed: false, reason: "signed-out" };
+  }
+
+  try {
+    const keyResponse = await fetch(`${API_BASE_URL}/api/app/push/vapid-public-key/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const keyData = await keyResponse.json().catch(() => ({}));
+    const publicKey = keyData?.public_key;
+    if (!publicKey) {
+      return { subscribed: false, reason: "not-configured" };
+    }
+
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+    }
+
+    const subscriptionJson = subscription.toJSON();
+    await fetch(`${API_BASE_URL}/api/app/push/subscribe/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        endpoint: subscriptionJson.endpoint,
+        keys: subscriptionJson.keys,
+        user_agent: navigator.userAgent,
+      }),
+    });
+
+    return { subscribed: true };
+  } catch (error) {
+    console.warn("SchoolDom push subscription failed.", error);
+    return { subscribed: false, reason: "error", error };
+  }
 }
 
 function readStoredBrand() {
@@ -295,16 +364,21 @@ window.schoolDomPWA = {
 
     if (permission === "granted") {
       const registration = await navigator.serviceWorker.ready;
-      try {
-        await registration.showNotification("SchoolDom notifications are ready", {
-          body: "You can receive school updates from the installed app.",
-          icon: "/schooldom-favicon.jpeg",
-          badge: "/schooldom-favicon.jpeg",
-          tag: "schooldom-notifications-ready",
-        });
-      } catch (error) {
-        console.warn("SchoolDom notification preview could not be shown.", error);
+      const result = await subscribeToPush(registration);
+      if (result.subscribed) {
+        try {
+          await registration.showNotification("SchoolDom notifications are on", {
+            body: "You'll get school updates here, even when Chrome is closed.",
+            icon: "/schooldom-favicon.jpeg",
+            badge: "/schooldom-favicon.jpeg",
+            tag: "schooldom-notifications-ready",
+          });
+        } catch (error) {
+          console.warn("SchoolDom notification preview could not be shown.", error);
+        }
       }
+      emitInstallStatus({ notificationPermission: permission, pushSubscribed: result.subscribed });
+      return permission;
     }
 
     emitInstallStatus({ notificationPermission: permission });

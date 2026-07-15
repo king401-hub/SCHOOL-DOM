@@ -190,6 +190,31 @@ class Notification(TimeStampedModel, UUIDModel):
         self.delivered_at = timezone.now()
         self.save(update_fields=['is_delivered', 'delivered_at'])
 
+
+class PushSubscription(TimeStampedModel, UUIDModel):
+    """
+    A browser's Web Push subscription (endpoint + encryption keys), as returned
+    by PushManager.subscribe() in the frontend service worker. One row per
+    browser/device the user has granted notification permission on.
+    """
+    tenant = models.ForeignKey(SchoolTenant, on_delete=models.CASCADE, related_name='push_subscriptions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_subscriptions')
+    endpoint = models.URLField(max_length=500, unique=True)
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=255)
+    user_agent = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Push Subscription"
+        verbose_name_plural = "Push Subscriptions"
+        indexes = [
+            models.Index(fields=['user']),
+        ]
+
+    def __str__(self):
+        return f"Push subscription for {self.user.get_full_name()}"
+
+
 class NotificationPreference(TimeStampedModel, UUIDModel):
     """
     User preferences for receiving notifications.
@@ -481,6 +506,76 @@ class InAppMessage(TimeStampedModel, UUIDModel):
         self.is_read = True
         self.read_at = timezone.now()
         self.save(update_fields=['is_read', 'read_at'])
+
+
+class MessageGroup(TimeStampedModel, UUIDModel):
+    """
+    Student-created group chat. Currently only Non-K12 schools allow students
+    to message each other at all (see users.app_views._is_non_k12_school), so
+    group membership is restricted to students at the same Non-K12 tenant.
+    """
+    tenant = models.ForeignKey(SchoolTenant, on_delete=models.CASCADE, related_name='message_groups')
+    name = models.CharField(max_length=150)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_message_groups')
+    members = models.ManyToManyField(User, through='MessageGroupMembership', related_name='message_groups')
+
+    class Meta:
+        verbose_name = "Message Group"
+        verbose_name_plural = "Message Groups"
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        super().clean()
+        if self.created_by_id and self.tenant_id and self.created_by.tenant_id != self.tenant_id:
+            raise ValidationError("Group tenant must match the creator's tenant.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+
+class MessageGroupMembership(TimeStampedModel):
+    group = models.ForeignKey(MessageGroup, on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='message_group_memberships')
+    last_read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Message Group Membership"
+        verbose_name_plural = "Message Group Memberships"
+        unique_together = ('group', 'user')
+
+    def __str__(self):
+        return f"{self.user.get_full_name()} in {self.group.name}"
+
+
+class GroupMessage(TimeStampedModel, UUIDModel):
+    group = models.ForeignKey(MessageGroup, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_group_messages')
+    body = models.TextField(blank=True)
+    attachments = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        verbose_name = "Group Message"
+        verbose_name_plural = "Group Messages"
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['group', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.sender.get_full_name()} in {self.group.name}"
+
+    def clean(self):
+        super().clean()
+        if self.sender_id and self.group_id and not self.group.memberships.filter(user_id=self.sender_id).exists():
+            raise ValidationError("Sender must be a member of the group.")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 
 class EmailConfiguration(TimeStampedModel):

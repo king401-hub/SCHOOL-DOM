@@ -70,13 +70,31 @@ except Exception:  # pragma: no cover - HR app is optional in older installs
 logger = logging.getLogger(__name__)
 
 try:
-    from notifications.models import Announcement, InAppMessage, Notification, NotificationPreference, SMSConfiguration
+    from notifications.models import (
+        Announcement,
+        GroupMessage,
+        InAppMessage,
+        MessageGroup,
+        MessageGroupMembership,
+        Notification,
+        NotificationPreference,
+        PushSubscription,
+        SMSConfiguration,
+    )
+    from notifications.push import push_for_notifications
 except Exception:  # pragma: no cover - optional app fallback
     Announcement = None
     InAppMessage = None
+    MessageGroup = None
+    MessageGroupMembership = None
+    GroupMessage = None
     Notification = None
     NotificationPreference = None
+    PushSubscription = None
     SMSConfiguration = None
+
+    def push_for_notifications(notifications):
+        return None
 
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
 ID_CARD_SIGNING_SALT = "schooldom.id-card.verify"
@@ -702,6 +720,7 @@ def _notify_admins_exam_ready(exam, teacher):
     ]
     if notifications:
         Notification.objects.bulk_create(notifications)
+        push_for_notifications(notifications)
 
 
 def _exam_pin_payload(pin, include_usage=False):
@@ -2347,6 +2366,274 @@ def _collect_message_attachments(request):
             }
         )
     return attachments
+
+
+def _non_k12_student_peers_queryset(user):
+    """Other students at the same Non-K12 school - the only users eligible to
+    be in a group chat with this user. Group chat mirrors the 1:1 student-to-
+    student messaging restriction: Non-K12 only, same tenant, students only."""
+    if not (_is_non_k12_school(user) and getattr(user, "role", "") == "student"):
+        return User.objects.none()
+    return User.objects.filter(tenant=user.tenant, role="student", is_active=True).exclude(id=user.id)
+
+
+def _group_message_payload(message, request=None, viewer=None):
+    if not message:
+        return None
+    viewer_id = getattr(viewer, "id", None)
+    attachments = [
+        payload
+        for payload in (_message_attachment_payload(item, request=request) for item in (message.attachments or []))
+        if payload
+    ]
+    return {
+        "id": str(message.id),
+        "group_id": str(message.group_id),
+        "sender_id": str(message.sender_id),
+        "sender_name": message.sender.get_full_name(),
+        "sender_email": message.sender.email,
+        "outgoing": bool(viewer_id and message.sender_id == viewer_id),
+        "body": message.body,
+        "attachments": attachments,
+        "created_at": message.created_at,
+    }
+
+
+def _group_payload(group, viewer=None, request=None, include_messages=False, message_limit=100):
+    memberships = list(group.memberships.select_related("user").all())
+    membership = next((m for m in memberships if m.user_id == getattr(viewer, "id", None)), None)
+    last_message = group.messages.order_by("-created_at").first()
+
+    unread = 0
+    if membership:
+        unread_qs = group.messages.exclude(sender=viewer)
+        if membership.last_read_at:
+            unread_qs = unread_qs.filter(created_at__gt=membership.last_read_at)
+        unread = unread_qs.count()
+
+    payload = {
+        "id": str(group.id),
+        "name": group.name,
+        "created_by": group.created_by.get_full_name(),
+        "created_by_id": str(group.created_by_id),
+        "members": [
+            {"id": str(m.user_id), "name": m.user.get_full_name(), "email": m.user.email}
+            for m in memberships
+        ],
+        "member_count": len(memberships),
+        "last_message": _group_message_payload(last_message, request=request, viewer=viewer) if last_message else None,
+        "unread": unread,
+        "created_at": group.created_at,
+        "updated_at": group.updated_at,
+    }
+    if include_messages:
+        messages_qs = group.messages.select_related("sender").order_by("created_at")[:message_limit]
+        payload["messages"] = [_group_message_payload(m, request=request, viewer=viewer) for m in messages_qs]
+    return payload
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def message_groups(request):
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    user = request.user
+
+    if request.method == "GET":
+        groups = (
+            MessageGroup.objects.filter(tenant=user.tenant, memberships__user=user)
+            .distinct()
+            .order_by("-updated_at")
+        )
+        return Response(
+            {"success": True, "groups": [_group_payload(group, viewer=user, request=request) for group in groups]}
+        )
+
+    if not (_is_non_k12_school(user) and user.role == "student"):
+        return Response(
+            {"success": False, "message": "Group chats are only available to students at Non-K12 schools."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    name = str(request.data.get("name", "")).strip()
+    if not name:
+        return Response({"success": False, "message": "A group name is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    member_emails = request.data.get("member_emails") or request.data.get("members") or []
+    if isinstance(member_emails, str):
+        member_emails = re.split(r"[\s,;]+", member_emails)
+    normalized_emails = {str(email).strip().lower() for email in member_emails if str(email).strip()}
+
+    peers_by_email = {peer.email.lower(): peer for peer in _non_k12_student_peers_queryset(user)}
+    members = [peers_by_email[email] for email in normalized_emails if email in peers_by_email]
+    if not members:
+        return Response(
+            {"success": False, "message": "Select at least one classmate to add to the group."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with db_transaction.atomic():
+        group = MessageGroup.objects.create(tenant=user.tenant, name=name, created_by=user)
+        MessageGroupMembership.objects.create(group=group, user=user, last_read_at=timezone.now())
+        MessageGroupMembership.objects.bulk_create(
+            [MessageGroupMembership(group=group, user=member) for member in members]
+        )
+
+    return Response(
+        {"success": True, "message": "Group created.", "group": _group_payload(group, viewer=user, request=request)},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+def _user_message_group_or_404(user, group_id):
+    return get_object_or_404(MessageGroup, id=group_id, tenant=user.tenant, memberships__user=user)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def message_group_detail(request, group_id):
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    group = _user_message_group_or_404(request.user, group_id)
+    return Response(
+        {"success": True, "group": _group_payload(group, viewer=request.user, request=request, include_messages=True)}
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def send_group_message(request, group_id):
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    group = _user_message_group_or_404(request.user, group_id)
+    body = str(request.data.get("body", "")).strip()
+    try:
+        attachments = _collect_message_attachments(request)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not body and not attachments:
+        return Response(
+            {"success": False, "message": "Message body or attachment is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    message = GroupMessage.objects.create(group=group, sender=request.user, body=body, attachments=attachments)
+    group.save(update_fields=["updated_at"])
+    MessageGroupMembership.objects.filter(group=group, user=request.user).update(last_read_at=timezone.now())
+
+    if Notification:
+        group_notifications = Notification.objects.bulk_create(
+            [
+                Notification(
+                    tenant=request.user.tenant,
+                    user_id=membership.user_id,
+                    title=f"New message in {group.name}",
+                    message=body or "Sent an attachment",
+                    notification_type="info",
+                    priority=2,
+                    channel="in_app",
+                    is_delivered=True,
+                    delivered_at=timezone.now(),
+                    event_type="group_message_received",
+                    reference_id=message.id,
+                    reference_model="GroupMessage",
+                    deep_link="/messages",
+                )
+                for membership in group.memberships.exclude(user=request.user)
+            ]
+        )
+        push_for_notifications(group_notifications)
+
+    return Response(
+        {
+            "success": True,
+            "message": "Message sent.",
+            "group_message": _group_message_payload(message, request=request, viewer=request.user),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def mark_group_read(request, group_id):
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    group = _user_message_group_or_404(request.user, group_id)
+    MessageGroupMembership.objects.filter(group=group, user=request.user).update(last_read_at=timezone.now())
+    return Response({"success": True, "message": "Group marked as read."})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_group_members(request, group_id):
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    group = _user_message_group_or_404(request.user, group_id)
+
+    member_emails = request.data.get("member_emails") or request.data.get("members") or []
+    if isinstance(member_emails, str):
+        member_emails = re.split(r"[\s,;]+", member_emails)
+    normalized_emails = {str(email).strip().lower() for email in member_emails if str(email).strip()}
+    if not normalized_emails:
+        return Response(
+            {"success": False, "message": "Provide at least one classmate to add."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    peers_by_email = {peer.email.lower(): peer for peer in _non_k12_student_peers_queryset(request.user)}
+    existing_member_ids = set(group.memberships.values_list("user_id", flat=True))
+    to_add = [
+        peers_by_email[email]
+        for email in normalized_emails
+        if email in peers_by_email and peers_by_email[email].id not in existing_member_ids
+    ]
+    if not to_add:
+        return Response(
+            {"success": False, "message": "No new eligible classmates to add."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    MessageGroupMembership.objects.bulk_create([MessageGroupMembership(group=group, user=member) for member in to_add])
+    return Response(
+        {
+            "success": True,
+            "message": f"Added {len(to_add)} member(s).",
+            "group": _group_payload(group, viewer=request.user, request=request),
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def leave_message_group(request, group_id):
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    group = _user_message_group_or_404(request.user, group_id)
+    MessageGroupMembership.objects.filter(group=group, user=request.user).delete()
+    if not group.memberships.exists():
+        group.delete()
+    return Response({"success": True, "message": "You left the group."})
 
 
 def _ensure_default_grade_scales(user):
@@ -7695,6 +7982,12 @@ def messages_snapshot(request):
     can_manage_messages = _can_manage_school_settings(user)
     guardian_sms_recipients = _guardian_sms_contacts_for_school(user.tenant) if can_manage_messages else []
     sms_config = _kudisms_config_for_school(user.tenant) if can_manage_messages else {}
+    groups_payload = []
+    if MessageGroup:
+        groups_qs = (
+            MessageGroup.objects.filter(tenant=user.tenant, memberships__user=user).distinct().order_by("-updated_at")
+        )
+        groups_payload = [_group_payload(group, viewer=user, request=request) for group in groups_qs[:20]]
 
     return Response(
         {
@@ -7702,6 +7995,7 @@ def messages_snapshot(request):
             "summary": {
                 "unread_notifications": notifications.filter(is_read=False).count() if Notification else 0,
                 "unread_inbox": inbox.filter(is_read=False).count() if InAppMessage else 0,
+                "unread_groups": sum(item["unread"] for item in groups_payload),
                 "active_announcements": len(announcements),
             },
             "notifications": [
@@ -7739,6 +8033,8 @@ def messages_snapshot(request):
                 }
                 for item in recipients[:100]
             ],
+            "groups": groups_payload,
+            "can_create_groups": _is_non_k12_school(user) and user.role == "student",
             "guardian_sms_recipients": guardian_sms_recipients,
             "sms_configured": bool(sms_config.get("token") and sms_config.get("is_active")) if can_manage_messages else False,
         }
@@ -9649,7 +9945,7 @@ def send_message(request):
         ]
         created_messages = InAppMessage.objects.bulk_create(messages)
         if Notification:
-            Notification.objects.bulk_create(
+            class_notifications = Notification.objects.bulk_create(
                 [
                     Notification(
                         tenant=request.user.tenant,
@@ -9669,6 +9965,7 @@ def send_message(request):
                     for msg in created_messages
                 ]
             )
+            push_for_notifications(class_notifications)
 
         return Response(
             {
@@ -9766,6 +10063,68 @@ def mark_notification_read(request, notification_id):
     notification = get_object_or_404(_tenant_notifications_for_user(request.user), id=notification_id)
     notification.mark_as_read()
     return Response({"success": True, "message": "Notification marked as read."})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def push_vapid_public_key(request):
+    return Response({"success": True, "public_key": getattr(settings, "VAPID_PUBLIC_KEY", "")})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def push_subscribe(request):
+    if not PushSubscription:
+        return Response(
+            {"success": False, "message": "Push notifications module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    endpoint = str(request.data.get("endpoint") or "").strip()
+    keys = request.data.get("keys") or {}
+    p256dh = str(keys.get("p256dh") or "").strip()
+    auth_key = str(keys.get("auth") or "").strip()
+    user_agent = str(request.data.get("user_agent") or request.META.get("HTTP_USER_AGENT") or "").strip()[:255]
+
+    if not (endpoint and p256dh and auth_key):
+        return Response(
+            {"success": False, "message": "A valid push subscription (endpoint and keys) is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not getattr(request.user, "tenant_id", None):
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    PushSubscription.objects.update_or_create(
+        endpoint=endpoint,
+        defaults={
+            "tenant": request.user.tenant,
+            "user": request.user,
+            "p256dh": p256dh,
+            "auth": auth_key,
+            "user_agent": user_agent,
+        },
+    )
+    return Response({"success": True, "message": "Push notifications enabled."}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def push_unsubscribe(request):
+    if not PushSubscription:
+        return Response(
+            {"success": False, "message": "Push notifications module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    endpoint = str(request.data.get("endpoint") or "").strip()
+    if not endpoint:
+        return Response({"success": False, "message": "endpoint is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
+    return Response({"success": True, "message": "Push notifications disabled."})
 
 
 @api_view(["POST", "DELETE"])

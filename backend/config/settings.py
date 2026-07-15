@@ -48,6 +48,25 @@ def env_list(name: str, default: str = "") -> list[str]:
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# ── Web Push (browser notifications) ────────────────────────────────────────
+# Both keys are raw base64url (no PEM wrapper) - this is the exact format
+# pywebpush's Vapid.from_string() and the browser's PushManager.subscribe()
+# applicationServerKey both expect. Generate a pair with:
+#   venv/Scripts/python -c "
+#   import base64
+#   from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+#   from py_vapid import Vapid02
+#   v = Vapid02(); v.generate_keys()
+#   priv = v.private_key.private_numbers().private_value.to_bytes(32, 'big')
+#   pub = v.public_key.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+#   print('VAPID_PRIVATE_KEY=' + base64.urlsafe_b64encode(priv).decode().rstrip('='))
+#   print('VAPID_PUBLIC_KEY=' + base64.urlsafe_b64encode(pub).decode().rstrip('='))
+#   "
+# Push silently no-ops if either key is blank.
+VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
+VAPID_CLAIM_EMAIL = os.getenv('VAPID_CLAIM_EMAIL', 'mailto:support@schooldom.academy')
+
 # ── Schooldom Secretary AI ──────────────────────────────────────────────────
 # Ollama model for the admin secretary (must support tool calling).
 # Recommended: llama3.2:3b (fast), llama3.1:8b (smarter), gemma3:4b

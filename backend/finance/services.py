@@ -2868,6 +2868,7 @@ def notify_students_of_class_fee(class_fee, fees):
         return 0
 
     from notifications.models import Notification
+    from notifications.push import push_for_notifications
 
     now = timezone.now()
     notifications = []
@@ -2897,6 +2898,7 @@ def notify_students_of_class_fee(class_fee, fees):
         )
     if notifications:
         Notification.objects.bulk_create(notifications)
+        push_for_notifications(notifications)
     return len(notifications)
 
 

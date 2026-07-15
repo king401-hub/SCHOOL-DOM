@@ -1730,6 +1730,10 @@ export function GlobalNotificationBell({ session, onNavigate }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [readIds, setReadIds] = useState(() => new Set());
   const [busyId, setBusyId] = useState("");
+  const [pushPermission, setPushPermission] = useState(() =>
+    typeof window !== "undefined" && "Notification" in window ? window.Notification.permission : "unsupported"
+  );
+  const [pushBusy, setPushBusy] = useState(false);
   const [mobileBellEnabled, setMobileBellEnabled] = useState(false);
   const [mobileBellPosition, setMobileBellPosition] = useState(() => {
     try {
@@ -1937,6 +1941,17 @@ export function GlobalNotificationBell({ session, onNavigate }) {
     }
   };
 
+  const handleEnableNotifications = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      const permission = await window.schoolDomPWA?.requestNotifications?.();
+      if (permission) setPushPermission(permission);
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   return (
     <div
       className={`global-notification-shell ${mobileBellEnabled && mobileBellPosition ? "has-mobile-position" : ""}`}
@@ -1985,6 +2000,17 @@ export function GlobalNotificationBell({ session, onNavigate }) {
                     <button type="button" className="table-action notification-mark-all" disabled={unreadCount === 0 || busyId === "__all__"} onClick={markAllRead}>
                       {busyId === "__all__" ? "Clearing..." : "Mark all as read"}
                     </button>
+                    {pushPermission === "granted" ? (
+                      <span className="table-action ghost" aria-live="polite">Notifications on</span>
+                    ) : pushPermission === "denied" ? (
+                      <span className="table-action ghost" title="Notifications are blocked in your browser settings">
+                        Notifications blocked
+                      </span>
+                    ) : pushPermission === "unsupported" ? null : (
+                      <button type="button" className="table-action" disabled={pushBusy} onClick={handleEnableNotifications}>
+                        {pushBusy ? "Enabling..." : "Enable browser notifications"}
+                      </button>
+                    )}
                   </div>
                   <div className="notification-card-list">
                     {filteredItems.length === 0 ? (

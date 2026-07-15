@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import random
 
 from notifications.models import Notification
+from notifications.push import push_for_notifications
 from users.models import StudentEnrollment, User, resolve_legacy_tenant_for_school
 from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, Question, StudentAnswer
 from .serializers import (
@@ -455,6 +456,7 @@ def _create_flag_notifications(*, school, admin_users, teacher, title, message):
         )
     if notifications:
         Notification.objects.bulk_create(notifications)
+        push_for_notifications(notifications)
 
 
 def _student_flag_count(*, school, student, exam_title):

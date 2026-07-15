@@ -4,10 +4,13 @@ from .models import (
     Announcement,
     AnnouncementRead,
     BroadcastMessage,
+    GroupMessage,
     InAppMessage,
+    MessageGroup,
     Notification,
     NotificationPreference,
     NotificationTemplate,
+    PushSubscription,
 )
 
 
@@ -60,3 +63,24 @@ class InAppMessageAdmin(admin.ModelAdmin):
     list_display = ("subject", "sender", "recipient", "tenant", "is_read", "created_at")
     list_filter = ("tenant", "is_read", "deleted_by_sender", "deleted_by_recipient")
     search_fields = ("subject", "body", "sender__email", "recipient__email")
+
+
+@admin.register(MessageGroup)
+class MessageGroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "tenant", "created_by", "created_at")
+    list_filter = ("tenant",)
+    search_fields = ("name", "created_by__email")
+
+
+@admin.register(GroupMessage)
+class GroupMessageAdmin(admin.ModelAdmin):
+    list_display = ("group", "sender", "created_at")
+    list_filter = ("group__tenant",)
+    search_fields = ("body", "sender__email", "group__name")
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "tenant", "user_agent", "created_at")
+    list_filter = ("tenant",)
+    search_fields = ("user__email", "endpoint")
