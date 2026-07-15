@@ -2129,8 +2129,12 @@ def _sync_teacher_hr_salary(teacher_profile):
 
 
 def _message_recipient_queryset_for_user(user):
-    base = User.objects.filter(tenant=user.tenant, is_active=True).exclude(id=user.id)
+    # In-app messaging is staff and students only - parents are never valid
+    # senders or recipients here (they get SMS/notifications instead).
+    base = User.objects.filter(tenant=user.tenant, is_active=True).exclude(id=user.id).exclude(role="parent")
     role = getattr(user, "role", "")
+    if role == "parent":
+        return User.objects.none()
     if role == "student":
         allowed_roles = ["teacher", "school_admin", "principal", "super_admin"]
         if _is_non_k12_school(user):
@@ -2146,6 +2150,8 @@ def _message_recipient_queryset_for_user(user):
 
 
 def _is_allowed_message_recipient(sender, recipient):
+    if getattr(recipient, "role", "") == "parent":
+        return False
     if _can_manage_school_settings(sender):
         return True
     return _message_recipient_queryset_for_user(sender).filter(id=recipient.id).exists()

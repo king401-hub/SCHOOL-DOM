@@ -493,6 +493,72 @@ class EnrollmentsAPITests(TestCase):
         self.assertIn("body", first_message)
         self.assertIn("attachments", first_message)
 
+    def test_messages_snapshot_never_lists_parents_as_recipients(self):
+        """In-app messaging is staff and students only - a newly created parent
+        account must never show up as someone an admin (or anyone else) can
+        message."""
+        User.objects.create_user(
+            email="parent.msg@smoke.edu",
+            password="ParentPass123",
+            first_name="Priya",
+            last_name="Parent",
+            role="parent",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.get("/api/app/messages/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(item["email"] == "parent.msg@smoke.edu" for item in response.data["recipients"]))
+
+    def test_parent_gets_no_message_recipients_and_cannot_send(self):
+        parent_user = User.objects.create_user(
+            email="parent.sender@smoke.edu",
+            password="ParentPass123",
+            first_name="Priya",
+            last_name="Parent",
+            role="parent",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=parent_user)
+
+        response = self.client.get("/api/app/messages/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["recipients"], [])
+
+        send_response = self.client.post(
+            "/api/app/messages/send/",
+            data={"recipient_email": self.admin_user.email, "body": "Hello"},
+            format="json",
+        )
+        self.assertEqual(send_response.status_code, 403)
+
+    def test_admin_cannot_message_a_parent_directly(self):
+        """Even an admin's elevated messaging permission must not let them
+        target a parent account - parents are outside the messaging system
+        entirely, not just outside the default recipient list."""
+        parent_user = User.objects.create_user(
+            email="parent.target@smoke.edu",
+            password="ParentPass123",
+            first_name="Priya",
+            last_name="Parent",
+            role="parent",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={"recipient_email": parent_user.email, "body": "Hello parent"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(InAppMessage.objects.filter(recipient=parent_user).exists())
+
     def test_messages_snapshot_hides_cross_tenant_rows_even_for_same_user(self):
         other_school = SchoolTenant.objects.create(name="Other School", schema_name="other_school", is_active=True)
         other_sender = User.objects.create_user(

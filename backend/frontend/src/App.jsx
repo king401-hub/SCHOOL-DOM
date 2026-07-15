@@ -1850,6 +1850,8 @@ function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "
   const isNonK12Student = viewerRole === "student" && schoolType === "non_k12";
   return recipients.filter((item) => {
     const role = normalizeRecipientRole(item);
+    // In-app messaging is staff and students only - parents never show up here.
+    if (role === "parent") return false;
     const isAdmin = ["admin", "school_admin", "principal", "super_admin"].includes(role) || (!role && item?.email);
     const isTeacher = role === "teacher";
     const isStudent = role === "student";
