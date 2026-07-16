@@ -32,7 +32,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool
+from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool, FeeAllocation
 from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount
 from attendance.utils import get_frontend_base_url
 from attendance.models import AttendanceQRCode
@@ -3725,6 +3725,13 @@ def student_dashboard(request):
             "is_locked": wallet.is_locked,
             "id": str(wallet.id),
         }
+        # Paystack split/DVA payments (paid by a parent's virtual account) never
+        # attach to this wallet FK - they're only linked via FeeAllocation
+        # against this student's fees, so pull those in too.
+        split_tx_ids = FeeAllocation.objects.filter(fee__student=student_profile).values_list("transaction_id", flat=True)
+        recent_transactions = Transaction.objects.filter(
+            Q(wallet=wallet) | Q(id__in=split_tx_ids)
+        ).order_by("-created_at")[:12]
         wallet_transactions = [
             {
                 "id": str(tx.id),
@@ -3736,7 +3743,7 @@ def student_dashboard(request):
                 "narration": tx.narration,
                 "created_at": tx.created_at,
             }
-            for tx in wallet.transactions.order_by("-created_at")[:12]
+            for tx in recent_transactions
         ]
         wallet_fees = [
             _school_fee_payload(fee)

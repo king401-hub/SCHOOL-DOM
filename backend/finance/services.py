@@ -1123,6 +1123,17 @@ def allocate_split_payment(
         except Exception:
             pass
 
+    if allocations:
+        record_finance_activity(
+            getattr(parent_profile.user, "tenant", None),
+            None,
+            "paystack_split_payment",
+            f"Paystack payment {paystack_ref}: {len(allocations)} fee(s) allocated",
+            amount=amount_paid - overpayment,
+            reference=paystack_ref,
+            metadata={"transaction_id": str(transaction_id), "allocations": allocations},
+        )
+
     return {
         "allocations": allocations,
         "overpayment": float(overpayment),
@@ -2985,7 +2996,17 @@ def fee_recorded_paid_amount(fee):
         ).aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
-    total = wallet_debits + bank_credits
+    # Paystack split/DVA payments never create FEE_DEBIT/FEE_CREDIT rows - they
+    # record a FeeAllocation against the SPLIT_PAYMENT transaction instead.
+    split_payment_credits = (
+        FeeAllocation.objects.filter(
+            fee=fee,
+            status__in=[FeeAllocation.STATUS_PAID, FeeAllocation.STATUS_PARTIAL],
+            transaction__status=Transaction.STATUS_SUCCESS,
+        ).aggregate(total=Sum("amount_allocated"))["total"]
+        or Decimal("0.00")
+    )
+    total = wallet_debits + bank_credits + split_payment_credits
     return min(total, fee.amount)
 
 
@@ -4092,6 +4113,10 @@ def process_virtual_account_payment(
 
     parent_user = vac.parent
     amount = _as_decimal(amount_naira)
+    # Prefer the parent's own tenant over the Paystack metadata lookup above -
+    # metadata.school_id is only as reliable as what the frontend sent when
+    # initializing the charge, whereas the parent's tenant is always set.
+    resolved_tenant = parent_user.tenant or tenant
 
     # Get parent's children's unpaid fees
     try:
@@ -4120,7 +4145,7 @@ def process_virtual_account_payment(
         provider="paystack",
         narration=f"Virtual account payment — {parent_user.get_full_name() or parent_user.email}",
         parent_id=parent_user.id,
-        school_id=tenant.id if tenant else None,
+        school_id=resolved_tenant.id if resolved_tenant else None,
         tuition_amount=amount,
         allocation_status=Transaction.ALLOCATION_PENDING,
         metadata=metadata or {},
@@ -4170,7 +4195,7 @@ def process_virtual_account_payment(
         class_obj = getattr(student, "current_class", None)
         class_name = class_obj.name if class_obj else ""
         school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
-        school_name = getattr(school_name, "name", "") if school_name else (tenant.name if tenant else "")
+        school_name = getattr(school_name, "name", "") if school_name else (resolved_tenant.name if resolved_tenant else "")
         try:
             balance_left = float(fee.amount) - float(fee.amount_paid or 0)
             receipt_data = {
@@ -4185,7 +4210,7 @@ def process_virtual_account_payment(
                 "payment_date": timezone.now().strftime("%d %b %Y"),
                 "reference": paystack_reference,
             }
-            receipt_url = create_receipt_link(receipt_data, tenant=tenant)
+            receipt_url = create_receipt_link(receipt_data, tenant=resolved_tenant)
             receipt_message = build_paystack_receipt_message(
                 student_name=student_name,
                 class_name=class_name,
@@ -4218,6 +4243,17 @@ def process_virtual_account_payment(
     )
     tx.fee_ids = [a["fee_id"] for a in allocations]
     tx.save(update_fields=["allocation_status", "fee_ids", "updated_at"])
+
+    if allocations:
+        record_finance_activity(
+            resolved_tenant,
+            None,
+            "paystack_dva_payment",
+            f"Virtual account payment {paystack_reference}: {len(allocations)} fee(s) allocated",
+            amount=amount - remaining if remaining > 0 else amount,
+            reference=paystack_reference,
+            metadata={"transaction_id": str(tx.id), "allocations": allocations},
+        )
 
     logger.info(
         "DVA payment %s allocated: parent=%s fees_updated=%d remaining=%.2f status=%s",

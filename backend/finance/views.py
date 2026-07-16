@@ -580,7 +580,10 @@ def _admin_finance_snapshot(user):
     pool = get_or_create_activation_credit_pool(user.tenant)
     token_duration_months, token_duration_days = activation_credit_duration_for_tenant(user.tenant)
     bank_payments = BankPayment.objects.select_related("student", "student__user", "payment_reference").filter(tenant=user.tenant)
-    transaction_history = Transaction.objects.filter(admin_wallet__tenant=user.tenant).order_by("-created_at")[:100]
+    transaction_history = Transaction.objects.filter(
+        Q(admin_wallet__tenant=user.tenant)
+        | Q(tx_type=Transaction.SPLIT_PAYMENT, school_id=user.tenant_id)
+    ).order_by("-created_at")[:100]
     try:
         finance_ledger_logs = FinanceLedgerLog.objects.select_related("actor").filter(tenant=user.tenant).order_by("-created_at")[:100]
         finance_ledger_log_rows = FinanceLedgerLogSerializer(finance_ledger_logs, many=True).data
@@ -692,7 +695,16 @@ def _student_wallet_snapshot(user):
         .prefetch_related("transactions")
         .get(pk=wallet.pk)
     )
-    transactions = wallet.transactions.order_by("-created_at")[:20]
+    # Paystack split/DVA payments (paid by a parent's virtual account) never
+    # attach to this wallet FK - they're only linked via FeeAllocation against
+    # this student's fees, so pull those in too.
+    split_tx_ids = (
+        FeeAllocation.objects.filter(fee__student=student_profile).values_list("transaction_id", flat=True)
+        if student_profile else []
+    )
+    transactions = Transaction.objects.filter(
+        Q(wallet=wallet) | Q(id__in=split_tx_ids)
+    ).order_by("-created_at")[:20]
     fees = SchoolFee.objects.filter(
         student__user=user
     ).filter(

@@ -12,6 +12,8 @@ from finance.models import (
     AdminWallet,
     ClassFee,
     DocumentGenerationCreditTransaction,
+    FeeAllocation,
+    FinanceLedgerLog,
     ParentVirtualAccount,
     SchoolFee,
     SmsWalletTransaction,
@@ -34,6 +36,7 @@ from finance.services import (
     get_or_create_sms_wallet,
     get_or_create_student_payment_reference,
     initialize_sms_credit_purchase,
+    process_virtual_account_payment,
     refund_sms_wallet,
     send_wallet_sms,
     sync_class_fee_assignments,
@@ -42,7 +45,7 @@ from finance.services import (
 from finance.models import SmsMessageLog
 from notifications.models import Notification
 from tenants.models import Tenant
-from users.models import StudentProfile, User, generate_short_student_id, generate_short_teacher_id
+from users.models import ParentProfile, StudentProfile, User, generate_short_student_id, generate_short_teacher_id
 
 
 class StudentFeeReferenceTests(TestCase):
@@ -788,3 +791,132 @@ class CrossTenantIsolationTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class PaystackDvaReconciliationTests(TestCase):
+    """Regression coverage: a parent's Paystack virtual-account payment must
+    reconcile the fee balance and show up on the admin ledger and the
+    student's own dashboard - not just trigger a receipt notification."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Reconcile School", schema_name="reconcile_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.admin_user = User.objects.create_user(
+            email="admin@reconcile.edu", password="AdminPass123", first_name="Admin", last_name="User",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.parent_user = User.objects.create_user(
+            email="parent@reconcile.edu", password="ParentPass123", first_name="Parent", last_name="User",
+            role="parent", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.parent_profile = ParentProfile.objects.create(user=self.parent_user)
+
+        self.student_user = User.objects.create_user(
+            email="student@reconcile.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="STR001", admission_number="ADM-R-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=school_class,
+        )
+        self.parent_profile.children.add(self.student)
+
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+        self.vac = ParentVirtualAccount.objects.create(
+            parent=self.parent_user, tenant=self.school,
+            account_number="1234567890", bank_name="Test Bank", account_name="Parent User",
+        )
+
+    def test_partial_dva_payment_reconciles_fee_amount_paid(self):
+        result = process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("30000.00"),
+            paystack_reference="DVA-TEST-PARTIAL",
+        )
+        self.assertEqual(result["status"], "success")
+
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PARTIAL)
+        # This is the exact bug: amount_paid on the model was correct, but
+        # fee_paid_amount() (what the admin table and student dashboard both
+        # read) used to ignore FeeAllocation rows and report 0 here.
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("30000.00"))
+
+    def test_full_dva_payment_reconciles_fee_status_and_amount(self):
+        process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-FULL",
+        )
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("50000.00"))
+
+    def test_dva_payment_appears_on_admin_finance_ledger(self):
+        process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-LEDGER",
+        )
+        tx = Transaction.objects.get(paystack_ref="DVA-TEST-LEDGER")
+
+        client = APIClient()
+        client.force_authenticate(self.admin_user)
+        response = client.get("/api/finance/admin/overview/")
+
+        self.assertEqual(response.status_code, 200)
+        ledger_ids = [row["id"] for row in response.data["transaction_history"]]
+        self.assertIn(str(tx.id), ledger_ids)
+
+    def test_dva_payment_writes_a_finance_ledger_log_entry(self):
+        process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-AUDIT",
+        )
+        self.assertTrue(
+            FinanceLedgerLog.objects.filter(tenant=self.school, reference="DVA-TEST-AUDIT").exists()
+        )
+
+    def test_dva_payment_appears_in_students_own_wallet_transactions(self):
+        process_virtual_account_payment(
+            tenant=self.school,
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-STUDENT",
+        )
+        tx = Transaction.objects.get(paystack_ref="DVA-TEST-STUDENT")
+
+        client = APIClient()
+        client.force_authenticate(self.student_user)
+        response = client.get("/api/finance/wallet/")
+
+        self.assertEqual(response.status_code, 200)
+        transaction_ids = [row["id"] for row in response.data["transactions"]]
+        self.assertIn(str(tx.id), transaction_ids)
+
+    def test_dva_payment_sets_school_id_from_parents_tenant(self):
+        process_virtual_account_payment(
+            tenant=None,  # simulates Paystack metadata not resolving a tenant
+            account_number=self.vac.account_number,
+            amount_naira=Decimal("50000.00"),
+            paystack_reference="DVA-TEST-NOTENANT",
+        )
+        # school_id is a UUIDField storing the (int) SchoolTenant pk - filtering
+        # the same way the admin ledger query does is the real contract here.
+        self.assertTrue(
+            Transaction.objects.filter(paystack_ref="DVA-TEST-NOTENANT", school_id=self.school.id).exists()
+        )
