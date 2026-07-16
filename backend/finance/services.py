@@ -847,8 +847,17 @@ def create_receipt_link(
 
 
 def sms_compact_url(url: str) -> str:
-    """Strip the scheme for compact SMS display, e.g. 'schooldom.academy/r/0c439bc8'."""
-    return re.sub(r"^https?://", "", url)
+    """Strip the scheme but keep a 'www.' prefix for compact SMS display,
+    e.g. 'www.schooldom.academy/r/0c439bc8'.
+
+    A bare domain with no scheme and no 'www.' is not reliably auto-detected
+    as a tappable link by phone SMS apps (confirmed not to linkify on iOS
+    Messages) - 'www.' is short but still reliably recognized.
+    """
+    stripped = re.sub(r"^https?://", "", url)
+    if not stripped.startswith("www."):
+        stripped = f"www.{stripped}"
+    return stripped
 
 
 def _sms_message_with_receipt_link(message: str, receipt_url: str) -> str:

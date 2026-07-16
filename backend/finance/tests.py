@@ -975,4 +975,12 @@ class PaystackReceiptMessageTests(TestCase):
 
     def test_receipt_link_untouched_for_a_short_message(self):
         combined = _sms_message_with_receipt_link("Short message.", "https://schooldom.academy/r/abcd1234")
-        self.assertEqual(combined, "Short message. Receipt: schooldom.academy/r/abcd1234")
+        self.assertEqual(combined, "Short message. Receipt: www.schooldom.academy/r/abcd1234")
+
+    def test_compact_url_keeps_www_prefix_so_sms_apps_auto_detect_it(self):
+        # A bare domain with no scheme/www. isn't reliably auto-linkified by
+        # phone SMS apps (this is the exact bug reported: link visible as
+        # plain text, not tappable) - www. is the shortest reliable prefix.
+        from finance.services import sms_compact_url
+        self.assertEqual(sms_compact_url("https://schooldom.academy/r/abcd1234"), "www.schooldom.academy/r/abcd1234")
+        self.assertEqual(sms_compact_url("https://www.schooldom.academy/r/abcd1234"), "www.schooldom.academy/r/abcd1234")
