@@ -4445,6 +4445,7 @@ def teacher_dashboard(request):
                 "subjects_taught": subject_names,
                 "subjects": subjects_payload,
                 "salary_balance": salary_balance,
+                "monthly_salary": float(teacher_profile.monthly_salary) if teacher_profile and teacher_profile.monthly_salary else None,
             },
             "school": _school_payload(school, request),
             "metrics": {
@@ -6027,6 +6028,19 @@ def create_teacher(request):
     if not teacher_email:
         return Response(
             {"success": False, "message": "teacher_email is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    _EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$')
+    if not _EMAIL_RE.match(teacher_email):
+        return Response(
+            {"success": False, "message": "Enter a valid email address (e.g. teacher@gmail.com)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    _FAKE_SUFFIXES = (".local", "@schooldom.", "@example.", "@test.", "@fake.")
+    if any(teacher_email.endswith(s) or (s.startswith("@") and s in teacher_email) for s in _FAKE_SUFFIXES):
+        return Response(
+            {"success": False, "message": "Use a real email address. Placeholder or internal domains are not allowed."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

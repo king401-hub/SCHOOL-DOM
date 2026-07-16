@@ -9198,6 +9198,15 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
       setFormError("Email is required.");
       return;
     }
+    const emailVal = form.teacher_email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailVal)) {
+      setFormError("Enter a valid email address (e.g. teacher@gmail.com).");
+      return;
+    }
+    if (/\.local$|@schooldom\.|@example\.|@test\.|@fake\./i.test(emailVal)) {
+      setFormError("Use a real email address. Placeholder or internal domains are not allowed.");
+      return;
+    }
     if (!form.first_name?.trim()) {
       setFormError("First name is required.");
       return;
@@ -9399,8 +9408,14 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
         <form className="panel-form" onSubmit={handleSubmit} noValidate>
           <div className="panel-form-grid">
             <label className="panel-field">
-              Email
-              <input value={form.teacher_email} onChange={(event) => setForm((prev) => ({ ...prev, teacher_email: event.target.value }))} />
+              Email <span style={{ color: "#ef4444", fontSize: "0.78rem", fontWeight: 600 }}>— must be a real email</span>
+              <input
+                type="email"
+                value={form.teacher_email}
+                onChange={(event) => setForm((prev) => ({ ...prev, teacher_email: event.target.value }))}
+                placeholder="e.g. teacher@gmail.com"
+                autoComplete="off"
+              />
             </label>
             <label className="panel-field">
               First Name

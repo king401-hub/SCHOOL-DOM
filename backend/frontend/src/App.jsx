@@ -4795,6 +4795,15 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             icon="requests"
             tone="rose"
           />
+          {teacherProfile.monthly_salary != null && Number(teacherProfile.monthly_salary) > 0 ? (
+            <MetricCard
+              label="Monthly Salary"
+              value={`${NAIRA_SYMBOL}${Number(teacherProfile.monthly_salary).toLocaleString()}`}
+              trend="Set by school admin"
+              icon="money"
+              tone="emerald"
+            />
+          ) : null}
         </div>
 
         <article className="app-panel">

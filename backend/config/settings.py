@@ -1,9 +1,27 @@
 # backend/config/settings/base.py
 import os
+import sys
 from pathlib import Path
 from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Django 4.2's BaseContext.__copy__ does `copy(super())`, relying on an old
+# copy.copy() fallback for `super` proxies to get a plain shallow copy of
+# `self`. Python 3.14 no longer falls through that way, so every admin
+# inclusion tag (search_form, result_list, submit_row, ...) raises
+# AttributeError: 'super' object has no attribute 'dicts'. Patch it with an
+# equivalent, version-safe implementation until Django ships a real fix.
+if sys.version_info >= (3, 14):
+    from django.template.context import BaseContext as _BaseContext
+
+    def _base_context_copy(self):
+        duplicate = self.__class__.__new__(self.__class__)
+        duplicate.__dict__.update(self.__dict__)
+        duplicate.dicts = self.dicts[:]
+        return duplicate
+
+    _BaseContext.__copy__ = _base_context_copy
 
 
 def load_env_file(env_path: Path) -> None:
@@ -421,6 +439,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'backend' / 'config' / 'static']
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'

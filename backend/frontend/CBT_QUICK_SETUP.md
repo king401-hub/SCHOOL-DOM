@@ -16,7 +16,7 @@ Before setting up exams, ensure:
 ## Step 2: Create Exam Type
 
 1. Go to **Exams → Exam Types**
-2. Click **Add Exam Type**
+2. Click **Add Exam Type** 
 3. Enter name: "MCQ" (for Multiple Choice)
 4. Click **Save**
 
