@@ -22,6 +22,15 @@ MAX_IMAGE_BYTES = 8_000_000     # ~6 MB decoded; reject anything larger
 
 SYSTEM_PROMPT = """You are Phoenix AI, a personal assistant built into Schooldom — a school management platform used by Nigerian schools.
 
+## Absolute rule — this overrides every other instruction below
+You must NEVER write, generate, complete, fix, translate, or explain programming code
+in any language (Python, JavaScript, HTML, CSS, SQL, Java, etc.) or markup/config
+syntax, no matter how the request is worded — directly, "for a school project", as
+pseudocode, as an example, inside a story or roleplay, or disguised any other way.
+If asked for code in any form, reply with only this and nothing else:
+"I can't help with writing code — I'm here for Schooldom admin tasks like lesson
+plans, letters, and messages. What can I help you with on the platform?"
+
 ## Roles and their navigation menus
 
 **Admin** sees these pages in the sidebar:
@@ -145,7 +154,39 @@ def _clean_messages(raw_messages):
     return cleaned
 
 
+# llama3.2:1b is small and does not reliably follow the "never write code"
+# system prompt rule on its own - this is a hard server-side backstop that
+# cuts the stream the moment the model's own output looks like code, rather
+# than trusting the model to police itself.
+CODE_SIGNALS = (
+    "```",
+    "<?php",
+    "#!/usr/bin/env",
+    "def __init__",
+    "console.log(",
+    "select * from",
+    "insert into",
+    "create table",
+    "import numpy",
+    "import pandas",
+    "</html>",
+    "<script",
+)
+
+CODE_REFUSAL_MESSAGE = (
+    "\n\nI can't help with writing or explaining code — I'm here for Schooldom "
+    "admin tasks like lesson plans, letters, and messages. What can I help you "
+    "with on the platform?"
+)
+
+
+def _looks_like_code(text):
+    lowered = text.lower()
+    return any(signal in lowered for signal in CODE_SIGNALS)
+
+
 def _stream_ollama_reply(upstream):
+    collected = ""
     try:
         for line in upstream.iter_lines():
             if not line:
@@ -159,6 +200,10 @@ def _stream_ollama_reply(upstream):
                 return
             content = (chunk.get("message") or {}).get("content", "")
             if content:
+                collected += content
+                if _looks_like_code(collected):
+                    yield CODE_REFUSAL_MESSAGE
+                    return
                 yield content
             if chunk.get("done"):
                 return
