@@ -22,10 +22,13 @@ from finance.models import (
 )
 from finance.services import (
     ACTIVATION_CREDIT_PRICE,
+    SMS_CHAR_LIMIT,
     InsufficientSmsCreditsError,
     SmsWalletLockedError,
+    _sms_message_with_receipt_link,
     activation_credit_bonus_for_purchase,
     adjust_sms_wallet,
+    build_paystack_receipt_message,
     charge_sms_wallet,
     complete_wallet_funding,
     credit_sms_wallet_from_purchase,
@@ -920,3 +923,56 @@ class PaystackDvaReconciliationTests(TestCase):
         self.assertTrue(
             Transaction.objects.filter(paystack_ref="DVA-TEST-NOTENANT", school_id=self.school.id).exists()
         )
+
+    def test_second_partial_payment_sms_shows_true_outstanding_not_stale_figure(self):
+        """Regression: the SMS used to compute 'Outstanding' as fee_total minus
+        only *this* transaction's amount, ignoring what was already paid
+        before - so a second payment's SMS showed a stale, too-high balance."""
+        self.parent_user.phone = "+2348012345678"
+        self.parent_user.save(update_fields=["phone"])
+
+        with patch("finance.services.send_ebulksms") as mock_sms:
+            mock_sms.return_value = {"status": "success"}
+            process_virtual_account_payment(
+                tenant=self.school, account_number=self.vac.account_number,
+                amount_naira=Decimal("20000.00"), paystack_reference="DVA-TEST-FIRST",
+            )
+            process_virtual_account_payment(
+                tenant=self.school, account_number=self.vac.account_number,
+                amount_naira=Decimal("20000.00"), paystack_reference="DVA-TEST-SECOND",
+            )
+
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.amount_paid, Decimal("40000.00"))
+        second_call_message = mock_sms.call_args_list[1].args[1]
+        # True outstanding after both payments: 50000 - 40000 = 10000.
+        self.assertIn("Outstanding: 10,000", second_call_message)
+        self.assertNotIn("Outstanding: 30,000", second_call_message)
+
+
+class PaystackReceiptMessageTests(TestCase):
+    """Unit coverage for the SMS receipt text helpers themselves."""
+
+    def test_balance_remaining_override_is_used_when_provided(self):
+        message = build_paystack_receipt_message(
+            "Adaeze Chukwuemeka", "JSS 2", Decimal("20000"), Decimal("50000"), "partial",
+            school_name="Test School", balance_remaining=Decimal("10000"),
+        )
+        self.assertIn("Outstanding: 10,000", message)
+
+    def test_balance_remaining_falls_back_to_naive_calc_when_not_provided(self):
+        message = build_paystack_receipt_message(
+            "Adaeze Chukwuemeka", "JSS 2", Decimal("20000"), Decimal("50000"), "partial",
+            school_name="Test School",
+        )
+        self.assertIn("Outstanding: 30,000", message)
+
+    def test_receipt_link_is_never_truncated_even_with_a_long_message(self):
+        long_message = "A" * 200
+        combined = _sms_message_with_receipt_link(long_message, "https://schooldom.academy/r/abcd1234")
+        self.assertIn("schooldom.academy/r/abcd1234", combined)
+        self.assertLessEqual(len(combined), SMS_CHAR_LIMIT)
+
+    def test_receipt_link_untouched_for_a_short_message(self):
+        combined = _sms_message_with_receipt_link("Short message.", "https://schooldom.academy/r/abcd1234")
+        self.assertEqual(combined, "Short message. Receipt: schooldom.academy/r/abcd1234")

@@ -851,6 +851,18 @@ def sms_compact_url(url: str) -> str:
     return re.sub(r"^https?://", "", url)
 
 
+def _sms_message_with_receipt_link(message: str, receipt_url: str) -> str:
+    """Append the (shortened) receipt link, trimming the descriptive text -
+    never the link - if the combined string would otherwise exceed the SMS
+    character limit and get the link silently truncated off by send_ebulksms.
+    """
+    suffix = f" Receipt: {sms_compact_url(receipt_url)}"
+    budget = SMS_CHAR_LIMIT - len(suffix)
+    if budget > 3 and len(message) > budget:
+        message = message[: budget - 3].rstrip() + "..."
+    return f"{message}{suffix}"
+
+
 def send_payment_receipt(
     to_email: str,
     message: str,
@@ -924,14 +936,26 @@ def build_paystack_receipt_message(
     fee_total: Decimal,
     payment_status: str,
     school_name: str = "",
+    balance_remaining: Decimal = None,
 ) -> str:
     """Build a compact SMS/WhatsApp receipt for a Paystack payment (kept short to fit
-    within the 160-char SMS limit alongside the receipt link)."""
+    within the 160-char SMS limit alongside the receipt link).
+
+    `amount_paid` is what was received in *this* transaction (used for the
+    "X received" text). `balance_remaining` is the fee's true outstanding
+    balance *after* this payment - pass it explicitly whenever the fee had a
+    prior balance, since `fee_total - amount_paid` only equals the true
+    remaining balance for a fee's very first payment.
+    """
     prefix = school_name if school_name else "School"
     class_tag = f" ({class_name})" if class_name else ""
     if payment_status == "paid":
         return f"{prefix}: {_plain_amount(amount_paid)} received for {student_name}{class_tag}. Fees FULLY PAID."
-    remaining = Decimal(str(fee_total)) - Decimal(str(amount_paid))
+    remaining = (
+        Decimal(str(balance_remaining))
+        if balance_remaining is not None
+        else Decimal(str(fee_total)) - Decimal(str(amount_paid))
+    )
     return f"{prefix}: {_plain_amount(amount_paid)} received for {student_name}{class_tag}. Outstanding: {_plain_amount(remaining)}."
 
 
@@ -1093,7 +1117,10 @@ def allocate_split_payment(
                 receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
                 send_payment_receipt(
                     parent_email,
-                    build_paystack_receipt_message(student_name, class_name, allocated, fee.amount, "partial", school_name),
+                    build_paystack_receipt_message(
+                        student_name, class_name, allocated, fee.amount, "partial", school_name,
+                        balance_remaining=balance_remaining,
+                    ),
                     receipt_url=receipt_url,
                     data=receipt_data,
                     receipt_type="receipt",
@@ -4218,6 +4245,7 @@ def process_virtual_account_payment(
                 fee_total=float(fee.amount),
                 payment_status="paid" if fully_paid else "partial",
                 school_name=school_name,
+                balance_remaining=None if fully_paid else max(0, balance_left),
             )
 
             recipient_email = (parent_user.email or "").strip()
@@ -4232,7 +4260,7 @@ def process_virtual_account_payment(
 
             parent_phone = (getattr(parent_user, "phone", "") or "").strip()
             if parent_phone:
-                send_ebulksms(parent_phone, f"{receipt_message} Receipt: {sms_compact_url(receipt_url)}")
+                send_ebulksms(parent_phone, _sms_message_with_receipt_link(receipt_message, receipt_url))
         except Exception:
             logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 
