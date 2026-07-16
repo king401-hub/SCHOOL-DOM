@@ -2,25 +2,13 @@
 setlocal
 
 set "ROOT=%~dp0"
-set "APP_DIR=%ROOT%mobile-app"
-set "ANDROID_DIR=%APP_DIR%\android"
-set "APK_SOURCE=%ANDROID_DIR%\app\build\outputs\apk\release\app-release.apk"
+set "APP_DIR=%ROOT%mobile-app-flutter"
+set "APK_SOURCE=%APP_DIR%\build\app\outputs\flutter-apk\app-release.apk"
 set "APK_TARGET=%ROOT%media\app\schooldom-app.apk"
 
-if not exist "%APP_DIR%\node_modules" (
-  echo Installing mobile app dependencies...
-  pushd "%APP_DIR%"
-  call npm install --legacy-peer-deps --no-audit --no-fund
-  if errorlevel 1 exit /b 1
-  popd
-)
-
-if not exist "%ANDROID_DIR%\gradlew.bat" (
-  echo Generating Android native project...
-  pushd "%APP_DIR%"
-  call npx expo prebuild --platform android --no-install
-  if errorlevel 1 exit /b 1
-  popd
+if not exist "%APP_DIR%\pubspec.yaml" (
+  echo Flutter project not found at "%APP_DIR%".
+  exit /b 1
 )
 
 if not defined JAVA_HOME (
@@ -29,25 +17,24 @@ if not defined JAVA_HOME (
   )
 )
 
-if not exist "%JAVA_HOME%\bin\java.exe" (
-  echo Java was not found. Install Android Studio or set JAVA_HOME to a JDK.
-  exit /b 1
-)
-
 if not defined ANDROID_HOME (
   set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
 )
 set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
 
 if not exist "%ANDROID_HOME%\platforms" (
-  echo Android SDK was not found at "%ANDROID_HOME%".
-  echo Open Android Studio ^> SDK Manager and install Android SDK Platform 34 and Build-Tools 34.0.0.
+  echo Android SDK not found at "%ANDROID_HOME%".
+  echo Open Android Studio ^> SDK Manager and install Android SDK Platform 35 and Build-Tools 35.0.0.
   exit /b 1
 )
 
+echo Getting Flutter packages...
+pushd "%APP_DIR%"
+call flutter pub get
+if errorlevel 1 exit /b 1
+
 echo Building SchoolDom release APK...
-pushd "%ANDROID_DIR%"
-call gradlew.bat assembleRelease
+call flutter build apk --release
 if errorlevel 1 exit /b 1
 popd
 

@@ -1,0 +1,46 @@
+name: schooldom_app
+description: SchoolDom mobile workspace for students, teachers, and staff.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  provider: ^6.1.2
+
+  # HTTP client
+  http: ^1.2.2
+
+  # Secure token storage (JWT tokens)
+  flutter_secure_storage: ^9.2.2
+
+  # Offline cache + queue (SharedPreferences)
+  shared_preferences: ^2.3.2
+
+  # Biometric unlock
+  local_auth: ^2.3.0
+
+  # GPS attendance
+  geolocator: ^13.0.2
+  permission_handler: ^11.3.1
+
+  # Open attachment URLs in browser
+  url_launcher: ^6.3.1
+
+  # Camera and file picker (Settings)
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -28,6 +28,9 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Flutter source — override the lib/ rule above
+!mobile-app-flutter/lib/
+!mobile-app-flutter/lib/**
 parts/
 sdist/
 var/
