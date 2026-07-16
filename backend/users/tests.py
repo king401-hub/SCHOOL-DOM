@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -16,6 +16,7 @@ from academic.models import (
     QuestionPrompt,
     QuestionResponse,
     ResultBatch,
+    SchoolActivityCalendar,
     StudentClassPromotion,
     StudentSubjectScore,
     Subject,
@@ -3872,3 +3873,93 @@ class PasswordResetOtpTests(TestCase):
         self.assertTrue(resend_response.data["success"])
         self.assertTrue(resend_response.data["otp_challenge"])
         self.assertNotEqual(resend_response.data["otp_challenge"], first_challenge)
+
+
+class SchoolActivitiesOnTimetableTests(TestCase):
+    """Admin-set school activities should surface to students, teachers, and
+    non-teaching staff via the shared timetables endpoint."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Activities School",
+            schema_name="activities_school_20260716",
+            is_active=True,
+        )
+        self.tenant = Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        self.student_user = User.objects.create_user(
+            email="student@activities.edu",
+            password="StudentPass123",
+            first_name="Stu",
+            last_name="Dent",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@activities.edu",
+            password="TeacherPass123",
+            first_name="Tea",
+            last_name="Cher",
+            role="teacher",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.staff_user = User.objects.create_user(
+            email="staff@activities.edu",
+            password="StaffPass123",
+            first_name="Non",
+            last_name="Teaching",
+            role="staff",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        today = timezone.localdate()
+        self.upcoming_activity = SchoolActivityCalendar.objects.create(
+            tenant=self.tenant,
+            month=today.month,
+            year=today.year,
+            title="Inter-House Sports",
+            activity_date=today + timedelta(days=5),
+            description="Annual sports day",
+            color="#22C55E",
+        )
+        self.past_activity = SchoolActivityCalendar.objects.create(
+            tenant=self.tenant,
+            month=1,
+            year=2020,
+            title="Old Assembly",
+            activity_date=date(2020, 1, 10),
+        )
+
+    def _activity_titles(self, response):
+        return [item["title"] for item in response.data["school_activities"]]
+
+    def test_student_sees_upcoming_school_activity_not_past_one(self):
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.get("/api/app/timetables/")
+
+        self.assertEqual(response.status_code, 200)
+        titles = self._activity_titles(response)
+        self.assertIn("Inter-House Sports", titles)
+        self.assertNotIn("Old Assembly", titles)
+
+    def test_teacher_sees_upcoming_school_activity(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get("/api/app/timetables/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Inter-House Sports", self._activity_titles(response))
+
+    def test_non_teaching_staff_sees_upcoming_school_activity(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/app/timetables/")
+
+        self.assertEqual(response.status_code, 200)
+        # Staff have no class assigned, so no timetable entries - but they
+        # should still see tenant-wide school activities.
+        self.assertEqual(response.data["entries"], [])
+        self.assertIn("Inter-House Sports", self._activity_titles(response))

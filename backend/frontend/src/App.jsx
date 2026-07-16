@@ -3785,9 +3785,49 @@ const TIMETABLE_DAY_FALLBACK = [
   { value: 5, label: "Saturday" },
 ];
 
+const SCHOOL_ACTIVITY_MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function formatSchoolActivityWhen(activity) {
+  const formatDate = (value) =>
+    new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  if (activity.activity_date) {
+    if (activity.end_date && activity.end_date !== activity.activity_date) {
+      return `${formatDate(activity.activity_date)} – ${formatDate(activity.end_date)}`;
+    }
+    return formatDate(activity.activity_date);
+  }
+  if (activity.month) {
+    return `${SCHOOL_ACTIVITY_MONTH_NAMES[activity.month - 1]}${activity.year ? ` ${activity.year}` : ""}`;
+  }
+  return "";
+}
+
+function SchoolActivitiesList({ activities, emptyMessage = "No upcoming school activities yet." }) {
+  if (!activities.length) {
+    return <p className="school-activity-empty">{emptyMessage}</p>;
+  }
+  return (
+    <ul className="school-activity-list">
+      {activities.map((item) => (
+        <li key={item.id} className="school-activity-item" style={{ borderLeftColor: item.color || "#2563EB" }}>
+          <div className="school-activity-item-head">
+            <strong>{item.title}</strong>
+            <span>{formatSchoolActivityWhen(item)}</span>
+          </div>
+          {item.description ? <p>{item.description}</p> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassColumn = true }) {
   const [entries, setEntries] = useState([]);
   const [days, setDays] = useState(TIMETABLE_DAY_FALLBACK);
+  const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -3798,6 +3838,7 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
       const result = await requestJson(session, "GET", "/api/app/timetables/");
       setEntries(result?.entries || []);
       if (result?.days?.length) setDays(result.days);
+      setActivities(result?.school_activities || []);
     } catch (loadError) {
       setError(loadError.message || "Could not load the timetable.");
     } finally {
@@ -3816,6 +3857,12 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
         <small>{subtitle}</small>
       </div>
       <ScreenState loading={loading && !entries.length} error={error} onRetry={loadTimetable} />
+      {!loading && activities.length ? (
+        <div className="school-activity-banner">
+          <h4>Upcoming school activities</h4>
+          <SchoolActivitiesList activities={activities} />
+        </div>
+      ) : null}
       {!loading ? (
         <TimetableGridTable
           entries={entries}
@@ -4143,7 +4190,51 @@ function EmploymentLetterPreview({ letter }) {
   );
 }
 
-function StaffSelfServicePanel({ session, initialData = null, standalone = false, showAttendance = true, onRefresh }) {
+function StaffSchoolActivitiesPage({ session, onNavigate }) {
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadActivities = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/app/timetables/");
+      setActivities(result?.school_activities || []);
+    } catch (loadError) {
+      setError(loadError.message || "Could not load school activities.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session) loadActivities();
+  }, [loadActivities, session]);
+
+  return (
+    <section className="quiz-layout personal-quiz-layout">
+      <header className="quiz-hero personal-quiz-hero">
+        <div>
+          <p className="quiz-kicker">School activities</p>
+          <h1>Upcoming school activities</h1>
+          <p>Events and activities set by your school administrator, visible to every staff member.</p>
+        </div>
+        <div className="quiz-actions">
+          <button type="button" className="pill-button ghost" onClick={() => onNavigate?.("/dashboard")}>
+            Back to dashboard
+          </button>
+        </div>
+      </header>
+      <div className="app-panel">
+        <ScreenState loading={loading} error={error} onRetry={loadActivities} />
+        {!loading && !error ? <SchoolActivitiesList activities={activities} /> : null}
+      </div>
+    </section>
+  );
+}
+
+function StaffSelfServicePanel({ session, initialData = null, standalone = false, showAttendance = true, onRefresh, onNavigate }) {
   const [snapshot, setSnapshot] = useState(initialData || null);
   const [employmentLetter, setEmploymentLetter] = useState(null);
   const [letterBusy, setLetterBusy] = useState(false);
@@ -4351,6 +4442,11 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
             <small>Update biodata, credentials, guarantor's form, and download your employment letter.</small>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
+            {onNavigate ? (
+              <button type="button" className="table-action" onClick={() => onNavigate("/school-activities")}>
+                School Activities
+              </button>
+            ) : null}
             <button type="button" className="table-action" onClick={handleDownloadEmploymentLetter} disabled={letterBusy}>
               {letterBusy ? "Preparing…" : "Download Employment Letter"}
             </button>
@@ -5618,7 +5714,7 @@ function TeacherWorkspace({
       );
     }
     if (activeTab === "requests") {
-      return <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} />;
+      return <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />;
     }
     return null;
   };
@@ -8292,6 +8388,7 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
             initialData={data}
             standalone
             onRefresh={loadDashboard}
+            onNavigate={onNavigate}
           />
 ) : role === "parent" ? (
           <ParentWorkspace
@@ -8876,7 +8973,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       return;
     }
 
-    if (!isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !STUDENT_ROUTE_SET.has(currentPath) && !isStudentExamPath(currentPath)) {
+    if (!isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && currentPath !== "/school-activities" && !STUDENT_ROUTE_SET.has(currentPath) && !isStudentExamPath(currentPath)) {
       navigate("/dashboard", { replace: true });
     }
   }, [currentPath, navigate, session]);
@@ -9095,6 +9192,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         themePreference={themePreference}
         onThemeChange={setThemePreference}
       />
+    );
+  }
+
+  if (currentPath === "/school-activities" && role === "staff") {
+    return withGlobalNotifications(
+      <StaffSchoolActivitiesPage session={session} onNavigate={navigate} />
     );
   }
 

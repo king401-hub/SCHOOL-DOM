@@ -550,6 +550,31 @@ def _activity_calendar_payload(item):
     }
 
 
+def _upcoming_school_activities(user, limit=30):
+    """Tenant-wide school activities that haven't passed yet, oldest first.
+
+    Activities may only have a month/year (no exact date) when set from the
+    settings calendar, so date-based and month-based entries both need a
+    "has this passed" check rather than a single DB filter.
+    """
+    today = timezone.localdate()
+    qs = _scope_to_user_tenant(SchoolActivityCalendar.objects.all(), user).order_by(
+        "year", "month", "activity_date", "title"
+    )
+    upcoming = []
+    for item in qs:
+        reference_date = item.end_date or item.activity_date
+        if reference_date:
+            if reference_date < today:
+                continue
+        elif item.year and (item.year, item.month) < (today.year, today.month):
+            continue
+        upcoming.append(_activity_calendar_payload(item))
+        if len(upcoming) >= limit:
+            break
+    return upcoming
+
+
 def _activity_calendar_items_from_request(request):
     raw_items = request.data.get("activity_calendar")
     if raw_items in (None, ""):
@@ -8289,6 +8314,7 @@ def timetables_snapshot(request):
         "success": True,
         "entries": [_timetable_entry_payload(item) for item in entries_qs[:500]],
         "days": [{"value": value, "label": label} for value, label in TimetableEntry.DAY_CHOICES],
+        "school_activities": _upcoming_school_activities(user),
     }
 
     if role in ADMIN_ROLES:
