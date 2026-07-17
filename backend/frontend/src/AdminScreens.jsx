@@ -3355,7 +3355,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   );
 }
 
-function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onBulkPromotion, onCreateSubject, onDeleteSubject }) {
+function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onBulkPromotion, onCreateSubject, onDeleteSubject }) {
   const classes = data?.classes || [];
   const subjects = data?.subjects || [];
   const terms = data?.terms || [];
@@ -3440,6 +3440,24 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
     setSelectedSubjectIds([]);
     setFormError("");
     setFormSuccess("");
+  };
+
+  const handleDeleteClass = async (item) => {
+    const ok = await confirm({
+      title: `Delete ${groupLabels.singular}`,
+      message: `Delete "${item.label || item.name}"? Students in this ${groupLabels.singular.toLowerCase()} will lose their class assignment. This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    setFormError("");
+    setFormSuccess("");
+    try {
+      await onDelete?.(item.id);
+      setFormSuccess(`${groupLabels.singular} deleted.`);
+    } catch (deleteError) {
+      setFormError(deleteError.message || `Could not delete ${groupLabels.singular.toLowerCase()}.`);
+    }
   };
 
   const handleSubjectSubmit = async (event) => {
@@ -3799,6 +3817,9 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
                   <td>
                     <button className="table-action" type="button" onClick={() => handleEditClass(item)}>
                       Edit
+                    </button>
+                    <button className="table-action danger" type="button" onClick={() => handleDeleteClass(item)}>
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -10254,229 +10275,6 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
   );
 }
 
-function AdminPersonalQuizPoolsScreen({ data = {}, loading, error, onRetry, session }) {
-  const folders = data?.folders || [];
-  const subjects = data?.subjects || [];
-
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [expandedFolder, setExpandedFolder] = useState(null);
-  const [showNewFolder, setShowNewFolder] = useState(false);
-  const [newFolder, setNewFolder] = useState({ subject_id: "", name: "" });
-  const [showAddQuestion, setShowAddQuestion] = useState(null);
-  const [newQ, setNewQ] = useState({ prompt: "", optA: "", optB: "", optC: "", optD: "", correct_answer: "", question_type: "objective" });
-  const [confirm, confirmDialog] = useConfirm();
-
-  const clearFeedback = () => { setFeedback(""); setActionError(""); };
-
-  const createFolder = async () => {
-    if (!newFolder.subject_id) { setActionError("Select a subject for this question pool."); return; }
-    setBusy(true); clearFeedback();
-    try {
-      await requestJson(session, "POST", "/api/quizzes/personal/resource-folder/", {
-        subject_id: Number(newFolder.subject_id),
-        name: newFolder.name.trim() || undefined,
-      });
-      setFeedback("Question pool created.");
-      setShowNewFolder(false);
-      setNewFolder({ subject_id: "", name: "" });
-      onRetry?.();
-    } catch (e) { setActionError(e.message || "Could not create folder."); }
-    finally { setBusy(false); }
-  };
-
-  const deleteFolder = async (folder) => {
-    const ok = await confirm({ title: "Delete Pool", message: `Delete "${folder.name}" and all its questions?`, confirmLabel: "Delete", danger: true });
-    if (!ok) return;
-    setBusy(true); clearFeedback();
-    try {
-      await requestJson(session, "DELETE", `/api/quizzes/personal/resource-folder/${folder.id}/`);
-      setFeedback("Pool deleted.");
-      setExpandedFolder(null);
-      onRetry?.();
-    } catch (e) { setActionError(e.message || "Could not delete pool."); }
-    finally { setBusy(false); }
-  };
-
-  const addQuestion = async (folderId) => {
-    const opts = [newQ.optA, newQ.optB, newQ.optC, newQ.optD].map((o) => o.trim()).filter(Boolean);
-    if (!newQ.prompt.trim() || !newQ.correct_answer.trim()) { setActionError("Question and correct answer are required."); return; }
-    setBusy(true); clearFeedback();
-    try {
-      await requestJson(session, "POST", `/api/quizzes/personal/resource-folder/${folderId}/questions/`, {
-        question_type: newQ.question_type,
-        prompt: newQ.prompt.trim(),
-        options: opts,
-        correct_answer: newQ.correct_answer.trim(),
-      });
-      setFeedback("Question added.");
-      setShowAddQuestion(null);
-      setNewQ({ prompt: "", optA: "", optB: "", optC: "", optD: "", correct_answer: "", question_type: "objective" });
-      onRetry?.();
-    } catch (e) { setActionError(e.message || "Could not add question."); }
-    finally { setBusy(false); }
-  };
-
-  const deleteQuestion = async (folderId, questionId, prompt) => {
-    const ok = await confirm({ title: "Remove Question", message: `Remove: "${prompt?.slice(0, 60)}..."?`, confirmLabel: "Remove", danger: true });
-    if (!ok) return;
-    setBusy(true); clearFeedback();
-    try {
-      await requestJson(session, "DELETE", `/api/quizzes/personal/resource-folder/${folderId}/questions/${questionId}/`);
-      setFeedback("Question removed.");
-      onRetry?.();
-    } catch (e) { setActionError(e.message || "Could not remove question."); }
-    finally { setBusy(false); }
-  };
-
-  if (loading && !folders.length) return <section className="screen-grid"><div className="panel"><p className="panel-empty">Loading personal quiz pools…</p></div></section>;
-  if (error) return <section className="screen-grid"><div className="panel"><p className="error-message">{error}</p><button className="btn" onClick={onRetry}>Retry</button></div></section>;
-
-  return (
-    <section className="screen-grid">
-      <div className="panel">
-        <header className="panel-header">
-          <div>
-            <h2>Personal Quiz Question Pools</h2>
-            <p className="panel-subtitle">Questions here feed the students' daily personal quiz. Each pool must be linked to a subject.</p>
-          </div>
-          <button className="btn btn-primary" onClick={() => { setShowNewFolder(true); clearFeedback(); }}>+ New Pool</button>
-        </header>
-
-        {feedback && <p className="form-success">{feedback}</p>}
-        {actionError && <p className="error-message">{actionError}</p>}
-
-        {showNewFolder && (
-          <div className="modal-overlay">
-            <div className="modal-box">
-              <h3>New Question Pool</h3>
-              <label>Subject <span className="required">*</span>
-                <select value={newFolder.subject_id} onChange={(e) => setNewFolder((p) => ({ ...p, subject_id: e.target.value }))}>
-                  <option value="">— choose subject —</option>
-                  {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}{s.code ? ` (${s.code})` : ""}</option>)}
-                </select>
-              </label>
-              <label>Pool name (optional — auto-generated from subject if left blank)
-                <input value={newFolder.name} onChange={(e) => setNewFolder((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Mathematics Personal Quiz Pool" />
-              </label>
-              <div className="modal-actions">
-                <button className="btn" onClick={() => { setShowNewFolder(false); clearFeedback(); }}>Cancel</button>
-                <button className="btn btn-primary" onClick={createFolder} disabled={busy}>Create</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!folders.length && !showNewFolder && (
-          <p className="panel-empty">No personal quiz pools yet. Create one per subject to enable the daily student quiz.</p>
-        )}
-
-        <div className="personal-quiz-pools-list">
-          {folders.map((folder) => {
-            const isExpanded = expandedFolder === folder.id;
-            return (
-              <div key={folder.id} className={`quiz-pool-card ${isExpanded ? "expanded" : ""}`}>
-                <div className="quiz-pool-card-header" onClick={() => setExpandedFolder(isExpanded ? null : folder.id)}>
-                  <div className="quiz-pool-card-info">
-                    <strong>{folder.name}</strong>
-                    <span className="quiz-pool-meta">
-                      {folder.subject || <em>No subject linked</em>}
-                      {" · "}
-                      <span className={folder.question_count > 0 ? "count-ok" : "count-warn"}>
-                        {folder.question_count} question{folder.question_count !== 1 ? "s" : ""}
-                      </span>
-                      {folder.is_global && <span className="badge">Global</span>}
-                    </span>
-                  </div>
-                  <span className="expand-chevron">{isExpanded ? "▲" : "▼"}</span>
-                </div>
-
-                {isExpanded && (
-                  <div className="quiz-pool-card-body">
-                    {!folder.subject && (
-                      <p className="warn-box">⚠ This pool has no subject linked. Students cannot receive questions from it until a subject is assigned. Edit via the control panel or delete and recreate with the correct subject.</p>
-                    )}
-                    <div className="quiz-pool-actions">
-                      <button className="btn btn-sm btn-primary" onClick={() => { setShowAddQuestion(folder.id); setNewQ({ prompt: "", optA: "", optB: "", optC: "", optD: "", correct_answer: "", question_type: "objective" }); clearFeedback(); }}>+ Add Question</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => deleteFolder(folder)} disabled={busy}>Delete Pool</button>
-                    </div>
-
-                    {showAddQuestion === folder.id && (
-                      <div className="add-question-form">
-                        <h4>Add a Question</h4>
-                        <label>Type
-                          <select value={newQ.question_type} onChange={(e) => setNewQ((p) => ({ ...p, question_type: e.target.value }))}>
-                            <option value="objective">Multiple choice (A–D)</option>
-                            <option value="true_false">True / False</option>
-                          </select>
-                        </label>
-                        <label>Question text <span className="required">*</span>
-                          <textarea rows={3} value={newQ.prompt} onChange={(e) => setNewQ((p) => ({ ...p, prompt: e.target.value }))} placeholder="Type the question here…" />
-                        </label>
-                        {newQ.question_type === "objective" && (
-                          <>
-                            {["A", "B", "C", "D"].map((letter) => {
-                              const key = `opt${letter}`;
-                              return (
-                                <label key={letter}>Option {letter}
-                                  <input value={newQ[key]} onChange={(e) => setNewQ((p) => ({ ...p, [key]: e.target.value }))} placeholder={`Option ${letter}`} />
-                                </label>
-                              );
-                            })}
-                            <label>Correct answer <span className="required">*</span>
-                              <select value={newQ.correct_answer} onChange={(e) => setNewQ((p) => ({ ...p, correct_answer: e.target.value }))}>
-                                <option value="">— choose —</option>
-                                {["A", "B", "C", "D"].map((letter) => {
-                                  const text = newQ[`opt${letter}`].trim();
-                                  return text ? <option key={letter} value={text}>{letter}: {text}</option> : null;
-                                })}
-                              </select>
-                            </label>
-                          </>
-                        )}
-                        {newQ.question_type === "true_false" && (
-                          <label>Correct answer <span className="required">*</span>
-                            <select value={newQ.correct_answer} onChange={(e) => setNewQ((p) => ({ ...p, correct_answer: e.target.value }))}>
-                              <option value="">— choose —</option>
-                              <option value="True">True</option>
-                              <option value="False">False</option>
-                            </select>
-                          </label>
-                        )}
-                        <div className="modal-actions">
-                          <button className="btn" onClick={() => setShowAddQuestion(null)}>Cancel</button>
-                          <button className="btn btn-primary" onClick={() => addQuestion(folder.id)} disabled={busy}>Save Question</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {folder.questions.length > 0 ? (
-                      <div className="quiz-pool-questions">
-                        <p className="questions-label">Questions ({folder.questions.length} shown)</p>
-                        {folder.questions.map((q, idx) => (
-                          <div key={q.id} className="quiz-pool-question-row">
-                            <span className="q-num">{idx + 1}.</span>
-                            <span className="q-text">{q.prompt}</span>
-                            <button className="btn btn-icon btn-danger-ghost" title="Remove" onClick={() => deleteQuestion(folder.id, q.id, q.prompt)}>✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="panel-empty">No questions in this pool yet. Use the button above to add some.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {confirmDialog}
-    </section>
-  );
-}
-
 export {
   AdminDashboardScreen,
   AdminPerformanceHeatmapScreen,
@@ -10485,7 +10283,6 @@ export {
   AdminTimetablesScreen,
   AdminResultsScreen,
   AdminTableScreen,
-  AdminPersonalQuizPoolsScreen,
   AdminClassesScreen,
   AdminHRPayrollScreen,
   AdminNonTeachingStaffScreen,

@@ -105,7 +105,6 @@ const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
-const AdminPersonalQuizPoolsScreen = lazyAdminScreen("AdminPersonalQuizPoolsScreen");
 const AdminTimetablesScreen = lazyAdminScreen("AdminTimetablesScreen");
 const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
 const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
@@ -6905,6 +6904,19 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleDeleteClass = useCallback(
+    async (classId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/classes/${classId}/`);
+      await Promise.all([
+        loadScreen("/classes", true),
+        loadScreen("/dashboard", true),
+        loadScreen("/students", true),
+      ]);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
   const handleUpdateStudent = useCallback(
     async (studentId, payload) => {
       const result = await requestJson(session, "PATCH", `/api/app/students/${studentId}/`, payload);
@@ -7655,6 +7667,7 @@ const unreadNotificationsCount =
         onRetry={handleRetry}
         onCreate={handleCreateClass}
         onUpdate={handleUpdateClass}
+        onDelete={handleDeleteClass}
         onBulkPromotion={handleBulkClassPromotion}
         onCreateSubject={handleCreateSubject}
         onDeleteSubject={handleDeleteSubject}
@@ -7674,16 +7687,6 @@ const unreadNotificationsCount =
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}
-      />
-    );
-  } else if (activePath === "/personal-quiz-pools") {
-    content = (
-      <AdminPersonalQuizPoolsScreen
-        data={data}
-        loading={loading}
-        error={error}
-        onRetry={handleRetry}
-        session={session}
       />
     );
   } else if (activePath === "/timetables") {
