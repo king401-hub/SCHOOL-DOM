@@ -130,6 +130,7 @@ class ControlPanelSite(AdminSite):
     site_title = "Schooldom Control Panel"
     index_title = "Platform Control Panel"
     index_template = "admin/control_panel_index.html"
+    app_index_template = "admin/control_panel_app_index.html"
 
     def get_app_list(self, request, app_label=None):
         app_list = super().get_app_list(request, app_label=app_label)

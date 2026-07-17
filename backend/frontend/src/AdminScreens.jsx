@@ -9991,7 +9991,6 @@ function AdminEnrollmentsScreen({ data, loading, error, onRetry, onCreate }) {
 
 function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessage, onMarkRead, onDelete }) {
   const summary = data?.summary || {};
-  const notifications = data?.notifications || [];
   const announcements = data?.announcements || [];
   const recipients = data?.recipients || [];
   const recipientOptions = recipients
@@ -10024,10 +10023,8 @@ function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessag
       {data ? (
         <>
           <div className="metric-grid">
-            <MetricCard label="Unread Notifications" value={summary.unread_notifications ?? 0} trend="Personal feed" />
             <MetricCard label="Unread Inbox" value={summary.unread_inbox ?? 0} trend="Direct messages" />
             <MetricCard label="Active Announcements" value={summary.active_announcements ?? announcements.length} trend="Published now" />
-            <MetricCard label="Notifications Shown" value={notifications.length} trend="Latest items" />
           </div>
 
           <MessageInboxPanel
