@@ -105,6 +105,7 @@ const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
+const AdminPersonalQuizPoolsScreen = lazyAdminScreen("AdminPersonalQuizPoolsScreen");
 const AdminTimetablesScreen = lazyAdminScreen("AdminTimetablesScreen");
 const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
 const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
@@ -7673,6 +7674,16 @@ const unreadNotificationsCount =
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}
+      />
+    );
+  } else if (activePath === "/personal-quiz-pools") {
+    content = (
+      <AdminPersonalQuizPoolsScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        session={session}
       />
     );
   } else if (activePath === "/timetables") {

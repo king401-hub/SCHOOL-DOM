@@ -953,6 +953,31 @@ class TeacherQuizSubmissions(APIView):
         return Response(payload)
 
 
+def _personal_quiz_folder_payload(folder):
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "description": folder.description,
+        "subject_id": folder.subject_id,
+        "subject": folder.subject.name if folder.subject else folder.subject_name or "",
+        "subject_code": folder.subject_code or (folder.subject.code if folder.subject else ""),
+        "class_group": _class_label(folder.class_group) if folder.class_group else "All classes",
+        "is_global": folder.tenant_id is None,
+        "question_count": folder.folder_questions.filter(is_active=True).count(),
+        "questions": [
+            {
+                "id": q.id,
+                "question_type": q.question_type,
+                "prompt": q.prompt,
+                "options": q.options or [],
+                "correct_answer": q.correct_answer,
+                "points": q.points,
+            }
+            for q in folder.folder_questions.filter(is_active=True).order_by("order", "id")[:100]
+        ],
+    }
+
+
 class PersonalQuizResourceFolder(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -960,33 +985,16 @@ class PersonalQuizResourceFolder(APIView):
         if getattr(request.user, "role", "") not in {"school_admin", "principal", "super_admin"}:
             return Response({"detail": "Personal quiz question pools are not available to this account."}, status=status.HTTP_403_FORBIDDEN)
         legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
-        folders = PersonalQuizFolder.objects.filter(is_active=True).prefetch_related("folder_questions")
-        # Global (tenant__isnull=True) folders are always visible by design; when this
-        # admin's own school tenant can't be resolved, show only those - never every
-        # other school's folders.
+        folders = PersonalQuizFolder.objects.filter(is_active=True).select_related("subject", "class_group").prefetch_related("folder_questions")
         folders = folders.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True)) if legacy_tenant else folders.filter(tenant__isnull=True)
-        payload = [
-            {
-                "id": folder.id,
-                "name": folder.name,
-                "description": folder.description,
-                "subject": folder.subject.name if folder.subject else folder.subject_name or "All subjects",
-                "class_group": _class_label(folder.class_group) if folder.class_group else "All classes",
-                "question_count": folder.folder_questions.filter(is_active=True).count(),
-                "questions": [
-                    {
-                        "id": question.id,
-                        "question_type": question.question_type,
-                        "prompt": question.prompt,
-                        "options": question.options or [],
-                        "points": question.points,
-                    }
-                    for question in folder.folder_questions.filter(is_active=True)[:50]
-                ],
-            }
-            for folder in folders[:20]
-        ]
-        return Response({"folders": payload})
+
+        subjects = []
+        if legacy_tenant:
+            subjects = list(
+                Subject.objects.filter(tenant=legacy_tenant).order_by("name").values("id", "name", "code")
+            )
+
+        return Response({"folders": [_personal_quiz_folder_payload(f) for f in folders[:50]], "subjects": subjects})
 
     def post(self, request):
         if request.user.role not in {"school_admin", "principal", "super_admin"}:
@@ -997,16 +1005,78 @@ class PersonalQuizResourceFolder(APIView):
         else:
             legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
             if not legacy_tenant:
-                # Never silently fall back to a global (tenant=None) folder just because
-                # this admin's school has no legacy tenant mapping - that would make a
-                # school-specific folder visible to every other school by accident.
                 return Response({"detail": "Your school is not fully set up yet. Contact support."}, status=status.HTTP_400_BAD_REQUEST)
+
+        subject = None
+        subject_id = request.data.get("subject_id")
+        if subject_id:
+            subject = Subject.objects.filter(id=subject_id).first()
+
+        subject_name = str(request.data.get("subject_name") or (subject.name if subject else "") or "").strip()
+        subject_code = str(request.data.get("subject_code") or (subject.code if subject else "") or "").strip().upper()
+        default_name = f"{subject_name or subject_code or 'General'} Personal Quiz Pool"
+        name = str(request.data.get("name") or default_name).strip() or default_name
+
         folder = PersonalQuizFolder.objects.create(
             tenant=legacy_tenant,
-            name=str(request.data.get("name") or "Personal Quiz Questions").strip(),
+            name=name,
             description=str(request.data.get("description") or "").strip(),
+            subject=subject,
+            subject_name=subject_name,
+            subject_code=subject_code,
         )
-        return Response({"id": folder.id, "name": folder.name, "description": folder.description, "is_global": folder.tenant_id is None, "question_count": 0}, status=status.HTTP_201_CREATED)
+        return Response(_personal_quiz_folder_payload(folder), status=status.HTTP_201_CREATED)
+
+
+class PersonalQuizResourceFolderDetail(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get_folder(self, request, folder_id):
+        if request.user.role not in {"school_admin", "principal", "super_admin"}:
+            return None, Response({"detail": "Only school administrators can manage personal quiz folders."}, status=status.HTTP_403_FORBIDDEN)
+        legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        folder_query = PersonalQuizFolder.objects.filter(id=folder_id, is_active=True).select_related("subject", "class_group").prefetch_related("folder_questions")
+        if request.user.role == "super_admin":
+            folder_query = folder_query.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True))
+        elif legacy_tenant:
+            folder_query = folder_query.filter(tenant=legacy_tenant)
+        else:
+            folder_query = folder_query.none()
+        folder = folder_query.first()
+        if not folder:
+            return None, Response({"detail": "Folder not found."}, status=status.HTTP_404_NOT_FOUND)
+        return folder, None
+
+    def patch(self, request, folder_id):
+        folder, err = self._get_folder(request, folder_id)
+        if err:
+            return err
+        subject = folder.subject
+        subject_id = request.data.get("subject_id")
+        if subject_id is not None:
+            subject = Subject.objects.filter(id=subject_id).first() if subject_id else None
+        subject_name = str(request.data.get("subject_name") or (subject.name if subject else "") or "").strip()
+        subject_code = str(request.data.get("subject_code") or (subject.code if subject else "") or "").strip().upper()
+        update_fields = []
+        if "name" in request.data:
+            folder.name = str(request.data["name"]).strip() or folder.name
+            update_fields.append("name")
+        if subject_id is not None:
+            folder.subject = subject
+            folder.subject_name = subject_name
+            folder.subject_code = subject_code
+            update_fields += ["subject", "subject_name", "subject_code"]
+        if update_fields:
+            folder.save(update_fields=update_fields)
+        return Response(_personal_quiz_folder_payload(folder))
+
+    def delete(self, request, folder_id):
+        folder, err = self._get_folder(request, folder_id)
+        if err:
+            return err
+        folder.is_active = False
+        folder.save(update_fields=["is_active"])
+        return Response({"detail": "Folder deleted."}, status=status.HTTP_200_OK)
 
 
 class PersonalQuizResourceQuestion(APIView):
@@ -1038,7 +1108,24 @@ class PersonalQuizResourceQuestion(APIView):
             order=folder.folder_questions.count() + 1,
             points=int(request.data.get("points") or 1),
         )
-        return Response({"id": question.id, "prompt": question.prompt, "question_type": question.question_type}, status=status.HTTP_201_CREATED)
+        return Response({"id": question.id, "prompt": question.prompt, "question_type": question.question_type, "options": question.options or [], "correct_answer": question.correct_answer, "points": question.points}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, folder_id, question_id):
+        if request.user.role not in {"school_admin", "principal", "super_admin"}:
+            return Response({"detail": "Only school administrators can delete personal quiz questions."}, status=status.HTTP_403_FORBIDDEN)
+        legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        folder_query = PersonalQuizFolder.objects.filter(id=folder_id, is_active=True)
+        if request.user.role == "super_admin":
+            folder_query = folder_query.filter(Q(tenant=legacy_tenant) | Q(tenant__isnull=True))
+        elif legacy_tenant:
+            folder_query = folder_query.filter(tenant=legacy_tenant)
+        else:
+            folder_query = folder_query.none()
+        folder = get_object_or_404(folder_query)
+        question = get_object_or_404(PersonalQuizFolderQuestion, id=question_id, folder=folder)
+        question.is_active = False
+        question.save(update_fields=["is_active"])
+        return Response({"detail": "Question removed."}, status=status.HTTP_200_OK)
 
 
 class StudentQuizList(APIView):

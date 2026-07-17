@@ -42,6 +42,7 @@ export const ADMIN_ROUTES = [
       { path: "/classes", label: "Classes" },
       { path: "/attendance", label: "Attendance" },
       { path: "/exams", label: "CBT Exams" },
+      { path: "/personal-quiz-pools", label: "Personal Quiz Pools" },
       { path: "/timetables", label: "Timetables" },
       { path: "/results", label: "Results" },
     ]
@@ -104,6 +105,7 @@ export const ADMIN_ENDPOINTS = {
   "/classes": "/api/app/classes/",
   "/subjects": "/api/app/classes/", // subjects included in classes snapshot
   "/exams": "/api/app/exams/",
+  "/personal-quiz-pools": "/api/quizzes/personal/resource-folder/",
   "/timetables": "/api/app/timetables/",
   "/results": "/api/app/results/",
   "/database-import": "/api/app/database-imports/",
