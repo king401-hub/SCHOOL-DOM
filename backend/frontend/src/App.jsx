@@ -9069,7 +9069,11 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
       <>
         <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
-        {session && <AiChatWidget session={session} />}
+        {/* /quizzes is where students take personal + teacher-assigned quizzes (no
+            separate route for "in progress" - same URL as browsing the quiz list).
+            The AI assistant must not be reachable while a quiz could be active,
+            same reasoning as the dedicated /exam/:id CBT route below. */}
+        {session && currentPath !== "/quizzes" && <AiChatWidget session={session} />}
         {content}
       </>
     ),
