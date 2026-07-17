@@ -10379,34 +10379,17 @@ def kids_monitor_initiate(request, parent_id):
         except Exception:
             pass
 
-    from finance.services import _paystack_base_url, _paystack_headers, _paystack_json
-    import requests as _requests
-
     reference = f"km-{uuid.uuid4().hex[:16]}"
-    email = parent_profile.user.email or user.email
 
-    url = f"{_paystack_base_url()}/transaction/initialize"
-    payload = {
-        "email": email,
-        "amount": KIDS_MONITOR_PRICE * 100,
-        "reference": reference,
-        "metadata": {
-            "parent_id": str(parent_id),
-            "school_id": str(user.tenant.id),
-            "parent_name": parent_profile.user.get_full_name(),
-            "type": "kids_monitor",
-        },
-    }
-    try:
-        response = _requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
-        data = _paystack_json(response)
-    except Exception as exc:
-        return Response({"success": False, "message": f"Payment initialization failed: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+    child_count = parent_profile.children.count()
+    total_price = KIDS_MONITOR_PRICE * max(1, child_count)
 
-    if not data.get("status"):
-        return Response({"success": False, "message": data.get("message", "Paystack initialization failed.")}, status=status.HTTP_400_BAD_REQUEST)
-
-    tx_data = data["data"]
+    # Do NOT also call Paystack's /transaction/initialize here - the
+    # frontend opens this reference itself via PaystackPop.setup({ref, ...}),
+    # which performs its own initialize/charge using the public key.
+    # Initializing the same reference twice (once here with the secret key,
+    # again from the browser) is rejected by Paystack as "Duplicate
+    # transaction reference", so the popup never opens.
 
     # Create/update subscription record as pending
     KidsMonitorSubscription.objects.update_or_create(
@@ -10420,10 +10403,11 @@ def kids_monitor_initiate(request, parent_id):
 
     return Response({
         "success": True,
-        "authorization_url": tx_data["authorization_url"],
-        "access_code": tx_data["access_code"],
+        "authorization_url": "",
+        "access_code": "",
         "reference": reference,
-        "amount": KIDS_MONITOR_PRICE,
+        "amount": total_price,
+        "child_count": child_count,
         "parent_name": parent_profile.user.get_full_name(),
     })
 

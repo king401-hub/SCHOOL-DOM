@@ -3783,6 +3783,27 @@ class KidsMonitorExpiryTests(TestCase):
         sub.refresh_from_db()
         self.assertTrue(sub.is_currently_active)
 
+    @patch("requests.post")
+    def test_fresh_initiate_does_not_call_paystack_initialize_itself(self, mock_post):
+        """Regression: kids_monitor_initiate used to call Paystack's
+        /transaction/initialize server-side, then hand the same reference to
+        the frontend's PaystackPop.setup({ref, ...}), which performs its own
+        initialize/charge - Paystack rejects re-initializing the same
+        reference, so the popup failed with "Duplicate transaction
+        reference" on every attempt."""
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(f"/api/app/kids-monitor/{self.parent_profile.id}/initiate/", format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(response.data["reference"].startswith("km-"))
+        mock_post.assert_not_called()
+
+        sub = KidsMonitorSubscription.objects.get(parent=self.parent_profile)
+        self.assertFalse(sub.is_active)
+        self.assertEqual(sub.paystack_ref, response.data["reference"])
+
 
 @override_settings(ADMIN_OTP_DEBUG_CODE_ENABLED=True)
 class PasswordResetOtpTests(TestCase):
