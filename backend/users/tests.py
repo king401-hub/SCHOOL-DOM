@@ -147,6 +147,77 @@ class SchoolRegistrationCreditTests(TestCase):
         self.assertIn("school_type", response.data["errors"])
         self.assertFalse(SchoolTenant.objects.filter(schema_name="bogus_tier_academy").exists())
 
+    def test_retrying_create_school_with_same_email_does_not_create_a_duplicate_school(self):
+        """Regression: the sign-up wizard retries create-school if the
+        follow-up /register/ call fails - this used to create a brand new
+        SchoolTenant every retry."""
+        first = self.client.post(
+            "/api/auth/create-school/",
+            data={"school_name": "Retry Academy", "email": "retry.parent@school.test", "address": "1 First Street"},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        first_code = first.data["school"]["school_code"]
+
+        # Different body (not an exact duplicate) so this exercises the
+        # view's own email-based dedup, not just the IdempotencyMiddleware
+        # replaying an identical cached response.
+        second = self.client.post(
+            "/api/auth/create-school/",
+            data={"school_name": "Retry Academy Retry", "email": "retry.parent@school.test", "address": "2 Second Street"},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertEqual(second.data["school"]["school_code"], first_code)
+        self.assertEqual(SchoolTenant.objects.filter(email__iexact="retry.parent@school.test").count(), 1)
+
+    def test_retry_does_not_grant_free_activation_credits_twice(self):
+        self.client.post(
+            "/api/auth/create-school/",
+            data={"school_name": "Credit Retry Academy", "email": "credit.retry@school.test"},
+            format="json",
+        )
+        self.client.post(
+            "/api/auth/create-school/",
+            data={"school_name": "Credit Retry Academy", "email": "credit.retry@school.test", "address": "Second try"},
+            format="json",
+        )
+        school = SchoolTenant.objects.get(email__iexact="credit.retry@school.test")
+        pool = ActivationCreditPool.objects.get(tenant=school)
+        self.assertEqual(pool.balance, 50)
+
+    def test_new_school_allowed_for_email_once_previous_signup_actually_completed(self):
+        """A school with a real admin user already means that sign-up
+        finished - a later create-school call for the same email (e.g. a
+        proprietor genuinely registering a second school) must not be
+        merged into the first one."""
+        first = self.client.post(
+            "/api/auth/create-school/",
+            data={"school_name": "Completed Academy", "email": "completed.admin@school.test"},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        completed_school = SchoolTenant.objects.get(schema_name=first.data["school"]["school_code"])
+        User.objects.create_user(
+            email="completed.admin@school.test",
+            password="AdminPass123",
+            first_name="Completed",
+            last_name="Admin",
+            role="school_admin",
+            tenant=completed_school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        second = self.client.post(
+            "/api/auth/create-school/",
+            data={"school_name": "Second Genuine School", "email": "completed.admin@school.test"},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertNotEqual(second.data["school"]["school_code"], completed_school.schema_name)
+        self.assertEqual(SchoolTenant.objects.filter(email__iexact="completed.admin@school.test").count(), 2)
+
 
 class StudentEnrollmentTests(TestCase):
     def setUp(self):

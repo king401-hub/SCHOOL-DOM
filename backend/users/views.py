@@ -29,7 +29,7 @@ from .serializers import (
     CheckEmailSerializer, CreateSchoolSerializer
 )
 from .serializers import ResendVerificationSerializer
-from finance.services import grant_school_registration_credits, student_has_login_credit, update_student_activation_alerts
+from finance.services import get_or_create_activation_credit_pool, grant_school_registration_credits, student_has_login_credit, update_student_activation_alerts
 
 ADMIN_OTP_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
@@ -432,6 +432,36 @@ def create_school(request):
     payload = serializer.validated_data
     preferred = payload.get('school_code') or payload['school_name']
     requested_code = normalize_school_code(preferred)
+
+    # A retry of this same sign-up attempt (e.g. the follow-up /register/
+    # call failed and the user clicked "Generate Verification Code" again)
+    # must not create a second school. A school with no admin user yet means
+    # its sign-up never completed - safe to hand back instead of duplicating.
+    email = (payload.get('email') or '').strip()
+    if email:
+        existing = (
+            SchoolTenant.objects.filter(email__iexact=email)
+            .exclude(users__role__in=['school_admin', 'school_superadmin', 'principal'])
+            .order_by('-created_on')
+            .first()
+        )
+        if existing:
+            domain = existing.domains.filter(is_primary=True).first()
+            credit_pool = get_or_create_activation_credit_pool(existing)
+            return Response({
+                'success': True,
+                'message': 'School created successfully with 50 free activation credits.',
+                'school': {
+                    'id': existing.id,
+                    'name': existing.name,
+                    'school_code': existing.schema_name,
+                    'domain': domain.domain if domain else '',
+                    'free_credits': credit_pool.balance,
+                    'school_type': existing.school_type,
+                },
+                'requested_code': requested_code,
+                'conflict_resolved': existing.schema_name != requested_code,
+            }, status=status.HTTP_201_CREATED)
 
     # Retry loop for rare race conditions on unique constraints.
     for _ in range(5):

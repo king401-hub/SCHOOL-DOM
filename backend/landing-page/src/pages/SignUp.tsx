@@ -171,8 +171,11 @@ export default function SignUpPage() {
     setSubmitting(true);
     setError('');
     try {
-      let code = '';
-      if (!isProprietor) {
+      let code = schoolCode;
+      if (!isProprietor && !code) {
+        // Only create the school once per attempt - if this is a retry after
+        // the register() call below failed, reuse the school we already
+        // created instead of creating another one.
         const schoolData = await postJson('/api/auth/create-school/', {
           school_name: schoolName.trim(),
           school_code: '',
