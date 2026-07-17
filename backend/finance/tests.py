@@ -473,20 +473,20 @@ class SmsWalletTests(TestCase):
 
     @patch("finance.services.requests.post")
     def test_initialize_purchase_creates_pending_transaction_at_100_per_1000(self, mock_post):
-        mock_post.return_value.json.return_value = {
-            "status": True,
-            "data": {"authorization_url": "https://paystack.test/pay", "access_code": "abc123"},
-        }
-
+        # initialize_sms_credit_purchase must NOT call Paystack itself - the
+        # frontend's PaystackPop.setup({ref, ...}) does the actual
+        # initialize/charge for this reference. If our backend also calls
+        # /transaction/initialize, Paystack rejects the widget's later
+        # attempt with "Duplicate transaction reference" and the popup never
+        # opens - this regression-tests that requests.post is never touched.
         result = initialize_sms_credit_purchase(self.school, 300, self.admin)
 
         tx = SmsWalletTransaction.objects.get(reference=result["reference"])
         self.assertEqual(tx.status, SmsWalletTransaction.STATUS_PENDING)
         self.assertEqual(tx.credits, 300)
         self.assertEqual(tx.amount, Decimal("3000.00"))
-        self.assertEqual(result["authorization_url"], "https://paystack.test/pay")
-        sent_amount_kobo = mock_post.call_args.kwargs["json"]["amount"]
-        self.assertEqual(sent_amount_kobo, 300000)
+        self.assertEqual(result["amount"], Decimal("3000.00"))
+        mock_post.assert_not_called()
 
     @patch("finance.services.verify_paystack_transaction")
     def test_credit_from_purchase_adds_units_on_top_of_welcome_credit(self, mock_verify):
@@ -635,7 +635,7 @@ class SmsWalletTests(TestCase):
         self.assertEqual(wallet.balance, 3)
 
     @patch("finance.services.send_ebulksms")
-    def test_send_wallet_sms_charges_ten_credits_and_logs_sent(self, mock_send):
+    def test_send_wallet_sms_charges_one_credit_and_logs_sent(self, mock_send):
         wallet = get_or_create_sms_wallet(self.school)
         wallet.balance = 50
         wallet.save(update_fields=["balance", "updated_at"])
@@ -644,14 +644,14 @@ class SmsWalletTests(TestCase):
         log = send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.BULK)
         wallet.refresh_from_db()
 
-        self.assertEqual(wallet.balance, 40)
+        self.assertEqual(wallet.balance, 49)
         self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
-        self.assertEqual(log.credits_charged, 10)
+        self.assertEqual(log.credits_charged, 1)
         self.assertIsNotNone(log.sent_at)
         debit_tx = SmsWalletTransaction.objects.get(related_message_log=log)
         self.assertEqual(debit_tx.tx_type, SmsWalletTransaction.DEBIT)
         self.assertEqual(debit_tx.balance_before, 50)
-        self.assertEqual(debit_tx.balance_after, 40)
+        self.assertEqual(debit_tx.balance_after, 49)
 
     @patch("finance.services.send_ebulksms")
     def test_send_wallet_sms_refunds_on_provider_failure(self, mock_send):
@@ -673,7 +673,7 @@ class SmsWalletTests(TestCase):
     @patch("finance.services.send_ebulksms")
     def test_send_wallet_sms_raises_before_sending_when_balance_insufficient(self, mock_send):
         wallet = get_or_create_sms_wallet(self.school)
-        wallet.balance = 5
+        wallet.balance = 0
         wallet.save(update_fields=["balance", "updated_at"])
 
         with self.assertRaises(InsufficientSmsCreditsError):

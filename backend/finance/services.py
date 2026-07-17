@@ -2082,7 +2082,7 @@ SMS_UNIT_CURRENCY = "NGN"
 # Every school's SMS wallet starts with this many free credits.
 SMS_WELCOME_CREDITS = 100
 # Each outbound SMS costs this many wallet credits.
-SMS_CREDITS_PER_MESSAGE = 10
+SMS_CREDITS_PER_MESSAGE = 1
 
 
 class InsufficientSmsCreditsError(Exception):
@@ -2138,35 +2138,17 @@ def initialize_sms_credit_purchase(tenant, units: int, actor) -> dict:
         created_by=actor,
     )
 
-    email = getattr(actor, "email", "") or "billing@schooldom.academy"
-    url = f"{_paystack_base_url()}/transaction/initialize"
-    payload = {
-        "email": email,
-        "amount": int(amount * 100),
-        "reference": reference,
-        "metadata": {
-            "type": "sms_bundle",
-            "tenant_id": str(tenant.id) if tenant else "",
-            "units": units,
-            "reference": reference,
-        },
-    }
-    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
-    data = _paystack_json(response)
-    if not data.get("status"):
-        tx.status = SmsWalletTransaction.STATUS_FAILED
-        tx.metadata = {**tx.metadata, "init_error": data.get("message", "Paystack initialization failed.")}
-        tx.save(update_fields=["status", "metadata"])
-        raise RuntimeError(data.get("message", "Paystack initialization failed."))
-
-    tx_data = data["data"]
-    tx.metadata = {**tx.metadata, "authorization_url": tx_data.get("authorization_url"), "access_code": tx_data.get("access_code")}
-    tx.save(update_fields=["metadata"])
-
+    # Do NOT also call Paystack's /transaction/initialize here - the frontend
+    # opens this reference itself via PaystackPop.setup({ref, ...}), which
+    # performs its own initialize/charge using the public key. Initializing
+    # the same reference twice (once here with the secret key, again from
+    # the browser) is rejected by Paystack as "Duplicate transaction
+    # reference", so the popup never opens. This reference only needs to be
+    # unique on our side; Paystack first sees it when the widget opens.
     return {
         "reference": reference,
-        "authorization_url": tx_data.get("authorization_url"),
-        "access_code": tx_data.get("access_code"),
+        "authorization_url": "",
+        "access_code": "",
         "amount": amount,
         "credits": units,
     }
