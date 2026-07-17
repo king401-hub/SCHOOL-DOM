@@ -110,6 +110,16 @@ CSRF_TRUSTED_ORIGINS = env_list(
 USE_X_FORWARDED_HOST = env_bool('USE_X_FORWARDED_HOST', True)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# Cookies must never travel over plain HTTP in production (nginx already
+# terminates/forwards HTTPS status via X-Forwarded-Proto above, so this is
+# safe once DEBUG=False). Left insecure in DEBUG so local http://localhost
+# dev still works.
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
 # Optional IP allowlist. Keep disabled until IP_WHITELIST contains your current public IP.
 IP_WHITELIST_ENABLED = env_bool('IP_WHITELIST_ENABLED', False)
 IP_WHITELIST_RANGES = env_list('IP_WHITELIST', '')
@@ -195,7 +205,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    # 'django.middleware.csrf.CsrfViewMiddleware',  # Temporarily disabled for testing
+    'django.middleware.csrf.CsrfViewMiddleware',
     'middleware.invalid_uuid_session.InvalidUUIDSessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'middleware.idempotency.IdempotencyMiddleware',
@@ -303,6 +313,11 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
+    'DEFAULT_THROTTLE_RATES': {
+        # Shared by login/register/create-school/password-reset (see
+        # users.views.AuthRateThrottle) - per-IP, not global.
+        'auth': '20/minute',
+    },
 }
 
 # JWT Settings

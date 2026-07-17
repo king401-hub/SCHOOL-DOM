@@ -2,9 +2,10 @@
 import logging
 import re
 from rest_framework import status
-from rest_framework.decorators import APIView, api_view, authentication_classes, permission_classes
+from rest_framework.decorators import APIView, api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.hashers import check_password, make_password
@@ -39,6 +40,13 @@ PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5
 # Accounts that never require login/signup OTP, regardless of role.
 ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com"}
 logger = logging.getLogger(__name__)
+
+
+class AuthRateThrottle(AnonRateThrottle):
+    """Per-IP rate limit shared by login/register/create-school/password-reset -
+    generous enough for a school's concurrent staff, strict enough to stop a
+    brute-force or credential-stuffing script."""
+    scope = 'auth'
 
 class ResendVerificationView(APIView):
     def post(self, request, *args, **kwargs):
@@ -369,6 +377,7 @@ def get_tokens_for_user(user):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def register(request):
     """
     User registration endpoint
@@ -417,6 +426,7 @@ def register(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def create_school(request):
     """
     Create school tenant and allocate non-conflicting schema/domain.
@@ -538,6 +548,7 @@ def create_school(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def login_view(request):
     """
     User login endpoint
@@ -850,6 +861,7 @@ def admin_resend_otp(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def password_reset_request(request):
     """
     Request password reset: emails a 6-digit OTP code (not a link).
@@ -900,6 +912,7 @@ def password_reset_request(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def password_reset_resend_otp(request):
     """Resend a password reset OTP code."""
     email = str(request.data.get('email') or '').strip().lower()
@@ -937,6 +950,7 @@ def password_reset_resend_otp(request):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def password_reset_confirm(request):
     """
     Confirm password reset with the emailed OTP code.

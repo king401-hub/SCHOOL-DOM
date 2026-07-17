@@ -39,6 +39,12 @@ from users.app_views import ID_CARD_SIGNING_SALT
 
 class SchoolRegistrationCreditTests(TestCase):
     def setUp(self):
+        # This class calls create-school many times across its methods, all
+        # sharing the same per-IP 'auth' throttle scope (see
+        # users.views.AuthRateThrottle) - clear it so one method's calls
+        # don't push a later method over the limit.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
         self.client = APIClient()
 
     def test_create_school_receives_fifty_free_activation_credits(self):
@@ -3808,6 +3814,12 @@ class KidsMonitorExpiryTests(TestCase):
 @override_settings(ADMIN_OTP_DEBUG_CODE_ENABLED=True)
 class PasswordResetOtpTests(TestCase):
     def setUp(self):
+        # This class calls password-reset endpoints many times across its
+        # methods, all sharing the same per-IP 'auth' throttle scope (see
+        # users.views.AuthRateThrottle) - clear it so one method's calls
+        # don't push a later method over the limit.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
         self.client = APIClient()
         # Unique-per-test email: the IdempotencyMiddleware dedupes identical
         # (anon user, method, path, body) requests for 10s, so reusing the
@@ -4055,3 +4067,51 @@ class SchoolActivitiesOnTimetableTests(TestCase):
         # should still see tenant-wide school activities.
         self.assertEqual(response.data["entries"], [])
         self.assertIn("Inter-House Sports", self._activity_titles(response))
+
+
+class AuthRateThrottleTests(TestCase):
+    """Login/register/create-school/password-reset used to have zero rate
+    limiting - a script could brute-force credentials with no server-side
+    slowdown at all."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        self.client = APIClient()
+
+    def tearDown(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
+    def test_login_gets_throttled_after_too_many_attempts_from_same_ip(self):
+        for _ in range(20):
+            response = self.client.post(
+                "/api/auth/login/",
+                {"email": "nobody@nowhere.test", "password": "wrong"},
+                format="json",
+            )
+            self.assertNotEqual(response.status_code, 429)
+
+        throttled = self.client.post(
+            "/api/auth/login/",
+            {"email": "nobody@nowhere.test", "password": "wrong"},
+            format="json",
+        )
+        self.assertEqual(throttled.status_code, 429)
+
+    def test_throttle_bucket_is_shared_across_the_auth_endpoints(self):
+        """login and create-school share the same 'auth' scope/IP bucket -
+        a script can't dodge the limit by rotating which endpoint it hits."""
+        for _ in range(20):
+            self.client.post(
+                "/api/auth/login/",
+                {"email": "nobody@nowhere.test", "password": "wrong"},
+                format="json",
+            )
+
+        throttled = self.client.post(
+            "/api/auth/create-school/",
+            {"school_name": "Throttle Test Academy", "email": "throttle@test.edu"},
+            format="json",
+        )
+        self.assertEqual(throttled.status_code, 429)
