@@ -1,0 +1,30 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{% block nav-sidebar %}{% include "admin/nav_sidebar.html" %}{% endblock %}
+
+{% block content %}
+<div class="cp-kpi-grid">
+  <div class="cp-kpi-card">
+    <span class="cp-kpi-label">Schools</span>
+    <span class="cp-kpi-value">{{ schools_active }}<small>/{{ schools_total }}</small></span>
+    <span class="cp-kpi-sub">active / total{% if schools_suspended %} &middot; {{ schools_suspended }} suspended{% endif %}</span>
+  </div>
+  <div class="cp-kpi-card cp-kpi-blue">
+    <span class="cp-kpi-label">Kids Monitor</span>
+    <span class="cp-kpi-value">{{ kids_monitor_mrr }}</span>
+    <span class="cp-kpi-sub">{{ kids_monitor_active }} active subscription(s) &middot; est. monthly</span>
+  </div>
+  <div class="cp-kpi-card cp-kpi-amber">
+    <span class="cp-kpi-label">Activation Tokens</span>
+    <span class="cp-kpi-value">{{ tokens_revenue_total }}</span>
+    <span class="cp-kpi-sub">{{ tokens_revenue_30d }} last 30 days &middot; {{ tokens_credits_sold }} credits sold</span>
+  </div>
+  <div class="cp-kpi-card cp-kpi-purple">
+    <span class="cp-kpi-label">SMS Purchases</span>
+    <span class="cp-kpi-value">{{ sms_revenue_total }}</span>
+    <span class="cp-kpi-sub">{{ sms_revenue_30d }} last 30 days &middot; {{ sms_credits_sold }} credits sold</span>
+  </div>
+</div>
+{{ block.super }}
+{% endblock %}

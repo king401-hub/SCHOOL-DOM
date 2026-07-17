@@ -322,9 +322,25 @@ def _send_inappropriate_question_report(*, title, school, school_name, subject_n
     return True
 
 
+def _resolve_student_legacy_tenant(user, profile=None):
+    """Resolve the legacy tenants.Tenant for a student user.
+
+    Falls back to the tenant of the student's current class when the school→legacy
+    slug mapping fails, which can happen if core.SchoolTenant.schema_name doesn't
+    exactly match tenants.Tenant.slug for the school.
+    """
+    tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    if not tenant:
+        if profile is None:
+            profile = _student_profile(user)
+        if profile and profile.current_class_id:
+            tenant = getattr(profile.current_class, "tenant", None)
+    return tenant
+
+
 def _subject_queryset_for_student(user, profile=None):
     profile = profile or _student_profile(user)
-    legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+    legacy_tenant = _resolve_student_legacy_tenant(user, profile)
     subjects = Subject.objects.all().order_by("name")
     subjects = subjects.filter(tenant=legacy_tenant) if legacy_tenant else subjects.none()
     if profile and profile.current_class_id and profile.current_class.subjects.exists():
@@ -834,13 +850,28 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
             return questions
 
     if len(questions) < count:
-        exam_filter = _question_bank_subject_filter(subject)
+        # Path A: via QuestionBank — bank has both tenant and subject set
+        bank_filter = _question_bank_subject_filter(subject)
         if tenant:
-            exam_filter &= Q(question_banks__tenant=tenant)
+            bank_filter &= Q(question_banks__tenant=tenant)
         else:
-            exam_filter &= Q(question_banks__tenant__isnull=True)
+            bank_filter &= Q(question_banks__tenant__isnull=True)
+
+        # Path B: via Exam.questions M2M — question belongs to the tenant and
+        # the exam it was assigned to has a matching subject.  This catches
+        # questions that exist in the CBT system but aren't inside any bank.
+        _eq_subject_terms = _subject_personal_quiz_terms(subject)
+        exam_subject_q = Q(exams__subject=subject)
+        for _term in _eq_subject_terms:
+            exam_subject_q |= Q(exams__subject__name__iexact=_term)
+            exam_subject_q |= Q(exams__subject__code__iexact=_term)
+        if tenant:
+            exam_path_filter = exam_subject_q & Q(tenant=tenant)
+        else:
+            exam_path_filter = exam_subject_q & Q(tenant__isnull=True)
+
         exam_questions = list(
-            ExamQuestion.objects.filter(exam_filter)
+            ExamQuestion.objects.filter(bank_filter | exam_path_filter)
             .exclude(text="")
             .distinct()
             .order_by("?")[: max((count - len(questions)) * 5, count - len(questions))]
@@ -1149,7 +1180,7 @@ class PersonalQuizOptions(APIView):
         subject_payload = []
         for subject in subjects:
             attempt = today_attempts.get(subject.id)
-            available_question_count = _personal_question_availability_count(subject, profile.current_class if profile else None, resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None)))
+            available_question_count = _personal_question_availability_count(subject, profile.current_class if profile else None, _resolve_student_legacy_tenant(request.user, profile))
             status_label = "available"
             if attempt and attempt.is_submitted:
                 status_label = "completed"
@@ -1208,7 +1239,7 @@ class PersonalQuizGenerate(APIView):
         if not profile or not profile.current_class_id:
             return Response({"detail": "Your student profile must have a class before a quiz can be generated."}, status=status.HTTP_400_BAD_REQUEST)
 
-        legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+        legacy_tenant = _resolve_student_legacy_tenant(request.user, profile)
         subject_query = _subject_queryset_for_student(request.user, profile)
         subject = get_object_or_404(subject_query, id=request.data.get("subject_id"))
         today = _today()

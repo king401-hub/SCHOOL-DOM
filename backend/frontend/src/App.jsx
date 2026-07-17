@@ -4795,6 +4795,19 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             icon="requests"
             tone="rose"
           />
+          {teacherProfile.advances_received != null && Number(teacherProfile.advances_received) > 0 ? (
+            <MetricCard
+              label="Advance Received"
+              value={`${NAIRA_SYMBOL}${Number(teacherProfile.advances_received).toLocaleString()}`}
+              trend={
+                teacherProfile.salary_balance != null
+                  ? `Salary balance: ${NAIRA_SYMBOL}${Number(teacherProfile.salary_balance).toLocaleString()}`
+                  : "Approved by admin"
+              }
+              icon="money"
+              tone="violet"
+            />
+          ) : null}
           {teacherProfile.monthly_salary != null && Number(teacherProfile.monthly_salary) > 0 ? (
             <MetricCard
               label="Monthly Salary"

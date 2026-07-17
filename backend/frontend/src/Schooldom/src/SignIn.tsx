@@ -42,7 +42,6 @@ const DEFAULT_SIGNUP_ROLE = "school_admin";
 const TERMS_OPENED_KEY = "schooldom.terms_opened";
 const SIGNUP_ROLES = [
   { value: "school_admin", title: "School Admin", label: "School Admin" },
-  { value: "principal", title: "School Principal", label: "School Principal" },
   { value: "school_superadmin", title: "Proprietor/Director", label: "Proprietor/Director" },
   { value: "student", title: "Student", label: "Student (Non-K12 schools only)" },
 ];
@@ -1294,7 +1293,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                     ) : (
                       <>
                         <p className="success-text">
-                          School Admin and School Principal accounts are for one school. Create or enter that school's code to continue.
+                          School Admin accounts are for one school. Create or enter that school's code to continue.
                         </p>
                         <label htmlFor="signup-school-code">School code</label>
                         <div className="input-wrap">

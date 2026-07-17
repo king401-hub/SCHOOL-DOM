@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  <p class="cp-confirm-copy">
+    {% if make_active %}
+      This restores <strong>{{ object }}</strong>'s access to the platform immediately.
+    {% else %}
+      This immediately blocks <strong>{{ object }}</strong> from signing in or using the platform, until reactivated.
+    {% endif %}
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="Yes, {{ action_label }}" class="{% if make_active %}cp-btn-ok{% else %}cp-btn-warn{% endif %}">
+      <a class="button cp-btn-cancel" href="../../">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

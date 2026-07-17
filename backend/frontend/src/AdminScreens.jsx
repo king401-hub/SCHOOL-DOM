@@ -7080,7 +7080,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
       const handler = window.PaystackPop.setup({
         key: data.paystack_public_key,
         email: parent.email,
-        amount: (data.child_monitor_price || 1000) * 100,
+        amount: result.amount * 100,
         ref: result.reference,
         // Paystack inline v1 fires `callback`; keep onSuccess for v2 compatibility.
         callback: verifyPayment,
@@ -7395,7 +7395,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                   </p>
                 </div>
                 <div className="cm-pricing-tag">
-                  ₦{(data.child_monitor_price || 1000).toLocaleString()}<span>/parent</span>
+                  ₦{(data.child_monitor_price || 1000).toLocaleString()}<span>/child</span>
                 </div>
               </div>
               <div className="cm-pricing-meta">
@@ -7620,7 +7620,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                               disabled={cmPaying === parent.id || !parent.phone || !data.paystack_public_key}
                               title={!parent.phone ? "Parent has no phone number on file" : ""}
                             >
-                              {cmPaying === parent.id ? "Processing…" : `Enable — ₦${(data.child_monitor_price || 1000).toLocaleString()}`}
+                              {cmPaying === parent.id ? "Processing…" : `Enable — ₦${((parent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()}`}
                             </button>
                           )}
                         </div>
@@ -7699,7 +7699,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                 <div className="student-delete-icon" aria-hidden="true">🔔</div>
                 <p className="student-delete-kicker">Child Monitor</p>
                 <h3>Deactivate for {cmConfirmParent.name}?</h3>
-                <p>SMS attendance alerts will stop immediately. You&apos;ll need to pay ₦{(data.child_monitor_price || 1000).toLocaleString()} to re-enable.</p>
+                <p>SMS attendance alerts will stop immediately. You&apos;ll need to pay ₦{((cmConfirmParent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()} to re-enable.</p>
                 <div className="student-delete-actions">
                   <button type="button" className="table-action" onClick={() => setCmConfirmParent(null)}>Cancel</button>
                   <button type="button" className="table-action danger student-delete-confirm" onClick={confirmChildMonitorDeactivate}>Deactivate</button>

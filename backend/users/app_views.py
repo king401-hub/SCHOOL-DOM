@@ -1160,16 +1160,7 @@ def _sync_student_guardians_to_parent_directory(student_profile):
         student_profile.guardian_email,
         student_profile.guardian_relation,
     )
-    secondary = None
-    if student_profile.second_guardian_phone:
-        secondary = _sync_guardian_parent(
-            student_profile,
-            student_profile.second_guardian_name,
-            student_profile.second_guardian_phone,
-            student_profile.second_guardian_email,
-            student_profile.second_guardian_relation,
-        )
-    return [item for item in (primary, secondary) if item]
+    return [item for item in (primary,) if item]
 
 
 def _is_terminal_testimonial_class(class_name):
@@ -4382,6 +4373,14 @@ def teacher_dashboard(request):
         if staff_profile and HrSalaryAdvanceRequest is not None
         else 0
     )
+    if staff_profile and HrSalaryAdvanceRequest is not None:
+        from django.db.models import Sum as _Sum
+        _advances_agg = staff_profile.salary_advances.filter(
+            status__in=[HrSalaryAdvanceRequest.APPROVED, HrSalaryAdvanceRequest.PAID]
+        ).aggregate(total=_Sum("amount"))
+        advances_received = float(_advances_agg["total"] or 0)
+    else:
+        advances_received = 0
 
     exams_qs = _scope_to_user_tenant(
         Exam.objects.select_related("subject", "class_group", "exam_type"),
@@ -4445,6 +4444,7 @@ def teacher_dashboard(request):
                 "subjects_taught": subject_names,
                 "subjects": subjects_payload,
                 "salary_balance": salary_balance,
+                "advances_received": advances_received,
                 "monthly_salary": float(teacher_profile.monthly_salary) if teacher_profile and teacher_profile.monthly_salary else None,
             },
             "school": _school_payload(school, request),
