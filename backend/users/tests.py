@@ -33,7 +33,7 @@ from finance.services import (
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
-from users.models import KidsMonitorSubscription, ParentProfile, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
+from users.models import KidsMonitorSubscription, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
 from users.app_views import ID_CARD_SIGNING_SALT
 
 
@@ -4115,3 +4115,148 @@ class AuthRateThrottleTests(TestCase):
             format="json",
         )
         self.assertEqual(throttled.status_code, 429)
+
+
+class StudentActivityTitleNonK12Tests(TestCase):
+    """Student activity titles (leadership/extracurricular roles) are a
+    K-12-only feature - Non-K12 schools must not be able to see, manage, or
+    assign them at all."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.k12_school = SchoolTenant.objects.create(
+            name="K12 Activity School", schema_name="k12_activity_school", school_type=SchoolTenant.K12, is_active=True,
+        )
+        self.non_k12_school = SchoolTenant.objects.create(
+            name="Non-K12 Activity School", schema_name="non_k12_activity_school", school_type=SchoolTenant.NON_K12, is_active=True,
+        )
+        self.k12_admin = User.objects.create_user(
+            email="k12.admin@activity.edu", password="AdminPass123", first_name="K12", last_name="Admin",
+            role="school_admin", tenant=self.k12_school, is_active=True, is_verified=True,
+        )
+        self.non_k12_admin = User.objects.create_user(
+            email="nonk12.admin@activity.edu", password="AdminPass123", first_name="NonK12", last_name="Admin",
+            role="school_admin", tenant=self.non_k12_school, is_active=True, is_verified=True,
+        )
+        self.k12_legacy_tenant = Tenant.objects.create(name=self.k12_school.name, slug=self.k12_school.schema_name)
+        self.non_k12_legacy_tenant = Tenant.objects.create(name=self.non_k12_school.name, slug=self.non_k12_school.schema_name)
+        self.k12_class = Class.objects.create(name="Grade 5", section="A", tenant=self.k12_legacy_tenant)
+        self.non_k12_class = Class.objects.create(name="Cohort 1", section="A", tenant=self.non_k12_legacy_tenant)
+
+    def test_k12_admin_can_list_and_create_activity_titles(self):
+        self.client.force_authenticate(user=self.k12_admin)
+
+        listed = self.client.get("/api/app/students/activity-titles/")
+        self.assertEqual(listed.status_code, 200)
+
+        created = self.client.post(
+            "/api/app/students/activity-titles/",
+            {"name": "Head Boy", "star_rating": "5"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+
+    def test_non_k12_admin_cannot_list_activity_titles(self):
+        self.client.force_authenticate(user=self.non_k12_admin)
+        response = self.client.get("/api/app/students/activity-titles/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_k12_admin_cannot_create_activity_title(self):
+        self.client.force_authenticate(user=self.non_k12_admin)
+        response = self.client.post(
+            "/api/app/students/activity-titles/",
+            {"name": "Cohort Lead", "star_rating": "3"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(StudentActivityTitle.objects.filter(tenant=self.non_k12_school, name="Cohort Lead").exists())
+
+    def test_non_k12_admin_cannot_update_or_delete_existing_activity_title(self):
+        title = StudentActivityTitle.objects.create(tenant=self.non_k12_school, name="Leftover Title", star_rating=2)
+        self.client.force_authenticate(user=self.non_k12_admin)
+
+        patched = self.client.patch(
+            f"/api/app/students/activity-titles/{title.id}/",
+            {"name": "Renamed"},
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 403)
+
+        deleted = self.client.delete(f"/api/app/students/activity-titles/{title.id}/")
+        self.assertEqual(deleted.status_code, 403)
+
+    def test_creating_student_with_activity_title_id_is_ignored_for_non_k12(self):
+        title = StudentActivityTitle.objects.create(tenant=self.non_k12_school, name="Ignored Title", star_rating=1)
+        self.client.force_authenticate(user=self.non_k12_admin)
+
+        response = self.client.post(
+            "/api/app/students/create/",
+            {
+                "student_email": "nonk12.student@activity.edu",
+                "first_name": "NonK12",
+                "last_name": "Student",
+                "guardian_name": "Guardian",
+                "guardian_phone": "+15550001111",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+                "class_id": self.non_k12_class.id,
+                "extra_curricular_activity_title_id": str(title.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        profile = StudentProfile.objects.get(user__email="nonk12.student@activity.edu")
+        self.assertIsNone(profile.extra_curricular_activity_title)
+
+    def test_creating_student_with_activity_title_id_still_works_for_k12(self):
+        title = StudentActivityTitle.objects.create(tenant=self.k12_school, name="Class Prefect", star_rating=4)
+        self.client.force_authenticate(user=self.k12_admin)
+
+        response = self.client.post(
+            "/api/app/students/create/",
+            {
+                "student_email": "k12.student@activity.edu",
+                "first_name": "K12",
+                "last_name": "Student",
+                "guardian_name": "Guardian",
+                "guardian_phone": "+15550002222",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+                "class_id": self.k12_class.id,
+                "extra_curricular_activity_title_id": str(title.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        profile = StudentProfile.objects.get(user__email="k12.student@activity.edu")
+        self.assertEqual(profile.extra_curricular_activity_title_id, title.id)
+
+    def test_editing_student_with_activity_title_id_is_ignored_for_non_k12(self):
+        title = StudentActivityTitle.objects.create(tenant=self.non_k12_school, name="Ignored Edit Title", star_rating=1)
+        self.client.force_authenticate(user=self.non_k12_admin)
+
+        created = self.client.post(
+            "/api/app/students/create/",
+            {
+                "student_email": "nonk12.edit@activity.edu",
+                "first_name": "NonK12",
+                "last_name": "Edit",
+                "guardian_name": "Guardian",
+                "guardian_phone": "+15550003333",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+                "class_id": self.non_k12_class.id,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        student_id = created.data["student"]["id"]
+
+        response = self.client.patch(
+            f"/api/app/students/{student_id}/",
+            {"extra_curricular_activity_title_id": str(title.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        profile = StudentProfile.objects.get(user__email="nonk12.edit@activity.edu")
+        self.assertIsNone(profile.extra_curricular_activity_title)

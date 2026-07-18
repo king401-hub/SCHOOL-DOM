@@ -970,6 +970,10 @@ def _normalize_student_activity_stars(value):
 def _resolve_student_activity_title(user, raw_title_id, require_active=True):
     if raw_title_id in (None, ""):
         return None
+    # Activity titles are a K-12-only feature - non-K12 schools never get one
+    # assigned, regardless of what a request sends.
+    if _is_non_k12_school(user):
+        return None
     qs = _student_activity_title_queryset(user, include_inactive=not require_active)
     return get_object_or_404(qs, id=raw_title_id)
 
@@ -4765,6 +4769,11 @@ def student_activity_titles(request):
             {"success": False, "message": "Only administrators can manage student activity titles."},
             status=status.HTTP_403_FORBIDDEN,
         )
+    if _is_non_k12_school(user):
+        return Response(
+            {"success": False, "message": "Student activity titles are only available for K-12 schools."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     if not user.tenant:
         return Response(
             {"success": False, "message": "Your account is not linked to a school."},
@@ -4819,6 +4828,11 @@ def student_activity_title_detail(request, title_id):
     if user.role not in ADMIN_ROLES:
         return Response(
             {"success": False, "message": "Only administrators can manage student activity titles."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if _is_non_k12_school(user):
+        return Response(
+            {"success": False, "message": "Student activity titles are only available for K-12 schools."},
             status=status.HTTP_403_FORBIDDEN,
         )
     title = get_object_or_404(StudentActivityTitle.objects.filter(tenant=user.tenant), id=title_id)
@@ -5215,7 +5229,8 @@ def create_student(request):
 
     if extra_curricular_activity_title_id not in (None, ""):
         extra_curricular_activity_title = _resolve_student_activity_title(user, extra_curricular_activity_title_id)
-        if student_profile.extra_curricular_activity_title_id != extra_curricular_activity_title.id:
+        new_activity_title_id = extra_curricular_activity_title.id if extra_curricular_activity_title else None
+        if student_profile.extra_curricular_activity_title_id != new_activity_title_id:
             student_profile.extra_curricular_activity_title = extra_curricular_activity_title
             profile_update_fields.append("extra_curricular_activity_title")
 
@@ -5413,7 +5428,8 @@ def student_detail(request, student_id):
                 profile_update_fields.append("extra_curricular_activity_title")
         else:
             activity_title = _resolve_student_activity_title(user, raw_title_id)
-            if student_profile.extra_curricular_activity_title_id != activity_title.id:
+            new_activity_title_id = activity_title.id if activity_title else None
+            if student_profile.extra_curricular_activity_title_id != new_activity_title_id:
                 student_profile.extra_curricular_activity_title = activity_title
                 profile_update_fields.append("extra_curricular_activity_title")
 

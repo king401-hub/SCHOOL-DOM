@@ -678,7 +678,7 @@ function StudentDashboard({
   const schoolMotto = school.motto || school.tagline || "";
   const profilePicture = sameOriginMediaUrl(student.profile_picture);
   const initials = userInitials({ full_name: studentName });
-  const activityRole = student.extra_curricular_activity_title || "";
+  const activityRole = nonK12School ? "" : (student.extra_curricular_activity_title || "");
   const activityStars = student.extra_curricular_activity_star_label || (student.extra_curricular_activity_stars ? `${student.extra_curricular_activity_stars} stars` : "");
   const activityRoleLabel = activityRole ? `${activityRole}${activityStars ? ` - ${activityStars}` : ""}` : "";
   const profileRows = [
@@ -694,8 +694,7 @@ function StudentDashboard({
     ["State of Origin", student.state_of_origin],
     ["Local Government", student.local_government],
     ["Student Type", student.student_type],
-    ["Activity Role", activityRole],
-    ["Activity Stars", activityStars],
+    ...(nonK12School ? [] : [["Activity Role", activityRole], ["Activity Stars", activityStars]]),
     ["Blood Group", student.blood_group],
     ["Disability", student.disability],
     ["Guardian Name", student.guardian_name],
@@ -792,13 +791,13 @@ function StudentDashboard({
       detail: subjects.length ? subjects.slice(0, 2).map((subject) => subject.code || subject.name).join(", ") : "No subjects assigned",
       tone: "blue",
     },
-    {
+    ...(nonK12School ? [] : [{
       key: "activity-role",
       label: "Activity Role",
       value: activityRole || "None",
       detail: activityStars || "No stars assigned",
       tone: "gold",
-    },
+    }]),
     {
       key: "daily-quiz",
       label: "Daily Assessment",
