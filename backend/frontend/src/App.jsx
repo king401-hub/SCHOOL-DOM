@@ -7875,14 +7875,10 @@ const unreadNotificationsCount =
           })}
         </nav>
 
-        <div className="sidebar-help-card">
-          <h4>Need Help?</h4>
-          <p>Visit our help center or contact support.</p>
-          <button type="button" onClick={() => setHelpOpen(true)}>
-            <LifeBuoy size={15} strokeWidth={2} />
-            Get Help
-          </button>
-        </div>
+        <button type="button" className="sidebar-help-btn" onClick={() => setHelpOpen(true)}>
+          <LifeBuoy size={15} strokeWidth={2} />
+          Get Help
+        </button>
 
         <div className="sidebar-footer">
           <div className="sidebar-user-row">

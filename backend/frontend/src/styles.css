@@ -1833,47 +1833,26 @@ body[data-theme="dark"] .app-sidebar {
 }
 
 /* Sidebar "Need Help?" card */
-.sidebar-help-card {
-  margin: 0.4rem 0.65rem 0.75rem;
-  padding: 0.9rem 0.95rem;
-  border-radius: 14px;
-  flex-shrink: 0;
-  background: linear-gradient(135deg, #4f46e5, #312e81);
-  box-shadow: 0 10px 24px rgba(49, 46, 129, 0.35);
-}
-
-.sidebar-help-card h4 {
-  margin: 0 0 0.2rem;
-  font-size: 0.9rem;
-  font-weight: 800;
-  color: #ffffff;
-}
-
-.sidebar-help-card p {
-  margin: 0 0 0.7rem;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.sidebar-help-card button {
-  display: inline-flex;
+.sidebar-help-btn {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  border: none;
-  border-radius: 999px;
-  padding: 0.42rem 0.9rem;
-  background: #ffffff;
-  color: #312e81;
-  font-size: 0.8rem;
-  font-weight: 700;
+  gap: 0.45rem;
+  margin: 0 0.65rem 0.75rem;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform 150ms ease, box-shadow 150ms ease;
+  transition: background 120ms, color 120ms;
+  flex-shrink: 0;
 }
 
-.sidebar-help-card button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+.sidebar-help-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .help-drawer {
