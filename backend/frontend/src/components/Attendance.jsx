@@ -432,18 +432,26 @@ export function QRCodeManagement({ session }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const authFetch = useCallback(
+    (endpoint) =>
+      fetch(endpoint, {
+        headers: session?.access ? { Authorization: `Bearer ${session.access}` } : {},
+      }),
+    [session]
+  );
+
   const loadPreview = useCallback(async () => {
-    const response = await fetch(withUserId("/api/attendance/qr-code/download/", session));
+    const response = await authFetch("/api/attendance/qr-code/download/");
     if (!response.ok) return "";
     const blob = await response.blob();
     return URL.createObjectURL(blob);
-  }, [session]);
+  }, [authFetch]);
 
   const loadQRCode = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await attendanceRequest(null, withUserId("/api/attendance/qr-code/get/", session));
+      const result = await requestJson(session, "GET", "/api/attendance/qr-code/get/");
       setQrCode(result.data);
       const nextPreview = await loadPreview();
       setPreviewUrl((previous) => {
@@ -479,10 +487,7 @@ export function QRCodeManagement({ session }) {
     setError("");
     setMessage("");
     try {
-      const result = await attendanceRequest(null, "/api/attendance/qr-code/generate/", {
-        method: "POST",
-        body: JSON.stringify(attendanceBody(session)),
-      });
+      const result = await requestJson(session, "POST", "/api/attendance/qr-code/generate/");
       setQrCode(result.data);
       const nextPreview = await loadPreview();
       setPreviewUrl((previous) => {
@@ -501,7 +506,7 @@ export function QRCodeManagement({ session }) {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(withUserId("/api/attendance/qr-code/download/", session));
+      const response = await authFetch("/api/attendance/qr-code/download/");
       if (!response.ok) {
         const data = await response.json().catch(() => null);
         throw new Error(data?.message || "Download failed.");
@@ -589,7 +594,7 @@ export function AttendanceDashboard({ session }) {
   const loadToday = useCallback(async () => {
     setError("");
     try {
-      const result = await attendanceRequest(null, withUserId("/api/attendance/today/", session));
+      const result = await requestJson(session, "GET", "/api/attendance/today/");
       setRecords(result.data || []);
       setSummary({ date: result.date, total_present: result.total_present || 0 });
       setMapLocation((current) => {
