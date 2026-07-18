@@ -6475,7 +6475,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       addAdminNotification({
         category: "Finance",
         module: "Payment Accounts",
-        action: "Created Paystack subaccount for split payments.",
+        action: "Created subaccount for split payments.",
         status: "Success",
         priority: "High",
         tone: "success",

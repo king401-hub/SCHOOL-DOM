@@ -784,10 +784,10 @@ function AdminFinanceScreen({
     setVaActionError("");
     try {
       const result = await requestJson(session, "POST", `/api/finance/admin/virtual-accounts/${parentId}/provision/`);
-      setVaActionMessage(result?.message || "Paystack virtual account provisioned.");
+      setVaActionMessage(result?.message || "Virtual account provisioned.");
       await loadVirtualAccountsList();
     } catch (err) {
-      setVaActionError(err.message || "Could not provision Paystack virtual account.");
+      setVaActionError(err.message || "Could not provision virtual account.");
     } finally {
       setVaBusyParentId("");
     }
@@ -981,9 +981,9 @@ function AdminFinanceScreen({
     setSubaccountBusy(true);
     try {
       const result = await onPaystackSubaccountSetup(subaccountForm);
-      setSubaccountMessage(result?.message || "Paystack subaccount created.");
+      setSubaccountMessage(result?.message || "Subaccount created.");
     } catch (err) {
-      setSubaccountError(err.message || "Unable to create Paystack subaccount.");
+      setSubaccountError(err.message || "Unable to create subaccount.");
     } finally {
       setSubaccountBusy(false);
     }
@@ -1473,7 +1473,7 @@ function AdminFinanceScreen({
 
             <article className="app-panel">
               <div className="panel-head">
-                <h3>Paystack Bank Account</h3>
+                <h3>Settlement Bank Account</h3>
                 <small>
                   {adminWallet.subaccount_code
                     ? "Configured - parents' bank transfers split automatically to this account."
@@ -1528,7 +1528,7 @@ function AdminFinanceScreen({
                 </div>
                 <div className="panel-form-actions">
                   <button type="submit" disabled={!onPaystackSubaccountSetup || subaccountBusy}>
-                    {subaccountBusy ? "Saving..." : adminWallet.subaccount_code ? "Update bank account" : "Create Paystack subaccount"}
+                    {subaccountBusy ? "Saving..." : adminWallet.subaccount_code ? "Update bank account" : "Create subaccount"}
                   </button>
                 </div>
               </form>
@@ -1732,7 +1732,7 @@ function AdminFinanceScreen({
           <article className="app-panel">
             <div className="mobile-section-head">
               <h3>Virtual Accounts</h3>
-              <small>Auto-generate a real Paystack dedicated account number per parent for bank-transfer fee payments.</small>
+              <small>Auto-generate a dedicated account number per parent for bank-transfer fee payments.</small>
             </div>
             {vaActionMessage ? <p className="form-feedback success">{vaActionMessage}</p> : null}
             {vaActionError ? <p className="form-feedback error">{vaActionError}</p> : null}
@@ -1766,7 +1766,7 @@ function AdminFinanceScreen({
                             onClick={() => handleProvisionVirtualAccount(row.parent_id)}
                             disabled={vaBusyParentId === row.parent_id}
                           >
-                            {vaBusyParentId === row.parent_id ? "Provisioning..." : "Provision via Paystack"}
+                            {vaBusyParentId === row.parent_id ? "Provisioning..." : "Provision Account"}
                           </button>
                         </td>
                       </tr>
@@ -1785,7 +1785,7 @@ function AdminFinanceScreen({
                       <td>{row.parent_name}<small>{row.parent_email}</small></td>
                       <td>{row.account_number}</td>
                       <td>{row.bank_name}</td>
-                      <td>{row.provider}</td>
+                      <td>{row.provider === "paystack" ? "Automated" : row.provider}</td>
                       <td><span className={`finance-status status-${row.is_active ? "paid" : "pending"}`}>{row.is_active ? "active" : "inactive"}</span></td>
                       <td>
                         {row.provider === "paystack" ? (
@@ -7294,9 +7294,9 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
           notes: result.virtual_account.notes || "",
         });
       }
-      setVaSuccess(result?.message || "Paystack virtual account provisioned.");
+      setVaSuccess(result?.message || "Virtual account provisioned.");
     } catch (err) {
-      setVaError(err.message || "Could not provision Paystack virtual account.");
+      setVaError(err.message || "Could not provision virtual account.");
     } finally {
       setVaProvisioning(false);
     }
@@ -7810,7 +7810,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                 ) : (
                   <form className="panel-form" onSubmit={handleSaveVirtualAccount}>
                     <p className="field-note" style={{ marginBottom: "0.75rem" }}>
-                      Auto-generate a real Paystack dedicated account number for this parent, or assign one manually below.
+                      Auto-generate a dedicated account number for this parent, or assign one manually below.
                       The parent transfers school fees to this account and the system automatically matches and credits their children's fees.
                     </p>
                     <div className="panel-form-actions" style={{ marginBottom: "1rem" }}>
@@ -7819,7 +7819,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                         onClick={handleProvisionPaystackAccount}
                         disabled={vaProvisioning || vaSaving}
                       >
-                        {vaProvisioning ? "Provisioning..." : "Provision via Paystack"}
+                        {vaProvisioning ? "Provisioning..." : "Provision Account"}
                       </button>
                     </div>
                     {vaExisting ? (
@@ -7865,18 +7865,18 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                       <label className="panel-field">
                         Provider
                         <select value={vaForm.provider} onChange={(e) => setVaForm((p) => ({ ...p, provider: e.target.value }))}>
-                          <option value="paystack">Paystack</option>
+                          <option value="paystack">Automated</option>
                           <option value="kuda">Kuda</option>
                           <option value="flutterwave">Flutterwave</option>
                           <option value="other">Other</option>
                         </select>
                       </label>
                       <label className="panel-field">
-                        Paystack Reference (optional)
+                        Payment Reference (optional)
                         <input
                           value={vaForm.paystack_reference}
                           onChange={(e) => setVaForm((p) => ({ ...p, paystack_reference: e.target.value }))}
-                          placeholder="DVA customer code from Paystack"
+                          placeholder="DVA customer code from provider"
                         />
                       </label>
                       <label className="panel-field checkbox-field">
