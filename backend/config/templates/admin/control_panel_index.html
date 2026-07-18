@@ -4,26 +4,51 @@
 {% block nav-sidebar %}{% include "admin/nav_sidebar.html" %}{% endblock %}
 
 {% block content %}
+<div class="cp-hero">
+  <h1 class="cp-hero-title">Platform Overview</h1>
+  <p class="cp-hero-sub">{% now "l, F j, Y" %}</p>
+</div>
+
 <div class="cp-kpi-grid">
   <div class="cp-kpi-card">
-    <span class="cp-kpi-label">Schools</span>
-    <span class="cp-kpi-value">{{ schools_active }}<small>/{{ schools_total }}</small></span>
-    <span class="cp-kpi-sub">active / total{% if schools_suspended %} &middot; {{ schools_suspended }} suspended{% endif %}</span>
+    <div class="cp-kpi-icon cp-kpi-icon-green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/><path d="M22 8v6"/></svg>
+    </div>
+    <div class="cp-kpi-body">
+      <span class="cp-kpi-label">Schools</span>
+      <span class="cp-kpi-value">{{ schools_active }}<small>/{{ schools_total }}</small></span>
+      <span class="cp-kpi-sub">active / total{% if schools_suspended %} &middot; {{ schools_suspended }} suspended{% endif %}</span>
+    </div>
   </div>
   <div class="cp-kpi-card cp-kpi-blue">
-    <span class="cp-kpi-label">Kids Monitor</span>
-    <span class="cp-kpi-value">{{ kids_monitor_mrr }}</span>
-    <span class="cp-kpi-sub">{{ kids_monitor_active }} active subscription(s) &middot; est. monthly</span>
+    <div class="cp-kpi-icon cp-kpi-icon-blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+    </div>
+    <div class="cp-kpi-body">
+      <span class="cp-kpi-label">Kids Monitor</span>
+      <span class="cp-kpi-value">{{ kids_monitor_mrr }}</span>
+      <span class="cp-kpi-sub">{{ kids_monitor_active }} active subscription(s) &middot; est. monthly</span>
+    </div>
   </div>
   <div class="cp-kpi-card cp-kpi-amber">
-    <span class="cp-kpi-label">Activation Tokens</span>
-    <span class="cp-kpi-value">{{ tokens_revenue_total }}</span>
-    <span class="cp-kpi-sub">{{ tokens_revenue_30d }} last 30 days &middot; {{ tokens_credits_sold }} credits sold</span>
+    <div class="cp-kpi-icon cp-kpi-icon-amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8Z"/><path d="M10 6v12" stroke-dasharray="2 2"/></svg>
+    </div>
+    <div class="cp-kpi-body">
+      <span class="cp-kpi-label">Activation Tokens</span>
+      <span class="cp-kpi-value">{{ tokens_revenue_total }}</span>
+      <span class="cp-kpi-sub">{{ tokens_revenue_30d }} last 30 days &middot; {{ tokens_credits_sold }} credits sold</span>
+    </div>
   </div>
   <div class="cp-kpi-card cp-kpi-purple">
-    <span class="cp-kpi-label">SMS Purchases</span>
-    <span class="cp-kpi-value">{{ sms_revenue_total }}</span>
-    <span class="cp-kpi-sub">{{ sms_revenue_30d }} last 30 days &middot; {{ sms_credits_sold }} credits sold</span>
+    <div class="cp-kpi-icon cp-kpi-icon-purple">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg>
+    </div>
+    <div class="cp-kpi-body">
+      <span class="cp-kpi-label">SMS Purchases</span>
+      <span class="cp-kpi-value">{{ sms_revenue_total }}</span>
+      <span class="cp-kpi-sub">{{ sms_revenue_30d }} last 30 days &middot; {{ sms_credits_sold }} credits sold</span>
+    </div>
   </div>
 </div>
 {{ block.super }}
