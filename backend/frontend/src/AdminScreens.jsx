@@ -8078,6 +8078,8 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const groupLabels = academicGroupLabels(data?.school, school);
+  // Student activity titles (leadership/extracurricular roles) are a K-12-only feature.
+  const nonK12 = (school?.school_type || school?.schoolType || data?.school?.school_type || data?.school?.schoolType || "k12") === "non_k12";
   const activityTitles = data?.options?.student_activity_titles || [];
   const activeActivityTitles = activityTitles.filter((item) => item.is_active);
   const [form, setForm] = useState({
@@ -8593,17 +8595,19 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                   Student Type
                   <input value={form.student_type} onChange={(event) => setForm((prev) => ({ ...prev, student_type: event.target.value }))} placeholder="e.g., Regular, Scholarship, Transfer" />
                 </label>
-                <label className="panel-field">
-                  Activity Title
-                  <select value={form.extra_curricular_activity_title_id} onChange={(event) => setForm((prev) => ({ ...prev, extra_curricular_activity_title_id: event.target.value }))}>
-                    <option value="">No title</option>
-                    {activeActivityTitles.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} - {item.star_label || `${item.star_rating || 0} stars`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {nonK12 ? null : (
+                  <label className="panel-field">
+                    Activity Title
+                    <select value={form.extra_curricular_activity_title_id} onChange={(event) => setForm((prev) => ({ ...prev, extra_curricular_activity_title_id: event.target.value }))}>
+                      <option value="">No title</option>
+                      {activeActivityTitles.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} - {item.star_label || `${item.star_rating || 0} stars`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label className="panel-field full">
                   Medical Records
                   <textarea value={form.medical_records} onChange={(event) => setForm((prev) => ({ ...prev, medical_records: event.target.value }))} placeholder="Any medical conditions, allergies, or special medical needs" rows="3" />
@@ -8641,6 +8645,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
         </form>
       </article>
 
+      {nonK12 ? null : (
       <article className="app-panel">
         <h3>Student Activity Titles</h3>
         <form className="panel-form" onSubmit={handleActivityTitleSubmit}>
@@ -8711,6 +8716,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
           </div>
         ) : null}
       </article>
+      )}
 
       <article className="app-panel">
         <h3>Student Directory</h3>
@@ -8743,7 +8749,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                     <th>Email</th>
                     <th>Student ID</th>
                 <th>{groupLabels.singular}</th>
-                    <th>Activity Title</th>
+                    {nonK12 ? null : <th>Activity Title</th>}
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -8754,11 +8760,13 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       <td>{item.email}</td>
                       <td>{item.student_id}</td>
                       <td>{item.class_name}</td>
-                      <td>
-                        {item.extra_curricular_activity_title
-                          ? `${item.extra_curricular_activity_title} - ${item.extra_curricular_activity_star_label || `${item.extra_curricular_activity_stars || 0} stars`}`
-                          : "None"}
-                      </td>
+                      {nonK12 ? null : (
+                        <td>
+                          {item.extra_curricular_activity_title
+                            ? `${item.extra_curricular_activity_title} - ${item.extra_curricular_activity_star_label || `${item.extra_curricular_activity_stars || 0} stars`}`
+                            : "None"}
+                        </td>
+                      )}
                       <td>
                         <div className="table-actions-inline">
                           <button type="button" className="table-action" onClick={() => handleStartEdit(item)}>
@@ -8968,18 +8976,20 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                         Student Type
                         <input value={editForm.student_type} onChange={(e) => setEditForm((p) => ({ ...p, student_type: e.target.value }))} placeholder="e.g., Regular, Scholarship, Transfer" />
                       </label>
-                      <label className="panel-field">
-                        Activity Title
-                        <select value={editForm.extra_curricular_activity_title_id} onChange={(e) => setEditForm((p) => ({ ...p, extra_curricular_activity_title_id: e.target.value }))}>
-                          <option value="">No title</option>
-                          {activeActivityTitles.map((item) => (
-                            <option key={item.id} value={item.id}>{item.name} — {item.star_label || `${item.star_rating || 0} stars`}</option>
-                          ))}
-                          {editForm.extra_curricular_activity_title_id && !activeActivityTitles.some((item) => item.id === editForm.extra_curricular_activity_title_id) ? (
-                            <option value={editForm.extra_curricular_activity_title_id}>Inactive title</option>
-                          ) : null}
-                        </select>
-                      </label>
+                      {nonK12 ? null : (
+                        <label className="panel-field">
+                          Activity Title
+                          <select value={editForm.extra_curricular_activity_title_id} onChange={(e) => setEditForm((p) => ({ ...p, extra_curricular_activity_title_id: e.target.value }))}>
+                            <option value="">No title</option>
+                            {activeActivityTitles.map((item) => (
+                              <option key={item.id} value={item.id}>{item.name} — {item.star_label || `${item.star_rating || 0} stars`}</option>
+                            ))}
+                            {editForm.extra_curricular_activity_title_id && !activeActivityTitles.some((item) => item.id === editForm.extra_curricular_activity_title_id) ? (
+                              <option value={editForm.extra_curricular_activity_title_id}>Inactive title</option>
+                            ) : null}
+                          </select>
+                        </label>
+                      )}
                     </div>
                   </div>
 
@@ -9549,6 +9559,15 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                   Hire Date
                   <input type="date" value={form.hire_date} onChange={(event) => setForm((prev) => ({ ...prev, hire_date: event.target.value }))} />
                 </label>
+                <label className="panel-field full">
+                  Specialization (optional)
+                  <textarea
+                    rows={3}
+                    value={form.specialization}
+                    onChange={(event) => setForm((prev) => ({ ...prev, specialization: event.target.value }))}
+                    placeholder="e.g. Mathematics and Further Mathematics"
+                  />
+                </label>
           </div>
 {formError ? <p className="form-feedback error">{formError}</p> : null}
               {formSuccess ? <p className="form-feedback success">{formSuccess}</p> : null}
@@ -9795,7 +9814,12 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                   </label>
                   <label className="panel-field full">
                     Specialization
-                    <input value={editForm.specialization} onChange={(event) => setEditForm((prev) => ({ ...prev, specialization: event.target.value }))} />
+                    <textarea
+                      rows={3}
+                      value={editForm.specialization}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, specialization: event.target.value }))}
+                      placeholder="e.g. Mathematics and Further Mathematics"
+                    />
                   </label>
                   <label className="panel-field full">
                     Qualification
