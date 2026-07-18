@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  ArrowLeft, ArrowRight, ShieldCheck, GraduationCap, Users, CheckCircle2,
+  ArrowLeft, ArrowRight, ShieldCheck, Users, CheckCircle2,
   Eye, EyeOff, Copy, Check,
 } from 'lucide-react';
 
@@ -17,7 +17,7 @@ function Spinner() {
   return <span className="sd-spinner" aria-hidden="true" />;
 }
 
-type Role = 'school_admin' | 'principal' | 'school_superadmin';
+type Role = 'school_admin' | 'school_superadmin';
 type SchoolType = 'k12' | 'non_k12';
 
 const SESSION_KEY = 'schooldom.session';
@@ -25,7 +25,6 @@ const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || ((import.m
 
 const ROLES: { value: Role; title: string; desc: string; icon: typeof ShieldCheck }[] = [
   { value: 'school_admin', title: 'School Admin', desc: 'Direct management of single school operations, staff, and configurations.', icon: ShieldCheck },
-  { value: 'principal', title: 'School Principal', desc: 'Educational head oversight, curriculum planning, and staff assignment keys.', icon: GraduationCap },
   { value: 'school_superadmin', title: 'Proprietor', desc: 'Group management overseeing multiple campuses and administrative keys.', icon: Users },
 ];
 
@@ -314,7 +313,7 @@ export default function SignUpPage() {
 
               <div>
                 <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">Choose your primary role</p>
-                <div className="grid sm:grid-cols-3 gap-3">
+                <div className="grid sm:grid-cols-2 gap-3">
                   {ROLES.map(r => {
                     const Icon = r.icon;
                     const active = role === r.value;
