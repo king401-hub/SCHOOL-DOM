@@ -196,6 +196,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [adminRoleTitle, setAdminRoleTitle] = useState("School Admin");
   const [phone, setPhone] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
+  const [schoolGroupName, setSchoolGroupName] = useState("");
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
@@ -284,6 +285,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
     () => SIGNUP_ROLES.find((item) => item.title === adminRoleTitle) || SIGNUP_ROLES[0],
     [adminRoleTitle]
   );
+  const isSchoolSuperadminSignup = selectedSignupRole.value === "school_superadmin";
   const isStudentSignup = selectedSignupRole.value === "student";
 
   const canSignUp = useMemo(() => {
@@ -298,7 +300,11 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       return false;
     }
 
-    if (schoolCode.trim().length === 0) {
+    if (isSchoolSuperadminSignup && schoolGroupName.trim().length < 3) {
+      return false;
+    }
+
+    if (!isSchoolSuperadminSignup && schoolCode.trim().length === 0) {
       return false;
     }
 
@@ -315,9 +321,11 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
     confirmPassword,
     firstName,
     guardianName,
+    isSchoolSuperadminSignup,
     isStudentSignup,
     lastName,
     schoolCode,
+    schoolGroupName,
     signupEmail,
     signupPassword,
     termsAccepted,
@@ -523,7 +531,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         role: selectedSignupRole.value || DEFAULT_SIGNUP_ROLE,
         admin_title: isStudentSignup ? "" : adminRoleTitle,
         phone: phone.trim(),
-        school_code: schoolCode.trim(),
+        school_code: isSchoolSuperadminSignup ? "" : schoolCode.trim(),
+        school_group_name: isSchoolSuperadminSignup ? schoolGroupName.trim() : "",
         guardian_name: isStudentSignup ? guardianName.trim() : "",
         guardian_phone: isStudentSignup ? guardianPhone.trim() : "",
         terms_accepted: termsAccepted,
@@ -1184,16 +1193,60 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                       />
                     </div>
 
+                    <label htmlFor="admin-role-title">Role</label>
                     {isStudentSignup ? (
-                      <>
-                        <label htmlFor="admin-role-title">Role</label>
-                        <div className="input-wrap" aria-live="polite">
-                          <span className="input-icon">R</span>
-                          <span id="admin-role-title" style={{ padding: "0.75rem 0" }}>
-                            {selectedSignupRole.label}
-                          </span>
-                        </div>
+                      <div className="input-wrap" aria-live="polite">
+                        <span className="input-icon">R</span>
+                        <span id="admin-role-title" style={{ padding: "0.75rem 0" }}>
+                          {selectedSignupRole.label}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="input-wrap">
+                        <span className="input-icon">R</span>
+                        <select
+                          id="admin-role-title"
+                          value={adminRoleTitle}
+                          onChange={(event) => {
+                            const nextTitle = event.target.value;
+                            setAdminRoleTitle(nextTitle);
+                            setShowCreateSchool(false);
+                            setSchoolError("");
+                            setSchoolSuccess("");
+                            if (SIGNUP_ROLES.find((item) => item.title === nextTitle)?.value === "school_superadmin") {
+                              setSchoolCode("");
+                            }
+                          }}
+                        >
+                          {SIGNUP_ROLES.filter((item) => item.value !== "student").map((item) => (
+                            <option key={item.title} value={item.title}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
+                    {isSchoolSuperadminSignup ? (
+                      <>
+                        <p className="success-text">
+                          Proprietor/Director is for an owner managing multiple schools. You will create schools after signup from the School Superadmin dashboard, then invite principals, admins, and bursars for each school.
+                        </p>
+                        <label htmlFor="school-group-name">School group name</label>
+                        <div className="input-wrap">
+                          <span className="input-icon">G</span>
+                          <input
+                            id="school-group-name"
+                            type="text"
+                            value={schoolGroupName}
+                            onChange={(event) => setSchoolGroupName(event.target.value)}
+                            placeholder="e.g. Xcel Schools Group"
+                            required
+                          />
+                        </div>
+                      </>
+                    ) : isStudentSignup ? (
+                      <>
                         <p className="success-text">
                           Student self-registration is only available for Non-K12 schools (vocational,
                           tertiary, and academy institutions). Enter your school's unique code below —
