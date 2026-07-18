@@ -6248,6 +6248,8 @@ function AdminSettingsScreen({
   const [directorIdDocumentUrl, setDirectorIdDocumentUrl] = useState("");
   const [directorPassportFile, setDirectorPassportFile] = useState(null);
   const [directorPassportPreview, setDirectorPassportPreview] = useState("");
+  const [adminFirstName, setAdminFirstName] = useState("");
+  const [adminLastName, setAdminLastName] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
   const [academicYearStart, setAcademicYearStart] = useState("");
   const [academicYearEnd, setAcademicYearEnd] = useState("");
@@ -6301,6 +6303,8 @@ function AdminSettingsScreen({
     setDirectorIdDocumentFile(null);
     setDirectorPassportPreview(director.passport_photo || "");
     setDirectorPassportFile(null);
+    setAdminFirstName(director.first_name || user?.first_name || "");
+    setAdminLastName(director.last_name || user?.last_name || "");
     setAcademicYearName(data?.academic_year?.name || "");
     setAcademicYearStart((data?.academic_year?.start_date || "").slice(0, 10));
     setAcademicYearEnd((data?.academic_year?.end_date || "").slice(0, 10));
@@ -6355,6 +6359,8 @@ function AdminSettingsScreen({
       cac_certificate: cacCertificateFile,
       entrance_photo: entrancePhotoFile,
       proof_of_address: proofOfAddressFile,
+      admin_first_name: adminFirstName.trim(),
+      admin_last_name: adminLastName.trim(),
       director_address: directorAddress.trim(),
       director_id_type: directorIdType,
       director_proof_of_address: directorProofOfAddressFile,
@@ -6381,7 +6387,7 @@ function AdminSettingsScreen({
       ),
     }),
     [
-      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, email, logoFile, motto, name, phone, staffRules, studentRules, termEnd, termName, termStart,
+      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, adminFirstName, adminLastName, email, logoFile, motto, name, phone, staffRules, studentRules, termEnd, termName, termStart,
       cacRegisteredName, ministryApprovalNumber, cacCertificateFile, entrancePhotoFile, proofOfAddressFile,
       directorAddress, directorIdType, directorProofOfAddressFile, directorIdDocumentFile, directorPassportFile,
     ]
@@ -6768,8 +6774,12 @@ onClick={() => handleThemeSelect("light")}
                         </div>
                         <div className="panel-form-grid">
                           <label className="panel-field">
-                            Full Name
-                            <input value={director.full_name || `${user?.first_name || ""} ${user?.last_name || ""}`.trim()} disabled />
+                            First Name
+                            <input value={adminFirstName} onChange={(event) => setAdminFirstName(event.target.value)} disabled={!canEdit || isSaving} />
+                          </label>
+                          <label className="panel-field">
+                            Last Name
+                            <input value={adminLastName} onChange={(event) => setAdminLastName(event.target.value)} disabled={!canEdit || isSaving} />
                           </label>
                           <label className="panel-field">
                             Email

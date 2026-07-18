@@ -872,6 +872,8 @@ def _director_payload(user, request=None):
         return {}
     return {
         "full_name": user.get_full_name(),
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
         "email": user.email or "",
         "phone": user.phone or "",
         "address": user.director_address or "",
@@ -6467,6 +6469,14 @@ def school_settings(request):
                 update_fields.append(field)
 
         user_update_fields = []
+        for field, attr in (("admin_first_name", "first_name"), ("admin_last_name", "last_name")):
+            raw = request.data.get(field)
+            if raw is not None:
+                new_value = str(raw).strip()
+                if getattr(user, attr) != new_value:
+                    setattr(user, attr, new_value)
+                    user_update_fields.append(attr)
+
         raw_director_address = request.data.get("director_address")
         if raw_director_address is not None:
             new_value = str(raw_director_address or "").strip()
