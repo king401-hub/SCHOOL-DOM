@@ -6,10 +6,14 @@ from django_countries.fields import CountryField
 
 class SchoolGroup(models.Model):
     name = models.CharField(max_length=255)
+    # SchoolGroup is a shared app (public schema); User is tenant-scoped
+    # (per-school schema) - db_constraint=False since there's no single
+    # users_user table a shared table's FK could reference at the DB level.
     owner = models.ForeignKey(
         "users.User",
         on_delete=models.CASCADE,
         related_name="owned_school_groups",
+        db_constraint=False,
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -77,8 +81,12 @@ class SchoolTenant(models.Model):
     compliance_deadline_reference_at = models.DateTimeField(null=True, blank=True)
     compliance_submitted_at = models.DateTimeField(null=True, blank=True)
     compliance_reviewed_at = models.DateTimeField(null=True, blank=True)
+    # SchoolTenant is a shared app (public schema); User is tenant-scoped
+    # (per-school schema) - db_constraint=False since there's no single
+    # users_user table a shared table's FK could reference at the DB level.
     compliance_reviewed_by = models.ForeignKey(
         'users.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='compliance_reviews',
+        db_constraint=False,
     )
     compliance_suspended_at = models.DateTimeField(null=True, blank=True)
     compliance_reminder_stage = models.PositiveSmallIntegerField(default=0)

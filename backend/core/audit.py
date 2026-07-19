@@ -14,7 +14,11 @@ class AuditLog(TimeStampedModel):
         ('UPLOAD', 'Upload'),
     ]
     
-    user = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True)
+    # AuditLog is a shared app (one table in the public schema); User is
+    # tenant-scoped (a separate table per school schema), so there is no
+    # single users_user table this FK could reference at the database level -
+    # db_constraint=False keeps the column without a real Postgres FK.
+    user = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, db_constraint=False)
     tenant = models.ForeignKey('core.SchoolTenant', on_delete=models.CASCADE)
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
     model_name = models.CharField(max_length=100)
