@@ -199,6 +199,7 @@ else:
     ] + [
         'django_htmx',
         'tenants',
+        'superadmin_dashboard',
     ]
 
 # middleware
