@@ -277,17 +277,23 @@ elif USE_DJANGO_TENANTS:
     }
     DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
 else:
-    # Plain PostgreSQL for local dev — same flat app structure as SQLite mode
+    # Plain PostgreSQL - used for local dev (127.0.0.1, no SSL needed) and for
+    # production against a remote host like Supabase's pooler (over the public
+    # internet, so DB_SSLMODE defaults to 'require' whenever DB_HOST isn't
+    # local - override to 'disable' explicitly for a local, non-SSL Postgres).
+    db_host = os.getenv('DB_HOST', '127.0.0.1')
+    default_sslmode = 'disable' if db_host in ('127.0.0.1', 'localhost') else 'require'
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': os.getenv('DB_NAME', 'virtual_school'),
             'USER': os.getenv('DB_USER', 'postgres'),
             'PASSWORD': os.getenv('DB_PASSWORD', ''),
-            'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+            'HOST': db_host,
             'PORT': os.getenv('DB_PORT', '5432'),
             'ATOMIC_REQUESTS': True,
             'CONN_MAX_AGE': 60,
+            'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', default_sslmode)},
         }
     }
     DATABASE_ROUTERS = []
