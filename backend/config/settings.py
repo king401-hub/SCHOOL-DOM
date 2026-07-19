@@ -202,6 +202,18 @@ else:
         'superadmin_dashboard',
     ]
 
+# django.contrib.admin's own LogEntry.user FK has no db_constraint=False -
+# it's a shared app (public schema only), and AUTH_USER_MODEL (users.User)
+# is tenant-scoped (a separate table per school schema), so there's no
+# single users_user table for it to reference at the DB level. Since that
+# migration lives inside the installed django package (not this project),
+# it can't be edited directly - point Django at a local vendored copy
+# instead (identical except for that one flag) so migrate_schemas --shared
+# doesn't fail with "relation users_user does not exist".
+MIGRATION_MODULES = {
+    'admin': 'core.admin_migrations',
+}
+
 # middleware
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
