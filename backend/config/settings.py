@@ -127,9 +127,10 @@ IP_WHITELIST_USE_X_FORWARDED_FOR = env_bool('IP_WHITELIST_USE_X_FORWARDED_FOR', 
 
 # apps that exist in every tenant (shared across all schools)
 SHARED_APPS = [
-    'django_tenants', 
+    'django_tenants',
     'core',  # must be here because it contains the tenant model
     'settings_app',
+    'django_countries',
     'django.contrib.contenttypes',
     'django.contrib.auth',
     'django.contrib.admin',
@@ -157,6 +158,7 @@ TENANT_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
+    'django_countries',
 ]
 
 _FLAT_APPS = [
@@ -186,6 +188,7 @@ _FLAT_APPS = [
     'ai_chat',
     'ai_secretary',
     'superadmin_dashboard',
+    'django_countries',
 ]
 
 if USE_SQLITE_FOR_DEV or not USE_DJANGO_TENANTS:

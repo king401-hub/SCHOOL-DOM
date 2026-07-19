@@ -56,6 +56,7 @@ from academic.models import (
     TimetableEntry,
 )
 from core.models import SchoolTenant, Domain
+from django_countries import countries as django_countries_list
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
 from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplication, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
@@ -864,6 +865,8 @@ def _school_payload(school, request=None):
         "entrance_photo": _media_url(request, school.entrance_photo),
         "proof_of_address": _media_url(request, school.proof_of_address),
         "ministry_approval_number": getattr(school, "ministry_approval_number", "") or "",
+        "country": str(getattr(school, "country", "") or ""),
+        "state": getattr(school, "state", "") or "",
     }
 
 
@@ -6424,6 +6427,20 @@ def school_settings(request):
                     setattr(school, field, new_value)
                     update_fields.append(field)
 
+        raw_country = request.data.get("country")
+        if raw_country is not None:
+            new_country = str(raw_country or "").strip().upper()[:2]
+            if str(getattr(school, "country", "") or "") != new_country:
+                school.country = new_country
+                update_fields.append("country")
+
+        raw_state = request.data.get("state")
+        if raw_state is not None:
+            new_state = str(raw_state or "").strip()
+            if (getattr(school, "state", "") or "") != new_state:
+                school.state = new_state
+                update_fields.append("state")
+
         raw_motto = request.data.get("motto", request.data.get("tagline", None))
         if raw_motto is not None:
             new_motto = str(raw_motto or "").strip()
@@ -10547,3 +10564,75 @@ def _notify_parents_on_attendance(student_user, attendance_status, attendance_da
 
     if to_send:
         threading.Thread(target=_send_attendance_sms_batch, args=(to_send,), daemon=True).start()
+
+
+# Static dial-code map (ISO alpha-2 → calling code).  Covers all 249 UN-recognised
+# countries; add or override entries here if a code needs correcting.
+_DIAL_CODE_MAP = {
+    "AC": "+247", "AD": "+376", "AE": "+971", "AF": "+93", "AG": "+1268",
+    "AI": "+1264", "AL": "+355", "AM": "+374", "AO": "+244", "AQ": "+672",
+    "AR": "+54", "AS": "+1684", "AT": "+43", "AU": "+61", "AW": "+297",
+    "AX": "+358", "AZ": "+994", "BA": "+387", "BB": "+1246", "BD": "+880",
+    "BE": "+32", "BF": "+226", "BG": "+359", "BH": "+973", "BI": "+257",
+    "BJ": "+229", "BL": "+590", "BM": "+1441", "BN": "+673", "BO": "+591",
+    "BQ": "+599", "BR": "+55", "BS": "+1242", "BT": "+975", "BW": "+267",
+    "BY": "+375", "BZ": "+501", "CA": "+1", "CC": "+61", "CD": "+243",
+    "CF": "+236", "CG": "+242", "CH": "+41", "CI": "+225", "CK": "+682",
+    "CL": "+56", "CM": "+237", "CN": "+86", "CO": "+57", "CR": "+506",
+    "CU": "+53", "CV": "+238", "CW": "+599", "CX": "+61", "CY": "+357",
+    "CZ": "+420", "DE": "+49", "DJ": "+253", "DK": "+45", "DM": "+1767",
+    "DO": "+1809", "DZ": "+213", "EC": "+593", "EE": "+372", "EG": "+20",
+    "EH": "+212", "ER": "+291", "ES": "+34", "ET": "+251", "FI": "+358",
+    "FJ": "+679", "FK": "+500", "FM": "+691", "FO": "+298", "FR": "+33",
+    "GA": "+241", "GB": "+44", "GD": "+1473", "GE": "+995", "GF": "+594",
+    "GG": "+44", "GH": "+233", "GI": "+350", "GL": "+299", "GM": "+220",
+    "GN": "+224", "GP": "+590", "GQ": "+240", "GR": "+30", "GS": "+500",
+    "GT": "+502", "GU": "+1671", "GW": "+245", "GY": "+592", "HK": "+852",
+    "HN": "+504", "HR": "+385", "HT": "+509", "HU": "+36", "ID": "+62",
+    "IE": "+353", "IL": "+972", "IM": "+44", "IN": "+91", "IO": "+246",
+    "IQ": "+964", "IR": "+98", "IS": "+354", "IT": "+39", "JE": "+44",
+    "JM": "+1876", "JO": "+962", "JP": "+81", "KE": "+254", "KG": "+996",
+    "KH": "+855", "KI": "+686", "KM": "+269", "KN": "+1869", "KP": "+850",
+    "KR": "+82", "KW": "+965", "KY": "+1345", "KZ": "+7", "LA": "+856",
+    "LB": "+961", "LC": "+1758", "LI": "+423", "LK": "+94", "LR": "+231",
+    "LS": "+266", "LT": "+370", "LU": "+352", "LV": "+371", "LY": "+218",
+    "MA": "+212", "MC": "+377", "MD": "+373", "ME": "+382", "MF": "+590",
+    "MG": "+261", "MH": "+692", "MK": "+389", "ML": "+223", "MM": "+95",
+    "MN": "+976", "MO": "+853", "MP": "+1670", "MQ": "+596", "MR": "+222",
+    "MS": "+1664", "MT": "+356", "MU": "+230", "MV": "+960", "MW": "+265",
+    "MX": "+52", "MY": "+60", "MZ": "+258", "NA": "+264", "NC": "+687",
+    "NE": "+227", "NF": "+672", "NG": "+234", "NI": "+505", "NL": "+31",
+    "NO": "+47", "NP": "+977", "NR": "+674", "NU": "+683", "NZ": "+64",
+    "OM": "+968", "PA": "+507", "PE": "+51", "PF": "+689", "PG": "+675",
+    "PH": "+63", "PK": "+92", "PL": "+48", "PM": "+508", "PN": "+64",
+    "PR": "+1787", "PS": "+970", "PT": "+351", "PW": "+680", "PY": "+595",
+    "QA": "+974", "RE": "+262", "RO": "+40", "RS": "+381", "RU": "+7",
+    "RW": "+250", "SA": "+966", "SB": "+677", "SC": "+248", "SD": "+249",
+    "SE": "+46", "SG": "+65", "SH": "+290", "SI": "+386", "SJ": "+47",
+    "SK": "+421", "SL": "+232", "SM": "+378", "SN": "+221", "SO": "+252",
+    "SR": "+597", "SS": "+211", "ST": "+239", "SV": "+503", "SX": "+1721",
+    "SY": "+963", "SZ": "+268", "TA": "+290", "TC": "+1649", "TD": "+235",
+    "TG": "+228", "TH": "+66", "TJ": "+992", "TK": "+690", "TL": "+670",
+    "TM": "+993", "TN": "+216", "TO": "+676", "TR": "+90", "TT": "+1868",
+    "TV": "+688", "TW": "+886", "TZ": "+255", "UA": "+380", "UG": "+256",
+    "US": "+1", "UY": "+598", "UZ": "+998", "VA": "+379", "VC": "+1784",
+    "VE": "+58", "VG": "+1284", "VI": "+1340", "VN": "+84", "VU": "+678",
+    "WF": "+681", "WS": "+685", "XK": "+383", "YE": "+967", "YT": "+262",
+    "ZA": "+27", "ZM": "+260", "ZW": "+263",
+}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def countries_list(request):
+    """Return all countries with name, ISO code, flag emoji, and dial code."""
+    data = []
+    for code, name in sorted(django_countries_list, key=lambda x: x[1]):
+        flag = "".join(chr(0x1F1E0 + ord(c) - ord("A")) for c in code.upper())
+        data.append({
+            "code": code,
+            "name": str(name),
+            "flag": flag,
+            "dial_code": _DIAL_CODE_MAP.get(code, ""),
+        })
+    return Response({"success": True, "countries": data})

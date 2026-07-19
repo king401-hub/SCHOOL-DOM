@@ -90,4 +90,5 @@ urlpatterns = [
     path("kids-monitor/<uuid:parent_id>/initiate/", app_views.kids_monitor_initiate, name="app_kids_monitor_initiate"),
     path("kids-monitor/<uuid:parent_id>/verify/", app_views.kids_monitor_verify, name="app_kids_monitor_verify"),
     path("kids-monitor/<uuid:parent_id>/", app_views.kids_monitor_deactivate, name="app_kids_monitor_deactivate"),
+    path("countries/", app_views.countries_list, name="app_countries_list"),
 ]

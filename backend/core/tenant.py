@@ -1,6 +1,7 @@
 # backend/core/models/tenant.py
 from django.db import models
 from django.utils import timezone as django_timezone
+from django_countries.fields import CountryField
 
 
 class SchoolGroup(models.Model):
@@ -43,6 +44,8 @@ class SchoolTenant(models.Model):
     )
     
     # School Information
+    country = CountryField(blank=True, default="NG")
+    state = models.CharField(max_length=120, blank=True, default="")
     address = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)

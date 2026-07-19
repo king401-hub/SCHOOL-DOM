@@ -1855,6 +1855,83 @@ body[data-theme="dark"] .app-sidebar {
   color: #ffffff;
 }
 
+/* ── Phone + Country Code Input ────────────────────────────── */
+.phone-country-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--input-border, #d1d5db);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--input-bg, #fff);
+  transition: border-color 150ms;
+}
+
+.phone-country-input:focus-within {
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.phone-country-select {
+  border: none;
+  background: var(--surface-muted, #f3f4f6);
+  color: var(--text-primary, #111827);
+  font-size: 0.82rem;
+  padding: 0 0.4rem;
+  height: 100%;
+  min-height: 38px;
+  cursor: pointer;
+  outline: none;
+  border-right: 1px solid var(--input-border, #d1d5db);
+  max-width: 56px;
+  overflow: hidden;
+}
+
+.phone-dial-badge {
+  padding: 0 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary, #6b7280);
+  white-space: nowrap;
+  border-right: 1px solid var(--input-border, #d1d5db);
+  line-height: 38px;
+}
+
+.phone-number-field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0 0.65rem;
+  font-size: 0.875rem;
+  color: var(--text-primary, #111827);
+  outline: none;
+  min-width: 0;
+  height: 38px;
+}
+
+.phone-number-field::placeholder {
+  color: var(--text-muted, #9ca3af);
+}
+
+@media (prefers-color-scheme: dark) {
+  .phone-country-select {
+    background: #1f2937;
+    color: #f9fafb;
+    border-right-color: #374151;
+  }
+  .phone-country-input {
+    border-color: #374151;
+    background: #111827;
+  }
+  .phone-dial-badge {
+    color: #9ca3af;
+    border-right-color: #374151;
+  }
+  .phone-number-field {
+    color: #f9fafb;
+  }
+}
+/* ─────────────────────────────────────────────────────────── */
+
 .help-drawer {
   padding: 1rem;
 }

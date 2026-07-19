@@ -2179,4 +2179,97 @@ export function StudentOfflineExamPage({ exams = [], onSubmitOffline, onClose })
   );
 }
 
+/**
+ * PhoneCountryInput — phone field with a country-code prefix picker.
+ *
+ * Props:
+ *   countries  – array of { code, name, flag, dial_code } from /api/app/countries/
+ *   value      – controlled full phone string (e.g. "+2348012345678")
+ *   onChange   – called with the new full phone string
+ *   defaultCountryCode – ISO alpha-2 to pre-select when value is empty (e.g. "NG")
+ *   disabled, placeholder, className
+ */
+export function PhoneCountryInput({
+  countries = [],
+  value = "",
+  onChange,
+  defaultCountryCode = "NG",
+  disabled = false,
+  placeholder = "Phone number",
+  className = "",
+}) {
+  const inferCountry = useCallback(
+    (raw) => {
+      if (!raw) return defaultCountryCode || "NG";
+      const sorted = [...countries].sort((a, b) => b.dial_code.length - a.dial_code.length);
+      for (const c of sorted) {
+        if (c.dial_code && raw.startsWith(c.dial_code)) return c.code;
+      }
+      return defaultCountryCode || "NG";
+    },
+    [countries, defaultCountryCode]
+  );
 
+  const stripDialCode = useCallback(
+    (raw, code) => {
+      const country = countries.find((c) => c.code === code);
+      const dial = country?.dial_code || "";
+      if (dial && raw.startsWith(dial)) return raw.slice(dial.length).replace(/^\s+/, "");
+      return raw.replace(/^\+\d{1,4}\s?/, "");
+    },
+    [countries]
+  );
+
+  const [selectedCode, setSelectedCode] = useState(() => inferCountry(value));
+  const [localNumber, setLocalNumber] = useState(() => stripDialCode(value, inferCountry(value)));
+
+  useEffect(() => {
+    const code = inferCountry(value);
+    setSelectedCode(code);
+    setLocalNumber(stripDialCode(value, code));
+  }, [value, inferCountry, stripDialCode]);
+
+  const selectedCountry = countries.find((c) => c.code === selectedCode);
+  const dialCode = selectedCountry?.dial_code || "";
+
+  const handleCountryChange = (event) => {
+    const code = event.target.value;
+    setSelectedCode(code);
+    const country = countries.find((c) => c.code === code);
+    const dial = country?.dial_code || "";
+    onChange?.(dial ? `${dial}${localNumber}` : localNumber);
+  };
+
+  const handleNumberChange = (event) => {
+    const digits = event.target.value.replace(/[^\d\s\-().]/g, "");
+    setLocalNumber(digits);
+    onChange?.(dialCode ? `${dialCode}${digits}` : digits);
+  };
+
+  return (
+    <div className={`phone-country-input${className ? ` ${className}` : ""}`}>
+      <select
+        value={selectedCode}
+        onChange={handleCountryChange}
+        disabled={disabled}
+        aria-label="Country code"
+        className="phone-country-select"
+      >
+        {countries.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.flag} {c.dial_code} ({c.name})
+          </option>
+        ))}
+      </select>
+      <span className="phone-dial-badge">{dialCode || "+"}</span>
+      <input
+        type="tel"
+        value={localNumber}
+        onChange={handleNumberChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        className="phone-number-field"
+      />
+    </div>
+  );
+}

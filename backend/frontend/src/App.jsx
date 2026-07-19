@@ -6109,6 +6109,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const [screenLoading, setScreenLoading] = useState({});
   const [screenError, setScreenError] = useState({});
   const [adminActivityRecords, setAdminActivityRecords] = useState(() => readAdminActivityLog(session));
+  const [countriesList, setCountriesList] = useState([]);
   const [navOpen, setNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -6208,6 +6209,13 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       loadScreen("/settings");
     }
   }, [loadScreen, screenData, screenError, screenLoading]);
+
+  useEffect(() => {
+    if (!session?.access || countriesList.length > 0) return;
+    requestJson(session, "GET", "/api/app/countries/")
+      .then((result) => { if (result?.countries?.length) setCountriesList(result.countries); })
+      .catch(() => {});
+  }, [session, countriesList.length]);
 
   useEffect(() => {
     if (!screenData["/messages"] && !screenLoading["/messages"] && !screenError["/messages"]) {
@@ -7580,6 +7588,8 @@ const unreadNotificationsCount =
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
+        countries={countriesList}
+        defaultCountryCode={screenData["/settings"]?.school?.country || "NG"}
       />
     );
   } else if (activePath === "/parents") {
@@ -7645,6 +7655,8 @@ const unreadNotificationsCount =
         onUpdate={handleUpdateTeacher}
         onDelete={handleDeleteTeacher}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
+        countries={countriesList}
+        defaultCountryCode={screenData["/settings"]?.school?.country || "NG"}
       />
     );
   } else if (activePath === "/enrollments") {
@@ -7747,7 +7759,8 @@ const unreadNotificationsCount =
         onCancelAccountDeletion={handleAccountDeletionCancel}
         themePreference={themePreference}
         onThemeChange={onThemeChange}
-          />
+        countries={countriesList}
+      />
             );
   }
 

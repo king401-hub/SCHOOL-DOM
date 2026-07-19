@@ -9,6 +9,7 @@ import {
 } from "./appConstants";
 import {
   MultiSelectBox,
+  PhoneCountryInput,
   requestJson,
   formatDate,
   userDisplayName,
@@ -6219,12 +6220,15 @@ function AdminSettingsScreen({
   onCancelAccountDeletion,
   themePreference,
   onThemeChange,
+  countries = [],
 }) {
   const school = data?.school || {};
   const director = data?.director || {};
   const canEdit = Boolean(data?.can_edit);
   const [name, setName] = useState("");
   const [motto, setMotto] = useState("");
+  const [country, setCountry] = useState("NG");
+  const [schoolState, setSchoolState] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -6280,6 +6284,8 @@ function AdminSettingsScreen({
   useEffect(() => {
     setName(school.name || "");
     setMotto((current) => school.motto || school.tagline || current || "");
+    setCountry(school.country || "NG");
+    setSchoolState(school.state || "");
     setEmail(school.email || "");
     setPhone(school.phone || "");
     setAddress(school.address || "");
@@ -6348,6 +6354,8 @@ function AdminSettingsScreen({
       name: name.trim(),
       motto: motto.trim(),
       tagline: motto.trim(),
+      country,
+      state: schoolState.trim(),
       email: email.trim(),
       phone: phone.trim(),
       address: address.trim(),
@@ -6387,7 +6395,7 @@ function AdminSettingsScreen({
       ),
     }),
     [
-      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, adminFirstName, adminLastName, email, logoFile, motto, name, phone, staffRules, studentRules, termEnd, termName, termStart,
+      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, adminFirstName, adminLastName, country, email, logoFile, motto, name, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
       cacRegisteredName, ministryApprovalNumber, cacCertificateFile, entrancePhotoFile, proofOfAddressFile,
       directorAddress, directorIdType, directorProofOfAddressFile, directorIdDocumentFile, directorPassportFile,
     ]
@@ -6656,12 +6664,37 @@ onClick={() => handleThemeSelect("light")}
                 <input value={motto} onChange={(event) => setMotto(event.target.value)} placeholder="e.g., Knowledge and Character" disabled={!canEdit || isSaving} />
               </label>
               <label className="panel-field">
+                Country
+                <select value={country} onChange={(event) => setCountry(event.target.value)} disabled={!canEdit || isSaving || countries.length === 0}>
+                  {countries.length === 0 ? (
+                    <option value={country}>{country || "Loading..."}</option>
+                  ) : (
+                    countries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className="panel-field">
+                State / Province
+                <input value={schoolState} onChange={(event) => setSchoolState(event.target.value)} placeholder="e.g., Lagos State" disabled={!canEdit || isSaving} />
+              </label>
+              <label className="panel-field">
                 Email
                 <input value={email} onChange={(event) => setEmail(event.target.value)} disabled={!canEdit || isSaving} />
               </label>
               <label className="panel-field">
                 Phone
-                <input value={phone} onChange={(event) => setPhone(event.target.value)} disabled={!canEdit || isSaving} />
+                <PhoneCountryInput
+                  countries={countries}
+                  value={phone}
+                  onChange={setPhone}
+                  defaultCountryCode={country || "NG"}
+                  disabled={!canEdit || isSaving}
+                  placeholder="School phone number"
+                />
               </label>
                         <label className="panel-field full">
                           Address
@@ -8084,7 +8117,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   );
 }
 
-function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const groupLabels = academicGroupLabels(data?.school, school);
@@ -8524,7 +8557,12 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                 </label>
                 <label className="panel-field">
                   Guardian Phone
-                  <input value={form.guardian_phone} onChange={(event) => setForm((prev) => ({ ...prev, guardian_phone: event.target.value }))} />
+                  <PhoneCountryInput
+                    countries={countries}
+                    value={form.guardian_phone}
+                    onChange={(val) => setForm((prev) => ({ ...prev, guardian_phone: val }))}
+                    defaultCountryCode={defaultCountryCode}
+                  />
                 </label>
                 <label className="panel-field">
                   Guardian Email
@@ -8540,7 +8578,12 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                 </label>
                 <label className="panel-field">
                   Second Guardian Phone
-                  <input value={form.second_guardian_phone} onChange={(event) => setForm((prev) => ({ ...prev, second_guardian_phone: event.target.value }))} />
+                  <PhoneCountryInput
+                    countries={countries}
+                    value={form.second_guardian_phone}
+                    onChange={(val) => setForm((prev) => ({ ...prev, second_guardian_phone: val }))}
+                    defaultCountryCode={defaultCountryCode}
+                  />
                 </label>
                 <label className="panel-field">
                   Second Guardian Email
@@ -8933,7 +8976,12 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       </label>
                       <label className="panel-field">
                         Guardian Phone
-                        <input value={editForm.guardian_phone} onChange={(e) => setEditForm((p) => ({ ...p, guardian_phone: e.target.value }))} />
+                        <PhoneCountryInput
+                          countries={countries}
+                          value={editForm.guardian_phone}
+                          onChange={(val) => setEditForm((p) => ({ ...p, guardian_phone: val }))}
+                          defaultCountryCode={defaultCountryCode}
+                        />
                       </label>
                       <label className="panel-field">
                         Guardian Email
@@ -8956,7 +9004,12 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       </label>
                       <label className="panel-field">
                         Phone
-                        <input value={editForm.second_guardian_phone} onChange={(e) => setEditForm((p) => ({ ...p, second_guardian_phone: e.target.value }))} />
+                        <PhoneCountryInput
+                          countries={countries}
+                          value={editForm.second_guardian_phone}
+                          onChange={(val) => setEditForm((p) => ({ ...p, second_guardian_phone: val }))}
+                          defaultCountryCode={defaultCountryCode}
+                        />
                       </label>
                       <label className="panel-field">
                         Email
@@ -9100,7 +9153,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   );
 }
 
-function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
+function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, countries = [], defaultCountryCode = "NG" }) {
   const teachers = data?.teachers || [];
   const employmentTypes = data?.options?.employment_types || [];
   const subjectOptions = data?.options?.subjects || [];
@@ -9478,7 +9531,12 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
             </label>
             <label className="panel-field">
               Phone
-                <input value={form.phone} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} />
+              <PhoneCountryInput
+                countries={countries}
+                value={form.phone}
+                onChange={(val) => setForm((prev) => ({ ...prev, phone: val }))}
+                defaultCountryCode={defaultCountryCode}
+              />
             </label>
             <label className="panel-field">
               Password
@@ -9708,7 +9766,12 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                   </label>
                   <label className="panel-field">
                     Phone
-                    <input value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} />
+                    <PhoneCountryInput
+                      countries={countries}
+                      value={editForm.phone}
+                      onChange={(val) => setEditForm((prev) => ({ ...prev, phone: val }))}
+                      defaultCountryCode={defaultCountryCode}
+                    />
                   </label>
                   <label className="panel-field">
                     Gender
