@@ -14,6 +14,7 @@ interface SessionData {
   access: any;
   refresh: any;
   school: any;
+  school_group: any;
   school_code: string;
   redirectUrl: string;
   requiresVerification: boolean;
@@ -450,6 +451,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       access: data.access,
       refresh: data.refresh,
       school: data.school || null,
+      school_group: data.school_group || null,
       school_code: data.school_code || payload.school_code || "",
       redirectUrl: data.redirect_url || "/dashboard/",
       requiresVerification: Boolean(data.requires_verification),
@@ -579,6 +581,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       access: data.access,
       refresh: data.refresh,
       school: data.school || null,
+      school_group: data.school_group || null,
       school_code: data.school_code || schoolCode.trim() || "",
       redirectUrl: data.redirect_url || "/dashboard/",
       requiresVerification: false,

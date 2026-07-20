@@ -98,6 +98,7 @@ import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMes
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
+const ProprietorShell = lazy(() => import("./ProprietorScreens").then((module) => ({ default: module.ProprietorShell })));
 
 const IdCardVerificationPage = lazyAdminScreen("IdCardVerificationPage");
 const StudentIdCardPreview = lazyAdminScreen("IdCardPreview");
@@ -9136,6 +9137,10 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
 
   const role = session?.user?.role;
   const isAdmin = role === "school_admin" || role === "principal" || role === "super_admin" || role === "accountant";
+  // A proprietor manages several schools under one group, not one school -
+  // AdminShell/AdminScreens are hardwired to a single user.tenant, so
+  // school_superadmin gets its own dedicated shell instead of joining isAdmin.
+  const isProprietor = role === "school_superadmin";
 
   if (currentPath === STUDENT_CBT_DESKTOP_PATH) {
     return (
@@ -9153,6 +9158,14 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         token={getTeacherAttendanceToken(currentPath)}
         onNavigate={navigate}
       />
+    );
+  }
+
+  if (isProprietor) {
+    return withGlobalHome(
+      <Suspense fallback={<ScreenState loading />}>
+        <ProprietorShell session={session} onSignOut={handleSignOut} />
+      </Suspense>
     );
   }
 

@@ -1,9 +1,14 @@
 from django.urls import path
 
-from . import app_views
+from . import app_views, proprietor_views
 
 urlpatterns = [
     path("dashboard/", app_views.dashboard_snapshot, name="app_dashboard_snapshot"),
+    path("proprietor/overview/", proprietor_views.proprietor_overview, name="app_proprietor_overview"),
+    path("proprietor/schools/", proprietor_views.proprietor_create_school, name="app_proprietor_create_school"),
+    path("proprietor/schools/<int:school_id>/admins/", proprietor_views.proprietor_add_school_admin, name="app_proprietor_add_school_admin"),
+    path("proprietor/finance/", proprietor_views.proprietor_finance, name="app_proprietor_finance"),
+    path("proprietor/finance/export/", proprietor_views.proprietor_finance_export, name="app_proprietor_finance_export"),
     path("admin-desktop/bootstrap/", app_views.admin_desktop_bootstrap, name="app_admin_desktop_bootstrap"),
     path("admin-desktop/download/", app_views.admin_desktop_download, name="app_admin_desktop_download"),
     path("admin-desktop/support-tickets/", app_views.admin_desktop_support_tickets, name="app_admin_desktop_support_tickets"),

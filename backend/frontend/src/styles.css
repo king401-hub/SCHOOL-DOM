@@ -1876,14 +1876,15 @@ body[data-theme="dark"] .app-sidebar {
   background: var(--surface-muted, #f3f4f6);
   color: var(--text-primary, #111827);
   font-size: 0.82rem;
-  padding: 0 0.4rem;
+  padding: 0 0.25rem;
   height: 100%;
   min-height: 38px;
   cursor: pointer;
   outline: none;
   border-right: 1px solid var(--input-border, #d1d5db);
-  max-width: 56px;
-  overflow: hidden;
+  width: 52px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .phone-dial-badge {
@@ -24700,4 +24701,43 @@ body[data-theme="dark"] .dl-text { color: #94a3b8; }
   text-align: center;
   border-radius: 12px;
   border: 1px solid #cbd7e6;
+}
+
+/* ---- Proprietor (School Superadmin) dashboard nav ---- */
+.proprietor-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.25rem 0 0.5rem;
+}
+.proprietor-nav-item {
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid #d7e0ec;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.proprietor-nav-item:hover {
+  background: #eef2f7;
+}
+.proprietor-nav-item.active {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+}
+body[data-theme="dark"] .proprietor-nav-item {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+}
+body[data-theme="dark"] .proprietor-nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+body[data-theme="dark"] .proprietor-nav-item.active {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
 }

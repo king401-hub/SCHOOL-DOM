@@ -156,6 +156,7 @@ export default function SignUpPage() {
       access: data.access,
       refresh: data.refresh,
       school: data.school || null,
+      school_group: data.school_group || null,
       school_code: data.school_code || code || '',
       redirectUrl: data.redirect_url || '/dashboard',
       requiresVerification: false,

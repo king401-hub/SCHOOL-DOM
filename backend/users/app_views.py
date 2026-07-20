@@ -97,6 +97,11 @@ except Exception:  # pragma: no cover - optional app fallback
     def push_for_notifications(notifications):
         return None
 
+
+# Deliberately excludes school_superadmin (proprietor) - every view gated by
+# ADMIN_ROLES here assumes a single request.user.tenant, which proprietors
+# never have (they own a SchoolGroup of many schools instead). Proprietors
+# have their own endpoints in proprietor_views.py, keyed off school_group.
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
 ID_CARD_SIGNING_SALT = "schooldom.id-card.verify"
 ADMIN_EXAM_HIDDEN_SUBJECT_CODES = {"PHY", "CHEM"}

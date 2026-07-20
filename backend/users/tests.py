@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.core import signing
+from django.core import mail, signing
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -22,7 +22,7 @@ from academic.models import (
     Subject,
     Term,
 )
-from core.models import Domain, SchoolTenant
+from core.models import Domain, SchoolGroup, SchoolTenant
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
 from finance.services import (
@@ -4260,3 +4260,150 @@ class StudentActivityTitleNonK12Tests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         profile = StudentProfile.objects.get(user__email="nonk12.edit@activity.edu")
         self.assertIsNone(profile.extra_curricular_activity_title)
+
+
+class ProprietorDashboardAPITests(TestCase):
+    """school_superadmin (proprietor) accounts have no single tenant - they
+    manage several schools under one SchoolGroup instead. See
+    users/proprietor_views.py."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.proprietor = User.objects.create_user(
+            email="owner@xcelgroup.edu",
+            password="OwnerPass123",
+            first_name="Xcel",
+            last_name="Owner",
+            role="school_superadmin",
+            is_active=True,
+            is_verified=True,
+        )
+        self.group = SchoolGroup.objects.create(name="Xcel Schools Group", owner=self.proprietor)
+        self.proprietor.school_group = self.group
+        self.proprietor.save(update_fields=["school_group"])
+        self.client.force_authenticate(user=self.proprietor)
+
+    def test_overview_returns_group_name_and_empty_schools_list(self):
+        response = self.client.get("/api/app/proprietor/overview/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["school_group"]["name"], "Xcel Schools Group")
+        self.assertEqual(response.data["schools"], [])
+        self.assertEqual(response.data["totals"]["students"], 0)
+
+    def test_create_school_creates_real_tenant_linked_to_group(self):
+        response = self.client.post(
+            "/api/app/proprietor/schools/",
+            {"name": "Xcel Academy - Lekki", "address": "12 Admiralty Way", "email": "lekki@xcelgroup.edu"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        school = SchoolTenant.objects.get(name="Xcel Academy - Lekki")
+        self.assertEqual(school.school_group_id, self.group.id)
+        self.assertTrue(school.schema_name)
+
+        overview = self.client.get("/api/app/proprietor/overview/")
+        self.assertEqual(len(overview.data["schools"]), 1)
+        self.assertEqual(overview.data["schools"][0]["name"], "Xcel Academy - Lekki")
+
+    def test_create_school_requires_a_name(self):
+        response = self.client.post("/api/app/proprietor/schools/", {"name": "  "}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_add_school_admin_creates_user_sends_email_and_hides_password(self):
+        school = SchoolTenant.objects.create(
+            name="Xcel Academy - Ikeja",
+            schema_name="xcel_ikeja",
+            school_group=self.group,
+        )
+        mail.outbox = []
+        response = self.client.post(
+            f"/api/app/proprietor/schools/{school.id}/admins/",
+            {"name": "Jane Doe", "email": "jane@xcelgroup.edu", "role": "principal"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["invited"])
+        self.assertNotIn("password", str(response.data).lower())
+
+        new_admin = User.objects.get(email="jane@xcelgroup.edu")
+        self.assertEqual(new_admin.role, "principal")
+        self.assertEqual(new_admin.tenant_id, school.id)
+        self.assertEqual(new_admin.school_group_id, self.group.id)
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("jane@xcelgroup.edu", mail.outbox[0].to)
+        self.assertIn(school.schema_name, mail.outbox[0].body)
+
+    def test_add_school_admin_rejects_school_outside_group(self):
+        other_school = SchoolTenant.objects.create(name="Rival School", schema_name="rival_school")
+        response = self.client.post(
+            f"/api/app/proprietor/schools/{other_school.id}/admins/",
+            {"name": "Jane Doe", "email": "jane@rival.edu", "role": "school_admin"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(User.objects.filter(email="jane@rival.edu").exists())
+
+    def test_add_school_admin_rejects_duplicate_email(self):
+        school = SchoolTenant.objects.create(name="Xcel Academy - Yaba", schema_name="xcel_yaba", school_group=self.group)
+        User.objects.create_user(email="taken@xcelgroup.edu", password="Pass1234", role="teacher", is_active=True)
+        response = self.client.post(
+            f"/api/app/proprietor/schools/{school.id}/admins/",
+            {"name": "Jane Doe", "email": "taken@xcelgroup.edu", "role": "school_admin"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_finance_rollup_aggregates_across_schools(self):
+        SchoolTenant.objects.create(name="Xcel A", schema_name="xcel_a", school_group=self.group)
+        SchoolTenant.objects.create(name="Xcel B", schema_name="xcel_b", school_group=self.group)
+        response = self.client.get("/api/app/proprietor/finance/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data["schools"]), 2)
+        self.assertIn("top_defaulters", response.data)
+
+    def test_finance_export_returns_csv(self):
+        response = self.client.get("/api/app/proprietor/finance/export/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
+
+    def test_non_proprietor_gets_403_on_proprietor_routes(self):
+        school = SchoolTenant.objects.create(name="Some School", schema_name="some_school")
+        admin_user = User.objects.create_user(
+            email="admin@someschool.edu",
+            password="AdminPass123",
+            role="school_admin",
+            tenant=school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=admin_user)
+
+        self.assertEqual(self.client.get("/api/app/proprietor/overview/").status_code, 403)
+        self.assertEqual(self.client.post("/api/app/proprietor/schools/", {"name": "X"}, format="json").status_code, 403)
+        self.assertEqual(self.client.get("/api/app/proprietor/finance/").status_code, 403)
+
+    def test_registration_creates_group_but_no_tenant(self):
+        """Regression test for the original bug report: signing up as
+        school_superadmin must create a SchoolGroup and leave tenant unset -
+        schools are added afterwards from the dashboard, not at signup."""
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "first_name": "New",
+                "last_name": "Owner",
+                "email": "newowner@group.edu",
+                "password": "OwnerPass123",
+                "confirm_password": "OwnerPass123",
+                "role": "school_superadmin",
+                "school_group_name": "New Owner Group",
+                "phone": "+15550009999",
+                "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        new_user = User.objects.get(email="newowner@group.edu")
+        self.assertIsNone(new_user.tenant)
+        self.assertIsNotNone(new_user.school_group)
+        self.assertEqual(new_user.school_group.name, "New Owner Group")

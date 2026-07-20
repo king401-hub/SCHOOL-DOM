@@ -332,7 +332,7 @@ def clear_admin_otp(user):
 def admin_redirect_url(user):
     return {
         'super_admin': '/admin/dashboard/',
-        'school_superadmin': '/school-superadmin/',
+        'school_superadmin': '/dashboard',
         'school_admin': '/school/dashboard/',
         'principal': '/dashboard/',
         'teacher': '/teacher/dashboard/',
@@ -358,6 +358,20 @@ def auth_school_payload(user):
         "tagline": getattr(school, "motto", "") or "",
         "student_rules": getattr(school, "student_rules", "") or "",
         "staff_rules": getattr(school, "staff_rules", "") or "",
+    }
+
+
+def auth_school_group_payload(user):
+    """School group branding for school_superadmin (proprietor) accounts, which
+    have no single `tenant` for auth_school_payload to describe - the group is
+    what should drive the dashboard's branding/name for this role instead."""
+    group = getattr(user, "school_group", None) or user.owned_school_groups.first()
+    if not group:
+        return {}
+    return {
+        "id": group.id,
+        "name": group.name,
+        "schools_count": group.schools.count(),
     }
 
 
@@ -597,6 +611,7 @@ def login_view(request):
                 'user': UserSerializer(user).data,
                 'school_code': user.tenant.schema_name if user.tenant else '',
                 'school': auth_school_payload(user),
+                'school_group': auth_school_group_payload(user),
                 **admin_otp_debug_payload(user),
             })
 
@@ -610,15 +625,17 @@ def login_view(request):
                 'user': UserSerializer(user).data,
                 'school_code': user.tenant.schema_name if user.tenant else '',
                 'school': auth_school_payload(user),
+                'school_group': auth_school_group_payload(user),
                 **tokens
             })
-        
+
         return Response({
             'success': True,
             'message': 'Login successful',
             'user': UserSerializer(user).data,
             'school_code': user.tenant.schema_name if user.tenant else '',
             'school': auth_school_payload(user),
+            'school_group': auth_school_group_payload(user),
             'redirect_url': admin_redirect_url(user),
             **tokens
         })
@@ -821,6 +838,7 @@ def admin_verify_otp(request):
         'user': UserSerializer(user).data,
         'school_code': user.tenant.schema_name if user.tenant else '',
         'school': auth_school_payload(user),
+        'school_group': auth_school_group_payload(user),
         'redirect_url': admin_redirect_url(user),
         **tokens
     })

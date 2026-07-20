@@ -465,6 +465,11 @@ export function resolveSchoolBrand(...sources) {
     str(school.user?.schoolName) ||
     str(school.user?.school?.name) ||
     str(school.user?.tenant?.name) ||
+    // School Superadmin (proprietor) accounts have no single school/tenant -
+    // fall back to their school group's name before the generic default.
+    str(school.school_group?.name) ||
+    str(school.group_name) ||
+    str(school.user?.school_group?.name) ||
     "SchoolDom";
   return {
     name,
@@ -2257,7 +2262,7 @@ export function PhoneCountryInput({
       >
         {countries.map((c) => (
           <option key={c.code} value={c.code}>
-            {c.flag} {c.dial_code} ({c.name})
+            {c.flag} {c.name}
           </option>
         ))}
       </select>
