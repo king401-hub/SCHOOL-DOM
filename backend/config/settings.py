@@ -189,6 +189,7 @@ _FLAT_APPS = [
     'ai_secretary',
     'superadmin_dashboard',
     'django_countries',
+    'anymail',
 ]
 
 if USE_SQLITE_FOR_DEV or not USE_DJANGO_TENANTS:
@@ -367,6 +368,14 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = env_int('EMAIL_TIMEOUT', 10)
+
+# Anymail (HTTP-API email, e.g. Resend) - used instead of raw SMTP when
+# EMAIL_BACKEND is set to an anymail backend. Some VPS providers block
+# outbound SMTP ports (25/465/587) by default; HTTP-API sending goes over
+# 443, same as everything else, so it isn't affected by that.
+ANYMAIL = {
+    'RESEND_API_KEY': os.environ.get('RESEND_API_KEY', ''),
+}
 OTP_EMAIL_TOKEN_VALIDITY = int(os.environ.get('OTP_EMAIL_TOKEN_VALIDITY', '600'))
 OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1'))
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
