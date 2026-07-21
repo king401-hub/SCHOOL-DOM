@@ -639,6 +639,11 @@ def _admin_finance_snapshot(user):
         },
         "activation_credit_rows": activation_rows,
         "activation_credit_purchase_history": credit_purchase_history,
+        # Prepaid balances held on students' wallets (e.g. from overpayment)
+        # that will automatically apply to their next due fees.
+        "total_student_credit_balance": Wallet.objects.filter(
+            user__tenant=user.tenant, user__role="student"
+        ).aggregate(total=Sum("balance"))["total"] or Decimal("0.00"),
     }
 
 
@@ -942,6 +947,7 @@ def admin_overview(request):
             "activation_credit_summary": finance_snapshot["activation_credit_summary"],
             "activation_credit_rows": finance_snapshot["activation_credit_rows"],
             "activation_credit_purchase_history": finance_snapshot["activation_credit_purchase_history"],
+            "total_student_credit_balance": finance_snapshot["total_student_credit_balance"],
             "class_options": [
                 {
                     "id": item.id,
@@ -2499,6 +2505,12 @@ def parent_dashboard(request):
             "total_paid": float(total_paid),
             "total_remaining": float(max(total_expected - total_paid, Decimal("0"))),
             "children_count": len(children_data),
+            # Prepaid balance held on the children's wallets (e.g. from
+            # overpayment) that will automatically apply to their next fees.
+            "total_credit_balance": float(
+                Wallet.objects.filter(user__student_profile__in=parent_profile.children.all())
+                .aggregate(total=Sum("balance"))["total"] or Decimal("0")
+            ),
         },
         "children": children_data,
         "recent_payments": TransactionSerializer(recent_txs, many=True).data,

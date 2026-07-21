@@ -1621,6 +1621,7 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
   const [paymentInstructions, setPaymentInstructions] = useState({});
   const [bankPayments, setBankPayments] = useState([]);
   const [fees, setFees] = useState([]);
+  const [walletBalance, setWalletBalance] = useState(0);
   const [feedback, setFeedback] = useState("");
   const [copiedField, setCopiedField] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -1634,6 +1635,7 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
       setPaymentInstructions(result.payment_instructions || {});
       setBankPayments(result.bank_payments || []);
       setFees(result.fees || []);
+      setWalletBalance(Number(result.wallet?.balance || 0));
       setTimeout(() => setLoaded(true), 40);
     } catch (loadError) {
       setError(loadError.message || "Could not load school fees.");
@@ -1718,6 +1720,14 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
               <p className="fee-stat-value">{fmt(totalRemaining)}</p>
               <p className="fee-stat-sub">{totalRemaining > 0 ? "Balance due" : "Fully settled"}</p>
             </div>
+            {walletBalance > 0 ? (
+              <div className="fee-stat-card fee-stat-card--green" style={{ "--delay": "180ms" }}>
+                <CreditCard size={20} className="fee-stat-icon" />
+                <p className="fee-stat-label">Credit Balance</p>
+                <p className="fee-stat-value">{fmt(walletBalance)}</p>
+                <p className="fee-stat-sub">Applies automatically to your next fees</p>
+              </div>
+            ) : null}
           </div>
 
           {/* Payment account / reference card */}
@@ -8508,6 +8518,7 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
   const totalExpected = summary.total_expected || 0;
   const totalPaid = summary.total_paid || 0;
   const totalRemaining = summary.total_remaining || 0;
+  const totalCreditBalance = summary.total_credit_balance || 0;
 
   return (
     <div className={`student-shell ${navOpen ? "nav-open" : ""}`}>
@@ -8643,6 +8654,9 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
               <MetricCard label="Total Fees Expected" value={fmt(totalExpected)} trend={`${summary.children_count || 0} child${summary.children_count === 1 ? "" : "ren"}`} icon="money" tone="blue" />
               <MetricCard label="Total Paid" value={fmt(totalPaid)} trend="Confirmed payments" icon="results" tone="emerald" />
               <MetricCard label="Balance Due" value={fmt(totalRemaining)} trend={totalRemaining > 0 ? "Outstanding" : "All fees cleared"} icon="money" tone={totalRemaining > 0 ? "amber" : "emerald"} />
+              {totalCreditBalance > 0 ? (
+                <MetricCard label="Family Credit" value={fmt(totalCreditBalance)} trend="Prepaid - applies to upcoming fees" trendUp icon="money" tone="emerald" />
+              ) : null}
             </div>
 
             {/* Children quick summary */}

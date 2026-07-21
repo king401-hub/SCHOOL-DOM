@@ -1011,6 +1011,7 @@ def allocate_split_payment(
 
     remaining = amount_paid
     allocations = []
+    last_student = None
 
     for fee in unpaid_fees:
         if remaining <= 0:
@@ -1057,6 +1058,7 @@ def allocate_split_payment(
                 "remaining_balance": 0,
             })
             remaining -= total_due
+            last_student = student
 
             if parent_email:
                 tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
@@ -1107,6 +1109,7 @@ def allocate_split_payment(
                 "remaining_balance": float(balance_left + schooldom_fee_for(balance_left)),
             })
             remaining = Decimal("0.00")
+            last_student = student
 
             if parent_email:
                 tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
@@ -1135,7 +1138,11 @@ def allocate_split_payment(
                     receipt_type="receipt",
                 )
         else:
-            remaining = Decimal("0.00")
+            # Too little left to even cover this fee's Schooldom markup for a
+            # partial payment - stop allocating, but do NOT zero `remaining`
+            # here. Whatever's left is real leftover money and must flow into
+            # the overpayment/credit-balance check below rather than being
+            # silently discarded.
             break
 
     # After allocating all fees, ≈₦300 Paystack flat fee remains in `remaining`.
@@ -1145,19 +1152,57 @@ def allocate_split_payment(
     surplus = remaining - PAYSTACK_FLAT_FEE
     if surplus > Decimal("0.50"):   # 50 kobo threshold to avoid floating-point noise
         overpayment = surplus
-        try:
-            parent_user = User.objects.get(id=parent_id)
-            wallet = Wallet.objects.get(user=parent_user)
-            credit_wallet(
-                wallet,
-                overpayment,
-                Transaction.ADJUSTMENT_CREDIT,
-                generate_reference("OVP"),
-                f"Overpayment from Paystack transaction {paystack_ref}",
-                metadata={"paystack_ref": paystack_ref},
+        # Wallets are student-only (ensure_student_wallet rejects any other
+        # role) - a parent's payment can span several children, so credit the
+        # last student whose fee actually received part of this payment. If
+        # no fee was touched at all (every child was already fully paid, so
+        # this was pure prepayment), fall back to the parent's first child.
+        credit_student = last_student
+        if credit_student is None and students:
+            credit_student = students[0] if not hasattr(students, "first") else students.first()
+        if credit_student is not None:
+            try:
+                wallet = ensure_student_wallet(credit_student.user)
+                credit_wallet(
+                    wallet,
+                    overpayment,
+                    Transaction.ADJUSTMENT_CREDIT,
+                    generate_reference("OVP"),
+                    f"Overpayment carried to credit balance - Paystack {paystack_ref}",
+                    metadata={
+                        "paystack_ref": paystack_ref,
+                        "source": "paystack_split",
+                        "student_id": str(credit_student.id),
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to credit overpayment of %s to student %s for Paystack ref %s.",
+                    overpayment, credit_student.id, paystack_ref,
+                )
+                record_finance_activity(
+                    getattr(parent_profile.user, "tenant", None) if parent_profile else None,
+                    None,
+                    "overpayment_uncredited",
+                    f"Could not credit overpayment for Paystack transaction {paystack_ref}.",
+                    amount=overpayment,
+                    reference=paystack_ref,
+                    metadata={"parent_id": str(parent_id), "student_id": str(credit_student.id)},
+                )
+        else:
+            logger.warning(
+                "Overpayment of %s on Paystack ref %s has no resolvable student to credit (parent_id=%s).",
+                overpayment, paystack_ref, parent_id,
             )
-        except Exception:
-            pass
+            record_finance_activity(
+                getattr(parent_profile.user, "tenant", None) if parent_profile else None,
+                None,
+                "overpayment_uncredited",
+                f"Overpayment on Paystack transaction {paystack_ref} has no student to credit.",
+                amount=overpayment,
+                reference=paystack_ref,
+                metadata={"parent_id": str(parent_id)},
+            )
 
     if allocations:
         record_finance_activity(
@@ -3709,14 +3754,53 @@ def apply_bank_payment_to_student(payment, student_profile, actor=None):
 
         locked_admin.save(update_fields=["balance", "updated_at"])
 
+        # This path already knows exactly which student the payment belongs
+        # to (unlike the admin "recover/match" flow, which is for payments
+        # with no known student yet) - any leftover after their fees are
+        # fully paid is real overpayment, so credit it to their wallet rather
+        # than leaving it stranded as unapplied_amount indefinitely.
+        credited = Decimal("0.00")
+        if amount_remaining > 0:
+            try:
+                wallet = ensure_student_wallet(student_profile.user)
+                credit_wallet(
+                    wallet,
+                    amount_remaining,
+                    Transaction.ADJUSTMENT_CREDIT,
+                    generate_reference("OVP"),
+                    f"Overpayment carried to credit balance - Bank payment {payment.bank_reference}",
+                    metadata={
+                        "source": "bank_payment",
+                        "bank_payment_id": str(payment.id),
+                        "student_id": str(student_profile.id),
+                    },
+                    created_by=actor,
+                )
+                credited = amount_remaining
+            except Exception:
+                logger.exception(
+                    "Failed to credit bank-payment overpayment of %s to student %s (payment=%s).",
+                    amount_remaining, student_profile.id, payment.id,
+                )
+                record_finance_activity(
+                    student_profile.user.tenant, actor, "overpayment_uncredited",
+                    f"Could not credit overpayment for bank payment {payment.id}.",
+                    amount=amount_remaining, reference=payment.bank_reference or "",
+                    metadata={"bank_payment_id": str(payment.id), "student_id": str(student_profile.id)},
+                )
+
         locked_payment = BankPayment.objects.select_for_update().get(pk=payment.pk)
         locked_payment.student = student_profile
         locked_payment.tenant = student_profile.user.tenant
         locked_payment.applied_amount = applied
-        locked_payment.unapplied_amount = max(amount_remaining, Decimal("0.00"))
+        # Once credited, this money lives in the wallet, not on the payment
+        # record - zeroing unapplied_amount here avoids double-counting it
+        # (once as a wallet credit, once as "still owed") and keeps it out of
+        # the admin recover/match queue, which could otherwise re-apply it.
+        locked_payment.unapplied_amount = Decimal("0.00") if credited > 0 else max(amount_remaining, Decimal("0.00"))
         locked_payment.status = (
             BankPayment.STATUS_CONFIRMED
-            if amount_remaining <= 0
+            if amount_remaining <= 0 or credited > 0
             else BankPayment.STATUS_PARTIAL
             if applied > 0
             else BankPayment.STATUS_PENDING
@@ -4172,6 +4256,7 @@ def process_virtual_account_payment(
     # Allocate payment to fees (oldest due first, no extra ₦400 markup for DVA payments)
     remaining = amount
     allocations = []
+    last_student = None
 
     for fee in unpaid_fees:
         if remaining <= 0:
@@ -4206,6 +4291,7 @@ def process_virtual_account_payment(
             "status": "paid" if fully_paid else "partial",
         })
         remaining -= allocated
+        last_student = fee.student
 
         # Send receipt — email (if available) + SMS with receipt link via eBulkSMS
         student = fee.student
@@ -4255,10 +4341,63 @@ def process_virtual_account_payment(
         except Exception:
             logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 
+    overpayment_credited = Decimal("0.00")
+    if remaining > 0:
+        # Everything unpaid has been consumed (loop only stops early via the
+        # `remaining <= 0` guard), so any money left here is genuine
+        # overpayment - credit it to the last student whose fee was touched,
+        # falling back to the parent's first child for a pure-prepayment case
+        # where no fee needed touching at all.
+        credit_student = last_student
+        if credit_student is None and students:
+            credit_student = students[0] if not hasattr(students, "first") else students.first()
+        if credit_student is not None:
+            try:
+                wallet = ensure_student_wallet(credit_student.user)
+                credit_wallet(
+                    wallet,
+                    remaining,
+                    Transaction.ADJUSTMENT_CREDIT,
+                    generate_reference("OVP"),
+                    f"Overpayment carried to credit balance - DVA {paystack_reference}",
+                    metadata={
+                        "paystack_ref": paystack_reference,
+                        "source": "dva",
+                        "parent_tx_id": str(tx.id),
+                        "student_id": str(credit_student.id),
+                    },
+                )
+                overpayment_credited = remaining
+            except Exception:
+                logger.exception(
+                    "Failed to credit DVA overpayment of %s to student %s for ref %s.",
+                    remaining, credit_student.id, paystack_reference,
+                )
+                record_finance_activity(
+                    resolved_tenant, None, "overpayment_uncredited",
+                    f"Could not credit overpayment for DVA payment {paystack_reference}.",
+                    amount=remaining, reference=paystack_reference,
+                    metadata={"transaction_id": str(tx.id), "student_id": str(credit_student.id)},
+                )
+        else:
+            logger.warning(
+                "DVA overpayment of %s on ref %s has no resolvable student to credit.",
+                remaining, paystack_reference,
+            )
+            record_finance_activity(
+                resolved_tenant, None, "overpayment_uncredited",
+                f"DVA payment {paystack_reference} overpayment has no student to credit.",
+                amount=remaining, reference=paystack_reference,
+                metadata={"transaction_id": str(tx.id)},
+            )
+
     tx.allocation_status = (
-        Transaction.ALLOCATION_OVERPAID if remaining > 0 and not unpaid_fees
-        else Transaction.ALLOCATION_ALLOCATED if remaining <= 0
-        else Transaction.ALLOCATION_PARTIAL
+        Transaction.ALLOCATION_ALLOCATED if remaining <= 0 or overpayment_credited > 0
+        # Reaching here means real money is left over that couldn't be
+        # credited anywhere (no resolvable student, or the credit itself
+        # failed) - flag it for manual reconciliation rather than mislabeling
+        # it "partial" (every fee that could be paid already was).
+        else Transaction.ALLOCATION_OVERPAID
     )
     tx.fee_ids = [a["fee_id"] for a in allocations]
     tx.save(update_fields=["allocation_status", "fee_ids", "updated_at"])

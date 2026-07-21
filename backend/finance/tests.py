@@ -10,6 +10,7 @@ from academic.models import Class
 from finance.models import (
     ActivationCreditTransaction,
     AdminWallet,
+    BankPayment,
     ClassFee,
     DocumentGenerationCreditTransaction,
     FeeAllocation,
@@ -19,6 +20,7 @@ from finance.models import (
     SmsWalletTransaction,
     StudentPaymentReference,
     Transaction,
+    Wallet,
 )
 from finance.services import (
     ACTIVATION_CREDIT_PRICE,
@@ -28,6 +30,8 @@ from finance.services import (
     _sms_message_with_receipt_link,
     activation_credit_bonus_for_purchase,
     adjust_sms_wallet,
+    allocate_split_payment,
+    apply_bank_payment_to_student,
     build_paystack_receipt_message,
     charge_sms_wallet,
     complete_wallet_funding,
@@ -39,10 +43,12 @@ from finance.services import (
     get_or_create_sms_wallet,
     get_or_create_student_payment_reference,
     initialize_sms_credit_purchase,
+    process_due_fees,
     process_virtual_account_payment,
     refund_sms_wallet,
     send_wallet_sms,
     sync_class_fee_assignments,
+    sync_student_class_fees,
     verify_activation_credit_purchase,
 )
 from finance.models import SmsMessageLog
@@ -948,6 +954,178 @@ class PaystackDvaReconciliationTests(TestCase):
         # True outstanding after both payments: 50000 - 40000 = 10000.
         self.assertIn("Outstanding: 10,000", second_call_message)
         self.assertNotIn("Outstanding: 30,000", second_call_message)
+
+
+class CreditBalanceCarryForwardTests(TestCase):
+    """Overpayment across all three payment paths (Paystack checkout, DVA bank
+    transfer, manually-matched bank payment) must land as a real credit on the
+    student's own Wallet - not be silently dropped - and that credit must
+    then carry forward and auto-pay a later term's fees with no extra code."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Credit School", schema_name="credit_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.parent_user = User.objects.create_user(
+            email="parent@credit.edu", password="ParentPass123", first_name="Parent", last_name="User",
+            role="parent", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.parent_profile = ParentProfile.objects.create(user=self.parent_user)
+
+        self.student_user = User.objects.create_user(
+            email="student@credit.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="CRD001", admission_number="ADM-C-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.parent_profile.children.add(self.student)
+
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+    def _wallet_balance(self):
+        wallet = Wallet.objects.filter(user=self.student_user).first()
+        return wallet.balance if wallet else Decimal("0.00")
+
+    def test_overpaid_paystack_checkout_credits_student_wallet(self):
+        tx = Transaction.objects.create(
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+            amount=Decimal("60300.00"),
+            reference="PSK-OVERPAY-1",
+            parent_id=self.parent_user.id,
+        )
+        result = allocate_split_payment(
+            parent_id=self.parent_user.id,
+            amount_paid=Decimal("60300.00"),  # fee (50000) + schooldom fee (150) + ~300 flat fee + 9850 genuine surplus
+            paystack_ref="PSK-OVERPAY-1",
+            transaction_id=tx.id,
+        )
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertGreater(result["overpayment"], 0)
+
+        self.assertEqual(self._wallet_balance(), Decimal(str(result["overpayment"])))
+        self.assertTrue(
+            Transaction.objects.filter(
+                wallet__user=self.student_user, tx_type=Transaction.ADJUSTMENT_CREDIT, reference__startswith="OVP",
+            ).exists()
+        )
+
+    def test_overpaid_dva_payment_credits_student_wallet(self):
+        vac = ParentVirtualAccount.objects.create(
+            parent=self.parent_user, tenant=self.school,
+            account_number="1112223334", bank_name="Test Bank", account_name="Parent User",
+        )
+        result = process_virtual_account_payment(
+            tenant=self.school,
+            account_number=vac.account_number,
+            amount_naira=Decimal("70000.00"),  # 50000 fee + 20000 genuine surplus
+            paystack_reference="DVA-OVERPAY-1",
+        )
+        self.assertEqual(result["status"], "success")
+
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(self._wallet_balance(), Decimal("20000.00"))
+
+        tx = Transaction.objects.get(paystack_ref="DVA-OVERPAY-1")
+        self.assertEqual(tx.allocation_status, Transaction.ALLOCATION_ALLOCATED)
+
+        # Re-processing the same reference must not double-credit (existing
+        # duplicate-payment guard covers the new credit too).
+        process_virtual_account_payment(
+            tenant=self.school, account_number=vac.account_number,
+            amount_naira=Decimal("70000.00"), paystack_reference="DVA-OVERPAY-1",
+        )
+        self.assertEqual(self._wallet_balance(), Decimal("20000.00"))
+
+    def test_manual_bank_payment_leftover_credits_student_wallet(self):
+        payment = BankPayment.objects.create(
+            tenant=self.school, amount=Decimal("65000.00"),
+            narration="Test transfer", bank_reference="BANK-OVERPAY-1",
+        )
+        apply_bank_payment_to_student(payment, self.student)
+
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(self._wallet_balance(), Decimal("15000.00"))
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.unapplied_amount, Decimal("0.00"))
+        self.assertEqual(payment.status, BankPayment.STATUS_CONFIRMED)
+        self.assertTrue(
+            Transaction.objects.filter(
+                wallet__user=self.student_user, tx_type=Transaction.ADJUSTMENT_CREDIT,
+                metadata__bank_payment_id=str(payment.id),
+            ).exists()
+        )
+
+    def test_credit_balance_auto_pays_a_new_terms_fee_with_no_extra_code(self):
+        """The whole point of the feature: once a credit balance correctly
+        lands in the wallet, the existing sync-then-sweep pattern (already
+        used by the Fees screen) must carry it into a brand new fee with no
+        term-transition-specific code required."""
+        # Give the fee an existing overpaid credit balance directly (isolating
+        # this test from exactly *how* the credit got there).
+        wallet = ensure_student_wallet(self.student_user)
+        wallet.balance = Decimal("30000.00")
+        wallet.save(update_fields=["balance"])
+        self.fee.status = SchoolFee.STATUS_PAID
+        self.fee.amount_paid = self.fee.amount
+        self.fee.save(update_fields=["status", "amount_paid"])
+
+        # "Next term" - a brand new ClassFee the admin creates for the class.
+        ClassFee.objects.create(
+            school_class=self.school_class, title="Next Term Fee",
+            amount=Decimal("25000.00"), due_date=timezone.localdate(), is_active=True,
+        )
+
+        # Exactly what finance/views.py's Fees-screen path does.
+        sync_student_class_fees(self.student, actor=self.student_user)
+        process_due_fees(self.student, actor=self.student_user)
+
+        new_fee = SchoolFee.objects.get(title="Next Term Fee", student=self.student)
+        self.assertEqual(new_fee.status, SchoolFee.STATUS_PAID)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, Decimal("5000.00"))
+        self.assertTrue(
+            Transaction.objects.filter(
+                wallet=wallet, tx_type=Transaction.FEE_DEBIT, metadata__fee_id=str(new_fee.id),
+            ).exists()
+        )
+
+    def test_dva_overpayment_with_no_student_is_logged_not_lost(self):
+        """A DVA payment against a parent with zero children can't be
+        credited anywhere - it must be flagged for reconciliation, not
+        silently discarded."""
+        childless_parent = User.objects.create_user(
+            email="childless@credit.edu", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        ParentProfile.objects.create(user=childless_parent)
+        vac = ParentVirtualAccount.objects.create(
+            parent=childless_parent, tenant=self.school,
+            account_number="9998887776", bank_name="Test Bank", account_name="Childless Parent",
+        )
+        result = process_virtual_account_payment(
+            tenant=self.school, account_number=vac.account_number,
+            amount_naira=Decimal("10000.00"), paystack_reference="DVA-NOCHILD-1",
+        )
+        self.assertEqual(result["status"], "success")
+        tx = Transaction.objects.get(paystack_ref="DVA-NOCHILD-1")
+        self.assertEqual(tx.allocation_status, Transaction.ALLOCATION_OVERPAID)
+        self.assertTrue(
+            FinanceLedgerLog.objects.filter(action="overpayment_uncredited", reference="DVA-NOCHILD-1").exists()
+        )
 
 
 class PaystackReceiptMessageTests(TestCase):

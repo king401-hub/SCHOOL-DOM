@@ -33,7 +33,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool, FeeAllocation
-from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount
+from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount, sync_student_class_fees
 from attendance.utils import get_frontend_base_url
 from attendance.models import AttendanceQRCode
 from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
@@ -3693,6 +3693,10 @@ def student_dashboard(request):
     if student_profile:
         if not wallet:
             wallet = ensure_student_wallet(user)
+        # Sync before sweeping so a credit balance is applied to any
+        # newly-due fee (e.g. a new term's) in this same request, matching
+        # the Fees screen's own sync-then-sweep order (finance/views.py).
+        sync_student_class_fees(student_profile, actor=user)
         process_due_fees(student_profile, actor=user)
         payment_reference = get_or_create_student_payment_reference(student_profile)
         admin_wallet = AdminWallet.objects.filter(tenant=user.tenant).first()
@@ -7335,6 +7339,21 @@ def class_promotions(request):
             if target_term:
                 student.current_term = target_term
             student.save(update_fields=["current_class", "current_term"] if target_term else ["current_class"])
+
+    # Carry forward any credit balance (from overpayment) into the new term's
+    # fees, so a family sees it already applied instead of needing to first
+    # visit the Fees screen. Kept outside the promotion's own atomic block -
+    # each student's own sync+sweep is independent, and a failure here must
+    # never undo or block the promotion itself, which has already committed.
+    for student in students:
+        try:
+            sync_student_class_fees(student, actor=user)
+            process_due_fees(student, actor=user)
+        except Exception:
+            logger.exception(
+                "Post-promotion fee sync/sweep failed for student %s (batch %s).",
+                student.id, batch_reference,
+            )
 
     applied_preview = _build_promotion_preview(user, request.data)
     return Response(

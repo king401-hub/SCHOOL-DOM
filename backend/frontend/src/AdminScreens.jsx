@@ -820,6 +820,7 @@ function AdminFinanceScreen({
   const expectedAmount = Number(finance?.expected_fee_amount || 0);
   const receivedAmount = Number(finance?.amount_received || 0);
   const outstandingAmount = Number(finance?.outstanding_balance || 0);
+  const studentCreditBalance = Number(finance?.total_student_credit_balance || 0);
   const receivedPercent = expectedAmount > 0 ? Math.min(100, Math.round((receivedAmount / expectedAmount) * 100)) : 0;
   const outstandingPercent = expectedAmount > 0 ? Math.min(100, Math.round((outstandingAmount / expectedAmount) * 100)) : 0;
   const requestedCreditCount = Number(creditPurchaseForm.credits || 0);
@@ -1338,6 +1339,15 @@ function AdminFinanceScreen({
               <div>
                 <p>Outstanding</p>
                 <strong>{formatFinanceAmount(outstandingAmount)}</strong>
+              </div>
+            </article>
+            <article className="finance-summary-card tone-received" title="Prepaid balances held for future fees">
+              <div className="finance-summary-icon" aria-hidden="true">
+                <DashboardIcon name="money" className="inline-icon" />
+              </div>
+              <div>
+                <p>Student Credit Balance</p>
+                <strong>{formatFinanceAmount(studentCreditBalance)}</strong>
               </div>
             </article>
             <article
