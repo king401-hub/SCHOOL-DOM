@@ -1871,6 +1871,34 @@ body[data-theme="dark"] .app-sidebar {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
+/* Undo the .panel-field input/select width:100% on phone component children */
+.panel-field .phone-country-select,
+.panel-field .phone-country-select:hover:not(:focus),
+.panel-field .phone-country-select:focus,
+body[data-theme="dark"] .panel-field .phone-country-select {
+  width: 68px;
+  max-width: 68px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.panel-field .phone-number-field,
+.panel-field .phone-number-field:hover:not(:focus),
+.panel-field .phone-number-field:focus,
+body[data-theme="dark"] .panel-field .phone-number-field {
+  width: auto;
+  max-width: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.panel-field .phone-country-input {
+  padding: 0;
+}
+
 .phone-country-select {
   -webkit-appearance: none;
   appearance: none;
