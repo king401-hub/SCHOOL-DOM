@@ -1884,8 +1884,8 @@ body[data-theme="dark"] .app-sidebar {
   cursor: pointer;
   outline: none;
   border-right: 1px solid var(--input-border, #d1d5db);
-  width: 110px;
-  max-width: 110px;
+  width: 68px;
+  max-width: 68px;
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;

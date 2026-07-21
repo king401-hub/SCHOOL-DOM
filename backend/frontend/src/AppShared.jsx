@@ -2262,7 +2262,7 @@ export function PhoneCountryInput({
       >
         {countries.map((c) => (
           <option key={c.code} value={c.code}>
-            {c.name}
+            {c.dial_code}
           </option>
         ))}
       </select>
