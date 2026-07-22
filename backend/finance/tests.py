@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -42,6 +42,7 @@ from finance.services import (
     get_or_create_activation_credit_pool,
     get_or_create_sms_wallet,
     get_or_create_student_payment_reference,
+    initialize_activation_credit_purchase,
     initialize_sms_credit_purchase,
     process_due_fees,
     process_virtual_account_payment,
@@ -143,6 +144,43 @@ class ActivationCreditBonusTests(TestCase):
         tx.refresh_from_db()
 
         self.assertEqual(verified_pool.balance, 110)
+
+    @override_settings(PAYMENT_PROVIDER="paystack", PAYSTACK_SECRET_KEY="sk_test_fake")
+    @patch("finance.services.requests.post")
+    def test_paystack_activation_credit_purchase_initializes_instead_of_raising(self, mock_post):
+        """Regression: initialize_payment_transaction used to hard-raise for
+        Paystack ("Use initialize_paystack_school_fee_payment..."), which is
+        the school-fee split-payment function and wrong for a pure
+        Schooldom-revenue purchase like activation tokens - this made buying
+        tokens completely broken for any school on the Paystack provider."""
+        def fake_paystack_initialize(url, json, headers, timeout):
+            # Real Paystack echoes back whatever reference we send it.
+            response = Mock()
+            response.json.return_value = {
+                "status": True,
+                "data": {
+                    "authorization_url": "https://checkout.paystack.com/abc123",
+                    "access_code": "abc123",
+                    "reference": json["reference"],
+                },
+            }
+            return response
+
+        mock_post.side_effect = fake_paystack_initialize
+
+        result = initialize_activation_credit_purchase(self.school, 100, self.admin)
+
+        self.assertEqual(result["provider"], "paystack")
+        self.assertEqual(result["authorization_url"], "https://checkout.paystack.com/abc123")
+        # Our own reference must be the one sent to Paystack (not omitted),
+        # since verification later looks the transaction up by this exact
+        # reference via verify_paystack_transaction.
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["reference"], result["reference"])
+
+        tx = ActivationCreditTransaction.objects.get(reference=result["reference"])
+        self.assertEqual(tx.provider, "paystack")
+        self.assertEqual(tx.metadata.get("authorization_url"), "https://checkout.paystack.com/abc123")
         self.assertEqual(tx.credits, 100)
         self.assertEqual(tx.metadata["purchased_credits"], 100)
         self.assertEqual(tx.metadata["bonus_credits"], 10)

@@ -511,6 +511,31 @@ def initialize_paystack_split_payment(
     return data["data"]
 
 
+def initialize_paystack_direct_payment(email: str, amount: Decimal, reference: str, metadata: dict = None, callback_url: str = "") -> dict:
+    """
+    Initialize a plain Paystack transaction paid entirely into Schooldom's
+    own account - no subaccount/split. For purchases that are pure Schooldom
+    revenue (activation tokens, wallet top-ups), as opposed to school fees
+    (initialize_paystack_school_fee_payment), which must split with the
+    school's own subaccount. Passing our own `reference` explicitly (rather
+    than letting Paystack generate one) is what lets the caller later verify
+    with that same reference via verify_paystack_transaction.
+    """
+    url = f"{_paystack_base_url()}/transaction/initialize"
+    payload = {
+        "email": email,
+        "amount": int(_as_decimal(amount) * 100),
+        "reference": reference,
+        "metadata": metadata or {},
+        "callback_url": callback_url or getattr(settings, "PAYSTACK_CALLBACK_URL", ""),
+    }
+    response = requests.post(url, json=payload, headers=_paystack_headers(), timeout=30)
+    data = _paystack_json(response)
+    if not data.get("status"):
+        raise RuntimeError(data.get("message", "Failed to initialize payment"))
+    return data["data"]
+
+
 def verify_paystack_transaction(reference: str) -> dict:
     """
     Verify a Paystack transaction.
@@ -1996,7 +2021,13 @@ def _payment_provider_for_reference(reference):
 def initialize_payment_transaction(user, amount: Decimal, reference: str, metadata=None, callback_url=""):
     provider = active_payment_provider()
     if provider == "paystack":
-        raise ValueError("Use initialize_paystack_school_fee_payment for Paystack split payments")
+        # This dispatcher is only ever used for pure Schooldom-revenue
+        # purchases (activation tokens, wallet top-ups) - never school fees,
+        # which always go through initialize_paystack_school_fee_payment's
+        # subaccount-split flow instead. A plain, non-split Paystack payment
+        # is the correct match here, same as SMS credits (see
+        # initialize_sms_credit_purchase).
+        return initialize_paystack_direct_payment(user.email, amount, reference, metadata=metadata, callback_url=callback_url)
     if provider == "kuda":
         return initialize_kuda_transaction(user, amount, reference, metadata=metadata, callback_url=callback_url)
     return initialize_flutterwave_transaction(user, amount, reference, metadata=metadata, callback_url=callback_url)
@@ -2065,7 +2096,7 @@ def initialize_activation_credit_purchase(tenant, credits, actor):
             "access_code": init_payload.get("access_code"),
         }
     )
-    return {"pool": pool, "reference": reference, "amount": amount, **init_payload}
+    return {"pool": pool, "reference": reference, "amount": amount, "provider": active_payment_provider(), **init_payload}
 
 
 def verify_activation_credit_purchase(reference, actor=None, verification: Optional[dict] = None):

@@ -1091,8 +1091,9 @@ function AdminFinanceScreen({
       setCreditPurchaseReference(result?.reference || "");
       const checkoutUrl = result?.authorization_url || result?.link || "";
       setCreditPurchaseUrl(checkoutUrl);
+      const providerLabel = result?.provider ? result.provider.charAt(0).toUpperCase() + result.provider.slice(1) : "Payment";
       setFeedback(
-        `Flutterwave checkout initialized. ${Number(result?.total_credits || totalCreditCount).toLocaleString()} tokens will be added after payment.`
+        `${providerLabel} checkout initialized. ${Number(result?.total_credits || totalCreditCount).toLocaleString()} tokens will be added after payment.`
       );
       if (checkoutUrl) {
         window.open(checkoutUrl, "_blank", "noopener");
@@ -4227,6 +4228,8 @@ function AdminNonTeachingStaffScreen({
   onUpdateStaff,
   onDownloadTeachers,
   onDownloadSharedQr,
+  countries = [],
+  defaultCountryCode = "NG",
 }) {
   const summary = data?.summary || {};
   const staff = data?.staff || [];
@@ -4432,7 +4435,7 @@ function AdminNonTeachingStaffScreen({
             <label className="panel-field">Account name<input value={staffForm.bank_account_name} onChange={(e) => setStaffForm((p) => ({ ...p, bank_account_name: e.target.value }))} /></label>
             <label className="panel-field">Account number<input value={staffForm.bank_account_number} onChange={(e) => setStaffForm((p) => ({ ...p, bank_account_number: e.target.value.replace(/\D/g, "") }))} /></label>
             <label className="panel-field">Email<input value={staffForm.email} onChange={(e) => setStaffForm((p) => ({ ...p, email: e.target.value }))} /></label>
-            <label className="panel-field">Phone<input value={staffForm.phone} onChange={(e) => setStaffForm((p) => ({ ...p, phone: e.target.value }))} /></label>
+            <label className="panel-field">Phone<PhoneCountryInput countries={countries} value={staffForm.phone} onChange={(val) => setStaffForm((p) => ({ ...p, phone: val }))} defaultCountryCode={defaultCountryCode} /></label>
             <label className="panel-field">Gender<select value={staffForm.gender} onChange={(e) => setStaffForm((p) => ({ ...p, gender: e.target.value }))}><option value="">Select gender</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option><option value="N">Prefer not to say</option></select></label>
             <label className="panel-field">Hire date<input type="date" value={staffForm.hire_date} onChange={(e) => setStaffForm((p) => ({ ...p, hire_date: e.target.value }))} /></label>
             <label className="panel-field">
@@ -7064,7 +7067,7 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
-function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete, onChildMonitorInitiate, onChildMonitorVerify, onChildMonitorDeactivate, session }) {
+function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete, onChildMonitorInitiate, onChildMonitorVerify, onChildMonitorDeactivate, session, countries = [], defaultCountryCode = "NG" }) {
   const parents = data?.parents || [];
   const groupLabels = academicGroupLabels(data?.school, school);
   const [searchTerm, setSearchTerm] = useState("");
@@ -7820,7 +7823,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                     <label className="panel-field">First Name<input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required /></label>
                     <label className="panel-field">Last Name<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
                     <label className="panel-field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required /></label>
-                    <label className="panel-field">Phone<input value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} /></label>
+                    <label className="panel-field">Phone<PhoneCountryInput countries={countries} value={editForm.phone} onChange={(val) => setEditForm((prev) => ({ ...prev, phone: val }))} defaultCountryCode={defaultCountryCode} /></label>
                     <label className="panel-field">Occupation<input value={editForm.occupation} onChange={(event) => setEditForm((prev) => ({ ...prev, occupation: event.target.value }))} /></label>
                     <label className="panel-field">Company<input value={editForm.company} onChange={(event) => setEditForm((prev) => ({ ...prev, company: event.target.value }))} /></label>
                     <label className="panel-field">
