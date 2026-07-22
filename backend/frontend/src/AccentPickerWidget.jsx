@@ -177,7 +177,7 @@ export default function AccentPickerWidget({ session }) {
             </button>
           </div>
 
-          <div className="accent-picker-grid">
+          <div className="accent-picker-grid" dir={activeLang.dir || "ltr"}>
             {activeLang.groups.map((group) => (
               <button
                 key={group.key}

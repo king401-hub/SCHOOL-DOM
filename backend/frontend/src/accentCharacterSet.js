@@ -35,9 +35,61 @@ export const FRENCH_GROUPS = [
   { key: "œ", tap: "œ", variants: ["œ"] },
 ];
 
+// Arabic has no Latin-keyboard equivalent at all, so every letter's `tap` is
+// the bare letter itself (unlike the Yorùbá/French groups above). Contextual
+// joining (initial/medial/final letterforms) is handled automatically by the
+// browser's Arabic text shaping once the plain codepoint is inserted — nothing
+// extra is needed here. The trailing five groups are the core harakat
+// (short-vowel diacritics); each is a standalone combining mark that attaches
+// to whatever letter already precedes it in the field.
+export const ARABIC_GROUPS = [
+  { key: "alif", tap: "ا", variants: ["ا"] },
+  { key: "ba", tap: "ب", variants: ["ب"] },
+  { key: "ta", tap: "ت", variants: ["ت"] },
+  { key: "tha", tap: "ث", variants: ["ث"] },
+  { key: "jim", tap: "ج", variants: ["ج"] },
+  { key: "ha", tap: "ح", variants: ["ح"] },
+  { key: "kha", tap: "خ", variants: ["خ"] },
+  { key: "dal", tap: "د", variants: ["د"] },
+  { key: "dhal", tap: "ذ", variants: ["ذ"] },
+  { key: "ra", tap: "ر", variants: ["ر"] },
+  { key: "zay", tap: "ز", variants: ["ز"] },
+  { key: "sin", tap: "س", variants: ["س"] },
+  { key: "shin", tap: "ش", variants: ["ش"] },
+  { key: "sad", tap: "ص", variants: ["ص"] },
+  { key: "dad", tap: "ض", variants: ["ض"] },
+  { key: "taa", tap: "ط", variants: ["ط"] },
+  { key: "zaa", tap: "ظ", variants: ["ظ"] },
+  { key: "ain", tap: "ع", variants: ["ع"] },
+  { key: "ghain", tap: "غ", variants: ["غ"] },
+  { key: "fa", tap: "ف", variants: ["ف"] },
+  { key: "qaf", tap: "ق", variants: ["ق"] },
+  { key: "kaf", tap: "ك", variants: ["ك"] },
+  { key: "lam", tap: "ل", variants: ["ل"] },
+  { key: "mim", tap: "م", variants: ["م"] },
+  { key: "nun", tap: "ن", variants: ["ن"] },
+  { key: "ha2", tap: "ه", variants: ["ه"] },
+  { key: "waw", tap: "و", variants: ["و"] },
+  { key: "ya", tap: "ي", variants: ["ي"] },
+  { key: "hamza", tap: "ء", variants: ["ء"] },
+  { key: "alif_hamza_above", tap: "أ", variants: ["أ"] },
+  { key: "alif_hamza_below", tap: "إ", variants: ["إ"] },
+  { key: "waw_hamza", tap: "ؤ", variants: ["ؤ"] },
+  { key: "ya_hamza", tap: "ئ", variants: ["ئ"] },
+  { key: "alif_madda", tap: "آ", variants: ["آ"] },
+  { key: "ta_marbuta", tap: "ة", variants: ["ة"] },
+  { key: "alif_maksura", tap: "ى", variants: ["ى"] },
+  { key: "fatha", tap: "َ", variants: ["َ"] },
+  { key: "damma", tap: "ُ", variants: ["ُ"] },
+  { key: "kasra", tap: "ِ", variants: ["ِ"] },
+  { key: "shadda", tap: "ّ", variants: ["ّ"] },
+  { key: "sukun", tap: "ْ", variants: ["ْ"] },
+];
+
 export const ACCENT_LANGUAGES = [
   { id: "yoruba", label: "Yorùbá", groups: YORUBA_GROUPS },
   { id: "french", label: "Français", groups: FRENCH_GROUPS },
+  { id: "arabic", label: "العربية", dir: "rtl", groups: ARABIC_GROUPS },
 ];
 
 // Standard, codepoint-verified Unicode case mapping (each Yorùbá/French letter
