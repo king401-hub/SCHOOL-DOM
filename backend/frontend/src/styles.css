@@ -3220,6 +3220,238 @@ body[data-theme="dark"] .ai-chat-error {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   ACCENT CHARACTER PICKER — Yorùbá & French input helper
+   Position: bottom-left (mirrors Phoenix AI's bottom-right default)
+   Colors: indigo gradient
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.accent-picker-shell {
+  position: fixed;
+  z-index: 1300;
+}
+
+.accent-picker-toggle {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(145deg, #4f46e5 0%, #312e81 100%);
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 8px 28px rgba(79, 70, 229, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease;
+}
+.accent-picker-toggle:hover {
+  transform: translateY(-3px) scale(1.06);
+  box-shadow: 0 14px 40px rgba(79, 70, 229, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.accent-picker-toggle.is-open {
+  background: #1e293b;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.32);
+}
+.accent-picker-toggle.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.08) !important;
+  transition: none;
+}
+
+.accent-picker-popup {
+  position: fixed;
+  width: min(320px, calc(100vw - 2rem));
+  max-height: min(420px, calc(100vh - 7rem));
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.18), 0 8px 24px rgba(79, 70, 229, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 1300;
+}
+
+.accent-picker-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.accent-picker-tabs {
+  display: flex;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.accent-picker-tab {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.accent-picker-tab.is-active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.accent-picker-shift {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.95rem;
+}
+.accent-picker-shift.is-active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.accent-picker-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+}
+.accent-picker-close:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.accent-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.35rem;
+  padding: 0.6rem;
+  overflow-y: auto;
+}
+
+.accent-picker-char-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.accent-picker-char-btn:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.accent-picker-hint {
+  padding: 0.5rem 0.75rem 0.7rem;
+  font-size: 0.74rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.accent-picker-flyout {
+  position: fixed;
+  display: flex;
+  gap: 0.25rem;
+  background: #1e293b;
+  border-radius: 12px;
+  padding: 0.35rem;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.35);
+  z-index: 1310;
+}
+
+.accent-picker-flyout-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: #334155;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: none;
+}
+.accent-picker-flyout-btn:hover {
+  background: #475569;
+}
+
+@media (max-width: 640px) {
+  .accent-picker-popup {
+    width: calc(100vw - 1.5rem);
+  }
+}
+
+body[data-theme="dark"] .accent-picker-popup {
+  background: #0f172a;
+  border-color: #1e293b;
+}
+body[data-theme="dark"] .accent-picker-popup-header {
+  border-color: #1e293b;
+}
+body[data-theme="dark"] .accent-picker-tab {
+  background: #111b2e;
+  border-color: #334155;
+  color: #93c5fd;
+}
+body[data-theme="dark"] .accent-picker-tab.is-active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+body[data-theme="dark"] .accent-picker-shift {
+  background: #111b2e;
+  border-color: #334155;
+  color: #93c5fd;
+}
+body[data-theme="dark"] .accent-picker-shift.is-active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+body[data-theme="dark"] .accent-picker-close:hover {
+  background: #162032;
+  color: #e2e8f0;
+}
+body[data-theme="dark"] .accent-picker-char-btn {
+  background: #111b2e;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+body[data-theme="dark"] .accent-picker-char-btn:hover {
+  background: #162032;
+  border-color: #60a5fa;
+}
+body[data-theme="dark"] .accent-picker-hint {
+  color: #64748b;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    SCHOOLDOM SECRETARY WIDGET
    Position: bottom-left (opposite Phoenix AI at bottom-right)
    Colors: emerald-teal gradient

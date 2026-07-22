@@ -16,6 +16,7 @@ import PrivacyPolicyPage from "./PrivacyPolicyPage.jsx";
 import TermsConditionsPage from "./TermsConditionsPage";
 import PricingPage from "./PricingPage";
 import AiChatWidget from "./AiChatWidget";
+import AccentPickerWidget from "./AccentPickerWidget";
 import { AttendanceModule, IdCardAttendanceScanner, StudentQrAttendanceScanner, TeacherQRCodeAttendancePage } from "./components/Attendance";
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
@@ -9084,6 +9085,7 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         <GlobalNotificationBell session={session} onNavigate={navigate} />
         {session && <AiChatWidget session={session} />}
+        {session && <AccentPickerWidget session={session} />}
         {content}
       </>
     ),
@@ -9097,9 +9099,11 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         {/* /quizzes is where students take personal + teacher-assigned quizzes (no
             separate route for "in progress" - same URL as browsing the quiz list).
-            The AI assistant must not be reachable while a quiz could be active,
-            same reasoning as the dedicated /exam/:id CBT route below. */}
+            Neither the AI assistant nor the accent picker must be reachable while a
+            quiz could be active, same reasoning as the dedicated /exam/:id CBT route
+            below. */}
         {session && currentPath !== "/quizzes" && <AiChatWidget session={session} />}
+        {session && currentPath !== "/quizzes" && <AccentPickerWidget session={session} />}
         {content}
       </>
     ),
@@ -9221,7 +9225,8 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   }
 
   if (currentPath.match(/^\/exam\/\d+\/?$/)) {
-    // Deliberately bypasses withGlobalHome: the AI assistant must not be reachable during a live exam attempt.
+    // Deliberately bypasses withGlobalHome: neither the AI assistant nor the accent
+    // picker must be reachable during a live exam attempt.
     const attemptId = parseInt(currentPath.split("/")[2]);
     return (
       <>
