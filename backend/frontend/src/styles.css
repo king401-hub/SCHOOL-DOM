@@ -15540,6 +15540,17 @@ body[data-theme="light"] .quiz-progress span {
   object-fit: cover;
 }
 
+.settings-signature-preview {
+  width: 160px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+}
+
+.settings-signature-preview img {
+  object-fit: contain;
+}
+
 .settings-activity-calendar {
   display: grid;
   gap: 1rem;
@@ -21582,6 +21593,27 @@ body[data-theme="dark"] .heat-bar-track {
   display: block;
 }
 
+.id-card-signature-block {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 0 0.62rem 0.5rem;
+}
+
+.id-card-signature-img {
+  height: 34px;
+  max-width: 130px;
+  object-fit: contain;
+}
+
+.id-card-signature-block span {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  font-weight: 800;
+}
+
 .id-card-qr {
   width: 94px;
   height: 94px;
@@ -22513,6 +22545,14 @@ body[data-theme="dark"] .qr-scanner-copy p {
   font-family: "Manrope", Arial, sans-serif;
   font-weight: 800;
   font-size: 0.78rem;
+}
+
+.doc-signature-img {
+  display: block;
+  height: 34px;
+  max-width: 150px;
+  object-fit: contain;
+  margin: 0 auto 4px;
 }
 
 .stamp-seal {

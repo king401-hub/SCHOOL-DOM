@@ -108,6 +108,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     director_proof_of_address = models.FileField(upload_to='directors/proof_of_address/%Y/%m/', null=True, blank=True)
     director_id_type = models.CharField(max_length=20, choices=DIRECTOR_ID_TYPE_CHOICES, blank=True, default="")
     director_id_document = models.FileField(upload_to='directors/id_documents/%Y/%m/', null=True, blank=True)
+    # Signature image used across the school's generated documents and ID cards
+    director_signature = models.ImageField(upload_to='directors/signatures/%Y/%m/', null=True, blank=True)
 
     # Account status
     is_active = models.BooleanField(default=True)

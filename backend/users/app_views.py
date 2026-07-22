@@ -846,6 +846,21 @@ def _media_url(request, file_field):
         return url
 
 
+def _resolve_school_signature_url(school, request=None):
+    """The single, school-wide signature shown on generated documents and ID
+    cards - whoever completed Director's Compliance for this school. Prefers
+    the school_superadmin (proprietor) role, but falls back to any admin who
+    has one, since smaller schools sometimes manage compliance from a plain
+    school_admin account instead."""
+    if not school:
+        return ""
+    signer = (
+        User.objects.filter(tenant=school, role="school_superadmin").exclude(director_signature="").first()
+        or User.objects.filter(tenant=school).exclude(director_signature="").first()
+    )
+    return _media_url(request, signer.director_signature) if signer else ""
+
+
 def _school_payload(school, request=None):
     if not school:
         return {}
@@ -872,6 +887,7 @@ def _school_payload(school, request=None):
         "ministry_approval_number": getattr(school, "ministry_approval_number", "") or "",
         "country": str(getattr(school, "country", "") or ""),
         "state": getattr(school, "state", "") or "",
+        "signature": _resolve_school_signature_url(school, request),
     }
 
 
@@ -888,6 +904,7 @@ def _director_payload(user, request=None):
         "proof_of_address": _media_url(request, user.director_proof_of_address),
         "id_type": user.director_id_type or "",
         "id_document": _media_url(request, user.director_id_document),
+        "signature": _media_url(request, user.director_signature),
         "passport_photo": _profile_picture_url(request, user),
     }
 
@@ -1404,6 +1421,7 @@ def _school_identity_payload(tenant, request=None):
         "logo": logo_url,
         "motto": getattr(tenant, "motto", "") or getattr(tenant, "tagline", "") or "",
         "tagline": getattr(tenant, "tagline", "") or getattr(tenant, "motto", "") or "",
+        "signature": _resolve_school_signature_url(tenant, request),
     }
 
 
@@ -6523,7 +6541,7 @@ def school_settings(request):
                 user.director_id_type = new_value
                 user_update_fields.append("director_id_type")
 
-        for field in ("director_proof_of_address", "director_id_document", "profile_picture"):
+        for field in ("director_proof_of_address", "director_id_document", "director_signature", "profile_picture"):
             uploaded_file = request.FILES.get(field)
             if uploaded_file:
                 setattr(user, field, uploaded_file)

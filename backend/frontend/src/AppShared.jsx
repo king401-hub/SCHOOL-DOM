@@ -480,6 +480,7 @@ export function resolveSchoolBrand(...sources) {
     phone: str(school.phone) || str(school.phone_number) || str(school.phoneNumber) || str(school.school_phone) || str(school.schoolPhone) || str(school.user?.school_phone) || str(school.user?.schoolPhone) || "",
     email: str(school.email) || str(school.school_email) || str(school.schoolEmail) || str(school.user?.school_email) || str(school.user?.schoolEmail) || "",
     school_type: str(school.school_type) || str(school.schoolType) || str(school.type) || str(school.user?.school_type) || str(school.user?.schoolType) || "k12",
+    signature: str(school.signature) || str(school.school_signature) || str(school.schoolSignature) || "",
     initials: name
       .split(/\s+/)
       .filter(Boolean)

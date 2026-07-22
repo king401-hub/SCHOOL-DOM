@@ -3002,7 +3002,10 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
                     </div>
                     <div className="report-signature-block">
                       <div className="report-signature-line"><span>Class Teacher&apos;s Signature</span></div>
-                      <div className="report-signature-line"><span>Head Teacher&apos;s Signature</span></div>
+                      <div className="report-signature-line">
+                        {brand.signature ? <img src={brand.signature} alt="Head Teacher's signature" className="doc-signature-img" /> : null}
+                        <span>Head Teacher&apos;s Signature</span>
+                      </div>
                       <div className="report-date-line"><span>Date Issued: {formatDate(new Date())}</span></div>
                     </div>
                   </div>
@@ -4866,6 +4869,13 @@ export function IdCardPreview({ person, school, qrDataUrl }) {
             </dl>
           </section>
 
+          {brand.signature ? (
+            <div className="id-card-signature-block">
+              <img src={brand.signature} alt="Authorized signature" className="id-card-signature-img" />
+              <span>Authorized Signature</span>
+            </div>
+          ) : null}
+
           <footer className="id-card-footer id-card-front-footer">
             <strong><span>Flip card to verify {person.email || person.secondary_label || "SchoolDom profile verification"}
 </span></strong>
@@ -5088,6 +5098,9 @@ function buildIdCardHtml(person, school, qrDataUrl) {
   const logoBlock = brand.logo
     ? `<img src="${escapeHtml(brand.logo)}" alt="${escapeHtml(brand.name)} logo" />`
     : `<span>${escapeHtml(brand.initials)}</span>`;
+  const signatureBlock = brand.signature
+    ? `<div class="sigBlock"><img src="${escapeHtml(brand.signature)}" alt="Authorized signature" class="sigImg" /><span>Authorized Signature</span></div>`
+    : "";
   return `<!doctype html>
 <html>
 <head>
@@ -5095,7 +5108,7 @@ function buildIdCardHtml(person, school, qrDataUrl) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(person.name)} ID Card</title>
   <style>
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#eef3f8;font-family:Inter,Arial,sans-serif;color:#102033}.stage{display:grid;gap:16px;justify-items:center;padding:24px}.flip{width:360px;height:560px;perspective:1400px}.inner{position:relative;width:100%;height:100%;transition:transform .55s ease;transform-style:preserve-3d}.inner.flipped{transform:rotateY(180deg)}.card{position:absolute;inset:0;width:360px;min-height:560px;background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,.18);border:1px solid #dbe5f0;backface-visibility:hidden}.back{transform:rotateY(180deg);background:#08111f;color:#fff}.ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;font-weight:800;letter-spacing:.12em;font-size:12px;padding:10px}.top,.backHead{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.backHead{background:#102033;color:#fff}.logo,.photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.logo img,.photo img,.qr img{width:100%;height:100%;object-fit:cover}.logo span,.photo span{font-weight:900;color:#0f3d5e}.top strong,.backHead strong{display:block;font-size:18px}.motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.backHead .motto{color:#a7f3d0}.top span,.backHead span{display:block;color:#64748b;font-size:12px;margin-top:2px}.backHead span{color:#cbd5e1}.person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.photo{width:94px;height:112px;border-radius:18px}.person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.person span{display:block;color:#475569;margin-top:10px;font-weight:700}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.details dd{margin:4px 0 0;font-weight:800;font-size:13px}.frontFooter{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.frontFooter strong,.frontFooter span{display:block}.frontFooter span{color:#cbd5e1;font-size:12px;margin-top:6px}.backPanel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.backPanel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.qr img{object-fit:contain}.backPanel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.backPanel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.backFooter{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.flipBtn{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff;display:block}.stage{display:grid;grid-template-columns:360px 360px;gap:18px;place-content:center;padding:0}.flip{display:contents}.inner{display:contents;transform:none!important}.card{position:relative;inset:auto;box-shadow:none;page-break-inside:avoid;backface-visibility:visible}.back{transform:none}.flipBtn{display:none}}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#eef3f8;font-family:Inter,Arial,sans-serif;color:#102033}.stage{display:grid;gap:16px;justify-items:center;padding:24px}.flip{width:360px;height:560px;perspective:1400px}.inner{position:relative;width:100%;height:100%;transition:transform .55s ease;transform-style:preserve-3d}.inner.flipped{transform:rotateY(180deg)}.card{position:absolute;inset:0;width:360px;min-height:560px;background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,.18);border:1px solid #dbe5f0;backface-visibility:hidden}.back{transform:rotateY(180deg);background:#08111f;color:#fff}.ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;font-weight:800;letter-spacing:.12em;font-size:12px;padding:10px}.top,.backHead{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.backHead{background:#102033;color:#fff}.logo,.photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.logo img,.photo img,.qr img{width:100%;height:100%;object-fit:cover}.logo span,.photo span{font-weight:900;color:#0f3d5e}.top strong,.backHead strong{display:block;font-size:18px}.motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.backHead .motto{color:#a7f3d0}.top span,.backHead span{display:block;color:#64748b;font-size:12px;margin-top:2px}.backHead span{color:#cbd5e1}.person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.photo{width:94px;height:112px;border-radius:18px}.person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.person span{display:block;color:#475569;margin-top:10px;font-weight:700}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.details dd{margin:4px 0 0;font-weight:800;font-size:13px}.sigBlock{display:grid;justify-items:center;gap:2px;padding:0 22px 10px}.sigImg{height:36px;max-width:140px;object-fit:contain}.sigBlock span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.frontFooter{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.frontFooter strong,.frontFooter span{display:block}.frontFooter span{color:#cbd5e1;font-size:12px;margin-top:6px}.backPanel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.backPanel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.qr img{object-fit:contain}.backPanel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.backPanel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.backFooter{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.flipBtn{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff;display:block}.stage{display:grid;grid-template-columns:360px 360px;gap:18px;place-content:center;padding:0}.flip{display:contents}.inner{display:contents;transform:none!important}.card{position:relative;inset:auto;box-shadow:none;page-break-inside:avoid;backface-visibility:visible}.back{transform:none}.flipBtn{display:none}}
   </style>
 </head>
 <body>
@@ -5114,6 +5127,7 @@ function buildIdCardHtml(person, school, qrDataUrl) {
             <div><dt>${person.person_type === "student" ? "Guardian" : "Department"}</dt><dd>${escapeHtml(person.guardian_name || person.department || person.secondary_label || "-")}</dd></div>
             <div><dt>Phone</dt><dd>${escapeHtml(person.phone || person.guardian_phone || "-")}</dd></div>
           </dl>
+          ${signatureBlock}
           <footer class="frontFooter"><strong>Flip card to verify</strong><span>${escapeHtml(person.email || person.secondary_label || "SchoolDom profile verification")}</span></footer>
         </article>
         <article class="card back">
@@ -5415,7 +5429,7 @@ async function downloadPrintablePng(elementId, filename, title) {
 
 function documentStylesForExport() {
   return `
-    *{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#0f172a;font-family:Georgia,'Times New Roman',serif}.official-document{width:min(100%,850px);margin:24px auto;background:#fff;color:#111827;padding:42px;border:1px solid #d7e0ec;box-shadow:0 18px 45px rgba(15,23,42,.12)}.official-doc-header{text-align:center;border-bottom:3px double #0f3d5e;padding-bottom:18px;margin-bottom:24px}.official-doc-logo{width:82px;height:82px;border-radius:18px;border:1px solid #cbd5e1;display:grid;place-items:center;margin:0 auto 10px;overflow:hidden;background:#f8fafc}.official-doc-logo img{width:100%;height:100%;object-fit:contain}.official-doc-logo span{font-family:Arial,sans-serif;font-weight:900;color:#0f3d5e}.official-doc-header h1{font-size:28px;text-transform:uppercase;letter-spacing:.04em;margin:0}.official-doc-header p{margin:5px 0 0;color:#475569;font-family:Arial,sans-serif}.official-doc-motto{font-style:italic;font-weight:800;color:#0f3d5e}.official-doc-title{text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:22px;margin:20px 0;color:#0f3d5e}.doc-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:22px}.doc-line{display:flex;gap:10px;border-bottom:1px solid #94a3b8;min-height:30px;align-items:flex-end}.doc-line strong{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;white-space:nowrap;color:#334155}.doc-line span{font-weight:700}.document-table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-family:Arial,sans-serif;font-size:13px}.document-table th,.document-table td{border:1px solid #cbd5e1;padding:8px;text-align:left}.document-table th{background:#eef6f3;color:#0f3d5e;text-transform:uppercase;font-size:11px}.term-record{break-inside:avoid;margin-bottom:18px}.term-record h3{margin:0 0 8px;font-family:Arial,sans-serif;color:#0f3d5e}.testimonial-border{border:12px double #198754;padding:28px;background:linear-gradient(0deg,rgba(25,135,84,.035),rgba(25,135,84,.035)),#fff}.testimonial-title{font-size:42px;color:#b42318;font-weight:900;text-align:center;font-family:Georgia,'Times New Roman',serif;margin:12px 0 24px}.testimonial-list{display:grid;gap:10px;counter-reset:item}.testimonial-row{display:grid;grid-template-columns:34px 190px 1fr;gap:10px;align-items:end}.testimonial-row:before{counter-increment:item;content:counter(item) ".";font-weight:800}.testimonial-row strong{font-family:Arial,sans-serif;font-size:12px}.testimonial-row span{border-bottom:1px solid #334155;min-height:24px;font-weight:700;padding:0 6px}.doc-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.doc-summary-strip div{border:1px solid #cbd5e1;padding:10px;background:#f8fafc}.doc-summary-strip strong,.doc-summary-strip span{display:block}.doc-summary-strip strong{font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase}.doc-summary-strip span{font-size:18px;font-weight:900}.signature-row{display:grid;grid-template-columns:1fr 120px 1fr;gap:20px;align-items:end;margin-top:42px}.signature-line{border-top:1px solid #111827;text-align:center;padding-top:8px;font-family:Arial,sans-serif;font-weight:800;font-size:12px}.stamp-seal{width:98px;height:98px;border-radius:50%;background:#dc2626;box-shadow:inset 0 0 0 8px rgba(255,255,255,.18);margin:auto}.stamp-box{border:2px dashed #94a3b8;min-height:86px;display:grid;place-items:center;color:#64748b;font-family:Arial,sans-serif;text-transform:uppercase;font-weight:800}.document-note{font-family:Arial,sans-serif;color:#64748b;font-size:12px}.no-print{display:none}.id-card-print-area{width:100%;min-height:620px;background:#fff;display:grid;grid-template-columns:370px 370px;gap:18px;place-content:center;place-items:center;font-family:Inter,Arial,sans-serif}.id-card-flip-inner{display:contents;transform:none!important}.id-card-face{position:relative;inset:auto;backface-visibility:visible}.id-card-back{transform:none}.id-card-preview-card{width:370px;min-height:560px;background:#fff;color:#102033;border:1px solid #d7e0ec;border-radius:22px;overflow:hidden;box-shadow:none}.id-card-back{display:grid;grid-template-rows:auto 1fr auto;background:#08111f;color:#fff}.id-card-ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900;padding:10px}.id-card-top,.id-card-back-head{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.id-card-back-head{background:#102033;color:#fff}.id-card-school-logo,.id-card-photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.id-card-school-logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.id-card-school-logo img,.id-card-photo img,.id-card-back-qr img{width:100%;height:100%;object-fit:cover}.id-card-school-logo span,.id-card-photo span{font-weight:900;color:#0f3d5e}.id-card-top strong,.id-card-back-head strong{display:block;font-size:18px}.id-card-motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.id-card-back-head .id-card-motto{color:#a7f3d0}.id-card-top span,.id-card-back-head span{display:block;color:#64748b;font-size:12px;margin-top:2px}.id-card-back-head span{color:#cbd5e1}.id-card-person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.id-card-photo{width:94px;height:112px;border-radius:18px}.id-card-person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.id-card-person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.id-card-person span{display:block;color:#475569;margin-top:10px;font-weight:700}.id-card-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.id-card-details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.id-card-details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-details dd{margin:4px 0 0;font-weight:800;font-size:13px}.id-card-front-footer{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.id-card-front-footer strong,.id-card-front-footer span{display:block}.id-card-front-footer span{color:#cbd5e1;font-size:12px;margin-top:6px}.id-card-back-qr-panel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.id-card-back-qr-panel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.id-card-back-qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.id-card-back-qr img{object-fit:contain}.id-card-back-qr-panel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.id-card-back-qr-panel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.id-card-back-footer{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.id-card-flip-button{display:none}@media print{body{background:#fff}.official-document{box-shadow:none;margin:0 auto;border:none;min-height:100vh}.testimonial-border{min-height:calc(100vh - 84px)}}@media(max-width:720px){.official-document{padding:24px}.doc-info-grid,.doc-summary-strip,.signature-row{grid-template-columns:1fr}.testimonial-row{grid-template-columns:28px 1fr}.testimonial-row span{grid-column:2}}`;
+    *{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#0f172a;font-family:Georgia,'Times New Roman',serif}.official-document{width:min(100%,850px);margin:24px auto;background:#fff;color:#111827;padding:42px;border:1px solid #d7e0ec;box-shadow:0 18px 45px rgba(15,23,42,.12)}.official-doc-header{text-align:center;border-bottom:3px double #0f3d5e;padding-bottom:18px;margin-bottom:24px}.official-doc-logo{width:82px;height:82px;border-radius:18px;border:1px solid #cbd5e1;display:grid;place-items:center;margin:0 auto 10px;overflow:hidden;background:#f8fafc}.official-doc-logo img{width:100%;height:100%;object-fit:contain}.official-doc-logo span{font-family:Arial,sans-serif;font-weight:900;color:#0f3d5e}.official-doc-header h1{font-size:28px;text-transform:uppercase;letter-spacing:.04em;margin:0}.official-doc-header p{margin:5px 0 0;color:#475569;font-family:Arial,sans-serif}.official-doc-motto{font-style:italic;font-weight:800;color:#0f3d5e}.official-doc-title{text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:22px;margin:20px 0;color:#0f3d5e}.doc-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:22px}.doc-line{display:flex;gap:10px;border-bottom:1px solid #94a3b8;min-height:30px;align-items:flex-end}.doc-line strong{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;white-space:nowrap;color:#334155}.doc-line span{font-weight:700}.document-table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-family:Arial,sans-serif;font-size:13px}.document-table th,.document-table td{border:1px solid #cbd5e1;padding:8px;text-align:left}.document-table th{background:#eef6f3;color:#0f3d5e;text-transform:uppercase;font-size:11px}.term-record{break-inside:avoid;margin-bottom:18px}.term-record h3{margin:0 0 8px;font-family:Arial,sans-serif;color:#0f3d5e}.testimonial-border{border:12px double #198754;padding:28px;background:linear-gradient(0deg,rgba(25,135,84,.035),rgba(25,135,84,.035)),#fff}.testimonial-title{font-size:42px;color:#b42318;font-weight:900;text-align:center;font-family:Georgia,'Times New Roman',serif;margin:12px 0 24px}.testimonial-list{display:grid;gap:10px;counter-reset:item}.testimonial-row{display:grid;grid-template-columns:34px 190px 1fr;gap:10px;align-items:end}.testimonial-row:before{counter-increment:item;content:counter(item) ".";font-weight:800}.testimonial-row strong{font-family:Arial,sans-serif;font-size:12px}.testimonial-row span{border-bottom:1px solid #334155;min-height:24px;font-weight:700;padding:0 6px}.doc-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.doc-summary-strip div{border:1px solid #cbd5e1;padding:10px;background:#f8fafc}.doc-summary-strip strong,.doc-summary-strip span{display:block}.doc-summary-strip strong{font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase}.doc-summary-strip span{font-size:18px;font-weight:900}.signature-row{display:grid;grid-template-columns:1fr 120px 1fr;gap:20px;align-items:end;margin-top:42px}.signature-line{border-top:1px solid #111827;text-align:center;padding-top:8px;font-family:Arial,sans-serif;font-weight:800;font-size:12px}.doc-signature-img{display:block;height:34px;max-width:150px;object-fit:contain;margin:0 auto 4px}.stamp-seal{width:98px;height:98px;border-radius:50%;background:#dc2626;box-shadow:inset 0 0 0 8px rgba(255,255,255,.18);margin:auto}.stamp-box{border:2px dashed #94a3b8;min-height:86px;display:grid;place-items:center;color:#64748b;font-family:Arial,sans-serif;text-transform:uppercase;font-weight:800}.document-note{font-family:Arial,sans-serif;color:#64748b;font-size:12px}.no-print{display:none}.id-card-print-area{width:100%;min-height:620px;background:#fff;display:grid;grid-template-columns:370px 370px;gap:18px;place-content:center;place-items:center;font-family:Inter,Arial,sans-serif}.id-card-flip-inner{display:contents;transform:none!important}.id-card-face{position:relative;inset:auto;backface-visibility:visible}.id-card-back{transform:none}.id-card-preview-card{width:370px;min-height:560px;background:#fff;color:#102033;border:1px solid #d7e0ec;border-radius:22px;overflow:hidden;box-shadow:none}.id-card-back{display:grid;grid-template-rows:auto 1fr auto;background:#08111f;color:#fff}.id-card-ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900;padding:10px}.id-card-top,.id-card-back-head{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.id-card-back-head{background:#102033;color:#fff}.id-card-school-logo,.id-card-photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.id-card-school-logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.id-card-school-logo img,.id-card-photo img,.id-card-back-qr img{width:100%;height:100%;object-fit:cover}.id-card-school-logo span,.id-card-photo span{font-weight:900;color:#0f3d5e}.id-card-top strong,.id-card-back-head strong{display:block;font-size:18px}.id-card-motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.id-card-back-head .id-card-motto{color:#a7f3d0}.id-card-top span,.id-card-back-head span{display:block;color:#64748b;font-size:12px;margin-top:2px}.id-card-back-head span{color:#cbd5e1}.id-card-person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.id-card-photo{width:94px;height:112px;border-radius:18px}.id-card-person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.id-card-person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.id-card-person span{display:block;color:#475569;margin-top:10px;font-weight:700}.id-card-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.id-card-details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.id-card-details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-details dd{margin:4px 0 0;font-weight:800;font-size:13px}.id-card-signature-block{display:grid;justify-items:center;gap:2px;margin:0 22px 14px}.id-card-signature-img{height:36px;max-width:140px;object-fit:contain}.id-card-signature-block span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-front-footer{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.id-card-front-footer strong,.id-card-front-footer span{display:block}.id-card-front-footer span{color:#cbd5e1;font-size:12px;margin-top:6px}.id-card-back-qr-panel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.id-card-back-qr-panel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.id-card-back-qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.id-card-back-qr img{object-fit:contain}.id-card-back-qr-panel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.id-card-back-qr-panel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.id-card-back-footer{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.id-card-flip-button{display:none}@media print{body{background:#fff}.official-document{box-shadow:none;margin:0 auto;border:none;min-height:100vh}.testimonial-border{min-height:calc(100vh - 84px)}}@media(max-width:720px){.official-document{padding:24px}.doc-info-grid,.doc-summary-strip,.signature-row{grid-template-columns:1fr}.testimonial-row{grid-template-columns:28px 1fr}.testimonial-row span{grid-column:2}}`;
 }
 
 function OfficialDocHeader({ school, title }) {
@@ -5435,6 +5449,7 @@ function OfficialDocHeader({ school, title }) {
 
 function TranscriptPreview({ transcript, school }) {
   const selectedSchool = transcript?.school || school;
+  const brand = resolveSchoolBrand(selectedSchool);
   const student = transcript?.student || {};
   const termRecords = transcript?.term_records || [];
   const cumulative = transcript?.cumulative || {};
@@ -5489,7 +5504,10 @@ function TranscriptPreview({ transcript, school }) {
         <p className="document-note">No academic result records are available for this student yet.</p>
       )}
       <div className="signature-row">
-        <div className="signature-line">Principal / Administrator Signature</div>
+        <div className="signature-line">
+          {brand.signature ? <img src={brand.signature} alt="Principal signature" className="doc-signature-img" /> : null}
+          Principal / Administrator Signature
+        </div>
         <div className="stamp-box">Stamp</div>
         <div className="signature-line">Registrar / Records Officer</div>
       </div>
@@ -5499,6 +5517,7 @@ function TranscriptPreview({ transcript, school }) {
 
 function TestimonialPreview({ detail, school }) {
   const selectedSchool = detail?.school || school;
+  const brand = resolveSchoolBrand(selectedSchool);
   const student = detail?.student || {};
   const testimonial = detail?.testimonial || {};
   const rows = [
@@ -5536,7 +5555,10 @@ function TestimonialPreview({ detail, school }) {
         <div className="signature-row">
           <div className="signature-line">{idCardDate(testimonial.issue_date)}<br />Date</div>
           <div className="stamp-seal" aria-label="Official stamp area" />
-          <div className="signature-line">{testimonial.principal_name || "Principal / Administrator"}<br />Signature and Stamp</div>
+          <div className="signature-line">
+            {brand.signature ? <img src={brand.signature} alt="Principal signature" className="doc-signature-img" /> : null}
+            {testimonial.principal_name || "Principal / Administrator"}<br />Signature and Stamp
+          </div>
         </div>
       </div>
     </article>
@@ -6265,6 +6287,8 @@ function AdminSettingsScreen({
   const [directorIdDocumentUrl, setDirectorIdDocumentUrl] = useState("");
   const [directorPassportFile, setDirectorPassportFile] = useState(null);
   const [directorPassportPreview, setDirectorPassportPreview] = useState("");
+  const [directorSignatureFile, setDirectorSignatureFile] = useState(null);
+  const [directorSignaturePreview, setDirectorSignaturePreview] = useState("");
   const [adminFirstName, setAdminFirstName] = useState("");
   const [adminLastName, setAdminLastName] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
@@ -6322,6 +6346,8 @@ function AdminSettingsScreen({
     setDirectorIdDocumentFile(null);
     setDirectorPassportPreview(director.passport_photo || "");
     setDirectorPassportFile(null);
+    setDirectorSignaturePreview(director.signature || "");
+    setDirectorSignatureFile(null);
     setAdminFirstName(director.first_name || user?.first_name || "");
     setAdminLastName(director.last_name || user?.last_name || "");
     setAcademicYearName(data?.academic_year?.name || "");
@@ -6336,7 +6362,7 @@ function AdminSettingsScreen({
     school.address, school.email, school.logo, school.motto, school.name, school.phone,
     school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline,
     school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
-    director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo,
+    director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
   ]);
 
   useEffect(() => {
@@ -6386,6 +6412,7 @@ function AdminSettingsScreen({
       director_id_type: directorIdType,
       director_proof_of_address: directorProofOfAddressFile,
       director_id_document: directorIdDocumentFile,
+      director_signature: directorSignatureFile,
       profile_picture: directorPassportFile,
       academic_year_name: academicYearName.trim(),
       academic_year_start_date: academicYearStart,
@@ -6410,7 +6437,7 @@ function AdminSettingsScreen({
     [
       academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, adminFirstName, adminLastName, country, email, logoFile, motto, name, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
       cacRegisteredName, ministryApprovalNumber, cacCertificateFile, entrancePhotoFile, proofOfAddressFile,
-      directorAddress, directorIdType, directorProofOfAddressFile, directorIdDocumentFile, directorPassportFile,
+      directorAddress, directorIdType, directorProofOfAddressFile, directorIdDocumentFile, directorPassportFile, directorSignatureFile,
     ]
   );
 
@@ -6579,6 +6606,12 @@ function AdminSettingsScreen({
     const file = event.target.files?.[0] || null;
     setDirectorPassportFile(file);
     setDirectorPassportPreview(file ? URL.createObjectURL(file) : director.passport_photo || "");
+  };
+
+  const handleDirectorSignatureChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setDirectorSignatureFile(file);
+    setDirectorSignaturePreview(file ? URL.createObjectURL(file) : director.signature || "");
   };
 
   const handleThemeSelect = (nextTheme) => {
@@ -6870,6 +6903,16 @@ onClick={() => handleThemeSelect("light")}
                             <label className="panel-field">
                               Upload Passport Photograph
                               <input type="file" accept="image/*" onChange={handleDirectorPassportChange} disabled={!canEdit || isSaving} />
+                            </label>
+                          </div>
+                          <div className="settings-logo-field full">
+                            <div className="settings-logo-preview settings-signature-preview">
+                              {directorSignaturePreview ? <img src={directorSignaturePreview} alt="Director signature" /> : <span>No signature</span>}
+                            </div>
+                            <label className="panel-field">
+                              Signature
+                              <input type="file" accept="image/*" onChange={handleDirectorSignatureChange} disabled={!canEdit || isSaving} />
+                              <span className="field-note">Upload a clear image of your signature (ideally on a plain background). It will appear on report cards, transcripts, testimonials, and ID cards for the whole school.</span>
                             </label>
                           </div>
                         </div>
