@@ -7556,6 +7556,8 @@ const unreadNotificationsCount =
         onUpdateStaff={handleUpdateHrStaff}
         onDownloadTeachers={handleDownloadHrTeachers}
         onDownloadSharedQr={handleDownloadSharedStaffQr}
+        countries={countriesList}
+        defaultCountryCode={screenData["/settings"]?.school?.country || "NG"}
       />
     );
   } else if (activePath === "/hr/activity") {
@@ -7618,6 +7620,8 @@ const unreadNotificationsCount =
         onChildMonitorDeactivate={handleKidsMonitorDeactivate}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         session={session}
+        countries={countriesList}
+        defaultCountryCode={screenData["/settings"]?.school?.country || "NG"}
       />
     );
   } else if (activePath === "/sms-wallet") {

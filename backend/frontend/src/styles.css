@@ -1856,26 +1856,28 @@ body[data-theme="dark"] .app-sidebar {
 }
 
 /* ── Phone + Country Code Input ────────────────────────────── */
+/* SVG chevrons inlined so they theme-switch without external fetches */
 .phone-country-input {
   display: flex;
   align-items: center;
-  border: 1px solid var(--input-border, #d1d5db);
+  border: 1px solid #d1d5db;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--input-bg, #fff);
+  background: #ffffff;
   transition: border-color 150ms;
 }
 
 .phone-country-input:focus-within {
-  border-color: var(--accent, #3b82f6);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
-/* Undo the .panel-field input/select width:100% on phone component children */
+/* Undo .panel-field input/select width:100% on phone component children */
+.panel-field .phone-country-input { padding: 0; }
+
 .panel-field .phone-country-select,
 .panel-field .phone-country-select:hover:not(:focus),
-.panel-field .phone-country-select:focus,
-body[data-theme="dark"] .panel-field .phone-country-select {
+.panel-field .phone-country-select:focus {
   width: 68px;
   max-width: 68px;
   border: none;
@@ -1885,8 +1887,7 @@ body[data-theme="dark"] .panel-field .phone-country-select {
 
 .panel-field .phone-number-field,
 .panel-field .phone-number-field:hover:not(:focus),
-.panel-field .phone-number-field:focus,
-body[data-theme="dark"] .panel-field .phone-number-field {
+.panel-field .phone-number-field:focus {
   width: auto;
   max-width: none;
   border: none;
@@ -1895,81 +1896,64 @@ body[data-theme="dark"] .panel-field .phone-number-field {
   background: transparent;
 }
 
-.panel-field .phone-country-input {
-  padding: 0;
-}
-
 .phone-country-select {
   -webkit-appearance: none;
   appearance: none;
   border: none;
-  background: var(--surface-muted, #f3f4f6);
-  color: var(--text-primary, #111827);
+  border-right: 1px solid #d1d5db;
+  background-color: #f3f4f6;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+  color: #111827;
   font-size: 0.82rem;
+  font-family: inherit;
   padding: 0 1.25rem 0 0.5rem;
   height: 100%;
   min-height: 38px;
-  cursor: pointer;
-  outline: none;
-  border-right: 1px solid var(--input-border, #d1d5db);
   width: 68px;
   max-width: 68px;
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.4rem center;
+  cursor: pointer;
+  outline: none;
 }
 
-.phone-dial-badge {
-  padding: 0 0.45rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-secondary, #6b7280);
-  white-space: nowrap;
-  border-right: 1px solid var(--input-border, #d1d5db);
-  line-height: 38px;
-}
 
 .phone-number-field {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
-  padding: 0 0.65rem;
+  color: #111827;
   font-size: 0.875rem;
-  color: var(--text-primary, #111827);
+  font-family: inherit;
+  padding: 0 0.65rem;
   outline: none;
-  min-width: 0;
   height: 38px;
 }
 
-.phone-number-field::placeholder {
-  color: var(--text-muted, #9ca3af);
-}
+.phone-number-field::placeholder { color: #9ca3af; }
 
-@media (prefers-color-scheme: dark) {
-  .phone-country-select {
-    background-color: #1f2937;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239ca3af'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.4rem center;
-    color: #f9fafb;
-    border-right-color: #374151;
-  }
-  .phone-country-input {
-    border-color: #374151;
-    background: #111827;
-  }
-  .phone-dial-badge {
-    color: #9ca3af;
-    border-right-color: #374151;
-  }
-  .phone-number-field {
-    color: #f9fafb;
-  }
-}
+/* ── Dark: manual toggle ── */
+body[data-theme="dark"] .phone-country-input  { border-color: #374151; background: #111827; }
+body[data-theme="dark"] .phone-country-select { background-color: #1f2937; color: #f9fafb; border-right-color: #374151;
+                                                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239ca3af'/%3E%3C/svg%3E"); }
+body[data-theme="dark"] .phone-number-field   { color: #f9fafb; }
+body[data-theme="dark"] .phone-number-field::placeholder { color: #6b7280; }
+body[data-theme="dark"] .panel-field .phone-country-select { background-color: #1f2937; border: none; box-shadow: none; }
+body[data-theme="dark"] .panel-field .phone-number-field   { background: transparent; color: #f9fafb; border: none; box-shadow: none; }
+
+/* ── Light: manual toggle overrides OS dark preference ── */
+body[data-theme="light"] .phone-country-input  { border-color: #d1d5db; background: #ffffff; }
+body[data-theme="light"] .phone-country-select { background-color: #f3f4f6; color: #111827; border-right-color: #d1d5db;
+                                                  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E"); }
+body[data-theme="light"] .phone-number-field   { color: #111827; }
+body[data-theme="light"] .phone-number-field::placeholder { color: #9ca3af; }
+body[data-theme="light"] .panel-field .phone-country-select { background-color: #f3f4f6; border: none; box-shadow: none; }
+body[data-theme="light"] .panel-field .phone-number-field   { background: transparent; color: #111827; border: none; box-shadow: none; }
 /* ─────────────────────────────────────────────────────────── */
 
 .help-drawer {

@@ -2266,7 +2266,6 @@ export function PhoneCountryInput({
           </option>
         ))}
       </select>
-      <span className="phone-dial-badge">{dialCode || "+"}</span>
       <input
         type="tel"
         value={localNumber}
