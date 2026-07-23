@@ -15621,7 +15621,11 @@ body[data-theme="dark"] .signature-mode-tabs button.is-active {
 
 body[data-theme="dark"] .signature-pad-canvas {
   border-color: #334155;
-  background: #0f172a;
+  /* Always a white drawing surface, even in dark mode - the ink color is
+     dark, and the signature is ultimately placed on light document/ID card
+     backgrounds, so the pad should look and behave the same regardless of
+     app theme. */
+  background: #ffffff;
 }
 
 .signature-pad-hint {
