@@ -4078,6 +4078,22 @@ body[data-theme="dark"] .app-panel {
 
 body[data-theme="dark"] .app-panel h3 { color: #f1f5f9; }
 
+/* ── Inline button spinner ───────────────────────────────────────────────── */
+
+.inline-spinner {
+  animation: inline-spin 0.7s linear infinite;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+
+@keyframes inline-spin {
+  to { transform: rotate(360deg); }
+}
+
+button:disabled .inline-spinner {
+  opacity: 0.85;
+}
+
 /* ── Skeleton loading ────────────────────────────────────────────────────── */
 
 @keyframes shimmer {

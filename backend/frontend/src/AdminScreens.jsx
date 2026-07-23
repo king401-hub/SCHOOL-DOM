@@ -24,6 +24,7 @@ import {
   MetricCard,
   MessageInboxPanel,
   ScreenState,
+  Spinner,
   TimetableGridTable,
 } from "./AppShared";
 import { TeacherExamBuilder } from "./TeacherExamPanels";
@@ -757,9 +758,16 @@ function AdminFinanceScreen({
   const [subaccountBankQuery, setSubaccountBankQuery] = useState("");
   const [subaccountBanks, setSubaccountBanks] = useState([]);
   const [subaccountBanksLoading, setSubaccountBanksLoading] = useState(false);
-  const [subaccountBusy, setSubaccountBusy] = useState(false);
+  // Shared across all of this screen's action buttons: while any one action is
+  // in flight, every other button disables too, so a second click can't fire
+  // a second request before the first finishes. busyAction identifies which
+  // single-instance action is running (for its own spinner); recoverBusyId
+  // does the same for the per-row "Match" button in the bank payment table.
+  const [busyAction, setBusyAction] = useState("");
+  const [recoverBusyId, setRecoverBusyId] = useState("");
   const [subaccountMessage, setSubaccountMessage] = useState("");
   const [subaccountError, setSubaccountError] = useState("");
+  const anyBusy = Boolean(busyAction) || Boolean(recoverBusyId) || vaListLoading || Boolean(vaBusyParentId);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
   const tokenPurchaseRef = useRef(null);
@@ -988,14 +996,14 @@ function AdminFinanceScreen({
       setSubaccountError("Select a valid bank from the list.");
       return;
     }
-    setSubaccountBusy(true);
+    setBusyAction("subaccount");
     try {
       const result = await onPaystackSubaccountSetup(subaccountForm);
       setSubaccountMessage(result?.message || "Subaccount created.");
     } catch (err) {
       setSubaccountError(err.message || "Unable to create subaccount.");
     } finally {
-      setSubaccountBusy(false);
+      setBusyAction("");
     }
   };
 
@@ -1019,6 +1027,7 @@ function AdminFinanceScreen({
     event.preventDefault();
     setFeedback("");
     setFormError("");
+    setBusyAction("classFee");
     try {
       const result = await onClassFeeSave({
         id: editingClassFeeId,
@@ -1030,6 +1039,8 @@ function AdminFinanceScreen({
       setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" });
     } catch (err) {
       setFormError(err.message || "Unable to save class fee.");
+    } finally {
+      setBusyAction("");
     }
   };
 
@@ -1077,6 +1088,7 @@ function AdminFinanceScreen({
     if (!editingStudentFeeId) return;
     setFeedback("");
     setFormError("");
+    setBusyAction("studentFee");
     try {
       await onStudentFeeSave({
         id: editingStudentFeeId,
@@ -1087,6 +1099,8 @@ function AdminFinanceScreen({
       resetStudentFeeForm();
     } catch (err) {
       setFormError(err.message || "Unable to update student fee.");
+    } finally {
+      setBusyAction("");
     }
   };
 
@@ -1094,6 +1108,7 @@ function AdminFinanceScreen({
     event.preventDefault();
     setFeedback("");
     setFormError("");
+    setBusyAction("creditPurchase");
     try {
       const result = await onPurchaseCredits({ credits: Number(creditPurchaseForm.credits) });
       setCreditPurchaseReference(result?.reference || "");
@@ -1108,6 +1123,8 @@ function AdminFinanceScreen({
       }
     } catch (err) {
       setFormError(err.message || "Unable to start token payment.");
+    } finally {
+      setBusyAction("");
     }
   };
 
@@ -1137,15 +1154,29 @@ function AdminFinanceScreen({
     };
   }, [creditPurchaseReference, onVerifyCredits]);
 
+  const handleCreditVerifySubmit = async (event) => {
+    event.preventDefault();
+    if (!creditPurchaseReference || !onVerifyCredits) return;
+    setBusyAction("creditVerify");
+    try {
+      await onVerifyCredits({ reference: creditPurchaseReference });
+    } catch {
+      // Silent - the polling useEffect above surfaces the real outcome once it succeeds.
+    } finally {
+      setBusyAction("");
+    }
+  };
+
   const handleCreditAssignSubmit = async (event) => {
     event.preventDefault();
     setFeedback("");
     setFormError("");
+    if (creditAssignForm.scope === "student" && !creditAssignForm.student_id) {
+      setFormError("Select an inactive student before assigning tokens.");
+      return;
+    }
+    setBusyAction("creditAssign");
     try {
-      if (creditAssignForm.scope === "student" && !creditAssignForm.student_id) {
-        setFormError("Select an inactive student before assigning tokens.");
-        return;
-      }
       const result = await onAssignCredits({
         scope: creditAssignForm.scope,
         months: Number(creditAssignForm.months),
@@ -1154,6 +1185,8 @@ function AdminFinanceScreen({
       setFeedback(`${result.assigned || 0} student accounts activated.`);
     } catch (err) {
       setFormError(err.message || "Unable to assign activation tokens.");
+    } finally {
+      setBusyAction("");
     }
   };
 
@@ -1161,22 +1194,28 @@ function AdminFinanceScreen({
     event.preventDefault();
     setFeedback("");
     setFormError("");
+    setBusyAction("creditSettings");
     try {
       await onCreditSettings(creditSettingsForm);
       setFeedback("Auto-assignment settings saved.");
     } catch (err) {
       setFormError(err.message || "Unable to save token settings.");
+    } finally {
+      setBusyAction("");
     }
   };
 
   const handleRunAutoCredits = async () => {
     setFeedback("");
     setFormError("");
+    setBusyAction("creditAutoAssign");
     try {
       const result = await onRunAutoCredits();
       setFeedback(`${result.assigned || 0} student accounts activated by auto-assignment.`);
     } catch (err) {
       setFormError(err.message || "Unable to run auto-assignment.");
+    } finally {
+      setBusyAction("");
     }
   };
 
@@ -1197,24 +1236,30 @@ function AdminFinanceScreen({
     event.preventDefault();
     setFeedback("");
     setFormError("");
+    setBusyAction("cashPayment");
     try {
       await onCashPaymentRecord(cashPaymentForm);
       setFeedback("Cash payment recorded and applied.");
       setCashPaymentForm({ student_id: "", amount: "", note: "" });
     } catch (err) {
       setFormError(err.message || "Unable to record cash payment.");
+    } finally {
+      setBusyAction("");
     }
   };
 
   const handleRecoverPayment = async (paymentId) => {
     setFeedback("");
     setFormError("");
+    setRecoverBusyId(paymentId);
     try {
       await onBankPaymentRecover(paymentId, recoveryForm[paymentId] || {});
       setFeedback("Payment recovered and applied.");
       setRecoveryForm((current) => ({ ...current, [paymentId]: { student_id: "", reference_code: "" } }));
     } catch (err) {
       setFormError(err.message || "Unable to recover payment.");
+    } finally {
+      setRecoverBusyId("");
     }
   };
 
@@ -1424,7 +1469,9 @@ function AdminFinanceScreen({
                     </div>
                   </div>
                   <div className="panel-form-actions" style={{margin:"0.75rem 1.5rem 0",paddingTop:"1rem",borderTop:"1px solid #f1f5f9"}}>
-                    <button type="submit" disabled={!onStudentFeeSave}>Update record</button>
+                    <button type="submit" disabled={!onStudentFeeSave || anyBusy}>
+                      {busyAction === "studentFee" ? <><Spinner /> Updating...</> : "Update record"}
+                    </button>
                     <button type="button" className="btn-secondary" onClick={resetStudentFeeForm}>Cancel</button>
                   </div>
                 </form>
@@ -1498,7 +1545,9 @@ function AdminFinanceScreen({
                   <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onClassFeeSave}>{editingClassFeeId ? `Update ${groupLabels.fee.toLowerCase()}` : `Create ${groupLabels.fee.toLowerCase()}`}</button>
+                  <button type="submit" disabled={!onClassFeeSave || anyBusy}>
+                    {busyAction === "classFee" ? <><Spinner /> Saving...</> : editingClassFeeId ? `Update ${groupLabels.fee.toLowerCase()}` : `Create ${groupLabels.fee.toLowerCase()}`}
+                  </button>
                   {editingClassFeeId ? <button type="button" className="btn-secondary" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
                 </div>
               </form>
@@ -1560,8 +1609,8 @@ function AdminFinanceScreen({
                   </label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onPaystackSubaccountSetup || subaccountBusy}>
-                    {subaccountBusy ? "Saving..." : adminWallet.subaccount_code ? "Update bank account" : "Create subaccount"}
+                  <button type="submit" disabled={!onPaystackSubaccountSetup || anyBusy}>
+                    {busyAction === "subaccount" ? <><Spinner /> Saving...</> : adminWallet.subaccount_code ? "Update bank account" : "Create subaccount"}
                   </button>
                 </div>
               </form>
@@ -1601,7 +1650,14 @@ function AdminFinanceScreen({
                               placeholder="Student ref"
                               aria-label="Student payment reference"
                             />
-                            <button type="button" className="table-action" onClick={() => handleRecoverPayment(payment.id)} disabled={!onBankPaymentRecover}>Match</button>
+                            <button
+                              type="button"
+                              className="table-action"
+                              onClick={() => handleRecoverPayment(payment.id)}
+                              disabled={!onBankPaymentRecover || anyBusy}
+                            >
+                              {recoverBusyId === payment.id ? <><Spinner size={12} /> Matching...</> : "Match"}
+                            </button>
                           </div>
                         ) : (
                           <span className="field-note">Matched</span>
@@ -1650,7 +1706,9 @@ function AdminFinanceScreen({
                 />
               </label>
               <div className="panel-form-actions">
-                <button type="submit" disabled={!onCashPaymentRecord}>Record Cash Payment</button>
+                <button type="submit" disabled={!onCashPaymentRecord || anyBusy}>
+                  {busyAction === "cashPayment" ? <><Spinner /> Recording...</> : "Record Cash Payment"}
+                </button>
               </div>
             </form>
             <div className="table-scroll">
@@ -1730,13 +1788,17 @@ function AdminFinanceScreen({
                   <label className="panel-field">Bonus tokens<input value={bonusCreditCount ? `${bonusCreditCount} bonus` : "No bonus"} readOnly /></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1}>Buy tokens</button>
+                  <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1 || anyBusy}>
+                    {busyAction === "creditPurchase" ? <><Spinner /> Starting...</> : "Buy tokens"}
+                  </button>
                   {creditPurchaseUrl ? <a className="table-action" href={creditPurchaseUrl} target="_blank" rel="noreferrer">Open checkout</a> : null}
                 </div>
               </form>
-              <form className="panel-form inline-credit-form" onSubmit={(event) => { event.preventDefault(); if (creditPurchaseReference && onVerifyCredits) onVerifyCredits({ reference: creditPurchaseReference }); }}>
+              <form className="panel-form inline-credit-form" onSubmit={handleCreditVerifySubmit}>
                 <label className="panel-field full">Payment reference<input value={creditPurchaseReference} onChange={(event) => setCreditPurchaseReference(event.target.value)} placeholder="Flutterwave reference" /></label>
-                <button type="submit" disabled={!onVerifyCredits || !creditPurchaseReference}>Verify payment</button>
+                <button type="submit" disabled={!onVerifyCredits || !creditPurchaseReference || anyBusy}>
+                  {busyAction === "creditVerify" ? <><Spinner /> Verifying...</> : "Verify payment"}
+                </button>
               </form>
             </article>
 
@@ -1760,8 +1822,12 @@ function AdminFinanceScreen({
                   <p className="form-hint">No inactive student matches that search.</p>
                 )}
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onAssignCredits}>Assign tokens</button>
-                  <button type="button" className="table-action" onClick={handleRunAutoCredits} disabled={!onRunAutoCredits}>Run auto assign</button>
+                  <button type="submit" disabled={!onAssignCredits || anyBusy}>
+                    {busyAction === "creditAssign" ? <><Spinner /> Assigning...</> : "Assign tokens"}
+                  </button>
+                  <button type="button" className="table-action" onClick={handleRunAutoCredits} disabled={!onRunAutoCredits || anyBusy}>
+                    {busyAction === "creditAutoAssign" ? <><Spinner size={12} /> Running...</> : "Run auto assign"}
+                  </button>
                 </div>
               </form>
               <form className="panel-form" onSubmit={handleCreditSettingsSubmit}>
@@ -1770,7 +1836,9 @@ function AdminFinanceScreen({
                   <label className="panel-field">Auto scope<select value={creditSettingsForm.scope} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, scope: event.target.value }))}><option value="all">All inactive students</option><option value="paid_50">Paid 50% and above</option></select></label>
                 </div>
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onCreditSettings}>Save token settings</button>
+                  <button type="submit" disabled={!onCreditSettings || anyBusy}>
+                    {busyAction === "creditSettings" ? <><Spinner /> Saving...</> : "Save token settings"}
+                  </button>
                 </div>
               </form>
             </article>
@@ -1835,8 +1903,8 @@ function AdminFinanceScreen({
                 onChange={(event) => setVaSearch(event.target.value)}
                 style={{ maxWidth: "320px" }}
               />
-              <button type="button" onClick={loadVirtualAccountsList} disabled={vaListLoading}>
-                {vaListLoading ? "Refreshing..." : "Refresh"}
+              <button type="button" onClick={loadVirtualAccountsList} disabled={anyBusy}>
+                {vaListLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
               </button>
             </div>
 
@@ -1854,9 +1922,9 @@ function AdminFinanceScreen({
                             type="button"
                             className="table-action active"
                             onClick={() => handleProvisionVirtualAccount(row.parent_id)}
-                            disabled={vaBusyParentId === row.parent_id}
+                            disabled={anyBusy}
                           >
-                            {vaBusyParentId === row.parent_id ? "Provisioning..." : "Provision Account"}
+                            {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Provisioning...</> : "Provision Account"}
                           </button>
                         </td>
                       </tr>
@@ -1883,9 +1951,9 @@ function AdminFinanceScreen({
                             type="button"
                             className="table-action"
                             onClick={() => handleProvisionVirtualAccount(row.parent_id)}
-                            disabled={vaBusyParentId === row.parent_id}
+                            disabled={anyBusy}
                           >
-                            {vaBusyParentId === row.parent_id ? "Working..." : "Re-provision"}
+                            {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Working...</> : "Re-provision"}
                           </button>
                         ) : (
                           <small>Manually assigned</small>
