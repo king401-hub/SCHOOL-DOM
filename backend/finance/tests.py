@@ -46,6 +46,7 @@ from finance.services import (
     initialize_sms_credit_purchase,
     process_due_fees,
     process_virtual_account_payment,
+    record_cash_payment,
     refund_sms_wallet,
     send_wallet_sms,
     sync_class_fee_assignments,
@@ -1164,6 +1165,87 @@ class CreditBalanceCarryForwardTests(TestCase):
         self.assertTrue(
             FinanceLedgerLog.objects.filter(action="overpayment_uncredited", reference="DVA-NOCHILD-1").exists()
         )
+
+
+class CashPaymentTests(TestCase):
+    """Walk-in cash payments skip the bank-transfer unmatched/recover queue -
+    the admin already knows the student, so record_cash_payment applies the
+    money immediately and tags it so it's distinguishable from real bank
+    transfers in the same BankPayment table."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Cash School", schema_name="cash_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.admin_user = User.objects.create_user(
+            email="admin@cash.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        self.student_user = User.objects.create_user(
+            email="student@cash.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="CSH001", admission_number="ADM-CSH-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("20000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+    def test_record_cash_payment_pays_fee_and_tags_payment_method(self):
+        payment = record_cash_payment(self.student, Decimal("20000.00"), note="Paid at front desk", actor=self.admin_user)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(payment.status, BankPayment.STATUS_CONFIRMED)
+        self.assertEqual(payment.metadata.get("payment_method"), "cash")
+        self.assertEqual(payment.metadata.get("note"), "Paid at front desk")
+        self.assertTrue(payment.bank_reference.startswith("CSH"))
+
+    def test_record_cash_payment_overpayment_credits_wallet(self):
+        payment = record_cash_payment(self.student, Decimal("25000.00"), actor=self.admin_user)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        wallet = Wallet.objects.get(user=self.student_user)
+        self.assertEqual(wallet.balance, Decimal("5000.00"))
+        self.assertEqual(payment.applied_amount, Decimal("20000.00"))
+
+    def test_record_cash_payment_rejects_non_positive_amount(self):
+        with self.assertRaises(ValueError):
+            record_cash_payment(self.student, Decimal("0.00"), actor=self.admin_user)
+
+    def test_admin_cash_payment_endpoint_requires_finance_role(self):
+        non_finance_user = User.objects.create_user(
+            email="teacher@cash.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        client = APIClient()
+        client.force_authenticate(user=non_finance_user)
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "5000"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_cash_payment_endpoint_records_and_applies(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "20000", "note": "Cash at desk"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["payment"]["payment_method"], "cash")
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
 
 
 class PaystackReceiptMessageTests(TestCase):

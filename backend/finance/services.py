@@ -3855,6 +3855,36 @@ def apply_bank_payment_to_student(payment, student_profile, actor=None):
     return payment
 
 
+def record_cash_payment(student_profile, amount, note="", actor=None):
+    """Record a walk-in cash payment and apply it to the student immediately.
+
+    Unlike bank transfers, cash has no narration to auto-match and no
+    ambiguity about which student it belongs to - the admin is looking at
+    the money and the student at the same time - so this skips straight to
+    apply_bank_payment_to_student instead of going through the
+    unmatched -> recover queue built for bank transfers.
+    """
+    amount = _as_decimal(amount)
+    if amount <= 0:
+        raise ValueError("Amount must be greater than zero.")
+
+    tenant = student_profile.user.tenant
+    reference = get_or_create_student_payment_reference(student_profile)
+    payment = BankPayment.objects.create(
+        tenant=tenant,
+        student=student_profile,
+        payment_reference=reference,
+        amount=amount,
+        currency="NGN",
+        narration=str(note or "").strip() or "Cash payment received in person",
+        bank_reference=generate_reference("CSH"),
+        status=BankPayment.STATUS_PENDING,
+        unapplied_amount=amount,
+        metadata={"payment_method": "cash", "note": str(note or "").strip(), "recorded_by": actor.email if actor else ""},
+    )
+    return apply_bank_payment_to_student(payment, student_profile, actor=actor)
+
+
 def ingest_bank_payment(tenant, amount, narration, bank_reference, currency="NGN", metadata=None, actor=None):
     amount = _as_decimal(amount)
     payment, created = BankPayment.objects.get_or_create(

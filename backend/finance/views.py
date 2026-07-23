@@ -79,6 +79,7 @@ from finance.services import (
     generate_bank_links,
     ingest_bank_payment,
     apply_bank_payment_to_student,
+    record_cash_payment,
     parent_balance_payload,
     provision_kuda_admin_virtual_account,
     record_finance_activity,
@@ -1634,6 +1635,58 @@ def admin_bank_payment_recover(request, payment_id):
         user,
         "bank_payment_recovered",
         f"Matched bank payment to {student.user.get_full_name() or student.user.email}.",
+        amount=payment.amount,
+        currency=payment.currency,
+        reference=payment.bank_reference,
+        metadata={"student_id": str(student.id), "status": payment.status},
+    )
+    return Response({"success": True, "payment": BankPaymentSerializer(payment).data, "finance": _admin_finance_snapshot(user)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_cash_payment_record(request):
+    """Record a walk-in cash payment for a known student and apply it immediately."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    student_lookup = str(request.data.get("student_id") or request.data.get("student") or "").strip()
+    if not student_lookup:
+        return Response({"success": False, "message": "Select a student."}, status=status.HTTP_400_BAD_REQUEST)
+
+    student_qs = StudentProfile.objects.select_related("user").filter(user__tenant=user.tenant)
+    student = student_qs.filter(
+        Q(student_id__iexact=student_lookup)
+        | Q(admission_number__iexact=student_lookup)
+        | Q(user__email__iexact=student_lookup)
+    ).first()
+    if not student:
+        try:
+            student = student_qs.filter(id=student_lookup).first()
+        except Exception:
+            student = None
+    if not student:
+        return Response({"success": False, "message": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        payment = record_cash_payment(student, request.data.get("amount"), note=request.data.get("note"), actor=user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
+        phone = student.guardian_phone or student.second_guardian_phone
+        if phone:
+            try:
+                send_payment_receipt(phone, receipt_message_for_payment(payment))
+            except Exception:
+                pass
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "cash_payment_recorded",
+        f"Recorded cash payment from {student.user.get_full_name() or student.user.email}.",
         amount=payment.amount,
         currency=payment.currency,
         reference=payment.bank_reference,

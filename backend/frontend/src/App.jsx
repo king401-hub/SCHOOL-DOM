@@ -6613,6 +6613,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleCashPaymentRecord = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/finance/admin/cash-payments/record/", payload);
+      addAdminNotification({
+        category: "Finance",
+        module: "Cash Payments",
+        action: "Recorded a cash payment for a student.",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleActivationCreditPurchase = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/activation-credits/purchase/", payload);
@@ -7505,6 +7522,7 @@ const unreadNotificationsCount =
         onRunAutoCredits={handleActivationCreditRunAuto}
         onBankPaymentsIngest={handleBankPaymentsIngest}
         onBankPaymentRecover={handleBankPaymentRecover}
+        onCashPaymentRecord={handleCashPaymentRecord}
         session={session}
       />
     );

@@ -683,6 +683,7 @@ function AdminFinanceScreen({
   onRunAutoCredits,
   onBankPaymentsIngest,
   onBankPaymentRecover,
+  onCashPaymentRecord,
   session,
 }) {
   const finance = data?.finance_overview || data || {};
@@ -698,6 +699,8 @@ function AdminFinanceScreen({
   const creditRows = finance?.activation_credit_rows || [];
   const creditPurchaseHistory = finance?.activation_credit_purchase_history || [];
   const bankPaymentRows = finance?.bank_payment_rows || [];
+  const cashPaymentRows = bankPaymentRows.filter((payment) => payment.payment_method === "cash");
+  const bankTransferRows = bankPaymentRows.filter((payment) => payment.payment_method !== "cash");
   const transactionHistory = finance?.transaction_history || [];
   const financeLedgerRows = finance?.finance_ledger_logs || [];
   const [withdrawForm, setWithdrawForm] = useState({
@@ -728,6 +731,7 @@ function AdminFinanceScreen({
   const [editingStudentFeeId, setEditingStudentFeeId] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
   const [recoveryForm, setRecoveryForm] = useState({});
+  const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "" });
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
   const [creditPurchaseUrl, setCreditPurchaseUrl] = useState("");
@@ -855,8 +859,11 @@ function AdminFinanceScreen({
   });
   const visibleCreditRows = expandedFinanceTables.activationAlerts ? creditRows : creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleBankPaymentRows = expandedFinanceTables.bankPaymentHistory
-    ? bankPaymentRows
-    : bankPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+    ? bankTransferRows
+    : bankTransferRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleCashPaymentRows = expandedFinanceTables.cashPaymentHistory
+    ? cashPaymentRows
+    : cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCreditPurchaseHistory = expandedFinanceTables.creditHistory
     ? creditPurchaseHistory
     : creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -1183,6 +1190,19 @@ function AdminFinanceScreen({
       setBankPaymentForm({ amount: "", narration: "", bank_reference: "" });
     } catch (err) {
       setFormError(err.message || "Unable to process bank transaction.");
+    }
+  };
+
+  const handleCashPaymentSubmit = async (event) => {
+    event.preventDefault();
+    setFeedback("");
+    setFormError("");
+    try {
+      await onCashPaymentRecord(cashPaymentForm);
+      setFeedback("Cash payment recorded and applied.");
+      setCashPaymentForm({ student_id: "", amount: "", note: "" });
+    } catch (err) {
+      setFormError(err.message || "Unable to record cash payment.");
     }
   };
 
@@ -1552,12 +1572,12 @@ function AdminFinanceScreen({
           <article className="app-panel">
             <div className="mobile-section-head">
               <h3>Student Bank Payment History</h3>
-              <small>{bankPaymentRows.length} bank payment records</small>
+              <small>{bankTransferRows.length} bank payment records</small>
             </div>
             <div className="table-scroll">
               <table className="data-table">
                 <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
-                <tbody>{bankPaymentRows.length ? visibleBankPaymentRows.map((payment) => {
+                <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map((payment) => {
                   const recovery = recoveryForm[payment.id] || {};
                   const canRecover = ["unmatched", "pending"].includes(payment.status);
                   return (
@@ -1591,7 +1611,64 @@ function AdminFinanceScreen({
                   );
                 }) : <tr><td colSpan="10">No student bank payments found.</td></tr>}</tbody>
               </table>
-              {renderFinanceMoreButton("bankPaymentHistory", bankPaymentRows.length)}
+              {renderFinanceMoreButton("bankPaymentHistory", bankTransferRows.length)}
+            </div>
+          </article>
+
+          <article className="app-panel">
+            <div className="mobile-section-head">
+              <h3>Cash Payments</h3>
+              <small>{cashPaymentRows.length} cash payment records</small>
+            </div>
+            <form className="panel-form-grid" onSubmit={handleCashPaymentSubmit}>
+              <label className="panel-field">
+                Student ID / Admission No. / Email
+                <input
+                  value={cashPaymentForm.student_id}
+                  onChange={(event) => setCashPaymentForm((current) => ({ ...current, student_id: event.target.value }))}
+                  placeholder="e.g. STU0012"
+                  required
+                />
+              </label>
+              <label className="panel-field">
+                Amount
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={cashPaymentForm.amount}
+                  onChange={(event) => setCashPaymentForm((current) => ({ ...current, amount: event.target.value }))}
+                  required
+                />
+              </label>
+              <label className="panel-field full">
+                Note (optional)
+                <input
+                  value={cashPaymentForm.note}
+                  onChange={(event) => setCashPaymentForm((current) => ({ ...current, note: event.target.value }))}
+                  placeholder="e.g. Term 2 fees, paid at the front desk"
+                />
+              </label>
+              <div className="panel-form-actions">
+                <button type="submit" disabled={!onCashPaymentRecord}>Record Cash Payment</button>
+              </div>
+            </form>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Date</th></tr></thead>
+                <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
+                    <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
+                    <td>{payment.note || "-"}</td>
+                    <td>{formatFinanceAmount(payment.amount)}</td>
+                    <td>{formatFinanceAmount(payment.applied_amount)}</td>
+                    <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                    <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                  </tr>
+                )) : <tr><td colSpan="7">No cash payments recorded yet.</td></tr>}</tbody>
+              </table>
+              {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
             </div>
           </article>
 

@@ -134,6 +134,8 @@ class BankPaymentSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_id = serializers.SerializerMethodField()
     reference_code = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
+    note = serializers.SerializerMethodField()
 
     class Meta:
         model = BankPayment
@@ -152,6 +154,8 @@ class BankPaymentSerializer(serializers.ModelSerializer):
             "unapplied_amount",
             "matched_at",
             "receipt_number",
+            "payment_method",
+            "note",
             "created_at",
         ]
 
@@ -167,6 +171,12 @@ class BankPaymentSerializer(serializers.ModelSerializer):
 
     def get_reference_code(self, obj):
         return obj.payment_reference.code if obj.payment_reference_id else ""
+
+    def get_payment_method(self, obj):
+        return (obj.metadata or {}).get("payment_method", "bank_transfer")
+
+    def get_note(self, obj):
+        return (obj.metadata or {}).get("note", "")
 
 
 class ClassFeeSerializer(serializers.ModelSerializer):
