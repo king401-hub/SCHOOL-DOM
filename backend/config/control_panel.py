@@ -752,6 +752,91 @@ def _build_admin_class(model):
     return type(f"{model.__name__}AutoAdmin", (admin.ModelAdmin,), attrs)
 
 
+def _build_user_admin():
+    """A real add/change form for the AUTH_USER_MODEL, in place of the generic
+    auto-admin. _build_admin_class() marks any "password"-like field read-only to
+    stop someone corrupting an *existing* hash by typing plain text into it - but
+    that same protection makes it impossible to set a password when creating a
+    brand-new account. This gives new accounts a proper two-field "set password"
+    form (like Django's own UserCreationForm) and existing accounts the standard
+    safe, read-only hash display (like Django's own UserAdmin) - so creating a
+    user through the control panel actually produces a working login."""
+    from django import forms as django_forms
+    from django.contrib.auth import get_user_model, password_validation
+    from django.contrib.auth.forms import ReadOnlyPasswordHashField
+
+    User = get_user_model()
+
+    # This model also carries internal security bookkeeping (login_attempts,
+    # admin_otp_*, password_reset_otp_attempts, ...) that's `blank=False` with a
+    # model-level default - Django's ModelForm still marks those *required* if
+    # they're pulled in via "__all__"/exclude, even though omitting them entirely
+    # would happily fall back to the default. So both forms use an explicit
+    # allowlist of the fields an admin actually needs to set by hand, the same way
+    # Django's own stock UserAdmin keeps its add form to just username+password.
+    essential_fields = (
+        "email", "first_name", "last_name", "phone", "role", "admin_title",
+        "tenant", "school_group", "is_active", "is_staff", "is_superuser",
+    )
+
+    class ControlPanelUserCreationForm(django_forms.ModelForm):
+        password1 = django_forms.CharField(
+            label="Password", widget=django_forms.PasswordInput,
+            help_text="Sets a working login password for this account.",
+        )
+        password2 = django_forms.CharField(label="Confirm password", widget=django_forms.PasswordInput)
+
+        class Meta:
+            model = User
+            fields = essential_fields
+
+        def clean_password2(self):
+            p1 = self.cleaned_data.get("password1")
+            p2 = self.cleaned_data.get("password2")
+            if p1 and p2 and p1 != p2:
+                raise django_forms.ValidationError("Passwords don't match.")
+            if p1:
+                password_validation.validate_password(p1, self.instance)
+            return p2
+
+        def save(self, commit=True):
+            user = super().save(commit=False)
+            user.set_password(self.cleaned_data["password1"])
+            if commit:
+                user.save()
+            return user
+
+    class ControlPanelUserChangeForm(django_forms.ModelForm):
+        password = ReadOnlyPasswordHashField(
+            label="Password",
+            help_text=(
+                "Raw passwords aren't stored, so there's no way to see this one. "
+                "Reset it with `manage.py changepassword &lt;email&gt;` on the server."
+            ),
+        )
+
+        class Meta:
+            model = User
+            fields = essential_fields + ("password",)
+
+        def clean_password(self):
+            return self.initial.get("password")
+
+    class ControlPanelUserAdmin(admin.ModelAdmin):
+        add_form = ControlPanelUserCreationForm
+        form = ControlPanelUserChangeForm
+        list_display = ("email", "first_name", "last_name", "role", "is_staff", "is_active")
+        list_filter = ("role", "is_staff", "is_active", "tenant")
+        search_fields = ("email", "first_name", "last_name")
+
+        def get_form(self, request, obj=None, **kwargs):
+            if obj is None:
+                kwargs["form"] = self.add_form
+            return super().get_form(request, obj, **kwargs)
+
+    return User, ControlPanelUserAdmin
+
+
 def register_all():
     mirrored, generated, skipped = 0, 0, 0
 
@@ -760,6 +845,12 @@ def register_all():
         control_panel.register(SchoolTenant, ControlPanelSchoolTenantAdmin)
     except Exception:
         logger.warning("control_panel: could not register custom SchoolTenant admin", exc_info=True)
+
+    try:
+        User, ControlPanelUserAdmin = _build_user_admin()
+        control_panel.register(User, _wrap_with_ops_gate(ControlPanelUserAdmin, "students_staff_data"))
+    except Exception:
+        logger.warning("control_panel: could not register custom User admin", exc_info=True)
 
     try:
         from ops.models import MemberPermission, PermissionAuditLog, RolePermission
