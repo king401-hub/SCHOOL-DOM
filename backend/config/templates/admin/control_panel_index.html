@@ -9,6 +9,14 @@
   <p class="cp-hero-sub">{% now "l, F j, Y" %}</p>
 </div>
 
+{% if compliance_pending %}
+<a href="/super-admin/compliance/" class="cp-alert-banner">
+  <span class="cp-alert-dot"></span>
+  <span><strong>{{ compliance_pending }}</strong> school{{ compliance_pending|pluralize }} waiting on compliance review</span>
+  <span class="cp-alert-cta">Review now &rarr;</span>
+</a>
+{% endif %}
+
 <div class="cp-kpi-grid">
   <div class="cp-kpi-card">
     <div class="cp-kpi-icon cp-kpi-icon-green">
@@ -18,6 +26,26 @@
       <span class="cp-kpi-label">Schools</span>
       <span class="cp-kpi-value">{{ schools_active }}<small>/{{ schools_total }}</small></span>
       <span class="cp-kpi-sub">active / total{% if schools_suspended %} &middot; {{ schools_suspended }} suspended{% endif %}</span>
+    </div>
+  </div>
+  <div class="cp-kpi-card cp-kpi-teal">
+    <div class="cp-kpi-icon cp-kpi-icon-teal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </div>
+    <div class="cp-kpi-body">
+      <span class="cp-kpi-label">Students</span>
+      <span class="cp-kpi-value">{{ students_total }}</span>
+      <span class="cp-kpi-sub">enrolled across all schools</span>
+    </div>
+  </div>
+  <div class="cp-kpi-card cp-kpi-slate">
+    <div class="cp-kpi-icon cp-kpi-icon-slate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/></svg>
+    </div>
+    <div class="cp-kpi-body">
+      <span class="cp-kpi-label">Staff &amp; Teachers</span>
+      <span class="cp-kpi-value">{{ staff_total }}</span>
+      <span class="cp-kpi-sub">teachers, admins &amp; support</span>
     </div>
   </div>
   <div class="cp-kpi-card cp-kpi-blue">
@@ -38,6 +66,9 @@
       <span class="cp-kpi-label">Activation Tokens</span>
       <span class="cp-kpi-value">{{ tokens_revenue_total }}</span>
       <span class="cp-kpi-sub">{{ tokens_revenue_30d }} last 30 days &middot; {{ tokens_credits_sold }} credits sold</span>
+      {% if tokens_sparkline %}
+      <div class="cp-spark cp-spark-amber">{% for h in tokens_sparkline %}<span style="height:{{ h }}%"></span>{% endfor %}</div>
+      {% endif %}
     </div>
   </div>
   <div class="cp-kpi-card cp-kpi-purple">
@@ -48,8 +79,72 @@
       <span class="cp-kpi-label">SMS Purchases</span>
       <span class="cp-kpi-value">{{ sms_revenue_total }}</span>
       <span class="cp-kpi-sub">{{ sms_revenue_30d }} last 30 days &middot; {{ sms_credits_sold }} credits sold</span>
+      {% if sms_sparkline %}
+      <div class="cp-spark cp-spark-purple">{% for h in sms_sparkline %}<span style="height:{{ h }}%"></span>{% endfor %}</div>
+      {% endif %}
     </div>
   </div>
 </div>
+
+<div class="cp-dash-columns">
+  <div class="cp-widget">
+    <div class="cp-widget-head">
+      <h2>Recently Onboarded Schools</h2>
+      <a href="/control-panel/core/schooltenant/" class="cp-widget-link">View all &rarr;</a>
+    </div>
+    {% if recent_schools %}
+    <table class="cp-mini-table">
+      <thead><tr><th>School</th><th>Status</th><th>Compliance</th><th>Onboarded</th></tr></thead>
+      <tbody>
+        {% for s in recent_schools %}
+        <tr>
+          <td><a href="{{ s.url }}">{{ s.name }}</a></td>
+          <td>{% if s.is_active %}<span class="cp-pill cp-pill-ok">Active</span>{% else %}<span class="cp-pill cp-pill-danger">Suspended</span>{% endif %}</td>
+          <td>{{ s.compliance_status }}</td>
+          <td>{{ s.created_on }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="cp-widget-empty">No schools yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="cp-widget">
+    <div class="cp-widget-head"><h2>Quick Actions</h2></div>
+    <div class="cp-quick-actions">
+      <a href="/control-panel/core/schooltenant/add/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+        <span>Add a school</span>
+      </a>
+      <a href="/control-panel/core/schooltenant/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg></span>
+        <span>Suspend / manage schools</span>
+      </a>
+      <a href="/super-admin/compliance/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></span>
+        <span>Compliance review queue</span>
+      </a>
+      <a href="/control-panel/finance/smswallet/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span>
+        <span>SMS wallets</span>
+      </a>
+      <a href="/control-panel/permission-matrix/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <span>Permission matrix</span>
+      </a>
+      <a href="/control-panel/ops/opsuser/add/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+        <span>Add ops staff</span>
+      </a>
+      <a href="/control-panel/users/user/" class="cp-quick-action">
+        <span class="cp-quick-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.9 3.6-7 8-7s8 3.1 8 7"/></svg></span>
+        <span>Manage users</span>
+      </a>
+    </div>
+  </div>
+</div>
+
 {{ block.super }}
 {% endblock %}

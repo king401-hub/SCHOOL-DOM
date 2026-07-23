@@ -7,8 +7,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .access import function_group_name, super_admin_required
-from .forms import PlatformNotificationForm, SchoolTokenPaymentSettingForm, SuperAdminCreateForm, SuperAdminFunctionsForm, SUPER_ADMIN_FUNCTIONS
-from .models import PlatformNotification, SchoolTokenPaymentSetting
+from .forms import PlatformNotificationForm, SuperAdminCreateForm, SuperAdminFunctionsForm, SUPER_ADMIN_FUNCTIONS
+from .models import PlatformNotification
 from .services import dashboard_context, platform_models, search_queryset
 
 
@@ -63,14 +63,6 @@ def create_staff_user(form):
         key: value for key, value in data.items()
         if key in field_names or key == "password"
     })
-
-
-def school_token_setting_for(school):
-    return SchoolTokenPaymentSetting.objects.get_or_create(
-        school_model=f"{school._meta.app_label}.{school._meta.model_name}",
-        school_pk=str(school.pk),
-        defaults={"school_name": str(school)},
-    )[0]
 
 
 @super_admin_required
@@ -207,26 +199,112 @@ def _send_compliance_review_email(school, approved):
 
 @super_admin_required(function="tokens")
 def school_token_settings(request, pk):
+    """Grant SMS credits / activation tokens to a school and adjust its token price.
+    Writes directly to the real finance models (SmsWallet, ActivationCreditPool) that
+    the actual purchase/activation flow reads - not a disconnected settings record."""
+    from decimal import Decimal, InvalidOperation
+
+    from finance.models import ActivationCreditTransaction, SmsWalletTransaction
+    from finance.services import (
+        generate_reference,
+        get_or_create_activation_credit_pool,
+        get_or_create_sms_wallet,
+        record_finance_activity,
+    )
+
     School = platform_models()["school"]
     school = get_object_or_404(School, pk=pk)
-    setting = school_token_setting_for(school)
-    if setting.school_name != str(school):
-        setting.school_name = str(school)
-        setting.save(update_fields=["school_name", "updated_at"])
+    wallet = get_or_create_sms_wallet(school)
+    pool = get_or_create_activation_credit_pool(school)
 
     if request.method == "POST":
-        form = SchoolTokenPaymentSettingForm(request.POST, instance=setting)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Token payment settings were updated.")
-            return redirect("superadmin_dashboard:schools")
-    else:
-        form = SchoolTokenPaymentSettingForm(instance=setting)
+        action = request.POST.get("action")
+
+        if action == "add_sms_credits":
+            try:
+                credits = int(request.POST.get("sms_credits") or 0)
+            except ValueError:
+                credits = 0
+            if credits > 0:
+                balance_before = wallet.balance
+                wallet.balance += credits
+                wallet.save(update_fields=["balance", "updated_at"])
+                SmsWalletTransaction.objects.create(
+                    wallet=wallet,
+                    tx_type=SmsWalletTransaction.ADMIN_CREDIT,
+                    status=SmsWalletTransaction.STATUS_SUCCESS,
+                    credits=credits,
+                    balance_before=balance_before,
+                    balance_after=wallet.balance,
+                    reference=generate_reference("SMSADM"),
+                    narration=f"Manual credit grant by {request.user}",
+                    created_by=request.user,
+                )
+                record_finance_activity(
+                    school, request.user, "sms_credits_granted",
+                    f"Granted {credits} SMS credits.", reference=str(wallet.id),
+                    metadata={"credits": credits},
+                )
+                messages.success(request, f"Added {credits} SMS credits to {school}.")
+            else:
+                messages.error(request, "Enter a number of SMS credits greater than zero.")
+            return redirect("superadmin_dashboard:school_token_settings", pk=pk)
+
+        if action == "add_tokens":
+            try:
+                credits = int(request.POST.get("token_credits") or 0)
+            except ValueError:
+                credits = 0
+            if credits > 0:
+                pool.balance += credits
+                pool.save(update_fields=["balance", "updated_at"])
+                ActivationCreditTransaction.objects.create(
+                    pool=pool,
+                    tx_type=ActivationCreditTransaction.ADJUSTMENT,
+                    status=ActivationCreditTransaction.STATUS_SUCCESS,
+                    credits=credits,
+                    price_per_credit=pool.price_per_credit,
+                    amount=Decimal("0.00"),
+                    reference=generate_reference("TOKADM"),
+                    narration=f"Manual token grant by {request.user}",
+                    created_by=request.user,
+                )
+                record_finance_activity(
+                    school, request.user, "tokens_granted",
+                    f"Granted {credits} activation tokens.", reference=str(pool.id),
+                    metadata={"credits": credits},
+                )
+                messages.success(request, f"Added {credits} activation tokens to {school}.")
+            else:
+                messages.error(request, "Enter a number of tokens greater than zero.")
+            return redirect("superadmin_dashboard:school_token_settings", pk=pk)
+
+        if action == "update_token_price":
+            try:
+                new_price = Decimal(request.POST.get("token_price") or "0")
+            except InvalidOperation:
+                new_price = Decimal("0")
+            if new_price > 0:
+                old_price = pool.price_per_credit
+                pool.price_per_credit = new_price
+                pool.save(update_fields=["price_per_credit", "updated_at"])
+                record_finance_activity(
+                    school, request.user, "token_price_updated",
+                    "Updated activation token price.", amount=new_price, reference=str(pool.id),
+                    metadata={"old_price": str(old_price), "new_price": str(new_price)},
+                )
+                messages.success(request, f"Token price for {school} updated to {pool.currency} {new_price}.")
+            else:
+                messages.error(request, "Enter a token price greater than zero.")
+            return redirect("superadmin_dashboard:school_token_settings", pk=pk)
+
+        messages.error(request, "Unknown action.")
+        return redirect("superadmin_dashboard:school_token_settings", pk=pk)
 
     return render(request, "superadmin_dashboard/school_token_settings.html", {
         "school": school,
-        "setting": setting,
-        "form": form,
+        "wallet": wallet,
+        "pool": pool,
     })
 
 
@@ -235,13 +313,13 @@ def subscriptions(request):
     model = platform_models()["subscription"]
     if model is None:
         return missing_module(request, "Subscriptions")
-    queryset, query, status = search_queryset(model, request, ["plan", "school__name", "reference"])
+    queryset, query, status = search_queryset(model, request, ["name", "schema_name", "school_group__name"], default_order="name")
     return render(request, "superadmin_dashboard/list.html", {
         "title": "Subscriptions",
         "objects": paginate(request, queryset),
         "query": query,
         "status": status,
-        "columns": ["school", "plan", "status", "created_at"],
+        "columns": ["name", "subscription_tier", "is_active", "created_on"],
     })
 
 
@@ -250,13 +328,28 @@ def payments(request):
     model = platform_models()["payment"] or platform_models()["transaction"]
     if model is None:
         return missing_module(request, "Payments and Transactions")
-    queryset, query, status = search_queryset(model, request, ["reference", "school__name", "provider"])
+    queryset, query, status = search_queryset(model, request, ["provider_reference", "school__name", "provider", "payer_name"])
     return render(request, "superadmin_dashboard/list.html", {
         "title": "Payments and Transactions",
         "objects": paginate(request, queryset),
         "query": query,
         "status": status,
-        "columns": ["reference", "school", "amount", "status", "created_at"],
+        "columns": ["provider_reference", "school", "gross_amount", "status", "paid_at"],
+    })
+
+
+@super_admin_required(function="billing")
+def finance_ledger(request):
+    model = platform_models()["finance_ledger"]
+    if model is None:
+        return missing_module(request, "Finance Ledger")
+    queryset, query, status = search_queryset(model, request, ["action", "description", "reference", "tenant__name", "actor__email"])
+    return render(request, "superadmin_dashboard/list.html", {
+        "title": "Finance Ledger",
+        "objects": paginate(request, queryset),
+        "query": query,
+        "status": status,
+        "columns": ["tenant", "actor", "action", "description", "amount", "created_at"],
     })
 
 
@@ -375,13 +468,13 @@ def audit_logs(request):
     model = platform_models()["audit_log"]
     if model is None:
         return missing_module(request, "Audit Logs")
-    queryset, query, status = search_queryset(model, request, ["action", "actor__email", "object_repr", "ip_address"])
+    queryset, query, status = search_queryset(model, request, ["user__email", "object_repr", "change_message"], default_order="-action_time")
     return render(request, "superadmin_dashboard/list.html", {
         "title": "Audit Logs",
         "objects": paginate(request, queryset),
         "query": query,
         "status": status,
-        "columns": ["actor", "action", "object_repr", "ip_address", "created_at"],
+        "columns": ["user", "object_repr", "get_change_message", "action_time"],
     })
 
 

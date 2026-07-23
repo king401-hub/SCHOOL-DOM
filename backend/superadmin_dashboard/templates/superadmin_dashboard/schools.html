@@ -27,7 +27,7 @@
               <form method="post" action="{% url 'superadmin_dashboard:school_action' school.pk 'approve' %}">{% csrf_token %}<button>Approve</button></form>
               <form method="post" action="{% url 'superadmin_dashboard:school_action' school.pk 'suspend' %}">{% csrf_token %}<button class="danger">Suspend</button></form>
               <form method="post" action="{% url 'superadmin_dashboard:school_action' school.pk 'reactivate' %}">{% csrf_token %}<button>Reactivate</button></form>
-              <a class="button-link secondary" href="{% url 'superadmin_dashboard:school_token_settings' school.pk %}">Tokens</a>
+              <a class="button-link secondary" href="{% url 'superadmin_dashboard:school_token_settings' school.pk %}">Credits</a>
             </td>
           </tr>
         {% empty %}

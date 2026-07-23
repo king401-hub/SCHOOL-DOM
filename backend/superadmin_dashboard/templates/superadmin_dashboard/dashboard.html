@@ -39,7 +39,7 @@
     <div class="panel-head"><h2>Activity Tracking</h2></div>
     <ol class="activity-list">
       {% for item in recent_activity %}
-        <li><strong>{{ item }}</strong><small>{{ item.created_at|default:"" }}</small></li>
+        <li><strong>{{ item.object_repr }} &mdash; {{ item.get_change_message }}</strong><small>{{ item.user|default:"System" }} &middot; {{ item.action_time }}</small></li>
       {% empty %}
         <li><strong>No audit activity available.</strong><small>Connect your audit log model to populate this feed.</small></li>
       {% endfor %}

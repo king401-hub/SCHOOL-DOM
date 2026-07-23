@@ -3,6 +3,8 @@ from django.db import models
 from django.utils import timezone as django_timezone
 from django_countries.fields import CountryField
 
+from ops.models import Region
+
 
 class SchoolGroup(models.Model):
     name = models.CharField(max_length=255)
@@ -46,7 +48,16 @@ class SchoolTenant(models.Model):
         blank=True,
         related_name="schools",
     )
-    
+    # Sales/growth-ops territory assignment (Ops Console spec) - distinct from
+    # country/state below, which describe the school's own physical location.
+    ops_region = models.ForeignKey(
+        Region,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="schools",
+    )
+
     # School Information
     country = CountryField(blank=True, default="NG")
     state = models.CharField(max_length=120, blank=True, default="")

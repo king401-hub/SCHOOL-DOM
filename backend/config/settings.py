@@ -130,6 +130,7 @@ SHARED_APPS = [
     'django_tenants',
     'core',  # must be here because it contains the tenant model
     'settings_app',
+    'ops',  # platform-level staff/roles, not tenant-scoped - lives with core
     'django_countries',
     'django.contrib.contenttypes',
     'django.contrib.auth',
@@ -175,6 +176,7 @@ _FLAT_APPS = [
     'corsheaders',
     'core',
     'settings_app',
+    'ops',
     'tenants',
     'users',
     'academic',

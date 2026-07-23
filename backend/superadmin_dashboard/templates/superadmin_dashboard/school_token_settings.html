@@ -1,24 +1,47 @@
 {% extends "superadmin_dashboard/base.html" %}
-{% block heading %}Token Payments for {{ school }}{% endblock %}
+{% block heading %}Manage Credits for {{ school }}{% endblock %}
 {% block content %}
 <section class="panel form-panel">
   <div class="summary-strip">
-    <span><strong>Current price</strong>{{ setting.token_price }}</span>
-    <span><strong>Tokens per payment</strong>{{ setting.tokens_per_payment }}</span>
-    <span><strong>Minimum tokens</strong>{{ setting.minimum_tokens }}</span>
+    <span><strong>SMS balance</strong>{{ wallet.balance }}</span>
+    <span><strong>Token balance</strong>{{ pool.balance }}</span>
+    <span><strong>Token price</strong>{{ pool.currency }} {{ pool.price_per_credit }}</span>
   </div>
+
   <form method="post" class="stacked-form">
     {% csrf_token %}
-    {% for field in form %}
-      <label>
-        <span>{{ field.label }}</span>
-        {{ field }}
-        {% for error in field.errors %}<strong class="field-error">{{ error }}</strong>{% endfor %}
-      </label>
-    {% endfor %}
+    <input type="hidden" name="action" value="add_sms_credits">
+    <label>
+      <span>Add SMS credits</span>
+      <input type="number" name="sms_credits" min="1" step="1" required>
+    </label>
     <div class="form-actions">
-      <button type="submit">Save Token Settings</button>
-      <a class="button-link secondary" href="{% url 'superadmin_dashboard:schools' %}">Cancel</a>
+      <button type="submit">Add SMS Credits</button>
+    </div>
+  </form>
+
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="add_tokens">
+    <label>
+      <span>Add activation tokens</span>
+      <input type="number" name="token_credits" min="1" step="1" required>
+    </label>
+    <div class="form-actions">
+      <button type="submit">Add Tokens</button>
+    </div>
+  </form>
+
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_token_price">
+    <label>
+      <span>New token price ({{ pool.currency }})</span>
+      <input type="number" name="token_price" min="0.01" step="0.01" value="{{ pool.price_per_credit }}" required>
+    </label>
+    <div class="form-actions">
+      <button type="submit">Update Token Price</button>
+      <a class="button-link secondary" href="{% url 'superadmin_dashboard:schools' %}">Back to Schools</a>
     </div>
   </form>
 </section>

@@ -17,7 +17,80 @@ from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
+from ops.models import OpsUser, Region
+from ops.permissions import clear_member_override, has_permission, set_member_override, set_role_default
+
 logger = logging.getLogger("control_panel")
+
+# Maps a concrete model to the Ops Console module that gates it (spec section 2).
+# Only models with a real, already-built feature are listed here - Lead pipeline,
+# Churn dashboard, Training tools, and Slack controls have no backing model yet, so
+# there's nothing to gate for them (see the Ops Console build-scope decision).
+MODULE_MODEL_MAP = {
+    ("finance", "activationcreditpool"): "token_assignment",
+    ("finance", "activationcredittransaction"): "token_assignment",
+    ("finance", "smswallet"): "token_assignment",
+    ("finance", "smswallettransaction"): "token_assignment",
+    ("finance", "smsbundle"): "token_assignment",
+    ("users", "user"): "students_staff_data",
+    ("users", "studentprofile"): "students_staff_data",
+    ("users", "teacherprofile"): "students_staff_data",
+    ("users", "parentprofile"): "students_staff_data",
+    ("hr", "staffprofile"): "students_staff_data",
+}
+
+
+class OpsGatedAdminMixin:
+    """Gates a ModelAdmin behind a single Ops Console module permission. Accounts
+    without an ops_profile (every existing platform-staff account) are completely
+    unaffected - this only restricts accounts explicitly enrolled in the Ops
+    Console role system."""
+
+    ops_module = None
+
+    def _ops_profile(self, request):
+        return getattr(request.user, "ops_profile", None)
+
+    def _ops_allows(self, request):
+        profile = self._ops_profile(request)
+        if profile is None or not self.ops_module:
+            return True
+        return has_permission(profile, self.ops_module)
+
+    # For an ops_profile account, the module permission is the *sole* authority -
+    # it does not additionally require Django's own per-model auth.Permission
+    # grants (which a freshly-created ops account won't have configured, and isn't
+    # meant to need: role + module is the whole point of the Ops Console spec).
+    # Accounts with no ops_profile fall through to normal Django admin behavior,
+    # completely unaffected.
+    def has_module_permission(self, request):
+        if self._ops_profile(request) is not None:
+            return self._ops_allows(request)
+        return super().has_module_permission(request)
+
+    def has_view_permission(self, request, obj=None):
+        if self._ops_profile(request) is not None:
+            return self._ops_allows(request)
+        return super().has_view_permission(request, obj)
+
+    def has_add_permission(self, request):
+        if self._ops_profile(request) is not None:
+            return self._ops_allows(request)
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        if self._ops_profile(request) is not None:
+            return self._ops_allows(request)
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if self._ops_profile(request) is not None:
+            return self._ops_allows(request)
+        return super().has_delete_permission(request, obj)
+
+
+def _wrap_with_ops_gate(admin_class, module):
+    return type(f"OpsGated{admin_class.__name__}", (OpsGatedAdminMixin, admin_class), {"ops_module": module})
 
 # Third-party / framework apps we never want to dump raw model admin for.
 _THIRD_PARTY_APP_LABELS = {
@@ -60,6 +133,7 @@ APP_LABEL_NAMES = {
     "ai_chat": "AI Chat",
     "ai_secretary": "AI Secretary",
     "superadmin_dashboard": "Platform Admin",
+    "ops": "Ops Console",
 }
 
 
@@ -87,8 +161,30 @@ def _dashboard_metrics():
         metrics["schools_total"] = total
         metrics["schools_active"] = active
         metrics["schools_suspended"] = total - active
+        metrics["compliance_pending"] = SchoolTenant.objects.filter(compliance_status="submitted").count()
+        metrics["recent_schools"] = [
+            {
+                "name": s.name,
+                "is_active": s.is_active,
+                "compliance_status": s.get_compliance_status_display(),
+                "created_on": s.created_on,
+                "url": reverse("control_panel:core_schooltenant_change", args=[s.pk]),
+            }
+            for s in SchoolTenant.objects.order_by("-created_on")[:6]
+        ]
     except Exception:
         metrics["schools_total"] = metrics["schools_active"] = metrics["schools_suspended"] = "—"
+        metrics["compliance_pending"] = 0
+        metrics["recent_schools"] = []
+
+    try:
+        from users.models import User
+        metrics["students_total"] = User.objects.filter(role="student").count()
+        metrics["staff_total"] = User.objects.filter(
+            role__in=["teacher", "staff", "principal", "school_admin", "accountant"]
+        ).count()
+    except Exception:
+        metrics["students_total"] = metrics["staff_total"] = "—"
 
     try:
         from users.app_views import KIDS_MONITOR_PRICE
@@ -102,15 +198,34 @@ def _dashboard_metrics():
 
     since_30d = timezone.now() - timezone.timedelta(days=30)
 
+    def _sparkline(qs, field="amount"):
+        """7 bar heights (0-100) from the last 7 days of a queryset, oldest first."""
+        from django.db.models.functions import TruncDate
+
+        today = timezone.localdate()
+        days = [today - timezone.timedelta(days=i) for i in range(6, -1, -1)]
+        rows = (
+            qs.filter(created_at__date__gte=days[0])
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(total=Sum(field))
+        )
+        by_day = {row["day"]: float(row["total"] or 0) for row in rows}
+        values = [by_day.get(d, 0.0) for d in days]
+        peak = max(values) or 1.0
+        return [max(4, round((v / peak) * 100)) for v in values]
+
     try:
         from finance.models import ActivationCreditTransaction
         qs = ActivationCreditTransaction.objects.filter(tx_type="purchase", status="successful")
         metrics["tokens_revenue_total"] = _money(qs.aggregate(s=Sum("amount"))["s"] or Decimal("0"))
         metrics["tokens_revenue_30d"] = _money(qs.filter(created_at__gte=since_30d).aggregate(s=Sum("amount"))["s"] or Decimal("0"))
         metrics["tokens_credits_sold"] = qs.aggregate(s=Sum("credits"))["s"] or 0
+        metrics["tokens_sparkline"] = _sparkline(qs)
     except Exception:
         metrics["tokens_revenue_total"] = metrics["tokens_revenue_30d"] = "—"
         metrics["tokens_credits_sold"] = "—"
+        metrics["tokens_sparkline"] = []
 
     try:
         from finance.models import SmsWalletTransaction
@@ -118,9 +233,11 @@ def _dashboard_metrics():
         metrics["sms_revenue_total"] = _money(qs.aggregate(s=Sum("amount"))["s"] or Decimal("0"))
         metrics["sms_revenue_30d"] = _money(qs.filter(created_at__gte=since_30d).aggregate(s=Sum("amount"))["s"] or Decimal("0"))
         metrics["sms_credits_sold"] = qs.aggregate(s=Sum("credits"))["s"] or 0
+        metrics["sms_sparkline"] = _sparkline(qs)
     except Exception:
         metrics["sms_revenue_total"] = metrics["sms_revenue_30d"] = "—"
         metrics["sms_credits_sold"] = "—"
+        metrics["sms_sparkline"] = []
 
     return metrics
 
@@ -142,6 +259,56 @@ class ControlPanelSite(AdminSite):
         context = {**(extra_context or {}), **_dashboard_metrics()}
         return super().index(request, extra_context=context)
 
+    def get_urls(self):
+        custom = [
+            path("permission-matrix/", self.admin_view(self.permission_matrix_view), name="permission_matrix"),
+        ]
+        return custom + super().get_urls()
+
+    def permission_matrix_view(self, request):
+        """The "Master permissions matrix" from the spec, editable as one grid.
+        Only CEO/CTO (or accounts with no ops_profile at all - regular platform
+        staff, unaffected by this system) may edit it - everyone else with module
+        access can still open the raw RolePermission list, just not this editor."""
+        from ops.models import MODULE_CHOICES, RolePermission
+
+        profile = getattr(request.user, "ops_profile", None)
+        if profile is not None and profile.role not in (OpsUser.CEO, OpsUser.CTO):
+            raise PermissionDenied
+
+        if request.method == "POST":
+            existing = {(rp.role, rp.module): rp.granted for rp in RolePermission.objects.all()}
+            for role, _label in OpsUser.ROLE_CHOICES:
+                if role == OpsUser.CEO:
+                    continue
+                for module, _mlabel in MODULE_CHOICES:
+                    granted = request.POST.get(f"perm__{role}__{module}") == "on"
+                    if existing.get((role, module), False) != granted:
+                        set_role_default(request.user, role, module, granted)
+            messages.success(request, "Permission matrix updated.")
+            return redirect(f"{self.name}:permission_matrix")
+
+        perms = {(rp.role, rp.module): rp.granted for rp in RolePermission.objects.all()}
+        rows = []
+        for module_slug, module_label in MODULE_CHOICES:
+            cells = []
+            for role_slug, _rlabel in OpsUser.ROLE_CHOICES:
+                locked = role_slug == OpsUser.CEO
+                cells.append({
+                    "granted": True if locked else perms.get((role_slug, module_slug), False),
+                    "locked": locked,
+                    "field_name": f"perm__{role_slug}__{module_slug}",
+                })
+            rows.append({"module_label": module_label, "cells": cells})
+
+        context = {
+            **self.each_context(request),
+            "title": "Permission Matrix",
+            "roles": OpsUser.ROLE_CHOICES,
+            "rows": rows,
+        }
+        return render(request, "admin/ops/permission_matrix.html", context)
+
 
 control_panel = ControlPanelSite(name="control_panel")
 
@@ -149,10 +316,62 @@ control_panel = ControlPanelSite(name="control_panel")
 class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
     """Adds suspend/reactivate/delete controls on top of core.admin's SchoolTenantAdmin."""
 
-    list_display = ("name", "schema_name", "school_group", "school_type", "status_badge", "subscription_tier", "row_actions")
-    list_filter = ("school_group", "school_type", "is_active", "subscription_tier")
+    list_display = ("name", "schema_name", "school_group", "ops_region", "school_type", "status_badge", "subscription_tier", "row_actions")
+    list_filter = ("school_group", "ops_region", "school_type", "is_active", "subscription_tier")
     search_fields = ("name", "schema_name", "school_group__name")
     actions = ["suspend_schools", "activate_schools"]
+
+    # School onboarding is the primary module for this model, but CFO (billing_plan
+    # / revenue_features) and general students_staff_data holders also need to see
+    # the school list even though they can't onboard/edit one - spec section 3.3.
+    _view_modules = ("school_onboarding", "compliance_verification", "students_staff_data", "revenue_features", "billing_plan")
+    _edit_modules = ("school_onboarding", "compliance_verification")
+
+    def _ops_profile(self, request):
+        return getattr(request.user, "ops_profile", None)
+
+    def _ops_can_view(self, profile):
+        return any(has_permission(profile, m) for m in self._view_modules)
+
+    def _ops_can_edit(self, profile):
+        return any(has_permission(profile, m) for m in self._edit_modules)
+
+    def has_module_permission(self, request):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._ops_can_view(profile)
+        return super().has_module_permission(request)
+
+    def has_view_permission(self, request, obj=None):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._ops_can_view(profile)
+        return super().has_view_permission(request, obj)
+
+    def has_add_permission(self, request):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._ops_can_edit(profile)
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._ops_can_edit(profile)
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._ops_can_edit(profile)
+        return super().has_delete_permission(request, obj)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        profile = self._ops_profile(request)
+        if profile is not None and not profile.sees_all_regions():
+            qs = qs.filter(ops_region=profile.region)
+        return qs
 
     @admin.display(description="Status")
     def status_badge(self, obj):
@@ -214,6 +433,176 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             return render(request, "admin/core/schooltenant/confirm_toggle.html", context)
 
         return view
+
+
+class ControlPanelOpsUserAdmin(admin.ModelAdmin):
+    """Team management (spec section 2/3.4): CTO/CEO hold the global team_management
+    permission and can manage anyone. A Growth Manager only holds the scoped
+    team_management_scoped variant - they may only see/add/edit/remove Senior
+    Marketers and Marketers within their own region, never another region's roster
+    and never a peer GM/CTO/CFO."""
+
+    list_display = ("user", "role", "region", "reports_to", "is_active")
+    list_filter = ("role", "region", "is_active")
+    search_fields = ("user__email", "user__first_name", "user__last_name")
+
+    def _ops_profile(self, request):
+        return getattr(request.user, "ops_profile", None)
+
+    def _can_view(self, profile):
+        return has_permission(profile, "team_management") or has_permission(profile, "team_management_scoped")
+
+    def _can_manage(self, profile, obj):
+        if has_permission(profile, "team_management"):
+            return True
+        if has_permission(profile, "team_management_scoped"):
+            if obj is None:
+                return True
+            return obj.role in (OpsUser.SENIOR_MARKETER, OpsUser.MARKETER) and obj.region_id == profile.region_id
+        return False
+
+    def has_module_permission(self, request):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._can_view(profile)
+        return super().has_module_permission(request)
+
+    def has_view_permission(self, request, obj=None):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._can_view(profile)
+        return super().has_view_permission(request, obj)
+
+    def has_add_permission(self, request):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._can_view(profile)
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._can_manage(profile, obj)
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        profile = self._ops_profile(request)
+        if profile is not None:
+            return self._can_manage(profile, obj)
+        return super().has_delete_permission(request, obj)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        profile = self._ops_profile(request)
+        if profile is None or has_permission(profile, "team_management"):
+            return qs
+        if has_permission(profile, "team_management_scoped"):
+            return qs.filter(region=profile.region, role__in=[OpsUser.SENIOR_MARKETER, OpsUser.MARKETER])
+        return qs.none()
+
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        if db_field.name == "role":
+            profile = self._ops_profile(request)
+            if profile is not None and not has_permission(profile, "team_management"):
+                # A scoped Growth Manager can only ever create/reassign Senior
+                # Marketers and Marketers - never promote someone to CEO/CTO/CFO/GM
+                # via the Add/Change form, even though has_add_permission lets them
+                # open the form at all.
+                labels = dict(OpsUser.ROLE_CHOICES)
+                kwargs["choices"] = [
+                    (OpsUser.SENIOR_MARKETER, labels[OpsUser.SENIOR_MARKETER]),
+                    (OpsUser.MARKETER, labels[OpsUser.MARKETER]),
+                ]
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "region":
+            profile = self._ops_profile(request)
+            if profile is not None and not has_permission(profile, "team_management") and profile.region_id:
+                kwargs["queryset"] = Region.objects.filter(pk=profile.region_id)
+                kwargs["initial"] = profile.region_id
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        profile = self._ops_profile(request)
+        if profile is not None and not has_permission(profile, "team_management"):
+            # Defense in depth behind the form-field restriction above - reject
+            # anything outside a scoped GM's region/role even if the form was
+            # tampered with client-side.
+            in_scope = (
+                has_permission(profile, "team_management_scoped")
+                and obj.role in (OpsUser.SENIOR_MARKETER, OpsUser.MARKETER)
+                and obj.region_id == profile.region_id
+            )
+            if not in_scope:
+                raise PermissionDenied
+        super().save_model(request, obj, form, change)
+        # CEO/CTO are spec'd "Full platform" scope (section 1). The Ops Console
+        # module permissions above only cover the 13 modules this spec defines, so
+        # the underlying Django account also needs is_superuser for genuinely full
+        # access - kept in sync here rather than left as a manual setup step.
+        should_be_super = obj.role in (OpsUser.CEO, OpsUser.CTO)
+        if obj.user.is_superuser != should_be_super:
+            obj.user.is_superuser = should_be_super
+            obj.user.save(update_fields=["is_superuser"])
+
+    def delete_model(self, request, obj):
+        user = obj.user
+        drop_super = obj.role in (OpsUser.CEO, OpsUser.CTO) and user.is_superuser
+        super().delete_model(request, obj)
+        if drop_super:
+            user.is_superuser = False
+            user.save(update_fields=["is_superuser"])
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
+
+
+class ControlPanelRolePermissionAdmin(admin.ModelAdmin):
+    """Raw row editor for the seeded matrix. Prefer the Permission Matrix page for
+    day-to-day toggling (it shows the whole grid at once); this stays available as a
+    single-row fallback and both paths go through set_role_default so every change
+    is audited the same way."""
+
+    list_display = ("role", "module", "granted")
+    list_filter = ("role", "module", "granted")
+
+    def save_model(self, request, obj, form, change):
+        set_role_default(request.user, obj.role, obj.module, obj.granted)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class ControlPanelMemberPermissionAdmin(admin.ModelAdmin):
+    list_display = ("ops_user", "module", "granted")
+    list_filter = ("module", "granted")
+
+    def save_model(self, request, obj, form, change):
+        set_member_override(request.user, obj.ops_user, obj.module, obj.granted)
+
+    def delete_model(self, request, obj):
+        clear_member_override(request.user, obj.ops_user, obj.module)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            clear_member_override(request.user, obj.ops_user, obj.module)
+
+
+class ControlPanelAuditLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "actor", "change_type", "role", "target_ops_user", "module", "old_value", "new_value")
+    list_filter = ("change_type", "module", "role")
+    date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 def _is_local_app(app_config):
@@ -283,11 +672,24 @@ def register_all():
     except Exception:
         logger.warning("control_panel: could not register custom SchoolTenant admin", exc_info=True)
 
+    try:
+        from ops.models import MemberPermission, PermissionAuditLog, RolePermission
+        control_panel.register(OpsUser, ControlPanelOpsUserAdmin)
+        control_panel.register(RolePermission, ControlPanelRolePermissionAdmin)
+        control_panel.register(MemberPermission, ControlPanelMemberPermissionAdmin)
+        control_panel.register(PermissionAuditLog, ControlPanelAuditLogAdmin)
+    except Exception:
+        logger.warning("control_panel: could not register ops admin classes", exc_info=True)
+
     for model, model_admin in list(admin.site._registry.items()):
         if model in control_panel._registry:
             continue
         try:
-            control_panel.register(model, model_admin.__class__)
+            admin_class = model_admin.__class__
+            module = MODULE_MODEL_MAP.get((model._meta.app_label, model._meta.model_name))
+            if module:
+                admin_class = _wrap_with_ops_gate(admin_class, module)
+            control_panel.register(model, admin_class)
             mirrored += 1
         except admin.sites.AlreadyRegistered:
             pass
@@ -302,7 +704,11 @@ def register_all():
             if model in control_panel._registry:
                 continue
             try:
-                control_panel.register(model, _build_admin_class(model))
+                admin_class = _build_admin_class(model)
+                module = MODULE_MODEL_MAP.get((model._meta.app_label, model._meta.model_name))
+                if module:
+                    admin_class = _wrap_with_ops_gate(admin_class, module)
+                control_panel.register(model, admin_class)
                 generated += 1
             except Exception:
                 logger.warning("control_panel: could not auto-register %s", model, exc_info=True)

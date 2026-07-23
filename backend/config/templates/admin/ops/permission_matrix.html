@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-matrix-card">
+  <h1>Permission Matrix</h1>
+  <p class="cp-confirm-copy">
+    Default access per role. A per-user override in Member Permissions always wins over
+    what's set here. CEO is locked to full access on every module and can't be edited.
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="cp-matrix-scroll">
+      <table class="cp-matrix-table">
+        <thead>
+          <tr>
+            <th>Module</th>
+            {% for role_slug, role_label in roles %}<th>{{ role_label }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="cp-matrix-module">{{ row.module_label }}</td>
+            {% for cell in row.cells %}
+            <td class="cp-matrix-cell">
+              {% if cell.locked %}
+                <span class="cp-matrix-lock" title="CEO access is locked and cannot be edited">&#128274;</span>
+              {% else %}
+                <input type="checkbox" name="{{ cell.field_name }}" {% if cell.granted %}checked{% endif %}>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="Save Permission Matrix" class="cp-btn-ok">
+    </div>
+  </form>
+</div>
+{% endblock %}

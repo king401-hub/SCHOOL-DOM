@@ -57,14 +57,54 @@ def has_field_path(model, field_path):
 def platform_models():
     return {
         "school": get_model("core", "SchoolTenant") or get_model("schools", "School") or get_model("school", "School"),
-        "subscription": get_model("subscriptions", "Subscription"),
-        "payment": get_model("payments", "Payment") or get_model("billing", "Payment"),
-        "transaction": get_model("payments", "Transaction") or get_model("billing", "Transaction"),
-        "virtual_account": get_model("payments", "VirtualAccount") or get_model("billing", "VirtualAccount"),
+        # No dedicated Subscription model exists yet - subscription_tier lives directly
+        # on SchoolTenant, so that's the closest real thing to "subscriptions" we have.
+        "subscription": get_model("core", "SchoolTenant"),
+        # Real fee-collection payments received into school virtual accounts.
+        "payment": get_model("fee_collections", "FeePayment"),
+        "transaction": get_model("fee_collections", "FeePayment"),
+        "virtual_account": get_model("fee_collections", "SchoolVirtualAccount"),
+        # No support-ticket app exists in this codebase yet.
         "ticket": get_model("support", "SupportTicket") or get_model("tickets", "Ticket"),
         "announcement": get_model("superadmin_dashboard", "PlatformNotification") or get_model("announcements", "Announcement") or get_model("notifications", "Announcement"),
-        "audit_log": get_model("core", "AuditLog") or get_model("audit", "AuditLog") or get_model("activity", "AuditLog"),
+        # core.AuditLog is defined but nothing writes to it. django admin's own
+        # LogEntry is real, already populated by every admin add/change/delete,
+        # and is what actually backs "Activity Tracking" below.
+        "audit_log": get_model("admin", "LogEntry"),
+        # Cross-cutting money-movement ledger - every finance action across the
+        # whole platform (purchases, refunds, salary advances, withdrawals...).
+        "finance_ledger": get_model("finance", "FinanceLedgerLog"),
     }
+
+
+def _platform_revenue(since=None):
+    """Real platform-side revenue: activation-token purchases + SMS bundle purchases
+    + the platform's cut of fee-collection payments. Returns (total, transaction_count)."""
+    from finance.models import ActivationCreditTransaction, SmsWalletTransaction
+
+    total = Decimal("0.00")
+    count = 0
+
+    tokens = ActivationCreditTransaction.objects.filter(tx_type="purchase", status="successful")
+    sms = SmsWalletTransaction.objects.filter(tx_type="purchase", status="successful")
+    if since:
+        tokens = tokens.filter(created_at__gte=since)
+        sms = sms.filter(created_at__gte=since)
+    for qs in (tokens, sms):
+        agg = qs.aggregate(s=Sum("amount"), c=Count("id"))
+        total += agg["s"] or Decimal("0.00")
+        count += agg["c"] or 0
+
+    fee_payment_model = get_model("fee_collections", "FeePayment")
+    if fee_payment_model is not None:
+        qs = fee_payment_model.objects.filter(status="successful")
+        if since:
+            qs = qs.filter(created_at__gte=since)
+        agg = qs.aggregate(s=Sum("platform_fee"), c=Count("id"))
+        total += agg["s"] or Decimal("0.00")
+        count += agg["c"] or 0
+
+    return total, count
 
 
 def dashboard_context():
@@ -73,20 +113,22 @@ def dashboard_context():
     today = timezone.now().date()
     month_start = today.replace(day=1)
 
-    payments = models["payment"] or models["transaction"]
     school_model = models["school"]
+
+    monthly_revenue, _ = _platform_revenue(since=month_start)
+    _, transactions_count = _platform_revenue()
 
     stats = {
         "schools": safe_count(school_model),
-        "pending_schools": safe_count(school_model, {"is_active": False}) if has_field_path(school_model, "is_active") else safe_count(school_model, {"status__iexact": "pending"}),
+        "pending_schools": safe_count(school_model, {"compliance_status": "submitted"}) if has_field_path(school_model, "compliance_status") else 0,
         "active_schools": safe_count(school_model, {"is_active": True}) if has_field_path(school_model, "is_active") else safe_count(school_model, {"status__iexact": "active"}),
         "suspended_schools": safe_count(school_model, {"is_active": False}) if has_field_path(school_model, "is_active") else safe_count(school_model, {"status__iexact": "suspended"}),
         "users": User.objects.count(),
         "subscriptions": safe_count(models["subscription"]),
         "open_tickets": safe_count(models["ticket"], {"status__in": ["open", "pending", "new"]}),
         "virtual_accounts": safe_count(models["virtual_account"]),
-        "monthly_revenue": safe_sum(payments, "amount", {"created_at__date__gte": month_start}) if payments else Decimal("0.00"),
-        "transactions": safe_count(models["transaction"] or models["payment"]),
+        "monthly_revenue": monthly_revenue,
+        "transactions": transactions_count,
     }
 
     recent_schools = []
@@ -101,7 +143,7 @@ def dashboard_context():
         notifications = models["announcement"].objects.all().order_by(notification_order)[:5]
 
     if models["audit_log"]:
-        recent_activity = models["audit_log"].objects.all().order_by("-id")[:10]
+        recent_activity = models["audit_log"].objects.select_related("user").order_by("-action_time")[:10]
 
     return {
         "stats": stats,
