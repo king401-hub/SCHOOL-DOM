@@ -23,6 +23,10 @@
 
 {% block welcome-msg %}
 {% if request.path|slice:":15" == "/control-panel/" %}
+<button type="button" id="cp-install-btn" class="cp-install-btn" style="display:none;">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+  Install App
+</button>
 <span class="cp-avatar">{% firstof user.get_short_name user.get_username "?" as cp_name %}{{ cp_name|first|upper }}</span>
 {% translate 'Welcome,' %}
 <strong>{{ cp_name }}</strong>.
@@ -48,6 +52,46 @@
       navigator.serviceWorker.register("/control-panel/sw.js", { scope: "/control-panel/" }).catch(function () {});
     });
   }
+
+  (function () {
+    var btn = document.getElementById("cp-install-btn");
+    if (!btn) return;
+
+    var isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    if (isStandalone) return; // already installed and running as an app - nothing to offer
+
+    var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    var deferredPrompt = null;
+
+    // Chrome/Edge/Android: fires when install criteria are met. Stash it and show
+    // our own button instead of relying on the easy-to-miss browser-native icon.
+    window.addEventListener("beforeinstallprompt", function (e) {
+      e.preventDefault();
+      deferredPrompt = e;
+      btn.style.display = "inline-flex";
+    });
+
+    window.addEventListener("appinstalled", function () {
+      btn.style.display = "none";
+      deferredPrompt = null;
+    });
+
+    // Safari never fires beforeinstallprompt and offers no programmatic install -
+    // show the button anyway and just explain the manual Share-sheet steps.
+    if (isIOS) {
+      btn.style.display = "inline-flex";
+    }
+
+    btn.addEventListener("click", function () {
+      if (deferredPrompt) {
+        btn.style.display = "none";
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.finally(function () { deferredPrompt = null; });
+      } else if (isIOS) {
+        alert("To install: tap the Share button below, then \"Add to Home Screen\".");
+      }
+    });
+  })();
 </script>
 {% endif %}
 {% endblock %}
@@ -235,6 +279,22 @@
   #user-tools { font-size: 12.5px; display: flex; align-items: center; gap: 4px; }
   #user-tools a { border-bottom: none; padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.08) !important; margin: 0 2px; }
   #user-tools a:hover { background: rgba(255,255,255,.18) !important; }
+  .cp-install-btn {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    border: none;
+    border-radius: 999px;
+    padding: 4px 12px 4px 10px;
+    margin: 0 6px 0 0;
+    background: var(--cp-accent, #22c55e) !important;
+    color: #06210f !important;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .cp-install-btn svg { width: 14px; height: 14px; }
+  .cp-install-btn:hover { background: var(--cp-accent-hover, #16a34a) !important; }
   .cp-avatar {
     display: inline-flex;
     align-items: center;
