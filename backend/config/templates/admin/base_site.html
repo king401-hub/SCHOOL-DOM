@@ -32,6 +32,26 @@
 {% endif %}
 {% endblock %}
 
+{% block extrahead %}
+{{ block.super }}
+{% if request.path|slice:":15" == "/control-panel/" %}
+<link rel="manifest" href="/control-panel/manifest.json">
+<meta name="theme-color" content="#16a34a">
+<link rel="apple-touch-icon" href="{% static 'img/control-panel/apple-touch-icon.png' %}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Control Panel">
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/control-panel/sw.js", { scope: "/control-panel/" }).catch(function () {});
+    });
+  }
+</script>
+{% endif %}
+{% endblock %}
+
 {% block extrastyle %}
 {{ block.super }}
 {% if request.path|slice:":15" == "/control-panel/" %}

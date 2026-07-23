@@ -12,8 +12,9 @@ from django.apps import apps
 from django.contrib import admin, messages
 from django.contrib.admin.sites import AdminSite
 from django.core.exceptions import PermissionDenied
-from django.http import Http404
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.templatetags.static import static
 from django.urls import path, reverse
 from django.utils.html import format_html
 
@@ -135,6 +136,67 @@ APP_LABEL_NAMES = {
     "superadmin_dashboard": "Platform Admin",
     "ops": "Ops Console",
 }
+
+# Deliberately light-touch: admin data (school records, finance figures, ...) must
+# never be served stale, so pages/API calls always go to the network. Only static
+# assets (css/js/images) get cached, purely to speed up repeat loads and survive a
+# flaky connection - not to make the control panel usable fully offline.
+CONTROL_PANEL_SERVICE_WORKER_JS = """
+const CACHE_NAME = "schooldom-control-panel-v1";
+
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  const isStaticAsset = url.pathname.startsWith("/static/") || /\\.(css|js|png|jpe?g|svg|woff2?)$/.test(url.pathname);
+
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(request);
+        const network = fetch(request)
+          .then((response) => {
+            if (response.ok) cache.put(request, response.clone());
+            return response;
+          })
+          .catch(() => cached);
+        return cached || network;
+      })
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(request).catch(() =>
+      new Response(
+        "<!doctype html><html><head><meta charset='utf-8'><title>Offline</title>" +
+        "<meta name='viewport' content='width=device-width, initial-scale=1'></head>" +
+        "<body style=\\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
+        "background:#0f172a;color:#e5e9f0;display:flex;align-items:center;justify-content:center;" +
+        "height:100vh;margin:0;text-align:center;padding:20px;box-sizing:border-box;\\">" +
+        "<div><h1 style='margin:0 0 8px;font-size:20px;'>You're offline</h1>" +
+        "<p style='color:#94a3b8;margin:0;'>The control panel needs a connection for live data. Reconnect and try again.</p></div>" +
+        "</body></html>",
+        { headers: { "Content-Type": "text/html" }, status: 503 }
+      )
+    )
+  );
+});
+""".strip()
 
 
 def _money(value):
@@ -261,9 +323,36 @@ class ControlPanelSite(AdminSite):
 
     def get_urls(self):
         custom = [
+            # Not wrapped in admin_view - these must be fetchable while logged out
+            # too (the browser evaluates installability from the login page, and a
+            # service worker registration can't tolerate being redirected to login).
+            path("manifest.json", self.manifest_view, name="pwa_manifest"),
+            path("sw.js", self.service_worker_view, name="pwa_service_worker"),
             path("permission-matrix/", self.admin_view(self.permission_matrix_view), name="permission_matrix"),
         ]
         return custom + super().get_urls()
+
+    def manifest_view(self, request):
+        manifest = {
+            "name": "Schooldom Control Panel",
+            "short_name": "Control Panel",
+            "description": "Schooldom platform control panel",
+            "start_url": "/control-panel/",
+            "scope": "/control-panel/",
+            "display": "standalone",
+            "background_color": "#0f172a",
+            "theme_color": "#16a34a",
+            "orientation": "any",
+            "icons": [
+                {"src": static("img/control-panel/icon-192.png"), "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": static("img/control-panel/icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": static("img/control-panel/icon-maskable-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ],
+        }
+        return JsonResponse(manifest, content_type="application/manifest+json")
+
+    def service_worker_view(self, request):
+        return HttpResponse(CONTROL_PANEL_SERVICE_WORKER_JS, content_type="application/javascript")
 
     def permission_matrix_view(self, request):
         """The "Master permissions matrix" from the spec, editable as one grid.
