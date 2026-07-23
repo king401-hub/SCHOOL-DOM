@@ -130,6 +130,24 @@ export const PARENT_ROUTES = [
   { path: "/payments", label: "Payment History" },
 ];
 export const PARENT_ROUTE_SET = new Set(PARENT_ROUTES.map((item) => item.path));
+export const NON_TEACHING_STAFF_ROLES = [
+  "Administrative Assistant",
+  "Secretary",
+  "Registrar",
+  "Accountant",
+  "Bursar",
+  "Receptionist",
+  "Librarian",
+  "ICT/IT Support",
+  "School Nurse",
+  "Security Guard",
+  "Driver",
+  "Cook/Caterer",
+  "Cleaner",
+  "Gardener",
+  "Maintenance Officer",
+  "Store Keeper",
+];
 export const RECOMMENDED_SUBJECT_GROUPS = [
   {
     stream: "Science",

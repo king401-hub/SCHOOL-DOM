@@ -4,6 +4,7 @@ import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity } from "lu
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
+  NON_TEACHING_STAFF_ROLES,
   RECOMMENDED_SUBJECT_GROUPS,
   SUPPORT_EMAIL,
 } from "./appConstants";
@@ -4413,6 +4414,7 @@ function AdminNonTeachingStaffScreen({
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedRecordType, setSelectedRecordType] = useState("");
   const [showStaffPassword, setShowStaffPassword] = useState(false);
+  const [customRole, setCustomRole] = useState(false);
   const [showStaffConfirmPassword, setShowStaffConfirmPassword] = useState(false);
 
   const formatMoney = (value) => `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString()}`;
@@ -4431,6 +4433,7 @@ function AdminNonTeachingStaffScreen({
     setEditingStaffId("");
     setShowStaffPassword(false);
     setShowStaffConfirmPassword(false);
+    setCustomRole(false);
     setStaffForm({
       first_name: "",
       last_name: "",
@@ -4577,7 +4580,35 @@ function AdminNonTeachingStaffScreen({
           <div className="panel-form-grid">
             <label className="panel-field">First name<input value={staffForm.first_name} onChange={(e) => setStaffForm((p) => ({ ...p, first_name: e.target.value }))} /></label>
             <label className="panel-field">Last name<input value={staffForm.last_name} onChange={(e) => setStaffForm((p) => ({ ...p, last_name: e.target.value }))} /></label>
-            <label className="panel-field">Role<input value={staffForm.role} onChange={(e) => setStaffForm((p) => ({ ...p, role: e.target.value }))} placeholder="e.g., Administrative Assistant" /></label>
+            <label className="panel-field">
+              Role
+              <select
+                value={customRole || (staffForm.role && !NON_TEACHING_STAFF_ROLES.includes(staffForm.role)) ? "__custom__" : staffForm.role}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setCustomRole(true);
+                    setStaffForm((p) => ({ ...p, role: "" }));
+                  } else {
+                    setCustomRole(false);
+                    setStaffForm((p) => ({ ...p, role: e.target.value }));
+                  }
+                }}
+              >
+                <option value="">Select a role</option>
+                {NON_TEACHING_STAFF_ROLES.map((role) => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+                <option value="__custom__">Other (specify)</option>
+              </select>
+              {customRole || (staffForm.role && !NON_TEACHING_STAFF_ROLES.includes(staffForm.role)) ? (
+                <input
+                  value={staffForm.role}
+                  onChange={(e) => setStaffForm((p) => ({ ...p, role: e.target.value }))}
+                  placeholder="e.g., Administrative Assistant"
+                  style={{ marginTop: "0.4rem" }}
+                />
+              ) : null}
+            </label>
             <label className="panel-field">Department<input value={staffForm.department} onChange={(e) => setStaffForm((p) => ({ ...p, department: e.target.value }))} placeholder="e.g., Administration" /></label>
             <label className="panel-field">Monthly salary<input type="number" value={staffForm.base_salary} onChange={(e) => setStaffForm((p) => ({ ...p, base_salary: e.target.value }))} /></label>
             <label className="panel-field">Bank name<input value={staffForm.bank_name} onChange={(e) => setStaffForm((p) => ({ ...p, bank_name: e.target.value }))} /></label>
