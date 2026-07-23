@@ -854,9 +854,14 @@ def _resolve_school_signature_url(school, request=None):
     school_admin account instead."""
     if not school:
         return ""
+    # NOT a plain .exclude(director_signature__in=["", None]) - a literal NULL
+    # inside __in makes the whole NOT IN(...) comparison SQL-undefined for
+    # every row (three-valued logic), silently excluding everyone. Q-OR'd
+    # conditions inside exclude() apply De Morgan's correctly instead.
+    no_signature = Q(director_signature="") | Q(director_signature__isnull=True)
     signer = (
-        User.objects.filter(tenant=school, role="school_superadmin").exclude(director_signature="").first()
-        or User.objects.filter(tenant=school).exclude(director_signature="").first()
+        User.objects.filter(tenant=school, role="school_superadmin").exclude(no_signature).first()
+        or User.objects.filter(tenant=school).exclude(no_signature).first()
     )
     return _media_url(request, signer.director_signature) if signer else ""
 

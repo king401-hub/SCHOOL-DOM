@@ -34,7 +34,7 @@ from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
 from users.models import KidsMonitorSubscription, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
-from users.app_views import ID_CARD_SIGNING_SALT
+from users.app_views import ID_CARD_SIGNING_SALT, _resolve_school_signature_url
 
 
 class SchoolRegistrationCreditTests(TestCase):
@@ -1655,6 +1655,54 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(delete_response.status_code, 200)
         self.assertFalse(ResultBatch.objects.filter(id=batch_id).exists())
         self.assertFalse(StudentSubjectScore.objects.filter(student=student, subject=self.subject).exists())
+
+
+class DocumentSignatureResolutionTests(TestCase):
+    """The signature shown on report cards/transcripts/testimonials/ID cards
+    must resolve to whichever admin actually uploaded one - even when other
+    users in the tenant have director_signature stored as NULL rather than
+    an empty string (exactly what AddField backfills existing rows to), and
+    even when that admin isn't the first user row in the tenant."""
+
+    def test_resolves_admin_signature_even_when_later_user_has_null_signature(self):
+        school = SchoolTenant.objects.create(
+            name="Signature School", schema_name="signature_school_test", is_active=True,
+        )
+
+        # User.Meta.ordering is ["-created_at"] (most recent first), so the
+        # admin must be created FIRST here to prove the query doesn't just
+        # get lucky from default ordering - the decoy (created after, with
+        # director_signature forced to NULL rather than "" to match what a
+        # migration's AddField backfill actually produces for existing rows)
+        # would otherwise sort ahead of the real signer.
+        admin_user = User.objects.create_user(
+            email="admin@signature.edu", password="AdminPass123", role="school_admin",
+            tenant=school, is_active=True, is_verified=True,
+        )
+        admin_user.director_signature = SimpleUploadedFile("sig.png", b"fake-image-bytes", content_type="image/png")
+        admin_user.save(update_fields=["director_signature"])
+
+        decoy_student = User.objects.create_user(
+            email="decoy@signature.edu", password="StudentPass123", role="student",
+            tenant=school, is_active=True, is_verified=True,
+        )
+        User.objects.filter(pk=decoy_student.pk).update(director_signature=None)
+
+        resolved_url = _resolve_school_signature_url(school)
+        self.assertTrue(resolved_url)
+        self.assertIn("sig", resolved_url)
+
+    def test_returns_empty_string_when_nobody_has_uploaded_a_signature(self):
+        school = SchoolTenant.objects.create(
+            name="No Signature School", schema_name="no_signature_school_test", is_active=True,
+        )
+        admin_user = User.objects.create_user(
+            email="admin@nosignature.edu", password="AdminPass123", role="school_admin",
+            tenant=school, is_active=True, is_verified=True,
+        )
+        User.objects.filter(pk=admin_user.pk).update(director_signature=None)
+
+        self.assertEqual(_resolve_school_signature_url(school), "")
 
 
 class SchoolSettingsAPITests(TestCase):
