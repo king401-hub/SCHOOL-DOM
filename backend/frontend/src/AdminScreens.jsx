@@ -27,6 +27,7 @@ import {
   TimetableGridTable,
 } from "./AppShared";
 import { TeacherExamBuilder } from "./TeacherExamPanels";
+import SignaturePad from "./components/SignaturePad";
 
 function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
   useEffect(() => {
@@ -6289,6 +6290,7 @@ function AdminSettingsScreen({
   const [directorPassportPreview, setDirectorPassportPreview] = useState("");
   const [directorSignatureFile, setDirectorSignatureFile] = useState(null);
   const [directorSignaturePreview, setDirectorSignaturePreview] = useState("");
+  const [signatureInputMode, setSignatureInputMode] = useState("upload");
   const [adminFirstName, setAdminFirstName] = useState("");
   const [adminLastName, setAdminLastName] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
@@ -6909,11 +6911,44 @@ onClick={() => handleThemeSelect("light")}
                             <div className="settings-logo-preview settings-signature-preview">
                               {directorSignaturePreview ? <img src={directorSignaturePreview} alt="Director signature" /> : <span>No signature</span>}
                             </div>
-                            <label className="panel-field">
-                              Signature
-                              <input type="file" accept="image/*" onChange={handleDirectorSignatureChange} disabled={!canEdit || isSaving} />
-                              <span className="field-note">Upload a clear image of your signature (ideally on a plain background). It will appear on report cards, transcripts, testimonials, and ID cards for the whole school.</span>
-                            </label>
+                            <div className="settings-signature-controls">
+                              <span className="panel-field-label">Signature</span>
+                              <div className="signature-mode-tabs">
+                                <button
+                                  type="button"
+                                  className={signatureInputMode === "upload" ? "is-active" : ""}
+                                  onClick={() => setSignatureInputMode("upload")}
+                                  disabled={!canEdit || isSaving}
+                                >
+                                  Upload Image
+                                </button>
+                                <button
+                                  type="button"
+                                  className={signatureInputMode === "draw" ? "is-active" : ""}
+                                  onClick={() => setSignatureInputMode("draw")}
+                                  disabled={!canEdit || isSaving}
+                                >
+                                  Draw Signature
+                                </button>
+                              </div>
+                              {signatureInputMode === "draw" ? (
+                                <SignaturePad
+                                  onSave={(file) => {
+                                    setDirectorSignatureFile(file);
+                                    setDirectorSignaturePreview(URL.createObjectURL(file));
+                                    setSignatureInputMode("upload");
+                                  }}
+                                />
+                              ) : (
+                                <label className="panel-field">
+                                  <input type="file" accept="image/*" onChange={handleDirectorSignatureChange} disabled={!canEdit || isSaving} />
+                                  {directorSignatureFile ? (
+                                    <span className="field-note">Selected: {directorSignatureFile.name}</span>
+                                  ) : null}
+                                </label>
+                              )}
+                              <span className="field-note">Upload an image or draw your signature. It will appear on report cards, transcripts, testimonials, and ID cards for the whole school.</span>
+                            </div>
                           </div>
                         </div>
                       </div>

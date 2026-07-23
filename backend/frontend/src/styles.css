@@ -15551,6 +15551,98 @@ body[data-theme="light"] .quiz-progress span {
   object-fit: contain;
 }
 
+.settings-signature-controls {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.panel-field-label {
+  font-size: 0.82rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+body[data-theme="dark"] .panel-field-label { color: #94a3b8; }
+
+.signature-mode-tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.signature-mode-tabs button {
+  border: 1px solid #dbe4f0;
+  background: #ffffff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.signature-mode-tabs button.is-active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.signature-mode-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+body[data-theme="dark"] .signature-mode-tabs button {
+  background: #111827;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .signature-mode-tabs button.is-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.signature-pad {
+  position: relative;
+  display: inline-block;
+}
+
+.signature-pad-canvas {
+  touch-action: none;
+  cursor: crosshair;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  max-width: 100%;
+}
+
+body[data-theme="dark"] .signature-pad-canvas {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+.signature-pad-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+body[data-theme="dark"] .signature-pad-hint { color: #334155; }
+
+.signature-pad-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 .settings-activity-calendar {
   display: grid;
   gap: 1rem;
