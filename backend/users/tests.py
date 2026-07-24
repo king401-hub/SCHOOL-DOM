@@ -3375,6 +3375,44 @@ class AuthSchoolScopeTests(TestCase):
         self.assertEqual(refresh_response.status_code, 200)
         self.assertIn("access", refresh_response.data)
 
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_refresh_token_rejected_once_school_is_suspended(self):
+        """Suspension must end an already-open session too, not just block
+        new logins - a user signed in before their school got suspended
+        shouldn't be able to keep refreshing forever."""
+        user = User.objects.create_user(
+            email="suspend.admin@school.edu",
+            password="AdminPass123",
+            first_name="Suspend",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        login_response = self.client.post(
+            "/api/auth/login/",
+            data={"email": user.email, "password": "AdminPass123"},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, 200)
+        refresh_value = login_response.data["refresh"]
+
+        self.school.is_active = False
+        self.school.save(update_fields=["is_active"])
+
+        self.client.credentials()
+        refresh_response = self.client.post(
+            "/api/auth/refresh/",
+            data={"refresh": refresh_value},
+            format="json",
+        )
+
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertFalse(refresh_response.data["success"])
+        self.assertIn("suspended", refresh_response.data["message"].lower())
+
 
 class NonK12StudentSelfRegistrationTests(TestCase):
     def setUp(self):

@@ -1136,6 +1136,15 @@ def refresh_token(request):
         user_id = token.get('user_id')
         if user_id:
             user = User.objects.filter(id=user_id).first()
+            if user and user.tenant_id and not user.tenant.is_active:
+                # Suspension only blocked *new* logins before this - a user
+                # already signed in when their school got suspended could
+                # keep refreshing forever without ever seeing it. Reject the
+                # refresh too, so an existing session actually ends.
+                return Response({
+                    'success': False,
+                    'message': "Your school's account is suspended pending compliance documents. Contact support@schooldom.academy for help."
+                }, status=status.HTTP_401_UNAUTHORIZED)
             if user and user.role == 'student':
                 if user.tenant:
                     update_student_activation_alerts(user.tenant)
