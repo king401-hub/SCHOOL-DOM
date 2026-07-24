@@ -15923,6 +15923,12 @@ body[data-theme="dark"] .settings-compliance-section {
   gap: 0.5rem;
 }
 
+.sa-signature-current {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .service-agreement-history .data-table td,
 .service-agreement-history .data-table th {
   vertical-align: middle;

@@ -7249,31 +7249,51 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
 
                 <div className="sa-signature-capture">
                   <span className="panel-field-label">Signature</span>
-                  <div className="signature-mode-tabs">
-                    <button type="button" className={signatureMode === "draw" ? "is-active" : ""} onClick={() => setSignatureMode("draw")}>Draw Signature</button>
-                    <button type="button" className={signatureMode === "upload" ? "is-active" : ""} onClick={() => setSignatureMode("upload")}>Upload Image</button>
-                  </div>
-                  {signatureMode === "draw" ? (
-                    <SignaturePad
-                      onSave={(file) => {
-                        setSignatureFile(file);
-                        setSignaturePreview(URL.createObjectURL(file));
-                        setSignatureMode("upload");
-                      }}
-                    />
-                  ) : (
-                    <label className="panel-field">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] || null;
-                          setSignatureFile(file);
-                          setSignaturePreview(file ? URL.createObjectURL(file) : "");
+                  {signatureFile ? (
+                    <div className="sa-signature-current">
+                      <div className="settings-logo-preview settings-signature-preview">
+                        <img src={signaturePreview} alt="Captured signature" />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setSignatureFile(null);
+                          setSignaturePreview("");
+                          setSignatureMode("draw");
                         }}
-                      />
-                      {signatureFile ? <span className="field-note">Selected: {signatureFile.name}</span> : null}
-                    </label>
+                      >
+                        Remove Signature
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="signature-mode-tabs">
+                        <button type="button" className={signatureMode === "draw" ? "is-active" : ""} onClick={() => setSignatureMode("draw")}>Draw Signature</button>
+                        <button type="button" className={signatureMode === "upload" ? "is-active" : ""} onClick={() => setSignatureMode("upload")}>Upload Image</button>
+                      </div>
+                      {signatureMode === "draw" ? (
+                        <SignaturePad
+                          onSave={(file) => {
+                            setSignatureFile(file);
+                            setSignaturePreview(URL.createObjectURL(file));
+                            setSignatureMode("upload");
+                          }}
+                        />
+                      ) : (
+                        <label className="panel-field">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] || null;
+                              setSignatureFile(file);
+                              setSignaturePreview(file ? URL.createObjectURL(file) : "");
+                            }}
+                          />
+                        </label>
+                      )}
+                    </>
                   )}
                 </div>
 
