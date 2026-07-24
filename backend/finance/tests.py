@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 from core.models import SchoolTenant
 from academic.models import Class
 from finance.models import (
+    ActivationCreditPool,
     ActivationCreditTransaction,
     AdminWallet,
     BankPayment,
@@ -41,6 +42,7 @@ from finance.services import (
     fee_paid_amount,
     get_or_create_activation_credit_pool,
     get_or_create_sms_wallet,
+    get_or_create_student_activation_credit,
     get_or_create_student_payment_reference,
     initialize_activation_credit_purchase,
     initialize_sms_credit_purchase,
@@ -186,6 +188,67 @@ class ActivationCreditBonusTests(TestCase):
         self.assertEqual(tx.metadata["purchased_credits"], 100)
         self.assertEqual(tx.metadata["bonus_credits"], 10)
         self.assertEqual(tx.metadata["total_credits"], 110)
+
+
+class FinanceSnapshotDoesNotAutoSpendTokensTests(TestCase):
+    """A newly-created student is immediately "eligible" for monthly
+    auto-assignment. _admin_finance_snapshot used to also run that
+    auto-assignment as a side effect of a plain GET, so simply loading the
+    Finance page (or the Expense Tracker, which shares the same snapshot
+    helper) right after adding a student would silently spend a token on
+    them before anyone clicked "Assign tokens". Auto-assignment must now
+    only happen via the explicit "Run auto assign" action or the scheduled
+    Celery task - never as a side effect of viewing a page."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Snapshot School", schema_name="snapshot_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@snapshot.test", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student_user = User.objects.create_user(
+            email="newstudent@snapshot.test", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="SNAP001", admission_number="ADM-SNAP-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 10
+        pool.auto_assign_enabled = True
+        pool.auto_assign_scope = "all"
+        pool.save(update_fields=["balance", "auto_assign_enabled", "auto_assign_scope"])
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_loading_finance_overview_does_not_spend_a_token(self):
+        response = self.client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+
+        pool = get_or_create_activation_credit_pool(self.school)
+        self.assertEqual(pool.balance, 10)
+        credit = get_or_create_student_activation_credit(self.student)
+        self.assertFalse(credit.has_login_credit)
+
+    def test_loading_expense_tracker_does_not_spend_a_token(self):
+        response = self.client.get("/api/finance/admin/expenses/")
+        self.assertEqual(response.status_code, 200)
+
+        pool = get_or_create_activation_credit_pool(self.school)
+        self.assertEqual(pool.balance, 10)
+
+    def test_explicit_run_auto_assign_still_spends_a_token(self):
+        response = self.client.post("/api/finance/admin/activation-credits/run-auto/")
+        self.assertEqual(response.status_code, 200)
+
+        pool = get_or_create_activation_credit_pool(self.school)
+        self.assertEqual(pool.balance, 9)
+        credit = get_or_create_student_activation_credit(self.student)
+        self.assertTrue(credit.has_login_credit)
 
 
 class FlutterwaveSchoolFeeSettlementTests(TestCase):

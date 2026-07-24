@@ -72,7 +72,6 @@ from finance.services import (
     sync_class_fee_assignments,
     sync_student_class_fees,
     sync_tenant_class_fees,
-    run_configured_monthly_auto_assignment,
     complete_payment_reference,
     complete_wallet_funding,
     get_or_create_student_payment_reference,
@@ -425,10 +424,14 @@ def _admin_finance_snapshot(user):
     sync_tenant_class_fees(user.tenant, actor=user)
     update_student_activation_alerts(user.tenant)
     ensure_monthly_credit_reminder(user.tenant)
-    try:
-        run_configured_monthly_auto_assignment(user.tenant, actor=user)
-    except ValueError:
-        pass
+    # Deliberately NOT calling run_configured_monthly_auto_assignment here -
+    # this function backs plain GET reads (Finance page, Expense Tracker,
+    # etc.), and a newly-created student is immediately "eligible" for
+    # auto-assignment, so simply loading a finance page right after adding a
+    # student would silently spend a token on them before anyone clicked
+    # "Assign tokens". Auto-assignment now runs only from the explicit "Run
+    # auto assign" button (admin_activation_credit_run_auto) and the
+    # scheduled finance.tasks.auto_assign_monthly_credits Celery task.
 
     students = list(
         StudentProfile.objects.select_related("user", "current_class")
