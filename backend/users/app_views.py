@@ -1274,9 +1274,19 @@ def _transcript_payload(student_profile, request=None):
         .order_by("term__academic_year__start_date", "term__start_date", "subject__name")
     )
 
+    # Grade points (for GPA) come from the same admin-configured GradeScale
+    # every other grade in this payload already resolves through - one
+    # lookup per tenant, not per subject.
+    tenant_obj = _tenant_for_model(GradeScale, student_profile.user)
+    grade_points_by_letter = (
+        {gs.letter: float(gs.grade_point) for gs in GradeScale.objects.filter(tenant=tenant_obj)}
+        if tenant_obj else {}
+    )
+
     history_map = {}
     total_score = 0.0
     total_max = 0.0
+    all_grade_points = []
     for item in scores_qs:
         score = float(item.score or 0)
         max_score = float(item.max_score or 0)
@@ -1301,6 +1311,7 @@ def _transcript_payload(student_profile, request=None):
                 "subjects": [],
                 "total_score": 0.0,
                 "total_max": 0.0,
+                "_grade_points": [],
             },
         )
         group["subjects"].append(
@@ -1318,6 +1329,9 @@ def _transcript_payload(student_profile, request=None):
         )
         group["total_score"] += score
         group["total_max"] += max_score
+        if grade and grade in grade_points_by_letter:
+            group["_grade_points"].append(grade_points_by_letter[grade])
+            all_grade_points.append(grade_points_by_letter[grade])
 
     history = []
     for group in history_map.values():
@@ -1326,10 +1340,13 @@ def _transcript_payload(student_profile, request=None):
         group["average"] = average
         group["grade"] = grade
         group["remark"] = remark
+        term_grade_points = group.pop("_grade_points")
+        group["gpa"] = round(sum(term_grade_points) / len(term_grade_points), 2) if term_grade_points else 0.0
         history.append(group)
 
     cumulative = round((total_score / total_max) * 100, 2) if total_max else 0
     cumulative_grade, cumulative_remark = _grade_for_percentage(student_profile.user, cumulative) if cumulative else ("", "")
+    cumulative_gpa = round(sum(all_grade_points) / len(all_grade_points), 2) if all_grade_points else 0.0
     class_history = []
     seen_classes = set()
     for item in scores_qs:
@@ -1354,6 +1371,7 @@ def _transcript_payload(student_profile, request=None):
             "average": cumulative,
             "grade": cumulative_grade,
             "remark": cumulative_remark,
+            "gpa": cumulative_gpa,
             "subject_records": sum(len(group["subjects"]) for group in history),
         },
     }
@@ -2696,36 +2714,69 @@ def leave_message_group(request, group_id):
     return Response({"success": True, "message": "You left the group."})
 
 
+_DEFAULT_GRADE_SCALES = [
+    # letter, min_percentage, max_percentage, remark, grade_point (5-point scale)
+    ("A", 70, 100, "Excellent", 5),
+    ("B", 60, 69.99, "Very good", 4),
+    ("C", 50, 59.99, "Good", 3),
+    ("D", 45, 49.99, "Fair", 2),
+    ("E", 40, 44.99, "Pass", 1),
+    ("F", 0, 39.99, "Needs improvement", 0),
+]
+
+
+def _seed_default_grade_scales(tenant_obj):
+    if not tenant_obj:
+        return
+    for letter, min_value, max_value, remark, grade_point in _DEFAULT_GRADE_SCALES:
+        GradeScale.objects.get_or_create(
+            tenant=tenant_obj,
+            letter=letter,
+            defaults={
+                "min_percentage": min_value,
+                "max_percentage": max_value,
+                "remark": remark,
+                "grade_point": grade_point,
+            },
+        )
+
+
 def _ensure_default_grade_scales(user):
     tenant_obj = _tenant_for_model(GradeScale, user)
     if not tenant_obj:
         return GradeScale.objects.none()
-    defaults = [
-        ("A", 70, 100, "Excellent"),
-        ("B", 60, 69.99, "Very good"),
-        ("C", 50, 59.99, "Good"),
-        ("D", 45, 49.99, "Fair"),
-        ("E", 40, 44.99, "Pass"),
-        ("F", 0, 39.99, "Needs improvement"),
-    ]
-    for letter, min_value, max_value, remark in defaults:
-        GradeScale.objects.get_or_create(
-            tenant=tenant_obj,
-            letter=letter,
-            defaults={"min_percentage": min_value, "max_percentage": max_value, "remark": remark},
-        )
+    _seed_default_grade_scales(tenant_obj)
     return GradeScale.objects.filter(tenant=tenant_obj, is_active=True)
 
 
-def _grade_for_percentage(user, percentage):
-    grade = _ensure_default_grade_scales(user).filter(
+def grade_scale_for_percentage(tenant, percentage):
+    """Single source of truth for turning a percentage into a (letter, remark)
+    using the tenant's admin-configured GradeScale, seeding sane defaults on
+    first use. CBT results, quiz results, manual score entry, report cards,
+    broadsheets, and transcripts must all resolve grades through this (or the
+    user-based _grade_for_percentage wrapper below) so grading is consistent
+    everywhere, instead of each place inventing its own boundaries.
+
+    `tenant` must be a tenants.Tenant instance (GradeScale's actual FK target,
+    via TenantAwareModel) - NOT a core.SchoolTenant / user.tenant. Callers
+    that only have a user should call _grade_for_percentage(user, percentage)
+    instead, which does that resolution via _tenant_for_model."""
+    if not tenant:
+        return "", ""
+    _seed_default_grade_scales(tenant)
+    grade = GradeScale.objects.filter(
+        tenant=tenant,
+        is_active=True,
         min_percentage__lte=percentage,
         max_percentage__gte=percentage,
-        is_active=True,
     ).order_by("-min_percentage").first()
     if not grade:
         return "", ""
     return grade.letter, grade.remark
+
+
+def _grade_for_percentage(user, percentage):
+    return grade_scale_for_percentage(_tenant_for_model(GradeScale, user), percentage)
 
 
 def _can_manage_school_settings(user):
@@ -9497,25 +9548,40 @@ def teacher_mark_student_attendance(request):
     )
 
 
+def _grade_scale_payload(item):
+    return {
+        "id": item.id,
+        "letter": item.letter,
+        "min_percentage": float(item.min_percentage),
+        "max_percentage": float(item.max_percentage),
+        "remark": item.remark,
+        "grade_point": float(item.grade_point),
+        "is_active": item.is_active,
+    }
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def grading_scales(request):
     user = request.user
-    if user.role not in ADMIN_ROLES and user.role != "teacher":
-        return Response({"success": False, "message": "Only admins and teachers can manage grading scales."}, status=status.HTTP_403_FORBIDDEN)
-    scales = _ensure_default_grade_scales(user)
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can manage grading scales."}, status=status.HTTP_403_FORBIDDEN)
+    _ensure_default_grade_scales(user)
+    tenant_obj = _tenant_for_model(GradeScale, user)
     if request.method == "POST":
-        tenant_obj = _tenant_for_model(GradeScale, user)
         letter = str(request.data.get("letter") or "").strip().upper()
         if not letter:
             return Response({"success": False, "message": "letter is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             min_percentage = Decimal(str(request.data.get("min_percentage", 0)))
             max_percentage = Decimal(str(request.data.get("max_percentage", 100)))
+            grade_point = Decimal(str(request.data.get("grade_point", 0)))
         except (InvalidOperation, TypeError, ValueError):
-            return Response({"success": False, "message": "Grade percentages must be valid numbers."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"success": False, "message": "Grade percentages and grade point must be valid numbers."}, status=status.HTTP_400_BAD_REQUEST)
         if min_percentage < 0 or max_percentage > 100 or min_percentage > max_percentage:
             return Response({"success": False, "message": "Use a valid grade percentage range between 0 and 100."}, status=status.HTTP_400_BAD_REQUEST)
+        if grade_point < 0:
+            return Response({"success": False, "message": "Grade point cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
         scale, _created = GradeScale.objects.update_or_create(
             tenant=tenant_obj,
             letter=letter,
@@ -9523,30 +9589,37 @@ def grading_scales(request):
                 "min_percentage": min_percentage,
                 "max_percentage": max_percentage,
                 "remark": str(request.data.get("remark") or "").strip(),
+                "grade_point": grade_point,
                 "is_active": _to_bool(request.data.get("is_active"), True),
             },
         )
-        scales = GradeScale.objects.filter(tenant=tenant_obj, is_active=True)
         message = f"Grade {scale.letter} saved."
     else:
         message = "Grade scales loaded."
+    # Every row (including inactive ones) is returned so admins can find and
+    # re-enable/edit/delete a deactivated grade band - only active rows are
+    # actually used when grading a score (see grade_scale_for_percentage).
+    scales = GradeScale.objects.filter(tenant=tenant_obj)
     return Response(
         {
             "success": True,
             "message": message,
-            "grades": [
-                {
-                    "id": item.id,
-                    "letter": item.letter,
-                    "min_percentage": float(item.min_percentage),
-                    "max_percentage": float(item.max_percentage),
-                    "remark": item.remark,
-                    "is_active": item.is_active,
-                }
-                for item in scales
-            ],
+            "grades": [_grade_scale_payload(item) for item in scales],
         }
     )
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def grading_scale_detail(request, scale_id):
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can manage grading scales."}, status=status.HTTP_403_FORBIDDEN)
+    tenant_obj = _tenant_for_model(GradeScale, user)
+    scale = get_object_or_404(GradeScale, id=scale_id, tenant=tenant_obj)
+    letter = scale.letter
+    scale.delete()
+    return Response({"success": True, "message": f"Grade {letter} deleted."})
 
 
 @api_view(["POST"])

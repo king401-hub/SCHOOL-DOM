@@ -5118,7 +5118,7 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
   );
 }
 
-function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults, onSaveGradeScale }) {
+function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults }) {
   const [form, setForm] = useState({
     student_id: "",
     subject_id: subjects[0]?.id || "",
@@ -5139,8 +5139,6 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
   const [studentOptions, setStudentOptions] = useState([]);
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
-  const [gradeScales, setGradeScales] = useState([]);
-  const [gradeForm, setGradeForm] = useState({ letter: "A", min_percentage: "70", max_percentage: "100", remark: "Excellent" });
   const subjectIdSet = useMemo(() => new Set(subjects.map((subject) => String(subject.id))), [subjects]);
   const subjectCbtResults = useMemo(
     () => cbtResults.filter((row) => !row.subject_id || subjectIdSet.has(String(row.subject_id))),
@@ -5260,20 +5258,6 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
       refresh();
     } catch (pushError) {
       setError(pushError.message || "Could not push results.");
-    }
-  };
-
-  const handleGradeScaleSubmit = async (event) => {
-    event.preventDefault();
-    setError("");
-    setFeedback("");
-    try {
-      const result = await onSaveGradeScale?.(gradeForm);
-      setFeedback(result?.message || "Grade scale saved.");
-      setGradeScales(result?.grades || gradeScales);
-      await refresh();
-    } catch (gradeError) {
-      setError(gradeError.message || "Could not save grade scale.");
     }
   };
 
@@ -5461,45 +5445,6 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
         <article className="app-panel frosted-card">
           <div className="panel-head">
             <div>
-              <h3>Grading scale</h3>
-              <small>Use before pushing a result to admin for approval.</small>
-            </div>
-            <span className="pill muted">{gradeScales.length || 0} ranges</span>
-          </div>
-          <form className="panel-form" onSubmit={handleGradeScaleSubmit}>
-            <div className="panel-form-grid">
-              <label className="panel-field">Letter<input value={gradeForm.letter} onChange={(event) => setGradeForm((prev) => ({ ...prev, letter: event.target.value.toUpperCase() }))} /></label>
-              <label className="panel-field">Minimum %<input type="number" min="0" max="100" value={gradeForm.min_percentage} onChange={(event) => setGradeForm((prev) => ({ ...prev, min_percentage: event.target.value }))} /></label>
-              <label className="panel-field">Maximum %<input type="number" min="0" max="100" value={gradeForm.max_percentage} onChange={(event) => setGradeForm((prev) => ({ ...prev, max_percentage: event.target.value }))} /></label>
-              <label className="panel-field">Remark<input value={gradeForm.remark} onChange={(event) => setGradeForm((prev) => ({ ...prev, remark: event.target.value }))} /></label>
-            </div>
-            <div className="panel-form-actions"><button type="submit">Save grade range</button></div>
-          </form>
-          {gradeScales.length ? (
-            <div className="subject-chip-grid">
-              {gradeScales.map((grade) => (
-                <button
-                  key={grade.letter}
-                  type="button"
-                  className="subject-suggestion-chip"
-                  onClick={() => setGradeForm({
-                    letter: grade.letter,
-                    min_percentage: String(grade.min_percentage),
-                    max_percentage: String(grade.max_percentage),
-                    remark: grade.remark || "",
-                  })}
-                >
-                  <span>{grade.letter}</span>
-                  <small>{grade.min_percentage}% - {grade.max_percentage}% - {grade.remark}</small>
-                </button>
-              ))}
-            </div>
-          ) : <p className="panel-empty">Grade ranges will appear here.</p>}
-        </article>
-
-        <article className="app-panel frosted-card">
-          <div className="panel-head">
-            <div>
               <h3>Recent rankings</h3>
               <small>Descending order by total score.</small>
             </div>
@@ -5550,7 +5495,6 @@ function TeacherWorkspace({
   onLoadResults,
   onLoadClassStudents,
   onPushResults,
-  onSaveGradeScale,
   onCreateExam,
   onUpdateExam,
   isRefreshing,
@@ -5744,7 +5688,6 @@ function TeacherWorkspace({
           onLoadResults={onLoadResults}
           onLoadClassStudents={onLoadClassStudents}
           onPushResults={onPushResults}
-          onSaveGradeScale={onSaveGradeScale}
         />
       );
     }
@@ -7333,6 +7276,43 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleLoadGradingScales = useCallback(
+    async () => requestJson(session, "GET", "/api/app/results/grades/"),
+    [session]
+  );
+
+  const handleSaveGradingScale = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/results/grades/", payload);
+      addAdminNotification({
+        category: "Exams",
+        module: "Grading System",
+        action: `Saved grade ${payload?.letter || ""}.`,
+        status: "Saved",
+        priority: "Normal",
+        tone: "success",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
+  const handleDeleteGradingScale = useCallback(
+    async (scaleId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/results/grades/${scaleId}/`);
+      addAdminNotification({
+        category: "Exams",
+        module: "Grading System",
+        action: result?.message || "Deleted a grade band.",
+        status: "Deleted",
+        priority: "Normal",
+        tone: "warning",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
   const handleCreateTimetableEntry = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/timetables/create/", payload);
@@ -7824,6 +7804,9 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}
+        onLoadGradingScales={handleLoadGradingScales}
+        onSaveGradingScale={handleSaveGradingScale}
+        onDeleteGradingScale={handleDeleteGradingScale}
       />
     );
   } else if (activePath === "/timetables") {
@@ -8452,15 +8435,6 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
     [loadDashboard, session]
   );
 
-  const handleSaveTeacherGradeScale = useCallback(
-    async (payload) => {
-      const result = await requestJson(session, "POST", "/api/app/results/grades/", payload);
-      await loadDashboard();
-      return result;
-    },
-    [loadDashboard, session]
-  );
-
   const formatLastUpdated = lastUpdated ? formatDate(lastUpdated) : null;
   const schoolBrand = resolveSchoolBrand(data?.school, session?.school, session);
 
@@ -8568,7 +8542,6 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
             onLoadResults={handleTeacherResultsSnapshot}
             onLoadClassStudents={handleTeacherClassStudents}
             onPushResults={handleTeacherPushResults}
-            onSaveGradeScale={handleSaveTeacherGradeScale}
             onCreateExam={handleCreateExam}
             onUpdateExam={handleUpdateExam}
             onRefresh={loadDashboard}

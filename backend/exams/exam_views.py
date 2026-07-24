@@ -991,8 +991,7 @@ class ExamResultView(APIView):
         earned_points = attempt.score
         
         percentage = (earned_points / total_points * 100) if total_points > 0 else 0
-        grade = self._calculate_grade(percentage)
-        is_passed = percentage >= 40  # Assuming 40% is passing
+        grade, is_passed = self._calculate_grade(request.user, percentage)
         
         return Response({
             'attempt_id': attempt.id,
@@ -1015,18 +1014,25 @@ class ExamResultView(APIView):
             } for i, ans in enumerate(answers)]
         })
     
-    def _calculate_grade(self, percentage):
-        """Calculate letter grade based on percentage"""
-        if percentage >= 90:
-            return 'A'
-        elif percentage >= 80:
-            return 'B'
-        elif percentage >= 70:
-            return 'C'
-        elif percentage >= 60:
-            return 'D'
-        else:
-            return 'F'
+    def _calculate_grade(self, user, percentage):
+        """Resolve (letter grade, is_passed) from the school's admin-configured
+        grading system, so a CBT result always agrees with the grade the same
+        score would get anywhere else in the app (report cards, transcripts,
+        manually-entered scores) - this used to be a hardcoded 90/80/70/60
+        scale with a separate hardcoded 40% pass mark, independent of
+        whatever grading scale the admin actually configured."""
+        from academic.models import GradeScale
+        from users.app_views import _grade_for_percentage, _tenant_for_model
+
+        # _grade_for_percentage resolves `user`'s core.SchoolTenant into the
+        # tenants.Tenant GradeScale actually stores its FK against - reuse
+        # that same resolution here rather than using user.tenant directly,
+        # which is the wrong tenant model for this lookup.
+        letter, _remark = _grade_for_percentage(user, percentage)
+        tenant = _tenant_for_model(GradeScale, user)
+        lowest_scale = GradeScale.objects.filter(tenant=tenant, is_active=True).order_by("min_percentage").first()
+        is_passed = bool(letter) and (not lowest_scale or letter != lowest_scale.letter)
+        return letter, is_passed
 
 
 @api_view(['GET'])

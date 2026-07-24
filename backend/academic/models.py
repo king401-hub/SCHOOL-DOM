@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.core.validators import MinValueValidator
 from core.models import TenantAwareModel, TimeStampedModel
@@ -170,6 +172,7 @@ class GradeScale(TenantAwareModel, TimeStampedModel):
     min_percentage = models.DecimalField(max_digits=5, decimal_places=2)
     max_percentage = models.DecimalField(max_digits=5, decimal_places=2)
     remark = models.CharField(max_length=120, blank=True)
+    grade_point = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal("0.00"))
     is_active = models.BooleanField(default=True)
 
     class Meta:

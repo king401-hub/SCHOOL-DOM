@@ -86,6 +86,7 @@ urlpatterns = [
     path("questions/answer/", app_views.answer_question_prompt, name="app_answer_question_prompt"),
     path("results/", app_views.results_snapshot, name="app_results_snapshot"),
     path("results/grades/", app_views.grading_scales, name="app_grading_scales"),
+    path("results/grades/<int:scale_id>/", app_views.grading_scale_detail, name="app_grading_scale_detail"),
     path("results/my/", app_views.student_my_results, name="app_student_my_results"),
     path("results/submit/", app_views.submit_subject_score, name="app_submit_subject_score"),
     path("results/push/", app_views.push_results_to_admin, name="app_push_results"),

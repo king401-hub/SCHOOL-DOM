@@ -22656,6 +22656,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
 }
 
 .transcript-document .doc-summary-strip {
+  grid-template-columns: repeat(5, 1fr);
   gap: 7px;
   margin: 12px 0;
 }

@@ -34,7 +34,7 @@ from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
 from users.models import KidsMonitorSubscription, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
-from users.app_views import ID_CARD_SIGNING_SALT, _class_broadsheet, _resolve_school_signature_url
+from users.app_views import ID_CARD_SIGNING_SALT, _class_broadsheet, _resolve_school_signature_url, _transcript_payload
 
 
 class SchoolRegistrationCreditTests(TestCase):
@@ -1495,8 +1495,10 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(exam.questions.first().text, "Edited question?")
         self.assertEqual(exam.duration_minutes, 45)
 
-    def test_teacher_can_set_grade_scale_and_push_regraded_results(self):
-        self.client.force_authenticate(user=self.teacher_user)
+    def test_admin_configured_grade_scale_is_used_when_teacher_submits_and_pushes_results(self):
+        # Grading configuration moved to admin-only - the teacher only enters
+        # scores; grading itself resolves through whatever scale the admin
+        # has configured, and re-resolves when the teacher later pushes.
         student_user = User.objects.create_user(
             email="grade.student@teacher-dashboard.edu",
             password="StudentPass123",
@@ -1519,6 +1521,7 @@ class TeacherDashboardAPITests(TestCase):
         )
         TeacherProfile.objects.filter(user=self.teacher_user).first().subjects.add(self.subject)
 
+        self.client.force_authenticate(user=self.admin_user)
         grade_response = self.client.post(
             "/api/app/results/grades/",
             data={"letter": "A", "min_percentage": "80", "max_percentage": "100", "remark": "Distinction"},
@@ -1532,6 +1535,7 @@ class TeacherDashboardAPITests(TestCase):
         )
         self.assertTrue(GradeScale.objects.filter(tenant=self.legacy_tenant, letter="A", min_percentage=80).exists())
 
+        self.client.force_authenticate(user=self.teacher_user)
         score_response = self.client.post(
             "/api/app/results/submit/",
             data={
@@ -1547,11 +1551,14 @@ class TeacherDashboardAPITests(TestCase):
         score = StudentSubjectScore.objects.get(student=student, subject=self.subject)
         self.assertEqual(score.grade, "B")
 
+        self.client.force_authenticate(user=self.admin_user)
         self.client.post(
             "/api/app/results/grades/",
             data={"letter": "A", "min_percentage": "70", "max_percentage": "100", "remark": "Excellent"},
             format="json",
         )
+
+        self.client.force_authenticate(user=self.teacher_user)
         push_response = self.client.post(
             "/api/app/results/push/",
             data={"class_id": self.classroom.id, "title": "Teacher compiled results"},
@@ -1561,6 +1568,18 @@ class TeacherDashboardAPITests(TestCase):
         score.refresh_from_db()
         self.assertEqual(score.grade, "A")
         self.assertEqual(score.approval_status, ResultBatch.PENDING)
+
+    def test_teacher_cannot_manage_grading_scales(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        get_response = self.client.get("/api/app/results/grades/")
+        self.assertEqual(get_response.status_code, 403)
+
+        post_response = self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "A", "min_percentage": "80", "max_percentage": "100", "remark": "Distinction"},
+            format="json",
+        )
+        self.assertEqual(post_response.status_code, 403)
 
     def test_teacher_can_submit_score_for_subject_student_outside_assigned_class(self):
         other_class = Class.objects.create(
@@ -1655,6 +1674,145 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(delete_response.status_code, 200)
         self.assertFalse(ResultBatch.objects.filter(id=batch_id).exists())
         self.assertFalse(StudentSubjectScore.objects.filter(student=student, subject=self.subject).exists())
+
+
+class GradingSystemAdminAPITests(TestCase):
+    """Grading scale CRUD, now admin-only, with the new grade_point field and
+    the new delete endpoint (there was previously no way to delete a grade
+    band at all)."""
+
+    def setUp(self):
+        # IdempotencyMiddleware caches successful mutating responses per
+        # (user, method, path, body) fingerprint for 10s, and this test class
+        # creates several small, similarly-shaped POST/DELETE requests whose
+        # user pk can coincide with another test's due to per-test rollback -
+        # start each test with a clean cache so one test's cached response
+        # can never be silently replayed for another.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
+        self.school = SchoolTenant.objects.create(name="Grading Admin School", schema_name="grading_admin_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@grading-admin.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@grading-admin.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+
+    def test_admin_can_create_grade_with_grade_point(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "A", "min_percentage": "75", "max_percentage": "100", "remark": "Distinction", "grade_point": "5"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        scale = GradeScale.objects.get(tenant=self.legacy_tenant, letter="A")
+        self.assertEqual(scale.grade_point, Decimal("5.00"))
+        grade_row = next(item for item in response.data["grades"] if item["letter"] == "A")
+        self.assertEqual(grade_row["grade_point"], 5.0)
+
+    def test_admin_can_delete_a_grade_scale(self):
+        self.client.force_authenticate(user=self.admin_user)
+        self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "Z", "min_percentage": "0", "max_percentage": "1", "remark": "Test", "grade_point": "0"},
+            format="json",
+        )
+        scale = GradeScale.objects.get(tenant=self.legacy_tenant, letter="Z")
+
+        delete_response = self.client.delete(f"/api/app/results/grades/{scale.id}/")
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(GradeScale.objects.filter(id=scale.id).exists())
+
+    def test_teacher_gets_403_on_grading_endpoints(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.assertEqual(self.client.get("/api/app/results/grades/").status_code, 403)
+        self.assertEqual(
+            self.client.post("/api/app/results/grades/", data={"letter": "A"}, format="json").status_code, 403
+        )
+
+        # Distinct payload from other tests in this class (e.g.
+        # test_admin_can_delete_a_grade_scale) - IdempotencyMiddleware caches
+        # successful POST responses per (user, method, path, body) fingerprint
+        # for 10s, and Django's test client uses a fixed multipart boundary,
+        # so an identical payload posted elsewhere in the same run would
+        # return a cached response here instead of actually hitting the view.
+        self.client.force_authenticate(user=self.admin_user)
+        create_response = self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "Y", "min_percentage": "1", "max_percentage": "2", "remark": "Teacher 403 check", "grade_point": "0"},
+            format="json",
+        )
+        scale_id = next(item for item in create_response.data["grades"] if item["letter"] == "Y")["id"]
+
+        self.client.force_authenticate(user=self.teacher_user)
+        delete_response = self.client.delete(f"/api/app/results/grades/{scale_id}/")
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertTrue(GradeScale.objects.filter(id=scale_id).exists())
+
+    def test_deactivated_grade_still_appears_in_list_for_management(self):
+        self.client.force_authenticate(user=self.admin_user)
+        self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "Z", "min_percentage": "0", "max_percentage": "1", "remark": "Test", "grade_point": "0", "is_active": "false"},
+            format="json",
+        )
+        response = self.client.get("/api/app/results/grades/")
+        letters = [item["letter"] for item in response.data["grades"]]
+        self.assertIn("Z", letters)
+        z_row = next(item for item in response.data["grades"] if item["letter"] == "Z")
+        self.assertFalse(z_row["is_active"])
+
+
+class TranscriptGpaTests(TestCase):
+    """GPA on the transcript payload comes from the same admin-configured
+    GradeScale.grade_point values used for letter grades."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="GPA School", schema_name="gpa_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@gpa.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        GradeScale.objects.create(tenant=self.legacy_tenant, letter="A", min_percentage=70, max_percentage=100, remark="Excellent", grade_point=Decimal("5.00"))
+        GradeScale.objects.create(tenant=self.legacy_tenant, letter="B", min_percentage=60, max_percentage=69.99, remark="Very good", grade_point=Decimal("4.00"))
+
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.term = Term.objects.create(tenant=self.legacy_tenant, name="First Term", start_date=timezone.localdate(), end_date=timezone.localdate())
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        self.english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+
+        student_user = User.objects.create_user(
+            email="student@gpa.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="GPA001", admission_number="ADM-GPA-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        # Grade "A" (grade_point 5) and grade "B" (grade_point 4) -> GPA 4.5
+        StudentSubjectScore.objects.create(
+            student=self.student, subject=self.math, class_group=self.school_class, term=self.term,
+            score=Decimal("80.00"), max_score=Decimal("100.00"), grade="A", performance_remark="Excellent",
+        )
+        StudentSubjectScore.objects.create(
+            student=self.student, subject=self.english, class_group=self.school_class, term=self.term,
+            score=Decimal("65.00"), max_score=Decimal("100.00"), grade="B", performance_remark="Very good",
+        )
+
+    def test_cumulative_and_term_gpa_average_subject_grade_points(self):
+        payload = _transcript_payload(self.student)
+
+        self.assertEqual(payload["cumulative"]["gpa"], 4.5)
+        self.assertEqual(len(payload["term_records"]), 1)
+        self.assertEqual(payload["term_records"][0]["gpa"], 4.5)
 
 
 class DocumentSignatureResolutionTests(TestCase):

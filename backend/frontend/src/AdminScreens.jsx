@@ -1987,7 +1987,188 @@ function AdminFinanceScreen({
 
 }
 
-function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, onDeleteExam, session, onCreateExam, onUpdateExam }) {
+function AdminGradingSystemPanel({ onLoad, onSave, onDelete }) {
+  const emptyForm = { id: null, letter: "", min_percentage: "", max_percentage: "", remark: "", grade_point: "", is_active: true };
+  const [scales, setScales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [deleteBusyId, setDeleteBusyId] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await onLoad?.();
+      setScales(result?.grades || []);
+    } catch (loadError) {
+      setError(loadError.message || "Could not load grading scales.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setFeedback("");
+    if (!form.letter.trim()) {
+      setError("Letter is required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await onSave?.({
+        letter: form.letter.trim().toUpperCase(),
+        min_percentage: form.min_percentage,
+        max_percentage: form.max_percentage,
+        remark: form.remark.trim(),
+        grade_point: form.grade_point || 0,
+        is_active: form.is_active,
+      });
+      setScales(result?.grades || scales);
+      setFeedback(result?.message || "Grade scale saved.");
+      setForm(emptyForm);
+    } catch (saveError) {
+      setError(saveError.message || "Could not save grade scale.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (scale) => {
+    setError("");
+    setFeedback("");
+    setForm({
+      id: scale.id,
+      letter: scale.letter,
+      min_percentage: String(scale.min_percentage),
+      max_percentage: String(scale.max_percentage),
+      remark: scale.remark || "",
+      grade_point: String(scale.grade_point ?? 0),
+      is_active: scale.is_active,
+    });
+  };
+
+  const handleDelete = async (scale) => {
+    setError("");
+    setFeedback("");
+    setDeleteBusyId(scale.id);
+    try {
+      const result = await onDelete?.(scale.id);
+      setFeedback(result?.message || `Grade ${scale.letter} deleted.`);
+      setScales((prev) => prev.filter((item) => item.id !== scale.id));
+      if (form.id === scale.id) setForm(emptyForm);
+    } catch (deleteError) {
+      setError(deleteError.message || "Could not delete grade scale.");
+    } finally {
+      setDeleteBusyId("");
+    }
+  };
+
+  return (
+    <article className="app-panel grading-system-panel">
+      <div className="panel-head">
+        <div>
+          <h3>Grading System</h3>
+          <small>School-wide grading scale, automatically used for CBT results, manual scores, report cards, broadsheets, and transcripts.</small>
+        </div>
+        <span className="pill muted">{scales.length} band{scales.length === 1 ? "" : "s"}</span>
+      </div>
+
+      <form className="panel-form" onSubmit={handleSubmit}>
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Letter
+            <input value={form.letter} onChange={(event) => setForm((prev) => ({ ...prev, letter: event.target.value.toUpperCase() }))} placeholder="A" maxLength={5} disabled={saving} />
+          </label>
+          <label className="panel-field">
+            Minimum %
+            <input type="number" min="0" max="100" step="0.01" value={form.min_percentage} onChange={(event) => setForm((prev) => ({ ...prev, min_percentage: event.target.value }))} disabled={saving} />
+          </label>
+          <label className="panel-field">
+            Maximum %
+            <input type="number" min="0" max="100" step="0.01" value={form.max_percentage} onChange={(event) => setForm((prev) => ({ ...prev, max_percentage: event.target.value }))} disabled={saving} />
+          </label>
+          <label className="panel-field">
+            Grade Point
+            <input type="number" min="0" step="0.01" value={form.grade_point} onChange={(event) => setForm((prev) => ({ ...prev, grade_point: event.target.value }))} placeholder="e.g. 5" disabled={saving} />
+          </label>
+          <label className="panel-field full">
+            Remark
+            <input value={form.remark} onChange={(event) => setForm((prev) => ({ ...prev, remark: event.target.value }))} placeholder="Excellent" disabled={saving} />
+          </label>
+          <label className="panel-field checkbox-field">
+            <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))} disabled={saving} />
+            Active
+          </label>
+        </div>
+        {error ? <p className="form-feedback error">{error}</p> : null}
+        {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+        <div className="panel-form-actions">
+          {form.id ? (
+            <button type="button" className="btn-secondary" onClick={() => setForm(emptyForm)} disabled={saving}>Cancel Edit</button>
+          ) : null}
+          <button type="submit" disabled={saving}>{saving ? "Saving..." : form.id ? "Update Grade" : "Add Grade"}</button>
+        </div>
+      </form>
+
+      {loading ? (
+        <p className="panel-empty">Loading grading scales...</p>
+      ) : scales.length ? (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Letter</th>
+                <th>Min %</th>
+                <th>Max %</th>
+                <th>Remark</th>
+                <th>Grade Point</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {scales.map((scale) => (
+                <tr key={scale.id}>
+                  <td>{scale.letter}</td>
+                  <td>{scale.min_percentage}%</td>
+                  <td>{scale.max_percentage}%</td>
+                  <td>{scale.remark || "-"}</td>
+                  <td>{scale.grade_point}</td>
+                  <td>{scale.is_active ? "Active" : "Inactive"}</td>
+                  <td>
+                    <button type="button" className="table-action" onClick={() => handleEdit(scale)}>Edit</button>
+                    <button
+                      type="button"
+                      className="table-action danger"
+                      onClick={() => handleDelete(scale)}
+                      disabled={deleteBusyId === scale.id}
+                    >
+                      {deleteBusyId === scale.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="panel-empty">No grade bands configured yet.</p>
+      )}
+    </article>
+  );
+}
+
+function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, onDeleteExam, session, onCreateExam, onUpdateExam, onLoadGradingScales, onSaveGradingScale, onDeleteGradingScale }) {
   const results = data?.exam_results || data?.submitted_results || data?.cbt_results || data?.results || [];
   const autoSubmissions = data?.auto_submitted_exams || data?.auto_submissions || [];
   const exams = data?.exams || data?.available_exams || [];
@@ -2485,6 +2666,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         <button type="button" className={`table-action ${activeView === "auto-submissions" ? "active" : ""}`} onClick={() => setActiveView("auto-submissions")}>
           Auto Submissions
         </button>
+        <button type="button" className={`table-action ${activeView === "grading-system" ? "active" : ""}`} onClick={() => setActiveView("grading-system")}>
+          Grading System
+        </button>
       </div>
 
       {activeView === "desktop" ? <SchoolDomCbtDesktop exams={exams} results={results} downloads={data?.downloads || {}} school={broadsheetSchool} session={session} /> : null}
@@ -2852,6 +3036,13 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             <p className="panel-empty">{loading ? "Loading auto-submission report..." : "No auto-submitted exams have been recorded."}</p>
           )}
         </article>
+      ) : null}
+      {activeView === "grading-system" ? (
+        <AdminGradingSystemPanel
+          onLoad={onLoadGradingScales}
+          onSave={onSaveGradingScale}
+          onDelete={onDeleteGradingScale}
+        />
       ) : null}
       {confirmDialog}
     </section>
@@ -5919,6 +6110,7 @@ function documentStylesForExport() {
     .service-agreement-document .sa-sig-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid #cbd5e1;padding:10px 0}
     .service-agreement-document .sa-sig-label{flex:0 0 160px;color:#52606d;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
     .service-agreement-document .sa-signature-img{max-height:60px;object-fit:contain}
+    .transcript-document .doc-summary-strip{grid-template-columns:repeat(5,1fr)}
   `;
 }
 
@@ -5959,11 +6151,12 @@ function TranscriptPreview({ transcript, school }) {
         <div><strong>Max Score</strong><span>{cumulative.total_max ?? 0}</span></div>
         <div><strong>Average</strong><span>{cumulative.average ?? 0}%</span></div>
         <div><strong>Grade</strong><span>{cumulative.grade || "-"}</span></div>
+        <div><strong>GPA</strong><span>{cumulative.gpa ?? 0}</span></div>
       </section>
       {termRecords.length ? (
         termRecords.map((record, index) => (
           <section key={`${record.session}-${record.term}-${index}`} className="term-record">
-            <h3>{record.session} - {record.term} - {record.class_name || "Class Record"}</h3>
+            <h3>{record.session} - {record.term} - {record.class_name || "Class Record"} (GPA: {record.gpa ?? 0})</h3>
             <table className="document-table">
               <thead>
                 <tr>

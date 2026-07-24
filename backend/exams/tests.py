@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from academic.models import GradeScale
 from core.models import SchoolTenant
 from tenants.models import Tenant
 from users.models import StudentProfile, User
@@ -106,6 +107,75 @@ class FlagExamQuestionTests(TestCase):
         self.assertEqual(self.attempt.auto_submit_reason_display, "Exceeded tab-switching warnings")
         self.assertEqual(len(self.attempt.auto_submit_warning_history), 1)
         self.assertEqual(len(self.attempt.auto_submit_activity_logs), 1)
+
+
+class ExamResultGradingTests(TestCase):
+    """The CBT result page must resolve grades through the same admin-
+    configured GradeScale as manual score entry, report cards, and
+    transcripts - it used to have its own private, hardcoded 90/80/70/60
+    scale independent of whatever the admin actually configured.
+
+    Note: ExamResultView.get() only reaches the score/grade calculation for
+    the *teacher* role - a student hitting this same endpoint currently gets
+    an early-return "Exam Completed" message with no score/grade at all
+    (exam_views.py:974-981, pre-existing behavior, unrelated to grading and
+    out of scope here). These tests authenticate as the teacher to exercise
+    the code path that actually computes a grade."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Grading CBT School", schema_name="grading_cbt_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.teacher = User.objects.create_user(
+            email="teacher@grading-cbt.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = User.objects.create_user(
+            email="student@grading-cbt.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        # A custom "A" starting at 65% - deliberately below both the old
+        # hardcoded CBT scale's >=90 threshold AND the auto-seeded default
+        # GradeScale's own 70% threshold, so a score of 68% only comes out
+        # "A" if the admin's actual customization is honored (any leftover
+        # letters this tenant doesn't define, like F, get auto-seeded with
+        # the standard defaults - see grade_scale_for_percentage).
+        GradeScale.objects.create(
+            tenant=self.legacy_tenant, letter="A", min_percentage=65, max_percentage=100, remark="Excellent"
+        )
+
+        self.exam = Exam.objects.create(
+            title="Grading Consistency Exam",
+            teacher=self.teacher,
+            start_date=timezone.now() - timedelta(minutes=5),
+            end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60,
+            is_published=True,
+        )
+        self.attempt = ExamAttempt.objects.create(
+            exam=self.exam, student=self.student, is_submitted=True,
+            score=68, total_points=100, end_time=timezone.now(),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.teacher)
+
+    def test_cbt_result_grade_uses_admin_configured_grading_scale(self):
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["percentage"], 68.0)
+        self.assertEqual(response.data["grade"], "A")
+        self.assertTrue(response.data["is_passed"])
+
+    def test_cbt_result_reports_failing_grade_as_not_passed(self):
+        # 10% falls well within the auto-seeded default "F" band (0-39.99),
+        # regardless of the custom "A" override above.
+        self.attempt.score = 10
+        self.attempt.save(update_fields=["score"])
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["grade"], "F")
+        self.assertFalse(response.data["is_passed"])
 
 
 class ExamTenantIsolationTests(TestCase):

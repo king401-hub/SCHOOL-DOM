@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from academic.models import AcademicYear, GradeScale, Subject, Term
+from academic.models import AcademicYear, Subject, Term
 from exams.models import Question as ExamQuestion
 from notifications.models import Notification
 from notifications.push import push_for_notifications
@@ -541,31 +541,14 @@ def _personal_question_payload(question, include_answer=False, answer=None):
 
 
 def _grade_for_attempt(attempt, percentage):
-    scale = None
-    if getattr(attempt, "tenant_id", None):
-        scale = (
-            GradeScale.objects.filter(
-                tenant=attempt.tenant,
-                is_active=True,
-                min_percentage__lte=percentage,
-                max_percentage__gte=percentage,
-            )
-            .order_by("-min_percentage")
-            .first()
-        )
-    if scale:
-        return {"letter": scale.letter, "remark": scale.remark}
-    if percentage >= 70:
-        return {"letter": "A", "remark": "Excellent"}
-    if percentage >= 60:
-        return {"letter": "B", "remark": "Very good"}
-    if percentage >= 50:
-        return {"letter": "C", "remark": "Good"}
-    if percentage >= 45:
-        return {"letter": "D", "remark": "Fair"}
-    if percentage >= 40:
-        return {"letter": "E", "remark": "Pass"}
-    return {"letter": "F", "remark": "Needs improvement"}
+    # Resolves through the school's admin-configured grading system (same
+    # helper used by CBT results, manual score entry, report cards,
+    # broadsheets, and transcripts) instead of a private hardcoded fallback
+    # scale, so a personal quiz result always agrees with grading elsewhere.
+    from users.app_views import grade_scale_for_percentage
+
+    letter, remark = grade_scale_for_percentage(getattr(attempt, "tenant", None), percentage)
+    return {"letter": letter, "remark": remark}
 
 
 def _personal_attempt_payload(attempt, include_questions=False, include_answers=False):
