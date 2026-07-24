@@ -3929,6 +3929,50 @@ body[data-theme="dark"] .screen-hero {
 body[data-theme="dark"] .screen-hero h2 { color: #f1f5f9; }
 body[data-theme="dark"] .screen-hero p  { color: #64748b; }
 
+.screen-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.compliance-badge {
+  border: none;
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  animation: compliance-badge-pulse 2.2s ease-in-out infinite;
+}
+
+.compliance-badge.tone-unverified {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.compliance-badge.tone-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+@keyframes compliance-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+body[data-theme="dark"] .compliance-badge.tone-unverified {
+  background: #451a1a;
+  color: #fca5a5;
+}
+
+body[data-theme="dark"] .compliance-badge.tone-pending {
+  background: #452e0a;
+  color: #fcd34d;
+}
+
 /* ── Metric grid & cards ─────────────────────────────────────────────────── */
 
 .metric-grid {

@@ -893,6 +893,7 @@ def _school_payload(school, request=None):
         "country": str(getattr(school, "country", "") or ""),
         "state": getattr(school, "state", "") or "",
         "signature": _resolve_school_signature_url(school, request),
+        "compliance_status": getattr(school, "compliance_status", "") or "not_submitted",
     }
 
 

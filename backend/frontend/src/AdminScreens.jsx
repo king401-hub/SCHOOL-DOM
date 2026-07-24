@@ -273,10 +273,11 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
   );
 }
 
-function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage }) {
+function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcastMessage, onNavigate }) {
   const metrics = data?.metrics || {};
   const dashboardSchool = resolveSchoolBrand(data?.school, user?.school, user);
   const displayRole = userRoleLabel(user);
+  const complianceStatus = data?.school?.compliance_status || "";
   const announcements = data?.announcements || [];
   const recentStudents = data?.recent_students || [];
   const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
@@ -330,7 +331,19 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
   return (
     <section className="screen-grid">
       <div className="screen-hero">
-        <h2>Welcome back to {dashboardSchool.name}</h2>
+        <div className="screen-hero-title-row">
+          <h2>Welcome back to {dashboardSchool.name}</h2>
+          {complianceStatus && complianceStatus !== "approved" ? (
+            <button
+              type="button"
+              className={`compliance-badge tone-${complianceStatus === "submitted" ? "pending" : "unverified"}`}
+              onClick={() => onNavigate?.("/settings")}
+              title="Click to complete your school's compliance details"
+            >
+              {complianceStatus === "submitted" ? "Pending Review" : "Unverified"}
+            </button>
+          ) : null}
+        </div>
         <p>{displayRole} - {userDisplayName(user)}. Live summary from your school data endpoints.</p>
       </div>
 

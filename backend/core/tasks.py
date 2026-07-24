@@ -95,6 +95,31 @@ def send_compliance_reminders():
                 )
             except Exception:
                 logger.warning("Compliance reminder email failed for school %s.", school.schema_name, exc_info=True)
+
+            # In-app companion to the email, for whoever logs in before they
+            # check their inbox - one per admin account, not just the
+            # director, so the reminder shows up for anyone managing the school.
+            from notifications.models import Notification
+
+            for admin in User.objects.filter(tenant=school, role__in=["school_admin", "principal", "school_superadmin"], is_active=True):
+                try:
+                    Notification.objects.create(
+                        tenant=school,
+                        user=admin,
+                        title="Compliance documents needed",
+                        message=f"{days_left} day(s) left to submit your school's compliance documents before sign-in is suspended.",
+                        notification_type="reminder",
+                        priority=3,
+                        channel="in_app",
+                        event_type="compliance_reminder",
+                        action_text="Open Settings",
+                        deep_link="/settings",
+                        is_delivered=True,
+                        delivered_at=now,
+                    )
+                except Exception:
+                    logger.warning("Compliance in-app notification failed for school %s.", school.schema_name, exc_info=True)
+
             school.compliance_reminder_stage = stage_due
             school.save(update_fields=["compliance_reminder_stage"])
             reminders_sent += 1
