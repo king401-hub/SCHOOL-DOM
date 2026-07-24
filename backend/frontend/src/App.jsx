@@ -7569,6 +7569,8 @@ const unreadNotificationsCount =
     Number(screenData["/messages"]?.summary?.unread_inbox ?? 0) +
     adminActivityRecords.filter((item) => !item.isRead).length;
 
+const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?? 0);
+
   let content = null;
   if (activePath === "/dashboard") {
         content = (
@@ -7953,7 +7955,7 @@ const unreadNotificationsCount =
     if (route.children) {
       const isOpen = dropdownOpen === route.path;
       const hasActive = route.children.some((c) => activePath === c.path);
-      const hasUnreadMessages = route.children.some((c) => c.path === "/messages") && unreadNotificationsCount > 0;
+      const hasUnreadMessages = route.children.some((c) => c.path === "/messages") && unreadInboxCount > 0;
       return (
         <div key={route.path} className="nav-dropdown">
           <button
@@ -7966,7 +7968,7 @@ const unreadNotificationsCount =
             </span>
             <span className="nav-item-label">{route.label}</span>
             {hasUnreadMessages ? (
-              <strong className="nav-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
+              <strong className="nav-badge">{unreadInboxCount > 99 ? "99+" : unreadInboxCount}</strong>
             ) : null}
             <span className="nav-chevron">
               {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -7987,8 +7989,8 @@ const unreadNotificationsCount =
                       {ChildIcon ? <ChildIcon size={15} strokeWidth={1.8} /> : null}
                     </span>
                     <span className="nav-item-label">{child.label}</span>
-                    {child.path === "/messages" && unreadNotificationsCount > 0 ? (
-                      <strong className="nav-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
+                    {child.path === "/messages" && unreadInboxCount > 0 ? (
+                      <strong className="nav-badge">{unreadInboxCount > 99 ? "99+" : unreadInboxCount}</strong>
                     ) : null}
                   </button>
                 );
@@ -8009,8 +8011,8 @@ const unreadNotificationsCount =
           {IconComp ? <IconComp size={17} strokeWidth={1.8} /> : null}
         </span>
         <span className="nav-item-label">{route.label}</span>
-        {route.path === "/messages" && unreadNotificationsCount > 0 ? (
-          <strong className="nav-badge">{unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}</strong>
+        {route.path === "/messages" && unreadInboxCount > 0 ? (
+          <strong className="nav-badge">{unreadInboxCount > 99 ? "99+" : unreadInboxCount}</strong>
         ) : null}
       </button>
     );
