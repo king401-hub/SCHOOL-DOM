@@ -15837,6 +15837,113 @@ body[data-theme="dark"] .settings-compliance-section {
   background: rgba(17, 24, 39, 0.6);
 }
 
+.service-agreement-document {
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #1f2933;
+  line-height: 1.55;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.75rem;
+}
+
+.service-agreement-document h1 {
+  text-align: center;
+  font-size: 1.25rem;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.25rem;
+}
+
+.service-agreement-document .sa-subtitle {
+  text-align: center;
+  color: #52606d;
+  margin-bottom: 1.25rem;
+}
+
+.service-agreement-document h2 {
+  font-size: 0.95rem;
+  color: #1a365d;
+  margin: 1.25rem 0 0.5rem;
+  page-break-inside: avoid;
+}
+
+.service-agreement-document p {
+  margin: 0.4rem 0;
+}
+
+.service-agreement-document .sa-fill {
+  border-bottom: 1px solid #94a3b8;
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.service-agreement-document .sa-input {
+  border: none;
+  border-bottom: 1px solid #64748b;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  padding: 1px 4px;
+}
+
+.service-agreement-document .sa-input:focus {
+  outline: none;
+  border-bottom-color: #2563eb;
+}
+
+.service-agreement-document .sa-signature-block {
+  margin-top: 2rem;
+}
+
+.service-agreement-document .sa-sig-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid #cbd5e1;
+  padding: 0.6rem 0;
+}
+
+.service-agreement-document .sa-sig-label {
+  flex: 0 0 160px;
+  color: #52606d;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.service-agreement-document .sa-signature-img {
+  max-height: 60px;
+  object-fit: contain;
+}
+
+.sa-signature-capture {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.service-agreement-history .data-table td,
+.service-agreement-history .data-table th {
+  vertical-align: middle;
+}
+
+body[data-theme="dark"] .service-agreement-document {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+body[data-theme="dark"] .service-agreement-document h2 {
+  color: #93c5fd;
+}
+
+body[data-theme="dark"] .service-agreement-document .sa-fill,
+body[data-theme="dark"] .service-agreement-document .sa-input {
+  border-bottom-color: #475569;
+  color: #e2e8f0;
+}
+
 .activity-calendar-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);

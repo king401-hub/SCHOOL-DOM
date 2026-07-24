@@ -19,6 +19,7 @@ urlpatterns = [
     path("account/deletion-request/", app_views.account_deletion_request, name="app_account_deletion_request"),
     path("support-tickets/", app_views.support_tickets, name="app_support_tickets"),
     path("loan-applications/", app_views.loan_applications, name="app_loan_applications"),
+    path("legal/service-agreement/", app_views.service_agreement_view, name="app_service_agreement"),
     path("database-imports/", app_views.database_imports, name="app_database_imports"),
     path("academic/planning/", app_views.lesson_planning, name="app_lesson_planning"),
     path("academic/notes/", app_views.teacher_notes, name="app_teacher_notes"),

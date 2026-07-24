@@ -4,7 +4,7 @@ import {
   Briefcase, UserCheck, GraduationCap, Users, CreditCard, FileText,
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
-  Banknote, LifeBuoy, CalendarClock, MessageCircle,
+  Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -124,6 +124,8 @@ const AdminEnrollmentsScreen = lazyAdminScreen("AdminEnrollmentsScreen");
 const AdminMessagesScreen = lazyAdminScreen("AdminMessagesScreen");
 const AdminDatabaseImportScreen = lazyAdminScreen("AdminDatabaseImportScreen");
 const AdminLoanApplicationScreen = lazyAdminScreen("AdminLoanApplicationScreen");
+const AdminComplianceScreen = lazyAdminScreen("AdminComplianceScreen");
+const AdminServiceAgreementScreen = lazyAdminScreen("AdminServiceAgreementScreen");
 const AdminSmsWalletScreen = lazyAdminScreen("AdminSmsWalletScreen");
 const SupportCenterPanel = lazyAdminScreen("SupportCenterPanel");
 
@@ -6090,6 +6092,9 @@ const ADMIN_ROUTE_ICONS = {
   "/settings": Settings,
   "/finance-group": DollarSign,
   "/admin-group": CreditCard,
+  "/compliance": ShieldCheck,
+  "/service-agreement": FileSignature,
+  "/legal-group": ShieldCheck,
 };
 
 const ADMIN_NAV_SECTIONS = [
@@ -6097,7 +6102,7 @@ const ADMIN_NAV_SECTIONS = [
   { label: "People", paths: ["/people-group"] },
   { label: "Academics", paths: ["/academics-group"] },
   { label: "Finance & HR", paths: ["/finance-group"] },
-  { label: "Administration", paths: ["/admin-group"] },
+  { label: "Administration", paths: ["/admin-group", "/legal-group"] },
 ];
 
 const ACCOUNTANT_NAV_SECTIONS = [
@@ -7200,6 +7205,34 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, session]
   );
 
+  const handleSaveServiceAgreement = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/legal/service-agreement/", payload);
+      if (result?.agreement) {
+        setScreenData((previous) => ({
+          ...previous,
+          "/service-agreement": {
+            ...(previous["/service-agreement"] || {}),
+            agreements: [
+              result.agreement,
+              ...((previous["/service-agreement"]?.agreements || []).filter((item) => item.id !== result.agreement.id)),
+            ].slice(0, 20),
+          },
+        }));
+      }
+      addAdminNotification({
+        category: "System",
+        module: "Legal & Compliance",
+        action: `Saved a signed copy of the Service Agreement (${payload.school_legal_name || "school"}).`,
+        status: "Saved",
+        priority: "High",
+        tone: "warning",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
   const handleUploadExamResults = useCallback(
     async (examId, file) => {
       const parsedId = Number(examId);
@@ -7839,6 +7872,28 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onSubmit={handleSubmitLoanApplication}
+      />
+    );
+  } else if (activePath === "/compliance") {
+    content = (
+      <AdminComplianceScreen
+        data={data}
+        user={session?.user}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onSave={handleSaveSettings}
+      />
+    );
+  } else if (activePath === "/service-agreement") {
+    content = (
+      <AdminServiceAgreementScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onSave={handleSaveServiceAgreement}
+        school={session?.school}
       />
     );
   } else {

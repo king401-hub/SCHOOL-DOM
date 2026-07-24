@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>SchoolDom School Services Agreement</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1f2933; line-height: 1.5; max-width: 800px; margin: 0 auto; padding: 24px; }
+  h1 { text-align: center; font-size: 20px; letter-spacing: 0.03em; margin-bottom: 4px; }
+  .subtitle { text-align: center; color: #52606d; margin-bottom: 24px; }
+  h2 { font-size: 15px; color: #1a365d; margin-top: 24px; margin-bottom: 8px; }
+  p { margin: 6px 0; }
+  .parties p { margin: 4px 0; }
+  .sig-block { margin-top: 36px; }
+  .sig-line { border-bottom: 1px solid #333; margin: 28px 0 4px; }
+  .sig-label { color: #52606d; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>SCHOOLDOM SCHOOL SERVICES AGREEMENT</h1>
+  <p class="subtitle">This Agreement is made on {{ agreement.agreement_date }} between:</p>
+
+  <div class="parties">
+    <p>(1) Xcel Technologies Ltd., a company registered in Nigeria with RC number 9605197, with registered address at 256, Ijegun Ikotun Road, Lagos (&ldquo;Schooldom&rdquo;); and</p>
+    <p>(2) {{ agreement.school_legal_name }}, located at {{ agreement.school_registered_address }}, represented by {{ agreement.representative_name }}, {{ agreement.representative_title }} (&ldquo;the School&rdquo;).</p>
+    <p><em>Schooldom and the School are each a &ldquo;Party&rdquo; and together the &ldquo;Parties.&rdquo;</em></p>
+  </div>
+
+  <h2>1. Services</h2>
+  <p>Schooldom grants the School access to and usage of the Schooldom OS for the Term(s) covered by this Agreement, covering school administration, staff/student record management, and the Modules described in Clause 4, as made available on the Schooldom OS from time to time.</p>
+
+  <h2>2. Fees and Payment</h2>
+  <p>2.1 The subscription fee for the Schooldom OS is &#8358;20,000 per term (&ldquo;Subscription Fee&rdquo;), payable in full and in advance of onboarding. No per-student charges apply.</p>
+  <p>2.2 Schooldom may increase or decrease the Subscription Fee at its sole discretion. Any change to the Subscription Fee will take effect from the start of the School's next Term and will be communicated to the School in advance of that Term.</p>
+  <p>2.3 Onboarding, including account activation and access to the Schooldom OS, commences only upon Schooldom's confirmed receipt of the applicable fee.</p>
+  <p>2.4 Unless otherwise agreed in writing, the Subscription Fee is non-refundable once access has been activated. This clause should be reviewed against Schooldom's intended consumer-facing refund policy before use.</p>
+
+  <h2>3. Term and Renewal</h2>
+  <p>3.1 This Agreement covers one academic Term, as defined by the School's published academic calendar communicated to Schooldom at onboarding.</p>
+  <p>3.2 This Agreement renews automatically for each subsequent Term at the then-current Subscription Fee, unless either Party gives written notice of non-renewal at least {{ agreement.notice_days }} days before the start of the following Term.</p>
+
+  <h2>4. Optional Modules</h2>
+  <p>4.1 The following modules are optional. The School decides which, if any, to activate at onboarding or during any subsequent Term:</p>
+  <p>(a) Payment Solutions &mdash; enables the School to collect school fees through the Schooldom OS. Schooldom applies a markup of 0.5% on fees transacted through this module. Separate terms governing payment processing, settlement timing, and applicable regulatory disclosures apply and will be provided at activation.</p>
+  <p>(b) Child Monitor &mdash; a feature offered to parents/guardians of enrolled students on a separate fee basis set by Schooldom. The School's role is limited to permitting Schooldom to introduce this feature to the School's parent community; the School is not a party to the end-user agreement between Schooldom and parents.</p>
+  <p>(c) SMS Bundles &mdash; the School may purchase SMS credit bundles through the Schooldom OS for parent/staff communication, billed separately at rates published on the platform.</p>
+  <p>4.2 Once a module is activated for a Term, it remains active for the remainder of that Term and cannot be deactivated at will. A module may only be turned off effective from the start of the following Term, by written notice to the School's assigned Growth Manager before that Term begins.</p>
+
+  <h2>5. School Obligations</h2>
+  <p>5.1 The School shall provide accurate and current information about the school, its students, and its staff as reasonably required for onboarding.</p>
+  <p>5.2 The School shall designate at least one staff member to complete onboarding training and act as the primary point of contact with Schooldom's assigned Growth Manager.</p>
+  <p>5.3 Where the School submits personal data relating to students, parents/guardians, or staff, the School confirms it has the lawful basis and, where required, the consent of the relevant data subjects (or their parents/guardians, for minors) to share that data with Schooldom for the purposes of this Agreement.</p>
+
+  <h2>6. Schooldom Obligations</h2>
+  <p>6.1 Schooldom shall provide the School with access to the Schooldom OS, onboarding support, and a designated Growth Manager for ongoing support during the Term.</p>
+  <p>6.2 Schooldom shall use reasonable efforts to maintain the availability of the Schooldom OS, excluding scheduled maintenance and events outside Schooldom's reasonable control.</p>
+
+  <h2>7. Data Protection</h2>
+  <p>7.1 Each Party shall comply with applicable data protection law in Nigeria, including the Nigeria Data Protection Act 2023 and any subsidiary regulation, in respect of personal data processed under this Agreement.</p>
+  <p>7.2 Schooldom shall process student, staff, and parent/guardian data solely for the purposes of providing the Services and Optional Modules described in this Agreement, and shall implement reasonable technical and organisational measures to protect that data.</p>
+  <p>7.3 This clause is a starting point only. The precise allocation of data controller/processor responsibilities should be confirmed with a data protection professional before this Agreement is used, particularly given the involvement of minors' data.</p>
+
+  <h2>8. Confidentiality</h2>
+  <p>Each Party shall keep confidential any non-public information disclosed by the other Party in connection with this Agreement, and shall not disclose it to third parties except as required to perform this Agreement or by law.</p>
+
+  <h2>9. Limitation of Liability</h2>
+  <p>To the maximum extent permitted by law, Schooldom's total liability arising out of or in connection with this Agreement shall not exceed the total Subscription Fees paid by the School in the Term in which the claim arose. Neither Party shall be liable for indirect or consequential losses.</p>
+
+  <h2>10. Termination</h2>
+  <p>10.1 Either Party may terminate this Agreement immediately on written notice if the other Party commits a material breach that is not remedied within {{ agreement.cure_period_days }} days of being notified.</p>
+  <p>10.2 On termination, Schooldom shall provide the School a reasonable opportunity to export its data from the Schooldom OS, and the School's access shall be suspended at the end of the Term in which termination occurs, unless termination is for cause.</p>
+
+  <h2>11. Force Majeure</h2>
+  <p>Neither Party shall be liable for any failure or delay in performance caused by circumstances beyond its reasonable control, including power or internet infrastructure failures, provided the affected Party notifies the other and uses reasonable efforts to resume performance.</p>
+
+  <h2>12. Governing Law and Dispute Resolution</h2>
+  <p>This Agreement is governed by the laws of the Federal Republic of Nigeria. The Parties shall first attempt to resolve any dispute through good-faith negotiation; any dispute not resolved within {{ agreement.negotiation_days }} days shall be subject to the exclusive jurisdiction of the courts of Lagos State, Nigeria.</p>
+
+  <h2>13. Entire Agreement</h2>
+  <p>This Agreement, together with any module-specific terms referenced herein, constitutes the entire agreement between the Parties regarding its subject matter and supersedes all prior discussions. Amendments must be in writing and signed by both Parties.</p>
+
+  <div class="sig-block">
+    <h2>SIGNED by the School:</h2>
+    <p><em>By signing below, the School confirms it has read, understood, and agrees to be bound by this Agreement.</em></p>
+    <p><strong>For the School</strong></p>
+
+    <div class="sig-line"></div>
+    <p class="sig-label">Name / Title: {{ agreement.representative_name }}, {{ agreement.representative_title }}</p>
+
+    {% if signature_url %}<p><img src="{{ signature_url }}" alt="Signature" style="max-height:80px;" /></p>{% endif %}
+    <div class="sig-line"></div>
+    <p class="sig-label">Signature</p>
+
+    <div class="sig-line"></div>
+    <p class="sig-label">Date / School Stamp: {{ agreement.agreement_date }}</p>
+  </div>
+</body>
+</html>

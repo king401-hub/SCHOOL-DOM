@@ -59,7 +59,7 @@ from core.models import SchoolTenant, Domain
 from django_countries import countries as django_countries_list
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
-from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplication, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
+from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplication, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
 
 try:
@@ -7055,6 +7055,154 @@ def loan_applications(request):
             "success": True,
             "message": "Loan application submitted. We'll review it and follow up by email.",
             "loan": _loan_application_payload(loan, request),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+def _service_agreement_payload(agreement, request=None):
+    def _file_url(file_field):
+        if not file_field:
+            return ""
+        try:
+            url = file_field.url
+            return request.build_absolute_uri(url) if request else url
+        except Exception:
+            return ""
+
+    return {
+        "id": str(agreement.id),
+        "agreement_date": agreement.agreement_date,
+        "school_legal_name": agreement.school_legal_name,
+        "school_registered_address": agreement.school_registered_address,
+        "representative_name": agreement.representative_name,
+        "representative_title": agreement.representative_title,
+        "notice_days": agreement.notice_days,
+        "cure_period_days": agreement.cure_period_days,
+        "negotiation_days": agreement.negotiation_days,
+        "signature_url": _file_url(agreement.signature),
+        "document_url": _file_url(agreement.document),
+        "submitted_by": agreement.submitted_by.get_full_name() if agreement.submitted_by_id else "",
+        "created_at": agreement.created_at,
+    }
+
+
+def _render_service_agreement_html(agreement, request=None):
+    from django.template.loader import render_to_string
+
+    signature_url = ""
+    if agreement.signature:
+        try:
+            signature_url = request.build_absolute_uri(agreement.signature.url) if request else agreement.signature.url
+        except Exception:
+            signature_url = ""
+    return render_to_string(
+        "users/service_agreement_document.html",
+        {"agreement": agreement, "signature_url": signature_url},
+    )
+
+
+def _send_service_agreement_email(agreement, html_body):
+    support_email = _support_email()
+    school = agreement.school
+    subject = f"Signed service agreement: {school.name}"
+    body = (
+        "A school completed and saved its SchoolDom Service Agreement.\n\n"
+        f"School: {school.name}\n"
+        f"School code: {school.schema_name}\n"
+        f"Agreement date: {agreement.agreement_date}\n"
+        f"School legal name: {agreement.school_legal_name}\n"
+        f"School registered address: {agreement.school_registered_address}\n"
+        f"Representative: {agreement.representative_name} ({agreement.representative_title})\n"
+        f"Submitted by: {agreement.submitted_by.get_full_name() if agreement.submitted_by_id else '-'}\n"
+    )
+    try:
+        from django.core.mail import EmailMultiAlternatives
+
+        em = EmailMultiAlternatives(subject=subject, body=body, from_email=settings.DEFAULT_FROM_EMAIL, to=[support_email])
+        em.attach_alternative(html_body, "text/html")
+        em.attach("service-agreement.html", html_body, "text/html")
+        em.send()
+    except Exception:
+        logger.exception("Failed to send service agreement email (agreement=%s)", agreement.id)
+        return False
+    return True
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def service_agreement_view(request):
+    user = request.user
+    school = getattr(user, "tenant", None)
+    if not school:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can manage the service agreement."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "GET":
+        agreements = ServiceAgreement.objects.filter(school=school)[:20]
+        return Response({
+            "success": True,
+            "agreements": [_service_agreement_payload(item, request) for item in agreements],
+            "school_prefill": {"name": school.name, "address": school.address or ""},
+        })
+
+    agreement_date = parse_date(str(request.data.get("agreement_date") or ""))
+    if not agreement_date:
+        return Response({"success": False, "message": "Enter a valid agreement date."}, status=status.HTTP_400_BAD_REQUEST)
+
+    school_legal_name = str(request.data.get("school_legal_name") or "").strip()
+    school_registered_address = str(request.data.get("school_registered_address") or "").strip()
+    representative_name = str(request.data.get("representative_name") or "").strip()
+    representative_title = str(request.data.get("representative_title") or "").strip()
+    if not all([school_legal_name, school_registered_address, representative_name, representative_title]):
+        return Response(
+            {"success": False, "message": "School legal name, address, representative name, and title are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    signature = request.FILES.get("signature")
+    if not signature:
+        return Response({"success": False, "message": "A signature is required to save the agreement."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _positive_int(key, default_value):
+        try:
+            value = int(request.data.get(key) or default_value)
+        except (TypeError, ValueError):
+            return default_value
+        return value if value > 0 else default_value
+
+    agreement = ServiceAgreement.objects.create(
+        school=school,
+        submitted_by=user,
+        agreement_date=agreement_date,
+        school_legal_name=school_legal_name,
+        school_registered_address=school_registered_address,
+        representative_name=representative_name,
+        representative_title=representative_title,
+        notice_days=_positive_int("notice_days", 14),
+        cure_period_days=_positive_int("cure_period_days", 14),
+        negotiation_days=_positive_int("negotiation_days", 30),
+        signature=signature,
+    )
+
+    html_body = _render_service_agreement_html(agreement, request)
+    agreement.document.save(
+        f"service-agreement-{agreement.id}.html",
+        ContentFile(html_body.encode("utf-8")),
+        save=False,
+    )
+    agreement.save(update_fields=["document"])
+
+    if _send_service_agreement_email(agreement, html_body):
+        agreement.support_notified_at = timezone.now()
+        agreement.save(update_fields=["support_notified_at"])
+
+    return Response(
+        {
+            "success": True,
+            "message": "Service agreement saved.",
+            "agreement": _service_agreement_payload(agreement, request),
         },
         status=status.HTTP_201_CREATED,
     )

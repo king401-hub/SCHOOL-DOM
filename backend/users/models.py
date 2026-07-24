@@ -822,6 +822,38 @@ class LoanApplication(models.Model):
         return f"{self.school.name} loan - {self.amount_requested} ({self.status})"
 
 
+class ServiceAgreement(models.Model):
+    """A completed, signed copy of the SchoolDom School Services Agreement for a school."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    school = models.ForeignKey("core.SchoolTenant", on_delete=models.CASCADE, related_name="service_agreements")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="service_agreements")
+
+    agreement_date = models.DateField()
+    school_legal_name = models.CharField(max_length=255)
+    school_registered_address = models.TextField()
+    representative_name = models.CharField(max_length=255)
+    representative_title = models.CharField(max_length=255)
+    notice_days = models.PositiveIntegerField(default=14)
+    cure_period_days = models.PositiveIntegerField(default=14)
+    negotiation_days = models.PositiveIntegerField(default=30)
+
+    signature = models.ImageField(upload_to="service_agreements/signatures/%Y/%m/")
+    document = models.FileField(upload_to="service_agreements/%Y/%m/", null=True, blank=True)
+
+    support_notified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["school", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.school.name} service agreement - {self.agreement_date}"
+
+
 class KidsMonitorSubscription(models.Model):
     """Paid subscription enabling SMS alerts to a parent when their child's attendance is marked."""
 

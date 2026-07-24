@@ -68,6 +68,14 @@ export const ADMIN_ROUTES = [
       { path: "/settings", label: "Settings" },
     ]
   },
+  {
+    path: "/legal-group",
+    label: "Legal & Compliance",
+    children: [
+      { path: "/compliance", label: "Director & Admin Compliance" },
+      { path: "/service-agreement", label: "Service Agreement" },
+    ]
+  },
 ];
 export const ACCOUNTANT_ROUTES = [
   { path: "/finance", label: "Finance" },
@@ -86,6 +94,7 @@ export const ADMIN_ROUTE_REDIRECTS = {
   "/academics-group": "/classes",
   "/finance-group": "/finance",
   "/admin-group": "/id-cards",
+  "/legal-group": "/compliance",
 };
 export const ADMIN_ENDPOINTS = {
   "/dashboard": "/api/app/dashboard/",
@@ -110,6 +119,8 @@ export const ADMIN_ENDPOINTS = {
   "/messages": "/api/app/messages/",
   "/loan-application": "/api/app/loan-applications/",
   "/settings": "/api/app/school/settings/",
+  "/compliance": "/api/app/school/settings/",
+  "/service-agreement": "/api/app/legal/service-agreement/",
 };
 export const STUDENT_ROUTES = [
   { path: "/dashboard", label: "Dashboard" },

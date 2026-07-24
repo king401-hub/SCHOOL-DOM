@@ -33,7 +33,7 @@ from finance.services import (
 from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
-from users.models import KidsMonitorSubscription, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
+from users.models import KidsMonitorSubscription, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
 from users.app_views import ID_CARD_SIGNING_SALT, _class_broadsheet, _resolve_school_signature_url
 
 
@@ -1966,6 +1966,165 @@ class SchoolSettingsAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+
+class ServiceAgreementAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Agreement School",
+            schema_name="agreement_school_20260306",
+            is_active=True,
+            address="12 Ikorodu Road, Lagos",
+        )
+        self.admin_user = User.objects.create_user(
+            email="admin@agreement.edu",
+            password="AdminPass123",
+            first_name="Admin",
+            last_name="User",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.accountant_user = User.objects.create_user(
+            email="accountant@agreement.edu",
+            password="AccountantPass123",
+            first_name="Accountant",
+            last_name="User",
+            role="accountant",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+    def _signature(self):
+        return SimpleUploadedFile(
+            "sig.png",
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/png",
+        )
+
+    def _valid_payload(self, **overrides):
+        payload = {
+            "agreement_date": "2026-09-01",
+            "school_legal_name": "Agreement School Ltd",
+            "school_registered_address": "12 Ikorodu Road, Lagos",
+            "representative_name": "Jane Doe",
+            "representative_title": "Proprietor",
+            "signature": self._signature(),
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_get_returns_empty_history_and_school_prefill(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/legal/service-agreement/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["agreements"], [])
+        self.assertEqual(response.data["school_prefill"]["name"], "Agreement School")
+        self.assertEqual(response.data["school_prefill"]["address"], "12 Ikorodu Road, Lagos")
+
+    def test_admin_can_save_agreement_with_defaults_and_receives_email(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            "/api/app/legal/service-agreement/",
+            data=self._valid_payload(),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["success"])
+        agreement_data = response.data["agreement"]
+        self.assertEqual(agreement_data["notice_days"], 14)
+        self.assertEqual(agreement_data["cure_period_days"], 14)
+        self.assertEqual(agreement_data["negotiation_days"], 30)
+        self.assertTrue(agreement_data["signature_url"])
+        self.assertTrue(agreement_data["document_url"])
+
+        agreement = ServiceAgreement.objects.get(id=agreement_data["id"])
+        self.assertEqual(agreement.school, self.school)
+        self.assertEqual(agreement.submitted_by, self.admin_user)
+        self.assertIsNotNone(agreement.support_notified_at)
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.school.name, mail.outbox[0].subject)
+
+    def test_custom_day_values_are_saved(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            "/api/app/legal/service-agreement/",
+            data=self._valid_payload(notice_days="21", cure_period_days="10", negotiation_days="45"),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["agreement"]["notice_days"], 21)
+        self.assertEqual(response.data["agreement"]["cure_period_days"], 10)
+        self.assertEqual(response.data["agreement"]["negotiation_days"], 45)
+
+    def test_missing_signature_returns_400(self):
+        self.client.force_authenticate(user=self.admin_user)
+        payload = self._valid_payload()
+        del payload["signature"]
+        response = self.client.post("/api/app/legal/service-agreement/", data=payload, format="multipart")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ServiceAgreement.objects.exists())
+
+    def test_missing_required_field_returns_400(self):
+        self.client.force_authenticate(user=self.admin_user)
+        payload = self._valid_payload()
+        del payload["representative_name"]
+        response = self.client.post("/api/app/legal/service-agreement/", data=payload, format="multipart")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ServiceAgreement.objects.exists())
+
+    def test_accountant_role_is_forbidden(self):
+        self.client.force_authenticate(user=self.accountant_user)
+        response = self.client.post(
+            "/api/app/legal/service-agreement/",
+            data=self._valid_payload(),
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(ServiceAgreement.objects.exists())
+
+    def test_email_failure_does_not_block_save(self):
+        # Uses a distinct agreement_date from other tests in this class - the
+        # IdempotencyMiddleware caches successful POST responses per
+        # (user, method, path, body) fingerprint for 10s, and Django's test
+        # client uses a fixed multipart boundary, so an identical payload
+        # posted by another test in the same run would return a cached
+        # response here instead of actually hitting the view.
+        self.client.force_authenticate(user=self.admin_user)
+        with patch("django.core.mail.EmailMultiAlternatives.send", side_effect=Exception("smtp down")):
+            response = self.client.post(
+                "/api/app/legal/service-agreement/",
+                data=self._valid_payload(agreement_date="2026-03-03"),
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        agreement = ServiceAgreement.objects.get(id=response.data["agreement"]["id"])
+        self.assertIsNone(agreement.support_notified_at)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_multiple_saves_are_kept_as_history_ordered_newest_first(self):
+        self.client.force_authenticate(user=self.admin_user)
+        self.client.post("/api/app/legal/service-agreement/", data=self._valid_payload(agreement_date="2026-01-10"), format="multipart")
+        self.client.post("/api/app/legal/service-agreement/", data=self._valid_payload(agreement_date="2026-01-11"), format="multipart")
+
+        response = self.client.get("/api/app/legal/service-agreement/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["agreements"]), 2)
+        self.assertEqual(response.data["agreements"][0]["agreement_date"], date(2026, 1, 11))
+        self.assertEqual(response.data["agreements"][1]["agreement_date"], date(2026, 1, 10))
 
 
 class StudentsAPITests(TestCase):

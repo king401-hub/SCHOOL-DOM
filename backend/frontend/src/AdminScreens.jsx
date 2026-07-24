@@ -337,7 +337,7 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
             <button
               type="button"
               className={`compliance-badge tone-${complianceStatus === "submitted" ? "pending" : "unverified"}`}
-              onClick={() => onNavigate?.("/settings")}
+              onClick={() => onNavigate?.("/compliance")}
               title="Click to complete your school's compliance details"
             >
               <ShieldAlert size={13} className="compliance-badge-icon" />
@@ -5906,7 +5906,20 @@ async function downloadPrintablePng(elementId, filename, title) {
 
 function documentStylesForExport() {
   return `
-    *{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#0f172a;font-family:Georgia,'Times New Roman',serif}.official-document{width:min(100%,850px);margin:24px auto;background:#fff;color:#111827;padding:42px;border:1px solid #d7e0ec;box-shadow:0 18px 45px rgba(15,23,42,.12)}.official-doc-header{text-align:center;border-bottom:3px double #0f3d5e;padding-bottom:18px;margin-bottom:24px}.official-doc-logo{width:82px;height:82px;border-radius:18px;border:1px solid #cbd5e1;display:grid;place-items:center;margin:0 auto 10px;overflow:hidden;background:#f8fafc}.official-doc-logo img{width:100%;height:100%;object-fit:contain}.official-doc-logo span{font-family:Arial,sans-serif;font-weight:900;color:#0f3d5e}.official-doc-header h1{font-size:28px;text-transform:uppercase;letter-spacing:.04em;margin:0}.official-doc-header p{margin:5px 0 0;color:#475569;font-family:Arial,sans-serif}.official-doc-motto{font-style:italic;font-weight:800;color:#0f3d5e}.official-doc-title{text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:22px;margin:20px 0;color:#0f3d5e}.doc-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:22px}.doc-line{display:flex;gap:10px;border-bottom:1px solid #94a3b8;min-height:30px;align-items:flex-end}.doc-line strong{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;white-space:nowrap;color:#334155}.doc-line span{font-weight:700}.document-table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-family:Arial,sans-serif;font-size:13px}.document-table th,.document-table td{border:1px solid #cbd5e1;padding:8px;text-align:left}.document-table th{background:#eef6f3;color:#0f3d5e;text-transform:uppercase;font-size:11px}.term-record{break-inside:avoid;margin-bottom:18px}.term-record h3{margin:0 0 8px;font-family:Arial,sans-serif;color:#0f3d5e}.testimonial-border{border:12px double #198754;padding:28px;background:linear-gradient(0deg,rgba(25,135,84,.035),rgba(25,135,84,.035)),#fff}.testimonial-title{font-size:42px;color:#b42318;font-weight:900;text-align:center;font-family:Georgia,'Times New Roman',serif;margin:12px 0 24px}.testimonial-list{display:grid;gap:10px;counter-reset:item}.testimonial-row{display:grid;grid-template-columns:34px 190px 1fr;gap:10px;align-items:end}.testimonial-row:before{counter-increment:item;content:counter(item) ".";font-weight:800}.testimonial-row strong{font-family:Arial,sans-serif;font-size:12px}.testimonial-row span{border-bottom:1px solid #334155;min-height:24px;font-weight:700;padding:0 6px}.doc-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.doc-summary-strip div{border:1px solid #cbd5e1;padding:10px;background:#f8fafc}.doc-summary-strip strong,.doc-summary-strip span{display:block}.doc-summary-strip strong{font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase}.doc-summary-strip span{font-size:18px;font-weight:900}.signature-row{display:grid;grid-template-columns:1fr 120px 1fr;gap:20px;align-items:end;margin-top:42px}.signature-line{border-top:1px solid #111827;text-align:center;padding-top:8px;font-family:Arial,sans-serif;font-weight:800;font-size:12px}.doc-signature-img{display:block;height:34px;max-width:150px;object-fit:contain;margin:0 auto 4px}.stamp-seal{width:98px;height:98px;border-radius:50%;background:#dc2626;box-shadow:inset 0 0 0 8px rgba(255,255,255,.18);margin:auto}.stamp-box{border:2px dashed #94a3b8;min-height:86px;display:grid;place-items:center;color:#64748b;font-family:Arial,sans-serif;text-transform:uppercase;font-weight:800}.document-note{font-family:Arial,sans-serif;color:#64748b;font-size:12px}.no-print{display:none}.id-card-print-area{width:100%;min-height:620px;background:#fff;display:grid;grid-template-columns:370px 370px;gap:18px;place-content:center;place-items:center;font-family:Inter,Arial,sans-serif}.id-card-flip-inner{display:contents;transform:none!important}.id-card-face{position:relative;inset:auto;backface-visibility:visible}.id-card-back{transform:none}.id-card-preview-card{width:370px;min-height:560px;background:#fff;color:#102033;border:1px solid #d7e0ec;border-radius:22px;overflow:hidden;box-shadow:none}.id-card-back{display:grid;grid-template-rows:auto 1fr auto;background:#08111f;color:#fff}.id-card-ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900;padding:10px}.id-card-top,.id-card-back-head{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.id-card-back-head{background:#102033;color:#fff}.id-card-school-logo,.id-card-photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.id-card-school-logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.id-card-school-logo img,.id-card-photo img,.id-card-back-qr img{width:100%;height:100%;object-fit:cover}.id-card-school-logo span,.id-card-photo span{font-weight:900;color:#0f3d5e}.id-card-top strong,.id-card-back-head strong{display:block;font-size:18px}.id-card-motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.id-card-back-head .id-card-motto{color:#a7f3d0}.id-card-top span,.id-card-back-head span{display:block;color:#64748b;font-size:12px;margin-top:2px}.id-card-back-head span{color:#cbd5e1}.id-card-person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.id-card-photo{width:94px;height:112px;border-radius:18px}.id-card-person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.id-card-person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.id-card-person span{display:block;color:#475569;margin-top:10px;font-weight:700}.id-card-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.id-card-details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.id-card-details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-details dd{margin:4px 0 0;font-weight:800;font-size:13px}.id-card-signature-block{display:grid;justify-items:center;gap:2px;margin:0 22px 14px}.id-card-signature-img{height:36px;max-width:140px;object-fit:contain}.id-card-signature-block span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-front-footer{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.id-card-front-footer strong,.id-card-front-footer span{display:block}.id-card-front-footer span{color:#cbd5e1;font-size:12px;margin-top:6px}.id-card-back-qr-panel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.id-card-back-qr-panel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.id-card-back-qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.id-card-back-qr img{object-fit:contain}.id-card-back-qr-panel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.id-card-back-qr-panel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.id-card-back-footer{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.id-card-flip-button{display:none}@media print{body{background:#fff}.official-document{box-shadow:none;margin:0 auto;border:none;min-height:100vh}.testimonial-border{min-height:calc(100vh - 84px)}}@media(max-width:720px){.official-document{padding:24px}.doc-info-grid,.doc-summary-strip,.signature-row{grid-template-columns:1fr}.testimonial-row{grid-template-columns:28px 1fr}.testimonial-row span{grid-column:2}}`;
+    *{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#0f172a;font-family:Georgia,'Times New Roman',serif}.official-document{width:min(100%,850px);margin:24px auto;background:#fff;color:#111827;padding:42px;border:1px solid #d7e0ec;box-shadow:0 18px 45px rgba(15,23,42,.12)}.official-doc-header{text-align:center;border-bottom:3px double #0f3d5e;padding-bottom:18px;margin-bottom:24px}.official-doc-logo{width:82px;height:82px;border-radius:18px;border:1px solid #cbd5e1;display:grid;place-items:center;margin:0 auto 10px;overflow:hidden;background:#f8fafc}.official-doc-logo img{width:100%;height:100%;object-fit:contain}.official-doc-logo span{font-family:Arial,sans-serif;font-weight:900;color:#0f3d5e}.official-doc-header h1{font-size:28px;text-transform:uppercase;letter-spacing:.04em;margin:0}.official-doc-header p{margin:5px 0 0;color:#475569;font-family:Arial,sans-serif}.official-doc-motto{font-style:italic;font-weight:800;color:#0f3d5e}.official-doc-title{text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:22px;margin:20px 0;color:#0f3d5e}.doc-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:22px}.doc-line{display:flex;gap:10px;border-bottom:1px solid #94a3b8;min-height:30px;align-items:flex-end}.doc-line strong{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;white-space:nowrap;color:#334155}.doc-line span{font-weight:700}.document-table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-family:Arial,sans-serif;font-size:13px}.document-table th,.document-table td{border:1px solid #cbd5e1;padding:8px;text-align:left}.document-table th{background:#eef6f3;color:#0f3d5e;text-transform:uppercase;font-size:11px}.term-record{break-inside:avoid;margin-bottom:18px}.term-record h3{margin:0 0 8px;font-family:Arial,sans-serif;color:#0f3d5e}.testimonial-border{border:12px double #198754;padding:28px;background:linear-gradient(0deg,rgba(25,135,84,.035),rgba(25,135,84,.035)),#fff}.testimonial-title{font-size:42px;color:#b42318;font-weight:900;text-align:center;font-family:Georgia,'Times New Roman',serif;margin:12px 0 24px}.testimonial-list{display:grid;gap:10px;counter-reset:item}.testimonial-row{display:grid;grid-template-columns:34px 190px 1fr;gap:10px;align-items:end}.testimonial-row:before{counter-increment:item;content:counter(item) ".";font-weight:800}.testimonial-row strong{font-family:Arial,sans-serif;font-size:12px}.testimonial-row span{border-bottom:1px solid #334155;min-height:24px;font-weight:700;padding:0 6px}.doc-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.doc-summary-strip div{border:1px solid #cbd5e1;padding:10px;background:#f8fafc}.doc-summary-strip strong,.doc-summary-strip span{display:block}.doc-summary-strip strong{font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase}.doc-summary-strip span{font-size:18px;font-weight:900}.signature-row{display:grid;grid-template-columns:1fr 120px 1fr;gap:20px;align-items:end;margin-top:42px}.signature-line{border-top:1px solid #111827;text-align:center;padding-top:8px;font-family:Arial,sans-serif;font-weight:800;font-size:12px}.doc-signature-img{display:block;height:34px;max-width:150px;object-fit:contain;margin:0 auto 4px}.stamp-seal{width:98px;height:98px;border-radius:50%;background:#dc2626;box-shadow:inset 0 0 0 8px rgba(255,255,255,.18);margin:auto}.stamp-box{border:2px dashed #94a3b8;min-height:86px;display:grid;place-items:center;color:#64748b;font-family:Arial,sans-serif;text-transform:uppercase;font-weight:800}.document-note{font-family:Arial,sans-serif;color:#64748b;font-size:12px}.no-print{display:none}.id-card-print-area{width:100%;min-height:620px;background:#fff;display:grid;grid-template-columns:370px 370px;gap:18px;place-content:center;place-items:center;font-family:Inter,Arial,sans-serif}.id-card-flip-inner{display:contents;transform:none!important}.id-card-face{position:relative;inset:auto;backface-visibility:visible}.id-card-back{transform:none}.id-card-preview-card{width:370px;min-height:560px;background:#fff;color:#102033;border:1px solid #d7e0ec;border-radius:22px;overflow:hidden;box-shadow:none}.id-card-back{display:grid;grid-template-rows:auto 1fr auto;background:#08111f;color:#fff}.id-card-ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900;padding:10px}.id-card-top,.id-card-back-head{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.id-card-back-head{background:#102033;color:#fff}.id-card-school-logo,.id-card-photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.id-card-school-logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.id-card-school-logo img,.id-card-photo img,.id-card-back-qr img{width:100%;height:100%;object-fit:cover}.id-card-school-logo span,.id-card-photo span{font-weight:900;color:#0f3d5e}.id-card-top strong,.id-card-back-head strong{display:block;font-size:18px}.id-card-motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.id-card-back-head .id-card-motto{color:#a7f3d0}.id-card-top span,.id-card-back-head span{display:block;color:#64748b;font-size:12px;margin-top:2px}.id-card-back-head span{color:#cbd5e1}.id-card-person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.id-card-photo{width:94px;height:112px;border-radius:18px}.id-card-person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.id-card-person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.id-card-person span{display:block;color:#475569;margin-top:10px;font-weight:700}.id-card-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.id-card-details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.id-card-details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-details dd{margin:4px 0 0;font-weight:800;font-size:13px}.id-card-signature-block{display:grid;justify-items:center;gap:2px;margin:0 22px 14px}.id-card-signature-img{height:36px;max-width:140px;object-fit:contain}.id-card-signature-block span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-front-footer{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.id-card-front-footer strong,.id-card-front-footer span{display:block}.id-card-front-footer span{color:#cbd5e1;font-size:12px;margin-top:6px}.id-card-back-qr-panel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.id-card-back-qr-panel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.id-card-back-qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.id-card-back-qr img{object-fit:contain}.id-card-back-qr-panel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.id-card-back-qr-panel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.id-card-back-footer{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.id-card-flip-button{display:none}@media print{body{background:#fff}.official-document{box-shadow:none;margin:0 auto;border:none;min-height:100vh}.testimonial-border{min-height:calc(100vh - 84px)}}@media(max-width:720px){.official-document{padding:24px}.doc-info-grid,.doc-summary-strip,.signature-row{grid-template-columns:1fr}.testimonial-row{grid-template-columns:28px 1fr}.testimonial-row span{grid-column:2}}
+    @page{size:A4 portrait;margin:15mm}
+    .service-agreement-document{font-family:Georgia,'Times New Roman',serif;color:#1f2933;line-height:1.55;max-width:800px;margin:0 auto;padding:0 6px}
+    .service-agreement-document h1{text-align:center;font-size:20px;letter-spacing:.03em;margin:0 0 4px}
+    .service-agreement-document .sa-subtitle{text-align:center;color:#52606d;margin-bottom:20px}
+    .service-agreement-document h2{font-size:15px;color:#1a365d;margin:20px 0 8px;page-break-inside:avoid}
+    .service-agreement-document p{margin:6px 0}
+    .service-agreement-document .sa-fill{border-bottom:1px solid #94a3b8;padding:0 4px;font-weight:600}
+    .service-agreement-document .sa-input{display:none}
+    .service-agreement-document .sa-signature-block{margin-top:32px}
+    .service-agreement-document .sa-sig-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid #cbd5e1;padding:10px 0}
+    .service-agreement-document .sa-sig-label{flex:0 0 160px;color:#52606d;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+    .service-agreement-document .sa-signature-img{max-height:60px;object-fit:contain}
+  `;
 }
 
 function OfficialDocHeader({ school, title }) {
@@ -6721,33 +6734,12 @@ function AdminLoanApplicationScreen({ data = {}, loading, error, onRetry, onSubm
   );
 }
 
-function AdminSettingsScreen({
-  data,
-  user,
-  loading,
-  error,
-  onRetry,
-  onSave,
-  onRequestAccountDeletion,
-  onCancelAccountDeletion,
-  themePreference,
-  onThemeChange,
-  countries = [],
-}) {
+function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) {
   const school = data?.school || {};
   const director = data?.director || {};
   const canEdit = Boolean(data?.can_edit);
-  const [name, setName] = useState("");
-  const [motto, setMotto] = useState("");
-  const [country, setCountry] = useState("NG");
-  const [schoolState, setSchoolState] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [studentRules, setStudentRules] = useState("");
-  const [staffRules, setStaffRules] = useState("");
-  const [logoFile, setLogoFile] = useState(null);
-  const [logoPreview, setLogoPreview] = useState("");
+  const complianceStatus = school.compliance_status;
+
   const [cacRegisteredName, setCacRegisteredName] = useState("");
   const [ministryApprovalNumber, setMinistryApprovalNumber] = useState("");
   const [cacCertificateFile, setCacCertificateFile] = useState(null);
@@ -6769,6 +6761,663 @@ function AdminSettingsScreen({
   const [signatureInputMode, setSignatureInputMode] = useState("upload");
   const [adminFirstName, setAdminFirstName] = useState("");
   const [adminLastName, setAdminLastName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    setCacRegisteredName(school.cac_registered_name || "");
+    setMinistryApprovalNumber(school.ministry_approval_number || "");
+    setCacCertificateUrl(school.cac_certificate || "");
+    setCacCertificateFile(null);
+    setEntrancePhotoPreview(school.entrance_photo || "");
+    setEntrancePhotoFile(null);
+    setProofOfAddressUrl(school.proof_of_address || "");
+    setProofOfAddressFile(null);
+    setDirectorAddress(director.address || "");
+    setDirectorIdType(director.id_type || "");
+    setDirectorProofOfAddressUrl(director.proof_of_address || "");
+    setDirectorProofOfAddressFile(null);
+    setDirectorIdDocumentUrl(director.id_document || "");
+    setDirectorIdDocumentFile(null);
+    setDirectorPassportPreview(director.passport_photo || "");
+    setDirectorPassportFile(null);
+    setDirectorSignaturePreview(director.signature || "");
+    setDirectorSignatureFile(null);
+    setAdminFirstName(director.first_name || user?.first_name || "");
+    setAdminLastName(director.last_name || user?.last_name || "");
+  }, [
+    school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
+    director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
+    director.first_name, director.last_name, user?.first_name, user?.last_name,
+  ]);
+
+  const handleEntrancePhotoChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setEntrancePhotoFile(file);
+    setEntrancePhotoPreview(file ? URL.createObjectURL(file) : school.entrance_photo || "");
+  };
+
+  const handleDirectorPassportChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setDirectorPassportFile(file);
+    setDirectorPassportPreview(file ? URL.createObjectURL(file) : director.passport_photo || "");
+  };
+
+  const handleDirectorSignatureChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    setDirectorSignatureFile(file);
+    setDirectorSignaturePreview(file ? URL.createObjectURL(file) : director.signature || "");
+  };
+
+  const buildCompliancePayload = () => ({
+    cac_registered_name: cacRegisteredName.trim(),
+    ministry_approval_number: ministryApprovalNumber.trim(),
+    cac_certificate: cacCertificateFile,
+    entrance_photo: entrancePhotoFile,
+    proof_of_address: proofOfAddressFile,
+    admin_first_name: adminFirstName.trim(),
+    admin_last_name: adminLastName.trim(),
+    director_address: directorAddress.trim(),
+    director_id_type: directorIdType,
+    director_proof_of_address: directorProofOfAddressFile,
+    director_id_document: directorIdDocumentFile,
+    director_signature: directorSignatureFile,
+    profile_picture: directorPassportFile,
+  });
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canEdit) return;
+    setFeedback("");
+    setFormError("");
+    setIsSaving(true);
+    try {
+      const result = await onSave(buildCompliancePayload());
+      setFeedback(result?.message || "Compliance details updated.");
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not update compliance details.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const statusLabel = complianceStatus === "approved"
+    ? "Verified"
+    : complianceStatus === "submitted"
+      ? "Pending Review"
+      : complianceStatus === "rejected"
+        ? "Rejected - please resubmit"
+        : "Unverified";
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <div className="screen-hero-title-row">
+          <h2>Director & Admin Compliance</h2>
+          {complianceStatus ? (
+            <span className={`compliance-badge tone-${complianceStatus === "approved" ? "approved" : complianceStatus === "submitted" ? "pending" : "unverified"}`}>
+              {statusLabel}
+            </span>
+          ) : null}
+        </div>
+        <p>Provide your school's registration documents and the director's KYC details for verification.</p>
+      </div>
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+      {data ? (
+        <form className="panel-form" onSubmit={handleSubmit}>
+          <article className="app-panel">
+            <div className="settings-compliance-section">
+              <div className="panel-head">
+                <h3>School Compliance Details</h3>
+                <small>Provide your school's registration documents for verification.</small>
+              </div>
+              <div className="panel-form-grid">
+                <label className="panel-field">
+                  School Name (as on CAC)
+                  <input
+                    value={cacRegisteredName}
+                    onChange={(event) => setCacRegisteredName(event.target.value)}
+                    placeholder="Exact name on your CAC certificate"
+                    disabled={!canEdit || isSaving}
+                  />
+                </label>
+                <label className="panel-field">
+                  Ministry of Education Approval Number (if approved)
+                  <input
+                    value={ministryApprovalNumber}
+                    onChange={(event) => setMinistryApprovalNumber(event.target.value)}
+                    placeholder="Optional"
+                    disabled={!canEdit || isSaving}
+                  />
+                </label>
+                <label className="panel-field">
+                  CAC Certificate
+                  <input type="file" accept="image/*,.pdf" onChange={(event) => setCacCertificateFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                  {cacCertificateFile ? (
+                    <span className="field-note">Selected: {cacCertificateFile.name}</span>
+                  ) : cacCertificateUrl ? (
+                    <a className="field-note" href={cacCertificateUrl} target="_blank" rel="noreferrer">View uploaded certificate</a>
+                  ) : null}
+                </label>
+                <label className="panel-field">
+                  Proof of Address (utility bill)
+                  <input type="file" accept="image/*,.pdf" onChange={(event) => setProofOfAddressFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                  {proofOfAddressFile ? (
+                    <span className="field-note">Selected: {proofOfAddressFile.name}</span>
+                  ) : proofOfAddressUrl ? (
+                    <a className="field-note" href={proofOfAddressUrl} target="_blank" rel="noreferrer">View uploaded document</a>
+                  ) : null}
+                </label>
+                <div className="settings-logo-field full">
+                  <div className="settings-logo-preview">
+                    {entrancePhotoPreview ? <img src={entrancePhotoPreview} alt="School entrance" /> : <span>No photo</span>}
+                  </div>
+                  <label className="panel-field">
+                    Picture of School Entrance
+                    <input type="file" accept="image/*" onChange={handleEntrancePhotoChange} disabled={!canEdit || isSaving} />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-compliance-section">
+              <div className="panel-head">
+                <h3>Director's Personal Information</h3>
+                <small>KYC details for the school's proprietor/director.</small>
+              </div>
+              <div className="panel-form-grid">
+                <label className="panel-field">
+                  First Name
+                  <input value={adminFirstName} onChange={(event) => setAdminFirstName(event.target.value)} disabled={!canEdit || isSaving} />
+                </label>
+                <label className="panel-field">
+                  Last Name
+                  <input value={adminLastName} onChange={(event) => setAdminLastName(event.target.value)} disabled={!canEdit || isSaving} />
+                </label>
+                <label className="panel-field">
+                  Email
+                  <input value={director.email || user?.email || ""} disabled />
+                </label>
+                <label className="panel-field full">
+                  Address
+                  <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} disabled={!canEdit || isSaving} />
+                </label>
+                <label className="panel-field">
+                  ID Card Type
+                  <select value={directorIdType} onChange={(event) => setDirectorIdType(event.target.value)} disabled={!canEdit || isSaving}>
+                    <option value="">Select ID type</option>
+                    <option value="drivers_license">Driver's License</option>
+                    <option value="nin">National ID (NIN)</option>
+                    <option value="voters_card">Voter's Card</option>
+                    <option value="passport">International Passport</option>
+                  </select>
+                </label>
+                <label className="panel-field">
+                  Upload ID Card
+                  <input type="file" accept="image/*,.pdf" onChange={(event) => setDirectorIdDocumentFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                  {directorIdDocumentFile ? (
+                    <span className="field-note">Selected: {directorIdDocumentFile.name}</span>
+                  ) : directorIdDocumentUrl ? (
+                    <a className="field-note" href={directorIdDocumentUrl} target="_blank" rel="noreferrer">View uploaded ID</a>
+                  ) : null}
+                </label>
+                <label className="panel-field">
+                  Proof of Address
+                  <input type="file" accept="image/*,.pdf" onChange={(event) => setDirectorProofOfAddressFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
+                  {directorProofOfAddressFile ? (
+                    <span className="field-note">Selected: {directorProofOfAddressFile.name}</span>
+                  ) : directorProofOfAddressUrl ? (
+                    <a className="field-note" href={directorProofOfAddressUrl} target="_blank" rel="noreferrer">View uploaded document</a>
+                  ) : null}
+                </label>
+                <div className="settings-logo-field full">
+                  <div className="settings-logo-preview">
+                    {directorPassportPreview ? <img src={directorPassportPreview} alt="Director passport" /> : <span>No photo</span>}
+                  </div>
+                  <label className="panel-field">
+                    Upload Passport Photograph
+                    <input type="file" accept="image/*" onChange={handleDirectorPassportChange} disabled={!canEdit || isSaving} />
+                  </label>
+                </div>
+                <div className="settings-logo-field full">
+                  <div className="settings-logo-preview settings-signature-preview">
+                    {directorSignaturePreview ? <img src={directorSignaturePreview} alt="Director signature" /> : <span>No signature</span>}
+                  </div>
+                  <div className="settings-signature-controls">
+                    <span className="panel-field-label">Signature</span>
+                    <div className="signature-mode-tabs">
+                      <button
+                        type="button"
+                        className={signatureInputMode === "upload" ? "is-active" : ""}
+                        onClick={() => setSignatureInputMode("upload")}
+                        disabled={!canEdit || isSaving}
+                      >
+                        Upload Image
+                      </button>
+                      <button
+                        type="button"
+                        className={signatureInputMode === "draw" ? "is-active" : ""}
+                        onClick={() => setSignatureInputMode("draw")}
+                        disabled={!canEdit || isSaving}
+                      >
+                        Draw Signature
+                      </button>
+                    </div>
+                    {signatureInputMode === "draw" ? (
+                      <SignaturePad
+                        onSave={(file) => {
+                          setDirectorSignatureFile(file);
+                          setDirectorSignaturePreview(URL.createObjectURL(file));
+                          setSignatureInputMode("upload");
+                        }}
+                      />
+                    ) : (
+                      <label className="panel-field">
+                        <input type="file" accept="image/*" onChange={handleDirectorSignatureChange} disabled={!canEdit || isSaving} />
+                        {directorSignatureFile ? (
+                          <span className="field-note">Selected: {directorSignatureFile.name}</span>
+                        ) : null}
+                      </label>
+                    )}
+                    <span className="field-note">Upload an image or draw your signature. It will appear on report cards, transcripts, testimonials, and ID cards for the whole school.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {formError ? <p className="form-feedback error">{formError}</p> : null}
+            {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+            <div className="panel-form-actions">
+              <button type="submit" disabled={!canEdit || isSaving}>{isSaving ? "Saving..." : "Save Compliance Details"}</button>
+            </div>
+          </article>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+function AgreementField({ mode, value, onChange, type = "text", width = 160, placeholder = "" }) {
+  if (mode === "print") {
+    return <span className="sa-fill">{value || "—"}</span>;
+  }
+  if (type === "textarea") {
+    return (
+      <textarea
+        className="sa-input"
+        style={{ minWidth: width }}
+        value={value || ""}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={2}
+      />
+    );
+  }
+  return (
+    <input
+      className="sa-input"
+      style={{ width }}
+      type={type}
+      value={value || ""}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+    />
+  );
+}
+
+function ServiceAgreementDocument({ mode, form, onFieldChange, signatureUrl }) {
+  const values = form || {};
+  const field = (key, opts) => (
+    <AgreementField mode={mode} value={values[key]} onChange={(value) => onFieldChange?.(key, value)} {...opts} />
+  );
+
+  return (
+    <div className={`service-agreement-document mode-${mode}`}>
+      <h1>SCHOOLDOM SCHOOL SERVICES AGREEMENT</h1>
+      <p className="sa-subtitle">This Agreement is made on {field("agreement_date", { type: "date", width: 150 })} between:</p>
+
+      <div className="sa-parties">
+        <p>
+          (1) Xcel Technologies Ltd., a company registered in Nigeria with RC number 9605197, with registered
+          address at 256, Ijegun Ikotun Road, Lagos (&ldquo;Schooldom&rdquo;); and
+        </p>
+        <p>
+          (2) {field("school_legal_name", { width: 220, placeholder: "School legal/registered name" })}, located
+          at {field("school_registered_address", { type: "textarea", width: 260, placeholder: "School address" })},
+          represented by {field("representative_name", { width: 170, placeholder: "Name of signatory" })},{" "}
+          {field("representative_title", { width: 210, placeholder: "e.g. Proprietor/Head Administrator" })}{" "}
+          (&ldquo;the School&rdquo;).
+        </p>
+        <p><em>Schooldom and the School are each a &ldquo;Party&rdquo; and together the &ldquo;Parties.&rdquo;</em></p>
+      </div>
+
+      <h2>1. Services</h2>
+      <p>Schooldom grants the School access to and usage of the Schooldom OS for the Term(s) covered by this Agreement, covering school administration, staff/student record management, and the Modules described in Clause 4, as made available on the Schooldom OS from time to time.</p>
+
+      <h2>2. Fees and Payment</h2>
+      <p>2.1 The subscription fee for the Schooldom OS is &#8358;20,000 per term (&ldquo;Subscription Fee&rdquo;), payable in full and in advance of onboarding. No per-student charges apply.</p>
+      <p>2.2 Schooldom may increase or decrease the Subscription Fee at its sole discretion. Any change to the Subscription Fee will take effect from the start of the School's next Term and will be communicated to the School in advance of that Term.</p>
+      <p>2.3 Onboarding, including account activation and access to the Schooldom OS, commences only upon Schooldom's confirmed receipt of the applicable fee.</p>
+      <p>2.4 Unless otherwise agreed in writing, the Subscription Fee is non-refundable once access has been activated. This clause should be reviewed against Schooldom's intended consumer-facing refund policy before use.</p>
+
+      <h2>3. Term and Renewal</h2>
+      <p>3.1 This Agreement covers one academic Term, as defined by the School's published academic calendar communicated to Schooldom at onboarding.</p>
+      <p>3.2 This Agreement renews automatically for each subsequent Term at the then-current Subscription Fee, unless either Party gives written notice of non-renewal at least {field("notice_days", { type: "number", width: 56 })} days before the start of the following Term.</p>
+
+      <h2>4. Optional Modules</h2>
+      <p>4.1 The following modules are optional. The School decides which, if any, to activate at onboarding or during any subsequent Term:</p>
+      <p>(a) Payment Solutions &mdash; enables the School to collect school fees through the Schooldom OS. Schooldom applies a markup of 0.5% on fees transacted through this module. Separate terms governing payment processing, settlement timing, and applicable regulatory disclosures apply and will be provided at activation.</p>
+      <p>(b) Child Monitor &mdash; a feature offered to parents/guardians of enrolled students on a separate fee basis set by Schooldom. The School's role is limited to permitting Schooldom to introduce this feature to the School's parent community; the School is not a party to the end-user agreement between Schooldom and parents.</p>
+      <p>(c) SMS Bundles &mdash; the School may purchase SMS credit bundles through the Schooldom OS for parent/staff communication, billed separately at rates published on the platform.</p>
+      <p>4.2 Once a module is activated for a Term, it remains active for the remainder of that Term and cannot be deactivated at will. A module may only be turned off effective from the start of the following Term, by written notice to the School's assigned Growth Manager before that Term begins.</p>
+
+      <h2>5. School Obligations</h2>
+      <p>5.1 The School shall provide accurate and current information about the school, its students, and its staff as reasonably required for onboarding.</p>
+      <p>5.2 The School shall designate at least one staff member to complete onboarding training and act as the primary point of contact with Schooldom's assigned Growth Manager.</p>
+      <p>5.3 Where the School submits personal data relating to students, parents/guardians, or staff, the School confirms it has the lawful basis and, where required, the consent of the relevant data subjects (or their parents/guardians, for minors) to share that data with Schooldom for the purposes of this Agreement.</p>
+
+      <h2>6. Schooldom Obligations</h2>
+      <p>6.1 Schooldom shall provide the School with access to the Schooldom OS, onboarding support, and a designated Growth Manager for ongoing support during the Term.</p>
+      <p>6.2 Schooldom shall use reasonable efforts to maintain the availability of the Schooldom OS, excluding scheduled maintenance and events outside Schooldom's reasonable control.</p>
+
+      <h2>7. Data Protection</h2>
+      <p>7.1 Each Party shall comply with applicable data protection law in Nigeria, including the Nigeria Data Protection Act 2023 and any subsidiary regulation, in respect of personal data processed under this Agreement.</p>
+      <p>7.2 Schooldom shall process student, staff, and parent/guardian data solely for the purposes of providing the Services and Optional Modules described in this Agreement, and shall implement reasonable technical and organisational measures to protect that data.</p>
+      <p>7.3 This clause is a starting point only. The precise allocation of data controller/processor responsibilities should be confirmed with a data protection professional before this Agreement is used, particularly given the involvement of minors' data.</p>
+
+      <h2>8. Confidentiality</h2>
+      <p>Each Party shall keep confidential any non-public information disclosed by the other Party in connection with this Agreement, and shall not disclose it to third parties except as required to perform this Agreement or by law.</p>
+
+      <h2>9. Limitation of Liability</h2>
+      <p>To the maximum extent permitted by law, Schooldom's total liability arising out of or in connection with this Agreement shall not exceed the total Subscription Fees paid by the School in the Term in which the claim arose. Neither Party shall be liable for indirect or consequential losses.</p>
+
+      <h2>10. Termination</h2>
+      <p>10.1 Either Party may terminate this Agreement immediately on written notice if the other Party commits a material breach that is not remedied within {field("cure_period_days", { type: "number", width: 56 })} days of being notified.</p>
+      <p>10.2 On termination, Schooldom shall provide the School a reasonable opportunity to export its data from the Schooldom OS, and the School's access shall be suspended at the end of the Term in which termination occurs, unless termination is for cause.</p>
+
+      <h2>11. Force Majeure</h2>
+      <p>Neither Party shall be liable for any failure or delay in performance caused by circumstances beyond its reasonable control, including power or internet infrastructure failures, provided the affected Party notifies the other and uses reasonable efforts to resume performance.</p>
+
+      <h2>12. Governing Law and Dispute Resolution</h2>
+      <p>This Agreement is governed by the laws of the Federal Republic of Nigeria. The Parties shall first attempt to resolve any dispute through good-faith negotiation; any dispute not resolved within {field("negotiation_days", { type: "number", width: 56 })} days shall be subject to the exclusive jurisdiction of the courts of Lagos State, Nigeria.</p>
+
+      <h2>13. Entire Agreement</h2>
+      <p>This Agreement, together with any module-specific terms referenced herein, constitutes the entire agreement between the Parties regarding its subject matter and supersedes all prior discussions. Amendments must be in writing and signed by both Parties.</p>
+
+      <div className="sa-signature-block">
+        <h2>SIGNED by the School:</h2>
+        <p><em>By signing below, the School confirms it has read, understood, and agrees to be bound by this Agreement.</em></p>
+        <p className="sa-for-school"><strong>For the School</strong></p>
+
+        <div className="sa-sig-row">
+          <span className="sa-sig-label">Name / Title</span>
+          <span className="sa-sig-value">{values.representative_name || "—"} / {values.representative_title || "—"}</span>
+        </div>
+
+        <div className="sa-sig-row">
+          <span className="sa-sig-label">Signature</span>
+          <span className="sa-sig-value">
+            {signatureUrl ? <img src={signatureUrl} alt="Signature" className="sa-signature-img" /> : <span className="sa-fill">(not yet signed)</span>}
+          </span>
+        </div>
+
+        <div className="sa-sig-row">
+          <span className="sa-sig-label">Date / School Stamp</span>
+          <span className="sa-sig-value">{values.agreement_date || "—"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) {
+  const agreements = data?.agreements || [];
+  const prefill = data?.school_prefill || {};
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const [form, setForm] = useState({
+    agreement_date: todayIso,
+    school_legal_name: "",
+    school_registered_address: "",
+    representative_name: "",
+    representative_title: "",
+    notice_days: "14",
+    cure_period_days: "14",
+    negotiation_days: "30",
+  });
+  const [signatureFile, setSignatureFile] = useState(null);
+  const [signaturePreview, setSignaturePreview] = useState("");
+  const [signatureMode, setSignatureMode] = useState("draw");
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState(null);
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      school_legal_name: current.school_legal_name || prefill.name || "",
+      school_registered_address: current.school_registered_address || prefill.address || "",
+    }));
+  }, [prefill.name, prefill.address]);
+
+  const updateField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setFormError("");
+    if (!form.school_legal_name.trim() || !form.school_registered_address.trim() || !form.representative_name.trim() || !form.representative_title.trim()) {
+      setFormError("Fill in the school's legal name, address, and the representative's name and title.");
+      return;
+    }
+    if (!signatureFile) {
+      setFormError("Add a signature (draw or upload) before saving the agreement.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const result = await onSave({ ...form, signature: signatureFile });
+      setShowConfirm(true);
+      return result;
+    } catch (actionError) {
+      setFormError(actionError.message || "Could not save the service agreement.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const printNode = (elementId) => openPrintableDocument(elementId, "Service Agreement");
+
+  return (
+    <section className="screen-grid service-agreement-screen">
+      <div className="screen-hero">
+        <h2>Service Agreement</h2>
+        <p>Complete, sign, and save SchoolDom's School Services Agreement for your school's records.</p>
+      </div>
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+      {data ? (
+        <>
+          <section className="document-layout">
+            <article className="app-panel document-controls">
+              <div className="panel-head">
+                <h3>Fill in the agreement</h3>
+                <small>Every bracketed field is editable. The preview on the right is exactly what will print.</small>
+              </div>
+              <form className="panel-form" onSubmit={handleSubmit}>
+                <ServiceAgreementDocument mode="edit" form={form} onFieldChange={updateField} signatureUrl={signaturePreview} />
+
+                <div className="sa-signature-capture">
+                  <span className="panel-field-label">Signature</span>
+                  <div className="signature-mode-tabs">
+                    <button type="button" className={signatureMode === "draw" ? "is-active" : ""} onClick={() => setSignatureMode("draw")}>Draw Signature</button>
+                    <button type="button" className={signatureMode === "upload" ? "is-active" : ""} onClick={() => setSignatureMode("upload")}>Upload Image</button>
+                  </div>
+                  {signatureMode === "draw" ? (
+                    <SignaturePad
+                      onSave={(file) => {
+                        setSignatureFile(file);
+                        setSignaturePreview(URL.createObjectURL(file));
+                        setSignatureMode("upload");
+                      }}
+                    />
+                  ) : (
+                    <label className="panel-field">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] || null;
+                          setSignatureFile(file);
+                          setSignaturePreview(file ? URL.createObjectURL(file) : "");
+                        }}
+                      />
+                      {signatureFile ? <span className="field-note">Selected: {signatureFile.name}</span> : null}
+                    </label>
+                  )}
+                </div>
+
+                {formError ? <p className="form-feedback error">{formError}</p> : null}
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Agreement"}</button>
+                </div>
+              </form>
+            </article>
+
+            <article className="app-panel document-preview-panel">
+              <div className="panel-head">
+                <h3>Preview</h3>
+                <small>What you'll get when you print or download</small>
+              </div>
+              <div className="document-preview-scroll">
+                <div id="service-agreement-print-node">
+                  <ServiceAgreementDocument mode="print" form={form} signatureUrl={signaturePreview} />
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <article className="app-panel service-agreement-history">
+            <div className="panel-head">
+              <h3>Saved agreements</h3>
+              <small>Previously completed and signed copies for this school.</small>
+            </div>
+            {agreements.length ? (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Representative</th>
+                      <th>Submitted By</th>
+                      <th>Saved</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agreements.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.agreement_date}</td>
+                        <td>{item.representative_name} ({item.representative_title})</td>
+                        <td>{item.submitted_by || "-"}</td>
+                        <td>{formatDate(item.created_at)}</td>
+                        <td>
+                          <button type="button" className="table-action" onClick={() => setHistoryPreview(item)}>
+                            View / Print
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="panel-empty">No saved agreements yet.</p>
+            )}
+          </article>
+
+          {historyPreview ? (
+            <>
+              <div className="modal-overlay-bg" onClick={() => setHistoryPreview(null)} />
+              <article className="edit-modal-card service-agreement-modal">
+                <div className="edit-modal-head">
+                  <div>
+                    <h3>Service Agreement - {historyPreview.agreement_date}</h3>
+                  </div>
+                  <button type="button" className="edit-modal-close" onClick={() => setHistoryPreview(null)} aria-label="Close">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="document-preview-scroll" style={{ padding: "1rem 1.5rem" }}>
+                  <div id="service-agreement-history-node">
+                    <ServiceAgreementDocument mode="print" form={historyPreview} signatureUrl={historyPreview.signature_url} />
+                  </div>
+                </div>
+                <div className="panel-form-actions" style={{ padding: "0 1.5rem 1.5rem" }}>
+                  <button type="button" className="btn-secondary" onClick={() => setHistoryPreview(null)}>Close</button>
+                  <button type="button" onClick={() => printNode("service-agreement-history-node")}>Print</button>
+                  <button type="button" onClick={() => printNode("service-agreement-history-node")}>Download as PDF</button>
+                </div>
+              </article>
+            </>
+          ) : null}
+
+          {showConfirm ? (
+            <>
+              <div className="modal-overlay-bg" onClick={() => setShowConfirm(false)} />
+              <article className="edit-modal-card service-agreement-modal">
+                <div className="edit-modal-head">
+                  <div>
+                    <h3>Agreement saved</h3>
+                  </div>
+                  <button type="button" className="edit-modal-close" onClick={() => setShowConfirm(false)} aria-label="Close">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div style={{ padding: "1rem 1.5rem" }}>
+                  <p>The signed Service Agreement has been saved to your school's Legal &amp; Compliance records and emailed to the SchoolDom team.</p>
+                  <p className="field-note">"Download as PDF" uses your browser's print dialog - choose "Save as PDF" as the destination.</p>
+                </div>
+                <div className="panel-form-actions" style={{ padding: "0 1.5rem 1.5rem" }}>
+                  <button type="button" className="btn-secondary" onClick={() => setShowConfirm(false)}>Close</button>
+                  <button type="button" onClick={() => printNode("service-agreement-print-node")}>Print</button>
+                  <button type="button" onClick={() => printNode("service-agreement-print-node")}>Download as PDF</button>
+                </div>
+              </article>
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function AdminSettingsScreen({
+  data,
+  user,
+  loading,
+  error,
+  onRetry,
+  onSave,
+  onRequestAccountDeletion,
+  onCancelAccountDeletion,
+  themePreference,
+  onThemeChange,
+  countries = [],
+}) {
+  const school = data?.school || {};
+  const canEdit = Boolean(data?.can_edit);
+  const [name, setName] = useState("");
+  const [motto, setMotto] = useState("");
+  const [country, setCountry] = useState("NG");
+  const [schoolState, setSchoolState] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [studentRules, setStudentRules] = useState("");
+  const [staffRules, setStaffRules] = useState("");
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
   const [academicYearStart, setAcademicYearStart] = useState("");
   const [academicYearEnd, setAcademicYearEnd] = useState("");
@@ -6808,26 +7457,6 @@ function AdminSettingsScreen({
     setStaffRules((current) => school.staff_rules || school.staffRules || current || "");
     setLogoPreview(school.logo || "");
     setLogoFile(null);
-    setCacRegisteredName(school.cac_registered_name || "");
-    setMinistryApprovalNumber(school.ministry_approval_number || "");
-    setCacCertificateUrl(school.cac_certificate || "");
-    setCacCertificateFile(null);
-    setEntrancePhotoPreview(school.entrance_photo || "");
-    setEntrancePhotoFile(null);
-    setProofOfAddressUrl(school.proof_of_address || "");
-    setProofOfAddressFile(null);
-    setDirectorAddress(director.address || "");
-    setDirectorIdType(director.id_type || "");
-    setDirectorProofOfAddressUrl(director.proof_of_address || "");
-    setDirectorProofOfAddressFile(null);
-    setDirectorIdDocumentUrl(director.id_document || "");
-    setDirectorIdDocumentFile(null);
-    setDirectorPassportPreview(director.passport_photo || "");
-    setDirectorPassportFile(null);
-    setDirectorSignaturePreview(director.signature || "");
-    setDirectorSignatureFile(null);
-    setAdminFirstName(director.first_name || user?.first_name || "");
-    setAdminLastName(director.last_name || user?.last_name || "");
     setAcademicYearName(data?.academic_year?.name || "");
     setAcademicYearStart((data?.academic_year?.start_date || "").slice(0, 10));
     setAcademicYearEnd((data?.academic_year?.end_date || "").slice(0, 10));
@@ -6839,8 +7468,6 @@ function AdminSettingsScreen({
     data?.term?.id, data?.term?.name, data?.term?.start_date, data?.term?.end_date,
     school.address, school.email, school.logo, school.motto, school.name, school.phone,
     school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline,
-    school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
-    director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
   ]);
 
   useEffect(() => {
@@ -6879,19 +7506,6 @@ function AdminSettingsScreen({
       student_rules: studentRules.trim(),
       staff_rules: staffRules.trim(),
       logo: logoFile,
-      cac_registered_name: cacRegisteredName.trim(),
-      ministry_approval_number: ministryApprovalNumber.trim(),
-      cac_certificate: cacCertificateFile,
-      entrance_photo: entrancePhotoFile,
-      proof_of_address: proofOfAddressFile,
-      admin_first_name: adminFirstName.trim(),
-      admin_last_name: adminLastName.trim(),
-      director_address: directorAddress.trim(),
-      director_id_type: directorIdType,
-      director_proof_of_address: directorProofOfAddressFile,
-      director_id_document: directorIdDocumentFile,
-      director_signature: directorSignatureFile,
-      profile_picture: directorPassportFile,
       academic_year_name: academicYearName.trim(),
       academic_year_start_date: academicYearStart,
       academic_year_end_date: academicYearEnd,
@@ -6913,9 +7527,7 @@ function AdminSettingsScreen({
       ),
     }),
     [
-      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, adminFirstName, adminLastName, country, email, logoFile, motto, name, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
-      cacRegisteredName, ministryApprovalNumber, cacCertificateFile, entrancePhotoFile, proofOfAddressFile,
-      directorAddress, directorIdType, directorProofOfAddressFile, directorIdDocumentFile, directorPassportFile, directorSignatureFile,
+      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, country, email, logoFile, motto, name, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
     ]
   );
 
@@ -7072,24 +7684,6 @@ function AdminSettingsScreen({
     const file = event.target.files?.[0] || null;
     setLogoFile(file);
     setLogoPreview(file ? URL.createObjectURL(file) : school.logo || "");
-  };
-
-  const handleEntrancePhotoChange = (event) => {
-    const file = event.target.files?.[0] || null;
-    setEntrancePhotoFile(file);
-    setEntrancePhotoPreview(file ? URL.createObjectURL(file) : school.entrance_photo || "");
-  };
-
-  const handleDirectorPassportChange = (event) => {
-    const file = event.target.files?.[0] || null;
-    setDirectorPassportFile(file);
-    setDirectorPassportPreview(file ? URL.createObjectURL(file) : director.passport_photo || "");
-  };
-
-  const handleDirectorSignatureChange = (event) => {
-    const file = event.target.files?.[0] || null;
-    setDirectorSignatureFile(file);
-    setDirectorSignaturePreview(file ? URL.createObjectURL(file) : director.signature || "");
   };
 
   const handleThemeSelect = (nextTheme) => {
@@ -7268,165 +7862,6 @@ onClick={() => handleThemeSelect("light")}
                           Term End
                           <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} disabled={!canEdit || isSaving} />
                         </label>
-                      </div>
-
-                      <div className="settings-compliance-section">
-                        <div className="panel-head">
-                          <h3>School Compliance Details</h3>
-                          <small>Provide your school's registration documents for verification.</small>
-                        </div>
-                        <div className="panel-form-grid">
-                          <label className="panel-field">
-                            School Name (as on CAC)
-                            <input
-                              value={cacRegisteredName}
-                              onChange={(event) => setCacRegisteredName(event.target.value)}
-                              placeholder="Exact name on your CAC certificate"
-                              disabled={!canEdit || isSaving}
-                            />
-                          </label>
-                          <label className="panel-field">
-                            Ministry of Education Approval Number (if approved)
-                            <input
-                              value={ministryApprovalNumber}
-                              onChange={(event) => setMinistryApprovalNumber(event.target.value)}
-                              placeholder="Optional"
-                              disabled={!canEdit || isSaving}
-                            />
-                          </label>
-                          <label className="panel-field">
-                            CAC Certificate
-                            <input type="file" accept="image/*,.pdf" onChange={(event) => setCacCertificateFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
-                            {cacCertificateFile ? (
-                              <span className="field-note">Selected: {cacCertificateFile.name}</span>
-                            ) : cacCertificateUrl ? (
-                              <a className="field-note" href={cacCertificateUrl} target="_blank" rel="noreferrer">View uploaded certificate</a>
-                            ) : null}
-                          </label>
-                          <label className="panel-field">
-                            Proof of Address (utility bill)
-                            <input type="file" accept="image/*,.pdf" onChange={(event) => setProofOfAddressFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
-                            {proofOfAddressFile ? (
-                              <span className="field-note">Selected: {proofOfAddressFile.name}</span>
-                            ) : proofOfAddressUrl ? (
-                              <a className="field-note" href={proofOfAddressUrl} target="_blank" rel="noreferrer">View uploaded document</a>
-                            ) : null}
-                          </label>
-                          <div className="settings-logo-field full">
-                            <div className="settings-logo-preview">
-                              {entrancePhotoPreview ? <img src={entrancePhotoPreview} alt="School entrance" /> : <span>No photo</span>}
-                            </div>
-                            <label className="panel-field">
-                              Picture of School Entrance
-                              <input type="file" accept="image/*" onChange={handleEntrancePhotoChange} disabled={!canEdit || isSaving} />
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="settings-compliance-section">
-                        <div className="panel-head">
-                          <h3>Director's Personal Information</h3>
-                          <small>KYC details for the school's proprietor/director.</small>
-                        </div>
-                        <div className="panel-form-grid">
-                          <label className="panel-field">
-                            First Name
-                            <input value={adminFirstName} onChange={(event) => setAdminFirstName(event.target.value)} disabled={!canEdit || isSaving} />
-                          </label>
-                          <label className="panel-field">
-                            Last Name
-                            <input value={adminLastName} onChange={(event) => setAdminLastName(event.target.value)} disabled={!canEdit || isSaving} />
-                          </label>
-                          <label className="panel-field">
-                            Email
-                            <input value={director.email || user?.email || ""} disabled />
-                          </label>
-                          <label className="panel-field full">
-                            Address
-                            <textarea value={directorAddress} onChange={(event) => setDirectorAddress(event.target.value)} disabled={!canEdit || isSaving} />
-                          </label>
-                          <label className="panel-field">
-                            ID Card Type
-                            <select value={directorIdType} onChange={(event) => setDirectorIdType(event.target.value)} disabled={!canEdit || isSaving}>
-                              <option value="">Select ID type</option>
-                              <option value="drivers_license">Driver's License</option>
-                              <option value="nin">National ID (NIN)</option>
-                              <option value="voters_card">Voter's Card</option>
-                              <option value="passport">International Passport</option>
-                            </select>
-                          </label>
-                          <label className="panel-field">
-                            Upload ID Card
-                            <input type="file" accept="image/*,.pdf" onChange={(event) => setDirectorIdDocumentFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
-                            {directorIdDocumentFile ? (
-                              <span className="field-note">Selected: {directorIdDocumentFile.name}</span>
-                            ) : directorIdDocumentUrl ? (
-                              <a className="field-note" href={directorIdDocumentUrl} target="_blank" rel="noreferrer">View uploaded ID</a>
-                            ) : null}
-                          </label>
-                          <label className="panel-field">
-                            Proof of Address
-                            <input type="file" accept="image/*,.pdf" onChange={(event) => setDirectorProofOfAddressFile(event.target.files?.[0] || null)} disabled={!canEdit || isSaving} />
-                            {directorProofOfAddressFile ? (
-                              <span className="field-note">Selected: {directorProofOfAddressFile.name}</span>
-                            ) : directorProofOfAddressUrl ? (
-                              <a className="field-note" href={directorProofOfAddressUrl} target="_blank" rel="noreferrer">View uploaded document</a>
-                            ) : null}
-                          </label>
-                          <div className="settings-logo-field full">
-                            <div className="settings-logo-preview">
-                              {directorPassportPreview ? <img src={directorPassportPreview} alt="Director passport" /> : <span>No photo</span>}
-                            </div>
-                            <label className="panel-field">
-                              Upload Passport Photograph
-                              <input type="file" accept="image/*" onChange={handleDirectorPassportChange} disabled={!canEdit || isSaving} />
-                            </label>
-                          </div>
-                          <div className="settings-logo-field full">
-                            <div className="settings-logo-preview settings-signature-preview">
-                              {directorSignaturePreview ? <img src={directorSignaturePreview} alt="Director signature" /> : <span>No signature</span>}
-                            </div>
-                            <div className="settings-signature-controls">
-                              <span className="panel-field-label">Signature</span>
-                              <div className="signature-mode-tabs">
-                                <button
-                                  type="button"
-                                  className={signatureInputMode === "upload" ? "is-active" : ""}
-                                  onClick={() => setSignatureInputMode("upload")}
-                                  disabled={!canEdit || isSaving}
-                                >
-                                  Upload Image
-                                </button>
-                                <button
-                                  type="button"
-                                  className={signatureInputMode === "draw" ? "is-active" : ""}
-                                  onClick={() => setSignatureInputMode("draw")}
-                                  disabled={!canEdit || isSaving}
-                                >
-                                  Draw Signature
-                                </button>
-                              </div>
-                              {signatureInputMode === "draw" ? (
-                                <SignaturePad
-                                  onSave={(file) => {
-                                    setDirectorSignatureFile(file);
-                                    setDirectorSignaturePreview(URL.createObjectURL(file));
-                                    setSignatureInputMode("upload");
-                                  }}
-                                />
-                              ) : (
-                                <label className="panel-field">
-                                  <input type="file" accept="image/*" onChange={handleDirectorSignatureChange} disabled={!canEdit || isSaving} />
-                                  {directorSignatureFile ? (
-                                    <span className="field-note">Selected: {directorSignatureFile.name}</span>
-                                  ) : null}
-                                </label>
-                              )}
-                              <span className="field-note">Upload an image or draw your signature. It will appear on report cards, transcripts, testimonials, and ID cards for the whole school.</span>
-                            </div>
-                          </div>
-                        </div>
                       </div>
 
                       <div className="settings-activity-calendar">
@@ -10968,6 +11403,8 @@ export {
   AdminMessagesScreen,
   AdminDatabaseImportScreen,
   AdminLoanApplicationScreen,
+  AdminComplianceScreen,
+  AdminServiceAgreementScreen,
   AdminSmsWalletScreen,
 };
 
