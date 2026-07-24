@@ -4795,6 +4795,7 @@ body[data-theme="dark"] .panel-field textarea:focus {
 .form-feedback.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
 .form-feedback.error   { background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; }
 .form-feedback.info    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.form-feedback.warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
 
 /* ── Empty states ────────────────────────────────────────────────────────── */
 

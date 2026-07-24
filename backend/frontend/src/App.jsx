@@ -6365,14 +6365,28 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const handleCreateStudent = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/students/create/", payload);
-      addAdminNotification({
-        category: "Students",
-        module: "Student Registration",
-        action: `Registered student ${payload?.first_name || payload?.name || result?.student?.name || "record"} on the platform.`,
-        status: "Success",
-        priority: "Medium",
-        tone: "success",
-      });
+      const studentName = payload?.first_name || payload?.name || result?.student?.name || "record";
+      if (result?.token_message) {
+        addAdminNotification({
+          category: "Students",
+          module: "Student Registration",
+          action: `Registered student ${studentName}, but no activation token was available - ${result.token_message} Assign one manually before they can log in.`,
+          status: "Action Needed",
+          priority: "High",
+          tone: "warning",
+        });
+      } else {
+        addAdminNotification({
+          category: "Students",
+          module: "Student Registration",
+          action: result?.token_assigned
+            ? `Registered student ${studentName} and assigned their first activation token.`
+            : `Registered student ${studentName} on the platform.`,
+          status: "Success",
+          priority: "Medium",
+          tone: "success",
+        });
+      }
       await       Promise.all([
         loadScreen("/students", true),
         loadScreen("/parents", true),

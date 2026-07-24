@@ -1997,6 +1997,87 @@ class StudentsAPITests(TestCase):
         )
         self.client.force_authenticate(user=self.admin_user)
 
+    def test_create_student_auto_assigns_one_activation_token(self):
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 5
+        pool.save(update_fields=["balance", "updated_at"])
+
+        response = self.client.post(
+            "/api/app/students/create/",
+            {
+                "student_email": "tokened.student@student-upload.edu",
+                "first_name": "Tokened",
+                "last_name": "Student",
+                "guardian_name": "Guardian",
+                "guardian_phone": "08010000000",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["token_assigned"])
+        self.assertEqual(response.data["token_message"], "")
+
+        profile = StudentProfile.objects.get(user__email="tokened.student@student-upload.edu")
+        credit = get_or_create_student_activation_credit(profile)
+        self.assertTrue(credit.has_login_credit)
+
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 4)
+
+    def test_create_student_with_empty_pool_still_creates_student_but_flags_no_token(self):
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 0
+        pool.save(update_fields=["balance", "updated_at"])
+
+        response = self.client.post(
+            "/api/app/students/create/",
+            {
+                "student_email": "notoken.student@student-upload.edu",
+                "first_name": "NoToken",
+                "last_name": "Student",
+                "guardian_name": "Guardian",
+                "guardian_phone": "08010000001",
+                "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(response.data["token_assigned"])
+        self.assertIn("Insufficient", response.data["token_message"])
+
+        # The student must still exist - an empty token pool is not a reason
+        # to fail the whole registration.
+        profile = StudentProfile.objects.get(user__email="notoken.student@student-upload.edu")
+        credit = get_or_create_student_activation_credit(profile)
+        self.assertFalse(credit.has_login_credit)
+
+    def test_saving_an_existing_student_again_does_not_re_assign_a_token(self):
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 5
+        pool.save(update_fields=["balance", "updated_at"])
+
+        payload = {
+            "student_email": "repeat.student@student-upload.edu",
+            "first_name": "Repeat",
+            "last_name": "Student",
+            "guardian_name": "Guardian",
+            "guardian_phone": "08010000002",
+            "student_password": "StudentPass123",
+            "confirm_student_password": "StudentPass123",
+        }
+        first = self.client.post("/api/app/students/create/", payload)
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertTrue(first.data["token_assigned"])
+
+        second = self.client.post("/api/app/students/create/", {**payload, "student_password": "", "confirm_student_password": ""})
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertFalse(second.data["token_assigned"])
+        self.assertEqual(second.data["token_message"], "")
+
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 4)  # only decremented once, not twice
+
     def test_create_student_accepts_profile_picture_and_returns_visible_media_url(self):
         image_content = (
             b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"

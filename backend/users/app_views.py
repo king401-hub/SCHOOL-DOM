@@ -5134,6 +5134,13 @@ def create_student(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Resolved before _ensure_student_profile_for_tenant runs, since that
+    # helper silently returns an existing profile instead of creating one -
+    # only a genuinely new student should get an activation token auto-
+    # assigned below, never a repeat save of an existing one.
+    existing_user_for_email = User.objects.filter(email__iexact=student_email).first()
+    is_new_student = not (existing_user_for_email and StudentProfile.objects.filter(user=existing_user_for_email).exists())
+
     first_name = str(request.data.get("first_name", "")).strip()
     last_name = str(request.data.get("last_name", "")).strip()
     guardian_name = str(request.data.get("guardian_name", "")).strip()
@@ -5294,11 +5301,27 @@ def create_student(request):
 
     student_profile.refresh_from_db()
     _sync_student_guardians_to_parent_directory(student_profile)
+
+    token_assigned = False
+    token_message = ""
+    if is_new_student:
+        from finance.services import assign_monthly_activation_credits
+
+        try:
+            assign_monthly_activation_credits(
+                user.tenant, scope="student", months=1, actor=user, student_id=str(student_profile.id)
+            )
+            token_assigned = True
+        except ValueError as exc:
+            token_message = str(exc)
+
     return Response(
         {
             "success": True,
             "message": "Student saved.",
             "student": _student_payload(student_profile, request=request),
+            "token_assigned": token_assigned,
+            "token_message": token_message,
         },
         status=status.HTTP_201_CREATED,
     )

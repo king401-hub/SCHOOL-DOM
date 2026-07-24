@@ -8723,6 +8723,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+  const [tokenWarning, setTokenWarning] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -8828,6 +8829,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     event.preventDefault();
     setFormError("");
     setFormSuccess("");
+    setTokenWarning(false);
     setIsSaving(true);
     try {
       const payload = { ...form };
@@ -8841,7 +8843,15 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
         delete payload.profile_picture;
       }
       const result = await onCreate(payload);
-      setFormSuccess(result?.message || "Student saved.");
+      const baseMessage = result?.message || "Student saved.";
+      setTokenWarning(Boolean(result?.token_message));
+      setFormSuccess(
+        result?.token_message
+          ? `${baseMessage} No activation token available - ${result.token_message} Assign one from Finance before this student can log in.`
+          : result?.token_assigned
+            ? `${baseMessage} Their first activation token was assigned automatically.`
+            : baseMessage
+      );
       setForm({
         student_email: "",
         first_name: "",
@@ -9256,7 +9266,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
             </label>
           </div>
 {formError ? <p className="form-feedback error">{formError}</p> : null}
-              {formSuccess ? <p className="form-feedback success">{formSuccess}</p> : null}
+              {formSuccess ? <p className={`form-feedback ${tokenWarning ? "warning" : "success"}`}>{formSuccess}</p> : null}
           <div className="panel-form-actions">
                         <button type="submit" disabled={isSaving}>
                   {isSaving ? "Saving..." : "Create Student"}
