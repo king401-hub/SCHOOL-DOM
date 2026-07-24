@@ -24,7 +24,7 @@ from academic.models import (
 )
 from core.models import Domain, SchoolGroup, SchoolTenant
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
-from finance.models import ActivationCreditPool, ActivationCreditTransaction, StudentPaymentReference
+from finance.models import ActivationCreditPool, ActivationCreditTransaction, PaymentReceiptLink, SmsMessageLog, StudentPaymentReference
 from finance.services import (
     activate_kids_monitor_subscription,
     get_or_create_activation_credit_pool,
@@ -34,7 +34,7 @@ from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
 from users.models import KidsMonitorSubscription, ParentProfile, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
-from users.app_views import ID_CARD_SIGNING_SALT, _resolve_school_signature_url
+from users.app_views import ID_CARD_SIGNING_SALT, _class_broadsheet, _resolve_school_signature_url
 
 
 class SchoolRegistrationCreditTests(TestCase):
@@ -4493,3 +4493,289 @@ class ProprietorDashboardAPITests(TestCase):
         self.assertIsNone(new_user.tenant)
         self.assertIsNotNone(new_user.school_group)
         self.assertEqual(new_user.school_group.name, "New Owner Group")
+
+
+class ClassBroadsheetFeatureTests(TestCase):
+    """Student search + class broadsheet aggregation + parent resolution +
+    SMS-sharing, all sharing one rich fixture: two classes, a term, students
+    with/without scores, and parents covering every edge case the feature
+    needs to get right (sibling in another class, twins in the same class,
+    a parent with no child in the class at all, a parent with no phone)."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Broadsheet School", schema_name="broadsheet_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.admin = User.objects.create_user(
+            email="admin@broadsheet.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        self.class_a = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.class_b = Class.objects.create(tenant=self.legacy_tenant, name="Basic 2", section="A")
+        self.term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term",
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=90),
+        )
+        self.other_term = Term.objects.create(
+            tenant=self.legacy_tenant, name="Second Term",
+            start_date=timezone.localdate() + timedelta(days=91), end_date=timezone.localdate() + timedelta(days=180),
+        )
+
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        self.english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        self.science = Subject.objects.create(tenant=self.legacy_tenant, name="Basic Science", code="SCI")
+
+        def make_student(email, first, last, student_id, class_group):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name=first, last_name=last,
+                role="student", tenant=self.school, is_active=True, is_verified=True,
+            )
+            return StudentProfile.objects.create(
+                user=user, student_id=student_id, admission_number=f"ADM-{student_id}",
+                admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+                current_class=class_group,
+            )
+
+        self.student1 = make_student("s1@broadsheet.edu", "Ada", "Okoro", "BS001", self.class_a)
+        self.student2 = make_student("s2@broadsheet.edu", "Bola", "Okoro", "BS002", self.class_a)
+        self.student3 = make_student("s3@broadsheet.edu", "Chidi", "Eze", "BS003", self.class_a)  # no scores
+        self.twin1 = make_student("twin1@broadsheet.edu", "Tayo", "Twin", "BS004", self.class_a)
+        self.twin2 = make_student("twin2@broadsheet.edu", "Kehinde", "Twin", "BS005", self.class_a)
+        self.student_b = make_student("sb@broadsheet.edu", "Dami", "Lawal", "BS010", self.class_b)
+
+        StudentSubjectScore.objects.create(student=self.student1, subject=self.math, class_group=self.class_a, term=self.term, score=Decimal("90"), max_score=Decimal("100"), grade="A", approval_status=ResultBatch.PUBLISHED)
+        StudentSubjectScore.objects.create(student=self.student1, subject=self.english, class_group=self.class_a, term=self.term, score=Decimal("80"), max_score=Decimal("100"), grade="B", approval_status=ResultBatch.PUBLISHED)
+        StudentSubjectScore.objects.create(student=self.student2, subject=self.math, class_group=self.class_a, term=self.term, score=Decimal("60"), max_score=Decimal("100"), grade="C", approval_status=ResultBatch.PUBLISHED)
+        StudentSubjectScore.objects.create(student=self.student2, subject=self.english, class_group=self.class_a, term=self.term, score=Decimal("55"), max_score=Decimal("100"), grade="C", approval_status=ResultBatch.PUBLISHED)
+        # Unpublished - must not count unless include_unpublished=True.
+        StudentSubjectScore.objects.create(student=self.student1, subject=self.science, class_group=self.class_a, term=self.term, score=Decimal("100"), max_score=Decimal("100"), grade="A", approval_status=ResultBatch.PENDING)
+        # A different term entirely - must never leak into this term's broadsheet.
+        StudentSubjectScore.objects.create(student=self.student1, subject=self.math, class_group=self.class_a, term=self.other_term, score=Decimal("1"), max_score=Decimal("100"), grade="F", approval_status=ResultBatch.PUBLISHED)
+
+        def make_parent(email, phone=""):
+            user = User.objects.create_user(
+                email=email, password="ParentPass123", role="parent",
+                tenant=self.school, is_active=True, is_verified=True, phone=phone,
+            )
+            return ParentProfile.objects.create(user=user)
+
+        self.parent1 = make_parent("parent1@broadsheet.edu", "08010000001")  # student1 only
+        self.parent1.children.add(self.student1)
+
+        self.parent2 = make_parent("parent2@broadsheet.edu", "08010000002")  # student2 (class_a) + student_b (class_b)
+        self.parent2.children.add(self.student2, self.student_b)
+
+        self.parent3 = make_parent("parent3@broadsheet.edu", "08010000003")  # student_b only - not in class_a at all
+        self.parent3.children.add(self.student_b)
+
+        self.parent4 = make_parent("parent4@broadsheet.edu", "08010000004")  # twins, both in class_a
+        self.parent4.children.add(self.twin1, self.twin2)
+
+        self.parent5 = make_parent("parent5@broadsheet.edu", "")  # student3, but no phone on file
+        self.parent5.children.add(self.student3)
+
+    # ── Student search ──────────────────────────────────────────────────────
+
+    def test_search_ranks_exact_match_first(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/students/search/?q=Okoro")
+        self.assertEqual(response.status_code, 200)
+        names = [row["name"] for row in response.data["results"]]
+        self.assertIn("Ada Okoro", names)
+        self.assertIn("Bola Okoro", names)
+
+    def test_search_matches_exact_student_id(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/students/search/?q=BS002")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"][0]["student_id"], "BS002")
+
+    def test_search_filters_by_class(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/students/search/?q=BS&class_id={self.class_b.id}")
+        self.assertEqual(response.status_code, 200)
+        student_ids = {row["student_id"] for row in response.data["results"]}
+        self.assertEqual(student_ids, {"BS010"})
+
+    def test_search_short_query_returns_empty(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/app/students/search/?q=B")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"], [])
+
+    def test_search_requires_admin_role(self):
+        teacher = User.objects.create_user(email="teacher@broadsheet.edu", password="TeacherPass123", role="teacher", tenant=self.school, is_active=True, is_verified=True)
+        self.client.force_authenticate(user=teacher)
+        response = self.client.get("/api/app/students/search/?q=Okoro")
+        self.assertEqual(response.status_code, 403)
+
+    # ── Broadsheet aggregation ──────────────────────────────────────────────
+
+    def test_broadsheet_is_roster_complete_and_ranked(self):
+        sheet = _class_broadsheet(self.class_a, self.term, self.admin, include_unpublished=False)
+        self.assertEqual(sheet["class_size"], 5)
+        self.assertEqual(sheet["subjects"], ["Basic Science", "English Language", "Mathematics"])
+
+        by_id = {row["student_id"]: row for row in sheet["rows"]}
+        self.assertEqual(by_id["BS001"]["total_score"], 170.0)
+        self.assertEqual(by_id["BS001"]["rank"], 1)
+        self.assertEqual(by_id["BS002"]["total_score"], 115.0)
+        self.assertEqual(by_id["BS002"]["rank"], 2)
+        # Zero-score student still appears (roster-first), tied at 0, tie-broken by student_id.
+        self.assertEqual(by_id["BS003"]["total_score"], 0.0)
+        self.assertEqual(by_id["BS004"]["total_score"], 0.0)
+        self.assertEqual(by_id["BS005"]["total_score"], 0.0)
+        self.assertLess(by_id["BS003"]["rank"], by_id["BS004"]["rank"])
+        self.assertLess(by_id["BS004"]["rank"], by_id["BS005"]["rank"])
+
+    def test_broadsheet_excludes_unpublished_scores_unless_included(self):
+        sheet = _class_broadsheet(self.class_a, self.term, self.admin, include_unpublished=False)
+        by_id = {row["student_id"]: row for row in sheet["rows"]}
+        self.assertEqual(by_id["BS001"]["total_score"], 170.0)
+        self.assertNotIn("Basic Science", by_id["BS001"]["scores"])
+
+        sheet_all = _class_broadsheet(self.class_a, self.term, self.admin, include_unpublished=True)
+        by_id_all = {row["student_id"]: row for row in sheet_all["rows"]}
+        self.assertEqual(by_id_all["BS001"]["total_score"], 270.0)
+        self.assertIn("Basic Science", by_id_all["BS001"]["scores"])
+
+    def test_broadsheet_is_isolated_to_its_own_class_and_term(self):
+        sheet = _class_broadsheet(self.class_a, self.term, self.admin, include_unpublished=False)
+        student_ids = {row["student_id"] for row in sheet["rows"]}
+        self.assertNotIn("BS010", student_ids)  # student_b is in class_b, must not appear
+
+        by_id = {row["student_id"]: row for row in sheet["rows"]}
+        self.assertEqual(by_id["BS001"]["total_score"], 170.0)  # the other_term score (1) must not leak in
+
+    def test_results_snapshot_adds_class_broadsheet_only_when_class_and_term_given(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/?class_id={self.class_a.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("class_broadsheet", response.data)
+
+        response = self.client.get(f"/api/app/results/?class_id={self.class_a.id}&term_id={self.term.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("class_broadsheet", response.data)
+        self.assertEqual(response.data["class_broadsheet"]["class_size"], 5)
+
+    # ── Parent resolution ───────────────────────────────────────────────────
+
+    def test_parents_list_excludes_parents_with_no_child_in_class(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/broadsheet/parents/?class_id={self.class_a.id}")
+        self.assertEqual(response.status_code, 200)
+        parent_ids = {row["user_id"] for row in response.data["parents"]}
+        self.assertIn(str(self.parent1.user_id), parent_ids)
+        self.assertNotIn(str(self.parent3.user_id), parent_ids)  # only has a child in class_b
+
+    def test_parents_list_scopes_siblings_to_only_the_selected_class(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/broadsheet/parents/?class_id={self.class_a.id}")
+        parent2_row = next(row for row in response.data["parents"] if row["user_id"] == str(self.parent2.user_id))
+        child_names = {child["name"] for child in parent2_row["children_in_class"]}
+        self.assertEqual(child_names, {"Bola Okoro"})  # not Dami Lawal (class_b sibling)
+
+    def test_parents_list_includes_both_twins(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/broadsheet/parents/?class_id={self.class_a.id}")
+        parent4_row = next(row for row in response.data["parents"] if row["user_id"] == str(self.parent4.user_id))
+        self.assertEqual(len(parent4_row["children_in_class"]), 2)
+
+    def test_parents_list_still_includes_parent_with_no_phone(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/broadsheet/parents/?class_id={self.class_a.id}")
+        parent5_row = next(row for row in response.data["parents"] if row["user_id"] == str(self.parent5.user_id))
+        self.assertEqual(parent5_row["phone"], "")
+
+    # ── Sending ──────────────────────────────────────────────────────────────
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_creates_one_link_per_parent_with_correct_highlight(self, mock_send):
+        mock_send.return_value = {"status": "success"}
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/app/results/broadsheet/send/", {
+            "class_id": self.class_a.id, "term_id": self.term.id,
+            "parent_ids": [str(self.parent1.user_id), str(self.parent2.user_id), str(self.parent4.user_id), str(self.parent5.user_id)],
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["sent"], 3)
+        self.assertEqual(response.data["skipped"], 1)  # parent5 has no phone
+        self.assertEqual(response.data["failed"], 0)
+
+        links = PaymentReceiptLink.objects.filter(receipt_type="class_broadsheet")
+        self.assertEqual(links.count(), 3)
+
+        link1 = links.get(phone="08010000001")
+        self.assertEqual(link1.data["highlight_student_ids"], [str(self.student1.id)])
+
+        link2 = links.get(phone="08010000002")
+        self.assertEqual(link2.data["highlight_student_ids"], [str(self.student2.id)])  # not student_b
+
+        link4 = links.get(phone="08010000004")
+        self.assertEqual(set(link4.data["highlight_student_ids"]), {str(self.twin1.id), str(self.twin2.id)})
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_never_creates_a_link_for_a_deselected_parent(self, mock_send):
+        mock_send.return_value = {"status": "success"}
+        self.client.force_authenticate(user=self.admin)
+        self.client.post("/api/app/results/broadsheet/send/", {
+            "class_id": self.class_a.id, "term_id": self.term.id,
+            "parent_ids": [str(self.parent1.user_id)],
+        }, format="json")
+        self.assertFalse(PaymentReceiptLink.objects.filter(phone="08010000002").exists())
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_ignores_a_parent_id_not_actually_in_the_class(self, mock_send):
+        """A manipulated request selecting parent3 (no child in class_a) must
+        not be trusted - re-filtered server-side, so no link/SMS goes out."""
+        mock_send.return_value = {"status": "success"}
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/app/results/broadsheet/send/", {
+            "class_id": self.class_a.id, "term_id": self.term.id,
+            "parent_ids": [str(self.parent1.user_id), str(self.parent3.user_id)],
+        }, format="json")
+        self.assertEqual(response.data["sent"], 1)
+        self.assertFalse(PaymentReceiptLink.objects.filter(phone="08010000003").exists())
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_insufficient_credit_on_one_recipient_does_not_abort_batch(self, mock_send):
+        mock_send.return_value = {"status": "success"}
+        from finance.services import get_or_create_sms_wallet
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 1
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/app/results/broadsheet/send/", {
+            "class_id": self.class_a.id, "term_id": self.term.id,
+            "parent_ids": [str(self.parent1.user_id), str(self.parent2.user_id)],
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["sent"], 1)
+        self.assertEqual(response.data["failed"], 1)
+
+    def test_send_requires_no_empty_parent_list(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/app/results/broadsheet/send/", {
+            "class_id": self.class_a.id, "term_id": self.term.id, "parent_ids": [],
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_send_requires_admin_role_not_accountant(self):
+        accountant = User.objects.create_user(email="accountant@broadsheet.edu", password="AccountantPass123", role="accountant", tenant=self.school, is_active=True, is_verified=True)
+        self.client.force_authenticate(user=accountant)
+        response = self.client.post("/api/app/results/broadsheet/send/", {
+            "class_id": self.class_a.id, "term_id": self.term.id, "parent_ids": [str(self.parent1.user_id)],
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_send_requires_admin_role_not_teacher_or_parent(self):
+        for role, email in (("teacher", "t@broadsheet.edu"), ("parent", "p@broadsheet.edu")):
+            user = User.objects.create_user(email=email, password="Pass12345", role=role, tenant=self.school, is_active=True, is_verified=True)
+            self.client.force_authenticate(user=user)
+            response = self.client.post("/api/app/results/broadsheet/send/", {
+                "class_id": self.class_a.id, "term_id": self.term.id, "parent_ids": [str(self.parent1.user_id)],
+            }, format="json")
+            self.assertEqual(response.status_code, 403, f"role={role}")

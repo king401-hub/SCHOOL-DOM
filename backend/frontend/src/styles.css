@@ -15683,6 +15683,92 @@ body[data-theme="dark"] .signature-mode-tabs button.is-active {
   color: #fff;
 }
 
+.results-view-toggle {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.results-view-toggle button {
+  border: 1px solid #dbe4f0;
+  background: #ffffff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.results-view-toggle button.is-active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+body[data-theme="dark"] .results-view-toggle button {
+  background: #111827;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .results-view-toggle button.is-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.search-typeahead {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.search-typeahead li button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  cursor: pointer;
+}
+
+.search-typeahead li button:hover {
+  background: #eef2ff;
+}
+
+.search-typeahead li button small {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+body[data-theme="dark"] .search-typeahead {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .search-typeahead li button:hover {
+  background: #1e293b;
+}
+
+body[data-theme="dark"] .search-typeahead li button small {
+  color: #94a3b8;
+}
+
 .signature-pad {
   position: relative;
   display: inline-block;

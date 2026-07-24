@@ -7395,6 +7395,48 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [session]
   );
 
+  const handleStudentSearch = useCallback(
+    async (query) => requestJson(session, "GET", `/api/app/students/search/?q=${encodeURIComponent(query)}`),
+    [session]
+  );
+
+  const handleLoadBroadsheet = useCallback(
+    async (classId, termId) => {
+      const result = await requestJson(
+        session, "GET",
+        `/api/app/results/?class_id=${encodeURIComponent(classId)}&term_id=${encodeURIComponent(termId)}`
+      );
+      setScreenData((previous) => ({ ...previous, "/results": result }));
+      return result;
+    },
+    [session]
+  );
+
+  const handleLoadBroadsheetParents = useCallback(
+    async (classId) => requestJson(session, "GET", `/api/app/results/broadsheet/parents/?class_id=${encodeURIComponent(classId)}`),
+    [session]
+  );
+
+  const handleSendBroadsheet = useCallback(
+    async ({ classId, termId, parentIds }) => {
+      const result = await requestJson(session, "POST", "/api/app/results/broadsheet/send/", {
+        class_id: classId,
+        term_id: termId,
+        parent_ids: parentIds,
+      });
+      addAdminNotification({
+        category: "Results",
+        module: "Class Broadsheet",
+        action: `Shared the class broadsheet with ${result?.sent || 0} parent(s).`,
+        status: "Success",
+        priority: "Medium",
+        tone: "success",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
   const handleReviewResultBatch = useCallback(
     async (batchId, nextStatus) => {
       const result = await requestJson(session, "POST", `/api/app/results/batches/${batchId}/review/`, { status: nextStatus });
@@ -7758,6 +7800,10 @@ const unreadNotificationsCount =
         onReviewBatch={handleReviewResultBatch}
         onDeleteBatch={handleDeleteResultBatch}
         onSendSms={handleSendReportSms}
+        onStudentSearch={handleStudentSearch}
+        onLoadBroadsheet={handleLoadBroadsheet}
+        onLoadBroadsheetParents={handleLoadBroadsheetParents}
+        onSendBroadsheet={handleSendBroadsheet}
       />
     );
   } else if (activePath === "/database-import") {

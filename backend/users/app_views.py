@@ -9456,6 +9456,23 @@ def delete_result_batch(request, batch_id):
     return Response({"success": True, "message": f"Deleted result batch and {score_count} score record(s).", "batch_id": batch_id})
 
 
+def _fuzzy_student_filter(queryset, code):
+    """Match a free-text student search term against ID, email, or name (either
+    "First Last" or "Last First" word order). `queryset` must already be scoped
+    to a tenant. Shared by the teacher score-entry lookup and the admin student
+    search endpoint."""
+    name_terms = [term for term in re.split(r"\s+", code) if term]
+    name_query = Q(user__first_name__icontains=code) | Q(user__last_name__icontains=code)
+    if len(name_terms) >= 2:
+        name_query |= Q(user__first_name__icontains=name_terms[0], user__last_name__icontains=name_terms[-1])
+        name_query |= Q(user__first_name__icontains=name_terms[-1], user__last_name__icontains=name_terms[0])
+    return queryset.filter(
+        Q(student_id__icontains=code)
+        | Q(user__email__iexact=code)
+        | name_query
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def submit_subject_score(request):
@@ -9553,16 +9570,7 @@ def submit_subject_score(request):
     )
     if class_id not in (None, ""):
         student_matches = student_matches.filter(current_class_id=class_id)
-    name_terms = [term for term in re.split(r"\s+", student_code) if term]
-    name_query = Q(user__first_name__icontains=student_code) | Q(user__last_name__icontains=student_code)
-    if len(name_terms) >= 2:
-        name_query |= Q(user__first_name__icontains=name_terms[0], user__last_name__icontains=name_terms[-1])
-        name_query |= Q(user__first_name__icontains=name_terms[-1], user__last_name__icontains=name_terms[0])
-    student_matches = student_matches.filter(
-        Q(student_id__iexact=student_code)
-        | Q(user__email__iexact=student_code)
-        | name_query
-    )
+    student_matches = _fuzzy_student_filter(student_matches, student_code)
     student_profile = None
     normalized_lookup = re.sub(r"\s+", " ", student_code).strip().lower()
     for candidate in student_matches[:25]:
@@ -9645,6 +9653,106 @@ def submit_subject_score(request):
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def student_search(request):
+    """Find students by name or ID for an admin to disambiguate before acting
+    on one (e.g. sending a report card). Returns a short ranked candidate list,
+    not a single resolved match."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only administrators can search students."}, status=status.HTTP_403_FORBIDDEN)
+
+    query = str(request.query_params.get("q") or "").strip()
+    if len(query) < 2:
+        return Response({"success": True, "results": []})
+
+    class_id = request.query_params.get("class_id")
+    candidates_qs = StudentProfile.objects.select_related("user", "current_class").filter(user__tenant=user.tenant)
+    if class_id not in (None, ""):
+        candidates_qs = candidates_qs.filter(current_class_id=class_id)
+    candidates_qs = _fuzzy_student_filter(candidates_qs, query)
+
+    normalized = re.sub(r"\s+", " ", query).strip().lower()
+
+    def _rank(candidate):
+        name = re.sub(r"\s+", " ", candidate.user.get_full_name()).strip().lower()
+        student_id = str(candidate.student_id or "").lower()
+        if student_id == normalized or name == normalized:
+            return 0
+        if name.startswith(normalized) or student_id.startswith(normalized):
+            return 1
+        return 2
+
+    candidates = sorted(candidates_qs[:50], key=_rank)[:15]
+    return Response({
+        "success": True,
+        "results": [
+            {
+                "id": str(candidate.id),
+                "student_id": candidate.student_id,
+                "name": candidate.user.get_full_name(),
+                "class_name": _class_label(candidate.current_class) if candidate.current_class else "Unassigned",
+                "guardian_phone": candidate.guardian_phone or "",
+            }
+            for candidate in candidates
+        ],
+    })
+
+
+def _class_broadsheet(class_group, term, user, include_unpublished=False):
+    """Every student in class_group's results for term, side by side. Unlike
+    _student_result_report's own class_position/class_size (which only counts
+    students who already have >=1 score row), this starts from the real class
+    roster and left-joins scores, so an ungraded student still appears (with
+    "-" cells) instead of silently vanishing from the list and the ranking."""
+    subjects = list(_scope_to_user_tenant(Subject.objects.all(), user).order_by("name"))
+
+    scores_qs = StudentSubjectScore.objects.select_related("subject").filter(
+        class_group=class_group, term=term, student__user__tenant=user.tenant,
+    )
+    if not include_unpublished:
+        scores_qs = scores_qs.filter(approval_status=ResultBatch.PUBLISHED)
+
+    by_student = {}
+    for row in scores_qs:
+        entry = by_student.setdefault(row.student_id, {"scores": {}, "total": 0.0})
+        entry["scores"][row.subject.name] = {
+            "score": float(row.score or 0),
+            "max_score": float(row.max_score or 0),
+            "grade": row.grade,
+        }
+        entry["total"] += float(row.score or 0)
+
+    roster = StudentProfile.objects.select_related("user").filter(
+        current_class=class_group, user__tenant=user.tenant,
+    )
+    rows = []
+    for student in roster:
+        entry = by_student.get(student.id, {"scores": {}, "total": 0.0})
+        subject_count = len(entry["scores"])
+        rows.append({
+            "student_uuid": str(student.id),
+            "student_id": student.student_id,
+            "student_name": student.user.get_full_name(),
+            "scores": entry["scores"],
+            "total_score": round(entry["total"], 2),
+            "average_score": round(entry["total"] / subject_count, 2) if subject_count else 0.0,
+        })
+    rows.sort(key=lambda r: (-r["total_score"], r["student_id"]))
+    for idx, r in enumerate(rows, start=1):
+        r["rank"] = idx
+
+    return {
+        "class_id": class_group.id,
+        "class_name": _class_label(class_group),
+        "term": {"id": term.id, "name": term.name},
+        "subjects": [s.name for s in subjects],
+        "rows": rows,
+        "class_size": len(rows),
+    }
 
 
 @api_view(["GET"])
@@ -9747,10 +9855,140 @@ def results_snapshot(request):
             student_profile, class_group=class_group or student_profile.current_class, term=term, request=request, include_unpublished=user.role in ADMIN_ROLES
         )
 
+    if class_group and term:
+        response_payload["class_broadsheet"] = _class_broadsheet(
+            class_group, term, user, include_unpublished=user.role in ADMIN_ROLES
+        )
+
     if user.role == "teacher":
         response_payload["subjects_taught"] = _subjects_taught_for_teacher(user)
 
     return Response(response_payload)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def class_broadsheet_parents(request):
+    """Parents eligible to receive a class's broadsheet - only those with at
+    least one child actually in that class. Computed lazily (only when the
+    admin opens the share panel), not folded into the continuously-polled
+    results_snapshot."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only administrators can view this."}, status=status.HTTP_403_FORBIDDEN)
+
+    class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=request.query_params.get("class_id"))
+    parents = (
+        ParentProfile.objects.filter(children__current_class=class_group, user__tenant=user.tenant)
+        .distinct()
+        .select_related("user")
+        .prefetch_related("children")
+    )
+    payload = []
+    for parent in parents:
+        in_class_children = [child for child in parent.children.all() if child.current_class_id == class_group.id]
+        payload.append({
+            "user_id": str(parent.user.id),
+            "name": parent.user.get_full_name(),
+            "phone": parent.user.phone or "",
+            "children_in_class": [
+                {"id": str(child.id), "name": child.user.get_full_name(), "student_id": child.student_id}
+                for child in in_class_children
+            ],
+        })
+    return Response({"success": True, "class_name": _class_label(class_group), "parents": payload})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def send_class_broadsheet(request):
+    """Send the class broadsheet to selected parents - one PaymentReceiptLink
+    per parent (never one link shared across recipients), with
+    highlight_student_ids recomputed here from the parent's own children,
+    never trusted from the request body."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can send the class broadsheet."}, status=status.HTTP_403_FORBIDDEN)
+
+    class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=request.data.get("class_id"))
+    term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=request.data.get("term_id"))
+    parent_ids = request.data.get("parent_ids") or []
+    if not parent_ids:
+        return Response({"success": False, "message": "No parents selected."}, status=status.HTTP_400_BAD_REQUEST)
+
+    broadsheet = _class_broadsheet(class_group, term, user, include_unpublished=False)
+    base_link_data = {
+        "school_name": user.tenant.name if user.tenant else "",
+        "class_name": broadsheet["class_name"],
+        "term_name": broadsheet["term"]["name"],
+        "subjects": broadsheet["subjects"],
+        "rows": [
+            {
+                **row,
+                "cells": [row["scores"].get(subject, {}).get("score", "—") for subject in broadsheet["subjects"]],
+            }
+            for row in broadsheet["rows"]
+        ],
+        "generated_at": timezone.now().strftime("%d %b %Y"),
+    }
+
+    from finance.models import SmsMessageLog
+    from finance.services import (
+        InsufficientSmsCreditsError,
+        SmsWalletLockedError,
+        create_receipt_link,
+        send_wallet_sms,
+        sms_compact_url,
+    )
+
+    # Re-filtered by class server-side - a manipulated request can't select a
+    # parent who doesn't actually belong to this class.
+    parents = (
+        ParentProfile.objects.filter(user_id__in=parent_ids, children__current_class=class_group, user__tenant=user.tenant)
+        .distinct()
+        .select_related("user")
+        .prefetch_related("children")
+    )
+
+    sent, failed, skipped = 0, 0, 0
+    errors = []
+    for parent in parents:
+        phone = parent.user.phone or ""
+        if not phone:
+            skipped += 1
+            continue
+
+        in_class_children = [child for child in parent.children.all() if child.current_class_id == class_group.id]
+        highlight_ids = [str(child.id) for child in in_class_children]
+        my_rows = [row for row in broadsheet["rows"] if row["student_uuid"] in highlight_ids]
+
+        link_data = {
+            **base_link_data,
+            "highlight_student_ids": highlight_ids,
+            "highlight_names": [row["student_name"] for row in my_rows],
+        }
+        report_url = create_receipt_link(link_data, tenant=user.tenant, phone=phone, receipt_type="class_broadsheet")
+
+        sms_parts = [f"{base_link_data['school_name']} Class Broadsheet: {broadsheet['class_name']} ({broadsheet['term']['name']})."]
+        if my_rows:
+            child = my_rows[0]
+            sms_parts.append(f"{child['student_name']}: {child['rank']}/{broadsheet['class_size']}.")
+        sms_parts.append(f"View: {sms_compact_url(report_url)}")
+        sms_body = " ".join(sms_parts)
+
+        try:
+            log = send_wallet_sms(user.tenant, phone, sms_body, category=SmsMessageLog.BULK, actor=user, narration="Class broadsheet")
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            failed += 1
+            errors.append(f"{parent.user.get_full_name()}: {exc}")
+            continue
+
+        if log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
+            sent += 1
+        else:
+            failed += 1
+
+    return Response({"success": True, "sent": sent, "failed": failed, "skipped": skipped, "errors": errors[:10]})
 
 
 @api_view(["GET"])

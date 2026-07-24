@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>
-    {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% else %}Fee Statement{% endif %}
+    {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% else %}Fee Statement{% endif %}
     — {{ data.school_name|default:"School" }}
   </title>
   <style>
@@ -108,6 +108,8 @@
     tr:last-child td { border-bottom: none; }
     .text-right { text-align: right; }
     .text-muted  { color: #94a3b8; }
+    .broadsheet-highlight { background: #eef2ff; }
+    .broadsheet-highlight td:first-child { border-left: 3px solid #6366f1; }
 
     /* ── Student block (bill) ── */
     .student-block {
@@ -184,7 +186,7 @@
     <div class="school-initial">{{ data.school_name|default:"S"|first|upper }}</div>
     <h1>{{ data.school_name|default:"School" }}</h1>
     <p>
-      {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% else %}Fee Statement{% endif %}
+      {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% else %}Fee Statement{% endif %}
       &bull; {% firstof data.payment_date data.generated_at "" %}
     </p>
   </div>
@@ -195,6 +197,11 @@
       <span class="badge" style="background:#6366f1;color:#fff;border:2px solid #fff">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
         Report Card
+      </span>
+    {% elif link.receipt_type == "class_broadsheet" %}
+      <span class="badge" style="background:#6366f1;color:#fff;border:2px solid #fff">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        Class Broadsheet
       </span>
     {% elif link.receipt_type == "bill" %}
       <span class="badge bill">
@@ -264,6 +271,57 @@
         </tbody>
       </table>
       {% endif %}
+
+    {% elif link.receipt_type == "class_broadsheet" %}
+    <!-- ── CLASS BROADSHEET VIEW ── -->
+
+      <p class="section-title">Class Details</p>
+      <div class="info-grid">
+        <div class="info-item">
+          <label>Class</label>
+          <span>{{ data.class_name|default:"—" }}</span>
+        </div>
+        <div class="info-item">
+          <label>Term</label>
+          <span>{{ data.term_name|default:"—" }}</span>
+        </div>
+      </div>
+
+      {% if data.highlight_names %}
+      <div class="amount-hero" style="text-align:left">
+        <div class="label">Your Ward{{ data.highlight_names|length|pluralize }}</div>
+        <div class="amount" style="font-size:20px;color:#6366f1">{{ data.highlight_names|join:", " }}</div>
+      </div>
+      {% endif %}
+
+      <p class="section-title">Class Broadsheet</p>
+      <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Student</th>
+            {% for subject in data.subjects %}<th class="text-right">{{ subject }}</th>{% endfor %}
+            <th class="text-right">Total</th>
+            <th class="text-right">Avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in data.rows %}
+          <tr class="{% if row.student_uuid in data.highlight_student_ids %}broadsheet-highlight{% endif %}">
+            <td>{{ row.rank }}</td>
+            <td>
+              {{ row.student_name }}
+              {% if row.student_uuid in data.highlight_student_ids %}<br><small style="color:#6366f1;font-weight:700">Your ward</small>{% endif %}
+            </td>
+            {% for cell in row.cells %}<td class="text-right">{{ cell }}</td>{% endfor %}
+            <td class="text-right"><strong>{{ row.total_score|floatformat:0 }}</strong></td>
+            <td class="text-right">{{ row.average_score|floatformat:1 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
 
     {% elif link.receipt_type == "receipt" %}
     <!-- ── RECEIPT VIEW ── -->

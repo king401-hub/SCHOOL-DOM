@@ -2858,10 +2858,15 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   );
 }
 
-function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onSendSms }) {
+function AdminResultsScreen({
+  data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onSendSms,
+  onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet,
+}) {
   const summary = data?.summary || {};
   const leaderboard = data?.leaderboard || [];
   const batches = data?.result_batches || [];
+  const classOptions = data?.options?.classes || [];
+  const termOptions = data?.options?.terms || [];
   const [studentId, setStudentId] = useState("");
   const [report, setReport] = useState(data?.report_card || null);
   const [busy, setBusy] = useState(false);
@@ -2874,10 +2879,48 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
   const [smsFeedback, setSmsFeedback] = useState("");
   const [smsError, setSmsError] = useState("");
 
-  const handleSearch = async (event) => {
-    event.preventDefault();
+  const [searchResults, setSearchResults] = useState([]);
+
+  const [viewMode, setViewMode] = useState("card");
+
+  const [bsClassId, setBsClassId] = useState("");
+  const [bsTermId, setBsTermId] = useState("");
+  const [broadsheet, setBroadsheet] = useState(null);
+  const [bsBusy, setBsBusy] = useState(false);
+  const [bsError, setBsError] = useState("");
+
+  const [sharePanelOpen, setSharePanelOpen] = useState(false);
+  const [bsParents, setBsParents] = useState([]);
+  const [bsParentsLoading, setBsParentsLoading] = useState(false);
+  const [bsSelectedIds, setBsSelectedIds] = useState(new Set());
+  const [bsSending, setBsSending] = useState(false);
+  const [bsSendResult, setBsSendResult] = useState(null);
+  const [bsSendError, setBsSendError] = useState("");
+
+  useEffect(() => {
+    const query = studentId.trim();
+    if (query.length < 2 || !onStudentSearch) {
+      setSearchResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await onStudentSearch(query);
+        if (!cancelled) setSearchResults(result?.results || []);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [studentId, onStudentSearch]);
+
+  const runSearch = async (idOverride) => {
     if (!onSearch) return;
-    const trimmed = studentId.trim();
+    const trimmed = (idOverride ?? studentId).trim();
     if (!trimmed) {
       setSearchError("Enter a student ID to search.");
       return;
@@ -2898,6 +2941,81 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
       setSearchError(actionError.message || "Could not fetch report card.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleSearch = (event) => {
+    event.preventDefault();
+    runSearch();
+  };
+
+  const handlePickSearchResult = (candidate) => {
+    setStudentId(candidate.student_id);
+    setSearchResults([]);
+    runSearch(candidate.student_id);
+  };
+
+  const handleLoadBroadsheet = async () => {
+    if (!onLoadBroadsheet || !bsClassId || !bsTermId) return;
+    setBsBusy(true);
+    setBsError("");
+    setBroadsheet(null);
+    try {
+      const result = await onLoadBroadsheet(bsClassId, bsTermId);
+      const sheet = result?.class_broadsheet || null;
+      setBroadsheet(sheet);
+      if (!sheet) setBsError("No broadsheet data returned for this class and term.");
+    } catch (actionError) {
+      setBsError(actionError.message || "Could not load class broadsheet.");
+    } finally {
+      setBsBusy(false);
+    }
+  };
+
+  const handleOpenSharePanel = async () => {
+    setSharePanelOpen(true);
+    setBsSendResult(null);
+    setBsSendError("");
+    setBsSelectedIds(new Set());
+    if (!onLoadBroadsheetParents || !bsClassId) return;
+    setBsParentsLoading(true);
+    try {
+      const result = await onLoadBroadsheetParents(bsClassId);
+      setBsParents(result?.parents || []);
+    } catch (actionError) {
+      setBsSendError(actionError.message || "Could not load parents for this class.");
+    } finally {
+      setBsParentsLoading(false);
+    }
+  };
+
+  const eligibleParents = bsParents.filter((parent) => parent.phone);
+
+  const handleSelectAllParents = (event) => {
+    setBsSelectedIds(event.target.checked ? new Set(eligibleParents.map((parent) => parent.user_id)) : new Set());
+  };
+
+  const handleToggleParent = (userId) => {
+    setBsSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const handleSendBroadsheet = async () => {
+    if (!onSendBroadsheet || bsSelectedIds.size === 0) return;
+    setBsSending(true);
+    setBsSendError("");
+    setBsSendResult(null);
+    try {
+      const result = await onSendBroadsheet({ classId: bsClassId, termId: bsTermId, parentIds: Array.from(bsSelectedIds) });
+      setBsSendResult(result);
+    } catch (actionError) {
+      setBsSendError(actionError.message || "Could not send class broadsheet.");
+    } finally {
+      setBsSending(false);
     }
   };
 
@@ -2996,16 +3114,40 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
         ) : <p className="panel-empty">No pushed result batches yet.</p>}
       </article>
 
+      <div className="results-view-toggle">
+        <button type="button" className={viewMode === "card" ? "is-active" : ""} onClick={() => setViewMode("card")}>
+          Single Report Card
+        </button>
+        <button type="button" className={viewMode === "broadsheet" ? "is-active" : ""} onClick={() => setViewMode("broadsheet")}>
+          Class Broadsheet
+        </button>
+      </div>
+
+      {viewMode === "card" && (
+      <>
       <article className="app-panel">
         <form className="panel-form" onSubmit={handleSearch}>
           <div className="panel-form-grid">
-            <label className="panel-field">
-              Student ID
+            <label className="panel-field" style={{ position: "relative" }}>
+              Student Name or ID
               <input
                 value={studentId}
                 onChange={(event) => setStudentId(event.target.value)}
-                placeholder="e.g. STU2026-001"
+                placeholder="e.g. STU2026-001 or Jane Doe"
+                autoComplete="off"
               />
+              {searchResults.length ? (
+                <ul className="search-typeahead">
+                  {searchResults.map((candidate) => (
+                    <li key={candidate.id}>
+                      <button type="button" onClick={() => handlePickSearchResult(candidate)}>
+                        <strong>{candidate.name}</strong>
+                        <small>{candidate.student_id} · {candidate.class_name}</small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </label>
           </div>
           {searchError ? <p className="form-feedback error">{searchError}</p> : null}
@@ -3223,6 +3365,150 @@ function AdminResultsScreen({ data = {}, loading, error, onRetry, onSearch, onRe
           </article>
         </>
       ) : null}
+      </>
+      )}
+
+      {viewMode === "broadsheet" && (
+      <article className="app-panel">
+        <div className="panel-head">
+          <h3>Class Broadsheet</h3>
+          <small>Every student in a class, side by side, for a selected term.</small>
+        </div>
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Class
+            <select value={bsClassId} onChange={(event) => { setBsClassId(event.target.value); setBroadsheet(null); }}>
+              <option value="">Select a class</option>
+              {classOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="panel-field">
+            Term
+            <select value={bsTermId} onChange={(event) => { setBsTermId(event.target.value); setBroadsheet(null); }}>
+              <option value="">Select a term</option>
+              {termOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {bsError ? <p className="form-feedback error">{bsError}</p> : null}
+        <div className="panel-form-actions">
+          <button type="button" onClick={handleLoadBroadsheet} disabled={bsBusy || !bsClassId || !bsTermId}>
+            {bsBusy ? "Loading..." : "View broadsheet"}
+          </button>
+          {broadsheet ? (
+            <button type="button" className="btn-secondary" onClick={handleOpenSharePanel}>
+              Share with Parents
+            </button>
+          ) : null}
+        </div>
+
+        {broadsheet ? (
+          <div className="table-scroll" style={{ marginTop: "1rem" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Student</th>
+                  {broadsheet.subjects.map((subject) => <th key={subject}>{subject}</th>)}
+                  <th>Total</th>
+                  <th>Average</th>
+                </tr>
+              </thead>
+              <tbody>
+                {broadsheet.rows.length ? broadsheet.rows.map((row) => (
+                  <tr key={row.student_uuid}>
+                    <td>{row.rank}</td>
+                    <td>{row.student_name}<small>{row.student_id}</small></td>
+                    {broadsheet.subjects.map((subject) => (
+                      <td key={subject}>{row.scores?.[subject]?.score ?? "—"}</td>
+                    ))}
+                    <td>{row.total_score}</td>
+                    <td>{row.average_score}</td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan={broadsheet.subjects.length + 4}>No students in this class yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {sharePanelOpen ? (
+          <>
+            <div className="modal-overlay-bg" onClick={() => setSharePanelOpen(false)} />
+            <article className="edit-modal-card">
+              <div className="edit-modal-head">
+                <div>
+                  <h3>Share Class Broadsheet</h3>
+                  <p>{broadsheet?.class_name} · {broadsheet?.term?.name}</p>
+                </div>
+                <button type="button" className="edit-modal-close" onClick={() => setSharePanelOpen(false)} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
+              <div style={{ padding: "1rem 1.5rem 1.5rem" }}>
+                {bsParentsLoading ? (
+                  <p className="panel-empty">Loading parents...</p>
+                ) : bsParents.length ? (
+                  <>
+                    <label className="panel-field" style={{ flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={eligibleParents.length > 0 && bsSelectedIds.size === eligibleParents.length}
+                        onChange={handleSelectAllParents}
+                      />
+                      Select All Parents ({bsSelectedIds.size} of {eligibleParents.length} selected)
+                    </label>
+                    <div className="table-scroll" style={{ maxHeight: "320px", overflowY: "auto" }}>
+                      <table className="data-table">
+                        <thead><tr><th></th><th>Parent</th><th>Child(ren) in Class</th></tr></thead>
+                        <tbody>
+                          {bsParents.map((parent) => (
+                            <tr key={parent.user_id} style={!parent.phone ? { opacity: 0.5 } : undefined}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={bsSelectedIds.has(parent.user_id)}
+                                  disabled={!parent.phone}
+                                  onChange={() => handleToggleParent(parent.user_id)}
+                                />
+                              </td>
+                              <td>
+                                {parent.name}
+                                {!parent.phone ? <small className="field-note">No phone on file</small> : null}
+                              </td>
+                              <td>{parent.children_in_class.map((child) => child.name).join(", ")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="panel-empty">No parents found for this class.</p>
+                )}
+                {bsSendError ? <p className="form-feedback error">{bsSendError}</p> : null}
+                {bsSendResult ? (
+                  <p className="form-feedback success">
+                    Sent to {bsSendResult.sent}, failed {bsSendResult.failed}, skipped (no phone) {bsSendResult.skipped}.
+                  </p>
+                ) : null}
+                <div className="panel-form-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setSharePanelOpen(false)}>Close</button>
+                  <button type="button" onClick={handleSendBroadsheet} disabled={bsSending || bsSelectedIds.size === 0}>
+                    {bsSending ? "Sending..." : `Send Broadsheet to ${bsSelectedIds.size} parent(s)`}
+                  </button>
+                </div>
+              </div>
+            </article>
+          </>
+        ) : null}
+      </article>
+      )}
 
       <article className="app-panel">
         <div className="panel-head">
