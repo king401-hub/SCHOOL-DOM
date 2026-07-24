@@ -2,6 +2,8 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
+from django.db import connection
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -37,6 +39,7 @@ from finance.services import (
     charge_sms_wallet,
     complete_wallet_funding,
     credit_sms_wallet_from_purchase,
+    credit_wallet,
     deduct_document_generation_credit,
     ensure_student_wallet,
     fee_paid_amount,
@@ -53,6 +56,7 @@ from finance.services import (
     send_wallet_sms,
     sync_class_fee_assignments,
     sync_student_class_fees,
+    sync_tenant_class_fees,
     verify_activation_credit_purchase,
 )
 from finance.models import SmsMessageLog
@@ -249,6 +253,321 @@ class FinanceSnapshotDoesNotAutoSpendTokensTests(TestCase):
         self.assertEqual(pool.balance, 9)
         credit = get_or_create_student_activation_credit(self.student)
         self.assertTrue(credit.has_login_credit)
+
+
+class AdminFinanceSnapshotGoldenValuesTests(TestCase):
+    """Ground-truth values for _admin_finance_snapshot, captured against the
+    unbatched implementation. This locks in exact numbers across all three
+    fee_paid_amount sources (wallet debit, bank credit, split-payment
+    FeeAllocation) so a later performance refactor of the snapshot can be
+    proven to produce byte-identical output."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Batch School", schema_name="batch_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@batch.test", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.basic1 = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.basic2 = Class.objects.create(tenant=self.legacy_tenant, name="Basic 2", section="A")
+
+        ClassFee.objects.create(
+            school_class=self.basic1, title="Term Fee", amount=Decimal("20000.00"),
+            due_date=timezone.localdate(), is_active=True, created_by=self.admin,
+        )
+        ClassFee.objects.create(
+            school_class=self.basic2, title="Term Fee", amount=Decimal("15000.00"),
+            due_date=timezone.localdate(), is_active=True, created_by=self.admin,
+        )
+        # Inactive class fee - must never be synced/counted.
+        ClassFee.objects.create(
+            school_class=self.basic1, title="Old Fee", amount=Decimal("99999.00"),
+            due_date=timezone.localdate(), is_active=False, created_by=self.admin,
+        )
+
+        def make_student(email, code, admission, school_class):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name="Stu", last_name=code,
+                role="student", tenant=self.school, is_active=True, is_verified=True,
+            )
+            return StudentProfile.objects.create(
+                user=user, student_id=code, admission_number=admission,
+                admission_date=timezone.localdate(), guardian_name="Guardian",
+                guardian_relation="Parent", current_class=school_class,
+            )
+
+        self.student_wallet = make_student("wallet@batch.test", "BW001", "ADM-BW-001", self.basic1)
+        self.student_bank = make_student("bank@batch.test", "BB001", "ADM-BB-001", self.basic1)
+        self.student_split = make_student("split@batch.test", "BS001", "ADM-BS-001", self.basic2)
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+        # Generate the class fees for all three students first (mirrors what
+        # sync_tenant_class_fees does on every GET in production).
+        sync_tenant_class_fees(self.school, actor=self.admin)
+        self.fee_wallet = SchoolFee.objects.get(student=self.student_wallet)
+        self.fee_bank = SchoolFee.objects.get(student=self.student_bank)
+        self.fee_split = SchoolFee.objects.get(student=self.student_split)
+
+        # Wallet debit: fully pays the Basic 1 fee via auto-deduction.
+        wallet = ensure_student_wallet(self.student_wallet.user)
+        credit_wallet(wallet, Decimal("20000.00"), Transaction.ADJUSTMENT_CREDIT, "TOPUP-BW-001", "Test top-up")
+        process_due_fees(self.student_wallet, actor=self.admin, due_only=False)
+
+        # Bank credit: partially pays the Basic 1 fee via a matched transfer.
+        reference = get_or_create_student_payment_reference(self.student_bank)
+        payment = BankPayment.objects.create(
+            tenant=self.school, student=self.student_bank, payment_reference=reference,
+            amount=Decimal("12000.00"), currency="NGN", narration="Test bank transfer",
+            bank_reference="BANKREF-BB-001", status=BankPayment.STATUS_PENDING,
+            unapplied_amount=Decimal("12000.00"),
+        )
+        apply_bank_payment_to_student(payment, self.student_bank, actor=self.admin)
+
+        # Split payment: fully pays the Basic 2 fee via a Paystack DVA.
+        self.parent_user = User.objects.create_user(
+            email="parent@batch.test", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        parent_profile = ParentProfile.objects.create(user=self.parent_user)
+        parent_profile.children.add(self.student_split)
+        vac = ParentVirtualAccount.objects.create(
+            parent=self.parent_user, tenant=self.school,
+            account_number="9990001111", bank_name="Test Bank", account_name="Parent User",
+        )
+        process_virtual_account_payment(
+            tenant=self.school, account_number=vac.account_number,
+            amount_naira=Decimal("15000.00"), paystack_reference="DVA-BATCH-001",
+        )
+
+    def test_golden_values_for_wallet_bank_and_split_payments(self):
+        response = self.client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data
+
+        self.assertEqual(data["expected_fee_amount"], Decimal("55000.00"))
+        self.assertEqual(data["amount_received"], Decimal("47000.00"))
+        self.assertEqual(data["outstanding_balance"], Decimal("8000.00"))
+        self.assertEqual(data["pending_payments"], 1)
+        self.assertEqual(data["debtors_count"], 1)
+
+        rows_by_student = {row["id"]: row for row in data["student_payment_rows"]}
+        wallet_row = rows_by_student[str(self.student_wallet.id)]
+        self.assertEqual(wallet_row["payment_status"], "paid")
+        self.assertEqual(wallet_row["expected_amount"], Decimal("20000.00"))
+        self.assertEqual(wallet_row["amount_paid"], Decimal("20000.00"))
+        self.assertEqual(wallet_row["remaining_balance"], Decimal("0.00"))
+
+        bank_row = rows_by_student[str(self.student_bank.id)]
+        self.assertEqual(bank_row["payment_status"], "partial")
+        self.assertEqual(bank_row["expected_amount"], Decimal("20000.00"))
+        self.assertEqual(bank_row["amount_paid"], Decimal("12000.00"))
+        self.assertEqual(bank_row["remaining_balance"], Decimal("8000.00"))
+
+        split_row = rows_by_student[str(self.student_split.id)]
+        self.assertEqual(split_row["payment_status"], "paid")
+        self.assertEqual(split_row["expected_amount"], Decimal("15000.00"))
+        self.assertEqual(split_row["amount_paid"], Decimal("15000.00"))
+        self.assertEqual(split_row["remaining_balance"], Decimal("0.00"))
+
+        class_fee_rows_by_class = {row["school_class"]: row for row in data["class_fee_rows"]}
+        basic1_row = class_fee_rows_by_class[self.basic1.id]
+        self.assertEqual(basic1_row["student_count"], 2)
+        self.assertEqual(basic1_row["expected_amount"], Decimal("40000.00"))
+        self.assertEqual(basic1_row["amount_received"], Decimal("32000.00"))
+        basic2_row = class_fee_rows_by_class[self.basic2.id]
+        self.assertEqual(basic2_row["student_count"], 1)
+        self.assertEqual(basic2_row["expected_amount"], Decimal("15000.00"))
+        self.assertEqual(basic2_row["amount_received"], Decimal("15000.00"))
+
+        # The inactive "Old Fee" class fee must never appear.
+        self.assertNotIn("Old Fee", [row["title"] for row in data["class_fee_rows"]])
+
+        fee_rows_by_id = {row["id"]: row for row in data["student_fee_rows"]}
+        self.assertEqual(fee_rows_by_id[str(self.fee_wallet.id)]["payment_status"], "paid")
+        self.assertEqual(fee_rows_by_id[str(self.fee_bank.id)]["payment_status"], "partial")
+        self.assertEqual(fee_rows_by_id[str(self.fee_split.id)]["payment_status"], "paid")
+
+        summary = data["activation_credit_summary"]
+        self.assertEqual(summary["active_students"], 0)
+        self.assertEqual(summary["inactive_students"], 3)
+        self.assertEqual(summary["eligible_all"], 3)
+
+
+class AdminFinanceSnapshotProtectionTests(TestCase):
+    """A customized or already-paid SchoolFee must never be silently
+    overwritten by the background class-fee sync that runs on every GET."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Protect School", schema_name="protect_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@protect.test", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.class_fee = ClassFee.objects.create(
+            school_class=self.school_class, title="Term Fee", amount=Decimal("20000.00"),
+            due_date=timezone.localdate(), is_active=True, created_by=self.admin,
+        )
+
+        def make_student(email, code):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", role="student",
+                tenant=self.school, is_active=True, is_verified=True,
+            )
+            return StudentProfile.objects.create(
+                user=user, student_id=code, admission_number=f"ADM-{code}",
+                admission_date=timezone.localdate(), guardian_name="Guardian",
+                guardian_relation="Parent", current_class=self.school_class,
+            )
+
+        self.customized_student = make_student("customized@protect.test", "PC001")
+        self.paid_student = make_student("paid@protect.test", "PP001")
+
+        # StudentProfile creation already auto-generates a matching SchoolFee
+        # via the sync_class_fees_after_student_save signal (finance/signals.py)
+        # - mutate those into the customized/paid states under test rather than
+        # creating a second row for the same (student, class_fee) pair, which
+        # would trip SchoolFee.MultipleObjectsReturned once the endpoint's own
+        # sync runs get_or_create(student=..., class_fee=...).
+        self.customized_fee = SchoolFee.objects.get(student=self.customized_student, class_fee=self.class_fee)
+        self.customized_fee.title = "Discounted Term Fee"
+        self.customized_fee.amount = Decimal("5000.00")
+        self.customized_fee.is_customized = True
+        self.customized_fee.save(update_fields=["title", "amount", "is_customized", "updated_at"])
+
+        self.paid_fee = SchoolFee.objects.get(student=self.paid_student, class_fee=self.class_fee)
+        self.paid_fee.status = SchoolFee.STATUS_PAID
+        self.paid_fee.save(update_fields=["status", "updated_at"])
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_customized_fee_is_never_overwritten_by_sync(self):
+        response = self.client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+
+        self.customized_fee.refresh_from_db()
+        self.assertEqual(self.customized_fee.title, "Discounted Term Fee")
+        self.assertEqual(self.customized_fee.amount, Decimal("5000.00"))
+        self.assertTrue(self.customized_fee.is_customized)
+
+    def test_paid_fee_is_never_overwritten_by_sync(self):
+        response = self.client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+
+        self.paid_fee.refresh_from_db()
+        self.assertEqual(self.paid_fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(self.paid_fee.amount, Decimal("20000.00"))
+        # fee_paid_amount falls back to fee.amount for a PAID fee with no
+        # ledger-backed payment behind it - must still report as fully paid.
+        self.assertEqual(fee_paid_amount(self.paid_fee), Decimal("20000.00"))
+
+
+class AdminFinanceSnapshotQueryScalingTests(TestCase):
+    """Proves the N+1 fix: the number of DB queries the Finance/Expense
+    Tracker snapshot makes must not scale linearly with student count. This
+    is what actually caused the production outage - a tenant with enough
+    students made this endpoint slow enough to exceed gunicorn's worker
+    timeout, starving every other request on the platform."""
+
+    def _build_tenant(self, schema_name, student_count):
+        school = SchoolTenant.objects.create(name=schema_name, schema_name=schema_name, is_active=True)
+        legacy_tenant = Tenant.objects.create(name=school.name, slug=school.schema_name)
+        admin = User.objects.create_user(
+            email=f"admin@{schema_name}.test", password="AdminPass123", role="school_admin",
+            tenant=school, is_active=True, is_verified=True,
+        )
+        school_class = Class.objects.create(tenant=legacy_tenant, name="Basic 1", section="A")
+        ClassFee.objects.create(
+            school_class=school_class, title="Term Fee", amount=Decimal("10000.00"),
+            due_date=timezone.localdate(), is_active=True, created_by=admin,
+        )
+        for index in range(student_count):
+            user = User.objects.create_user(
+                email=f"student{index}@{schema_name}.test", password="StudentPass123",
+                role="student", tenant=school, is_active=True, is_verified=True,
+            )
+            StudentProfile.objects.create(
+                user=user, student_id=f"{schema_name.upper()}{index:04d}",
+                admission_number=f"ADM-{schema_name}-{index}", admission_date=timezone.localdate(),
+                guardian_name="Guardian", guardian_relation="Parent", current_class=school_class,
+            )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        return client
+
+    def test_query_count_does_not_scale_linearly_with_student_count(self):
+        small_client = self._build_tenant("scale_small", 3)
+        large_client = self._build_tenant("scale_large", 30)
+
+        # Warm both up first so the comparison reflects steady-state polling
+        # (the realistic production scenario - a page loaded repeatedly),
+        # not first-ever-load fee generation.
+        small_client.get("/api/finance/admin/overview/")
+        large_client.get("/api/finance/admin/overview/")
+
+        with CaptureQueriesContext(connection) as small_queries:
+            response = small_client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+
+        with CaptureQueriesContext(connection) as large_queries:
+            response = large_client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+
+        # 10x the students must not mean anywhere near 10x the queries - the
+        # old unbatched implementation scaled almost linearly with student
+        # count; the batched version should add only a small constant number
+        # of extra queries regardless of how many students there are.
+        self.assertLess(
+            len(large_queries),
+            len(small_queries) * 3,
+            f"Query count scaled with student count: {len(small_queries)} queries for 3 students, "
+            f"{len(large_queries)} queries for 30 students.",
+        )
+
+
+class AdminFinanceSnapshotGuardedWriteTests(TestCase):
+    """A student whose activation-credit state doesn't need any change must
+    not be written to on every request - this used to unconditionally
+    UPDATE every non-activated student's StudentActivationCredit row on
+    every single Finance/Expense Tracker page load."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Guard School", schema_name="guard_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@guard.test", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        student_user = User.objects.create_user(
+            email="student@guard.test", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="GD001", admission_number="ADM-GD-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=school_class,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_second_request_does_not_rewrite_unchanged_activation_credit(self):
+        # First request establishes inactive_since - a real, one-time change.
+        response = self.client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+        credit = get_or_create_student_activation_credit(self.student)
+        first_updated_at = credit.updated_at
+        self.assertIsNotNone(credit.inactive_since)
+
+        response = self.client.get("/api/finance/admin/overview/")
+        self.assertEqual(response.status_code, 200)
+        credit.refresh_from_db()
+        self.assertEqual(credit.updated_at, first_updated_at)
 
 
 class FlutterwaveSchoolFeeSettlementTests(TestCase):

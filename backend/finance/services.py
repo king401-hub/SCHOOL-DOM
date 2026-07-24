@@ -141,6 +141,61 @@ def get_or_create_student_payment_reference(student_profile) -> StudentPaymentRe
     return reference
 
 
+def bulk_get_or_create_payment_references(students):
+    """Batched equivalent of get_or_create_student_payment_reference for every
+    student in `students`, including the "repair a stale tenant/code" check -
+    one SELECT plus one bulk INSERT/UPDATE instead of several queries per
+    student. Returns {student_id: StudentPaymentReference}."""
+    students = list(students)
+    if not students:
+        return {}
+
+    students_by_id = {student.id: student for student in students}
+    student_ids = list(students_by_id.keys())
+    existing = {
+        reference.student_id: reference
+        for reference in StudentPaymentReference.objects.filter(student_id__in=student_ids)
+    }
+
+    to_create = [
+        StudentPaymentReference(
+            student=student,
+            tenant=getattr(student.user, "tenant", None),
+            code=generate_student_payment_code(student),
+        )
+        for student in students
+        if student.id not in existing
+    ]
+    if to_create:
+        StudentPaymentReference.objects.bulk_create(to_create, ignore_conflicts=True)
+        created_student_ids = [ref.student_id for ref in to_create]
+        for reference in StudentPaymentReference.objects.filter(student_id__in=created_student_ids):
+            existing[reference.student_id] = reference
+
+    now = timezone.now()
+    to_update = []
+    for student_id, reference in existing.items():
+        student = students_by_id.get(student_id)
+        if not student:
+            continue
+        changed = False
+        if not reference.tenant_id and getattr(student.user, "tenant", None):
+            reference.tenant = student.user.tenant
+            changed = True
+        expected_code = generate_student_payment_code(student)
+        if reference.code != expected_code:
+            reference.code = expected_code
+            changed = True
+        if changed:
+            reference.updated_at = now
+            to_update.append(reference)
+
+    if to_update:
+        StudentPaymentReference.objects.bulk_update(to_update, ["tenant", "code", "updated_at"])
+
+    return existing
+
+
 # ============================================================
 # NEW: PAYSTACK SPLIT PAYMENT INTEGRATION
 # ============================================================
@@ -1806,6 +1861,34 @@ def get_or_create_student_activation_credit(student_profile) -> StudentActivatio
     return credit
 
 
+def bulk_get_or_create_activation_credits(students):
+    """Batched equivalent of calling get_or_create_student_activation_credit
+    for every student in `students` - one SELECT plus one bulk INSERT instead
+    of up to 2 queries per student. Returns {student_id: StudentActivationCredit}."""
+    students = list(students)
+    if not students:
+        return {}
+
+    student_ids = [student.id for student in students]
+    existing = {
+        credit.student_id: credit
+        for credit in StudentActivationCredit.objects.filter(student_id__in=student_ids)
+    }
+    missing_ids = [sid for sid in student_ids if sid not in existing]
+    if missing_ids:
+        StudentActivationCredit.objects.bulk_create(
+            [StudentActivationCredit(student_id=sid) for sid in missing_ids],
+            ignore_conflicts=True,
+        )
+        # Re-fetch rather than trust the just-built instances: with
+        # ignore_conflicts=True a concurrent request could have already
+        # created one of these (student is a OneToOneField, unique at the DB
+        # level), so only a fresh read reflects which row actually won.
+        for credit in StudentActivationCredit.objects.filter(student_id__in=missing_ids):
+            existing[credit.student_id] = credit
+    return existing
+
+
 def ensure_student_wallet(user) -> Wallet:
     if getattr(user, "role", "") != "student":
         raise ValueError("Wallets can only be created for student accounts.")
@@ -2707,22 +2790,53 @@ def _student_paid_ratio(student_profile):
     return paid / expected
 
 
-def eligible_students_for_activation_credits(tenant, scope="all", include_excluded=False):
+def _bulk_student_paid_ratios(students):
+    """Batched equivalent of _student_paid_ratio for every student in
+    `students` - one pair of grouped aggregate queries instead of 2 per
+    student. Returns {student_id: Decimal ratio}."""
+    students = list(students)
+    if not students:
+        return {}
+    student_ids = [student.id for student in students]
+    expected_by_student = {
+        row["student_id"]: row["total"]
+        for row in SchoolFee.objects.filter(student_id__in=student_ids).values("student_id").annotate(total=Sum("amount"))
+    }
+    paid_by_student = {
+        row["student_id"]: row["total"]
+        for row in SchoolFee.objects.filter(student_id__in=student_ids, status=SchoolFee.STATUS_PAID)
+        .values("student_id").annotate(total=Sum("amount"))
+    }
+    ratios = {}
+    for student_id in student_ids:
+        expected = expected_by_student.get(student_id) or Decimal("0.00")
+        if expected <= 0:
+            ratios[student_id] = Decimal("0.00")
+            continue
+        ratios[student_id] = (paid_by_student.get(student_id) or Decimal("0.00")) / expected
+    return ratios
+
+
+def eligible_students_for_activation_credits(tenant, scope="all", include_excluded=False, credits_by_student_id=None):
     from users.models import StudentProfile
 
-    students = (
+    students = list(
         StudentProfile.objects.select_related("user", "current_class")
         .filter(user__tenant=tenant, user__role="student")
         .order_by("user__last_name", "user__first_name", "created_at")
     )
+    if credits_by_student_id is None:
+        credits_by_student_id = bulk_get_or_create_activation_credits(students)
+    ratios = _bulk_student_paid_ratios(students) if scope == "paid_50" else {}
+
     eligible = []
     for student in students:
-        credit = get_or_create_student_activation_credit(student)
+        credit = credits_by_student_id.get(student.id) or get_or_create_student_activation_credit(student)
         if credit.is_excluded_from_auto_deductions and not include_excluded:
             continue
         if credit.has_login_credit:
             continue
-        if scope == "paid_50" and _student_paid_ratio(student) < Decimal("0.50"):
+        if scope == "paid_50" and ratios.get(student.id, Decimal("0.00")) < Decimal("0.50"):
             continue
         eligible.append(student)
     return eligible
@@ -2816,7 +2930,7 @@ def assign_monthly_activation_credits(tenant, scope="all", months=1, actor=None,
     return {"assigned": len(students), "skipped": 0, "pool": pool}
 
 
-def update_student_activation_alerts(tenant):
+def update_student_activation_alerts(tenant, credits_by_student_id=None):
     from notifications.models import Notification
     from users.models import StudentProfile
     from users.models import User
@@ -2828,9 +2942,17 @@ def update_student_activation_alerts(tenant):
         role__in=["school_admin", "principal", "super_admin"],
         is_active=True,
     ))
-    students = StudentProfile.objects.select_related("user").filter(user__tenant=tenant, user__role="student")
+    students = list(StudentProfile.objects.select_related("user").filter(user__tenant=tenant, user__role="student"))
+    if credits_by_student_id is None:
+        credits_by_student_id = bulk_get_or_create_activation_credits(students)
+
     for student in students:
-        credit = get_or_create_student_activation_credit(student)
+        credit = credits_by_student_id.get(student.id) or get_or_create_student_activation_credit(student)
+        # Only write back when something actually changes below - this used
+        # to save() unconditionally for every non-activated student on every
+        # call (i.e. on every Finance/Expense Tracker page load), which is a
+        # needless DB write per student, every request.
+        original_state = (credit.inactive_since, credit.inactive_flagged_at, credit.is_excluded_from_auto_deductions)
         if credit.has_login_credit:
             if credit.inactive_since or credit.inactive_flagged_at or credit.is_excluded_from_auto_deductions:
                 credit.inactive_since = None
@@ -2863,7 +2985,9 @@ def update_student_activation_alerts(tenant):
                     is_delivered=True,
                     delivered_at=timezone.now(),
                 )
-        credit.save(update_fields=["inactive_since", "inactive_flagged_at", "is_excluded_from_auto_deductions", "updated_at"])
+        new_state = (credit.inactive_since, credit.inactive_flagged_at, credit.is_excluded_from_auto_deductions)
+        if new_state != original_state:
+            credit.save(update_fields=["inactive_since", "inactive_flagged_at", "is_excluded_from_auto_deductions", "updated_at"])
     return flagged
 
 
@@ -3048,27 +3172,96 @@ def sync_student_class_fees(student_profile, actor=None):
 
 
 def sync_tenant_class_fees(tenant, actor=None):
-    """Refresh generated school fees for active class fees in a tenant."""
+    """Refresh generated school fees for active class fees in a tenant.
+
+    Batched equivalent of calling sync_class_fee_for_student(student,
+    class_fee) for every (student, class_fee) pair - one query to load every
+    existing SchoolFee for those pairs, one bulk_create for missing rows, and
+    one bulk_update for rows that actually need a field changed, instead of
+    up to a few queries per pair. Applies the exact same per-row rules as
+    sync_class_fee_for_student (never touches a PAID or is_customized fee),
+    just evaluated in bulk. sync_class_fee_for_student itself is untouched -
+    still used by sync_class_fee_assignments (the create/edit-class-fee path)."""
     from users.models import StudentProfile
 
-    class_fees = ClassFee.objects.filter(is_active=True).select_related("school_class", "created_by")
+    class_fees = list(ClassFee.objects.filter(is_active=True).select_related("school_class", "created_by"))
     if tenant:
-        class_ids = (
+        class_ids = set(
             StudentProfile.objects.filter(user__tenant=tenant, current_class__isnull=False)
             .values_list("current_class_id", flat=True)
             .distinct()
         )
-        class_fees = class_fees.filter(school_class_id__in=class_ids)
+        class_fees = [cf for cf in class_fees if cf.school_class_id in class_ids]
+    if not class_fees:
+        return 0
 
-    count = 0
-    for class_fee in class_fees:
-        students = StudentProfile.objects.filter(current_class=class_fee.school_class).select_related("user")
-        if tenant:
-            students = students.filter(user__tenant=tenant)
-        for student in students:
-            sync_class_fee_for_student(student, class_fee, actor=actor)
-            count += 1
-    return count
+    class_fee_ids = [cf.id for cf in class_fees]
+    class_ids = list({cf.school_class_id for cf in class_fees})
+    students_qs = StudentProfile.objects.filter(current_class_id__in=class_ids).select_related("user")
+    if tenant:
+        students_qs = students_qs.filter(user__tenant=tenant)
+    students_by_class = {}
+    for student in students_qs:
+        students_by_class.setdefault(student.current_class_id, []).append(student)
+
+    pairs = [
+        (student, class_fee)
+        for class_fee in class_fees
+        for student in students_by_class.get(class_fee.school_class_id, [])
+    ]
+    if not pairs:
+        return 0
+
+    student_ids = list({student.id for student, _ in pairs})
+    existing_by_pair = {
+        (fee.student_id, fee.class_fee_id): fee
+        for fee in SchoolFee.objects.filter(class_fee_id__in=class_fee_ids, student_id__in=student_ids)
+    }
+
+    to_create = []
+    to_update = []
+    for student, class_fee in pairs:
+        fee = existing_by_pair.get((student.id, class_fee.id))
+        if fee is None:
+            to_create.append(
+                SchoolFee(
+                    student=student,
+                    class_fee=class_fee,
+                    title=class_fee.title,
+                    amount=class_fee.amount,
+                    currency=class_fee.currency,
+                    due_date=class_fee.due_date,
+                    auto_deduct=True,
+                    created_by=actor or class_fee.created_by,
+                )
+            )
+            continue
+        if fee.status == SchoolFee.STATUS_PAID or fee.is_customized:
+            continue
+        changed = False
+        for field, value in {
+            "title": class_fee.title,
+            "amount": class_fee.amount,
+            "currency": class_fee.currency,
+            "due_date": class_fee.due_date,
+            "auto_deduct": True,
+        }.items():
+            if getattr(fee, field) != value:
+                setattr(fee, field, value)
+                changed = True
+        if changed:
+            to_update.append(fee)
+
+    if to_create:
+        SchoolFee.objects.bulk_create(to_create)
+    if to_update:
+        now = timezone.now()
+        for fee in to_update:
+            fee.updated_at = now
+        # bulk_update doesn't trigger auto_now, so updated_at is set explicitly above.
+        SchoolFee.objects.bulk_update(to_update, ["title", "amount", "currency", "due_date", "auto_deduct", "updated_at"])
+
+    return len(to_create) + len(to_update)
 
 
 def fee_recorded_paid_amount(fee):
@@ -3112,6 +3305,63 @@ def fee_paid_amount(fee):
     if fee.status == SchoolFee.STATUS_PAID:
         return fee.amount
     return Decimal("0.00")
+
+
+def bulk_fee_paid_amounts(fees):
+    """Batched equivalent of calling fee_paid_amount(fee) for every fee in
+    `fees`. Replaces N x 3 aggregate queries (one call per fee) with 3 total,
+    regardless of how many fees are passed in - used by hot paths like
+    _admin_finance_snapshot that would otherwise recompute this per fee,
+    sometimes multiple times over for the same fee."""
+    fees = list(fees)
+    if not fees:
+        return {}
+
+    fee_ids = [fee.id for fee in fees]
+    fee_id_strs = [str(fid) for fid in fee_ids]
+
+    wallet_debit_totals = {
+        row["metadata__fee_id"]: row["total"]
+        for row in Transaction.objects.filter(
+            tx_type=Transaction.FEE_DEBIT,
+            status=Transaction.STATUS_SUCCESS,
+            metadata__fee_id__in=fee_id_strs,
+        ).values("metadata__fee_id").annotate(total=Sum("amount"))
+    }
+    bank_credit_totals = {
+        row["metadata__fee_id"]: row["total"]
+        for row in Transaction.objects.filter(
+            tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_SUCCESS,
+            metadata__fee_id__in=fee_id_strs,
+            metadata__bank_payment_id__isnull=False,
+        ).values("metadata__fee_id").annotate(total=Sum("amount"))
+    }
+    split_payment_totals = {
+        row["fee_id"]: row["total"]
+        for row in FeeAllocation.objects.filter(
+            fee_id__in=fee_ids,
+            status__in=[FeeAllocation.STATUS_PAID, FeeAllocation.STATUS_PARTIAL],
+            transaction__status=Transaction.STATUS_SUCCESS,
+        ).values("fee_id").annotate(total=Sum("amount_allocated"))
+    }
+
+    result = {}
+    for fee in fees:
+        fee_id_str = str(fee.id)
+        recorded_total = (
+            (wallet_debit_totals.get(fee_id_str) or Decimal("0.00"))
+            + (bank_credit_totals.get(fee_id_str) or Decimal("0.00"))
+            + (split_payment_totals.get(fee.id) or Decimal("0.00"))
+        )
+        recorded_total = min(recorded_total, fee.amount)
+        if recorded_total > 0:
+            result[fee.id] = recorded_total
+        elif fee.status == SchoolFee.STATUS_PAID:
+            result[fee.id] = fee.amount
+        else:
+            result[fee.id] = Decimal("0.00")
+    return result
 
 
 def reconcile_fee_status(fee):

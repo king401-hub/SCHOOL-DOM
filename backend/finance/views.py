@@ -57,6 +57,9 @@ from finance.services import (
     add_activation_credits_to_pool,
     active_payment_provider,
     assign_monthly_activation_credits,
+    bulk_fee_paid_amounts,
+    bulk_get_or_create_activation_credits,
+    bulk_get_or_create_payment_references,
     eligible_students_for_activation_credits,
     ensure_monthly_credit_reminder,
     generate_reference,
@@ -67,7 +70,6 @@ from finance.services import (
     initialize_payment_transaction,
     initiate_admin_withdrawal,
     process_due_fees,
-    fee_paid_amount,
     reconcile_fee_status,
     sync_class_fee_assignments,
     sync_student_class_fees,
@@ -422,7 +424,19 @@ def _classes_for_user(user):
 
 def _admin_finance_snapshot(user):
     sync_tenant_class_fees(user.tenant, actor=user)
-    update_student_activation_alerts(user.tenant)
+
+    students = list(
+        StudentProfile.objects.select_related("user", "current_class")
+        .filter(user__tenant=user.tenant)
+        .order_by("user__last_name", "user__first_name", "created_at")
+    )
+    # Fetched once and shared across the alert sweep, the main per-student
+    # loop below, and the eligible-student counts at the end of this
+    # function - each of those used to independently re-fetch/re-create the
+    # same rows per student, which is the main source of this endpoint's
+    # query-count blowup on tenants with many students.
+    credits_by_student_id = bulk_get_or_create_activation_credits(students)
+    update_student_activation_alerts(user.tenant, credits_by_student_id=credits_by_student_id)
     ensure_monthly_credit_reminder(user.tenant)
     # Deliberately NOT calling run_configured_monthly_auto_assignment here -
     # this function backs plain GET reads (Finance page, Expense Tracker,
@@ -433,11 +447,8 @@ def _admin_finance_snapshot(user):
     # auto assign" button (admin_activation_credit_run_auto) and the
     # scheduled finance.tasks.auto_assign_monthly_credits Celery task.
 
-    students = list(
-        StudentProfile.objects.select_related("user", "current_class")
-        .filter(user__tenant=user.tenant)
-        .order_by("user__last_name", "user__first_name", "created_at")
-    )
+    payment_refs_by_student_id = bulk_get_or_create_payment_references(students)
+
     class_ids = list(_classes_for_user(user).values_list("id", flat=True))
     class_fees = list(
         ClassFee.objects.select_related("school_class")
@@ -448,10 +459,12 @@ def _admin_finance_snapshot(user):
     for class_fee in class_fees:
         fees_by_class.setdefault(class_fee.school_class_id, []).append(class_fee)
 
-    generated_fees = SchoolFee.objects.filter(
-        student__in=students,
-        class_fee__in=class_fees,
-    ).select_related("student", "student__user", "student__current_class", "class_fee")
+    generated_fees = list(
+        SchoolFee.objects.filter(
+            student__in=students,
+            class_fee__in=class_fees,
+        ).select_related("student", "student__user", "student__current_class", "class_fee")
+    )
     fee_by_student_and_class_fee = {
         (fee.student_id, fee.class_fee_id): fee
         for fee in generated_fees
@@ -465,6 +478,12 @@ def _admin_finance_snapshot(user):
     for fee in manual_fees:
         manual_fees_by_student.setdefault(fee.student_id, []).append(fee)
 
+    # One batched computation reused for the per-student totals below, the
+    # class_fee_rows totals, and SchoolFeeSerializer - this used to be
+    # recomputed per fee (3 aggregate queries each) up to 5 times over across
+    # those three places.
+    paid_amounts = bulk_fee_paid_amounts([*generated_fees, *manual_fees])
+
     student_rows = []
     activation_rows = []
     expected_total = Decimal("0.00")
@@ -475,7 +494,7 @@ def _admin_finance_snapshot(user):
     excluded_credit_count = 0
 
     for student in students:
-        activation_credit = get_or_create_student_activation_credit(student)
+        activation_credit = credits_by_student_id.get(student.id) or get_or_create_student_activation_credit(student)
         has_login_credit = activation_credit.has_login_credit
         if has_login_credit:
             active_credit_count += 1
@@ -490,12 +509,12 @@ def _admin_finance_snapshot(user):
             fee = fee_by_student_and_class_fee.get((student.id, class_fee.id))
             if fee:
                 expected_for_student += fee.amount
-                paid_for_student += fee_paid_amount(fee)
+                paid_for_student += paid_amounts.get(fee.id, Decimal("0.00"))
             else:
                 expected_for_student += class_fee.amount
         for fee in manual_fees_by_student.get(student.id, []):
             expected_for_student += fee.amount
-            paid_for_student += fee_paid_amount(fee)
+            paid_for_student += paid_amounts.get(fee.id, Decimal("0.00"))
 
         remaining = max(expected_for_student - paid_for_student, Decimal("0.00"))
         if expected_for_student <= 0:
@@ -511,7 +530,7 @@ def _admin_finance_snapshot(user):
             pending_payments += 1
         expected_total += expected_for_student
         amount_received += paid_for_student
-        payment_reference = get_or_create_student_payment_reference(student)
+        payment_reference = payment_refs_by_student_id.get(student.id) or get_or_create_student_payment_reference(student)
         student_rows.append(
             {
                 "id": str(student.id),
@@ -556,7 +575,7 @@ def _admin_finance_snapshot(user):
     for class_fee in class_fees:
         student_count = count_by_class.get(class_fee.school_class_id, 0)
         generated_for_fee = [fee for fee in generated_fees if fee.class_fee_id == class_fee.id]
-        paid_for_fee = sum((fee_paid_amount(fee) for fee in generated_for_fee), Decimal("0.00"))
+        paid_for_fee = sum((paid_amounts.get(fee.id, Decimal("0.00")) for fee in generated_for_fee), Decimal("0.00"))
         expected_for_fee = sum((fee.amount for fee in generated_for_fee), Decimal("0.00"))
         missing_count = max(student_count - len(generated_for_fee), 0)
         expected_for_fee += class_fee.amount * missing_count
@@ -579,6 +598,7 @@ def _admin_finance_snapshot(user):
     student_fee_rows = SchoolFeeSerializer(
         sorted([*generated_fees, *manual_fees], key=lambda fee: (fee.student.user.last_name, fee.student.user.first_name, fee.due_date, fee.title)),
         many=True,
+        context={"paid_amounts": paid_amounts},
     ).data
 
     pool = get_or_create_activation_credit_pool(user.tenant)
@@ -638,8 +658,8 @@ def _admin_finance_snapshot(user):
             "active_students": active_credit_count,
             "inactive_students": inactive_credit_count,
             "excluded_students": excluded_credit_count,
-            "eligible_all": len(eligible_students_for_activation_credits(user.tenant, scope="all")),
-            "eligible_paid_50": len(eligible_students_for_activation_credits(user.tenant, scope="paid_50")),
+            "eligible_all": len(eligible_students_for_activation_credits(user.tenant, scope="all", credits_by_student_id=credits_by_student_id)),
+            "eligible_paid_50": len(eligible_students_for_activation_credits(user.tenant, scope="paid_50", credits_by_student_id=credits_by_student_id)),
         },
         "activation_credit_rows": activation_rows,
         "activation_credit_purchase_history": credit_purchase_history,

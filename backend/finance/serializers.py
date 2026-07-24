@@ -87,14 +87,24 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
             "payment_status",
         ]
 
-    def get_amount_paid(self, obj):
+    def _paid_amount(self, obj):
+        # When the caller precomputes paid amounts in bulk (e.g.
+        # _admin_finance_snapshot via bulk_fee_paid_amounts), reuse that
+        # instead of recomputing per-fee here - falls back to the original
+        # per-object query for every other caller of this serializer.
+        paid_amounts = self.context.get("paid_amounts")
+        if paid_amounts is not None and obj.id in paid_amounts:
+            return paid_amounts[obj.id]
         return fee_paid_amount(obj)
 
+    def get_amount_paid(self, obj):
+        return self._paid_amount(obj)
+
     def get_remaining_balance(self, obj):
-        return max(obj.amount - fee_paid_amount(obj), Decimal("0.00"))
+        return max(obj.amount - self._paid_amount(obj), Decimal("0.00"))
 
     def get_payment_status(self, obj):
-        paid = fee_paid_amount(obj)
+        paid = self._paid_amount(obj)
         if obj.amount <= 0 or paid >= obj.amount:
             return "paid"
         if paid > 0:
