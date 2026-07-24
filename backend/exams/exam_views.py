@@ -969,9 +969,19 @@ class ExamResultView(APIView):
 
     def get(self, request, attempt_id):
         attempt_qs = ExamAttempt.objects.select_related("exam", "exam__teacher")
-        if getattr(request.user, "role", "") == "teacher":
+        role = getattr(request.user, "role", "")
+        if role == "teacher":
             attempt = get_object_or_404(attempt_qs, id=attempt_id, exam__teacher=request.user)
+        elif role in {"school_admin", "principal", "super_admin"}:
+            legacy_tenant = resolve_legacy_tenant_for_school(getattr(request.user, "tenant", None))
+            attempt = get_object_or_404(
+                attempt_qs.filter(Q(exam__class_group__tenant=legacy_tenant) | Q(exam__tenant=legacy_tenant)),
+                id=attempt_id,
+            )
         else:
+            # Students (and any other role) never see their own CBT score or
+            # grade through this endpoint - only admins and teachers can view
+            # a completed attempt's full result.
             attempt = get_object_or_404(attempt_qs, id=attempt_id, student=request.user)
             return Response({
                 'success': True,
@@ -979,7 +989,7 @@ class ExamResultView(APIView):
                 'exam_title': attempt.exam.title,
                 'message': 'Exam Completed'
             })
-        
+
         if not attempt.is_submitted:
             return Response(
                 {'error': 'Exam has not been submitted yet'},
@@ -1150,14 +1160,14 @@ def sync_offline_exam_attempt(request):
         ]
     )
 
-    score, total_points = _grade_attempt(attempt)
+    # Grading happens here, but the score/percentage is deliberately not
+    # included below - the student calling this endpoint should never see
+    # their CBT result, same policy as SubmitExamView and ExamResultView.
+    _grade_attempt(attempt)
     return Response(
         {
             "success": True,
             "attempt_id": attempt.id,
-            "score": score,
-            "total_points": total_points,
-            "percentage": attempt.percentage,
             "message": "Offline exam synced and graded.",
         },
         status=status.HTTP_201_CREATED,
@@ -1486,6 +1496,8 @@ def cbt_offline_result_ingest(request):
 @permission_classes([IsAuthenticated])
 def cbt_results_package_import(request):
     """Import a portable result package exported from the offline CBT desktop app."""
+    if request.user.role not in {"school_admin", "principal", "super_admin", "teacher", "accountant"}:
+        return Response({"success": False, "message": "Admin or teacher access required."}, status=status.HTTP_403_FORBIDDEN)
     package_payload = request.data or {}
     results = package_payload.get("results") or package_payload.get("items") or []
     if not isinstance(results, list):

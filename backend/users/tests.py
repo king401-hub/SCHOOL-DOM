@@ -1004,6 +1004,19 @@ class StudentDashboardAPITests(TestCase):
         self.assertIn("from_email", response.data["inbox"][0])
         self.assertIn("body", response.data["inbox"][0])
 
+    def test_student_dashboard_recent_results_never_include_score(self):
+        # Students must never see their own CBT score/grade - the dashboard
+        # can say a result exists (status/title/date) but not the score.
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.get("/api/app/student/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data["recent_results"]), 1)
+        for item in response.data["recent_results"]:
+            self.assertNotIn("score", item)
+            self.assertNotIn("percentage", item)
+            self.assertNotIn("grade", item)
+
     def test_non_student_cannot_access_student_dashboard(self):
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.get("/api/app/student/dashboard/")
@@ -1570,6 +1583,16 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(score.approval_status, ResultBatch.PENDING)
 
     def test_teacher_cannot_manage_grading_scales(self):
+        # IdempotencyMiddleware caches successful POST responses per (user,
+        # method, path, body) fingerprint for 10s. This test's POST body is
+        # identical to test_admin_configured_grade_scale_is_used_when_teacher_
+        # submits_and_pushes_results's admin POST above, and per-test-method
+        # transaction rollback can hand out the same pk to a different user
+        # across methods - clear the cache so that admin's cached 200 can
+        # never be replayed for this teacher's (expected-403) request.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
         self.client.force_authenticate(user=self.teacher_user)
         get_response = self.client.get("/api/app/results/grades/")
         self.assertEqual(get_response.status_code, 403)

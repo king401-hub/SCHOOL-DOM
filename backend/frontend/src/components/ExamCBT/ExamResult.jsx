@@ -6,10 +6,10 @@ const ExamResult = ({ attemptId, session, onNavigate }) => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expandedReview, setExpandedReview] = useState(null);
-  const isTeacher = session?.user?.role === "teacher";
+  const canViewResult = ["teacher", "school_admin", "principal", "super_admin"].includes(session?.user?.role);
 
   useEffect(() => {
-    if (!isTeacher) {
+    if (!canViewResult) {
       setLoading(false);
       return;
     }
@@ -30,9 +30,9 @@ const ExamResult = ({ attemptId, session, onNavigate }) => {
     };
 
     fetchResult();
-  }, [attemptId, session, isTeacher]);
+  }, [attemptId, session, canViewResult]);
 
-  if (!isTeacher) {
+  if (!canViewResult) {
     return (
       <div className="exam-completed-screen">
         <div className="exam-completed-card">

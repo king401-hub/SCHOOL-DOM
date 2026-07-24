@@ -3708,16 +3708,6 @@ def student_dashboard(request):
     attempts_by_exam = {attempt.exam_id: attempt for attempt in attempts_qs}
     results_qs = attempts_qs.filter(Q(is_submitted=True) | Q(is_completed=True)).order_by("-updated_at", "-created_at")
     recent_result_attempts = list(results_qs[:10])
-    recent_result_scores = {}
-    if recent_result_attempts:
-        recent_result_scores = {
-            row["attempt_id"]: row["total_score"]
-            for row in (
-                StudentAnswer.objects.filter(attempt_id__in=[item.id for item in recent_result_attempts])
-                .values("attempt_id")
-                .annotate(total_score=Sum("score"))
-            )
-        }
 
     inbox_qs = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     unread_inbox = inbox_qs.filter(is_read=False).count() if InAppMessage else 0
@@ -3955,7 +3945,8 @@ def student_dashboard(request):
         if not exam:
             continue
 
-        score = recent_result_scores.get(attempt.id)
+        # Deliberately no score/percentage/grade here - students never see
+        # their own CBT result, only that it was submitted/completed.
         recent_results.append(
             {
                 "id": str(attempt.id),
@@ -3966,7 +3957,6 @@ def student_dashboard(request):
                 "status": "Completed" if attempt.is_completed else "Submitted",
                 "is_submitted": attempt.is_submitted,
                 "is_completed": attempt.is_completed,
-                "score": round(score, 2) if score is not None else None,
                 "exam_start_date": exam.start_date,
                 "updated_at": attempt.updated_at,
             }

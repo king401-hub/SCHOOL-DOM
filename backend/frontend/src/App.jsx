@@ -659,11 +659,6 @@ function StudentDashboard({
         ? 100
         : 0;
 
-  const scoredResults = results.filter((item) => typeof item.score === "number");
-  const averageScore = scoredResults.length
-    ? Math.round(scoredResults.reduce((sum, item) => sum + (item.score || 0), 0) / scoredResults.length)
-    : null;
-
   const sortedExams = [...exams].sort((a, b) => {
     const aDate = a.start_date || a.due_date || a.date;
     const bDate = b.start_date || b.due_date || b.date;
@@ -775,10 +770,10 @@ function StudentDashboard({
       tone: "emerald",
     },
     {
-      key: "grade",
-      label: "Average Grade",
-      value: averageScore !== null ? `${averageScore}%` : "-",
-      detail: scoredResults.length ? "Based on recent results" : "No grades yet",
+      key: "results",
+      label: "CBT Exams Completed",
+      value: results.length || 0,
+      detail: results.length ? "Ask your teacher for your result" : "No exams completed yet",
       tone: "gold",
     },
     {

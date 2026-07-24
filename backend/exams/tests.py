@@ -178,6 +178,103 @@ class ExamResultGradingTests(TestCase):
         self.assertFalse(response.data["is_passed"])
 
 
+class ExamResultStudentPrivacyTests(TestCase):
+    """Students must never see their own CBT score, percentage, or grade -
+    only admins and teachers can view a completed attempt's result."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Privacy CBT School", schema_name="privacy_cbt_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.other_school = SchoolTenant.objects.create(name="Other CBT School", schema_name="other_cbt_school", is_active=True)
+        self.other_legacy_tenant = Tenant.objects.create(name=self.other_school.name, slug=self.other_school.schema_name)
+
+        self.teacher = User.objects.create_user(
+            email="teacher@privacy-cbt.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@privacy-cbt.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.other_school_admin = User.objects.create_user(
+            email="admin@other-cbt.edu", password="AdminPass123", role="school_admin",
+            tenant=self.other_school, is_active=True, is_verified=True,
+        )
+        self.student = User.objects.create_user(
+            email="student@privacy-cbt.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.exam = Exam.objects.create(
+            title="Privacy Exam", teacher=self.teacher, tenant=self.legacy_tenant,
+            start_date=timezone.now() - timedelta(minutes=5), end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, is_published=True,
+        )
+        self.attempt = ExamAttempt.objects.create(
+            exam=self.exam, student=self.student, is_submitted=True,
+            score=80, total_points=100, end_time=timezone.now(),
+        )
+        self.client = APIClient()
+
+    def test_student_never_sees_own_score_or_grade(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("score", response.data)
+        self.assertNotIn("percentage", response.data)
+        self.assertNotIn("grade", response.data)
+        self.assertNotIn("is_passed", response.data)
+        self.assertNotIn("answers_review", response.data)
+        self.assertEqual(response.data["message"], "Exam Completed")
+
+    def test_admin_can_view_result_in_their_own_tenant(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["score"], 80)
+        self.assertEqual(response.data["percentage"], 80.0)
+        self.assertIn("grade", response.data)
+
+    def test_admin_from_another_tenant_cannot_view_result(self):
+        self.client.force_authenticate(self.other_school_admin)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_offline_sync_response_never_includes_score(self):
+        question = Question.objects.create(
+            tenant=self.legacy_tenant, question_type="mcq", text="2 + 2?",
+            options=["3", "4"], correct_answer="4", points=1,
+        )
+        self.exam.questions.add(question)
+        self.client.force_authenticate(self.student)
+
+        response = self.client.post(
+            reverse("exams:sync_offline_exam_attempt"),
+            {
+                "exam_id": self.exam.id,
+                "answers": {str(question.id): "4"},
+                "offline_attempt_id": "offline-privacy-check",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn("score", response.data)
+        self.assertNotIn("percentage", response.data)
+        self.assertNotIn("total_points", response.data)
+
+    def test_student_cannot_import_cbt_results_package(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post(
+            reverse("exams:cbt_results_package_import"),
+            {"results": []},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+
 class ExamTenantIsolationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
