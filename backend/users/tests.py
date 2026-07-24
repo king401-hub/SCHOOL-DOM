@@ -28,6 +28,7 @@ from finance.models import ActivationCreditPool, ActivationCreditTransaction, Pa
 from finance.services import (
     activate_kids_monitor_subscription,
     get_or_create_activation_credit_pool,
+    get_or_create_sms_wallet,
     get_or_create_student_activation_credit,
 )
 from hr.models import StaffProfile
@@ -805,6 +806,82 @@ class EnrollmentsAPITests(TestCase):
         self.assertEqual(kwargs["params"]["senderID"], "neo")
         self.assertEqual(kwargs["params"]["recipients"], "2349036425748,2348153197053")
         self.assertEqual(kwargs["params"]["gateway"], "2")
+
+    @patch("finance.services.send_ebulksms")
+    def test_report_card_sms_is_billed_to_school_wallet_and_creates_secure_link(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "report_card_sms",
+                "body": "Report card",
+                "phone": "08010000099",
+                "report_data": {
+                    "student": {"name": "Report Student", "class_name": "JSS1"},
+                    "school": {"name": "Smoke School"},
+                    "average_score": 72.5,
+                    "class_position": 3,
+                    "class_size": 30,
+                    "scores": [{"subject": "Maths", "score": 80, "max_score": 100, "grade": "A"}],
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance - 1)
+        link = PaymentReceiptLink.objects.get(phone="08010000099", receipt_type="report_card")
+        self.assertEqual(link.data["student_name"], "Report Student")
+        log = SmsMessageLog.objects.get(recipient_phone="08010000099")
+        self.assertEqual(log.category, SmsMessageLog.RESULTS)
+        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
+
+    @patch("finance.services.send_ebulksms")
+    def test_report_card_sms_provider_failure_is_not_billed_and_shows_clear_reason(self, mock_send):
+        mock_send.return_value = {"response": {"status": "FAILED", "totalsent": 0}}
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "report_card_sms",
+                "body": "Report card",
+                "phone": "08010000098",
+                "report_data": {"student": {"name": "Failed Student"}, "school": {"name": "Smoke School"}},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("FAILED", response.data["message"])
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance)
+
+    def test_report_card_sms_with_empty_wallet_charges_nothing(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        response = self.client.post(
+            "/api/app/messages/send/",
+            data={
+                "target": "report_card_sms",
+                "body": "Report card",
+                "phone": "08010000097",
+                "report_data": {"student": {"name": "Broke School Student"}, "school": {"name": "Smoke School"}},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 402)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 0)
+        self.assertFalse(SmsMessageLog.objects.filter(recipient_phone="08010000097").exists())
 
     def test_admin_can_publish_announcement_for_students_and_teachers(self):
         student_user = User.objects.create_user(
@@ -5114,7 +5191,7 @@ class ClassBroadsheetFeatureTests(TestCase):
 
     @patch("finance.services.send_ebulksms")
     def test_send_creates_one_link_per_parent_with_correct_highlight(self, mock_send):
-        mock_send.return_value = {"status": "success"}
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         self.client.force_authenticate(user=self.admin)
         response = self.client.post("/api/app/results/broadsheet/send/", {
             "class_id": self.class_a.id, "term_id": self.term.id,
@@ -5139,7 +5216,7 @@ class ClassBroadsheetFeatureTests(TestCase):
 
     @patch("finance.services.send_ebulksms")
     def test_send_never_creates_a_link_for_a_deselected_parent(self, mock_send):
-        mock_send.return_value = {"status": "success"}
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         self.client.force_authenticate(user=self.admin)
         self.client.post("/api/app/results/broadsheet/send/", {
             "class_id": self.class_a.id, "term_id": self.term.id,
@@ -5151,7 +5228,7 @@ class ClassBroadsheetFeatureTests(TestCase):
     def test_send_ignores_a_parent_id_not_actually_in_the_class(self, mock_send):
         """A manipulated request selecting parent3 (no child in class_a) must
         not be trusted - re-filtered server-side, so no link/SMS goes out."""
-        mock_send.return_value = {"status": "success"}
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         self.client.force_authenticate(user=self.admin)
         response = self.client.post("/api/app/results/broadsheet/send/", {
             "class_id": self.class_a.id, "term_id": self.term.id,
@@ -5162,7 +5239,7 @@ class ClassBroadsheetFeatureTests(TestCase):
 
     @patch("finance.services.send_ebulksms")
     def test_send_insufficient_credit_on_one_recipient_does_not_abort_batch(self, mock_send):
-        mock_send.return_value = {"status": "success"}
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         from finance.services import get_or_create_sms_wallet
         wallet = get_or_create_sms_wallet(self.school)
         wallet.balance = 1

@@ -19,6 +19,7 @@ from finance.models import (
     FeeAllocation,
     FinanceLedgerLog,
     ParentVirtualAccount,
+    PaymentReceiptLink,
     SchoolFee,
     SmsWalletTransaction,
     StudentPaymentReference,
@@ -53,7 +54,10 @@ from finance.services import (
     process_virtual_account_payment,
     record_cash_payment,
     refund_sms_wallet,
+    send_bulk_message_to_parents,
+    send_parent_virtual_account_fee_reminder,
     send_wallet_sms,
+    sms_failure_reason,
     sync_class_fee_assignments,
     sync_student_class_fees,
     sync_tenant_class_fees,
@@ -1063,10 +1067,12 @@ class SmsWalletTests(TestCase):
 
     @patch("finance.services.send_ebulksms")
     def test_send_wallet_sms_charges_one_credit_and_logs_sent(self, mock_send):
+        # Real eBulkSMS success shape, confirmed from production logs - nested
+        # under "response", not a top-level "status" key.
         wallet = get_or_create_sms_wallet(self.school)
         wallet.balance = 50
         wallet.save(update_fields=["balance", "updated_at"])
-        mock_send.return_value = {"status": "success"}
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
 
         log = send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.BULK)
         wallet.refresh_from_db()
@@ -1081,21 +1087,45 @@ class SmsWalletTests(TestCase):
         self.assertEqual(debit_tx.balance_after, 49)
 
     @patch("finance.services.send_ebulksms")
-    def test_send_wallet_sms_refunds_on_provider_failure(self, mock_send):
+    def test_send_wallet_sms_never_charges_on_provider_failure(self, mock_send):
+        # No charge-then-refund anymore: a confirmed provider failure must
+        # never touch the wallet balance at all, and never create a debit or
+        # refund transaction - there's nothing to undo because nothing was
+        # ever charged.
         wallet = get_or_create_sms_wallet(self.school)
         wallet.balance = 50
         wallet.save(update_fields=["balance", "updated_at"])
-        mock_send.return_value = {"status": "error", "reason": "Invalid phone format"}
+        mock_send.return_value = {"response": {"status": "FAILED", "totalsent": 0}}
 
         log = send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.BULK)
         wallet.refresh_from_db()
 
         self.assertEqual(wallet.balance, 50)
-        self.assertEqual(log.delivery_status, SmsMessageLog.REFUNDED)
-        self.assertIsNotNone(log.refunded_at)
-        self.assertEqual(
-            SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.REFUND).count(), 1
-        )
+        self.assertEqual(log.delivery_status, SmsMessageLog.FAILED)
+        self.assertEqual(log.credits_charged, 0)
+        self.assertIsNone(log.refunded_at)
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.DEBIT).count(), 0)
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.REFUND).count(), 0)
+        self.assertIn("FAILED", sms_failure_reason(log))
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_wallet_sms_treats_ambiguous_response_as_failure_not_success(self, mock_send):
+        # Regression test for the actual production bug: send_wallet_sms used to
+        # check the wrong (top-level, nonexistent) "status" key, so ANY response
+        # that wasn't literally this module's own {"status": "error"/"skipped"}
+        # sentinel was treated as a successful, chargeable send - including a
+        # response like this one, which confirms nothing.
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 50
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"status": "ok", "message": "queued"}
+
+        log = send_wallet_sms(self.school, "2348012345678", "Test message", category=SmsMessageLog.BULK)
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 50)
+        self.assertEqual(log.delivery_status, SmsMessageLog.FAILED)
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.DEBIT).count(), 0)
 
     @patch("finance.services.send_ebulksms")
     def test_send_wallet_sms_raises_before_sending_when_balance_insufficient(self, mock_send):
@@ -1359,7 +1389,7 @@ class PaystackDvaReconciliationTests(TestCase):
         self.parent_user.save(update_fields=["phone"])
 
         with patch("finance.services.send_ebulksms") as mock_sms:
-            mock_sms.return_value = {"status": "success"}
+            mock_sms.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
             process_virtual_account_payment(
                 tenant=self.school, account_number=self.vac.account_number,
                 amount_naira=Decimal("20000.00"), paystack_reference="DVA-TEST-FIRST",
@@ -1375,6 +1405,62 @@ class PaystackDvaReconciliationTests(TestCase):
         # True outstanding after both payments: 50000 - 40000 = 10000.
         self.assertIn("Outstanding: 10,000", second_call_message)
         self.assertNotIn("Outstanding: 30,000", second_call_message)
+
+
+class FeeReminderSecureLinkTests(TestCase):
+    """Fee reminder SMS (single-parent and bulk-personalized) must include a
+    secure /r/<code> bill link, same as report cards and broadsheets."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Reminder School", schema_name="reminder_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.parent_user = User.objects.create_user(
+            email="parent@reminder.edu", password="ParentPass123", first_name="Parent", last_name="User",
+            role="parent", tenant=self.school, is_active=True, is_verified=True, phone="+2348012340001",
+        )
+        self.parent_profile = ParentProfile.objects.create(user=self.parent_user, preferred_contact="sms")
+        self.student_user = User.objects.create_user(
+            email="student@reminder.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="STR900", admission_number="ADM-R-900",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=school_class,
+        )
+        self.parent_profile.children.add(self.student)
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+    @patch("finance.services.send_ebulksms")
+    def test_single_sms_reminder_includes_working_bill_link_within_char_limit(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        result = send_parent_virtual_account_fee_reminder(self.parent_user)
+
+        self.assertTrue(result["success"], result)
+        sent_message = mock_send.call_args.args[1]
+        self.assertLessEqual(len(sent_message), SMS_CHAR_LIMIT)
+        link = PaymentReceiptLink.objects.get(receipt_type="bill")
+        self.assertIn("/r/" + link.short_code, sent_message)
+        self.assertEqual(link.data["students"][0]["total_outstanding"], "50000.00")
+
+    @patch("finance.services.send_ebulksms")
+    def test_bulk_personalized_sms_reminder_includes_bill_link(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        results = send_bulk_message_to_parents(
+            self.school, [self.parent_user.id], "sms", "", personalize=True,
+        )
+
+        self.assertEqual(results["sent"], 1, results)
+        sent_message = mock_send.call_args.args[1]
+        self.assertLessEqual(len(sent_message), SMS_CHAR_LIMIT)
+        link = PaymentReceiptLink.objects.get(receipt_type="bill")
+        self.assertIn("/r/" + link.short_code, sent_message)
 
 
 class CreditBalanceCarryForwardTests(TestCase):

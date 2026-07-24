@@ -3684,9 +3684,18 @@ function AdminResultsScreen({
                 )}
                 {bsSendError ? <p className="form-feedback error">{bsSendError}</p> : null}
                 {bsSendResult ? (
-                  <p className="form-feedback success">
-                    Sent to {bsSendResult.sent}, failed {bsSendResult.failed}, skipped (no phone) {bsSendResult.skipped}.
-                  </p>
+                  <>
+                    <p className="form-feedback success">
+                      Sent to {bsSendResult.sent}, failed {bsSendResult.failed}, skipped (no phone) {bsSendResult.skipped}.
+                    </p>
+                    {bsSendResult.errors && bsSendResult.errors.length ? (
+                      <ul className="form-feedback error" style={{ paddingLeft: "1.1em", margin: "4px 0 0" }}>
+                        {bsSendResult.errors.map((line, index) => (
+                          <li key={index}>{line}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </>
                 ) : null}
                 <div className="panel-form-actions">
                   <button type="button" className="btn-secondary" onClick={() => setSharePanelOpen(false)}>Close</button>

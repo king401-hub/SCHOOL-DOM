@@ -816,6 +816,45 @@ def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dic
         return {"status": "error", "reason": str(exc)}
 
 
+def _ebulksms_accepted(result: dict):
+    """Parses eBulkSMS's actual response shape - nested under "response", e.g.
+    {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}} - to decide
+    whether a message was genuinely accepted for delivery. This is deliberately
+    an allowlist, not a blocklist: only an explicit SUCCESS with at least one
+    recipient sent counts as accepted. This module's own "error"/"skipped"
+    sentinels, an unrecognized provider status, or a malformed/missing response
+    are all treated as failure - a school must never be charged for a message
+    the provider didn't confirm. Returns (accepted: bool, reason: str)."""
+    if not isinstance(result, dict):
+        return False, "SMS provider returned an unexpected response."
+
+    if result.get("status") in ("error", "skipped"):
+        return False, str(result.get("reason") or "SMS provider request failed.")
+
+    response = result.get("response")
+    if isinstance(response, dict):
+        provider_status = str(response.get("status") or "").upper()
+        total_sent = response.get("totalsent")
+        try:
+            sent_ok = total_sent is None or int(total_sent) >= 1
+        except (TypeError, ValueError):
+            sent_ok = False
+        if provider_status == "SUCCESS" and sent_ok:
+            return True, ""
+        if provider_status:
+            return False, f"SMS provider reported: {response.get('status')}."
+
+    return False, "SMS provider did not confirm delivery."
+
+
+def sms_failure_reason(log: "SmsMessageLog") -> str:
+    """Human-readable reason an SmsMessageLog failed, re-derived from its stored
+    provider_response using the same logic send_wallet_sms used to decide not to
+    charge for it - so callers can show admins exactly why a send didn't go out."""
+    _, reason = _ebulksms_accepted(log.provider_response or {})
+    return reason or "SMS delivery failed."
+
+
 def send_wallet_sms(
     tenant,
     phone: str,
@@ -827,53 +866,74 @@ def send_wallet_sms(
     sender: str = "SchoolDom",
 ) -> "SmsMessageLog":
     """
-    Charge the school's SMS wallet (SMS_CREDITS_PER_MESSAGE credits) and send via
-    eBulkSMS, synchronously. Refunds the credits automatically if the send fails.
-    Raises InsufficientSmsCreditsError / SmsWalletLockedError *before* anything is
-    sent or logged - callers must catch these so one recipient's empty wallet never
-    breaks a whole batch.
+    Send via eBulkSMS, then charge the school's SMS wallet (SMS_CREDITS_PER_MESSAGE
+    credits) ONLY once the provider has genuinely confirmed acceptance (see
+    _ebulksms_accepted). A failed/unconfirmed send is never charged, so there's
+    nothing to refund.
+
+    Raises InsufficientSmsCreditsError / SmsWalletLockedError *before* the provider
+    is ever called if the wallet can't cover the message - callers must catch these
+    so one recipient's empty wallet never breaks a whole batch.
 
     Only for school-initiated messages billed to the school's own wallet (fee
-    reminders, bulk messages, guardian SMS) - Kids Monitor attendance alerts are
-    funded by the parent's own subscription and must never call this.
+    reminders, bulk messages, guardian SMS, report cards, broadsheets) - Kids
+    Monitor attendance alerts are funded by the parent's own subscription and
+    must never call this.
 
     Sent synchronously rather than via Celery: this codebase has no confirmed Celery
     worker running in production (users/signals.py falls back to sync for the same
     reason), so queuing SMS there risks messages silently never sending.
     """
-    debit_tx = charge_sms_wallet(tenant, SMS_CREDITS_PER_MESSAGE, category, narration=narration, actor=actor, metadata=metadata)
+    wallet = get_or_create_sms_wallet(tenant)
+    if wallet.is_locked:
+        raise SmsWalletLockedError("This school's SMS wallet is locked.")
+    if wallet.balance < SMS_CREDITS_PER_MESSAGE:
+        raise InsufficientSmsCreditsError(
+            f"Insufficient SMS credits: need {SMS_CREDITS_PER_MESSAGE}, have {wallet.balance}."
+        )
 
     log = SmsMessageLog.objects.create(
         tenant=tenant,
-        wallet=debit_tx.wallet,
+        wallet=wallet,
         category=category,
         recipient_phone=phone,
         message=message,
-        credits_charged=SMS_CREDITS_PER_MESSAGE,
+        credits_charged=0,
         created_by=actor,
     )
-    debit_tx.related_message_log = log
-    debit_tx.save(update_fields=["related_message_log"])
 
     try:
         result = send_ebulksms(phone, message, sender=sender)
     except Exception as exc:
         result = {"status": "error", "reason": str(exc)}
 
-    ok = result.get("status") not in ("error", "skipped")
+    accepted, _reason = _ebulksms_accepted(result)
     log.provider_response = result
-    if ok:
+
+    if not accepted:
+        log.delivery_status = SmsMessageLog.FAILED
+        log.save(update_fields=["delivery_status", "provider_response"])
+        return log
+
+    try:
+        debit_tx = charge_sms_wallet(tenant, SMS_CREDITS_PER_MESSAGE, category, narration=narration, actor=actor, metadata=metadata)
+    except (InsufficientSmsCreditsError, SmsWalletLockedError):
+        # The message already went out and can't be un-sent - a concurrent send
+        # exhausted/locked the wallet between the pre-flight check above and this
+        # debit. Log it as sent-but-unbilled rather than falsely reporting a
+        # failed send that the recipient actually received.
         log.delivery_status = SmsMessageLog.SENT
         log.sent_at = timezone.now()
         log.save(update_fields=["delivery_status", "provider_response", "sent_at"])
-    else:
-        log.delivery_status = SmsMessageLog.FAILED
-        log.save(update_fields=["delivery_status", "provider_response"])
-        refund_sms_wallet(debit_tx, reason=str(result.get("reason", "SMS send failed"))[:200])
-        log.delivery_status = SmsMessageLog.REFUNDED
-        log.refunded_at = timezone.now()
-        log.save(update_fields=["delivery_status", "refunded_at"])
+        return log
 
+    debit_tx.related_message_log = log
+    debit_tx.save(update_fields=["related_message_log"])
+    log.wallet = debit_tx.wallet
+    log.credits_charged = SMS_CREDITS_PER_MESSAGE
+    log.delivery_status = SmsMessageLog.SENT
+    log.sent_at = timezone.now()
+    log.save(update_fields=["wallet", "credits_charged", "delivery_status", "provider_response", "sent_at"])
     return log
 
 
@@ -3639,37 +3699,8 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
 
     tenant = getattr(parent_user, "tenant", None)
 
-    # ── Route by preferred contact ────────────────────────────
-    if preferred == "sms":
-        phone = (parent_user.phone or "").strip()
-        if not phone:
-            return {"success": False, "message": "Parent has no phone number on file."}
-        try:
-            log = send_wallet_sms(tenant, phone, message, category=SmsMessageLog.FEE_REMINDER, narration="Fee reminder")
-        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
-            return {"success": False, "message": str(exc)}
-        ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
-        return {"success": ok, "message": "SMS reminder sent." if ok else "SMS failed to send."}
-
-    if preferred == "whatsapp":
-        phone = (parent_user.phone or "").strip()
-        if not phone:
-            return {"success": False, "message": "Parent has no phone number on file."}
-        wa_result = send_termii_whatsapp(phone, message)
-        if wa_result.get("status") == "success":
-            return {"success": True, "message": "WhatsApp reminder sent."}
-        try:
-            log = send_wallet_sms(tenant, phone, message, category=SmsMessageLog.FEE_REMINDER, narration="Fee reminder (WhatsApp fallback)")
-        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
-            return {"success": False, "message": f"WhatsApp failed, and SMS fallback failed: {exc}"}
-        ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
-        return {"success": ok, "message": "SMS reminder sent (WhatsApp unavailable)." if ok else "WhatsApp and SMS both failed."}
-
-    # ── Email (default) ───────────────────────────────────────
-    email = (parent_user.email or "").strip()
-    if not email:
-        return {"success": False, "message": "Parent has no email address."}
-
+    # Built once up front - the secure bill link is shared by SMS, the SMS
+    # fallback for WhatsApp, and email, not just email.
     bill_students = []
     if students:
         for student in students:
@@ -3694,7 +3725,7 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
                     "total_outstanding": str(student_total),
                 })
 
-    total_all = sum(Decimal(s["total_outstanding"]) for s in bill_students)
+    total_all = sum((Decimal(s["total_outstanding"]) for s in bill_students), Decimal("0"))
     bill_data = {
         "type": "bill",
         "school_name": school_name,
@@ -3708,8 +3739,44 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
         "total_outstanding": str(total_all),
         "generated_at": timezone.now().strftime("%d %b %Y"),
     }
-    tenant_obj = getattr(parent_user, "tenant", None)
-    receipt_url = create_receipt_link(bill_data, tenant=tenant_obj, receipt_type="bill")
+    receipt_url = create_receipt_link(bill_data, tenant=tenant, receipt_type="bill")
+
+    # ── Route by preferred contact ────────────────────────────
+    if preferred == "sms":
+        phone = (parent_user.phone or "").strip()
+        if not phone:
+            return {"success": False, "message": "Parent has no phone number on file."}
+        try:
+            log = send_wallet_sms(
+                tenant, phone, _sms_message_with_receipt_link(message, receipt_url),
+                category=SmsMessageLog.FEE_REMINDER, narration="Fee reminder",
+            )
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            return {"success": False, "message": str(exc)}
+        ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
+        return {"success": ok, "message": "SMS reminder sent." if ok else sms_failure_reason(log)}
+
+    if preferred == "whatsapp":
+        phone = (parent_user.phone or "").strip()
+        if not phone:
+            return {"success": False, "message": "Parent has no phone number on file."}
+        wa_result = send_termii_whatsapp(phone, message)
+        if wa_result.get("status") == "success":
+            return {"success": True, "message": "WhatsApp reminder sent."}
+        try:
+            log = send_wallet_sms(
+                tenant, phone, _sms_message_with_receipt_link(message, receipt_url),
+                category=SmsMessageLog.FEE_REMINDER, narration="Fee reminder (WhatsApp fallback)",
+            )
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            return {"success": False, "message": f"WhatsApp failed, and SMS fallback failed: {exc}"}
+        ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
+        return {"success": ok, "message": "SMS reminder sent (WhatsApp unavailable)." if ok else f"WhatsApp and SMS both failed: {sms_failure_reason(log)}"}
+
+    # ── Email (default) ───────────────────────────────────────
+    email = (parent_user.email or "").strip()
+    if not email:
+        return {"success": False, "message": "Parent has no email address."}
 
     try:
         send_result = send_payment_receipt(email, message, receipt_url=receipt_url, data=bill_data, receipt_type="bill")
@@ -3741,17 +3808,33 @@ def _build_personalized_fee_reminder(parent_user, channel: str):
         pass
 
     per_child = []
+    bill_students = []
     total_outstanding = Decimal("0")
     for student in students:
         unpaid = SchoolFee.objects.filter(
             student=student,
             status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
         )
+        unpaid = list(unpaid)
         balance = sum((f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid)
         if balance > 0:
             child_name = student.user.get_full_name() if student.user else "Child"
             per_child.append((child_name, balance))
             total_outstanding += balance
+            bill_students.append({
+                "name": child_name,
+                "class": getattr(getattr(student, "current_class", None), "name", ""),
+                "fees": [
+                    {
+                        "title": f.title,
+                        "amount": str(f.amount),
+                        "paid": str(f.amount_paid or Decimal("0")),
+                        "balance": str(f.amount - (f.amount_paid or Decimal("0"))),
+                    }
+                    for f in unpaid
+                ],
+                "total_outstanding": str(balance),
+            })
 
     if not per_child:
         return "", False
@@ -3767,7 +3850,23 @@ def _build_personalized_fee_reminder(parent_user, channel: str):
             parts.append(f"Pay {virtual_account.account_number} {virtual_account.bank_name}.")
         else:
             parts.append("Contact school office to pay.")
-        return " ".join(parts)[:160], True
+        message = " ".join(parts)
+
+        bill_data = {
+            "type": "bill",
+            "school_name": school_name,
+            "parent_name": parent_user.get_full_name() or parent_user.email,
+            "students": bill_students,
+            "virtual_account": {
+                "number": virtual_account.account_number,
+                "bank": virtual_account.bank_name,
+                "name": virtual_account.account_name,
+            } if virtual_account else None,
+            "total_outstanding": str(total_outstanding),
+            "generated_at": timezone.now().strftime("%d %b %Y"),
+        }
+        receipt_url = create_receipt_link(bill_data, tenant=getattr(parent_user, "tenant", None), receipt_type="bill")
+        return _sms_message_with_receipt_link(message, receipt_url), True
 
     lines = [f"{school_name} Fee Reminder"]
     for child_name, balance in per_child:
@@ -3845,13 +3944,15 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 try:
                     log = send_wallet_sms(tenant, phone, outgoing_message, category=SmsMessageLog.BULK, narration="Bulk message (WhatsApp fallback)")
                     sms_ok = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
-                except (InsufficientSmsCreditsError, SmsWalletLockedError):
+                except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+                    log = None
                     sms_ok = False
                 if sms_ok:
                     results["sent"] += 1
                 else:
                     results["failed"] += 1
-                    results["errors"].append(f"{name}: WhatsApp and SMS both failed")
+                    reason = sms_failure_reason(log) if log else str(exc)
+                    results["errors"].append(f"{name}: WhatsApp and SMS both failed ({reason})")
 
         elif channel == "sms":
             if not phone:
@@ -3869,7 +3970,7 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
                 results["sent"] += 1
             else:
                 results["failed"] += 1
-                results["errors"].append(f"{name}: SMS failed to send")
+                results["errors"].append(f"{name}: {sms_failure_reason(log)}")
 
     return results
 
@@ -4648,7 +4749,16 @@ def process_virtual_account_payment(
 
             parent_phone = (getattr(parent_user, "phone", "") or "").strip()
             if parent_phone:
-                send_ebulksms(parent_phone, _sms_message_with_receipt_link(receipt_message, receipt_url))
+                try:
+                    send_wallet_sms(
+                        resolved_tenant,
+                        parent_phone,
+                        _sms_message_with_receipt_link(receipt_message, receipt_url),
+                        category=SmsMessageLog.RECEIPT,
+                        narration="Payment receipt",
+                    )
+                except (InsufficientSmsCreditsError, SmsWalletLockedError):
+                    logger.warning("Payment receipt SMS skipped for fee %s: SMS wallet unavailable.", fee.id)
         except Exception:
             logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 

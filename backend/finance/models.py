@@ -970,6 +970,7 @@ class SmsMessageLog(models.Model):
     PARENT_ALERT = "parent_alert"
     TEACHER_NOTICE = "teacher_notice"
     BULK = "bulk"
+    RECEIPT = "receipt"
     OTHER = "other"
     CATEGORY_CHOICES = [
         (ATTENDANCE, "Attendance"),
@@ -979,6 +980,7 @@ class SmsMessageLog(models.Model):
         (PARENT_ALERT, "Parent Alert"),
         (TEACHER_NOTICE, "Teacher Notice"),
         (BULK, "Bulk Message"),
+        (RECEIPT, "Payment Receipt"),
         (OTHER, "Other"),
     ]
     QUEUED = "queued"

@@ -359,7 +359,8 @@ class SecretaryTools:
 
     def send_sms(self, to_phone: str, message_body: str) -> dict:
         try:
-            from finance.services import send_sendchamp_sms
+            from finance.models import SmsMessageLog
+            from finance.services import InsufficientSmsCreditsError, SmsWalletLockedError, send_wallet_sms, sms_failure_reason
         except ImportError:
             return {"status": "error", "error_code": "NOT_CONFIGURED", "message": "SMS service not available."}
         try:
@@ -370,19 +371,28 @@ class SecretaryTools:
                     "message": f"SMS is {len(message_body)} chars — must be ≤160. Please shorten it.",
                 }
             to_phone = self._normalize_phone(to_phone)
-            result = send_sendchamp_sms(to_phone, message_body)
-            ok = result.get("code") in ("200", 200) or result.get("status") == "success"
-            if ok:
+            try:
+                log = send_wallet_sms(
+                    self.tenant,
+                    to_phone,
+                    message_body,
+                    category=SmsMessageLog.OTHER,
+                    actor=self.requesting_user,
+                    narration="AI Secretary",
+                )
+            except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+                return {"status": "error", "error_code": "INSUFFICIENT_CREDITS", "message": str(exc)}
+            if log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
                 return {
                     "status": "success",
                     "delivered_to": to_phone,
-                    "sms_id": result.get("data", {}).get("id", ""),
-                    "units_used": 1,
+                    "sms_id": str(log.id),
+                    "units_used": log.credits_charged,
                 }
             return {
                 "status": "error",
                 "error_code": "SMS_DELIVERY_FAILED",
-                "message": result.get("message", "Delivery failed."),
+                "message": sms_failure_reason(log),
             }
         except Exception as exc:
             logger.exception("send_sms failed: %s", exc)

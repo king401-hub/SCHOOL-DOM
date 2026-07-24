@@ -10173,6 +10173,7 @@ def send_class_broadsheet(request):
         create_receipt_link,
         send_wallet_sms,
         sms_compact_url,
+        sms_failure_reason,
     )
 
     # Re-filtered by class server-side - a manipulated request can't select a
@@ -10221,6 +10222,7 @@ def send_class_broadsheet(request):
             sent += 1
         else:
             failed += 1
+            errors.append(f"{parent.user.get_full_name()}: {sms_failure_reason(log)}")
 
     return Response({"success": True, "sent": sent, "failed": failed, "skipped": skipped, "errors": errors[:10]})
 
@@ -10408,7 +10410,15 @@ def send_message(request):
         class_size = report_data.get("class_size") or 0
         scores = report_data.get("scores") or []
 
-        from finance.services import create_receipt_link
+        from finance.models import SmsMessageLog
+        from finance.services import (
+            InsufficientSmsCreditsError,
+            SmsWalletLockedError,
+            create_receipt_link,
+            send_wallet_sms,
+            sms_compact_url,
+            sms_failure_reason,
+        )
         link_data = {
             "school_name": school_name,
             "student_name": student_name,
@@ -10437,7 +10447,6 @@ def send_message(request):
             receipt_type="report_card",
         )
 
-        from finance.services import sms_compact_url
         sms_parts = [f"{school_name} Report Card: {student_name}."]
         if class_name:
             sms_parts.append(f"Class: {class_name}.")
@@ -10448,16 +10457,20 @@ def send_message(request):
         sms_body = " ".join(sms_parts)
 
         try:
-            from finance.services import send_sendchamp_sms
-            sms_result = send_sendchamp_sms(phone, sms_body)
-        except Exception as exc:
-            return Response(
-                {"success": False, "message": f"Could not send SMS: {exc}"},
-                status=status.HTTP_502_BAD_GATEWAY,
+            log = send_wallet_sms(
+                getattr(request.user, "tenant", None),
+                phone,
+                sms_body,
+                category=SmsMessageLog.RESULTS,
+                actor=request.user,
+                narration="Report card",
             )
-        if sms_result.get("status") in ("error", "skipped"):
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_402_PAYMENT_REQUIRED)
+
+        if log.delivery_status not in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
             return Response(
-                {"success": False, "message": sms_result.get("reason") or "SMS delivery failed."},
+                {"success": False, "message": sms_failure_reason(log)},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response(
