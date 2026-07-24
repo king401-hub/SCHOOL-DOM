@@ -207,6 +207,7 @@ def _offline_student_payload(user, request=None):
         "email": user.email,
         "class_name": str(getattr(profile, "current_class", "") or ""),
         "profile_picture": profile_picture,
+        "is_active": user.is_active,
     }
 
 

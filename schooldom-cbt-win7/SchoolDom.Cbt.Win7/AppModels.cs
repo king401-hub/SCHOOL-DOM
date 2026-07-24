@@ -42,6 +42,7 @@ namespace SchoolDom.Cbt.Win7
         public string ClassName { get; set; }
         public string ProfilePicture { get; set; }
         public string ProfilePictureData { get; set; }
+        public bool IsActive { get; set; } = true;
     }
 
     public class ExamRecord
@@ -93,6 +94,7 @@ namespace SchoolDom.Cbt.Win7
         public string StudentName { get; set; }
         public string Status { get; set; }
         public string StartedAt { get; set; }
+        public string ExamBeganAt { get; set; }
         public string EndsAt { get; set; }
         public string SubmittedAt { get; set; }
         public string SyncStatus { get; set; }

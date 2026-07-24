@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 
 namespace SchoolDom.StudentCbt.Win7
@@ -281,6 +282,15 @@ namespace SchoolDom.StudentCbt.Win7
 
         private void EnterExamMode()
         {
+            // Reset ends_at to now + duration so instruction-reading time doesn't eat into exam time
+            try
+            {
+                var began = _client.BeginExam(Value(_session, "id", "Id"));
+                if (began.ContainsKey("session") && began["session"] is Dictionary<string, object> updatedSession)
+                    _session = updatedSession;
+            }
+            catch { }
+
             _examMode = true;
             _current = 0;
             var sessionId = Value(_session, "id", "Id");
@@ -369,52 +379,41 @@ namespace SchoolDom.StudentCbt.Win7
             main.Controls.Add(body);
             main.Controls.Add(footer);
 
-            var innerWidth = main.Width - 84;
+            var innerWidth = main.Width - 64;
             body.Controls.Add(Label("Question " + (_current + 1) + " of " + _questions.Count, 32, 24, 10, true, 260, Palette.Muted));
-            
-            // ** FIX: Use WebBrowser to render HTML content instead of Label **
+
+            var passageGroup = Raw(question, "group", "Group") as Dictionary<string, object>;
+            var passageTitle = passageGroup != null ? Value(passageGroup, "title", "Title") : "";
+            var passageText = passageGroup != null ? Value(passageGroup, "passage_text", "PassageText") : "";
+            var questionText = Value(question, "text", "Text");
+
+            const int webViewInitialHeight = 260;
             _questionWebView = new WebBrowser
             {
                 Left = 32,
-                Top = 70,
+                Top = 58,
                 Width = innerWidth,
-                Height = 300,
-                DocumentText = Value(question, "text", "Text"),
-                ScrollBarsEnabled = true,
+                Height = webViewInitialHeight,
+                ScrollBarsEnabled = false,
                 AllowNavigation = false,
                 WebBrowserShortcutsEnabled = false,
                 IsWebBrowserContextMenuEnabled = false,
                 BackColor = Color.White
             };
-            // Wait for document to load before reading height
-            _questionWebView.DocumentCompleted += (s, e) =>
-            {
-                try
-                {
-                    var doc = _questionWebView.Document;
-                    if (doc != null)
-                    {
-                        var element = doc.Body;
-                        if (element != null)
-                        {
-                            _questionWebView.Height = Math.Max(150, element.ScrollRectangle.Height + 20);
-                        }
-                    }
-                }
-                catch { }
-            };
             body.Controls.Add(_questionWebView);
 
-            var top = Math.Max(160, 70 + _questionWebView.Height + 20);
             var type = Value(question, "type", "Type").ToLowerInvariant();
             var options = JsonUtil.List(Raw(question, "options", "Options")).Select(JsonUtil.Text).Where(x => x.Length > 0).ToList();
+
+            var answerContainer = new Panel { Left = 0, Top = 58 + webViewInitialHeight + 16, Width = main.Width, Height = 600, BackColor = Color.White };
+            body.Controls.Add(answerContainer);
 
             if (type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any())
             {
                 var answer = new TextBox
                 {
                     Left = 32,
-                    Top = top,
+                    Top = 0,
                     Width = innerWidth,
                     Height = 190,
                     Multiline = true,
@@ -426,17 +425,16 @@ namespace SchoolDom.StudentCbt.Win7
                 };
                 object saved;
                 if (_answers.TryGetValue(QuestionId(question, _current), out saved)) answer.Text = JsonUtil.Text(saved);
-                body.Controls.Add(answer);
+                answerContainer.Controls.Add(answer);
             }
             else
             {
                 for (var i = 0; i < options.Count; i++)
                 {
-                    var optionTop = top + i * 56;
                     var option = new RadioButton
                     {
                         Left = 38,
-                        Top = optionTop,
+                        Top = i * 56,
                         Width = innerWidth - 8,
                         Height = 54,
                         Text = ((char)('A' + i)) + ". " + options[i],
@@ -450,9 +448,24 @@ namespace SchoolDom.StudentCbt.Win7
                     object saved;
                     option.Checked = _answers.TryGetValue(QuestionId(question, _current), out saved) && JsonUtil.Text(saved) == i.ToString();
                     option.CheckedChanged += (s, e) => SaveCurrentAnswer(main);
-                    body.Controls.Add(option);
+                    answerContainer.Controls.Add(option);
                 }
             }
+
+            _questionWebView.DocumentCompleted += (s, e) =>
+            {
+                try
+                {
+                    if (_questionWebView.Document?.Body != null)
+                    {
+                        var loadedHeight = Math.Max(webViewInitialHeight, _questionWebView.Document.Body.ScrollRectangle.Height + 24);
+                        _questionWebView.Height = loadedHeight;
+                        answerContainer.Top = 58 + loadedHeight + 16;
+                    }
+                }
+                catch { }
+            };
+            _questionWebView.DocumentText = BuildQuestionHtml(passageTitle, passageText, questionText);
 
             var prev = SecondaryButton("Previous", 32, 18, 120);
             prev.Enabled = _current > 0;
@@ -461,6 +474,47 @@ namespace SchoolDom.StudentCbt.Win7
             var next = PrimaryButton(_current == _questions.Count - 1 ? "Review" : "Next", main.Width - 164, 18, 120);
             next.Click += (s, e) => { SaveCurrentAnswer(main); if (_current < _questions.Count - 1) _current++; ShowExam(); };
             footer.Controls.Add(next);
+        }
+
+        private static string BuildQuestionHtml(string passageTitle, string passageText, string questionText)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>");
+            sb.Append("body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#162233;margin:4px 0;padding:0;line-height:1.6;}");
+            sb.Append("p{margin:0 0 8px 0;}ul,ol{margin:0 0 8px 0;padding-left:20px;}");
+            sb.Append("table{border-collapse:collapse;width:100%;margin:0 0 8px 0;}td,th{border:1px solid #ccd;padding:4px 8px;}");
+            sb.Append(".passage{background:#f0f4fb;border-left:3px solid #1860b4;padding:10px 14px;margin:0 0 14px 0;}");
+            sb.Append(".ptitle{font-weight:bold;color:#1860b4;margin:0 0 6px 0;font-size:12px;}");
+            sb.Append("</style></head><body>");
+            if (!string.IsNullOrWhiteSpace(passageText))
+            {
+                sb.Append("<div class='passage'>");
+                if (!string.IsNullOrWhiteSpace(passageTitle))
+                    sb.Append("<p class='ptitle'>").Append(HtmlSafeText(passageTitle)).Append("</p>");
+                sb.Append(LooksLikeHtml(passageText) ? passageText : "<p>" + HtmlSafeText(passageText).Replace("\n", "<br>") + "</p>");
+                sb.Append("</div>");
+            }
+            if (!string.IsNullOrWhiteSpace(questionText))
+                sb.Append(LooksLikeHtml(questionText) ? questionText : "<p>" + HtmlSafeText(questionText).Replace("\n", "<br>") + "</p>");
+            sb.Append("</body></html>");
+            return sb.ToString();
+        }
+
+        private static bool LooksLikeHtml(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            return text.IndexOf('<') >= 0 && (
+                text.IndexOf("</", StringComparison.Ordinal) >= 0 ||
+                text.IndexOf("/>", StringComparison.Ordinal) >= 0 ||
+                text.IndexOf("<br", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("<p", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("<div", StringComparison.OrdinalIgnoreCase) >= 0
+            );
+        }
+
+        private static string HtmlSafeText(string text)
+        {
+            return (text ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
         private void SaveCurrentAnswer(Control container)

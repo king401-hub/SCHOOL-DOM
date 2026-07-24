@@ -227,6 +227,14 @@ namespace SchoolDom.StudentCbt.Win7
             return GetWithRetry("/health");
         }
 
+        public Dictionary<string, object> BeginExam(string sessionId)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId))
+                throw new ArgumentException("Session ID is required");
+            return PostWithRetry("/api/sessions/" + Uri.EscapeDataString(sessionId) + "/begin",
+                new Dictionary<string, object>());
+        }
+
         public Dictionary<string, object> SaveAnswers(string sessionId, Dictionary<string, object> answers)
         {
             if (string.IsNullOrWhiteSpace(sessionId))

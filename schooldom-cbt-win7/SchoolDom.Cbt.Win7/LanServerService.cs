@@ -203,6 +203,11 @@ namespace SchoolDom.Cbt.Win7
                             if (exam == null) WriteJson(stream, 404, new Dictionary<string, object> { { "success", false }, { "message", "Exam not found." } });
                             else WriteJson(stream, 200, new Dictionary<string, object> { { "success", true }, { "exam", PublicExam(exam) }, { "payload", new Dictionary<string, object> { { "questions", exam.Questions } } } });
                         }
+                        else if (method == "POST" && path.StartsWith("/api/sessions/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/begin", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var sessionId = Uri.UnescapeDataString(path.Substring("/api/sessions/".Length, path.Length - "/api/sessions/".Length - "/begin".Length));
+                            WriteJson(stream, 200, BeginExam(sessionId));
+                        }
                         else if (method == "POST" && path.StartsWith("/api/sessions/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/answers", StringComparison.OrdinalIgnoreCase))
                         {
                             var sessionId = Uri.UnescapeDataString(path.Substring("/api/sessions/".Length, path.Length - "/api/sessions/".Length - "/answers".Length));
@@ -260,6 +265,7 @@ namespace SchoolDom.Cbt.Win7
             var pinHash = JsonUtil.Sha256(pin);
             var student = _store.State.Students.FirstOrDefault(item => string.Equals(item.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
             if (student == null) return new Dictionary<string, object> { { "success", false }, { "message", "Student ID was not found on the admin LAN server." } };
+            if (!student.IsActive) return new Dictionary<string, object> { { "success", false }, { "message", "Your student account is inactive. Please contact your school administrator to renew your activation token." } };
             var exams = _store.State.Exams.Where(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase)).ToList();
             if (!exams.Any()) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
             if (exams.Count > 1)
@@ -351,6 +357,21 @@ namespace SchoolDom.Cbt.Win7
             DateTime ends;
             return DateTime.TryParse(session.EndsAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out ends)
                 && DateTime.UtcNow > ends.ToUniversalTime();
+        }
+
+        private Dictionary<string, object> BeginExam(string sessionId)
+        {
+            var session = FindSession(sessionId);
+            if (session == null) return new Dictionary<string, object> { { "success", false }, { "message", "Session not found." } };
+            if (session.Status == "submitted") return new Dictionary<string, object> { { "success", false }, { "message", "This exam has already been submitted." } };
+            var exam = _store.State.Exams.FirstOrDefault(item => item.Id == session.ExamId);
+            if (exam == null) return new Dictionary<string, object> { { "success", false }, { "message", "Exam record not found." } };
+            var began = DateTime.UtcNow;
+            session.ExamBeganAt = began.ToString("o");
+            session.EndsAt = began.AddSeconds(Math.Max(60, exam.DurationSeconds)).ToString("o");
+            session.AuditLogs.Add(new ActivityLogRecord { Type = "exam_began", Message = "Student entered exam mode on LAN.", CreatedAt = JsonUtil.IsoNow() });
+            _store.Save();
+            return new Dictionary<string, object> { { "success", true }, { "session", session } };
         }
 
         private Dictionary<string, object> LogFocusLoss(string sessionId, string bodyText)

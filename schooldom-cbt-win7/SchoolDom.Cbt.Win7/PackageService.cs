@@ -73,6 +73,13 @@ namespace SchoolDom.Cbt.Win7
                 if (row == null) continue;
                 var studentId = FirstText(row, "student_id", "admission_number", "id").Trim();
                 if (studentId.Length == 0) continue;
+                bool isActive = true;
+                if (row.ContainsKey("is_active"))
+                {
+                    var activeVal = row["is_active"];
+                    if (activeVal is bool) isActive = (bool)activeVal;
+                    else if (activeVal != null) bool.TryParse(Convert.ToString(activeVal), out isActive);
+                }
                 _store.State.Students.Add(new StudentRecord
                 {
                     Id = FirstText(row, "id", "student_id"),
@@ -80,7 +87,8 @@ namespace SchoolDom.Cbt.Win7
                     FullName = StudentNameFromRow(row, studentId),
                     ClassName = FirstText(row, "class_name", "class_label"),
                     ProfilePicture = FirstText(row, "profile_picture", "profile_picture_url", "photo", "photo_url"),
-                    ProfilePictureData = FirstText(row, "profile_picture_data", "photo_data")
+                    ProfilePictureData = FirstText(row, "profile_picture_data", "photo_data"),
+                    IsActive = isActive
                 });
                 var cached = _store.State.Students[_store.State.Students.Count - 1];
                 if (string.IsNullOrWhiteSpace(cached.ProfilePictureData))
