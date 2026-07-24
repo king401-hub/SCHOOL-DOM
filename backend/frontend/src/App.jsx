@@ -7490,7 +7490,7 @@ const unreadNotificationsCount =
         error={error}
         onRetry={handleRetry}
         onBroadcastMessage={handleSendMessage}
-        onNavigate={navigate}
+        onNavigate={onNavigate}
       />
     );
   } else if (activePath === "/performance-heatmap") {
