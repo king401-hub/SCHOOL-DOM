@@ -15944,6 +15944,10 @@ body[data-theme="dark"] .service-agreement-document .sa-input {
   color: #e2e8f0;
 }
 
+body[data-theme="dark"] .service-agreement-document .sa-signature-img {
+  filter: invert(1);
+}
+
 .activity-calendar-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
