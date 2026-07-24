@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -340,6 +340,7 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
               onClick={() => onNavigate?.("/settings")}
               title="Click to complete your school's compliance details"
             >
+              <ShieldAlert size={13} className="compliance-badge-icon" />
               {complianceStatus === "submitted" ? "Pending Review" : "Unverified"}
             </button>
           ) : null}
