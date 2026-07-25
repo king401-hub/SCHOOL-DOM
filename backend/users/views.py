@@ -589,7 +589,8 @@ def login_view(request):
             user.device_tokens.append(device_token)
             user.save(update_fields=['device_tokens'])
         
-        if is_admin_otp_user(user):
+        cbt_desktop_client = request.META.get('HTTP_USER_AGENT', '').startswith('SchoolDom-CBT-Win7')
+        if is_admin_otp_user(user) and not cbt_desktop_client:
             purpose = "login" if user.is_verified else "signup"
             try:
                 challenge = send_admin_otp(user, purpose=purpose)

@@ -48,10 +48,6 @@ namespace SchoolDom.Cbt.Win7
             };
             var response = Request("POST", NormalizeCloudUrl(cloudUrl) + "/api/auth/login/", JsonUtil.Serialize(body), "");
             var data = JsonUtil.DeserializeObject(response);
-            if (data.ContainsKey("requires_otp") && Convert.ToBoolean(data["requires_otp"]))
-            {
-                throw new InvalidOperationException("This admin account requires OTP. Sign in on the website and paste the JWT access token into this app.");
-            }
             if (!data.ContainsKey("access"))
             {
                 throw new InvalidOperationException("Login succeeded but no access token was returned.");
