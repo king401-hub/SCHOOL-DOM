@@ -1,0 +1,33 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  <p class="cp-confirm-copy">
+    <strong>{{ object.credits }}</strong> tokens for <strong>{{ object.tenant }}</strong>,
+    currently {{ object.status_label|lower }}
+    {% if object.expires_at %}(expires {{ object.expires_at }}){% else %}(never expires){% endif %}.
+    {% if object.revoked_at %}This allocation already expired and its credits were removed from the pool balance
+    &mdash; setting a future date below will restore them.{% endif %}
+  </p>
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    <label style="display:block;margin-bottom:10px;">
+      <span style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;">New expiration date</span>
+      <input type="date" name="new_expires_at" value="{{ object.expires_at|date:'Y-m-d' }}">
+    </label>
+    <label style="display:block;margin-bottom:10px;">
+      <input type="checkbox" name="never_expires"> Never expires (clears the expiration date)
+    </label>
+    <label style="display:block;margin-bottom:10px;">
+      <span style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;">Add more tokens now (optional)</span>
+      <input type="number" name="additional_credits" min="0" step="1" value="0">
+    </label>
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="Save" class="cp-btn-ok">
+      <a class="button cp-btn-cancel" href="../../">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -36,4 +36,10 @@ app.conf.beat_schedule = {
         "task": "users.tasks.clear_old_database_imports",
         "schedule": crontab(hour=2, minute=0),
     },
+    # Daily at 06:00 — expire due token allocations (revokes pool credits) and
+    # send staged 7-day/1-day/expired notices
+    "process-token-allocation-expirations": {
+        "task": "finance.tasks.process_token_allocation_expirations",
+        "schedule": crontab(hour=6, minute=0),
+    },
 }

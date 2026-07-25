@@ -20,17 +20,50 @@
     </div>
   </form>
 
-  <form method="post" class="stacked-form">
+  <form method="post" class="stacked-form" id="add-tokens-form">
     {% csrf_token %}
     <input type="hidden" name="action" value="add_tokens">
     <label>
       <span>Add activation tokens</span>
       <input type="number" name="token_credits" min="1" step="1" required>
     </label>
+    <label>
+      <span>Start date</span>
+      <input type="date" name="start_date" value="{{ today|date:'Y-m-d' }}" required>
+    </label>
+    <label>
+      <span>Expiration</span>
+      <select name="duration" id="tok-duration">
+        <option value="none">Never expires</option>
+        <option value="1_month">1 month</option>
+        <option value="3_months">3 months</option>
+        <option value="1_term">1 term (~4 months)</option>
+        <option value="1_year">1 year</option>
+        <option value="custom">Custom date&hellip;</option>
+      </select>
+    </label>
+    <label id="tok-custom-expiry-row" style="display:none;">
+      <span>Custom expiration date</span>
+      <input type="date" name="custom_expiry">
+    </label>
+    <label>
+      <span>Notes (optional)</span>
+      <input type="text" name="notes" maxlength="255">
+    </label>
     <div class="form-actions">
       <button type="submit">Add Tokens</button>
     </div>
   </form>
+  <script>
+    (function () {
+      var select = document.getElementById("tok-duration");
+      var row = document.getElementById("tok-custom-expiry-row");
+      if (!select || !row) return;
+      select.addEventListener("change", function () {
+        row.style.display = select.value === "custom" ? "" : "none";
+      });
+    })();
+  </script>
 
   <form method="post" class="stacked-form">
     {% csrf_token %}
@@ -44,5 +77,28 @@
       <a class="button-link secondary" href="{% url 'superadmin_dashboard:schools' %}">Back to Schools</a>
     </div>
   </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tokens</th><th>Start</th><th>Expires</th><th>Days left</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody>
+        {% for a in allocations %}
+        <tr>
+          <td>{{ a.credits }}</td>
+          <td>{{ a.start_date }}</td>
+          <td>{{ a.expires_at|default:"Never" }}</td>
+          <td>{% if a.days_remaining is None %}&mdash;{% else %}{{ a.days_remaining }}{% endif %}</td>
+          <td><span class="badge">{{ a.status_label }}</span></td>
+          <td>{{ a.notes }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">No token allocations yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="help-text">To extend, renew, or top up an allocation, use the "Extend/Renew" action on the Token Allocations list in the <a href="/control-panel/finance/tokenallocation/">Control Panel</a>.</p>
 </section>
 {% endblock %}

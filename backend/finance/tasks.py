@@ -118,3 +118,153 @@ def flag_inactive_students(self):
 
     logger.info("flag_inactive_students complete: total_flagged=%d", total_flagged)
     return {"total_flagged": total_flagged}
+
+
+# (days left threshold, milestone name) — checked most-urgent first; only the
+# highest-urgency milestone that's due AND not yet sent fires on any given run,
+# so a short-lived allocation created with 2 days left gets the "1 day" notice
+# and never a redundant "7 days" one. Mirrors core.tasks.send_compliance_reminders.
+@shared_task
+def process_token_allocation_expirations():
+    """
+    Run daily. For every open (non-expired, non-revoked) TokenAllocation:
+    - past its expiry date: revoke it (deduct its credits from the pool
+      balance - this is what actually removes the school's access, since that
+      balance is what gates student activation), notify the school + the
+      SchoolDom team once.
+    - within 1 day of expiry and not yet warned at that stage: send the
+      "expires tomorrow" notice.
+    - else within 7 days and not yet warned at that stage: send the
+      "expires in a week" notice.
+    """
+    from django.conf import settings
+    from django.core.mail import send_mail
+    from django.utils import timezone
+
+    from finance.models import TokenAllocation
+    from finance.services import record_finance_activity
+    from notifications.models import Notification
+    from users.models import User
+
+    today = timezone.localdate()
+    now = timezone.now()
+    support_email = str(getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", "") or "support@schooldom.academy").strip()
+
+    expired_count = 0
+    notified_7d = 0
+    notified_1d = 0
+
+    allocations = (
+        TokenAllocation.objects.filter(expires_at__isnull=False, revoked_at__isnull=True)
+        .select_related("tenant", "pool")
+    )
+    for allocation in allocations:
+        school = allocation.tenant
+        days_left = (allocation.expires_at - today).days
+        admins = list(
+            User.objects.filter(
+                tenant=school, role__in=["school_admin", "principal", "school_superadmin"], is_active=True,
+            )
+        )
+        recipient = (admins[0].email if admins else "") or school.email or ""
+
+        if days_left < 0:
+            pool = allocation.pool
+            pool.balance = max(0, pool.balance - allocation.credits)
+            pool.save(update_fields=["balance", "updated_at"])
+            allocation.revoked_at = now
+            allocation.notified_expired_at = now
+            allocation.save(update_fields=["revoked_at", "notified_expired_at", "updated_at"])
+            record_finance_activity(
+                school, None, "token_allocation_expired",
+                f"{allocation.credits} tokens expired and were revoked from the pool balance.",
+                reference=str(allocation.id),
+                metadata={"credits": allocation.credits},
+            )
+            expired_count += 1
+
+            if recipient:
+                try:
+                    send_mail(
+                        "Your SchoolDom token allocation has expired",
+                        (
+                            f"Hello,\n\nThe {allocation.credits}-token allocation for {school.name} "
+                            f"(started {allocation.start_date}) expired on {allocation.expires_at} and has "
+                            "been removed from your balance. Students may lose activation access.\n\n"
+                            "Log in to the school-superadmin token page or contact support to renew it."
+                        ),
+                        settings.DEFAULT_FROM_EMAIL, [recipient], fail_silently=True,
+                    )
+                except Exception:
+                    logger.warning("Token expiry email failed for school %s.", school.schema_name, exc_info=True)
+            try:
+                send_mail(
+                    f"Token allocation expired: {school.name}",
+                    f"{school.name} ({school.schema_name}) had a {allocation.credits}-token allocation expire "
+                    f"on {allocation.expires_at} and it was revoked from the pool balance.",
+                    settings.DEFAULT_FROM_EMAIL, [support_email], fail_silently=True,
+                )
+            except Exception:
+                logger.warning("Token expiry support email failed for school %s.", school.schema_name, exc_info=True)
+
+            for admin in admins:
+                try:
+                    Notification.objects.create(
+                        tenant=school, user=admin,
+                        title="Token allocation expired",
+                        message=f"Your {allocation.credits}-token allocation expired on {allocation.expires_at} and needs to be renewed.",
+                        notification_type="alert", priority=4, channel="in_app",
+                        event_type="token_allocation_expired", action_text="Renew tokens",
+                        is_delivered=True, delivered_at=now,
+                    )
+                except Exception:
+                    logger.warning("Token expiry in-app notice failed for school %s.", school.schema_name, exc_info=True)
+            continue
+
+        if days_left <= 1 and not allocation.notified_1d_at:
+            stage, subject_days = "1d", "tomorrow"
+        elif days_left <= TokenAllocation.EXPIRING_SOON_WINDOW_DAYS and not allocation.notified_7d_at:
+            stage, subject_days = "7d", f"in {days_left} day(s)"
+        else:
+            continue
+
+        if recipient:
+            try:
+                send_mail(
+                    f"Your SchoolDom tokens expire {subject_days}",
+                    (
+                        f"Hello,\n\nThe {allocation.credits}-token allocation for {school.name} expires "
+                        f"{subject_days} (on {allocation.expires_at}). Renew it before then to avoid students "
+                        "losing activation access."
+                    ),
+                    settings.DEFAULT_FROM_EMAIL, [recipient], fail_silently=True,
+                )
+            except Exception:
+                logger.warning("Token %s reminder email failed for school %s.", stage, school.schema_name, exc_info=True)
+        for admin in admins:
+            try:
+                Notification.objects.create(
+                    tenant=school, user=admin,
+                    title="Tokens expiring soon",
+                    message=f"Your {allocation.credits}-token allocation expires {subject_days}.",
+                    notification_type="reminder", priority=3, channel="in_app",
+                    event_type="token_allocation_expiring", action_text="Renew tokens",
+                    is_delivered=True, delivered_at=now,
+                )
+            except Exception:
+                logger.warning("Token %s reminder in-app notice failed for school %s.", stage, school.schema_name, exc_info=True)
+
+        if stage == "1d":
+            allocation.notified_1d_at = now
+            allocation.save(update_fields=["notified_1d_at"])
+            notified_1d += 1
+        else:
+            allocation.notified_7d_at = now
+            allocation.save(update_fields=["notified_7d_at"])
+            notified_7d += 1
+
+    logger.info(
+        "process_token_allocation_expirations complete: expired=%d notified_7d=%d notified_1d=%d",
+        expired_count, notified_7d, notified_1d,
+    )
+    return {"expired": expired_count, "notified_7d": notified_7d, "notified_1d": notified_1d}

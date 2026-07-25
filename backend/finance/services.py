@@ -1874,6 +1874,57 @@ def get_or_create_activation_credit_pool(tenant=None) -> ActivationCreditPool:
     return pool
 
 
+def extend_token_allocation(actor, allocation, new_expires_at, additional_credits: int = 0):
+    """Extend, renew, or top up an existing TokenAllocation in place - never
+    creates a new allocation row. If the allocation had already expired
+    (revoked_at set) and the new expiry is in the future or open-ended, its
+    original credits are re-credited to the pool, since renewing is expected
+    to restore what expired. additional_credits (if any) is added on top,
+    immediately. Either way, all three notification-sent flags are cleared so
+    the 7-day/1-day/expired reminders can fire again against the new date."""
+    from .models import TokenAllocation
+
+    was_revoked = allocation.revoked_at is not None
+    pool = allocation.pool
+    credited = 0
+
+    if was_revoked and (new_expires_at is None or new_expires_at >= timezone.localdate()):
+        pool.balance += allocation.credits
+        credited += allocation.credits
+        allocation.revoked_at = None
+
+    if additional_credits > 0:
+        pool.balance += additional_credits
+        credited += additional_credits
+
+    if credited:
+        pool.save(update_fields=["balance", "updated_at"])
+
+    old_expiry = allocation.expires_at
+    allocation.expires_at = new_expires_at
+    allocation.credits += additional_credits
+    allocation.notified_7d_at = None
+    allocation.notified_1d_at = None
+    allocation.notified_expired_at = None
+    allocation.save(update_fields=[
+        "expires_at", "credits", "revoked_at",
+        "notified_7d_at", "notified_1d_at", "notified_expired_at", "updated_at",
+    ])
+
+    record_finance_activity(
+        allocation.tenant, actor, "token_allocation_extended",
+        (
+            f"Extended token allocation from {old_expiry or 'no expiry'} to {new_expires_at or 'no expiry'}"
+            + (f", added {additional_credits} tokens" if additional_credits else "")
+            + (f", re-credited {allocation.credits - additional_credits} previously-expired tokens" if credited and credited != additional_credits else "")
+            + "."
+        ),
+        reference=str(allocation.id),
+        metadata={"old_expiry": str(old_expiry), "new_expiry": str(new_expires_at), "additional_credits": additional_credits, "re_credited": credited - additional_credits if credited else 0},
+    )
+    return allocation
+
+
 def is_non_k12_tenant(tenant) -> bool:
     return bool(tenant and (getattr(tenant, "school_type", "k12") or "k12") == "non_k12")
 

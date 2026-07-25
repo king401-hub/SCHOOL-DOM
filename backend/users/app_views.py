@@ -3302,10 +3302,36 @@ def dashboard_snapshot(request):
     )
     question_prompts_list = list(prompt_qs[:8])
 
+    alerts = []
+    try:
+        from finance.models import ActivationCreditPool, TokenAllocation
+        pool = ActivationCreditPool.objects.filter(tenant=user.tenant).first()
+        if pool is not None and pool.balance <= 0:
+            latest_expired = (
+                TokenAllocation.objects.filter(
+                    tenant=user.tenant, expires_at__isnull=False, expires_at__lt=timezone.localdate(),
+                )
+                .order_by("-expires_at")
+                .first()
+            )
+            if latest_expired is not None:
+                alerts.append({
+                    "type": "token_allocation_expired",
+                    "title": "Token allocation expired",
+                    "message": (
+                        f"Your token allocation ({latest_expired.credits} tokens) expired on "
+                        f"{latest_expired.expires_at} and needs to be renewed."
+                    ),
+                    "expired_at": latest_expired.expires_at,
+                })
+    except Exception:
+        pass
+
     return Response(
         {
             "success": True,
             "school": _school_payload(user.tenant, request),
+            "alerts": alerts,
             "metrics": {
                 "active_students": active_students,
                 "new_students_7d": new_students_7d,

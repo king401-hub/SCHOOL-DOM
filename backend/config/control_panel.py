@@ -33,6 +33,7 @@ MODULE_MODEL_MAP = {
     ("finance", "smswallet"): "token_assignment",
     ("finance", "smswallettransaction"): "token_assignment",
     ("finance", "smsbundle"): "token_assignment",
+    ("finance", "tokenallocation"): "token_assignment",
     ("users", "user"): "students_staff_data",
     ("users", "studentprofile"): "students_staff_data",
     ("users", "teacherprofile"): "students_staff_data",
@@ -524,6 +525,74 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         return view
 
 
+class ControlPanelTokenAllocationAdmin(admin.ModelAdmin):
+    """Every school-level token batch, its lifecycle, and an Extend/Renew action
+    that modifies the existing row in place (spec: "without creating a new one")."""
+
+    list_display = ("tenant", "credits", "start_date", "expires_at", "days_left_display", "status_badge", "row_actions")
+    list_filter = ("tenant",)
+    search_fields = ("tenant__name", "notes")
+    readonly_fields = (
+        "created_by", "created_at", "updated_at", "revoked_at",
+        "notified_7d_at", "notified_1d_at", "notified_expired_at",
+    )
+
+    @admin.display(description="Days left")
+    def days_left_display(self, obj):
+        d = obj.days_remaining
+        return "—" if d is None else d
+
+    @admin.display(description="Status")
+    def status_badge(self, obj):
+        css = {"active": "cp-pill-ok", "expiring_soon": "cp-pill-warn", "expired": "cp-pill-danger"}[obj.status]
+        return format_html('<span class="cp-pill {}">{}</span>', css, obj.status_label)
+
+    @admin.display(description="Actions")
+    def row_actions(self, obj):
+        ns = self.admin_site.name
+        url = reverse(f"{ns}:finance_tokenallocation_extend", args=[obj.pk])
+        return format_html('<a class="cp-row-btn cp-row-btn-ok" href="{}">Extend / Renew</a>', url)
+
+    def get_urls(self):
+        custom = [
+            path("<path:object_id>/extend/", self.admin_site.admin_view(self.extend_view), name="finance_tokenallocation_extend"),
+        ]
+        return custom + super().get_urls()
+
+    def extend_view(self, request, object_id):
+        from django.utils.dateparse import parse_date
+
+        from finance.services import extend_token_allocation
+
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404
+        if not self.has_change_permission(request, obj):
+            raise PermissionDenied
+
+        if request.method == "POST":
+            never_expires = request.POST.get("never_expires") == "on"
+            new_expiry = None if never_expires else parse_date(request.POST.get("new_expires_at") or "")
+            if not never_expires and new_expiry is None:
+                messages.error(request, "Enter a valid new expiration date, or check 'never expires'.")
+                return redirect(f"{self.admin_site.name}:finance_tokenallocation_extend", object_id)
+            try:
+                additional_credits = int(request.POST.get("additional_credits") or 0)
+            except ValueError:
+                additional_credits = 0
+            extend_token_allocation(request.user, obj, new_expiry, additional_credits=max(0, additional_credits))
+            self.message_user(request, f"Allocation for {obj.tenant} updated.", messages.SUCCESS)
+            return redirect(f"{self.admin_site.name}:finance_tokenallocation_changelist")
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Extend / renew token allocation for {obj.tenant}",
+            "object": obj,
+            "opts": self.model._meta,
+        }
+        return render(request, "admin/finance/tokenallocation/extend.html", context)
+
+
 class ControlPanelOpsUserAdmin(admin.ModelAdmin):
     """Team management (spec section 2/3.4): CTO/CEO hold the global team_management
     permission and can manage anyone. A Growth Manager only holds the scoped
@@ -845,6 +914,12 @@ def register_all():
         control_panel.register(SchoolTenant, ControlPanelSchoolTenantAdmin)
     except Exception:
         logger.warning("control_panel: could not register custom SchoolTenant admin", exc_info=True)
+
+    try:
+        from finance.models import TokenAllocation
+        control_panel.register(TokenAllocation, _wrap_with_ops_gate(ControlPanelTokenAllocationAdmin, "token_assignment"))
+    except Exception:
+        logger.warning("control_panel: could not register custom TokenAllocation admin", exc_info=True)
 
     try:
         User, ControlPanelUserAdmin = _build_user_admin()

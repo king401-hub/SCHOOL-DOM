@@ -202,15 +202,20 @@ def school_token_settings(request, pk):
     """Grant SMS credits / activation tokens to a school and adjust its token price.
     Writes directly to the real finance models (SmsWallet, ActivationCreditPool) that
     the actual purchase/activation flow reads - not a disconnected settings record."""
+    from datetime import timedelta
     from decimal import Decimal, InvalidOperation
 
-    from finance.models import ActivationCreditTransaction, SmsWalletTransaction
+    from django.utils.dateparse import parse_date
+
+    from finance.models import ActivationCreditTransaction, SmsWalletTransaction, TokenAllocation
     from finance.services import (
         generate_reference,
         get_or_create_activation_credit_pool,
         get_or_create_sms_wallet,
         record_finance_activity,
     )
+
+    DURATION_DAYS = {"1_month": 30, "3_months": 90, "1_term": 120, "1_year": 365}
 
     School = platform_models()["school"]
     school = get_object_or_404(School, pk=pk)
@@ -255,9 +260,28 @@ def school_token_settings(request, pk):
                 credits = int(request.POST.get("token_credits") or 0)
             except ValueError:
                 credits = 0
+
+            start_date = parse_date(request.POST.get("start_date") or "") or timezone.localdate()
+            duration = request.POST.get("duration") or "none"
+            expires_at = None
+            if duration == "custom":
+                expires_at = parse_date(request.POST.get("custom_expiry") or "")
+                if expires_at is None:
+                    messages.error(request, "Enter a valid custom expiration date.")
+                    return redirect("superadmin_dashboard:school_token_settings", pk=pk)
+            elif duration in DURATION_DAYS:
+                expires_at = start_date + timedelta(days=DURATION_DAYS[duration])
+            # duration == "none" -> expires_at stays None (never expires)
+
             if credits > 0:
                 pool.balance += credits
                 pool.save(update_fields=["balance", "updated_at"])
+                allocation = TokenAllocation.objects.create(
+                    tenant=school, pool=pool, credits=credits,
+                    start_date=start_date, expires_at=expires_at,
+                    notes=request.POST.get("notes", "").strip(),
+                    created_by=request.user,
+                )
                 ActivationCreditTransaction.objects.create(
                     pool=pool,
                     tx_type=ActivationCreditTransaction.ADJUSTMENT,
@@ -266,15 +290,19 @@ def school_token_settings(request, pk):
                     price_per_credit=pool.price_per_credit,
                     amount=Decimal("0.00"),
                     reference=generate_reference("TOKADM"),
-                    narration=f"Manual token grant by {request.user}",
+                    narration=f"Manual token grant by {request.user}" + (f" (expires {expires_at})" if expires_at else " (no expiry)"),
                     created_by=request.user,
                 )
                 record_finance_activity(
-                    school, request.user, "tokens_granted",
-                    f"Granted {credits} activation tokens.", reference=str(pool.id),
-                    metadata={"credits": credits},
+                    school, request.user, "token_allocation_created",
+                    f"Assigned {credits} activation tokens" + (f", expiring {expires_at}." if expires_at else " (no expiry)."),
+                    reference=str(allocation.id),
+                    metadata={"credits": credits, "start_date": str(start_date), "expires_at": str(expires_at) if expires_at else None},
                 )
-                messages.success(request, f"Added {credits} activation tokens to {school}.")
+                messages.success(
+                    request,
+                    f"Added {credits} activation tokens to {school}" + (f", expiring {expires_at}." if expires_at else " (no expiry)."),
+                )
             else:
                 messages.error(request, "Enter a number of tokens greater than zero.")
             return redirect("superadmin_dashboard:school_token_settings", pk=pk)
@@ -305,6 +333,8 @@ def school_token_settings(request, pk):
         "school": school,
         "wallet": wallet,
         "pool": pool,
+        "allocations": TokenAllocation.objects.filter(tenant=school).order_by("-start_date"),
+        "today": timezone.localdate(),
     })
 
 

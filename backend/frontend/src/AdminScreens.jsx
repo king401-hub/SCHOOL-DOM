@@ -279,6 +279,7 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
   const displayRole = userRoleLabel(user);
   const complianceStatus = data?.school?.compliance_status || "";
   const announcements = data?.announcements || [];
+  const alerts = data?.alerts || [];
   const recentStudents = data?.recent_students || [];
   const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
   const [recentStudentWindow, setRecentStudentWindow] = useState("7d");
@@ -347,6 +348,29 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
         </div>
         <p>{displayRole} - {userDisplayName(user)}. Live summary from your school data endpoints.</p>
       </div>
+
+      {alerts.map((alert) => (
+        <div
+          key={alert.type}
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#b91c1c",
+            borderRadius: 10,
+            padding: "12px 16px",
+            marginBottom: 16,
+            fontSize: 13.5,
+            fontWeight: 500,
+          }}
+        >
+          <ShieldAlert size={18} style={{ flexShrink: 0 }} />
+          <span>{alert.message}</span>
+        </div>
+      ))}
 
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
 

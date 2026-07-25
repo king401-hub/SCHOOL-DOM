@@ -237,6 +237,85 @@ class ActivationCreditTransaction(models.Model):
         ]
 
 
+class TokenAllocation(models.Model):
+    """A school-level batch grant of activation tokens with its own start/expiry
+    lifecycle, on top of (but feeding into) the school's single, fungible
+    ActivationCreditPool.balance. A school can have several allocations active
+    at once; each is tracked and expired independently. On expiry, the
+    allocation's credits are deducted back out of the pool balance - since that
+    balance is what actually gates student activation/login, this is a real
+    access revocation, not just a status label."""
+
+    STATUS_ACTIVE = "active"
+    STATUS_EXPIRING_SOON = "expiring_soon"
+    STATUS_EXPIRED = "expired"
+    STATUS_LABELS = {
+        STATUS_ACTIVE: "Active",
+        STATUS_EXPIRING_SOON: "Expiring Soon",
+        STATUS_EXPIRED: "Expired",
+    }
+    EXPIRING_SOON_WINDOW_DAYS = 7
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.SchoolTenant", on_delete=models.CASCADE, related_name="token_allocations",
+    )
+    pool = models.ForeignKey(
+        ActivationCreditPool, on_delete=models.CASCADE, related_name="allocations",
+    )
+    credits = models.PositiveIntegerField()
+    start_date = models.DateField()
+    expires_at = models.DateField(
+        null=True, blank=True,
+        help_text="Leave blank for an allocation that never expires.",
+    )
+    revoked_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Set automatically once the daily expiry job has deducted this allocation's credits from the pool.",
+    )
+    notified_7d_at = models.DateTimeField(null=True, blank=True)
+    notified_1d_at = models.DateTimeField(null=True, blank=True)
+    notified_expired_at = models.DateTimeField(null=True, blank=True)
+    notes = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="token_allocations_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-start_date"]
+        indexes = [
+            models.Index(fields=["tenant", "expires_at"]),
+        ]
+
+    def __str__(self):
+        expiry = self.expires_at.isoformat() if self.expires_at else "no expiry"
+        return f"{self.tenant} - {self.credits} tokens ({self.start_date} to {expiry})"
+
+    @property
+    def days_remaining(self):
+        if not self.expires_at:
+            return None
+        return (self.expires_at - timezone.localdate()).days
+
+    @property
+    def status(self):
+        if not self.expires_at:
+            return self.STATUS_ACTIVE
+        days = self.days_remaining
+        if days < 0:
+            return self.STATUS_EXPIRED
+        if days <= self.EXPIRING_SOON_WINDOW_DAYS:
+            return self.STATUS_EXPIRING_SOON
+        return self.STATUS_ACTIVE
+
+    @property
+    def status_label(self):
+        return self.STATUS_LABELS[self.status]
+
+
 class DocumentGenerationCreditTransaction(models.Model):
     """Ledger for document generation credit deductions (1 credit per transcript/testimonial/ID card)."""
 
