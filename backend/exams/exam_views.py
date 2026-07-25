@@ -168,6 +168,7 @@ def _question_payload(question, request=None):
         "id": question.id,
         "text": question.text,
         "image": _file_url(request, question.image),
+        "attachment": _file_url(request, question.attachment),
         "options": question.options or [],
         "question_type": question.question_type,
         "points": question.points,
@@ -364,6 +365,13 @@ def _normalize_selected_answer(value):
 
 
 def _grade_attempt(attempt):
+    """Auto-grades the objective (mcq/true_false) portion of an attempt only.
+    Theory questions (short_answer/paragraph/essay) are left with a NULL
+    StudentAnswer.score/is_correct - that NULL *is* the "pending manual
+    grading" state, resolved later by publish_theory_grades. total_points
+    still sums every question so a Mixed exam's percentage only becomes
+    meaningful once the theory portion is published; score/percentage here
+    reflect the objective-only partial total until then."""
     questions = list(_question_queryset_for_exam(attempt.exam))
     question_map = {question.id: question for question in questions}
     answers = {answer.question_id: answer for answer in StudentAnswer.objects.filter(attempt=attempt, question_id__in=question_map)}
@@ -372,6 +380,8 @@ def _grade_attempt(attempt):
 
     for question in questions:
         answer = answers.get(question.id)
+        if question.question_type in Question.THEORY_TYPES:
+            continue
         selected = _normalize_selected_answer(answer.selected_options if answer else None)
         correct_index = None
         options = question.options or []
@@ -394,6 +404,32 @@ def _grade_attempt(attempt):
     attempt.graded_at = timezone.now()
     attempt.save(update_fields=["score", "total_points", "percentage", "graded_at", "updated_at"])
     return score, total_points
+
+
+def _attempt_needs_theory_grading(attempt):
+    """True if this attempt has at least one theory-type answer still
+    awaiting a teacher's score - the exact NULL-score signal _grade_attempt
+    leaves behind for theory questions."""
+    question_ids = _question_queryset_for_exam(attempt.exam).values_list("id", flat=True)
+    return StudentAnswer.objects.filter(
+        attempt=attempt, question_id__in=question_ids,
+        question__question_type__in=Question.THEORY_TYPES, score__isnull=True,
+    ).exists()
+
+
+def _publish_theory_grades(attempt):
+    """Recomputes attempt.score/percentage from ALL StudentAnswer.score
+    values (objective + now-graded theory) and finalizes graded_at. Callers
+    must have already verified _attempt_needs_theory_grading(attempt) is
+    False before calling this."""
+    question_ids = _question_queryset_for_exam(attempt.exam).values_list("id", flat=True)
+    answers = StudentAnswer.objects.filter(attempt=attempt, question_id__in=question_ids)
+    score = sum(answer.score or 0 for answer in answers)
+    attempt.score = score
+    attempt.percentage = (score / attempt.total_points * 100) if attempt.total_points else 0
+    attempt.graded_at = timezone.now()
+    attempt.save(update_fields=["score", "percentage", "graded_at", "updated_at"])
+    return attempt
 
 
 def _format_question_options(options):
@@ -999,10 +1035,11 @@ class ExamResultView(APIView):
         answers = StudentAnswer.objects.filter(attempt=attempt).select_related("question")
         total_points = attempt.total_points or sum(ans.question.points for ans in answers)
         earned_points = attempt.score
-        
+        needs_theory_grading = _attempt_needs_theory_grading(attempt)
+
         percentage = (earned_points / total_points * 100) if total_points > 0 else 0
         grade, is_passed = self._calculate_grade(request.user, percentage)
-        
+
         return Response({
             'attempt_id': attempt.id,
             'exam_title': attempt.exam.title,
@@ -1012,14 +1049,21 @@ class ExamResultView(APIView):
             'grade': grade,
             'is_passed': is_passed,
             'submitted_at': attempt.end_time,
+            # While True, score/percentage above only reflect the
+            # objective portion - some theory answer(s) below are still
+            # awaiting a teacher's score.
+            'needs_theory_grading': needs_theory_grading,
             'answers_review': [{
                 'question_number': i + 1,
                 'question_text': ans.question.text,
-                'user_answer': ans.selected_options,
+                'question_type': ans.question.question_type,
+                'user_answer': ans.answer_text if ans.question.question_type in Question.THEORY_TYPES else ans.selected_options,
                 'correct_answer': ans.question.correct_answer,
                 'is_correct': ans.is_correct,
-                'points_earned': ans.question.points if ans.is_correct else 0,
+                'pending_grading': ans.question.question_type in Question.THEORY_TYPES and ans.score is None,
+                'points_earned': ans.score if ans.score is not None else 0,
                 'total_points': ans.question.points,
+                'teacher_feedback': ans.teacher_feedback or "",
                 'explanation': ans.question.explanation
             } for i, ans in enumerate(answers)]
         })
@@ -1043,6 +1087,162 @@ class ExamResultView(APIView):
         lowest_scale = GradeScale.objects.filter(tenant=tenant, is_active=True).order_by("min_percentage").first()
         is_passed = bool(letter) and (not lowest_scale or letter != lowest_scale.letter)
         return letter, is_passed
+
+
+# Theory answers (short_answer/paragraph/essay) can't be auto-marked - a
+# teacher (their own exams) or admin (whole tenant) manually scores each one,
+# then publishes to fold the theory portion into the attempt's final score.
+THEORY_GRADING_ROLES = {"teacher", "school_admin", "principal", "super_admin"}
+
+
+def _theory_gradable_attempts_qs(user):
+    """Attempts the given user is allowed to grade theory answers for -
+    teachers see only their own exams, admins see their whole tenant. Mirrors
+    the exact role split ExamResultView.get already uses above."""
+    attempt_qs = ExamAttempt.objects.select_related("exam", "exam__teacher", "student")
+    role = getattr(user, "role", "")
+    if role == "teacher":
+        return attempt_qs.filter(exam__teacher=user)
+    if role in {"school_admin", "principal", "super_admin"}:
+        legacy_tenant = resolve_legacy_tenant_for_school(getattr(user, "tenant", None))
+        return attempt_qs.filter(Q(exam__class_group__tenant=legacy_tenant) | Q(exam__tenant=legacy_tenant))
+    return attempt_qs.none()
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def theory_grading_queue(request):
+    """List submitted attempts that still have at least one ungraded theory
+    answer - the admin/teacher "needs grading" queue. Uses one Exists(...)
+    annotation across the whole queryset rather than a per-attempt query."""
+    from django.db.models import Exists, OuterRef
+
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response({"success": False, "message": "Only teachers and administrators can grade theory answers."}, status=status.HTTP_403_FORBIDDEN)
+
+    pending_answers = StudentAnswer.objects.filter(
+        attempt=OuterRef("pk"), question__question_type__in=Question.THEORY_TYPES, score__isnull=True,
+    )
+    attempts = (
+        _theory_gradable_attempts_qs(request.user)
+        .filter(is_submitted=True)
+        .annotate(needs_grading=Exists(pending_answers))
+        .filter(needs_grading=True)
+        .order_by("-end_time")
+    )
+    return Response({
+        "success": True,
+        "attempts": [
+            {
+                "attempt_id": attempt.id,
+                "exam_id": attempt.exam_id,
+                "exam_title": attempt.exam.title,
+                "student_name": attempt.student.get_full_name() or attempt.student.email,
+                "submitted_at": attempt.end_time,
+            }
+            for attempt in attempts
+        ],
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attempt_theory_answers(request, attempt_id):
+    """Every theory-type answer for one attempt, for the "review each
+    student's answer" grading screen."""
+    from users.app_views import _media_url, _question_group_payload
+
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response({"success": False, "message": "Only teachers and administrators can grade theory answers."}, status=status.HTTP_403_FORBIDDEN)
+    attempt = get_object_or_404(_theory_gradable_attempts_qs(request.user), id=attempt_id)
+
+    answers = (
+        StudentAnswer.objects.filter(attempt=attempt, question__question_type__in=Question.THEORY_TYPES)
+        .select_related("question", "question__group")
+        .order_by("question__group_order", "id")
+    )
+    return Response({
+        "success": True,
+        "attempt_id": attempt.id,
+        "exam_title": attempt.exam.title,
+        "student_name": attempt.student.get_full_name() or attempt.student.email,
+        "answers": [
+            {
+                "answer_id": answer.id,
+                "question_id": answer.question_id,
+                "question_text": answer.question.text,
+                "passage": _question_group_payload(answer.question.group, request) if answer.question.group else None,
+                "image": _media_url(request, answer.question.image),
+                "attachment": _media_url(request, answer.question.attachment),
+                "points": answer.question.points,
+                "answer_text": answer.answer_text or "",
+                "score": answer.score,
+                "teacher_feedback": answer.teacher_feedback or "",
+            }
+            for answer in answers
+        ],
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def grade_theory_answer(request, attempt_id, answer_id):
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response({"success": False, "message": "Only teachers and administrators can grade theory answers."}, status=status.HTTP_403_FORBIDDEN)
+    attempt = get_object_or_404(_theory_gradable_attempts_qs(request.user), id=attempt_id)
+    answer = get_object_or_404(
+        StudentAnswer.objects.filter(question__question_type__in=Question.THEORY_TYPES),
+        id=answer_id, attempt=attempt,
+    )
+
+    try:
+        score = float(request.data.get("score"))
+    except (TypeError, ValueError):
+        return Response({"success": False, "message": "A numeric score is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if score < 0 or score > answer.question.points:
+        return Response(
+            {"success": False, "message": f"Score must be between 0 and {answer.question.points}."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    answer.score = score
+    answer.is_correct = score > 0
+    answer.teacher_feedback = str(request.data.get("feedback", "")).strip()
+    answer.save(update_fields=["score", "is_correct", "teacher_feedback", "updated_at"])
+
+    return Response({
+        "success": True,
+        "answer_id": answer.id,
+        "score": answer.score,
+        "teacher_feedback": answer.teacher_feedback,
+        "attempt_needs_grading": _attempt_needs_theory_grading(attempt),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def publish_theory_grades_view(request, attempt_id):
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response({"success": False, "message": "Only teachers and administrators can publish results."}, status=status.HTTP_403_FORBIDDEN)
+    attempt = get_object_or_404(_theory_gradable_attempts_qs(request.user), id=attempt_id)
+
+    if _attempt_needs_theory_grading(attempt):
+        return Response(
+            {"success": False, "message": "Every theory answer must be scored before publishing."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    _publish_theory_grades(attempt)
+    return Response({
+        "success": True,
+        "message": "Results published.",
+        "score": attempt.score,
+        "total_points": attempt.total_points,
+        "percentage": round(attempt.percentage, 2),
+    })
 
 
 @api_view(['GET'])

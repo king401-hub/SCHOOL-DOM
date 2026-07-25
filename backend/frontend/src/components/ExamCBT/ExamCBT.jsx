@@ -11,6 +11,7 @@ import { emitSchoolDomDataMutation } from "../../AppShared";
 const CBT_CACHE_KEY = "schooldom.cbt_attempt_cache";
 const CBT_SUBMISSION_QUEUE_KEY = "schooldom.cbt_submission_queue";
 const CONNECTION_LOST_AUTO_SUBMIT_MS = 120000;
+const THEORY_QUESTION_TYPES = new Set(["short_answer", "paragraph", "essay"]);
 
 const AUTO_SUBMIT_REASON_LABELS = {
   timer_expired: "Exam timer expired",
@@ -246,10 +247,11 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
     fetchExamData();
   }, [attemptId, session]);
 
-  // Save answer
+  // Save answer - theory (free-text) questions send answer_text instead of
+  // selected_options; the backend already accepts and stores either.
   const handleSaveAnswer = useCallback(
-    async (questionId, selectedOptions) => {
-      const nextAnswers = { ...answersRef.current, [questionId]: selectedOptions };
+    async (questionId, value, isTheory = false) => {
+      const nextAnswers = { ...answersRef.current, [questionId]: value };
       answersRef.current = nextAnswers;
       setAnswers(nextAnswers);
       updateCachedAnswers(session, attemptId, nextAnswers);
@@ -261,10 +263,11 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
             "Content-Type": "application/json",
             ...(session?.access ? { Authorization: `Bearer ${session.access}` } : {}),
           },
-          body: JSON.stringify({
-            question_id: questionId,
-            selected_options: selectedOptions,
-          }),
+          body: JSON.stringify(
+            isTheory
+              ? { question_id: questionId, answer_text: value }
+              : { question_id: questionId, selected_options: value }
+          ),
         });
         if (!response.ok) throw new Error("Could not save answer online");
         emitSchoolDomDataMutation({ source: "cbt", action: "answer-saved", attempt_id: attemptId });
@@ -280,7 +283,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   // Clear response
   const handleClearResponse = () => {
     const currentQuestion = questions[currentQuestionIndex];
-    handleSaveAnswer(currentQuestion.id, null);
+    handleSaveAnswer(currentQuestion.id, null, THEORY_QUESTION_TYPES.has(currentQuestion?.question_type));
   };
 
   const handleFlagQuestion = useCallback(
@@ -678,7 +681,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   }
 
   const currentQuestion = questions[currentQuestionIndex];
-  const answeredCount = Object.keys(answers).filter((k) => answers[k] !== null).length;
+  const answeredCount = Object.keys(answers).filter((k) => answers[k] !== null && answers[k] !== "").length;
   const sessionStudentInfo = {
     name: session?.user?.full_name || session?.user?.name || session?.user?.email || "Student",
     id: session?.user?.student_id || session?.user?.admission_number || session?.user?.username || session?.user?.email || "Student ID",

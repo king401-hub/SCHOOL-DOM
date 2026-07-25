@@ -10179,6 +10179,21 @@ body[data-theme="dark"] .admin-notification-card.tone-danger { background: linea
   font-size: 1.05rem;
 }
 
+.pending-grading-badge {
+  color: #92400e;
+  background: #fef3c7;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  width: fit-content;
+}
+
+body[data-theme="dark"] .pending-grading-badge,
+:root[data-theme="dark"] .pending-grading-badge {
+  background: rgba(217, 119, 6, 0.2);
+  color: #fcd34d;
+}
+
 .stacked {
   display: flex;
   flex-direction: column;
@@ -15583,6 +15598,35 @@ body[data-theme="light"] .quiz-progress span {
 
 .exam-review-grid .full {
   grid-column: 1 / -1;
+}
+
+.exam-preview-question {
+  padding: 14px 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.exam-preview-question:first-of-type {
+  border-top: none;
+}
+
+.exam-preview-question-text {
+  margin: 0 0 8px;
+}
+
+.exam-preview-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-reorder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.question-reorder-row .question-index {
+  font-weight: 600;
 }
 
 .settings-logo-field {

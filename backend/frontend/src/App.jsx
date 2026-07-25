@@ -95,7 +95,7 @@ import {
   StudentOfflineExamPage,
   TimetableGridTable,
 } from "./AppShared";
-import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer } from "./TeacherExamPanels";
+import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
@@ -5541,6 +5541,7 @@ function TeacherWorkspace({
     ["timetable", "Timetable", "calendar"],
     ["class-messages", "Messages & Notifications", "message"],
     ["results", "Results", "results"],
+    ["theory-grading", "Theory Grading", "results"],
     ["requests", "HR System", "requests"],
   ];
 
@@ -5685,6 +5686,9 @@ function TeacherWorkspace({
           onPushResults={onPushResults}
         />
       );
+    }
+    if (activeTab === "theory-grading") {
+      return <TheoryGradingPanel session={session} />;
     }
     if (activeTab === "requests") {
       return <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />;

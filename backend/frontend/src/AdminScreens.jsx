@@ -28,7 +28,7 @@ import {
   Spinner,
   TimetableGridTable,
 } from "./AppShared";
-import { TeacherExamBuilder } from "./TeacherExamPanels";
+import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
 import SignaturePad from "./components/SignaturePad";
 
 function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
@@ -2621,6 +2621,14 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const rawScore = row.score ?? row.obtained;
     const scoreValue = typeof rawScore === "number" ? rawScore : rawScore || "-";
     const questionCount = row.question_count || row.questions || null;
+    if (row.needs_theory_grading) {
+      return (
+        <div className="score-cell">
+          <strong className="pending-grading-badge">Pending grading</strong>
+          <small>Objective so far: {scoreValue}. See the Theory Grading tab.</small>
+        </div>
+      );
+    }
     return (
       <div className="score-cell">
         <strong>{scoreValue}</strong>
@@ -2668,6 +2676,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         </button>
         <button type="button" className={`table-action ${activeView === "grading-system" ? "active" : ""}`} onClick={() => setActiveView("grading-system")}>
           Grading System
+        </button>
+        <button type="button" className={`table-action ${activeView === "theory-grading" ? "active" : ""}`} onClick={() => setActiveView("theory-grading")}>
+          Theory Grading
         </button>
       </div>
 
@@ -3044,6 +3055,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           onDelete={onDeleteGradingScale}
         />
       ) : null}
+      {activeView === "theory-grading" ? <TheoryGradingPanel session={session} /> : null}
       {confirmDialog}
     </section>
   );

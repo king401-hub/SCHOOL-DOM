@@ -51,12 +51,18 @@ class Question(TenantAwareModel, TimeStampedModel):
         ('mcq', 'Multiple Choice'),
         ('true_false', 'True/False'),
         ('short_answer', 'Short Answer'),
+        ('paragraph', 'Paragraph'),
         ('essay', 'Essay'),
     ]
-    
+    # Auto-gradable via options/correct_answer index-matching.
+    OBJECTIVE_TYPES = ('mcq', 'true_false')
+    # Free-text, manually graded by a teacher/admin.
+    THEORY_TYPES = ('short_answer', 'paragraph', 'essay')
+
     question_type = models.CharField(max_length=20, choices=QUESTION_TYPES)
     text = models.TextField()
     image = models.ImageField(upload_to='question_images/', null=True, blank=True)
+    attachment = models.FileField(upload_to='question_attachments/', null=True, blank=True)
     points = models.IntegerField(default=1)
     options = models.JSONField(null=True, blank=True)  # For MCQ
     correct_answer = models.TextField(null=True, blank=True)
@@ -65,14 +71,21 @@ class Question(TenantAwareModel, TimeStampedModel):
     group_order = models.PositiveIntegerField(default=0)
 
 class Exam(TenantAwareModel, TimeStampedModel):
+    EXAM_FORMATS = [
+        ('objective', 'Objective (MCQ)'),
+        ('theory', 'Theory'),
+        ('mixed', 'Mixed (Objective + Theory)'),
+    ]
+
     title = models.CharField(max_length=200)
     subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE, null=True, blank=True)
     class_group = models.ForeignKey('academic.Class', on_delete=models.CASCADE, null=True, blank=True)
     teacher = models.ForeignKey('users.User', on_delete=models.CASCADE, null=True, blank=True)
     exam_type = models.ForeignKey(ExamType, on_delete=models.CASCADE, null=True, blank=True)
+    exam_format = models.CharField(max_length=10, choices=EXAM_FORMATS, default='objective')
     questions = models.ManyToManyField(Question, related_name="exams", blank=True)
     instructions = models.TextField(blank=True)
-    
+
     # Scheduling
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()

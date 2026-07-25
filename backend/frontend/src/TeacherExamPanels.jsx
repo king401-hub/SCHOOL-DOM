@@ -403,8 +403,11 @@ const isBlankBuilderQuestion = (question) =>
   !(question?.options || []).some((option) => String(option || "").trim()) &&
   !String(question?.explanation || "").trim();
 
-const newBuilderQuestion = () => ({
-  id: Date.now(),
+const THEORY_QUESTION_TYPES = new Set(["short_answer", "paragraph", "essay"]);
+
+const newBuilderQuestion = (questionType = "mcq") => ({
+  id: Date.now() + Math.random(),
+  questionType,
   text: "",
   marks: "1",
   options: ["", "", "", ""],
@@ -413,6 +416,7 @@ const newBuilderQuestion = () => ({
   groupKey: "",
   group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
   questionImagePreview: "",
+  questionAttachmentName: "",
 });
 
 const filePreviewUrl = (file) => (file ? URL.createObjectURL(file) : "");
@@ -625,6 +629,7 @@ export function TeacherExamBuilder({
     description: "",
     classId: "",
     subjectId: "",
+    examFormat: "objective",
     startDate: "",
     endDate: "",
     duration: "120",
@@ -738,6 +743,7 @@ export function TeacherExamBuilder({
       description: initialExam.description || "",
       classId: initialExam.class_id || "",
       subjectId: initialExam.subject_id || "",
+      examFormat: initialExam.exam_format || "objective",
       startDate: dateTimeLocalValue(initialExam.start_date),
       endDate: dateTimeLocalValue(initialExam.end_date),
       duration: String(initialExam.duration_minutes || 60),
@@ -754,6 +760,7 @@ export function TeacherExamBuilder({
       const correctIndex = Math.max(0, options.findIndex((option) => option === question.correct_answer));
       return {
         id: question.id || index + 1,
+        questionType: question.question_type || "mcq",
         text: question.text || "",
         marks: String(question.points || 1),
         options,
@@ -766,6 +773,7 @@ export function TeacherExamBuilder({
           ? { ...question.group, imagePreview: question.group.image || "" }
           : { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
         questionImagePreview: question.image || "",
+        questionAttachmentName: question.attachment ? question.attachment.split("/").pop() : "",
       };
     });
     setQuestions(
@@ -800,16 +808,20 @@ export function TeacherExamBuilder({
       return;
     }
     const preparedQuestions = questions.map((question) => {
-      const options = (question.options || []).map((option) => option.trim()).filter(Boolean);
+      const questionType = question.questionType || "mcq";
+      const isTheory = THEORY_QUESTION_TYPES.has(questionType);
+      const options = isTheory ? [] : (question.options || []).map((option) => option.trim()).filter(Boolean);
       const groupKey = question.groupKey || "";
       return {
         text: question.text.trim(),
+        question_type: questionType,
         points: Number(question.marks) || 1,
         options,
-        correct_answer: (question.options || [])[Number(question.correctIndex)]?.trim() || "",
+        correct_answer: isTheory ? "" : (question.options || [])[Number(question.correctIndex)]?.trim() || "",
         explanation: question.explanation?.trim() || "",
         source_question_id: question.cbtBankQuestionId || undefined,
         question_image_field: question.questionImageFile ? `question_image_${question.id}` : "",
+        question_attachment_field: question.questionAttachmentFile ? `question_attachment_${question.id}` : "",
         group_key: groupKey,
         group: groupKey
           ? {
@@ -822,11 +834,17 @@ export function TeacherExamBuilder({
           : null,
       };
     });
-    const invalidQuestion = preparedQuestions.find(
-      (question) => !question.text || question.options.length < 2 || !question.correct_answer
-    );
+    const invalidQuestion = preparedQuestions.find((question) => {
+      if (!question.text) return true;
+      if (THEORY_QUESTION_TYPES.has(question.question_type)) return false;
+      return question.options.length < 2 || !question.correct_answer;
+    });
     if (invalidQuestion) {
-      setError("Each CBT question needs text, at least two options, and a selected correct answer.");
+      setError(
+        THEORY_QUESTION_TYPES.has(invalidQuestion.question_type)
+          ? "Every theory question needs its question text."
+          : "Each objective question needs text, at least two options, and a selected correct answer."
+      );
       setActiveSection("questions");
       return;
     }
@@ -837,6 +855,7 @@ export function TeacherExamBuilder({
         title: form.title.trim(),
         class_id: form.classId || "",
         subject_id: form.subjectId || "",
+        exam_format: form.examFormat || "objective",
         start_date: makeDateTime(form.startDate),
         end_date: makeDateTime(form.endDate),
         duration_minutes: manualDuration,
@@ -847,9 +866,9 @@ export function TeacherExamBuilder({
         is_published: canPublishExam ? form.publishNow : false,
         questions: preparedQuestions,
       };
-      const hasImages = questions.some((question) => question.questionImageFile || question.group?.imageFile);
+      const hasFiles = questions.some((question) => question.questionImageFile || question.questionAttachmentFile || question.group?.imageFile);
       let requestPayload = payload;
-      if (hasImages) {
+      if (hasFiles) {
         const formData = new FormData();
         Object.entries(payload).forEach(([key, value]) => {
           formData.append(key, key === "questions" ? JSON.stringify(value) : value);
@@ -858,6 +877,9 @@ export function TeacherExamBuilder({
         questions.forEach((question) => {
           if (question.questionImageFile) {
             formData.append(`question_image_${question.id}`, question.questionImageFile);
+          }
+          if (question.questionAttachmentFile) {
+            formData.append(`question_attachment_${question.id}`, question.questionAttachmentFile);
           }
           if (question.groupKey && question.group?.imageFile && !addedPassageImages.has(question.groupKey)) {
             formData.append(`passage_image_${question.groupKey}`, question.group.imageFile);
@@ -915,8 +937,19 @@ export function TeacherExamBuilder({
     setSections((previous) => [...previous, { id: Date.now(), title: `Section ${String.fromCharCode(65 + previous.length)}`, marks: "10" }]);
   };
 
-  const addQuestion = () => {
-    setQuestions((previous) => [...previous, newBuilderQuestion()]);
+  const addQuestion = (questionType = "mcq") => {
+    setQuestions((previous) => [...previous, newBuilderQuestion(questionType)]);
+  };
+
+  const moveQuestion = (questionId, direction) => {
+    setQuestions((previous) => {
+      const index = previous.findIndex((item) => item.id === questionId);
+      const nextIndex = index + direction;
+      if (index === -1 || nextIndex < 0 || nextIndex >= previous.length) return previous;
+      const next = [...previous];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
   };
 
   const toggleBankQuestion = (questionId) => {
@@ -1124,6 +1157,14 @@ export function TeacherExamBuilder({
               <label className="panel-field full">Description<textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows={4} /></label>
               <label className="panel-field">Class / Course<select value={form.classId} onChange={(event) => setField("classId", event.target.value)}><option value="">All classes</option>{classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}</select></label>
               <label className="panel-field">Subject<select value={form.subjectId} onChange={(event) => setField("subjectId", event.target.value)}><option value="">General</option>{subjectOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              <label className="panel-field">
+                Exam Type
+                <select value={form.examFormat} onChange={(event) => setField("examFormat", event.target.value)}>
+                  <option value="objective">Objective (MCQ)</option>
+                  <option value="theory">Theory</option>
+                  <option value="mixed">Mixed (Objective + Theory)</option>
+                </select>
+              </label>
               <label className="panel-field">Teacher<input value={teacherName || "Teacher"} readOnly /></label>
               <label className="panel-field">Start Date<input type="datetime-local" value={form.startDate} onChange={(event) => setField("startDate", event.target.value)} /></label>
               <label className="panel-field">End Date<input type="datetime-local" value={form.endDate} onChange={(event) => setField("endDate", event.target.value)} /></label>
@@ -1147,7 +1188,7 @@ export function TeacherExamBuilder({
 
           {activeSection === "questions" ? (
             <div className="exam-builder-list">
-              {canUseCbtQuestionBank ? <div className="cbt-bank-picker">
+              {canUseCbtQuestionBank && form.examFormat !== "theory" ? <div className="cbt-bank-picker">
                 <div className="cbt-bank-picker-head">
                   <div>
                     <h3>CBT question bank</h3>
@@ -1197,42 +1238,84 @@ export function TeacherExamBuilder({
                   </div>
                 )}
               </div> : null}
-              <div className="standard-question-import">
-                <div className="cbt-bank-picker-head">
-                  <div>
-                    <h3>Import standard questions</h3>
-                    <p>Teachers and admins can paste or upload MCQs from common school question formats.</p>
+              {form.examFormat === "objective" ? (
+                <div className="standard-question-import">
+                  <div className="cbt-bank-picker-head">
+                    <div>
+                      <h3>Import standard questions</h3>
+                      <p>Teachers and admins can paste or upload MCQs from common school question formats.</p>
+                    </div>
+                    <div className="table-actions-inline">
+                      <label className="table-action file-action">
+                        Choose file
+                        <input type="file" onChange={handleImportFile} />
+                      </label>
+                      <button type="button" className="table-action active" onClick={importStandardQuestions}>
+                        Import questions
+                      </button>
+                    </div>
                   </div>
-                  <div className="table-actions-inline">
-                    <label className="table-action file-action">
-                      Choose file
-                      <input type="file" onChange={handleImportFile} />
-                    </label>
-                    <button type="button" className="table-action active" onClick={importStandardQuestions}>
-                      Import questions
-                    </button>
-                  </div>
+                  <textarea
+                    className="standard-import-textarea"
+                    value={importText}
+                    onChange={(event) => {
+                      setImportText(event.target.value);
+                      setImportError("");
+                      setImportFeedback("");
+                    }}
+                    placeholder={IMPORT_SAMPLE}
+                    rows={8}
+                  />
+                  {importError ? <p className="form-feedback error">{importError}</p> : null}
+                  {importFeedback ? <p className="form-feedback success">{importFeedback}</p> : null}
                 </div>
-                <textarea
-                  className="standard-import-textarea"
-                  value={importText}
-                  onChange={(event) => {
-                    setImportText(event.target.value);
-                    setImportError("");
-                    setImportFeedback("");
-                  }}
-                  placeholder={IMPORT_SAMPLE}
-                  rows={8}
-                />
-                {importError ? <p className="form-feedback error">{importError}</p> : null}
-                {importFeedback ? <p className="form-feedback success">{importFeedback}</p> : null}
-              </div>
-              {questions.map((question, index) => (
+              ) : null}
+              {questions.map((question, index) => {
+                const questionType = question.questionType || "mcq";
+                const isTheoryQuestion = THEORY_QUESTION_TYPES.has(questionType);
+                return (
                 <div key={question.id} className="exam-builder-question">
                   {question.sourceLabel ? <div className="cbt-question-source">From {question.sourceLabel}</div> : null}
+                  <div className="exam-builder-row question-reorder-row">
+                    <span className="question-index">Question {index + 1}</span>
+                    <div className="table-actions-inline">
+                      <button type="button" className="table-action" onClick={() => moveQuestion(question.id, -1)} disabled={index === 0} aria-label="Move question up">↑</button>
+                      <button type="button" className="table-action" onClick={() => moveQuestion(question.id, 1)} disabled={index === questions.length - 1} aria-label="Move question down">↓</button>
+                    </div>
+                  </div>
                   <div className="exam-builder-row">
-                    <label className="panel-field full">Question {index + 1}<FormattedTextarea value={question.text} onChange={(event) => updateQuestion(question.id, { text: event.target.value })} rows={3} /></label>
-                    <label className="panel-field">Type<input value="Objective MCQ" readOnly /></label>
+                    <label className="panel-field full">Question text<FormattedTextarea value={question.text} onChange={(event) => updateQuestion(question.id, { text: event.target.value })} rows={3} /></label>
+                    {form.examFormat === "mixed" ? (
+                      <label className="panel-field">
+                        Type
+                        <select
+                          value={questionType}
+                          onChange={(event) => {
+                            const nextType = event.target.value;
+                            updateQuestion(question.id, {
+                              questionType: nextType,
+                              options: THEORY_QUESTION_TYPES.has(nextType) ? question.options : (question.options?.length ? question.options : ["", "", "", ""]),
+                            });
+                          }}
+                        >
+                          <option value="mcq">Objective (MCQ)</option>
+                          <option value="short_answer">Theory - Short Answer</option>
+                          <option value="paragraph">Theory - Paragraph</option>
+                          <option value="essay">Theory - Essay</option>
+                        </select>
+                      </label>
+                    ) : form.examFormat === "theory" ? (
+                      <label className="panel-field">
+                        Answer space
+                        <select value={questionType} onChange={(event) => updateQuestion(question.id, { questionType: event.target.value })}>
+                          <option value="short_answer">Short Answer</option>
+                          <option value="paragraph">Paragraph</option>
+                          <option value="essay">Essay</option>
+                        </select>
+                      </label>
+                    ) : (
+                      <label className="panel-field">Type<input value="Objective MCQ" readOnly /></label>
+                    )}
                     <label className="panel-field">Marks<input type="number" min="1" value={question.marks} onChange={(event) => updateQuestion(question.id, { marks: event.target.value })} /></label>
                   </div>
                   <div className="exam-builder-row question-media-row">
@@ -1252,6 +1335,22 @@ export function TeacherExamBuilder({
                     </label>
                     {question.questionImagePreview ? (
                       <img className="question-builder-image-preview" src={question.questionImagePreview} alt="Question attachment preview" />
+                    ) : null}
+                    {isTheoryQuestion ? (
+                      <label className="panel-field">
+                        File attachment (optional)
+                        <input
+                          type="file"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] || null;
+                            updateQuestion(question.id, {
+                              questionAttachmentFile: file,
+                              questionAttachmentName: file ? file.name : question.questionAttachmentName || "",
+                            });
+                          }}
+                        />
+                        {question.questionAttachmentName ? <small>{question.questionAttachmentName}</small> : null}
+                      </label>
                     ) : null}
                   </div>
                   <div className="question-group-builder">
@@ -1325,45 +1424,71 @@ export function TeacherExamBuilder({
                       </>
                     ) : null}
                   </div>
-                  <div className="cbt-option-grid">
-                    {(question.options || []).map((option, optionIndex) => (
-                      <label key={optionIndex} className="panel-field">
-                        Option {String.fromCharCode(65 + optionIndex)}
-                        <input
-                          value={option}
-                          onChange={(event) => updateQuestionOption(question.id, optionIndex, event.target.value)}
-                          placeholder={`Answer option ${String.fromCharCode(65 + optionIndex)}`}
+                  {!isTheoryQuestion ? (
+                    <>
+                      <div className="cbt-option-grid">
+                        {(question.options || []).map((option, optionIndex) => (
+                          <label key={optionIndex} className="panel-field">
+                            Option {String.fromCharCode(65 + optionIndex)}
+                            <input
+                              value={option}
+                              onChange={(event) => updateQuestionOption(question.id, optionIndex, event.target.value)}
+                              placeholder={`Answer option ${String.fromCharCode(65 + optionIndex)}`}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="exam-builder-row">
+                        <label className="panel-field">
+                          Correct answer
+                          <select
+                            value={question.correctIndex}
+                            onChange={(event) => updateQuestion(question.id, { correctIndex: Number(event.target.value) })}
+                          >
+                            {(question.options || []).map((option, optionIndex) => (
+                              <option key={optionIndex} value={optionIndex}>
+                                {String.fromCharCode(65 + optionIndex)} {option ? `- ${option.slice(0, 40)}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="panel-field full">
+                          Teacher note / explanation
+                          <FormattedTextarea
+                            value={question.explanation}
+                            onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
+                            rows={2}
+                            placeholder="Optional review note for teacher records"
+                          />
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="exam-builder-row">
+                      <label className="panel-field full">
+                        Model answer / grading notes (optional, for the grader only - students never see this)
+                        <FormattedTextarea
+                          value={question.explanation}
+                          onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
+                          rows={3}
+                          placeholder="Optional notes to guide manual grading"
                         />
                       </label>
-                    ))}
-                  </div>
-                  <div className="exam-builder-row">
-                    <label className="panel-field">
-                      Correct answer
-                      <select
-                        value={question.correctIndex}
-                        onChange={(event) => updateQuestion(question.id, { correctIndex: Number(event.target.value) })}
-                      >
-                        {(question.options || []).map((option, optionIndex) => (
-                          <option key={optionIndex} value={optionIndex}>
-                            {String.fromCharCode(65 + optionIndex)} {option ? `- ${option.slice(0, 40)}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="panel-field full">
-                      Teacher note / explanation
-                      <FormattedTextarea
-                        value={question.explanation}
-                        onChange={(event) => updateQuestion(question.id, { explanation: event.target.value })}
-                        rows={2}
-                        placeholder="Optional review note for teacher records"
-                      />
-                    </label>
-                  </div>
+                    </div>
+                  )}
                 </div>
-              ))}
-              <button type="button" className="table-action" onClick={addQuestion}>Add question</button>
+                );
+              })}
+              <div className="table-actions-inline">
+                {form.examFormat !== "theory" ? (
+                  <button type="button" className="table-action" onClick={() => addQuestion("mcq")}>
+                    {form.examFormat === "mixed" ? "Add Objective Question" : "Add question"}
+                  </button>
+                ) : null}
+                {form.examFormat !== "objective" ? (
+                  <button type="button" className="table-action" onClick={() => addQuestion("essay")}>Add Theory Question</button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -1389,11 +1514,244 @@ export function TeacherExamBuilder({
                 <h3>Instructions</h3>
                 <p className="message-body">{form.instructions}</p>
               </article>
+              <article className="app-panel full">
+                <h3>Student preview</h3>
+                <p>Exactly what a student will see for each question - objective options, or an empty theory answer box.</p>
+                {questions.map((question, index) => {
+                  const questionType = question.questionType || "mcq";
+                  const isTheory = THEORY_QUESTION_TYPES.has(questionType);
+                  return (
+                    <div key={question.id} className="exam-preview-question">
+                      <p className="exam-preview-question-text">
+                        <strong>Q{index + 1}.</strong> {question.text || <em>(Empty question text)</em>} <small>({question.marks || 1} mark{question.marks === "1" ? "" : "s"})</small>
+                      </p>
+                      {question.group?.passage_text ? <p className="message-meta">{question.group.passage_text}</p> : null}
+                      {isTheory ? (
+                        <textarea className="theory-answer-box" rows={3} placeholder="Student answer space" disabled />
+                      ) : (
+                        <div className="exam-preview-options">
+                          {(question.options || []).map((option, optionIndex) => (
+                            <label key={optionIndex} className="option-label">
+                              <input type="radio" disabled />
+                              <span>{String.fromCharCode(65 + optionIndex)}. {option || <em>(empty option)</em>}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </article>
             </div>
           ) : null}
         </article>
       </main>
     </section>
+  );
+}
+
+// Self-contained: fetches its own queue and per-attempt answers, so it drops
+// into either dashboard as <TheoryGradingPanel session={session} /> with no
+// extra prop-threading through App.jsx - unlike TeacherExamBuilder there is
+// no existing results table on the teacher side to hook a "Grade" action
+// into (confirmed: teacher_dashboard's cbt_results is only ever used for an
+// average-score number, never rendered as a list), so this panel owns its
+// own queue view rather than depending on one.
+export function TheoryGradingPanel({ session }) {
+  const [queue, setQueue] = useState([]);
+  const [queueLoading, setQueueLoading] = useState(true);
+  const [queueError, setQueueError] = useState("");
+  const [selectedAttemptId, setSelectedAttemptId] = useState(null);
+  const [attemptDetail, setAttemptDetail] = useState(null);
+  const [answers, setAnswers] = useState([]);
+  const [answersLoading, setAnswersLoading] = useState(false);
+  const [answersError, setAnswersError] = useState("");
+  const [drafts, setDrafts] = useState({});
+  const [savingAnswerId, setSavingAnswerId] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishMessage, setPublishMessage] = useState("");
+
+  const loadQueue = useCallback(async () => {
+    setQueueLoading(true);
+    setQueueError("");
+    try {
+      const result = await requestJson(session, "GET", "/api/exams/theory/queue/");
+      setQueue(result.attempts || []);
+    } catch (error) {
+      setQueueError(error.message || "Could not load the grading queue.");
+    } finally {
+      setQueueLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadQueue();
+  }, [loadQueue]);
+
+  const openAttempt = async (attemptId) => {
+    setSelectedAttemptId(attemptId);
+    setAnswersLoading(true);
+    setAnswersError("");
+    setPublishMessage("");
+    try {
+      const result = await requestJson(session, "GET", `/api/exams/attempt/${attemptId}/theory-answers/`);
+      setAttemptDetail(result);
+      setAnswers(result.answers || []);
+      setDrafts(
+        Object.fromEntries(
+          (result.answers || []).map((answer) => [answer.answer_id, { score: answer.score ?? "", feedback: answer.teacher_feedback || "" }])
+        )
+      );
+    } catch (error) {
+      setAnswersError(error.message || "Could not load this student's theory answers.");
+    } finally {
+      setAnswersLoading(false);
+    }
+  };
+
+  const closeAttempt = () => {
+    setSelectedAttemptId(null);
+    setAttemptDetail(null);
+    setAnswers([]);
+    setDrafts({});
+    setPublishMessage("");
+  };
+
+  const saveGrade = async (answerId) => {
+    const draft = drafts[answerId] || {};
+    setSavingAnswerId(answerId);
+    setAnswersError("");
+    try {
+      const result = await requestJson(
+        session, "POST", `/api/exams/attempt/${selectedAttemptId}/theory-answers/${answerId}/grade/`,
+        { score: Number(draft.score), feedback: draft.feedback || "" }
+      );
+      setAnswers((previous) => previous.map((answer) => (answer.answer_id === answerId ? { ...answer, score: result.score, teacher_feedback: result.teacher_feedback } : answer)));
+    } catch (error) {
+      setAnswersError(error.message || "Could not save this score.");
+    } finally {
+      setSavingAnswerId(null);
+    }
+  };
+
+  const allGraded = answers.length > 0 && answers.every((answer) => answer.score !== null && answer.score !== undefined);
+
+  const publishResults = async () => {
+    setPublishing(true);
+    setAnswersError("");
+    try {
+      const result = await requestJson(session, "POST", `/api/exams/attempt/${selectedAttemptId}/publish-theory-grades/`);
+      setPublishMessage(`Results published: ${result.score}/${result.total_points} (${result.percentage}%).`);
+      setQueue((previous) => previous.filter((row) => row.attempt_id !== selectedAttemptId));
+    } catch (error) {
+      setAnswersError(error.message || "Could not publish results.");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  if (selectedAttemptId) {
+    return (
+      <article className="app-panel theory-grading-panel">
+        <div className="panel-head">
+          <div>
+            <h3>Grade theory answers</h3>
+            <p>{attemptDetail?.student_name || "Student"} · {attemptDetail?.exam_title || "Exam"}</p>
+          </div>
+          <button type="button" className="table-action" onClick={closeAttempt}>Back to queue</button>
+        </div>
+        {answersLoading ? (
+          <p className="panel-empty">Loading answers...</p>
+        ) : answers.length === 0 ? (
+          <p className="panel-empty">No theory answers found for this attempt.</p>
+        ) : (
+          <div className="panel-list">
+            {answers.map((answer) => (
+              <div key={answer.answer_id} className="message-item theory-answer-card">
+                <div className="message-head">
+                  <p>{answer.question_text}</p>
+                  <small>{answer.points} mark{answer.points === 1 ? "" : "s"}</small>
+                </div>
+                {answer.passage?.passage_text ? <p className="message-meta">{answer.passage.passage_text}</p> : null}
+                {answer.image ? <img className="question-builder-image-preview" src={answer.image} alt="Question" /> : null}
+                {answer.attachment ? (
+                  <a href={answer.attachment} target="_blank" rel="noreferrer" className="question-attachment-link">📎 View attached file</a>
+                ) : null}
+                <p className="message-body">{answer.answer_text || <em>No answer submitted.</em>}</p>
+                <div className="panel-form-grid">
+                  <label className="panel-field">
+                    Score (out of {answer.points})
+                    <input
+                      type="number"
+                      min="0"
+                      max={answer.points}
+                      value={drafts[answer.answer_id]?.score ?? ""}
+                      onChange={(event) => setDrafts((previous) => ({ ...previous, [answer.answer_id]: { ...previous[answer.answer_id], score: event.target.value } }))}
+                    />
+                  </label>
+                  <label className="panel-field full">
+                    Feedback
+                    <FormattedTextarea
+                      value={drafts[answer.answer_id]?.feedback || ""}
+                      onChange={(event) => setDrafts((previous) => ({ ...previous, [answer.answer_id]: { ...previous[answer.answer_id], feedback: event.target.value } }))}
+                      rows={2}
+                    />
+                  </label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="button" onClick={() => saveGrade(answer.answer_id)} disabled={savingAnswerId === answer.answer_id || drafts[answer.answer_id]?.score === ""}>
+                    {savingAnswerId === answer.answer_id ? "Saving..." : answer.score !== null && answer.score !== undefined ? "Update score" : "Save score"}
+                  </button>
+                  {answer.score !== null && answer.score !== undefined ? <span className="form-feedback success">Scored {answer.score}/{answer.points}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {answersError ? <p className="form-feedback error">{answersError}</p> : null}
+        {publishMessage ? <p className="form-feedback success">{publishMessage}</p> : null}
+        <div className="panel-form-actions">
+          <button type="button" onClick={publishResults} disabled={!allGraded || publishing || Boolean(publishMessage)}>
+            {publishing ? "Publishing..." : "Publish results"}
+          </button>
+          {!allGraded && !publishMessage ? <small>Score every answer before publishing.</small> : null}
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="app-panel theory-grading-panel">
+      <div className="panel-head">
+        <div>
+          <h3>Theory grading queue</h3>
+          <p>Attempts with at least one theory answer still awaiting a score.</p>
+        </div>
+        <button type="button" className="table-action" onClick={loadQueue} disabled={queueLoading}>
+          {queueLoading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+      {queueError ? <p className="form-feedback error">{queueError}</p> : null}
+      {queueLoading ? (
+        <p className="panel-empty">Loading queue...</p>
+      ) : queue.length === 0 ? (
+        <p className="panel-empty">Nothing awaiting grading right now.</p>
+      ) : (
+        <table className="data-table">
+          <thead><tr><th>Student</th><th>Exam</th><th>Submitted</th><th>Action</th></tr></thead>
+          <tbody>
+            {queue.map((row) => (
+              <tr key={row.attempt_id}>
+                <td>{row.student_name}</td>
+                <td>{row.exam_title}</td>
+                <td>{formatDate(row.submitted_at)}</td>
+                <td><button type="button" className="table-action active" onClick={() => openAttempt(row.attempt_id)}>Grade</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </article>
   );
 }
 

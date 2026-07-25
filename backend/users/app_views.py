@@ -21,7 +21,7 @@ from django.core import signing
 from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import transaction as db_transaction
-from django.db.models import Avg, Count, Q, Sum, Prefetch
+from django.db.models import Avg, Count, Exists, OuterRef, Q, Sum, Prefetch
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -4473,7 +4473,15 @@ def teacher_dashboard(request):
         ExamAttempt.objects.select_related("exam", "exam__subject", "exam__class_group", "student"),
         user,
     ).filter(exam__teacher=user)
-    submitted_attempts_qs = attempts_qs.filter(is_submitted=True).prefetch_related("answers__question").order_by("-end_time")
+    pending_theory_answers = StudentAnswer.objects.filter(
+        attempt=OuterRef("pk"), question__question_type__in=Question.THEORY_TYPES, score__isnull=True,
+    )
+    submitted_attempts_qs = (
+        attempts_qs.filter(is_submitted=True)
+        .prefetch_related("answers__question")
+        .annotate(needs_theory_grading=Exists(pending_theory_answers))
+        .order_by("-end_time")
+    )
     submitted_attempts = list(submitted_attempts_qs[:20])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
     announcements = _visible_announcements_for_user(user, now=now)
@@ -4560,6 +4568,7 @@ def teacher_dashboard(request):
                     "total_points": attempt.total_points,
                     "percentage": round(float(attempt.percentage or 0), 1),
                     "submitted_at": attempt.end_time,
+                    "needs_theory_grading": attempt.needs_theory_grading,
                     "answer_summary": [
                         {
                             "question": answer.question.text,
@@ -7752,7 +7761,15 @@ def exams_snapshot(request):
     elif user.role in ADMIN_ROLES:
         attempts = attempts.distinct()
         monitor_attempts = monitor_attempts.distinct()
-    submitted_attempts_qs = attempts.filter(is_submitted=True).prefetch_related("answers__question").order_by("-end_time")
+    pending_theory_answers = StudentAnswer.objects.filter(
+        attempt=OuterRef("pk"), question__question_type__in=Question.THEORY_TYPES, score__isnull=True,
+    )
+    submitted_attempts_qs = (
+        attempts.filter(is_submitted=True)
+        .prefetch_related("answers__question")
+        .annotate(needs_theory_grading=Exists(pending_theory_answers))
+        .order_by("-end_time")
+    )
     submitted_attempts = list(submitted_attempts_qs[:30])
     auto_submitted_attempts_qs = monitor_attempts.filter(auto_submitted=True, is_submitted=True).order_by("-end_time")
     auto_submitted_attempts = list(auto_submitted_attempts_qs[:50])
@@ -7834,6 +7851,7 @@ def exams_snapshot(request):
                     "total_points": attempt.total_points,
                     "percentage": round(float(attempt.percentage or 0), 1),
                     "submitted_at": attempt.end_time,
+                    "needs_theory_grading": attempt.needs_theory_grading,
                     "answer_summary": [
                         {
                             "question": answer.question.text,
@@ -7942,6 +7960,7 @@ def _exam_editor_payload(exam, request=None):
         "id": exam.id,
         "title": exam.title,
         "assessment_type": _assessment_type_for_exam(exam),
+        "exam_format": exam.exam_format,
         "subject": exam.subject.name if exam.subject else "General",
         "subject_id": exam.subject_id,
         "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
@@ -7964,6 +7983,7 @@ def _exam_editor_payload(exam, request=None):
                 "correct_answer": question.correct_answer or "",
                 "explanation": question.explanation or "",
                 "image": _media_url(request, question.image),
+                "attachment": _media_url(request, question.attachment),
                 "group_order": question.group_order,
                 "group": _question_group_payload(question.group, request),
                 "source_question_id": question.id if question.question_banks.exists() else None,
@@ -7975,18 +7995,31 @@ def _exam_editor_payload(exam, request=None):
     return payload
 
 
-def _clean_exam_questions_payload(raw_questions):
+def _clean_exam_questions_payload(raw_questions, exam_format="objective"):
     if isinstance(raw_questions, str):
         try:
             raw_questions = json.loads(raw_questions)
         except Exception:
             return None, "Questions payload must be valid JSON."
     if not isinstance(raw_questions, list) or not raw_questions:
-        return None, "Add at least one objective question before saving the exam."
+        return None, "Add at least one question before saving the exam."
+
+    allowed_types = {
+        "objective": set(Question.OBJECTIVE_TYPES),
+        "theory": set(Question.THEORY_TYPES),
+        "mixed": set(Question.OBJECTIVE_TYPES) | set(Question.THEORY_TYPES),
+    }.get(exam_format, set(Question.OBJECTIVE_TYPES))
 
     cleaned_questions = []
     for index, item in enumerate(raw_questions, start=1):
         text = str(item.get("text", "")).strip() if isinstance(item, dict) else ""
+        question_type = str(item.get("question_type") or "mcq").strip() if isinstance(item, dict) else "mcq"
+        if question_type not in dict(Question.QUESTION_TYPES):
+            question_type = "mcq"
+        if question_type not in allowed_types:
+            return None, f"Question {index}'s type does not match this exam's Objective/Theory/Mixed setting."
+        is_theory = question_type in Question.THEORY_TYPES
+
         raw_options = item.get("options", []) if isinstance(item, dict) else []
         options = [str(option).strip() for option in raw_options if str(option).strip()]
         correct_answer = str(item.get("correct_answer", "")).strip() if isinstance(item, dict) else ""
@@ -8006,22 +8039,30 @@ def _clean_exam_questions_payload(raw_questions):
 
         if len(text) < 3:
             return None, f"Question {index} must include the question text."
-        if len(options) < 2:
-            return None, f"Question {index} must include at least two answer options."
-        if correct_answer not in options:
-            return None, f"Question {index} must have a correct answer selected from its options."
+        if is_theory:
+            # Theory questions are free-text and manually graded - no
+            # options/correct-answer requirement, unlike objective questions.
+            options = []
+            correct_answer = ""
+        else:
+            if len(options) < 2:
+                return None, f"Question {index} must include at least two answer options."
+            if correct_answer not in options:
+                return None, f"Question {index} must have a correct answer selected from its options."
         if points <= 0:
             points = 1
 
         cleaned_questions.append(
             {
                 "text": text,
+                "question_type": question_type,
                 "options": options,
                 "correct_answer": correct_answer,
                 "points": points,
                 "explanation": str(item.get("explanation", "")).strip() if isinstance(item, dict) else "",
                 "source_question_id": source_question_id,
                 "question_image_field": str(item.get("question_image_field") or "").strip(),
+                "question_attachment_field": str(item.get("question_attachment_field") or "").strip(),
                 "group_key": group_key,
                 "group": {
                     "title": str(group_payload.get("title") or "").strip(),
@@ -8036,7 +8077,9 @@ def _clean_exam_questions_payload(raw_questions):
 
 def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_key=None, group_order=0):
     source_question_id = item.get("source_question_id")
-    if source_question_id:
+    # Question bank entries are always objective (mcq) - only worth checking
+    # for reuse when this item is objective too.
+    if source_question_id and item.get("question_type", "mcq") not in Question.THEORY_TYPES:
         source_qs = _scope_to_user_tenant(
             Question.objects.filter(question_banks__isnull=False).distinct(),
             user,
@@ -8052,9 +8095,10 @@ def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_
             return source_question
     return Question.objects.create(
         tenant=tenant_obj,
-        question_type="mcq",
+        question_type=item.get("question_type") or "mcq",
         text=item["text"],
         image=request.FILES.get(item.get("question_image_field")) if request and item.get("question_image_field") else None,
+        attachment=request.FILES.get(item.get("question_attachment_field")) if request and item.get("question_attachment_field") else None,
         options=item["options"],
         correct_answer=item["correct_answer"],
         points=item["points"],
@@ -8901,7 +8945,13 @@ def create_exam(request):
     can_publish_exam = request.user.role in ADMIN_ROLES
     is_published = _to_bool(request.data.get("is_published"), default=False) if can_publish_exam else False
     shuffle_questions = _to_bool(request.data.get("shuffle_questions"), default=False)
-    cleaned_questions, questions_error = _clean_exam_questions_payload(request.data.get("questions") or [])
+    exam_format = str(request.data.get("exam_format", "objective")).strip().lower() or "objective"
+    if exam_format not in dict(Exam.EXAM_FORMATS):
+        return Response(
+            {"success": False, "message": "exam_format must be one of: objective, theory, mixed."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    cleaned_questions, questions_error = _clean_exam_questions_payload(request.data.get("questions") or [], exam_format)
     if questions_error:
         return Response(
             {"success": False, "message": questions_error},
@@ -8914,6 +8964,7 @@ def create_exam(request):
         class_group=class_group,
         teacher=request.user,
         exam_type=exam_type,
+        exam_format=exam_format,
         start_date=start_date,
         end_date=end_date,
         duration_minutes=duration_minutes,
@@ -8946,6 +8997,7 @@ def create_exam(request):
                 "duration_minutes": exam.duration_minutes,
                 "is_published": exam.is_published,
                 "assessment_type": assessment_type,
+                "exam_format": exam.exam_format,
                 "question_count": len(created_questions),
                 "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
             },
@@ -9056,6 +9108,16 @@ def exam_detail(request, exam_id):
         exam.exam_type = exam_type
         update_fields.append("exam_type")
 
+    if "exam_format" in request.data:
+        exam_format = str(request.data.get("exam_format", "objective")).strip().lower() or "objective"
+        if exam_format not in dict(Exam.EXAM_FORMATS):
+            return Response(
+                {"success": False, "message": "exam_format must be one of: objective, theory, mixed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        exam.exam_format = exam_format
+        update_fields.append("exam_format")
+
     if "instructions" in request.data:
         exam.instructions = str(request.data.get("instructions") or "").strip()
         update_fields.append("instructions")
@@ -9097,7 +9159,7 @@ def exam_detail(request, exam_id):
         exam.save(update_fields=list(dict.fromkeys(update_fields)))
 
     if "questions" in request.data:
-        cleaned_questions, questions_error = _clean_exam_questions_payload(request.data.get("questions") or [])
+        cleaned_questions, questions_error = _clean_exam_questions_payload(request.data.get("questions") or [], exam.exam_format)
         if questions_error:
             return Response(
                 {"success": False, "message": questions_error},

@@ -25,4 +25,10 @@ urlpatterns = [
     
     # Results
     path('result/<int:attempt_id>/', exam_views.ExamResultView.as_view(), name='exam_result'),
+
+    # Theory grading
+    path('theory/queue/', exam_views.theory_grading_queue, name='theory_grading_queue'),
+    path('attempt/<int:attempt_id>/theory-answers/', exam_views.attempt_theory_answers, name='attempt_theory_answers'),
+    path('attempt/<int:attempt_id>/theory-answers/<int:answer_id>/grade/', exam_views.grade_theory_answer, name='grade_theory_answer'),
+    path('attempt/<int:attempt_id>/publish-theory-grades/', exam_views.publish_theory_grades_view, name='publish_theory_grades'),
 ]

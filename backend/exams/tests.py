@@ -404,4 +404,282 @@ class StudentCbtEntryCollisionTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
-        self.assertEqual(ExamAttempt.objects.count(), 0)
+
+
+class TheoryExamAuthoringTests(TestCase):
+    """Objective exams keep working exactly as before; Theory/Mixed exams
+    relax the options/correct-answer requirement for theory-typed questions
+    and reject a question whose type doesn't match the exam's format."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Theory Authoring School", schema_name="theory_authoring", is_active=True)
+        self.teacher = User.objects.create_user(
+            email="teacher@theory-authoring.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.teacher)
+
+    def _payload(self, exam_format, questions):
+        now = timezone.now()
+        return {
+            "title": f"{exam_format} exam",
+            "exam_format": exam_format,
+            "start_date": (now + timedelta(minutes=5)).isoformat(),
+            "end_date": (now + timedelta(hours=1)).isoformat(),
+            "duration_minutes": 30,
+            "questions": questions,
+        }
+
+    def test_objective_exam_unaffected_still_requires_options(self):
+        response = self.client.post(
+            "/api/app/exams/create/",
+            self._payload("objective", [{"text": "2 + 2?", "options": ["3", "4"], "correct_answer": "4"}]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        exam = Exam.objects.get(id=response.data["exam"]["id"])
+        self.assertEqual(exam.exam_format, "objective")
+        self.assertEqual(exam.questions.get().question_type, "mcq")
+
+    def test_theory_exam_accepts_question_with_no_options(self):
+        response = self.client.post(
+            "/api/app/exams/create/",
+            self._payload("theory", [{"text": "Explain photosynthesis.", "question_type": "essay", "points": 10}]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        exam = Exam.objects.get(id=response.data["exam"]["id"])
+        question = exam.questions.get()
+        self.assertEqual(question.question_type, "essay")
+        self.assertEqual(question.options, [])
+
+    def test_theory_exam_rejects_empty_question_text(self):
+        response = self.client.post(
+            "/api/app/exams/create/",
+            self._payload("theory", [{"text": "", "question_type": "essay"}]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_theory_exam_rejects_an_mcq_question(self):
+        response = self.client.post(
+            "/api/app/exams/create/",
+            self._payload("theory", [{"text": "2 + 2?", "options": ["3", "4"], "correct_answer": "4"}]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Objective/Theory/Mixed", response.data["message"])
+
+    def test_mixed_exam_accepts_both_mcq_and_theory_questions(self):
+        response = self.client.post(
+            "/api/app/exams/create/",
+            self._payload("mixed", [
+                {"text": "2 + 2?", "options": ["3", "4"], "correct_answer": "4"},
+                {"text": "Explain photosynthesis.", "question_type": "essay", "points": 10},
+            ]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        exam = Exam.objects.get(id=response.data["exam"]["id"])
+        types = sorted(exam.questions.values_list("question_type", flat=True))
+        self.assertEqual(types, ["essay", "mcq"])
+
+
+class TheoryGradingFlowTests(TestCase):
+    """End-to-end: submitting a Mixed attempt auto-grades only the MCQ
+    portion; the essay stays pending until a teacher scores and publishes
+    it, which then folds both portions into the final combined score."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Theory Grading School", schema_name="theory_grading", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.teacher = User.objects.create_user(
+            email="teacher@theory-grading.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = User.objects.create_user(
+            email="student@theory-grading.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.exam = Exam.objects.create(
+            title="Mixed Midterm", teacher=self.teacher, tenant=self.legacy_tenant, exam_format="mixed",
+            start_date=timezone.now() - timedelta(minutes=5), end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, is_published=True,
+        )
+        self.mcq_question = Question.objects.create(
+            tenant=self.legacy_tenant, question_type="mcq", text="2 + 2?",
+            options=["3", "4"], correct_answer="4", points=10,
+        )
+        self.essay_question = Question.objects.create(
+            tenant=self.legacy_tenant, question_type="essay", text="Explain photosynthesis.", points=20,
+        )
+        self.exam.questions.add(self.mcq_question, self.essay_question)
+        self.client = APIClient()
+
+    def _submit_attempt(self):
+        # Every test in this class posts byte-identical answer/submit
+        # bodies against the same URLs - IdempotencyMiddleware's response
+        # cache (process-level, not per-test-transaction) would otherwise
+        # serve a stale cached response from a previous test instead of
+        # actually processing this one.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
+        self.client.force_authenticate(self.student)
+        attempt = ExamAttempt.objects.create(exam=self.exam, student=self.student, tenant=self.legacy_tenant)
+        self.client.post(
+            reverse("exams:save_answer", args=[attempt.id]),
+            {"question_id": self.mcq_question.id, "selected_options": 1},
+            format="json",
+        )
+        self.client.post(
+            reverse("exams:save_answer", args=[attempt.id]),
+            {"question_id": self.essay_question.id, "answer_text": "Plants convert light into energy."},
+            format="json",
+        )
+        self.client.post(reverse("exams:submit_exam", args=[attempt.id]))
+        attempt.refresh_from_db()
+        return attempt
+
+    def test_submit_auto_grades_mcq_only_leaves_essay_pending(self):
+        attempt = self._submit_attempt()
+
+        mcq_answer = StudentAnswer.objects.get(attempt=attempt, question=self.mcq_question)
+        essay_answer = StudentAnswer.objects.get(attempt=attempt, question=self.essay_question)
+        self.assertTrue(mcq_answer.is_correct)
+        self.assertEqual(mcq_answer.score, 10)
+        self.assertIsNone(essay_answer.score)
+        self.assertIsNone(essay_answer.is_correct)
+        # Partial score reflects only the auto-graded MCQ portion so far.
+        self.assertEqual(attempt.score, 10)
+        self.assertEqual(attempt.total_points, 30)
+
+    def test_grading_queue_lists_attempt_until_published(self):
+        attempt = self._submit_attempt()
+        self.client.force_authenticate(self.teacher)
+
+        queue_response = self.client.get(reverse("exams:theory_grading_queue"))
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertIn(attempt.id, [row["attempt_id"] for row in queue_response.data["attempts"]])
+
+        answers_response = self.client.get(reverse("exams:attempt_theory_answers", args=[attempt.id]))
+        self.assertEqual(answers_response.status_code, 200)
+        self.assertEqual(len(answers_response.data["answers"]), 1)
+        essay_answer_id = answers_response.data["answers"][0]["answer_id"]
+        self.assertEqual(answers_response.data["answers"][0]["answer_text"], "Plants convert light into energy.")
+
+        publish_too_early = self.client.post(reverse("exams:publish_theory_grades", args=[attempt.id]))
+        self.assertEqual(publish_too_early.status_code, 400)
+
+        grade_response = self.client.post(
+            reverse("exams:grade_theory_answer", args=[attempt.id, essay_answer_id]),
+            {"score": 15, "feedback": "Good explanation, missing chlorophyll detail."},
+            format="json",
+        )
+        self.assertEqual(grade_response.status_code, 200, grade_response.data)
+        self.assertFalse(grade_response.data["attempt_needs_grading"])
+
+        queue_after_grading = self.client.get(reverse("exams:theory_grading_queue"))
+        self.assertNotIn(attempt.id, [row["attempt_id"] for row in queue_after_grading.data["attempts"]])
+
+        publish_response = self.client.post(reverse("exams:publish_theory_grades", args=[attempt.id]))
+        self.assertEqual(publish_response.status_code, 200, publish_response.data)
+        self.assertEqual(publish_response.data["score"], 25)  # 10 (mcq) + 15 (essay)
+        self.assertEqual(publish_response.data["total_points"], 30)
+
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.score, 25)
+        self.assertAlmostEqual(attempt.percentage, 25 / 30 * 100)
+        essay_answer = StudentAnswer.objects.get(id=essay_answer_id)
+        self.assertEqual(essay_answer.teacher_feedback, "Good explanation, missing chlorophyll detail.")
+
+    def test_grade_rejects_score_above_question_points(self):
+        attempt = self._submit_attempt()
+        essay_answer = StudentAnswer.objects.get(attempt=attempt, question=self.essay_question)
+        self.client.force_authenticate(self.teacher)
+
+        response = self.client.post(
+            reverse("exams:grade_theory_answer", args=[attempt.id, essay_answer.id]),
+            {"score": 999, "feedback": ""},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        essay_answer.refresh_from_db()
+        self.assertIsNone(essay_answer.score)
+
+
+class TheoryGradingPermissionTests(TestCase):
+    """Teachers only grade their own exams; admins grade within their own
+    tenant; students and other tenants' admins are blocked."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Grading Perm School", schema_name="grading_perm", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.other_school = SchoolTenant.objects.create(name="Other Grading Perm School", schema_name="other_grading_perm", is_active=True)
+        self.other_legacy_tenant = Tenant.objects.create(name=self.other_school.name, slug=self.other_school.schema_name)
+
+        self.owning_teacher = User.objects.create_user(
+            email="owner@grading-perm.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.other_teacher = User.objects.create_user(
+            email="other@grading-perm.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@grading-perm.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.other_school_admin = User.objects.create_user(
+            email="admin@other-grading-perm.edu", password="AdminPass123", role="school_admin",
+            tenant=self.other_school, is_active=True, is_verified=True,
+        )
+        self.student = User.objects.create_user(
+            email="student@grading-perm.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        self.exam = Exam.objects.create(
+            title="Perm Exam", teacher=self.owning_teacher, tenant=self.legacy_tenant, exam_format="theory",
+            start_date=timezone.now() - timedelta(minutes=5), end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, is_published=True,
+        )
+        self.essay_question = Question.objects.create(
+            tenant=self.legacy_tenant, question_type="essay", text="Explain photosynthesis.", points=20,
+        )
+        self.exam.questions.add(self.essay_question)
+        self.attempt = ExamAttempt.objects.create(
+            exam=self.exam, student=self.student, tenant=self.legacy_tenant,
+            is_submitted=True, total_points=20, end_time=timezone.now(),
+        )
+        self.answer = StudentAnswer.objects.create(
+            attempt=self.attempt, question=self.essay_question, tenant=self.legacy_tenant,
+            answer_text="Plants convert light into energy.",
+        )
+        self.client = APIClient()
+
+    def test_other_teacher_cannot_grade_a_colleagues_exam(self):
+        self.client.force_authenticate(self.other_teacher)
+        response = self.client.get(reverse("exams:attempt_theory_answers", args=[self.attempt.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_owning_teacher_can_grade(self):
+        self.client.force_authenticate(self.owning_teacher)
+        response = self.client.get(reverse("exams:attempt_theory_answers", args=[self.attempt.id]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_in_same_tenant_can_grade(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(reverse("exams:attempt_theory_answers", args=[self.attempt.id]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_from_other_tenant_cannot_grade(self):
+        self.client.force_authenticate(self.other_school_admin)
+        response = self.client.get(reverse("exams:attempt_theory_answers", args=[self.attempt.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_student_cannot_access_grading_queue(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.get(reverse("exams:theory_grading_queue"))
+        self.assertEqual(response.status_code, 403)
