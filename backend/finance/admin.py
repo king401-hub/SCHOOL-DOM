@@ -218,9 +218,9 @@ class SmsWalletTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(SmsMessageLog)
 class SmsMessageLogAdmin(admin.ModelAdmin):
-    list_display = ("recipient_phone", "wallet", "category", "delivery_status", "credits_charged", "created_at")
-    list_filter = ("category", "delivery_status")
-    search_fields = ("recipient_phone", "message", "wallet__tenant__name")
+    list_display = ("recipient_phone", "category", "delivery_status", "credits_charged", "created_by", "created_at")
+    list_filter = ("category", "delivery_status", "created_at")
+    search_fields = ("recipient_phone", "message", "wallet__tenant__name", "created_by__email", "created_by__first_name")
     readonly_fields = (
         "tenant", "wallet", "category", "recipient_phone", "message", "credits_charged",
         "delivery_status", "provider_response", "provider_message_id", "sent_at",
