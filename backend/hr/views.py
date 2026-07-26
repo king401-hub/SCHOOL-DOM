@@ -996,35 +996,45 @@ def review_advance_request(request, advance_id):
     return Response({"success": True, "message": f"Salary advance {decision}.", "advance": _advance_payload(advance)})
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def create_payroll_record(request):
-    if not _require_admin(request.user):
-        return Response({"success": False, "message": "Only admins can process payroll."}, status=status.HTTP_403_FORBIDDEN)
-    staff = get_object_or_404(_staff_queryset(request.user), id=request.data.get("staff_id"))
-    today = timezone.localdate()
-    year = int(request.data.get("year") or today.year)
-    month = int(request.data.get("month") or today.month)
-    allowances = _money(request.data.get("allowances")) or Decimal("0.00")
-    deductions = _money(request.data.get("deductions")) or Decimal("0.00")
-    amount_paid = _money(request.data.get("amount_paid")) or Decimal("0.00")
-    pay_with_flutterwave = bool(request.data.get("pay_with_flutterwave"))
+def process_payroll(staff, year, month, allowances, deductions, amount_paid, pay_with_flutterwave, actor, notes="", bank_overrides=None, status_override=None, mark_fully_paid=False):
+    """Computes gross/net salary (auto-pulling that period's paid salary
+    advances), optionally disburses via Flutterwave, and upserts the single
+    PayrollRecord for (staff, year, month) - update_or_create on that
+    unique-together key means re-running this for the same staff/month
+    updates the existing row instead of creating a duplicate salary record.
+
+    This is the single place payroll math happens - both create_payroll_record
+    (the HR payroll screen) and the Expenses page's Payslip flow call this, so
+    the two entry points can never compute two different net salaries for the
+    same staff/month.
+
+    mark_fully_paid: set amount_paid = net_salary once net_salary is known
+    (i.e. after advances_applied is looked up here) without requiring a real
+    Flutterwave transfer - lets a caller mark a payslip "Paid" for bookkeeping
+    without duplicating this function's advances/net-salary math to guess the
+    right amount upfront.
+
+    Raises ValueError for anything that should surface as a 400 to the caller
+    (validation failures, a failed Flutterwave transfer).
+    Returns (payroll, created, transfer_reference, transfer_result).
+    """
+    bank_overrides = bank_overrides or {}
     paid_advances = staff.salary_advances.filter(status=SalaryAdvanceRequest.PAID, request_date__year=year, request_date__month=month)
     advances_applied = paid_advances.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
     gross_salary = staff.base_salary + allowances
     net_salary = max(gross_salary - deductions - advances_applied, Decimal("0.00"))
-    if pay_with_flutterwave and amount_paid <= 0:
+    if (pay_with_flutterwave or mark_fully_paid) and amount_paid <= 0:
         amount_paid = net_salary
     if amount_paid > net_salary:
-        return Response({"success": False, "message": "amount_paid cannot exceed net salary."}, status=status.HTTP_400_BAD_REQUEST)
+        raise ValueError("amount_paid cannot exceed net salary.")
     if pay_with_flutterwave and amount_paid <= 0:
-        return Response({"success": False, "message": "There is no salary amount to pay."}, status=status.HTTP_400_BAD_REQUEST)
-    bank_code = str(request.data.get("bank_code") or staff.bank_code or "").strip()
-    bank_account_number = str(request.data.get("bank_account_number") or staff.bank_account_number or "").strip()
-    bank_account_name = str(request.data.get("bank_account_name") or staff.bank_account_name or staff.full_name or "").strip()
-    bank_name = str(request.data.get("bank_name") or staff.bank_name or "").strip()
+        raise ValueError("There is no salary amount to pay.")
+    bank_code = str(bank_overrides.get("bank_code") or staff.bank_code or "").strip()
+    bank_account_number = str(bank_overrides.get("bank_account_number") or staff.bank_account_number or "").strip()
+    bank_account_name = str(bank_overrides.get("bank_account_name") or staff.bank_account_name or staff.full_name or "").strip()
+    bank_name = str(bank_overrides.get("bank_name") or staff.bank_name or "").strip()
     if pay_with_flutterwave and (not bank_code or not bank_account_number):
-        return Response({"success": False, "message": "Staff bank code and account number are required for Flutterwave salary payment."}, status=status.HTTP_400_BAD_REQUEST)
+        raise ValueError("Staff bank code and account number are required for Flutterwave salary payment.")
     balance_after_payment = net_salary - amount_paid
     transfer_reference = ""
     transfer_result = None
@@ -1046,12 +1056,12 @@ def create_payroll_record(request):
                 amount_paid,
                 transfer_reference,
                 bank_payload=bank_payload,
-                actor=request.user,
+                actor=actor,
             )
-        except ValueError as exc:
-            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            raise
         except Exception as exc:
-            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValueError(str(exc))
         staff.bank_code = bank_code
         staff.bank_account_number = bank_account_number
         staff.bank_account_name = bank_account_name
@@ -1070,39 +1080,68 @@ def create_payroll_record(request):
             "net_salary": net_salary,
             "amount_paid": amount_paid,
             "balance_after_payment": balance_after_payment,
-            "status": PayrollRecord.PAID if amount_paid >= net_salary else PayrollRecord.APPROVED,
-            "notes": str(request.data.get("notes", "")).strip()
-            or ("Paid via Flutterwave transfer." if pay_with_flutterwave else ""),
-            "processed_by": request.user,
+            "status": status_override or (PayrollRecord.PAID if amount_paid >= net_salary else PayrollRecord.APPROVED),
+            "notes": notes or ("Paid via Flutterwave transfer." if pay_with_flutterwave else ""),
+            "processed_by": actor,
             "paid_at": timezone.now() if amount_paid > 0 else None,
         },
     )
     staff.salary_balance = balance_after_payment
     staff.save(update_fields=["salary_balance", "updated_at"])
     if pay_with_flutterwave:
-        _activity(staff.tenant, staff, request.user, "salary_paid_flutterwave", f"Salary payment sent for {payroll.period_label}: {amount_paid}")
+        _activity(staff.tenant, staff, actor, "salary_paid_flutterwave", f"Salary payment sent for {payroll.period_label}: {amount_paid}")
         record_finance_activity(
             staff.tenant,
-            request.user,
+            actor,
             "salary_payment_sent",
             f"Salary payment sent to {staff.full_name} for {payroll.period_label}.",
             amount=amount_paid,
             reference=transfer_reference,
             metadata={"staff_id": str(staff.id), "period": payroll.period_label, "status": payroll.status},
         )
-        message = "Salary payment sent to staff via Flutterwave."
     else:
-        _activity(staff.tenant, staff, request.user, "payroll_processed", f"Payroll {'created' if created else 'updated'} for {payroll.period_label}")
+        _activity(staff.tenant, staff, actor, "payroll_processed", f"Payroll {'created' if created else 'updated'} for {payroll.period_label}")
         record_finance_activity(
             staff.tenant,
-            request.user,
+            actor,
             "payroll_processed",
             f"Payroll {'created' if created else 'updated'} for {staff.full_name} ({payroll.period_label}).",
             amount=payroll.net_salary,
             reference=str(payroll.id),
             metadata={"staff_id": str(staff.id), "period": payroll.period_label, "status": payroll.status},
         )
-        message = "Payroll calculated."
+    return payroll, created, transfer_reference, transfer_result
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_payroll_record(request):
+    if not _require_admin(request.user):
+        return Response({"success": False, "message": "Only admins can process payroll."}, status=status.HTTP_403_FORBIDDEN)
+    staff = get_object_or_404(_staff_queryset(request.user), id=request.data.get("staff_id"))
+    today = timezone.localdate()
+    year = int(request.data.get("year") or today.year)
+    month = int(request.data.get("month") or today.month)
+    allowances = _money(request.data.get("allowances")) or Decimal("0.00")
+    deductions = _money(request.data.get("deductions")) or Decimal("0.00")
+    amount_paid = _money(request.data.get("amount_paid")) or Decimal("0.00")
+    pay_with_flutterwave = bool(request.data.get("pay_with_flutterwave"))
+
+    try:
+        payroll, created, transfer_reference, transfer_result = process_payroll(
+            staff, year, month, allowances, deductions, amount_paid, pay_with_flutterwave, request.user,
+            notes=str(request.data.get("notes", "")).strip(),
+            bank_overrides={
+                "bank_code": request.data.get("bank_code"),
+                "bank_account_number": request.data.get("bank_account_number"),
+                "bank_account_name": request.data.get("bank_account_name"),
+                "bank_name": request.data.get("bank_name"),
+            },
+        )
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    message = "Salary payment sent to staff via Flutterwave." if pay_with_flutterwave else "Payroll calculated."
     return Response(
         {
             "success": True,

@@ -1066,6 +1066,49 @@ def send_payment_receipt(
         return {"sent": False, "channel": "none", "email_error": str(exc)}
 
 
+def send_payslip_email(to_email: str, data: dict, receipt_url: str = "") -> dict:
+    """Send a payslip as an HTML email, same shape as send_payment_receipt but
+    for receipt_type='payslip' - reuses finance/receipt.html's payslip branch
+    rather than a second template/pipeline."""
+    if not to_email:
+        return {"sent": False, "channel": "none", "email_error": "No email address"}
+    try:
+        from django.core.mail import EmailMultiAlternatives
+        from django.template.loader import render_to_string
+
+        d = data or {}
+        school_name = d.get("school_name") or "School"
+        staff_name = d.get("staff_name") or "Employee"
+        period = d.get("period") or ""
+        subject = f"Payslip ({period}) — {school_name}"
+
+        class _Link:
+            pass
+
+        link_obj = _Link()
+        link_obj.receipt_type = "payslip"
+        link_obj.created_at = timezone.now()
+        link_obj.expires_at = timezone.now() + timedelta(days=90)
+
+        html_body = render_to_string("finance/receipt.html", {"link": link_obj, "data": d})
+
+        plain_body = f"{school_name}: payslip for {staff_name} ({period}). Net pay: {_format_naira(Decimal(str(d.get('net_salary') or '0')))}."
+        if receipt_url:
+            plain_body += f"\nView online: {receipt_url}"
+        plain_body += "\n\nPowered by Schooldom — https://schooldom.academy"
+
+        em = EmailMultiAlternatives(subject=subject, body=plain_body, from_email=None, to=[to_email])
+        em.attach_alternative(html_body, "text/html")
+        em.attach("payslip.html", html_body, "text/html")
+        em.send()
+
+        logger.info("Payslip email sent to %s (period=%s)", to_email, period)
+        return {"sent": True, "channel": "email"}
+    except Exception as exc:
+        logger.error("Payslip email to %s failed: %s", to_email, exc)
+        return {"sent": False, "channel": "none", "email_error": str(exc)}
+
+
 def _plain_amount(value) -> str:
     """Format an amount without a currency symbol or decorative decimals.
 

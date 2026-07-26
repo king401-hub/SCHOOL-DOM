@@ -1,5 +1,16 @@
-import { useMemo, useState } from "react";
-import { DashboardIcon, ScreenState, formatDate, resolveSchoolBrand } from "./AppShared";
+import { useEffect, useMemo, useState } from "react";
+import { DashboardIcon, ScreenState, formatDate, openPrintableDocument, resolveSchoolBrand } from "./AppShared";
+
+const PAYSLIP_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "approved", label: "Approved" },
+  { value: "paid", label: "Paid" },
+];
+
+const PAYMENT_METHOD_OPTIONS = ["Bank Transfer", "Cash", "Cheque"];
+
+const monthName = (month) =>
+  new Date(2000, Number(month) - 1, 1).toLocaleString(undefined, { month: "long" });
 
 const NAIRA_SYMBOL = "\u20A6";
 
@@ -34,7 +45,10 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-export default function ExpenseTracker({ data, school, loading, error, onRetry, onCreate, onDelete, onClassFeeSave, onClassFeeDelete }) {
+export default function ExpenseTracker({
+  data, school, loading, error, onRetry, onCreate, onDelete, onClassFeeSave, onClassFeeDelete,
+  onCreatePayslip, onSendPayslip, onLoadStaffOptions,
+}) {
   const items = data?.records || [];
   const classFees = data?.class_fee_rows || [];
   const classOptions = data?.class_options || [];
@@ -54,8 +68,60 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
     receiptNumber: "",
   });
   const [activeFilter, setActiveFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
+
+  // ── Payslip ──────────────────────────────────────────────────────────
+  const now = new Date();
+  const [payslipForm, setPayslipForm] = useState({
+    staffId: "",
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    basicSalary: "0",
+    allowances: "0",
+    deductions: "0",
+    paymentDate: now.toISOString().slice(0, 10),
+    paymentMethod: PAYMENT_METHOD_OPTIONS[0],
+    status: "approved",
+    remarks: "",
+  });
+  const [staffOptions, setStaffOptions] = useState([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffLoaded, setStaffLoaded] = useState(false);
+  const [payslipSaving, setPayslipSaving] = useState(false);
+  const [payslipError, setPayslipError] = useState("");
+  const [generatedPayslip, setGeneratedPayslip] = useState(null);
+  const [sendChannel, setSendChannel] = useState("email");
+  const [sendRecipient, setSendRecipient] = useState("");
+  const [sendingPayslip, setSendingPayslip] = useState(false);
+  const [sendFeedback, setSendFeedback] = useState("");
+  const [sendError, setSendError] = useState("");
+
+  useEffect(() => {
+    if (form.type === "payslip" && !staffLoaded && onLoadStaffOptions) {
+      setStaffLoading(true);
+      onLoadStaffOptions()
+        .then((list) => setStaffOptions(list || []))
+        .catch(() => setStaffOptions([]))
+        .finally(() => {
+          setStaffLoading(false);
+          setStaffLoaded(true);
+        });
+    }
+  }, [form.type, staffLoaded, onLoadStaffOptions]);
+
+  const selectedStaff = useMemo(
+    () => staffOptions.find((item) => String(item.id) === String(payslipForm.staffId)) || null,
+    [staffOptions, payslipForm.staffId]
+  );
+
+  const netSalaryPreview = useMemo(() => {
+    const basic = Number(payslipForm.basicSalary || 0);
+    const allowances = Number(payslipForm.allowances || 0);
+    const deductions = Number(payslipForm.deductions || 0);
+    return Math.max(basic + allowances - deductions, 0);
+  }, [payslipForm.basicSalary, payslipForm.allowances, payslipForm.deductions]);
   const [classFeeForm, setClassFeeForm] = useState({
     school_class: "",
     due_date: "",
@@ -125,7 +191,15 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
   }, [items]);
 
   const maxCategoryTotal = Math.max(...categoryRows.map((item) => item.total), 1);
-  const filteredItems = activeFilter === "all" ? items : items.filter((item) => item.type === activeFilter);
+  const typeFilteredItems = activeFilter === "all" ? items : items.filter((item) => item.type === activeFilter);
+  const searchNeedle = searchTerm.trim().toLowerCase();
+  const filteredItems = !searchNeedle
+    ? typeFilteredItems
+    : typeFilteredItems.filter((item) =>
+        [item.title, item.vendor, item.category, item.receiptNumber, item.note]
+          .filter(Boolean)
+          .some((field) => String(field).toLowerCase().includes(searchNeedle))
+      );
 
   const resetClassFeeForm = () => {
     setEditingClassFeeId("");
@@ -292,6 +366,74 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
   const handleTagChange = (label) => {
     const tag = EXPENSE_TAGS.find((item) => item.label === label) || EXPENSE_TAGS[0];
     setForm((current) => ({ ...current, category: tag.label, color: tag.color }));
+  };
+
+  const handleSelectStaff = (staffId) => {
+    const staff = staffOptions.find((item) => String(item.id) === String(staffId));
+    setPayslipForm((current) => ({
+      ...current,
+      staffId,
+      basicSalary: staff ? String(staff.base_salary ?? "0") : current.basicSalary,
+    }));
+  };
+
+  const handlePayslipSubmit = async (event) => {
+    event.preventDefault();
+    setPayslipError("");
+    setSendFeedback("");
+    setSendError("");
+    if (!payslipForm.staffId) {
+      setPayslipError("Select an employee.");
+      return;
+    }
+    setPayslipSaving(true);
+    try {
+      const result = await onCreatePayslip({
+        staff_id: payslipForm.staffId,
+        year: payslipForm.year,
+        month: payslipForm.month,
+        allowances: payslipForm.allowances || "0",
+        deductions: payslipForm.deductions || "0",
+        payment_date: payslipForm.paymentDate,
+        payment_method: payslipForm.paymentMethod,
+        status: payslipForm.status,
+        remarks: payslipForm.remarks.trim(),
+      });
+      setGeneratedPayslip(result?.payslip || null);
+      setSendRecipient(selectedStaff?.email || "");
+      setFeedback("Payslip generated.");
+    } catch (err) {
+      setPayslipError(err.message || "Could not generate payslip.");
+    } finally {
+      setPayslipSaving(false);
+    }
+  };
+
+  const handleSendPayslip = async (event) => {
+    event.preventDefault();
+    setSendFeedback("");
+    setSendError("");
+    if (!generatedPayslip) return;
+    setSendingPayslip(true);
+    try {
+      const result = await onSendPayslip(generatedPayslip.expense_record_id, {
+        channel: sendChannel,
+        recipient: sendRecipient.trim(),
+      });
+      setSendFeedback(result?.message || "Payslip sent.");
+    } catch (err) {
+      setSendError(err.message || "Could not send payslip.");
+    } finally {
+      setSendingPayslip(false);
+    }
+  };
+
+  const handlePrintPayslip = () => {
+    try {
+      openPrintableDocument("payslip-document", `Payslip - ${generatedPayslip?.staff_name || ""} - ${generatedPayslip?.period || ""}`);
+    } catch (err) {
+      setSendError(err.message || "Could not open the printable payslip.");
+    }
   };
 
   const handleDelete = async (itemId) => {
@@ -495,83 +637,241 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
         </article>
 
         <article className="app-panel expense-create-panel">
-          <h3>Create Expense, Bill, or Receipt</h3>
-          <form className="panel-form" onSubmit={handleSubmit}>
-            <div className="panel-form-grid">
-              <label className="panel-field">
-                Name
-                <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Example: Lab supplies" required />
-              </label>
-              <label className="panel-field">
-                Amount
-                <input type="number" min="1" step="0.01" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} required />
-              </label>
-              <label className="panel-field">
-                Vendor
-                <input value={form.vendor} onChange={(event) => setForm((current) => ({ ...current, vendor: event.target.value }))} placeholder="Vendor or staff member" />
-              </label>
-              <label className="panel-field">
-                Phone number
-                <input type="tel" value={form.phoneNumber} onChange={(event) => setForm((current) => ({ ...current, phoneNumber: event.target.value }))} placeholder="Vendor phone number" />
-              </label>
-              <label className="panel-field">
-                Date
-                <input type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} />
-              </label>
-              <label className="panel-field">
-                Type
-                <select value={form.type} onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}>
-                  <option value="expense">Expense</option>
-                  <option value="bill">Bill</option>
-                  <option value="receipt">Receipt</option>
-                </select>
-              </label>
-              <label className="panel-field">
-                Status
-                <select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}>
-                  <option value="pending">Pending</option>
-                  <option value="due">Due</option>
-                  <option value="paid">Paid</option>
-                </select>
-              </label>
-              <label className="panel-field full">
-                Color tag
-                <select value={form.category} onChange={(event) => handleTagChange(event.target.value)}>
-                  {EXPENSE_TAGS.map((tag) => (
-                    <option key={tag.label} value={tag.label}>{tag.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="panel-field">
-                Receipt no.
-                <input value={form.receiptNumber} onChange={(event) => setForm((current) => ({ ...current, receiptNumber: event.target.value }))} placeholder="Example: RC-2048" />
-              </label>
-              <div className="expense-color-tags">
-                {EXPENSE_TAGS.map((tag) => (
-                  <button
-                    key={tag.label}
-                    type="button"
-                    className={form.category === tag.label ? "active" : ""}
-                    onClick={() => handleTagChange(tag.label)}
-                    style={{ "--tag-color": tag.color }}
-                  >
-                    <span aria-hidden="true" />
-                    {tag.label}
-                  </button>
-                ))}
+          <h3>{form.type === "payslip" ? "Generate Payslip" : "Create Expense, Bill, or Receipt"}</h3>
+          <label className="panel-field">
+            Type
+            <select value={form.type} onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}>
+              <option value="expense">Expense</option>
+              <option value="bill">Bill</option>
+              <option value="receipt">Receipt</option>
+              <option value="payslip">Payslip</option>
+            </select>
+          </label>
+
+          {form.type === "payslip" ? (
+            <form className="panel-form" onSubmit={handlePayslipSubmit}>
+              <div className="panel-form-grid">
+                <label className="panel-field">
+                  Employee
+                  <select value={payslipForm.staffId} onChange={(event) => handleSelectStaff(event.target.value)} required>
+                    <option value="">{staffLoading ? "Loading staff..." : "Select employee"}</option>
+                    {staffOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="panel-field">
+                  Staff ID
+                  <input value={selectedStaff?.staff_code || ""} readOnly />
+                </label>
+                <label className="panel-field">
+                  Department
+                  <input value={selectedStaff?.department || ""} readOnly />
+                </label>
+                <label className="panel-field">
+                  Position
+                  <input value={selectedStaff?.role || ""} readOnly />
+                </label>
+                <label className="panel-field">
+                  Pay Period - Month
+                  <select value={payslipForm.month} onChange={(event) => setPayslipForm((current) => ({ ...current, month: Number(event.target.value) }))}>
+                    {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                      <option key={month} value={month}>{monthName(month)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="panel-field">
+                  Pay Period - Year
+                  <input type="number" value={payslipForm.year} onChange={(event) => setPayslipForm((current) => ({ ...current, year: Number(event.target.value) }))} />
+                </label>
+                <label className="panel-field">
+                  Basic Salary
+                  <input type="number" min="0" step="0.01" value={payslipForm.basicSalary} onChange={(event) => setPayslipForm((current) => ({ ...current, basicSalary: event.target.value }))} />
+                </label>
+                <label className="panel-field">
+                  Allowances
+                  <input type="number" min="0" step="0.01" value={payslipForm.allowances} onChange={(event) => setPayslipForm((current) => ({ ...current, allowances: event.target.value }))} />
+                </label>
+                <label className="panel-field">
+                  Deductions
+                  <input type="number" min="0" step="0.01" value={payslipForm.deductions} onChange={(event) => setPayslipForm((current) => ({ ...current, deductions: event.target.value }))} />
+                </label>
+                <label className="panel-field">
+                  Net Salary
+                  <input value={formatExpenseAmount(netSalaryPreview)} readOnly />
+                </label>
+                <label className="panel-field">
+                  Payment Date
+                  <input type="date" value={payslipForm.paymentDate} onChange={(event) => setPayslipForm((current) => ({ ...current, paymentDate: event.target.value }))} />
+                </label>
+                <label className="panel-field">
+                  Payment Method
+                  <select value={payslipForm.paymentMethod} onChange={(event) => setPayslipForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                    {PAYMENT_METHOD_OPTIONS.map((method) => (
+                      <option key={method} value={method}>{method}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="panel-field">
+                  Status
+                  <select value={payslipForm.status} onChange={(event) => setPayslipForm((current) => ({ ...current, status: event.target.value }))}>
+                    {PAYSLIP_STATUS_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="panel-field full">
+                  Remarks
+                  <textarea value={payslipForm.remarks} onChange={(event) => setPayslipForm((current) => ({ ...current, remarks: event.target.value }))} rows="2" placeholder="Optional notes for this payslip" />
+                </label>
               </div>
-              <label className="panel-field full">
-                Note
-                <textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} rows="3" placeholder="Optional details" />
-              </label>
-            </div>
-            {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-            {formError ? <p className="form-feedback error">{formError}</p> : null}
-            <div className="panel-form-actions">
-              <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Record"}</button>
-            </div>
-          </form>
+              {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+              {payslipError ? <p className="form-feedback error">{payslipError}</p> : null}
+              <div className="panel-form-actions">
+                <button type="submit" disabled={payslipSaving}>{payslipSaving ? "Generating..." : "Generate Payslip"}</button>
+              </div>
+            </form>
+          ) : (
+            <form className="panel-form" onSubmit={handleSubmit}>
+              <div className="panel-form-grid">
+                <label className="panel-field">
+                  Name
+                  <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Example: Lab supplies" required />
+                </label>
+                <label className="panel-field">
+                  Amount
+                  <input type="number" min="1" step="0.01" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} required />
+                </label>
+                <label className="panel-field">
+                  Vendor
+                  <input value={form.vendor} onChange={(event) => setForm((current) => ({ ...current, vendor: event.target.value }))} placeholder="Vendor or staff member" />
+                </label>
+                <label className="panel-field">
+                  Phone number
+                  <input type="tel" value={form.phoneNumber} onChange={(event) => setForm((current) => ({ ...current, phoneNumber: event.target.value }))} placeholder="Vendor phone number" />
+                </label>
+                <label className="panel-field">
+                  Date
+                  <input type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} />
+                </label>
+                <label className="panel-field">
+                  Status
+                  <select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}>
+                    <option value="pending">Pending</option>
+                    <option value="due">Due</option>
+                    <option value="paid">Paid</option>
+                  </select>
+                </label>
+                <label className="panel-field full">
+                  Color tag
+                  <select value={form.category} onChange={(event) => handleTagChange(event.target.value)}>
+                    {EXPENSE_TAGS.map((tag) => (
+                      <option key={tag.label} value={tag.label}>{tag.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="panel-field">
+                  Receipt no.
+                  <input value={form.receiptNumber} onChange={(event) => setForm((current) => ({ ...current, receiptNumber: event.target.value }))} placeholder="Example: RC-2048" />
+                </label>
+                <div className="expense-color-tags">
+                  {EXPENSE_TAGS.map((tag) => (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      className={form.category === tag.label ? "active" : ""}
+                      onClick={() => handleTagChange(tag.label)}
+                      style={{ "--tag-color": tag.color }}
+                    >
+                      <span aria-hidden="true" />
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="panel-field full">
+                  Note
+                  <textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} rows="3" placeholder="Optional details" />
+                </label>
+              </div>
+              {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+              {formError ? <p className="form-feedback error">{formError}</p> : null}
+              <div className="panel-form-actions">
+                <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Record"}</button>
+              </div>
+            </form>
+          )}
         </article>
+
+        {generatedPayslip ? (
+          <article className="app-panel expense-create-panel payslip-preview-panel">
+            <div className="expense-panel-head">
+              <h3>Payslip Preview</h3>
+              <div className="table-actions-inline">
+                <button type="button" className="table-action" onClick={handlePrintPayslip}>Print</button>
+                <button type="button" className="table-action" onClick={handlePrintPayslip}>Download as PDF</button>
+                <button type="button" className="table-action" onClick={() => setGeneratedPayslip(null)}>Close</button>
+              </div>
+            </div>
+
+            <div id="payslip-document" className="payslip-document">
+              <div className="print-letterhead">
+                {schoolBrand.logo ? <img src={schoolBrand.logo} alt={`${schoolBrand.name} logo`} /> : null}
+                <div>
+                  <h1>{schoolBrand.name}</h1>
+                  <p>{schoolBrand.address || "School address"}</p>
+                </div>
+              </div>
+              <h2>Payslip - {generatedPayslip.period}</h2>
+              <div className="print-meta">
+                <p><strong>Employee:</strong> {generatedPayslip.staff_name}</p>
+                <p><strong>Staff ID:</strong> {generatedPayslip.staff_code}</p>
+                <p><strong>Department:</strong> {generatedPayslip.department || "-"}</p>
+                <p><strong>Position:</strong> {generatedPayslip.role || "-"}</p>
+                <p><strong>Payment Date:</strong> {formatDate(generatedPayslip.payment_date)}</p>
+                <p><strong>Payment Method:</strong> {generatedPayslip.payment_method || "-"}</p>
+                <p><strong>Status:</strong> {generatedPayslip.status}</p>
+              </div>
+              <table>
+                <tbody>
+                  <tr><td>Basic Salary</td><td>{formatExpenseAmount(generatedPayslip.basic_salary)}</td></tr>
+                  <tr><td>Allowances</td><td>{formatExpenseAmount(generatedPayslip.allowances)}</td></tr>
+                  <tr><td>Deductions</td><td>-{formatExpenseAmount(generatedPayslip.deductions)}</td></tr>
+                  {Number(generatedPayslip.advances_applied) > 0 ? (
+                    <tr><td>Salary Advance Applied</td><td>-{formatExpenseAmount(generatedPayslip.advances_applied)}</td></tr>
+                  ) : null}
+                  <tr><td><strong>Net Salary</strong></td><td><strong>{formatExpenseAmount(generatedPayslip.net_salary)}</strong></td></tr>
+                </tbody>
+              </table>
+              {generatedPayslip.remarks ? <p className="print-body">Remarks: {generatedPayslip.remarks}</p> : null}
+              <p className="print-signature">Authorized signature: ____________________</p>
+            </div>
+
+            <form className="panel-form" onSubmit={handleSendPayslip}>
+              <div className="panel-form-grid">
+                <label className="panel-field">
+                  Send via
+                  <select value={sendChannel} onChange={(event) => setSendChannel(event.target.value)}>
+                    <option value="email">Email</option>
+                    <option value="sms">SMS Link</option>
+                  </select>
+                </label>
+                <label className="panel-field">
+                  {sendChannel === "email" ? "Recipient email" : "Recipient phone"}
+                  <input
+                    value={sendRecipient}
+                    onChange={(event) => setSendRecipient(event.target.value)}
+                    placeholder={sendChannel === "email" ? selectedStaff?.email || "employee@school.edu" : selectedStaff?.phone || "080..."}
+                  />
+                </label>
+              </div>
+              {sendFeedback ? <p className="form-feedback success">{sendFeedback}</p> : null}
+              {sendError ? <p className="form-feedback error">{sendError}</p> : null}
+              <div className="panel-form-actions">
+                <button type="submit" disabled={sendingPayslip}>{sendingPayslip ? "Sending..." : "Send Payslip"}</button>
+              </div>
+            </form>
+          </article>
+        ) : null}
 
       </div>
 
@@ -631,13 +931,21 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
         <div className="expense-panel-head">
           <h3>Expense Register</h3>
           <div className="expense-tabs">
-            {["all", "expense", "bill", "receipt"].map((filter) => (
+            {["all", "expense", "bill", "receipt", "payslip"].map((filter) => (
               <button key={filter} type="button" className={activeFilter === filter ? "active" : ""} onClick={() => setActiveFilter(filter)}>
-                {filter === "all" ? "All" : filter === "bill" ? "Bills" : filter === "receipt" ? "Receipts" : "Expenses"}
+                {filter === "all" ? "All" : filter === "bill" ? "Bills" : filter === "receipt" ? "Receipts" : filter === "payslip" ? "Payslips" : "Expenses"}
               </button>
             ))}
           </div>
         </div>
+        <input
+          type="search"
+          className="expense-search-input"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          placeholder="Search by name, vendor, tag, or receipt no."
+          aria-label="Search expense records"
+        />
         <div className="table-scroll">
           <table className="data-table expense-table">
             <thead>
@@ -657,7 +965,13 @@ export default function ExpenseTracker({ data, school, loading, error, onRetry, 
                 <tr key={item.id}>
                   <td>{item.title}<small>{[item.vendor, item.phoneNumber, item.note].filter(Boolean).join(" - ")}</small></td>
                   <td><span className="expense-tag-pill" style={{ "--tag-color": item.color }}>{item.category}</span></td>
-                  <td>{item.type}</td>
+                  <td>
+                    {item.type === "payslip" ? (
+                      <span className="type-badge type-badge-payslip">Payslip</span>
+                    ) : (
+                      <span className="type-badge">{item.type}</span>
+                    )}
+                  </td>
                   <td>{item.receiptNumber || "-"}</td>
                   <td><span className={`finance-status status-${item.status}`}>{item.status}</span></td>
                   <td>{formatDate(item.date)}</td>

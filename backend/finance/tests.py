@@ -1,6 +1,7 @@
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
+from django.core import mail
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.db import connection
@@ -16,6 +17,7 @@ from finance.models import (
     BankPayment,
     ClassFee,
     DocumentGenerationCreditTransaction,
+    ExpenseRecord,
     FeeAllocation,
     FinanceLedgerLog,
     ParentVirtualAccount,
@@ -26,6 +28,7 @@ from finance.models import (
     Transaction,
     Wallet,
 )
+from hr.models import PayrollRecord, StaffProfile
 from finance.services import (
     ACTIVATION_CREDIT_PRICE,
     SMS_CHAR_LIMIT,
@@ -1750,3 +1753,158 @@ class PaystackReceiptMessageTests(TestCase):
         from finance.services import sms_compact_url
         self.assertEqual(sms_compact_url("https://schooldom.academy/r/abcd1234"), "www.schooldom.academy/r/abcd1234")
         self.assertEqual(sms_compact_url("https://www.schooldom.academy/r/abcd1234"), "www.schooldom.academy/r/abcd1234")
+
+
+class PayslipExpenseTests(TestCase):
+    """The Expenses page's Payslip type must be a thin, deduplicated front end
+    onto hr.PayrollRecord - regenerating a payslip for the same staff/month
+    must update the existing PayrollRecord and ExpenseRecord, never create a
+    second one."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Payslip School", schema_name="payslip_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@payslip.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.accountant = User.objects.create_user(
+            email="accountant@payslip.edu", password="AccountantPass123", role="accountant",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.staff = StaffProfile.objects.create(
+            tenant=self.school, staff_code="STF001", first_name="Ada", last_name="Okafor",
+            email="ada@payslip.edu", phone="08010000001", role="Accountant", department="Finance",
+            base_salary=Decimal("150000.00"),
+        )
+        self.client.force_authenticate(self.admin)
+
+    def _create_payslip(self, **overrides):
+        payload = {
+            "staff_id": str(self.staff.id), "year": 2026, "month": 6,
+            "allowances": "5000", "deductions": "2000", "status": "paid",
+            "payment_method": "Bank Transfer", "payment_date": "2026-06-28", "remarks": "June salary",
+        }
+        payload.update(overrides)
+        return self.client.post("/api/finance/admin/expenses/payslip/", payload, format="json")
+
+    def test_creating_a_payslip_links_a_real_payroll_record(self):
+        response = self._create_payslip()
+        self.assertEqual(response.status_code, 201, response.data)
+
+        payroll = PayrollRecord.objects.get(staff=self.staff, year=2026, month=6)
+        self.assertEqual(payroll.net_salary, Decimal("153000.00"))  # 150000 + 5000 - 2000
+        self.assertEqual(payroll.status, PayrollRecord.PAID)
+
+        record = ExpenseRecord.objects.get(payroll_record=payroll)
+        self.assertEqual(record.record_type, ExpenseRecord.TYPE_PAYSLIP)
+        self.assertEqual(record.amount, Decimal("153000.00"))
+        self.assertEqual(record.status, ExpenseRecord.STATUS_PAID)
+        self.assertIn("Payslip", record.title)
+
+    def test_regenerating_a_payslip_for_the_same_month_updates_not_duplicates(self):
+        first = self._create_payslip()
+        self.assertEqual(first.status_code, 201)
+        second = self._create_payslip(allowances="8000")
+        self.assertEqual(second.status_code, 200, second.data)  # 200, not 201 - updated an existing row
+
+        self.assertEqual(PayrollRecord.objects.filter(staff=self.staff, year=2026, month=6).count(), 1)
+        self.assertEqual(ExpenseRecord.objects.filter(record_type=ExpenseRecord.TYPE_PAYSLIP).count(), 1)
+        payroll = PayrollRecord.objects.get(staff=self.staff, year=2026, month=6)
+        self.assertEqual(payroll.net_salary, Decimal("156000.00"))  # 150000 + 8000 - 2000
+
+    def test_net_salary_deducts_paid_salary_advance_for_the_same_period(self):
+        from hr.models import SalaryAdvanceRequest
+        SalaryAdvanceRequest.objects.create(
+            staff=self.staff, amount=Decimal("10000.00"), status=SalaryAdvanceRequest.PAID,
+            request_date=timezone.datetime(2026, 6, 15).date(),
+        )
+        response = self._create_payslip()
+        self.assertEqual(response.status_code, 201, response.data)
+        payroll = PayrollRecord.objects.get(staff=self.staff, year=2026, month=6)
+        self.assertEqual(payroll.net_salary, Decimal("143000.00"))  # 150000 + 5000 - 2000 - 10000
+
+    def test_draft_status_does_not_mark_as_paid(self):
+        response = self._create_payslip(status="draft")
+        self.assertEqual(response.status_code, 201, response.data)
+        payroll = PayrollRecord.objects.get(staff=self.staff, year=2026, month=6)
+        self.assertEqual(payroll.status, PayrollRecord.DRAFT)
+        self.assertEqual(payroll.amount_paid, Decimal("0.00"))
+        record = ExpenseRecord.objects.get(payroll_record=payroll)
+        self.assertEqual(record.status, ExpenseRecord.STATUS_PENDING)
+
+    def test_accountant_can_create_payslip_non_finance_role_cannot(self):
+        self.client.force_authenticate(self.accountant)
+        response = self._create_payslip()
+        self.assertEqual(response.status_code, 201, response.data)
+
+        teacher = User.objects.create_user(
+            email="teacher@payslip.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(teacher)
+        blocked = self._create_payslip(month=7)
+        self.assertEqual(blocked.status_code, 403)
+
+    def test_payslip_appears_in_expense_records_list(self):
+        self._create_payslip()
+        response = self.client.get("/api/finance/admin/expenses/")
+        self.assertEqual(response.status_code, 200)
+        types = {row["type"] for row in response.data["records"]}
+        self.assertIn("payslip", types)
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_payslip_via_sms_is_wallet_billed_and_uses_secure_link(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        created = self._create_payslip()
+        record_id = created.data["record"]["id"]
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
+
+        response = self.client.post(f"/api/finance/admin/expenses/payslip/{record_id}/send/", {"channel": "sms"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance - 1)
+        self.assertTrue(PaymentReceiptLink.objects.filter(receipt_type="payslip").exists())
+
+    @patch("finance.services.send_ebulksms")
+    def test_send_payslip_via_sms_provider_failure_is_not_billed(self, mock_send):
+        mock_send.return_value = {"response": {"status": "FAILED", "totalsent": 0}}
+        created = self._create_payslip()
+        record_id = created.data["record"]["id"]
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
+
+        response = self.client.post(f"/api/finance/admin/expenses/payslip/{record_id}/send/", {"channel": "sms"}, format="json")
+
+        self.assertEqual(response.status_code, 502)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance)
+
+    def test_send_payslip_via_email_uses_staff_email_on_file(self):
+        created = self._create_payslip()
+        record_id = created.data["record"]["id"]
+
+        response = self.client.post(f"/api/finance/admin/expenses/payslip/{record_id}/send/", {"channel": "email"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.staff.email, mail.outbox[0].to)
+        self.assertIn("Payslip", mail.outbox[0].subject)
+
+    def test_create_payroll_record_endpoint_still_works_unchanged(self):
+        """The refactor extracting process_payroll() must not change the
+        existing HR payroll endpoint's behavior."""
+        response = self.client.post(
+            "/api/hr/payroll/create/",
+            {"staff_id": str(self.staff.id), "year": 2026, "month": 9, "allowances": "1000", "deductions": "500", "amount_paid": "150500"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        payroll = PayrollRecord.objects.get(staff=self.staff, year=2026, month=9)
+        self.assertEqual(payroll.net_salary, Decimal("150500.00"))
+        self.assertEqual(payroll.status, PayrollRecord.PAID)
+        # This flow does not go through the Expenses page, so no linked
+        # ExpenseRecord should be created for it.
+        self.assertFalse(ExpenseRecord.objects.filter(payroll_record=payroll).exists())

@@ -715,10 +715,12 @@ class ExpenseRecord(models.Model):
     TYPE_EXPENSE = "expense"
     TYPE_BILL = "bill"
     TYPE_RECEIPT = "receipt"
+    TYPE_PAYSLIP = "payslip"
     TYPE_CHOICES = [
         (TYPE_EXPENSE, "Expense"),
         (TYPE_BILL, "Bill"),
         (TYPE_RECEIPT, "Receipt"),
+        (TYPE_PAYSLIP, "Payslip"),
     ]
 
     STATUS_PENDING = "pending"
@@ -750,6 +752,15 @@ class ExpenseRecord(models.Model):
     record_date = models.DateField()
     receipt_number = models.CharField(max_length=80, blank=True)
     note = models.TextField(blank=True)
+    payroll_record = models.OneToOneField(
+        "hr.PayrollRecord",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_record",
+        help_text="For record_type=payslip - the payroll transaction this row was generated from. "
+                   "OneToOne so a given staff/month payroll can never produce more than one Payslip row here.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

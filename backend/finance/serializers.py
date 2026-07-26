@@ -219,6 +219,7 @@ class ExpenseRecordSerializer(serializers.ModelSerializer):
     date = serializers.DateField(source="record_date", required=False)
     receiptNumber = serializers.CharField(source="receipt_number", required=False, allow_blank=True)
     phoneNumber = serializers.CharField(source="phone_number", required=False, allow_blank=True)
+    payrollRecordId = serializers.PrimaryKeyRelatedField(source="payroll_record", read_only=True)
 
     class Meta:
         model = ExpenseRecord
@@ -236,6 +237,7 @@ class ExpenseRecordSerializer(serializers.ModelSerializer):
             "date",
             "receiptNumber",
             "note",
+            "payrollRecordId",
             "created_at",
             "updated_at",
         ]
@@ -243,7 +245,7 @@ class ExpenseRecordSerializer(serializers.ModelSerializer):
 
     def validate_type(self, value):
         if value not in {choice[0] for choice in ExpenseRecord.TYPE_CHOICES}:
-            raise serializers.ValidationError("Type must be expense, bill, or receipt.")
+            raise serializers.ValidationError("Type must be expense, bill, receipt, or payslip.")
         return value
 
     def validate_status(self, value):

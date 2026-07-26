@@ -6540,6 +6540,36 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleAdminExpenseCreatePayslip = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/finance/admin/expenses/payslip/", payload);
+      addAdminNotification({
+        category: "Finance",
+        module: "Expenses",
+        action: `Generated payslip for ${result?.payslip?.staff_name || "staff"} (${result?.payslip?.period || ""}).`,
+        status: "Success",
+        priority: "Medium",
+        tone: "info",
+      });
+      await loadScreen("/expenses", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleAdminExpensePayslipSend = useCallback(
+    async (recordId, payload) => requestJson(session, "POST", `/api/finance/admin/expenses/payslip/${recordId}/send/`, payload),
+    [session]
+  );
+
+  const handleLoadHrStaffOptions = useCallback(
+    async () => {
+      const result = await requestJson(session, "GET", "/api/hr/overview/");
+      return result.staff || [];
+    },
+    [session]
+  );
+
   const handleBankPaymentsIngest = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/bank-payments/ingest/", payload);
@@ -7609,6 +7639,9 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onDelete={handleAdminExpenseDelete}
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
+        onCreatePayslip={handleAdminExpenseCreatePayslip}
+        onSendPayslip={handleAdminExpensePayslipSend}
+        onLoadStaffOptions={handleLoadHrStaffOptions}
       />
     );
   } else if (activePath === "/hr-self-service") {

@@ -491,6 +491,58 @@ export function resolveSchoolBrand(...sources) {
   };
 }
 
+const escapePrintableHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+
+/** Opens a popup (or, if popups are blocked, a hidden iframe) containing a
+ * clone of the given element's markup and triggers the browser's print
+ * dialog on load - this app's "Download as PDF" is the browser's own
+ * Print -> Save as PDF, there is no server-side PDF generator. */
+export function openPrintableDocument(elementId, title) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    throw new Error("The document preview is not ready yet.");
+  }
+  const printStyles =
+    "body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;padding:40px;} " +
+    ".print-letterhead{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1f2937;padding-bottom:14px;margin-bottom:24px;} " +
+    ".print-letterhead img{width:56px;height:56px;object-fit:contain;} .print-letterhead h1{font-size:1.15rem;margin:0;} " +
+    ".print-letterhead p{margin:2px 0 0;font-size:0.85rem;color:#4b5563;} .print-body p{line-height:1.7;font-size:0.95rem;} " +
+    ".print-meta{margin-bottom:18px;font-size:0.85rem;color:#4b5563;} .print-signature{margin-top:48px;font-size:0.9rem;} " +
+    "table{width:100%;border-collapse:collapse;margin:12px 0;} th,td{border-bottom:1px solid #e5e7eb;padding:8px 10px;text-align:left;} " +
+    "th:last-child,td:last-child{text-align:right;}";
+  const content = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${escapePrintableHtml(title)}</title><style>${printStyles}</style></head><body>${element.outerHTML}<script>window.onload=()=>{window.focus();window.print();};</script></body></html>`;
+
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=1100");
+  if (printWindow) {
+    printWindow.document.write(content);
+    printWindow.document.close();
+    return;
+  }
+
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+  const iframeDoc = iframe.contentWindow?.document;
+  if (!iframeDoc) {
+    iframe.remove();
+    throw new Error("Unable to open print preview.");
+  }
+  iframeDoc.open();
+  iframeDoc.write(content);
+  iframeDoc.close();
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    setTimeout(() => iframe.remove(), 1000);
+  };
+}
+
 export function academicGroupLabels(...sources) {
   const brand = resolveSchoolBrand(...sources);
   const isNonK12 = String(brand.school_type || "k12").toLowerCase() === "non_k12";

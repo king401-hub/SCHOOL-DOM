@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>
-    {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% else %}Fee Statement{% endif %}
+    {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% else %}Fee Statement{% endif %}
     — {{ data.school_name|default:"School" }}
   </title>
   <style>
@@ -186,7 +186,7 @@
     <div class="school-initial">{{ data.school_name|default:"S"|first|upper }}</div>
     <h1>{{ data.school_name|default:"School" }}</h1>
     <p>
-      {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% else %}Fee Statement{% endif %}
+      {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% else %}Fee Statement{% endif %}
       &bull; {% firstof data.payment_date data.generated_at "" %}
     </p>
   </div>
@@ -207,6 +207,11 @@
       <span class="badge bill">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
         Fee Statement
+      </span>
+    {% elif link.receipt_type == "payslip" %}
+      <span class="badge" style="background:#7c3aed;color:#fff;border:2px solid #fff">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
+        Payslip
       </span>
     {% elif data.payment_status == "paid" %}
       <span class="badge paid">
@@ -355,6 +360,55 @@
           Reference <span>{{ data.reference }}</span>
         </div>
       {% endif %}
+
+    {% elif link.receipt_type == "payslip" %}
+    <!-- ── PAYSLIP VIEW ── -->
+
+      <p class="section-title">Employee Details</p>
+      <div class="info-grid">
+        <div class="info-item">
+          <label>Name</label>
+          <span>{{ data.staff_name|default:"—" }}</span>
+        </div>
+        <div class="info-item">
+          <label>Staff ID</label>
+          <span>{{ data.staff_code|default:"—" }}</span>
+        </div>
+        <div class="info-item">
+          <label>Department</label>
+          <span>{{ data.department|default:"—" }}</span>
+        </div>
+        <div class="info-item">
+          <label>Position</label>
+          <span>{{ data.role|default:"—" }}</span>
+        </div>
+        <div class="info-item">
+          <label>Pay Period</label>
+          <span>{{ data.period|default:"—" }}</span>
+        </div>
+        <div class="info-item">
+          <label>Payment Date</label>
+          <span>{{ data.payment_date|default:"—" }}</span>
+        </div>
+      </div>
+
+      <p class="section-title">Pay Breakdown</p>
+      <table>
+        <tbody>
+          <tr><td>Basic Salary</td><td class="text-right">₦{{ data.basic_salary|floatformat:2 }}</td></tr>
+          <tr><td>Allowances</td><td class="text-right">₦{{ data.allowances|floatformat:2 }}</td></tr>
+          <tr><td>Deductions</td><td class="text-right" style="color:#dc2626">-₦{{ data.deductions|floatformat:2 }}</td></tr>
+          {% if data.advances_applied %}
+          <tr><td>Salary Advance Applied</td><td class="text-right" style="color:#dc2626">-₦{{ data.advances_applied|floatformat:2 }}</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+
+      <div class="amount-hero">
+        <div class="label">Net Salary</div>
+        <div class="amount" style="color:#7c3aed">₦{{ data.net_salary|floatformat:2 }}</div>
+        <div class="balance">Status: {{ data.status|default:"—"|capfirst }}</div>
+      </div>
 
     {% else %}
     <!-- ── BILL / FEE STATEMENT VIEW ── -->

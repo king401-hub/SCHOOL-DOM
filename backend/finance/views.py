@@ -30,6 +30,7 @@ from finance.models import (
     FinanceLedgerLog,
     ParentVirtualAccount,
     SchoolFee,
+    SmsMessageLog,
     SmsWalletTransaction,
     StudentActivationCredit,
     StudentPaymentReference,
@@ -117,6 +118,12 @@ from finance.services import (
     SMS_UNIT_BLOCK_SIZE,
     SMS_UNIT_BLOCK_PRICE,
     SMS_UNIT_CURRENCY,
+    create_receipt_link,
+    send_wallet_sms,
+    send_payslip_email,
+    sms_compact_url,
+    sms_failure_reason,
+    _format_naira,
 )
 from hr.models import PayrollRecord, StaffProfile
 from tenants.models import Tenant
@@ -1818,6 +1825,192 @@ def admin_expense_record_detail(request, record_id):
     record.delete()
     records = ExpenseRecord.objects.filter(tenant=user.tenant)
     return Response({"success": True, "records": ExpenseRecordSerializer(records, many=True).data})
+
+
+def _payslip_payload(record, payroll, staff, payment_method, remarks):
+    return {
+        "expense_record_id": str(record.id),
+        "payroll_record_id": str(payroll.id),
+        "staff_id": str(staff.id),
+        "staff_name": staff.full_name,
+        "staff_code": staff.staff_code,
+        "department": staff.department,
+        "role": staff.role,
+        "period": payroll.period_label,
+        "basic_salary": payroll.base_salary,
+        "allowances": payroll.allowances,
+        "deductions": payroll.deductions,
+        "advances_applied": payroll.advances_applied,
+        "gross_salary": payroll.gross_salary,
+        "net_salary": payroll.net_salary,
+        "payment_date": record.record_date,
+        "payment_method": payment_method,
+        "status": payroll.status,
+        "remarks": remarks,
+    }
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_expense_payslip_create(request):
+    """Create or update a Payslip-typed ExpenseRecord backed by a real
+    hr.PayrollRecord. Regenerating a payslip for the same staff/month updates
+    the existing PayrollRecord (process_payroll's update_or_create, keyed on
+    staff+year+month) and the same linked ExpenseRecord (keyed on the
+    OneToOneField) instead of creating duplicate salary records."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    staff = get_object_or_404(StaffProfile.objects.filter(tenant=user.tenant), id=request.data.get("staff_id"))
+    today = timezone.localdate()
+    try:
+        year = int(request.data.get("year") or today.year)
+        month = int(request.data.get("month") or today.month)
+    except (TypeError, ValueError):
+        return Response({"success": False, "message": "Valid pay period year and month are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _money(value):
+        try:
+            return Decimal(str(value or "0")).quantize(Decimal("0.01"))
+        except Exception:
+            return Decimal("0.00")
+
+    allowances = _money(request.data.get("allowances"))
+    deductions = _money(request.data.get("deductions"))
+    payslip_status = str(request.data.get("status") or PayrollRecord.APPROVED).strip().lower()
+    if payslip_status not in {PayrollRecord.DRAFT, PayrollRecord.APPROVED, PayrollRecord.PAID}:
+        return Response({"success": False, "message": "Status must be draft, approved, or paid."}, status=status.HTTP_400_BAD_REQUEST)
+    payment_method = str(request.data.get("payment_method") or "").strip()
+    remarks = str(request.data.get("remarks") or "").strip()
+    notes = " ".join(part for part in [f"Payment method: {payment_method}." if payment_method else "", remarks] if part)
+
+    payment_date = parse_date(str(request.data.get("payment_date"))) if request.data.get("payment_date") else None
+    payment_date = payment_date or today
+
+    from hr.views import process_payroll  # local import: HR views already import finance.services at module level
+
+    try:
+        payroll, created, _transfer_reference, _transfer_result = process_payroll(
+            staff, year, month, allowances, deductions, Decimal("0.00"),
+            pay_with_flutterwave=False, actor=user, notes=notes,
+            status_override=payslip_status, mark_fully_paid=(payslip_status == PayrollRecord.PAID),
+        )
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    expense_status = {
+        PayrollRecord.DRAFT: ExpenseRecord.STATUS_PENDING,
+        PayrollRecord.APPROVED: ExpenseRecord.STATUS_DUE,
+        PayrollRecord.PAID: ExpenseRecord.STATUS_PAID,
+    }[payroll.status]
+
+    record, _record_created = ExpenseRecord.objects.update_or_create(
+        payroll_record=payroll,
+        defaults={
+            "tenant": user.tenant,
+            "title": f"Payslip - {staff.full_name} - {payroll.period_label}",
+            "vendor": staff.full_name,
+            "phone_number": staff.phone or "",
+            "amount": payroll.net_salary,
+            "currency": "NGN",
+            "record_type": ExpenseRecord.TYPE_PAYSLIP,
+            "category": "Payroll",
+            "color": "#7c3aed",
+            "status": expense_status,
+            "record_date": payment_date,
+            "note": notes,
+            "created_by": user,
+        },
+    )
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "payslip_generated",
+        f"Payslip generated for {staff.full_name} ({payroll.period_label}).",
+        amount=payroll.net_salary,
+        reference=str(record.id),
+        metadata={"staff_id": str(staff.id), "period": payroll.period_label, "payroll_id": str(payroll.id)},
+    )
+
+    records = ExpenseRecord.objects.filter(tenant=user.tenant)
+    return Response(
+        {
+            "success": True,
+            "record": ExpenseRecordSerializer(record).data,
+            "records": ExpenseRecordSerializer(records, many=True).data,
+            "payslip": _payslip_payload(record, payroll, staff, payment_method, remarks),
+        },
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_expense_payslip_send(request, record_id):
+    """Send a previously-generated payslip to the employee via email or a
+    secure SMS link, reusing this session's existing SMS-wallet/receipt-link
+    infrastructure (create_receipt_link + send_wallet_sms) rather than a new
+    pipeline - so a payslip SMS is wallet-billed and only charged after the
+    provider confirms delivery, exactly like every other SMS feature."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    record = get_object_or_404(
+        ExpenseRecord.objects.filter(tenant=user.tenant, record_type=ExpenseRecord.TYPE_PAYSLIP).select_related("payroll_record", "payroll_record__staff"),
+        id=record_id,
+    )
+    payroll = record.payroll_record
+    if not payroll:
+        return Response({"success": False, "message": "This payslip is not linked to a payroll record."}, status=status.HTTP_400_BAD_REQUEST)
+    staff = payroll.staff
+
+    channel = str(request.data.get("channel") or "").strip().lower()
+    if channel not in {"email", "sms"}:
+        return Response({"success": False, "message": "channel must be 'email' or 'sms'."}, status=status.HTTP_400_BAD_REQUEST)
+
+    school_name = getattr(user.tenant, "name", "") or "School"
+    payslip_data = {
+        "type": "payslip",
+        "school_name": school_name,
+        "staff_name": staff.full_name,
+        "staff_code": staff.staff_code,
+        "department": staff.department,
+        "role": staff.role,
+        "period": payroll.period_label,
+        "basic_salary": str(payroll.base_salary),
+        "allowances": str(payroll.allowances),
+        "deductions": str(payroll.deductions),
+        "net_salary": str(payroll.net_salary),
+        "payment_date": record.record_date.strftime("%d %b %Y") if record.record_date else "",
+        "status": payroll.status,
+        "generated_at": timezone.now().strftime("%d %b %Y"),
+    }
+
+    if channel == "email":
+        recipient = str(request.data.get("recipient") or staff.email or "").strip()
+        if not recipient:
+            return Response({"success": False, "message": "No employee email on file - provide a recipient."}, status=status.HTTP_400_BAD_REQUEST)
+        receipt_url = create_receipt_link(payslip_data, tenant=user.tenant, receipt_type="payslip")
+        result = send_payslip_email(recipient, payslip_data, receipt_url=receipt_url)
+        if not result.get("sent"):
+            return Response({"success": False, "message": result.get("email_error") or "Could not send payslip email."}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({"success": True, "message": f"Payslip emailed to {recipient}."})
+
+    recipient = str(request.data.get("recipient") or staff.phone or "").strip()
+    if not recipient:
+        return Response({"success": False, "message": "No employee phone number on file - provide a recipient."}, status=status.HTTP_400_BAD_REQUEST)
+    receipt_url = create_receipt_link(payslip_data, tenant=user.tenant, phone=recipient, receipt_type="payslip")
+    message = f"{school_name} Payslip: {staff.full_name} ({payroll.period_label}). Net pay: {_format_naira(payroll.net_salary)}. View: {sms_compact_url(receipt_url)}"
+    try:
+        log = send_wallet_sms(user.tenant, recipient, message, category=SmsMessageLog.OTHER, actor=user, narration="Payslip")
+    except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_402_PAYMENT_REQUIRED)
+    if log.delivery_status not in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
+        return Response({"success": False, "message": sms_failure_reason(log)}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response({"success": True, "message": f"Payslip SMS sent to {recipient}."})
 
 
 @api_view(["GET"])
