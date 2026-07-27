@@ -6,6 +6,7 @@ app_name = 'exams'
 urlpatterns = [
     # Exam endpoints
     path('cbt-entry/', exam_views.StudentCbtEntryView.as_view(), name='student_cbt_entry'),
+    path('cbt/version/', exam_views.cbt_app_version, name='cbt_app_version'),
     path('cbt/offline-sync/', exam_views.cbt_offline_sync_package, name='cbt_offline_sync_package'),
     path('cbt/exams/<int:exam_id>/pin/regenerate/', exam_views.cbt_regenerate_exam_pin, name='cbt_regenerate_exam_pin'),
     path('cbt/results/delete/', exam_views.cbt_delete_offline_result, name='cbt_delete_offline_result'),

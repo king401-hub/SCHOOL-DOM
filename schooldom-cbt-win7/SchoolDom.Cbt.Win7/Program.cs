@@ -14,7 +14,48 @@ namespace SchoolDom.Cbt.Win7
             BootstrapNetworkSecurity();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+            if (!CheckForUpdateAndMaybeLaunch())
+                return; // update launched or user chose to exit
+
             Application.Run(new MainForm());
+        }
+
+        // Returns true  → continue to MainForm.
+        // Returns false → exit (installer started or user hit "Exit Application").
+        private static bool CheckForUpdateAndMaybeLaunch()
+        {
+            // Skip the network check when the snooze period is still active
+            if (UpdateService.IsUpdateSnoozed())
+                return true;
+
+            UpdateInfo info = null;
+            try
+            {
+                // Read cloud URL from stored state so we hit the right server
+                var cloudUrl = new LocalStore().State.CloudUrl ?? "https://schooldom.academy";
+                info = UpdateService.CheckForUpdate(cloudUrl);
+            }
+            catch
+            {
+                // No internet / server unreachable — let the user continue normally
+                return true;
+            }
+
+            var currentVersion = Application.ProductVersion; // e.g. "0.1.0.0"
+            if (info == null || !info.IsNewerThan(currentVersion))
+                return true; // already up to date
+
+            var form   = new UpdateForm(currentVersion, info);
+            var result = form.ShowDialog();
+
+            // OK  → installer launched; we must exit
+            // Abort → user clicked "Exit Application"
+            if (result == DialogResult.OK || result == DialogResult.Abort)
+                return false;
+
+            // Cancel (Remind Me Later) or form closed → proceed to MainForm
+            return true;
         }
 
         // Call once at startup — configures TLS and certificate validation globally for

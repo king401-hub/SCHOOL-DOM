@@ -1729,3 +1729,37 @@ def cbt_results_package_import(request):
         "failed": len(processed) - imported,
         "processed": processed,
     })
+
+
+# ---------------------------------------------------------------------------
+# CBT Admin App auto-update version endpoint
+# ---------------------------------------------------------------------------
+# Update CBT_ADMIN_APP_VERSION in your Django settings (or .env via a
+# settings override) whenever you publish a new installer.  The desktop app
+# checks this endpoint on every launch and prompts the admin to update when
+# 'version' is newer than the installed version.
+#
+# Example settings.py entry:
+#   CBT_ADMIN_APP_VERSION = {
+#       "version": "0.2.0",
+#       "release_notes": "- Fixed timer sync\n- HTML question rendering",
+#       "release_date": "2026-08-01",
+#       "download_url": "https://schooldom.academy/media/app/cbt/SchoolDom-Admin-Sync-Win7-0.2.0-Setup.exe",
+#       "file_size_bytes": 4567890,
+#       "is_mandatory": False,
+#   }
+_CBT_ADMIN_APP_VERSION_DEFAULT = {
+    "version": "0.1.0",
+    "release_notes": "Initial release of SchoolDom Admin Sync for Windows 7.",
+    "release_date": "2026-07-27",
+    "download_url": "",
+    "file_size_bytes": None,
+    "is_mandatory": False,
+}
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def cbt_app_version(request):
+    info = getattr(settings, 'CBT_ADMIN_APP_VERSION', _CBT_ADMIN_APP_VERSION_DEFAULT)
+    return Response(info)
+

@@ -57,6 +57,8 @@
     <Compile Include="MainForm.cs" />
     <Compile Include="PackageService.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="UpdateService.cs" />
+    <Compile Include="UpdateForm.cs" />
     <Compile Include="PromptDialog.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
