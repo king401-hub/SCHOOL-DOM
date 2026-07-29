@@ -3,13 +3,9 @@ from .models import Exam, ExamAttempt, Question, StudentAnswer
 
 
 class QuestionSerializer(serializers.ModelSerializer):
-    group = serializers.SerializerMethodField()
-
     class Meta:
         model = Question
         fields = ['id', 'text', 'image', 'options', 'question_type', 'points', 'group_order']
-
-    # Removed the get_group() method - no more duplicate group data
 
 
 class QuestionGroupSerializer(serializers.Serializer):
