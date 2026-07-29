@@ -102,6 +102,7 @@ class SchoolTenant(models.Model):
     compliance_suspended_at = models.DateTimeField(null=True, blank=True)
     compliance_reminder_stage = models.PositiveSmallIntegerField(default=0)
     signup_notification_sent_at = models.DateTimeField(null=True, blank=True)
+    welcome_email_sent_at = models.DateTimeField(null=True, blank=True)
 
     # Configuration
     timezone = models.CharField(max_length=50, default='UTC')

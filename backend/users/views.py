@@ -277,6 +277,81 @@ def admin_otp_debug_payload(user):
     return {"debug_otp": code} if code else {}
 
 
+# Roles that represent a school's own founding admin - the "Dear {School
+# Name} Team" welcome email is about a single school being onboarded, so
+# school_superadmin (a multi-school group owner with no single tenant at
+# this point) is deliberately excluded.
+SCHOOL_WELCOME_EMAIL_ROLES = {"school_admin", "principal"}
+SCHOOLDOM_SUPPORT_PHONE = "0907821365"
+
+
+def send_school_welcome_email(tenant, user):
+    """Send the one-time welcome email to a newly onboarded school, guarded
+    by SchoolTenant.welcome_email_sent_at so it only ever goes out once per
+    school - regardless of OTP retries, resends, or additional admins who
+    join the same school later (mirrors the signup_notification_sent_at
+    guard already used for the internal sign-up notification in
+    create_school)."""
+    if not tenant or tenant.welcome_email_sent_at:
+        return
+    recipient = (tenant.email or getattr(user, "email", "") or "").strip()
+    if not recipient:
+        return
+
+    support_email = getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", None) or "support@schooldom.academy"
+    frontend_base = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
+
+    context = {
+        "school_name": tenant.name,
+        "logo_url": f"{frontend_base}/schooldom-favicon.jpeg",
+        "dashboard_url": frontend_base,
+        "website_url": "https://www.schooldom.academy",
+        "website_url_label": "www.schooldom.academy",
+        "support_email": support_email,
+        "support_phone": SCHOOLDOM_SUPPORT_PHONE,
+        "features": [
+            "Eliminate revenue leakage through centralized fee management.",
+            "Improve financial transparency with real-time reporting.",
+            "Conduct reliable offline CBT without internet or power interruptions.",
+            "Streamline administration with integrated school management tools.",
+            "Enhance child safety and accountability through Child Monitor.",
+        ],
+        "getting_started": [
+            "Log in to your dashboard.",
+            "Complete your school profile.",
+            "Import your students and staff.",
+            "Configure your academic session and fee structure.",
+            "Onboard your teachers and staff.",
+        ],
+    }
+    html_message = render_to_string("emails/welcome_email.html", context)
+    plain_message = (
+        f"Dear {tenant.name} Team,\n\n"
+        "Welcome to Schooldom! We're delighted to have you join our growing community of "
+        "forward-thinking schools.\n\n"
+        "Your Schooldom account has been successfully created, and you're now ready to begin "
+        "transforming how your school operates.\n\n"
+        f"Log in to your dashboard: {frontend_base}\n\n"
+        f"Need help? Contact us at {SCHOOLDOM_SUPPORT_PHONE} or {support_email}.\n\n"
+        "Warm regards,\nThe Schooldom Team"
+    )
+    connection = get_connection(timeout=getattr(settings, "EMAIL_TIMEOUT", 10))
+    try:
+        send_mail(
+            f"Welcome to Schooldom, {tenant.name}!",
+            plain_message,
+            settings.DEFAULT_FROM_EMAIL,
+            [recipient],
+            connection=connection,
+            html_message=html_message,
+            fail_silently=False,
+        )
+        tenant.welcome_email_sent_at = timezone.now()
+        tenant.save(update_fields=["welcome_email_sent_at"])
+    except Exception:
+        logger.warning("Welcome email delivery failed for school %s (%s).", tenant.name, recipient, exc_info=True)
+
+
 def send_password_reset_otp(user):
     """Email a 6-digit password reset code, storing only its hash (mirrors send_admin_otp)."""
     code = "".join(secrets.choice(string.digits) for _ in range(6))
@@ -424,6 +499,8 @@ def register(request):
         # Return response
         tokens = get_tokens_for_user(user)
         create_login_history(user, request, status='success')
+        if user.role in SCHOOL_WELCOME_EMAIL_ROLES and user.tenant_id:
+            send_school_welcome_email(user.tenant, user)
         return Response({
             'success': True,
             'message': 'Registration successful. Please verify your email.',
@@ -827,6 +904,8 @@ def admin_verify_otp(request):
         user.is_verified = True
         user.email_verified_at = timezone.now()
         user.save(update_fields=['is_verified', 'email_verified_at'])
+        if user.role in SCHOOL_WELCOME_EMAIL_ROLES and user.tenant_id:
+            send_school_welcome_email(user.tenant, user)
     user.last_login = timezone.now()
     user.update_last_login_ip(get_client_ip(request))
     user.reset_login_attempts()

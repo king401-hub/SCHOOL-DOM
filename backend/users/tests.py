@@ -226,6 +226,121 @@ class SchoolRegistrationCreditTests(TestCase):
         self.assertEqual(SchoolTenant.objects.filter(email__iexact="completed.admin@school.test").count(), 2)
 
 
+class SchoolWelcomeEmailTests(TestCase):
+    """A newly onboarded school must receive exactly one welcome email, sent
+    to the school's own address once its founding admin's account is truly
+    active - never on retries, resends, or for roles that aren't a school's
+    own admin (school_superadmin has no single tenant at registration)."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Welcome Academy", schema_name="welcome_academy", email="admin@welcomeacademy.test", is_active=True,
+        )
+
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_register_without_otp_sends_one_welcome_email_to_school_address(self):
+        response = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Wel", "last_name": "Come", "email": "founder@welcomeacademy.test",
+                "password": "AdminPass123", "confirm_password": "AdminPass123",
+                "role": "school_admin", "school_code": self.school.schema_name, "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertIn(self.school.email, sent.to)
+        self.assertIn("Welcome to Schooldom", sent.subject)
+        self.assertIn(self.school.name, sent.subject)
+        # HTML alternative must include the header logo and the school name.
+        html_body = sent.alternatives[0][0]
+        self.assertIn("schooldom-favicon.jpeg", html_body)
+        self.assertIn(self.school.name, html_body)
+
+        self.school.refresh_from_db()
+        self.assertIsNotNone(self.school.welcome_email_sent_at)
+
+    @patch("users.views.ADMIN_OTP_ENABLED", True)
+    def test_welcome_email_sent_only_after_first_otp_verification_not_before(self):
+        user = User.objects.create_user(
+            email="pending.admin@welcomeacademy.test", password="AdminPass123",
+            first_name="Pending", last_name="Admin", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=False,
+        )
+        from users.views import send_admin_otp
+        challenge = send_admin_otp(user, purpose="signup")
+        # OTP itself already sent one email (the code) - only the *second*
+        # email (after verification) should be the welcome email.
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn("Welcome to Schooldom", mail.outbox[0].subject)
+
+        code = user._admin_otp_debug_code
+        response = self.client.post(
+            "/api/auth/admin/verify-otp/",
+            data={"email": user.email, "code": code, "challenge": challenge},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn("Welcome to Schooldom", mail.outbox[1].subject)
+        self.school.refresh_from_db()
+        self.assertIsNotNone(self.school.welcome_email_sent_at)
+
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_welcome_email_never_sent_twice_for_the_same_school(self):
+        first = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "First", "last_name": "Admin", "email": "first.admin@welcomeacademy.test",
+                "password": "AdminPass123", "confirm_password": "AdminPass123",
+                "role": "school_admin", "school_code": self.school.schema_name, "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(len(mail.outbox), 1)
+
+        second = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Second", "last_name": "Admin", "email": "second.admin@welcomeacademy.test",
+                "password": "AdminPass123", "confirm_password": "AdminPass123",
+                "role": "principal", "school_code": self.school.schema_name, "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201, second.data)
+        # A second admin joining the same already-welcomed school must not
+        # trigger a second welcome email.
+        self.assertEqual(len(mail.outbox), 1)
+
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_teacher_registration_never_triggers_a_school_welcome_email(self):
+        # Only a school's own admin (school_admin/principal) triggers the
+        # welcome email - a teacher joining the same school must not.
+        response = self.client.post(
+            "/api/auth/register/",
+            data={
+                "first_name": "Some", "last_name": "Teacher", "email": "teacher@welcomeacademy.test",
+                "password": "TeacherPass123", "confirm_password": "TeacherPass123",
+                "role": "teacher", "school_code": self.school.schema_name,
+                "terms_accepted": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(mail.outbox), 0)
+        self.school.refresh_from_db()
+        self.assertIsNone(self.school.welcome_email_sent_at)
+
+
 class StudentEnrollmentTests(TestCase):
     def setUp(self):
         self.school = SchoolTenant.objects.create(
