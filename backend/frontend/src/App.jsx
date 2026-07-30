@@ -6540,6 +6540,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleAdminExpenseSettle = useCallback(
+    async (recordId) => {
+      const result = await requestJson(session, "PATCH", `/api/finance/admin/expenses/${recordId}/`, { status: "paid" });
+      addAdminNotification({
+        category: "Finance",
+        module: "Expenses",
+        action: "Marked expense record as settled.",
+        status: "Success",
+        priority: "Medium",
+        tone: "info",
+      });
+      await loadScreen("/expenses", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAdminExpenseCreatePayslip = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/expenses/payslip/", payload);
@@ -7637,6 +7654,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onRetry={handleRetry}
         onCreate={handleAdminExpenseCreate}
         onDelete={handleAdminExpenseDelete}
+        onSettle={handleAdminExpenseSettle}
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
         onCreatePayslip={handleAdminExpenseCreatePayslip}

@@ -24,6 +24,7 @@ from finance.models import (
     BankPayment,
     ClassFee,
     DocumentGenerationCreditTransaction,
+    ExpenseRecord,
     FeeAllocation,
     FinanceLedgerLog,
     PaymentReceiptLink,
@@ -3516,6 +3517,146 @@ def bulk_fee_paid_amounts(fees):
         else:
             result[fee.id] = Decimal("0.00")
     return result
+
+
+def fee_totals_by_student(students, class_ids):
+    """Single source of truth for per-student (expected, paid) fee totals.
+
+    Used by both `_admin_finance_snapshot` (to build class_fee_rows /
+    student rows) and `compute_finance_summary` (for the Expected
+    Fees / Fees Collected grand totals) so the two can never silently
+    diverge - they read the exact same per-student numbers instead of
+    running two separate calculations that happen to agree today.
+
+    Returns (per_student, fee_data):
+      per_student: {student.id: (expected_amount, paid_amount)}
+      fee_data: {"class_fees", "generated_fees", "manual_fees", "paid_amounts"}
+                the raw collections used to derive the totals, exposed so
+                callers that also need row-level detail (e.g. class_fee_rows)
+                don't have to re-run the same queries.
+    """
+    class_fees = list(
+        ClassFee.objects.select_related("school_class")
+        .filter(is_active=True, school_class_id__in=class_ids)
+        .order_by("school_class__name", "school_class__section", "due_date", "title")
+    )
+    fees_by_class = {}
+    for class_fee in class_fees:
+        fees_by_class.setdefault(class_fee.school_class_id, []).append(class_fee)
+
+    generated_fees = list(
+        SchoolFee.objects.filter(student__in=students, class_fee__in=class_fees)
+        .select_related("student", "student__user", "student__current_class", "class_fee")
+    )
+    fee_by_student_and_class_fee = {
+        (fee.student_id, fee.class_fee_id): fee for fee in generated_fees
+    }
+    manual_fees = list(
+        SchoolFee.objects.filter(student__in=students, class_fee__isnull=True)
+        .select_related("student", "student__user", "student__current_class")
+        .order_by("due_date", "title")
+    )
+    manual_fees_by_student = {}
+    for fee in manual_fees:
+        manual_fees_by_student.setdefault(fee.student_id, []).append(fee)
+
+    paid_amounts = bulk_fee_paid_amounts([*generated_fees, *manual_fees])
+
+    per_student = {}
+    for student in students:
+        expected_for_student = Decimal("0.00")
+        paid_for_student = Decimal("0.00")
+        for class_fee in fees_by_class.get(student.current_class_id, []):
+            fee = fee_by_student_and_class_fee.get((student.id, class_fee.id))
+            if fee:
+                expected_for_student += fee.amount
+                paid_for_student += paid_amounts.get(fee.id, Decimal("0.00"))
+            else:
+                expected_for_student += class_fee.amount
+        for fee in manual_fees_by_student.get(student.id, []):
+            expected_for_student += fee.amount
+            paid_for_student += paid_amounts.get(fee.id, Decimal("0.00"))
+        per_student[student.id] = (expected_for_student, paid_for_student)
+
+    return per_student, {
+        "class_fees": class_fees,
+        "generated_fees": generated_fees,
+        "manual_fees": manual_fees,
+        "paid_amounts": paid_amounts,
+    }
+
+
+def compute_expense_totals(tenant):
+    """(settled_outflow, unsettled_payments) across a tenant's expense records.
+
+    Settled == ExpenseRecord.STATUS_PAID; Unsettled == pending/due. There is
+    no separate settled/unsettled model field - it maps onto the existing
+    `status` values so this stays consistent with what admin_expense_records
+    already exposes per record.
+    """
+    totals = ExpenseRecord.objects.filter(tenant=tenant).aggregate(
+        settled=Sum("amount", filter=Q(status=ExpenseRecord.STATUS_PAID)),
+        unsettled=Sum(
+            "amount",
+            filter=Q(status__in=[ExpenseRecord.STATUS_PENDING, ExpenseRecord.STATUS_DUE]),
+        ),
+    )
+    settled_outflow = totals["settled"] or Decimal("0.00")
+    unsettled_payments = totals["unsettled"] or Decimal("0.00")
+    return settled_outflow, unsettled_payments
+
+
+def compute_finance_summary(user, per_student_fee_totals=None):
+    """The single backend source of truth for all finance summary figures.
+
+    Both the Finance Dashboard and the Expenses page embed this same
+    computed dict in their API responses instead of deriving these
+    numbers independently (previously the Expenses page recomputed its
+    own, inconsistent versions of Total Outflow / Balance / Spending %
+    client-side).
+
+    Balance is deliberately Fees Collected minus Settled Outflow only -
+    never Expected Fees / Expected Income - per spec.
+
+    Pass `per_student_fee_totals` (the first element returned by
+    fee_totals_by_student) when the caller already computed it - e.g.
+    _admin_finance_snapshot - so this doesn't re-run the same
+    student/fee queries a second time in the same request.
+    """
+    if per_student_fee_totals is None:
+        from users.models import StudentProfile
+
+        students = list(
+            StudentProfile.objects.select_related("current_class").filter(user__tenant=user.tenant)
+        )
+        class_ids = [student.current_class_id for student in students if student.current_class_id]
+        per_student_fee_totals, _fee_data = fee_totals_by_student(students, class_ids)
+
+    expected_fees = sum((expected for expected, _paid in per_student_fee_totals.values()), Decimal("0.00"))
+    fees_collected = sum((paid for _expected, paid in per_student_fee_totals.values()), Decimal("0.00"))
+    outstanding = max(expected_fees - fees_collected, Decimal("0.00"))
+
+    settled_outflow, unsettled_payments = compute_expense_totals(user.tenant)
+    total_outflow = settled_outflow
+    balance = fees_collected - settled_outflow
+
+    if fees_collected > 0:
+        spending_percentage = (total_outflow / fees_collected) * Decimal("100")
+    elif total_outflow > 0:
+        spending_percentage = Decimal("100.00")
+    else:
+        spending_percentage = Decimal("0.00")
+
+    return {
+        "expected_fees": expected_fees,
+        "fees_collected": fees_collected,
+        "outstanding": outstanding,
+        "total_outflow": total_outflow,
+        "settled_outflow": settled_outflow,
+        "unsettled_payments": unsettled_payments,
+        "balance": balance,
+        "spending_percentage": spending_percentage,
+    }
 
 
 def reconcile_fee_status(fee):

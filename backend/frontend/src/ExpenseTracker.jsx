@@ -46,13 +46,12 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;");
 
 export default function ExpenseTracker({
-  data, school, loading, error, onRetry, onCreate, onDelete, onClassFeeSave, onClassFeeDelete,
+  data, school, loading, error, onRetry, onCreate, onDelete, onSettle, onClassFeeSave, onClassFeeDelete,
   onCreatePayslip, onSendPayslip, onLoadStaffOptions,
 }) {
   const items = data?.records || [];
   const classFees = data?.class_fee_rows || [];
   const classOptions = data?.class_options || [];
-  const salaryPaymentSummary = data?.salary_payment_summary || {};
   const schoolBrand = resolveSchoolBrand(data?.school, school);
   const [form, setForm] = useState({
     title: "",
@@ -135,6 +134,7 @@ export default function ExpenseTracker({
   const [deletingClassFeeId, setDeletingClassFeeId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
+  const [settlingId, setSettlingId] = useState("");
 
   const formatExpenseAmount = (value) =>
     `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, {
@@ -152,31 +152,20 @@ export default function ExpenseTracker({
     return match?.label || match?.name || match?.class_label || match?.value || "";
   }, [classFeeForm.school_class, classOptions]);
 
-  const totals = useMemo(() => {
-    const expenses = items.filter((item) => item.type === "expense");
-    const bills = items.filter((item) => item.type === "bill");
-    const receipts = items.filter((item) => item.type === "receipt");
-    const paid = items.filter((item) => item.status === "paid");
-    const due = items.filter((item) => item.status !== "paid");
-    return {
-      expenses: expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      bills: bills.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      receipts: receipts.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      paid: paid.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      due: due.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    };
-  }, [items]);
-
-  const schoolFeeStats = useMemo(() => {
-    const expected = classFees.reduce((sum, fee) => sum + Number(fee.expected_amount ?? fee.amount ?? 0), 0);
-    const received = classFees.reduce((sum, fee) => sum + Number(fee.amount_received || 0), 0);
-    const outstanding = classFees.reduce((sum, fee) => sum + Number(fee.outstanding_amount || 0), 0);
-    const students = classFees.reduce((sum, fee) => sum + Number(fee.student_count || 0), 0);
-    return { expected, received, outstanding, students };
-  }, [classFees]);
-  const staffSalaryAmount = Number(salaryPaymentSummary.staff_salary_amount || 0);
-  const unsettledPaymentsAmount = Number(salaryPaymentSummary.unsettled_amount || 0);
-  const balanceAmount = schoolFeeStats.expected - staffSalaryAmount - unsettledPaymentsAmount;
+  // Total Outflow, Settled/Unsettled, Balance, and Spending % all come from
+  // the shared backend finance summary (finance.services.compute_finance_summary)
+  // instead of being derived here - this is the same object the Finance
+  // Dashboard reads, so the two pages can never disagree on these figures.
+  const financeSummary = data?.finance_summary || {};
+  const expectedFeesAmount = Number(financeSummary.expected_fees || 0);
+  const feesCollectedAmount = Number(financeSummary.fees_collected || 0);
+  const outstandingAmount = Number(financeSummary.outstanding || 0);
+  const totalOutflowAmount = Number(financeSummary.total_outflow || 0);
+  const settledOutflowAmount = Number(financeSummary.settled_outflow || 0);
+  const unsettledPaymentsAmount = Number(financeSummary.unsettled_payments || 0);
+  const balanceAmount = Number(financeSummary.balance || 0);
+  // Backend allows this to exceed 100 internally (overspending signal); only the display is capped.
+  const spendingPercentage = Math.min(100, Math.round(Number(financeSummary.spending_percentage || 0)));
   const latestClassFees = classFees.slice(0, 5);
 
   const categoryRows = useMemo(() => {
@@ -450,6 +439,20 @@ export default function ExpenseTracker({
     }
   };
 
+  const handleSettle = async (itemId) => {
+    setFeedback("");
+    setFormError("");
+    setSettlingId(itemId);
+    try {
+      await onSettle(itemId);
+      setFeedback("Record marked as settled.");
+    } catch (err) {
+      setFormError(err.message || "Could not settle record.");
+    } finally {
+      setSettlingId("");
+    }
+  };
+
   return (
     <section className="expense-tracker screen-grid">
       <div className="expense-hero">
@@ -460,7 +463,7 @@ export default function ExpenseTracker({
         </div>
         <div className="expense-total-card">
           <small>Total Outflow</small>
-          <strong>{formatExpenseAmount(totals.expenses + totals.bills + totals.receipts)}</strong>
+          <strong>{formatExpenseAmount(totalOutflowAmount)}</strong>
         </div>
       </div>
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
@@ -472,8 +475,8 @@ export default function ExpenseTracker({
         </div>
         <div className="expense-chart-layout">
           <div>
-            <div className="expense-donut" style={{ "--paid": `${Math.round(((totals.paid || 0) / Math.max(totals.expenses + totals.bills + totals.receipts, 1)) * 100)}%` }}>
-              <strong>{Math.round(((totals.paid || 0) / Math.max(totals.expenses + totals.bills + totals.receipts, 1)) * 100)}%</strong>
+            <div className="expense-donut" style={{ "--paid": `${spendingPercentage}%` }}>
+              <strong>{spendingPercentage}%</strong>
               <span>spent</span>
             </div>
             <div className="expense-bar-chart" aria-label="Expenses by color tag">
@@ -490,12 +493,20 @@ export default function ExpenseTracker({
           </div>
           <div className="expense-stat-board">
             <div>
-              <span>Expected income</span>
-              <strong>{formatExpenseAmount(schoolFeeStats.expected)}</strong>
+              <span>Expected fees</span>
+              <strong>{formatExpenseAmount(expectedFeesAmount)}</strong>
             </div>
             <div>
-              <span>Staff salary</span>
-              <strong>{formatExpenseAmount(staffSalaryAmount)}</strong>
+              <span>Fees collected</span>
+              <strong>{formatExpenseAmount(feesCollectedAmount)}</strong>
+            </div>
+            <div>
+              <span>Outstanding</span>
+              <strong>{formatExpenseAmount(outstandingAmount)}</strong>
+            </div>
+            <div>
+              <span>Settled outflow</span>
+              <strong>{formatExpenseAmount(settledOutflowAmount)}</strong>
             </div>
             <div>
               <span>Unsettled payments</span>
@@ -977,6 +988,16 @@ export default function ExpenseTracker({
                   <td>{formatDate(item.date)}</td>
                   <td>{formatExpenseAmount(item.amount)}</td>
                   <td>
+                    {item.status !== "paid" ? (
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={() => handleSettle(item.id)}
+                        disabled={settlingId === item.id}
+                      >
+                        {settlingId === item.id ? "Settling..." : "Settle"}
+                      </button>
+                    ) : null}
                     <button type="button" className="table-action" onClick={() => handleDelete(item.id)} disabled={deletingId === item.id}>
                       {deletingId === item.id ? "Deleting..." : "Delete"}
                     </button>

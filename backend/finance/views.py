@@ -5,7 +5,7 @@ from datetime import datetime
 from html import escape
 
 from django.conf import settings
-from django.db import OperationalError, ProgrammingError
+from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -44,6 +44,7 @@ from finance.serializers import (
     ClassFeeSerializer,
     ExpenseRecordSerializer,
     FinanceLedgerLogSerializer,
+    FinanceSummarySerializer,
     SchoolFeeSerializer,
     StudentPaymentReferenceSerializer,
     TransactionSerializer,
@@ -61,7 +62,9 @@ from finance.services import (
     bulk_fee_paid_amounts,
     bulk_get_or_create_activation_credits,
     bulk_get_or_create_payment_references,
+    compute_finance_summary,
     eligible_students_for_activation_credits,
+    fee_totals_by_student,
     ensure_monthly_credit_reminder,
     generate_reference,
     get_or_create_admin_wallet,
@@ -457,39 +460,16 @@ def _admin_finance_snapshot(user):
     payment_refs_by_student_id = bulk_get_or_create_payment_references(students)
 
     class_ids = list(_classes_for_user(user).values_list("id", flat=True))
-    class_fees = list(
-        ClassFee.objects.select_related("school_class")
-        .filter(is_active=True, school_class_id__in=class_ids)
-        .order_by("school_class__name", "school_class__section", "due_date", "title")
-    )
-    fees_by_class = {}
-    for class_fee in class_fees:
-        fees_by_class.setdefault(class_fee.school_class_id, []).append(class_fee)
-
-    generated_fees = list(
-        SchoolFee.objects.filter(
-            student__in=students,
-            class_fee__in=class_fees,
-        ).select_related("student", "student__user", "student__current_class", "class_fee")
-    )
-    fee_by_student_and_class_fee = {
-        (fee.student_id, fee.class_fee_id): fee
-        for fee in generated_fees
-    }
-    manual_fees = list(
-        SchoolFee.objects.filter(student__in=students, class_fee__isnull=True)
-        .select_related("student", "student__user", "student__current_class")
-        .order_by("due_date", "title")
-    )
-    manual_fees_by_student = {}
-    for fee in manual_fees:
-        manual_fees_by_student.setdefault(fee.student_id, []).append(fee)
-
-    # One batched computation reused for the per-student totals below, the
-    # class_fee_rows totals, and SchoolFeeSerializer - this used to be
-    # recomputed per fee (3 aggregate queries each) up to 5 times over across
-    # those three places.
-    paid_amounts = bulk_fee_paid_amounts([*generated_fees, *manual_fees])
+    # fee_totals_by_student is the single shared helper also used by
+    # compute_finance_summary (Expected Fees / Fees Collected) - reusing it
+    # here (rather than recomputing per-student totals inline) is what
+    # guarantees the Finance Dashboard and the finance_summary payload can
+    # never silently diverge.
+    per_student_fee_totals, fee_data = fee_totals_by_student(students, class_ids)
+    class_fees = fee_data["class_fees"]
+    generated_fees = fee_data["generated_fees"]
+    manual_fees = fee_data["manual_fees"]
+    paid_amounts = fee_data["paid_amounts"]
 
     student_rows = []
     activation_rows = []
@@ -510,18 +490,9 @@ def _admin_finance_snapshot(user):
         if activation_credit.is_excluded_from_auto_deductions:
             excluded_credit_count += 1
 
-        expected_for_student = Decimal("0.00")
-        paid_for_student = Decimal("0.00")
-        for class_fee in fees_by_class.get(student.current_class_id, []):
-            fee = fee_by_student_and_class_fee.get((student.id, class_fee.id))
-            if fee:
-                expected_for_student += fee.amount
-                paid_for_student += paid_amounts.get(fee.id, Decimal("0.00"))
-            else:
-                expected_for_student += class_fee.amount
-        for fee in manual_fees_by_student.get(student.id, []):
-            expected_for_student += fee.amount
-            paid_for_student += paid_amounts.get(fee.id, Decimal("0.00"))
+        expected_for_student, paid_for_student = per_student_fee_totals.get(
+            student.id, (Decimal("0.00"), Decimal("0.00"))
+        )
 
         remaining = max(expected_for_student - paid_for_student, Decimal("0.00"))
         if expected_for_student <= 0:
@@ -646,6 +617,7 @@ def _admin_finance_snapshot(user):
         "expected_fee_amount": expected_total,
         "amount_received": amount_received,
         "outstanding_balance": max(expected_total - amount_received, Decimal("0.00")),
+        "finance_summary": compute_finance_summary(user, per_student_fee_totals),
         "pending_payments": pending_payments,
         "debtors_count": sum(1 for row in student_rows if row["remaining_balance"] > 0),
         "confirmed_bank_payments": bank_payments.filter(status__in=[BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL]).count(),
@@ -964,6 +936,7 @@ def admin_overview(request):
             "expected_fee_amount": finance_snapshot["expected_fee_amount"],
             "amount_received": finance_snapshot["amount_received"],
             "outstanding_balance": finance_snapshot["outstanding_balance"],
+            "finance_summary": FinanceSummarySerializer(finance_snapshot["finance_summary"]).data,
             "pending_payments": finance_snapshot["pending_payments"],
             "debtors_count": finance_snapshot["debtors_count"],
             "confirmed_bank_payments": finance_snapshot["confirmed_bank_payments"],
@@ -1749,6 +1722,7 @@ def admin_expense_records(request):
                 "success": True,
                 "records": ExpenseRecordSerializer(records, many=True).data,
                 "class_fee_rows": finance_snapshot["class_fee_rows"],
+                "finance_summary": FinanceSummarySerializer(finance_snapshot["finance_summary"]).data,
                 "salary_payment_summary": {
                     "records": len(payroll_records),
                     "staff_salary_amount": staff_salary_total,
@@ -1781,50 +1755,106 @@ def admin_expense_records(request):
     serializer = ExpenseRecordSerializer(data=request.data)
     if not serializer.is_valid():
         return Response({"success": False, "message": "Invalid expense record.", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-    record = serializer.save(tenant=user.tenant, created_by=user, currency="NGN")
-    record_finance_activity(
-        user.tenant,
-        user,
-        "expense_record_created",
-        f"Created {record.record_type} record '{record.title}'.",
-        amount=record.amount,
-        currency=record.currency,
-        reference=str(record.id),
-        metadata={"status": record.status, "category": record.category},
-    )
+    with transaction.atomic():
+        record = serializer.save(tenant=user.tenant, created_by=user, currency="NGN")
+        record_finance_activity(
+            user.tenant,
+            user,
+            "expense_record_created",
+            f"Created {record.record_type} record '{record.title}'.",
+            amount=record.amount,
+            currency=record.currency,
+            reference=str(record.id),
+            metadata={"status": record.status, "category": record.category},
+        )
+        finance_summary = compute_finance_summary(user)
     records = ExpenseRecord.objects.filter(tenant=user.tenant)
     return Response(
         {
             "success": True,
             "record": ExpenseRecordSerializer(record).data,
             "records": ExpenseRecordSerializer(records, many=True).data,
+            "finance_summary": FinanceSummarySerializer(finance_summary).data,
         },
         status=status.HTTP_201_CREATED,
     )
 
 
-@api_view(["DELETE"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def admin_expense_record_detail(request, record_id):
-    """Delete one tenant-scoped expense tracker record."""
+    """Get, update (e.g. settle an unsettled record), or delete one
+    tenant-scoped expense tracker record."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
 
     record = get_object_or_404(ExpenseRecord.objects.filter(tenant=user.tenant), id=record_id)
-    record_finance_activity(
-        user.tenant,
-        user,
-        "expense_record_deleted",
-        f"Deleted {record.record_type} record '{record.title}'.",
-        amount=record.amount,
-        currency=record.currency,
-        reference=str(record.id),
-        metadata={"status": record.status, "category": record.category},
-    )
-    record.delete()
+
+    if request.method == "GET":
+        return Response({"success": True, "record": ExpenseRecordSerializer(record).data})
+
+    if request.method == "PATCH":
+        previous_status = record.status
+        serializer = ExpenseRecordSerializer(record, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({"success": False, "message": "Invalid expense record.", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            record = serializer.save()
+            if previous_status != ExpenseRecord.STATUS_PAID and record.status == ExpenseRecord.STATUS_PAID:
+                record_finance_activity(
+                    user.tenant,
+                    user,
+                    "expense_record_settled",
+                    f"Settled {record.record_type} record '{record.title}'.",
+                    amount=record.amount,
+                    currency=record.currency,
+                    reference=str(record.id),
+                    metadata={"previous_status": previous_status, "status": record.status, "category": record.category},
+                )
+            else:
+                record_finance_activity(
+                    user.tenant,
+                    user,
+                    "expense_record_updated",
+                    f"Updated {record.record_type} record '{record.title}'.",
+                    amount=record.amount,
+                    currency=record.currency,
+                    reference=str(record.id),
+                    metadata={"previous_status": previous_status, "status": record.status, "category": record.category},
+                )
+            finance_summary = compute_finance_summary(user)
+        records = ExpenseRecord.objects.filter(tenant=user.tenant)
+        return Response(
+            {
+                "success": True,
+                "record": ExpenseRecordSerializer(record).data,
+                "records": ExpenseRecordSerializer(records, many=True).data,
+                "finance_summary": FinanceSummarySerializer(finance_summary).data,
+            }
+        )
+
+    with transaction.atomic():
+        record_finance_activity(
+            user.tenant,
+            user,
+            "expense_record_deleted",
+            f"Deleted {record.record_type} record '{record.title}'.",
+            amount=record.amount,
+            currency=record.currency,
+            reference=str(record.id),
+            metadata={"status": record.status, "category": record.category},
+        )
+        record.delete()
+        finance_summary = compute_finance_summary(user)
     records = ExpenseRecord.objects.filter(tenant=user.tenant)
-    return Response({"success": True, "records": ExpenseRecordSerializer(records, many=True).data})
+    return Response(
+        {
+            "success": True,
+            "records": ExpenseRecordSerializer(records, many=True).data,
+            "finance_summary": FinanceSummarySerializer(finance_summary).data,
+        }
+    )
 
 
 def _payslip_payload(record, payroll, staff, payment_method, remarks):
@@ -1941,6 +1971,7 @@ def admin_expense_payslip_create(request):
             "record": ExpenseRecordSerializer(record).data,
             "records": ExpenseRecordSerializer(records, many=True).data,
             "payslip": _payslip_payload(record, payroll, staff, payment_method, remarks),
+            "finance_summary": FinanceSummarySerializer(compute_finance_summary(user)).data,
         },
         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
     )

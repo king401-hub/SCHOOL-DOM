@@ -869,9 +869,13 @@ function AdminFinanceScreen({
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
-  const expectedAmount = Number(finance?.expected_fee_amount || 0);
-  const receivedAmount = Number(finance?.amount_received || 0);
-  const outstandingAmount = Number(finance?.outstanding_balance || 0);
+  const financeSummary = finance?.finance_summary || {};
+  const expectedAmount = Number(financeSummary.expected_fees || 0);
+  const receivedAmount = Number(financeSummary.fees_collected || 0);
+  const outstandingAmount = Number(financeSummary.outstanding || 0);
+  const totalOutflowAmount = Number(financeSummary.total_outflow || 0);
+  const balanceAmount = Number(financeSummary.balance || 0);
+  const spendingPercentage = Math.min(100, Math.round(Number(financeSummary.spending_percentage || 0)));
   const studentCreditBalance = Number(finance?.total_student_credit_balance || 0);
   const receivedPercent = expectedAmount > 0 ? Math.min(100, Math.round((receivedAmount / expectedAmount) * 100)) : 0;
   const outstandingPercent = expectedAmount > 0 ? Math.min(100, Math.round((outstandingAmount / expectedAmount) * 100)) : 0;
@@ -1447,6 +1451,24 @@ function AdminFinanceScreen({
                 <strong>{formatFinanceAmount(outstandingAmount)}</strong>
               </div>
             </article>
+            <article className="finance-summary-card tone-outstanding" title="Sum of settled expense records">
+              <div className="finance-summary-icon" aria-hidden="true">
+                <DashboardIcon name="money" className="inline-icon" />
+              </div>
+              <div>
+                <p>Total Outflow</p>
+                <strong>{formatFinanceAmount(totalOutflowAmount)}</strong>
+              </div>
+            </article>
+            <article className="finance-summary-card tone-received" title="Fees Collected minus Settled Outflow">
+              <div className="finance-summary-icon" aria-hidden="true">
+                <DashboardIcon name="check" className="inline-icon" />
+              </div>
+              <div>
+                <p>Balance</p>
+                <strong>{formatFinanceAmount(balanceAmount)}</strong>
+              </div>
+            </article>
             <article className="finance-summary-card tone-received" title="Prepaid balances held for future fees">
               <div className="finance-summary-icon" aria-hidden="true">
                 <DashboardIcon name="money" className="inline-icon" />
@@ -1534,6 +1556,11 @@ function AdminFinanceScreen({
                   <span>Outstanding</span>
                   <strong>{outstandingPercent}%</strong>
                   <div className="finance-chart-track warning"><i style={{ width: `${outstandingPercent}%` }} /></div>
+                </div>
+                <div>
+                  <span>Spending</span>
+                  <strong>{spendingPercentage}%</strong>
+                  <div className="finance-chart-track warning"><i style={{ width: `${spendingPercentage}%` }} /></div>
                 </div>
               </div>
             </article>

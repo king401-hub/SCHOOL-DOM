@@ -254,6 +254,22 @@ class ExpenseRecordSerializer(serializers.ModelSerializer):
         return value
 
 
+class FinanceSummarySerializer(serializers.Serializer):
+    """The one shared shape for all finance summary figures - both the
+    Finance Dashboard and the Expenses page consume this same structure
+    (via finance.services.compute_finance_summary) instead of each
+    deriving these numbers on their own."""
+
+    expected_fees = serializers.DecimalField(max_digits=14, decimal_places=2)
+    fees_collected = serializers.DecimalField(max_digits=14, decimal_places=2)
+    outstanding = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_outflow = serializers.DecimalField(max_digits=14, decimal_places=2)
+    settled_outflow = serializers.DecimalField(max_digits=14, decimal_places=2)
+    unsettled_payments = serializers.DecimalField(max_digits=14, decimal_places=2)
+    balance = serializers.DecimalField(max_digits=14, decimal_places=2)
+    spending_percentage = serializers.DecimalField(max_digits=8, decimal_places=2)
+
+
 class WalletSerializer(serializers.ModelSerializer):
     transactions = TransactionSerializer(many=True, read_only=True)
 
