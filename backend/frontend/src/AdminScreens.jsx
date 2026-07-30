@@ -9475,6 +9475,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     is_active: true,
     student_password: "",
     confirm_student_password: "",
+    profile_picture: null,
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [editError, setEditError] = useState("");
@@ -9492,6 +9493,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [activityTitleError, setActivityTitleError] = useState("");
   const [activityTitleSuccess, setActivityTitleSuccess] = useState("");
   const createProfilePictureRef = useRef(null);
+  const editProfilePictureRef = useRef(null);
 
   const toDateInputValue = (value) => {
     const raw = String(value || "");
@@ -9529,6 +9531,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     is_active: Boolean(student?.is_active),
     student_password: "",
     confirm_student_password: "",
+    profile_picture: null,
   });
 
   const filteredStudents = useMemo(() => {
@@ -9619,6 +9622,9 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     setShowEditConfirmPassword(false);
     setEditError("");
     setEditSuccess("");
+    if (editProfilePictureRef.current) {
+      editProfilePictureRef.current.value = "";
+    }
   };
 
   const handleUpdateSubmit = async (event) => {
@@ -9669,9 +9675,15 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
         payload.student_password = editForm.student_password;
         payload.confirm_student_password = editForm.confirm_student_password;
       }
+      if (editForm.profile_picture) {
+        payload.profile_picture = editForm.profile_picture;
+      }
       const result = await onUpdate(selectedStudentId, payload);
       if (result?.student) {
         setEditForm(buildEditForm(result.student));
+      }
+      if (editProfilePictureRef.current) {
+        editProfilePictureRef.current.value = "";
       }
       setEditSuccess(result?.message || "Student updated.");
     } catch (actionError) {
@@ -10236,6 +10248,17 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       <label className="panel-field">
                         Date of Birth
                         <input type="date" value={editForm.date_of_birth} onChange={(e) => setEditForm((p) => ({ ...p, date_of_birth: e.target.value }))} />
+                      </label>
+                      <label className="panel-field">
+                        Profile Picture
+                        <input
+                          ref={editProfilePictureRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) =>
+                            setEditForm((p) => ({ ...p, profile_picture: e.target.files?.[0] || null }))
+                          }
+                        />
                       </label>
                     </div>
                   </div>
