@@ -21,6 +21,7 @@ import random
 from notifications.models import Notification
 from notifications.push import push_for_notifications
 from users.models import StudentEnrollment, User, resolve_legacy_tenant_for_school
+from users.app_views import _profile_picture_url
 from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, Question, StudentAnswer
 from .serializers import (
     ExamSerializer,
@@ -249,6 +250,16 @@ def _client_ip(request):
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR")
+
+
+def _cbt_student_payload(request):
+    user = request.user
+    profile = getattr(user, "student_profile", None)
+    return {
+        "id": (profile.student_id if profile else "") or (profile.admission_number if profile else "") or user.username,
+        "name": f"{user.first_name} {user.last_name}".strip() or user.email,
+        "avatar": _profile_picture_url(request, user),
+    }
 
 
 def _record_pin_usage(request, *, exam, pin=None, entered_pin="", status_value=ExamPinUsage.STATUS_REJECTED, message="", attempt=None):
@@ -806,11 +817,7 @@ class ExamAttemptDetailView(APIView):
                 'instructions': getattr(exam, 'instructions', '')
             },
             'questions': [_question_payload(question, request) for question in questions],
-            'student': {
-                'id': str(request.user.id),
-                'name': f"{request.user.first_name} {request.user.last_name}",
-                'avatar': getattr(request.user, 'profile_image', None)
-            },
+            'student': _cbt_student_payload(request),
             'answers': answers_dict,
             'time_remaining_seconds': time_remaining
         })
