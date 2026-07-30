@@ -19349,6 +19349,99 @@ body[data-theme="dark"] .activation-credit-summary span {
   background: #fee2e2;
 }
 
+/* Request Queue statuses */
+.finance-status.status-queued {
+  color: #075985;
+  background: #e0f2fe;
+}
+
+.finance-status.status-processing {
+  color: #5b21b6;
+  background: #ede9fe;
+}
+
+.finance-status.status-retrying {
+  color: #9a3412;
+  background: #ffedd5;
+}
+
+.finance-status.status-approved {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.finance-status.status-rejected,
+.finance-status.status-failed {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.finance-status.status-cancelled {
+  color: #374151;
+  background: #e5e7eb;
+}
+
+.finance-status.status-expired {
+  color: #78350f;
+  background: #fef3c7;
+}
+
+.request-queue-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.request-queue-stat-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.request-queue-stat-card .stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.request-queue-stat-card .stat-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.request-queue-history {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+
+.request-queue-history-row {
+  display: flex;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.request-queue-history-row:last-child {
+  border-bottom: none;
+}
+
+.request-queue-history-row .event-type {
+  font-weight: 700;
+  color: #374151;
+  min-width: 140px;
+}
+
+.request-queue-history-row .event-meta {
+  color: #9ca3af;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .table-actions {
   display: flex;
   gap: 0.35rem;

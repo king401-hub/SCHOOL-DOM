@@ -5,6 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
+  RefreshCw,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -97,6 +98,7 @@ import {
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
+const AdminRequestQueueScreen = lazy(() => import("./RequestQueueScreen"));
 const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
 const ProprietorShell = lazy(() => import("./ProprietorScreens").then((module) => ({ default: module.ProprietorShell })));
@@ -6031,6 +6033,7 @@ const ADMIN_ROUTE_ICONS = {
   "/database-import": Upload,
   "/messages": MessageSquare,
   "/loan-application": Banknote,
+  "/request-queue": RefreshCw,
   "/settings": Settings,
   "/finance-group": DollarSign,
   "/admin-group": CreditCard,
@@ -6576,6 +6579,16 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
 
   const handleAdminExpensePayslipSend = useCallback(
     async (recordId, payload) => requestJson(session, "POST", `/api/finance/admin/expenses/payslip/${recordId}/send/`, payload),
+    [session]
+  );
+
+  const handleRequestQueueManualRetry = useCallback(
+    async (requestId) => requestJson(session, "POST", `/api/request-queue/${requestId}/retry/`),
+    [session]
+  );
+
+  const handleRequestQueueCancel = useCallback(
+    async (requestId) => requestJson(session, "POST", `/api/request-queue/${requestId}/cancel/`),
     [session]
   );
 
@@ -7660,6 +7673,17 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreatePayslip={handleAdminExpenseCreatePayslip}
         onSendPayslip={handleAdminExpensePayslipSend}
         onLoadStaffOptions={handleLoadHrStaffOptions}
+      />
+    );
+  } else if (activePath === "/request-queue") {
+    content = (
+      <AdminRequestQueueScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onManualRetry={handleRequestQueueManualRetry}
+        onCancelRequest={handleRequestQueueCancel}
       />
     );
   } else if (activePath === "/hr-self-service") {

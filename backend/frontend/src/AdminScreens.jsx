@@ -1055,11 +1055,11 @@ function AdminFinanceScreen({
     setFeedback("");
     setFormError("");
     try {
-      await onWithdraw({
+      const result = await onWithdraw({
         ...withdrawForm,
         amount: Number(withdrawForm.amount),
       });
-      setFeedback("Withdrawal initiated.");
+      setFeedback(result?.message || "Withdrawal initiated.");
       setWithdrawForm({ amount: "", account_number: "", bank_name: "", account_name: "" });
     } catch (err) {
       setFormError(err.message || "Unable to withdraw.");

@@ -72,7 +72,6 @@ from finance.services import (
     get_or_create_student_activation_credit,
     initialize_activation_credit_purchase,
     initialize_payment_transaction,
-    initiate_admin_withdrawal,
     process_due_fees,
     reconcile_fee_status,
     sync_class_fee_assignments,
@@ -129,6 +128,7 @@ from finance.services import (
     _format_naira,
 )
 from hr.models import PayrollRecord, StaffProfile
+from request_queue.services import enqueue_request
 from tenants.models import Tenant
 from users.models import StudentProfile, User
 
@@ -2232,20 +2232,16 @@ def admin_withdraw(request):
         )
 
     admin_wallet = get_or_create_admin_wallet(user.tenant)
+    if admin_wallet.balance < amount:
+        return Response({"success": False, "message": "Insufficient admin wallet balance."}, status=status.HTTP_400_BAD_REQUEST)
+
     reference = generate_reference("WD")
     bank_payload = {
         "account_number": bank_account_number,
         "bank_code": bank_code,
         "account_name": bank_account_name,
     }
-    try:
-        result = initiate_admin_withdrawal(admin_wallet, amount, reference, bank_payload=bank_payload, actor=user)
-    except ValueError as exc:
-        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as exc:
-        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    admin_wallet.refresh_from_db()
     admin_wallet.bank_account_name = bank_account_name
     admin_wallet.bank_account_number = bank_account_number
     admin_wallet.bank_code = bank_code
@@ -2259,6 +2255,30 @@ def admin_withdraw(request):
             "updated_at",
         ]
     )
+
+    # Submitted through the request queue rather than processed inline: a
+    # Paystack/Flutterwave/Kuda timeout or 5xx no longer fails the withdrawal
+    # outright - it's retried in the background with exponential backoff
+    # (see finance/queue_handlers.py::handle_wallet_withdrawal). Re-submitting
+    # the same amount/account while a withdrawal is still in flight is
+    # deduplicated automatically instead of double-processing.
+    queued_request, created = enqueue_request(
+        tenant=user.tenant,
+        requester=user,
+        request_type="wallet_withdrawal",
+        payload={
+            "admin_wallet_id": str(admin_wallet.id),
+            "amount": str(amount),
+            "reference": reference,
+            "bank_payload": bank_payload,
+            "actor_id": str(user.id),
+            "provider": active_payment_provider(),
+        },
+        # `reference` above is freshly generated on every call and must NOT
+        # affect deduplication - only the actual withdrawal content
+        # (amount + destination account) defines "the same request".
+        dedupe_payload={"amount": str(amount), "bank_payload": bank_payload},
+    )
     record_finance_activity(
         user.tenant,
         user,
@@ -2267,15 +2287,28 @@ def admin_withdraw(request):
         amount=amount,
         currency=admin_wallet.currency,
         reference=reference,
-        metadata={"status": result.get("status"), "account_number": bank_account_number, "bank_code": bank_code},
+        metadata={"queued_request_id": str(queued_request.id), "account_number": bank_account_number, "bank_code": bank_code},
     )
+
+    if not created:
+        return Response(
+            {
+                "success": True,
+                "status": queued_request.status,
+                "request_id": str(queued_request.id),
+                "admin_wallet": AdminWalletSerializer(admin_wallet).data,
+                "message": "A matching withdrawal is already being processed.",
+            }
+        )
+
     return Response(
         {
             "success": True,
-            "status": result.get("status"),
+            "status": queued_request.status,
+            "request_id": str(queued_request.id),
             "admin_wallet": AdminWalletSerializer(admin_wallet).data,
             "reference": reference,
-            "message": f"Withdrawal sent to the school account via {active_payment_provider().title()}.",
+            "message": f"Withdrawal queued for processing via {active_payment_provider().title()}.",
         }
     )
 

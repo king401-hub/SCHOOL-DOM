@@ -55,6 +55,7 @@ export const ADMIN_ROUTES = [
       { path: "/sms-wallet", label: "SMS Wallet" },
       { path: "/hr/activity", label: "HR Management" },
       { path: "/loan-application", label: "Loan Application" },
+      { path: "/request-queue", label: "Request Queue" },
     ]
   },
   {
@@ -118,6 +119,7 @@ export const ADMIN_ENDPOINTS = {
   "/database-import": "/api/app/database-imports/",
   "/messages": "/api/app/messages/",
   "/loan-application": "/api/app/loan-applications/",
+  "/request-queue": "/api/request-queue/",
   "/settings": "/api/app/school/settings/",
   "/compliance": "/api/app/school/settings/",
   "/service-agreement": "/api/app/legal/service-agreement/",

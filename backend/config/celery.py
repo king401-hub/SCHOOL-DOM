@@ -42,4 +42,12 @@ app.conf.beat_schedule = {
         "task": "finance.tasks.process_token_allocation_expirations",
         "schedule": crontab(hour=6, minute=0),
     },
+    # Every 5 minutes — re-dispatch any queued request stuck without a live
+    # Celery task (e.g. Redis was restarted and lost in-flight task state).
+    # QueuedRequest rows live in Postgres, so this is the safety net that
+    # guarantees no pending request is lost even if broker state is.
+    "reconcile-stuck-requests": {
+        "task": "request_queue.tasks.reconcile_stuck_requests",
+        "schedule": crontab(minute="*/5"),
+    },
 }

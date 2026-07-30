@@ -67,7 +67,11 @@ from finance.services import (
     verify_activation_credit_purchase,
 )
 from finance.models import SmsMessageLog
+from finance.queue_handlers import handle_wallet_withdrawal
 from notifications.models import Notification
+from request_queue.exceptions import RequestRejectedError, RetriableRequestError
+from request_queue.models import QueuedRequest
+from request_queue.services import enqueue_request
 from tenants.models import Tenant
 from users.models import ParentProfile, StudentProfile, User, generate_short_student_id, generate_short_teacher_id
 
@@ -1908,3 +1912,123 @@ class PayslipExpenseTests(TestCase):
         # This flow does not go through the Expenses page, so no linked
         # ExpenseRecord should be created for it.
         self.assertFalse(ExpenseRecord.objects.filter(payroll_record=payroll).exists())
+
+
+@override_settings(FLUTTERWAVE_SECRET_KEY="flw-secret")
+class WalletWithdrawalQueueHandlerTests(TestCase):
+    """handle_wallet_withdrawal is called directly here (not through the
+    Celery task) - these tests are about the handler's own idempotency and
+    rollback guarantees, which is where real money safety actually lives."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Withdrawal School", schema_name="withdrawal_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="withdraw.admin@school.edu",
+            password="AdminPass123",
+            first_name="With",
+            last_name="Admin",
+            role="super_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.wallet = AdminWallet.objects.create(tenant=self.school, balance=Decimal("100000.00"), currency="NGN")
+
+    def _enqueue(self, amount="10000.00", reference="WD-TEST-001"):
+        bank_payload = {"account_number": "0123456789", "bank_code": "058", "account_name": "Test School"}
+        return enqueue_request(
+            tenant=self.school,
+            requester=self.admin,
+            request_type="wallet_withdrawal",
+            payload={
+                "admin_wallet_id": str(self.wallet.id),
+                "amount": amount,
+                "reference": reference,
+                "bank_payload": bank_payload,
+                "actor_id": str(self.admin.id),
+                "provider": "flutterwave",
+            },
+            dedupe_payload={"amount": amount, "bank_payload": bank_payload},
+        )
+
+    @patch("finance.queue_handlers.requests.post")
+    def test_successful_withdrawal_deducts_wallet_once(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"status": "success", "data": {}}
+        queued_request, created = self._enqueue()
+        self.assertTrue(created)
+
+        result = handle_wallet_withdrawal(queued_request)
+
+        self.assertEqual(result["status"], "successful")
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal("90000.00"))
+        tx = Transaction.objects.get(reference="WD-TEST-001")
+        self.assertEqual(tx.status, Transaction.STATUS_SUCCESS)
+
+    @patch("finance.queue_handlers.requests.post")
+    def test_retriable_failure_keeps_deduction_and_retry_does_not_double_deduct(self, mock_post):
+        # First attempt: provider returns a 500 -> retriable, wallet stays
+        # deducted (Transaction left pending) rather than rolled back.
+        mock_post.return_value.status_code = 500
+        mock_post.return_value.json.return_value = {"message": "upstream error"}
+        queued_request, _ = self._enqueue()
+
+        with self.assertRaises(RetriableRequestError):
+            handle_wallet_withdrawal(queued_request)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal("90000.00"))
+        tx = Transaction.objects.get(reference="WD-TEST-001")
+        self.assertEqual(tx.status, Transaction.STATUS_PENDING)
+
+        # Second attempt (simulating a Celery retry with the same reference):
+        # provider now succeeds - must not deduct the wallet a second time.
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"status": "success", "data": {}}
+        result = handle_wallet_withdrawal(queued_request)
+
+        self.assertEqual(result["status"], "successful")
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal("90000.00"))
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, Transaction.STATUS_SUCCESS)
+
+    @patch("finance.queue_handlers.requests.post")
+    def test_permanent_rejection_rolls_back_wallet(self, mock_post):
+        mock_post.return_value.status_code = 400
+        mock_post.return_value.json.return_value = {"message": "Invalid account number"}
+        queued_request, _ = self._enqueue()
+
+        with self.assertRaises(RequestRejectedError):
+            handle_wallet_withdrawal(queued_request)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal("100000.00"))
+        tx = Transaction.objects.get(reference="WD-TEST-001")
+        self.assertEqual(tx.status, Transaction.STATUS_FAILED)
+
+    def test_insufficient_balance_rejects_without_calling_provider(self):
+        queued_request, _ = self._enqueue(amount="999999.00")
+
+        with self.assertRaises(RequestRejectedError):
+            handle_wallet_withdrawal(queued_request)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.balance, Decimal("100000.00"))
+
+    def test_duplicate_withdrawal_submission_links_to_original_and_is_archived(self):
+        original, created = self._enqueue(reference="WD-ORIG")
+        self.assertTrue(created)
+
+        resolved, created_again = self._enqueue(reference="WD-DUP")
+        self.assertFalse(created_again)
+        self.assertEqual(resolved.id, original.id)
+
+        duplicates = QueuedRequest.objects.filter(linked_request=original)
+        self.assertEqual(duplicates.count(), 1)
+        duplicate = duplicates.first()
+        self.assertEqual(duplicate.status, QueuedRequest.STATUS_CANCELLED)
+        self.assertTrue(duplicate.is_archived)
+        # The duplicate must never have touched the wallet.
+        self.assertFalse(Transaction.objects.filter(reference="WD-DUP").exists())
