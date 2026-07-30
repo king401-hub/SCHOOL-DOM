@@ -269,6 +269,13 @@
   font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
+  color: #111827;
+  background: #fff;
+  color-scheme: light;
+}
+
+.exam-pin-card input::placeholder {
+  color: #9ca3af;
 }
 
 .exam-pin-error {
