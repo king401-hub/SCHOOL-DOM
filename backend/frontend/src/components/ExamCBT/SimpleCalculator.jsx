@@ -45,6 +45,20 @@ const SimpleCalculator = () => {
     setWaitingForNumber(false);
   };
 
+  const backspace = () => {
+    setDisplay((current) => {
+      if (current === "Error" || waitingForNumber || current.length <= 1) return "0";
+      return current.slice(0, -1);
+    });
+  };
+
+  const toggleSign = () => {
+    setDisplay((current) => {
+      if (current === "0" || current === "Error") return current;
+      return current.startsWith("-") ? current.slice(1) : `-${current}`;
+    });
+  };
+
   const squareRoot = () => {
     setDisplay((current) => {
       const value = Number(current);
@@ -115,6 +129,11 @@ const SimpleCalculator = () => {
         showResult();
         return;
       }
+      if (key === "Backspace") {
+        event.preventDefault();
+        backspace();
+        return;
+      }
       if (key === "Escape" || key === "c" || key === "C") {
         event.preventDefault();
         clearAll();
@@ -132,17 +151,29 @@ const SimpleCalculator = () => {
       </output>
 
       <div className="calculator-grid">
-        <button type="button" className="calculator-key utility wide" onClick={clearAll}>
+        <button type="button" className="calculator-key utility" onClick={clearAll}>
           C
+        </button>
+        <button type="button" className="calculator-key utility" onClick={backspace}>
+          DEL
+        </button>
+        <button type="button" className="calculator-key utility" onClick={toggleSign}>
+          +/-
         </button>
         <button type="button" className="calculator-key utility" onClick={squareRoot}>
           √
         </button>
+
+        {[7, 8, 9].map((digit) => (
+          <button key={digit} type="button" className="calculator-key" onClick={() => inputDigit(String(digit))}>
+            {digit}
+          </button>
+        ))}
         <button type="button" className="calculator-key operator" onClick={() => chooseOperator("divide")}>
           ÷
         </button>
 
-        {[7, 8, 9].map((digit) => (
+        {[4, 5, 6].map((digit) => (
           <button key={digit} type="button" className="calculator-key" onClick={() => inputDigit(String(digit))}>
             {digit}
           </button>
@@ -151,7 +182,7 @@ const SimpleCalculator = () => {
           ×
         </button>
 
-        {[4, 5, 6].map((digit) => (
+        {[1, 2, 3].map((digit) => (
           <button key={digit} type="button" className="calculator-key" onClick={() => inputDigit(String(digit))}>
             {digit}
           </button>
@@ -160,22 +191,17 @@ const SimpleCalculator = () => {
           −
         </button>
 
-        {[1, 2, 3].map((digit) => (
-          <button key={digit} type="button" className="calculator-key" onClick={() => inputDigit(String(digit))}>
-            {digit}
-          </button>
-        ))}
-        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("add")}>
-          +
-        </button>
-
         <button type="button" className="calculator-key wide" onClick={() => inputDigit("0")}>
           0
         </button>
         <button type="button" className="calculator-key" onClick={inputDecimal}>
           .
         </button>
-        <button type="button" className="calculator-key equals" onClick={showResult}>
+        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("add")}>
+          +
+        </button>
+
+        <button type="button" className="calculator-key equals full-width" onClick={showResult}>
           =
         </button>
       </div>

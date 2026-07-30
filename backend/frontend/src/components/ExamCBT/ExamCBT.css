@@ -1237,6 +1237,12 @@
   grid-column: span 2;
 }
 
+.calculator-key.full-width {
+  aspect-ratio: auto;
+  grid-column: span 4;
+  min-height: 40px;
+}
+
 .instructions-content {
   color: #4b5563;
   line-height: 1.6;
