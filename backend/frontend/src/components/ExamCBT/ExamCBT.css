@@ -224,7 +224,7 @@
 .floating-calculator {
   position: fixed;
   z-index: 1500;
-  width: min(240px, calc(100vw - 24px));
+  width: min(280px, calc(100vw - 24px));
   border: 1px solid #cbd5e1;
   border-radius: 14px;
   background: #ffffff;
@@ -1147,7 +1147,7 @@
 }
 
 .simple-calculator {
-  width: min(100%, 240px);
+  width: min(100%, 280px);
   border-radius: 16px;
   background: linear-gradient(180deg, #2b2f38, #1c1f26);
   padding: 12px;
@@ -1176,7 +1176,7 @@
 
 .calculator-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1205,7 +1205,7 @@
 .calculator-key.utility {
   background: #6b7280;
   color: #ffffff;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .calculator-key.utility:hover {
@@ -1239,7 +1239,7 @@
 
 .calculator-key.full-width {
   aspect-ratio: auto;
-  grid-column: span 4;
+  grid-column: span 5;
   min-height: 40px;
 }
 
@@ -1524,7 +1524,7 @@ body[data-theme="dark"] .exam-completed-card p {
   }
 
   .simple-calculator {
-    width: min(100%, 200px);
+    width: min(100%, 240px);
     padding: 10px;
   }
 
@@ -1535,5 +1535,9 @@ body[data-theme="dark"] .exam-completed-card p {
 
   .calculator-key {
     font-size: 14px;
+  }
+
+  .calculator-key.utility {
+    font-size: 11px;
   }
 }

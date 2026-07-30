@@ -151,26 +151,16 @@ const SimpleCalculator = () => {
       </output>
 
       <div className="calculator-grid">
-        <button type="button" className="calculator-key utility" onClick={clearAll}>
-          C
-        </button>
-        <button type="button" className="calculator-key utility" onClick={backspace}>
-          DEL
-        </button>
-        <button type="button" className="calculator-key utility" onClick={toggleSign}>
-          +/-
-        </button>
-        <button type="button" className="calculator-key utility" onClick={squareRoot}>
-          √
-        </button>
-
         {[7, 8, 9].map((digit) => (
           <button key={digit} type="button" className="calculator-key" onClick={() => inputDigit(String(digit))}>
             {digit}
           </button>
         ))}
-        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("divide")}>
-          ÷
+        <button type="button" className="calculator-key utility" onClick={clearAll}>
+          C
+        </button>
+        <button type="button" className="calculator-key utility" onClick={backspace}>
+          DEL
         </button>
 
         {[4, 5, 6].map((digit) => (
@@ -178,8 +168,11 @@ const SimpleCalculator = () => {
             {digit}
           </button>
         ))}
-        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("multiply")}>
-          ×
+        <button type="button" className="calculator-key utility" onClick={toggleSign}>
+          +/-
+        </button>
+        <button type="button" className="calculator-key utility" onClick={squareRoot}>
+          √
         </button>
 
         {[1, 2, 3].map((digit) => (
@@ -187,8 +180,11 @@ const SimpleCalculator = () => {
             {digit}
           </button>
         ))}
-        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("subtract")}>
-          −
+        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("divide")}>
+          ÷
+        </button>
+        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("multiply")}>
+          ×
         </button>
 
         <button type="button" className="calculator-key wide" onClick={() => inputDigit("0")}>
@@ -196,6 +192,9 @@ const SimpleCalculator = () => {
         </button>
         <button type="button" className="calculator-key" onClick={inputDecimal}>
           .
+        </button>
+        <button type="button" className="calculator-key operator" onClick={() => chooseOperator("subtract")}>
+          −
         </button>
         <button type="button" className="calculator-key operator" onClick={() => chooseOperator("add")}>
           +
