@@ -52,6 +52,7 @@ export default function ExpenseTracker({
   const items = data?.records || [];
   const classFees = data?.class_fee_rows || [];
   const classOptions = data?.class_options || [];
+  const salaryPaymentSummary = data?.salary_payment_summary || {};
   const schoolBrand = resolveSchoolBrand(data?.school, school);
   const [form, setForm] = useState({
     title: "",
@@ -166,6 +167,7 @@ export default function ExpenseTracker({
   const balanceAmount = Number(financeSummary.balance || 0);
   // Backend allows this to exceed 100 internally (overspending signal); only the display is capped.
   const spendingPercentage = Math.min(100, Math.round(Number(financeSummary.spending_percentage || 0)));
+  const staffSalaryAmount = Number(salaryPaymentSummary.staff_salary_amount || 0);
   const latestClassFees = classFees.slice(0, 5);
 
   const categoryRows = useMemo(() => {
@@ -511,6 +513,10 @@ export default function ExpenseTracker({
             <div>
               <span>Unsettled payments</span>
               <strong>{formatExpenseAmount(unsettledPaymentsAmount)}</strong>
+            </div>
+            <div>
+              <span>Staff salary</span>
+              <strong>{formatExpenseAmount(staffSalaryAmount)}</strong>
             </div>
             <div>
               <span>Balance</span>
