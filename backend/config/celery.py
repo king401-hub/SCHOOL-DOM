@@ -50,4 +50,25 @@ app.conf.beat_schedule = {
         "task": "request_queue.tasks.reconcile_stuck_requests",
         "schedule": crontab(minute="*/5"),
     },
+    # Daily at 03:00 — notify admins once when an item's available quantity
+    # drops to/below its reorder level.
+    "inventory-check-low-stock": {
+        "task": "inventory.tasks.check_low_stock_levels",
+        "schedule": crontab(hour=3, minute=0),
+    },
+    # Daily at 03:15 — 7-day warning + expired notice for item warranties.
+    "inventory-check-expiring-warranties": {
+        "task": "inventory.tasks.check_expiring_warranties",
+        "schedule": crontab(hour=3, minute=15),
+    },
+    # Daily at 03:30 — flag borrowed items past their expected return date.
+    "inventory-check-overdue-borrowed-items": {
+        "task": "inventory.tasks.check_overdue_borrowed_items",
+        "schedule": crontab(hour=3, minute=30),
+    },
+    # Daily at 03:45 — notify when scheduled maintenance is due or overdue.
+    "inventory-check-scheduled-maintenance": {
+        "task": "inventory.tasks.check_scheduled_maintenance",
+        "schedule": crontab(hour=3, minute=45),
+    },
 }

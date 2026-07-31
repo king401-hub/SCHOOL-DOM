@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  RefreshCw,
+  RefreshCw, Package,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -99,6 +99,7 @@ import {
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const AdminRequestQueueScreen = lazy(() => import("./RequestQueueScreen"));
+const AdminInventoryScreen = lazy(() => import("./components/Inventory/InventoryScreen"));
 const lazyAdminScreen = (exportName) =>
   lazy(() => import("./AdminScreens").then((module) => ({ default: module[exportName] })));
 const ProprietorShell = lazy(() => import("./ProprietorScreens").then((module) => ({ default: module.ProprietorShell })));
@@ -6022,6 +6023,7 @@ const ADMIN_ROUTE_ICONS = {
   "/parents": Users,
   "/id-cards": CreditCard,
   "/documents": FileText,
+  "/inventory": Package,
   "/people-group": Users,
   "/teachers": BookOpen,
   "/non-teaching-staff": Briefcase,
@@ -7684,6 +7686,16 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onRetry={handleRetry}
         onManualRetry={handleRequestQueueManualRetry}
         onCancelRequest={handleRequestQueueCancel}
+      />
+    );
+  } else if (activePath === "/inventory") {
+    content = (
+      <AdminInventoryScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        session={session}
       />
     );
   } else if (activePath === "/hr-self-service") {

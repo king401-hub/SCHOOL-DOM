@@ -716,11 +716,13 @@ class ExpenseRecord(models.Model):
     TYPE_BILL = "bill"
     TYPE_RECEIPT = "receipt"
     TYPE_PAYSLIP = "payslip"
+    TYPE_INVENTORY_PURCHASE = "inventory_purchase"
     TYPE_CHOICES = [
         (TYPE_EXPENSE, "Expense"),
         (TYPE_BILL, "Bill"),
         (TYPE_RECEIPT, "Receipt"),
         (TYPE_PAYSLIP, "Payslip"),
+        (TYPE_INVENTORY_PURCHASE, "Inventory Purchase"),
     ]
 
     STATUS_PENDING = "pending"
@@ -745,7 +747,7 @@ class ExpenseRecord(models.Model):
     phone_number = models.CharField(max_length=40, blank=True)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=5, default="NGN")
-    record_type = models.CharField(max_length=16, choices=TYPE_CHOICES, default=TYPE_EXPENSE)
+    record_type = models.CharField(max_length=24, choices=TYPE_CHOICES, default=TYPE_EXPENSE)
     category = models.CharField(max_length=80, default="Operations")
     color = models.CharField(max_length=16, default="#14b8a6")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
@@ -760,6 +762,14 @@ class ExpenseRecord(models.Model):
         related_name="expense_record",
         help_text="For record_type=payslip - the payroll transaction this row was generated from. "
                    "OneToOne so a given staff/month payroll can never produce more than one Payslip row here.",
+    )
+    inventory_item = models.OneToOneField(
+        "inventory.InventoryItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_record",
+        help_text="For record_type=inventory_purchase - the inventory item this row was generated from.",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

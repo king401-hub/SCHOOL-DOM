@@ -64,6 +64,7 @@ export const ADMIN_ROUTES = [
     children: [
       { path: "/id-cards", label: "ID Cards" },
       { path: "/documents", label: "Transcripts & Testimonials" },
+      { path: "/inventory", label: "Inventory" },
       { path: "/database-import", label: "Database Import" },
       { path: "/messages", label: "Messages" },
       { path: "/settings", label: "Settings" },
@@ -120,6 +121,7 @@ export const ADMIN_ENDPOINTS = {
   "/messages": "/api/app/messages/",
   "/loan-application": "/api/app/loan-applications/",
   "/request-queue": "/api/request-queue/",
+  "/inventory": "/api/inventory/dashboard/",
   "/settings": "/api/app/school/settings/",
   "/compliance": "/api/app/school/settings/",
   "/service-agreement": "/api/app/legal/service-agreement/",

@@ -1,0 +1,97 @@
+.inventory-tabs {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.inventory-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.inventory-stat-card {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.inventory-stat-card .stat-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.inventory-stat-card .stat-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.inventory-stat-card.warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.inventory-stat-card.danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.inventory-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  color: #ffffff;
+}
+
+.inventory-item-images {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.inventory-item-images img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.inventory-qr-label {
+  display: none;
+}
+
+.inventory-qr-print {
+  text-align: center;
+  padding: 24px;
+}
+
+.inventory-qr-print img {
+  width: 180px;
+  height: 180px;
+}
+
+.inventory-qr-print h3 {
+  margin: 12px 0 4px;
+}
+
+.inventory-search-input {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 0 12px;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: inherit;
+  font-size: 0.9rem;
+}
