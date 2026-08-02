@@ -168,6 +168,19 @@ def _parse_amount(raw_amount):
         raise ValueError("Enter a valid positive amount.")
 
 
+def _parse_non_negative_amount(raw_amount):
+    """Like _parse_amount, but accepts zero - for optional amount fields
+    (e.g. a bill's discount/tax) where 0 is the valid "none" value, not
+    an error."""
+    try:
+        amount = Decimal(str(raw_amount))
+        if amount < 0:
+            raise ValueError
+        return amount.quantize(Decimal("0.01"))
+    except Exception:
+        raise ValueError("Enter a valid amount (0 or more).")
+
+
 def _parse_bool(value, default=True):
     if value is None:
         return default
@@ -1246,9 +1259,9 @@ def admin_bills(request):
 
         try:
             discount_raw = request.data.get("discount_amount")
-            discount_amount = _parse_amount(discount_raw) if discount_raw not in (None, "") else Decimal("0.00")
+            discount_amount = _parse_non_negative_amount(discount_raw) if discount_raw not in (None, "") else Decimal("0.00")
             tax_raw = request.data.get("tax_amount")
-            tax_amount = _parse_amount(tax_raw) if tax_raw not in (None, "") else Decimal("0.00")
+            tax_amount = _parse_non_negative_amount(tax_raw) if tax_raw not in (None, "") else Decimal("0.00")
         except ValueError as exc:
             return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1382,14 +1395,14 @@ def admin_bill_detail(request, bill_id):
     if editable_core and "discount_amount" in request.data:
         try:
             raw = request.data.get("discount_amount")
-            bill.discount_amount = _parse_amount(raw) if raw not in (None, "") else Decimal("0.00")
+            bill.discount_amount = _parse_non_negative_amount(raw) if raw not in (None, "") else Decimal("0.00")
         except ValueError as exc:
             return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         update_fields.append("discount_amount")
     if editable_core and "tax_amount" in request.data:
         try:
             raw = request.data.get("tax_amount")
-            bill.tax_amount = _parse_amount(raw) if raw not in (None, "") else Decimal("0.00")
+            bill.tax_amount = _parse_non_negative_amount(raw) if raw not in (None, "") else Decimal("0.00")
         except ValueError as exc:
             return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         update_fields.append("tax_amount")
