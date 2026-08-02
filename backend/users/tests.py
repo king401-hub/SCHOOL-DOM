@@ -4097,6 +4097,43 @@ class NonK12StudentSelfRegistrationTests(TestCase):
         credit = get_or_create_student_activation_credit(profile)
         self.assertTrue(credit.has_login_credit)
 
+    def test_self_registration_with_guardian_phone_creates_and_links_parent_account(self):
+        pool = get_or_create_activation_credit_pool(self.non_k12_school)
+        pool.balance = 3
+        pool.save(update_fields=["balance", "updated_at"])
+
+        payload = self._register_payload(self.non_k12_school.schema_name)
+        payload["guardian_phone"] = "+2348030001122"
+
+        response = self.client.post("/api/auth/register/", data=payload, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        student = User.objects.get(email=f"{self._testMethodName}@school.edu")
+        profile = StudentProfile.objects.get(user=student)
+        self.assertEqual(profile.guardian_phone, "+2348030001122")
+
+        parent_user = User.objects.get(role="parent", tenant=self.non_k12_school, phone="+2348030001122")
+        self.assertEqual(parent_user.first_name, "Guardian")
+        parent_profile = ParentProfile.objects.get(user=parent_user)
+        self.assertIn(profile, parent_profile.children.all())
+
+    def test_self_registration_without_guardian_phone_creates_no_parent_account(self):
+        pool = get_or_create_activation_credit_pool(self.non_k12_school)
+        pool.balance = 3
+        pool.save(update_fields=["balance", "updated_at"])
+
+        # _register_payload() never sets guardian_phone - matches the
+        # pre-existing behavior this test guards: no phone means no
+        # de-dup key, so _sync_guardian_parent must not create a parent.
+        response = self.client.post(
+            "/api/auth/register/",
+            data=self._register_payload(self.non_k12_school.schema_name),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(User.objects.filter(role="parent", tenant=self.non_k12_school).exists())
+
     def test_self_registration_rejected_for_k12_school(self):
         response = self.client.post(
             "/api/auth/register/",

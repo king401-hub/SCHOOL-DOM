@@ -189,6 +189,18 @@ class RegisterSerializer(serializers.Serializer):
                 except Exception:
                     pass
 
+                # Auto-provision (or link to) a parent account from the guardian
+                # details given at signup - this is what triggers the parent's
+                # Paystack virtual account via the on_user_created signal, the
+                # same as the admin "Add Student" form already does. Guarded
+                # like the wallet step above: a hiccup here (e.g. Paystack
+                # down) must never block the student's own registration.
+                try:
+                    from users.app_views import _sync_student_guardians_to_parent_directory
+                    _sync_student_guardians_to_parent_directory(profile)
+                except Exception:
+                    pass
+
                 # Self-registration (Non-K12 only, enforced in validate()) immediately
                 # consumes one activation credit from the school's pool so the new
                 # student can log in right away, same as an admin manually assigning one.
