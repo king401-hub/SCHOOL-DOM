@@ -1,5 +1,7 @@
 """API endpoints for wallet and fee management."""
 from decimal import Decimal
+import hashlib
+import hmac
 from hmac import compare_digest
 from datetime import datetime
 from html import escape
@@ -95,7 +97,6 @@ from finance.services import (
     ingest_bank_payment,
     apply_bank_payment_to_student,
     record_cash_payment,
-    parent_balance_payload,
     provision_kuda_admin_virtual_account,
     record_finance_activity,
     receipt_message_for_payment,
@@ -250,7 +251,11 @@ def _extract_whatsapp_messages(payload):
 def _bank_webhook_authorized(request):
     secret = getattr(settings, "SCHOOLDOM_BANK_WEBHOOK_SECRET", "")
     if not secret:
-        return True
+        # Fail closed: an unconfigured secret must reject every request,
+        # not accept every request. There's no external provider API to
+        # cross-check a bank credit against (unlike Paystack/Flutterwave/
+        # Kuda), so this signature check is the ONLY authenticity gate.
+        return False
     supplied = (
         request.headers.get("X-SchoolDom-Signature")
         or request.headers.get("X-Webhook-Secret")
@@ -267,6 +272,21 @@ def _first_present(data, names, default=""):
     return default
 
 
+def _whatsapp_signature_valid(request):
+    """Verify Meta's X-Hub-Signature-256 header: sha256=<hmac-hex of raw body,
+    keyed with the WhatsApp app secret>. Fails closed - an unconfigured
+    secret rejects every request, since this is the only authenticity gate
+    on an endpoint that triggers real outbound WhatsApp/SMS sends."""
+    app_secret = getattr(settings, "WHATSAPP_BUSINESS_APP_SECRET", "")
+    if not app_secret:
+        return False
+    header = request.headers.get("X-Hub-Signature-256", "")
+    if not header.startswith("sha256="):
+        return False
+    expected = hmac.new(app_secret.encode("utf-8"), request.body, hashlib.sha256).hexdigest()
+    return compare_digest(header[len("sha256="):], expected)
+
+
 @api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def whatsapp_business_webhook(request):
@@ -279,6 +299,9 @@ def whatsapp_business_webhook(request):
         if mode == "subscribe" and verify_token and compare_digest(token or "", verify_token):
             return HttpResponse(challenge)
         return Response({"success": False, "message": "Verification failed."}, status=status.HTTP_403_FORBIDDEN)
+
+    if not _whatsapp_signature_valid(request):
+        return Response({"success": False, "message": "Invalid webhook signature."}, status=status.HTTP_401_UNAUTHORIZED)
 
     processed = []
     for message in _extract_whatsapp_messages(request.data):
@@ -302,14 +325,6 @@ def whatsapp_business_webhook(request):
             except Exception as exc:
                 processed.append({"from": from_phone, "action": "help", "error": str(exc)})
     return Response({"success": True, "processed": processed})
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def whatsapp_balance_preview(request):
-    """Preview generated parent balance rows without sending WhatsApp messages."""
-    parent_phone = request.data.get("parent_phone") or request.data.get("phone") or ""
-    return Response({"success": True, "children": parent_balance_payload(parent_phone)})
 
 
 @api_view(["POST"])
@@ -1261,13 +1276,13 @@ def admin_bills(request):
         academic_year_id = request.data.get("academic_year_id") or request.data.get("academic_year")
         legacy_tenant = _legacy_tenant_for_user(user)
         if academic_year_id:
-            academic_year = get_object_or_404(AcademicYear, id=academic_year_id)
+            academic_year = get_object_or_404(AcademicYear, id=academic_year_id, tenant=legacy_tenant)
         else:
             academic_year = AcademicYear.objects.filter(tenant=legacy_tenant, is_active=True).first()
         term = None
         term_id = request.data.get("term_id") or request.data.get("term")
         if term_id:
-            term = get_object_or_404(Term, id=term_id)
+            term = get_object_or_404(Term, id=term_id, tenant=legacy_tenant)
         else:
             term = Term.objects.filter(tenant=legacy_tenant, is_active=True).first()
 
@@ -1760,7 +1775,7 @@ def flutterwave_webhook(request):
     """Complete successful Flutterwave payments as soon as Flutterwave notifies us."""
     configured_hash = getattr(settings, "FLUTTERWAVE_WEBHOOK_SECRET_HASH", "")
     received_hash = request.headers.get("verif-hash", "")
-    if configured_hash and not compare_digest(received_hash, configured_hash):
+    if not configured_hash or not compare_digest(received_hash, configured_hash):
         return Response({"success": False, "message": "Invalid webhook signature."}, status=status.HTTP_401_UNAUTHORIZED)
 
     payload = request.data or {}
@@ -1790,14 +1805,23 @@ def flutterwave_webhook(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def kuda_webhook(request):
-    """Complete successful Kuda payments as soon as Kuda notifies us."""
+    """Complete successful Kuda payments as soon as Kuda notifies us.
+
+    Security note: this webhook is intentionally NOT trusted for payment
+    facts (amount/status) - it only uses the notification to learn WHICH
+    reference to re-verify. The actual completion always goes through
+    complete_payment_reference(reference) with no pre-built verification,
+    so it falls through to a real verify_kuda_transaction() API call
+    (mirrors flutterwave_webhook). This closes off forging a payment by
+    POSTing a fabricated amount/status to this endpoint.
+    """
     configured_secret = getattr(settings, "KUDA_WEBHOOK_SECRET", "")
     received_secret = (
         request.headers.get("X-Kuda-Signature")
         or request.headers.get("X-Webhook-Secret")
         or request.headers.get("Authorization", "").replace("Bearer ", "", 1)
     )
-    if configured_secret and not compare_digest(received_secret or "", configured_secret):
+    if not configured_secret or not compare_digest(received_secret or "", configured_secret):
         return Response({"success": False, "message": "Invalid webhook signature."}, status=status.HTTP_401_UNAUTHORIZED)
 
     payload = request.data or {}
@@ -1810,23 +1834,11 @@ def kuda_webhook(request):
         or data.get("id")
         or ""
     ).strip()
-    provider_status = str(data.get("status") or data.get("transactionStatus") or data.get("state") or "").lower()
-
-    if provider_status and provider_status not in {"success", "successful", "completed", "complete", "paid"}:
-        return Response({"success": True, "message": "Payment is not successful yet."})
     if not reference:
         return Response({"success": False, "message": "Missing payment reference."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        result = complete_payment_reference(
-            reference,
-            verification={
-                **data,
-                "status": "successful",
-                "provider": "kuda",
-                "amount": data.get("amount") or data.get("Amount") or data.get("paid_amount") or 0,
-            },
-        )
+        result = complete_payment_reference(reference)
     except ValueError as exc:
         return Response({"success": True, "message": str(exc)})
     except Exception as exc:
@@ -3176,12 +3188,12 @@ def transaction_detail(request, reference):
         except Transaction.DoesNotExist:
             return Response({"success": False, "message": "Transaction not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Parents see only their own; admin/finance see all in their tenant
+    # Parents see only their own; admin/finance see only their own school's.
     if user.role == "parent":
         if tx.parent_id != user.id:
             return Response({"success": False, "message": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-    elif user.role not in FINANCE_ROLES:
-        return Response({"success": False, "message": "Permission denied."}, status=status.HTTP_403_FORBIDDEN)
+    elif user.role not in FINANCE_ROLES or str(tx.school_id) != str(user.tenant_id):
+        return Response({"success": False, "message": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
     allocations = list(
         tx.allocations.select_related("fee", "fee__student", "fee__student__user", "fee__student__current_class")

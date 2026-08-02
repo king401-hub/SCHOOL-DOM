@@ -1510,40 +1510,55 @@ def process_paystack_webhook(data: dict) -> dict:
     
     if tx.status == Transaction.STATUS_SUCCESS:
         return {'status': 'already_processed', 'reference': reference}
-    
-    # Verify the transaction
+
+    # Verify the transaction (network call - deliberately done before the
+    # row lock below, so a slow Paystack API call never holds a DB lock).
     try:
         verification = verify_paystack_transaction(reference)
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
-    
+
     # Check if successful
     if verification.get('status') != 'success':
         tx.status = Transaction.STATUS_FAILED
         tx.metadata = {**tx.metadata, 'verification': verification}
         tx.save()
         return {'status': 'failed', 'reference': reference}
-    
+
     amount_paid = Decimal(str(verification.get('amount', 0))) / 100
-    
-    # Update transaction
-    tx.status = Transaction.STATUS_SUCCESS
-    tx.amount = amount_paid
-    tx.metadata = {**tx.metadata, 'verification': verification}
-    tx.save()
-    
+
+    # Row-locked check-and-flip: Paystack retries webhooks on timeout, and a
+    # client-side "verify" poll can race the webhook for the same reference.
+    # Whichever request gets here first while status is still non-SUCCESS is
+    # the sole winner that proceeds to allocate_split_payment below; any
+    # concurrent request that finds status already SUCCESS (because it lost
+    # the race and blocked on select_for_update until the winner committed)
+    # must return without re-allocating the same payment a second time.
+    with transaction.atomic():
+        locked_tx = Transaction.objects.select_for_update().get(pk=tx.pk)
+        already_processed = locked_tx.status == Transaction.STATUS_SUCCESS
+        if not already_processed:
+            locked_tx.status = Transaction.STATUS_SUCCESS
+            locked_tx.amount = amount_paid
+            locked_tx.metadata = {**locked_tx.metadata, 'verification': verification}
+            locked_tx.save()
+        tx = locked_tx
+
+    if already_processed:
+        return {'status': 'already_processed', 'reference': reference}
+
     # Allocate payment
     parent_id = tx.metadata.get('parent_id') or tx.parent_id
     if not parent_id:
         return {'status': 'error', 'message': 'No parent ID found'}
-    
+
     allocation_result = allocate_split_payment(
         parent_id=parent_id,
         amount_paid=amount_paid,
         paystack_ref=reference,
         transaction_id=tx.id
     )
-    
+
     # Update transaction allocation status
     if allocation_result['overpayment'] > 0:
         tx.allocation_status = Transaction.ALLOCATION_OVERPAID
@@ -1551,10 +1566,10 @@ def process_paystack_webhook(data: dict) -> dict:
         tx.allocation_status = Transaction.ALLOCATION_PARTIAL
     else:
         tx.allocation_status = Transaction.ALLOCATION_ALLOCATED
-    
+
     tx.fee_ids = [a['fee_id'] for a in allocation_result['allocations'] if a.get('fee_id')]
     tx.save()
-    
+
     return {
         'status': 'success',
         'reference': reference,
@@ -1931,34 +1946,38 @@ def extend_token_allocation(actor, allocation, new_expires_at, additional_credit
     to restore what expired. additional_credits (if any) is added on top,
     immediately. Either way, all three notification-sent flags are cleared so
     the 7-day/1-day/expired reminders can fire again against the new date."""
-    from .models import TokenAllocation
+    from .models import TokenAllocation, ActivationCreditPool
 
     was_revoked = allocation.revoked_at is not None
-    pool = allocation.pool
     credited = 0
-
-    if was_revoked and (new_expires_at is None or new_expires_at >= timezone.localdate()):
-        pool.balance += allocation.credits
-        credited += allocation.credits
-        allocation.revoked_at = None
-
-    if additional_credits > 0:
-        pool.balance += additional_credits
-        credited += additional_credits
-
-    if credited:
-        pool.save(update_fields=["balance", "updated_at"])
-
     old_expiry = allocation.expires_at
-    allocation.expires_at = new_expires_at
-    allocation.credits += additional_credits
-    allocation.notified_7d_at = None
-    allocation.notified_1d_at = None
-    allocation.notified_expired_at = None
-    allocation.save(update_fields=[
-        "expires_at", "credits", "revoked_at",
-        "notified_7d_at", "notified_1d_at", "notified_expired_at", "updated_at",
-    ])
+
+    with transaction.atomic():
+        pool = ActivationCreditPool.objects.select_for_update().get(pk=allocation.pool_id)
+        locked_allocation = TokenAllocation.objects.select_for_update().get(pk=allocation.pk)
+
+        if was_revoked and (new_expires_at is None or new_expires_at >= timezone.localdate()):
+            pool.balance += locked_allocation.credits
+            credited += locked_allocation.credits
+            locked_allocation.revoked_at = None
+
+        if additional_credits > 0:
+            pool.balance += additional_credits
+            credited += additional_credits
+
+        if credited:
+            pool.save(update_fields=["balance", "updated_at"])
+
+        locked_allocation.expires_at = new_expires_at
+        locked_allocation.credits += additional_credits
+        locked_allocation.notified_7d_at = None
+        locked_allocation.notified_1d_at = None
+        locked_allocation.notified_expired_at = None
+        locked_allocation.save(update_fields=[
+            "expires_at", "credits", "revoked_at",
+            "notified_7d_at", "notified_1d_at", "notified_expired_at", "updated_at",
+        ])
+        allocation = locked_allocation
 
     record_finance_activity(
         allocation.tenant, actor, "token_allocation_extended",
@@ -2865,14 +2884,21 @@ def complete_wallet_funding(reference: str, actor=None, verification: Optional[d
 
     with transaction.atomic():
         locked_tx = Transaction.objects.select_for_update().select_related("wallet", "wallet__user").get(pk=tx.pk)
-        if locked_tx.status != Transaction.STATUS_SUCCESS:
+        # The row lock makes this the single source of truth for "did I win
+        # the race to apply this payment" - a concurrent caller (webhook +
+        # client-side verify poll, or a doubled webhook delivery) blocks on
+        # select_for_update() until the winner's transaction commits, then
+        # sees status already SUCCESS and must NOT re-apply the credit.
+        already_applied = locked_tx.status == Transaction.STATUS_SUCCESS
+        if not already_applied:
             locked_tx.status = Transaction.STATUS_SUCCESS
             locked_tx.metadata = {**locked_tx.metadata, "verification": verification}
             locked_tx.save(update_fields=["status", "metadata", "updated_at"])
 
     tx.refresh_from_db()
-    _apply_flutterwave_payment_to_admin_and_fees(tx, actor=actor or tx.wallet.user)
-    settle_flutterwave_school_fee_payment(tx, actor=actor or tx.wallet.user)
+    if not already_applied:
+        _apply_flutterwave_payment_to_admin_and_fees(tx, actor=actor or tx.wallet.user)
+        settle_flutterwave_school_fee_payment(tx, actor=actor or tx.wallet.user)
     if tx.wallet:
         tx.wallet.refresh_from_db()
     return tx.wallet

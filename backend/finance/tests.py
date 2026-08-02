@@ -1,4 +1,5 @@
 from decimal import Decimal
+import uuid
 from unittest.mock import Mock, patch
 
 from django.core import mail
@@ -1206,6 +1207,19 @@ class CrossTenantIsolationTests(TestCase):
         response = self.client.get(f"/api/finance/paystack/verify/?reference={tx.paystack_ref}")
         self.assertEqual(response.status_code, 404)
 
+    def test_admin_cannot_view_another_schools_transaction_detail(self):
+        tx = Transaction.objects.create(
+            amount=Decimal("1000.00"),
+            tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_SUCCESS,
+            reference="PAYCROSSTENANTDETAIL001",
+            paystack_ref="PAYCROSSTENANTDETAIL001",
+            school_id=self.school_b.id,
+            parent_id=self.parent_b.id,
+        )
+        response = self.client.get(f"/api/finance/transactions/{tx.paystack_ref}/")
+        self.assertEqual(response.status_code, 404)
+
     def test_admin_cannot_credit_another_schools_sms_wallet_via_guessed_reference(self):
         from finance.models import SmsWallet
         wallet_b = SmsWallet.objects.create(tenant=self.school_b, balance=0)
@@ -2032,3 +2046,154 @@ class WalletWithdrawalQueueHandlerTests(TestCase):
         self.assertTrue(duplicate.is_archived)
         # The duplicate must never have touched the wallet.
         self.assertFalse(Transaction.objects.filter(reference="WD-DUP").exists())
+
+
+class PaymentRaceConditionTests(TestCase):
+    """A webhook retry or a webhook racing a client-side 'verify' poll for
+    the same reference must apply a payment's effects exactly once."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Race School", schema_name="race_school", is_active=True)
+        self.student_user = User.objects.create_user(
+            email="race.student@school.edu", password="StudentPass123", first_name="Race", last_name="Student",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=self.student_user, student_id="STRACE01", admission_number="ADM-RACE-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+        )
+        AdminWallet.objects.create(tenant=self.school)
+
+    @override_settings(FLUTTERWAVE_SECRET_KEY="flw-secret", FLUTTERWAVE_AUTO_SETTLE_SCHOOL_FEES=False)
+    @patch("finance.services.verify_flutterwave_transaction")
+    def test_complete_wallet_funding_does_not_double_credit_on_concurrent_calls(self, mock_verify):
+        wallet = ensure_student_wallet(self.student_user)
+        tx = Transaction.objects.create(
+            wallet=wallet, amount=Decimal("1500.00"), tx_type=Transaction.FUNDING,
+            status=Transaction.STATUS_PENDING, reference="PAYRACE001",
+            narration="School fee payment", created_by=self.student_user,
+        )
+
+        def racing_verify(reference):
+            # Simulate a concurrent request (e.g. the real webhook) completing
+            # this exact payment while THIS call was still verifying with the
+            # provider - the classic check-then-act race window.
+            Transaction.objects.filter(reference=reference).update(status=Transaction.STATUS_SUCCESS)
+            return {"status": "successful", "amount": "1500.00"}
+
+        mock_verify.side_effect = racing_verify
+
+        complete_wallet_funding(tx.reference, actor=self.student_user)
+
+        admin_wallet = AdminWallet.objects.get(tenant=self.school)
+        # Only the racing call's status flip happened - THIS call must have
+        # detected that and skipped crediting the admin wallet a second time.
+        self.assertEqual(admin_wallet.balance, Decimal("0.00"))
+
+    def test_process_paystack_webhook_does_not_double_allocate_on_concurrent_calls(self):
+        from finance.services import process_paystack_webhook
+
+        tx = Transaction.objects.create(
+            amount=Decimal("1000.00"), tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_PENDING, reference="PAYRACESPLIT001",
+            paystack_ref="PAYRACESPLIT001", school_id=self.school.id, parent_id=uuid.uuid4(),
+        )
+
+        def racing_verify(reference):
+            Transaction.objects.filter(paystack_ref=reference).update(status=Transaction.STATUS_SUCCESS)
+            return {"status": "success", "amount": 100000}
+
+        webhook_payload = {
+            "event": "charge.success",
+            "data": {"reference": tx.paystack_ref, "channel": "card", "amount": 100000, "metadata": {}},
+        }
+
+        with patch("finance.services.verify_paystack_transaction", side_effect=racing_verify), \
+             patch("finance.services.allocate_split_payment") as mock_allocate:
+            result = process_paystack_webhook(webhook_payload)
+
+        mock_allocate.assert_not_called()
+        self.assertEqual(result["status"], "already_processed")
+
+    def test_process_paystack_webhook_allocates_exactly_once_without_a_race(self):
+        from finance.services import process_paystack_webhook
+
+        tx = Transaction.objects.create(
+            amount=Decimal("1000.00"), tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_PENDING, reference="PAYNORMALSPLIT001",
+            paystack_ref="PAYNORMALSPLIT001", school_id=self.school.id, parent_id=uuid.uuid4(),
+        )
+        webhook_payload = {
+            "event": "charge.success",
+            "data": {"reference": tx.paystack_ref, "channel": "card", "amount": 100000, "metadata": {}},
+        }
+
+        with patch("finance.services.verify_paystack_transaction", return_value={"status": "success", "amount": 100000}), \
+             patch("finance.services.allocate_split_payment", return_value={"overpayment": Decimal("0.00"), "allocations": []}) as mock_allocate:
+            result = process_paystack_webhook(webhook_payload)
+
+        mock_allocate.assert_called_once()
+        self.assertEqual(result["status"], "success")
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, Transaction.STATUS_SUCCESS)
+
+
+class WebhookFailClosedTests(TestCase):
+    """An unconfigured webhook secret must reject every request, not accept
+    every request - see the finance security audit this session."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    @override_settings(KUDA_WEBHOOK_SECRET="")
+    def test_kuda_webhook_rejects_when_secret_unconfigured(self):
+        response = self.client.post(
+            "/api/finance/kuda/webhook/",
+            {"data": {"reference": "SOME-REF", "status": "successful", "amount": 999999}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @override_settings(FLUTTERWAVE_WEBHOOK_SECRET_HASH="")
+    def test_flutterwave_webhook_rejects_when_secret_unconfigured(self):
+        response = self.client.post(
+            "/api/finance/flutterwave/webhook/",
+            {"event": "charge.completed", "data": {"tx_ref": "SOME-REF", "status": "successful"}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @override_settings(SCHOOLDOM_BANK_WEBHOOK_SECRET="")
+    def test_bank_credit_webhook_rejects_when_secret_unconfigured(self):
+        response = self.client.post(
+            "/api/finance/bank-credit/webhook/",
+            {"amount": 999999, "narration": "FORGED", "bank_reference": "FORGED-REF"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(WHATSAPP_BUSINESS_APP_SECRET="")
+    def test_whatsapp_webhook_rejects_when_secret_unconfigured(self):
+        response = self.client.post(
+            "/api/finance/whatsapp/webhook/",
+            {"entry": [{"changes": [{"value": {"messages": [{"from": "234800", "text": {"body": "balance"}}]}}]}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    @override_settings(WHATSAPP_BUSINESS_APP_SECRET="whatsapp-secret")
+    def test_whatsapp_webhook_accepts_a_correctly_signed_request(self):
+        import hashlib
+        import hmac as hmac_module
+        import json as json_module
+
+        body = json_module.dumps({"entry": []}).encode("utf-8")
+        signature = "sha256=" + hmac_module.new(b"whatsapp-secret", body, hashlib.sha256).hexdigest()
+
+        response = self.client.post(
+            "/api/finance/whatsapp/webhook/",
+            data=body,
+            content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256=signature,
+        )
+        self.assertEqual(response.status_code, 200)
