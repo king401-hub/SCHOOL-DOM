@@ -23,35 +23,11 @@ const EXPENSE_TAGS = [
   { label: "Transport", color: "#ef4444" },
 ];
 
-const DEFAULT_BILL_LINES = [
-  "TUITION FEES",
-  "HOSTEL FEES",
-  "TRANSPORTATION",
-  "UNIFORM",
-  "OUTSTANDING BALANCE",
-];
-
-const createBillLines = () => DEFAULT_BILL_LINES.map((label) => ({ label, amount: "0.00" }));
-
-const createBillNumber = () => {
-  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  return `BILL-${stamp}`;
-};
-
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
 export default function ExpenseTracker({
-  data, school, loading, error, onRetry, onCreate, onDelete, onSettle, onClassFeeSave, onClassFeeDelete,
+  data, school, loading, error, onRetry, onCreate, onDelete, onSettle,
   onCreatePayslip, onSendPayslip, onLoadStaffOptions,
 }) {
   const items = data?.records || [];
-  const classFees = data?.class_fee_rows || [];
-  const classOptions = data?.class_options || [];
   const salaryPaymentSummary = data?.salary_payment_summary || {};
   const schoolBrand = resolveSchoolBrand(data?.school, school);
   const [form, setForm] = useState({
@@ -122,17 +98,6 @@ export default function ExpenseTracker({
     const deductions = Number(payslipForm.deductions || 0);
     return Math.max(basic + allowances - deductions, 0);
   }, [payslipForm.basicSalary, payslipForm.allowances, payslipForm.deductions]);
-  const [classFeeForm, setClassFeeForm] = useState({
-    school_class: "",
-    due_date: "",
-  });
-  const [billLines, setBillLines] = useState(createBillLines);
-  const [billNumber, setBillNumber] = useState(createBillNumber);
-  const [editingClassFeeId, setEditingClassFeeId] = useState("");
-  const [classFeeFeedback, setClassFeeFeedback] = useState("");
-  const [classFeeError, setClassFeeError] = useState("");
-  const [savingClassFee, setSavingClassFee] = useState(false);
-  const [deletingClassFeeId, setDeletingClassFeeId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [settlingId, setSettlingId] = useState("");
@@ -142,16 +107,6 @@ export default function ExpenseTracker({
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
-
-  const billTotal = useMemo(
-    () => billLines.reduce((sum, line) => sum + Number(line.amount || 0), 0),
-    [billLines]
-  );
-
-  const selectedClassLabel = useMemo(() => {
-    const match = classOptions.find((item) => String(item.id || item.value || item.school_class || item.name) === String(classFeeForm.school_class));
-    return match?.label || match?.name || match?.class_label || match?.value || "";
-  }, [classFeeForm.school_class, classOptions]);
 
   // Total Outflow, Settled/Unsettled, Balance, and Spending % all come from
   // the shared backend finance summary (finance.services.compute_finance_summary)
@@ -168,7 +123,6 @@ export default function ExpenseTracker({
   // Backend allows this to exceed 100 internally (overspending signal); only the display is capped.
   const spendingPercentage = Math.min(100, Math.round(Number(financeSummary.spending_percentage || 0)));
   const staffSalaryAmount = Number(salaryPaymentSummary.staff_salary_amount || 0);
-  const latestClassFees = classFees.slice(0, 5);
 
   const categoryRows = useMemo(() => {
     const rows = new Map();
@@ -191,130 +145,6 @@ export default function ExpenseTracker({
           .filter(Boolean)
           .some((field) => String(field).toLowerCase().includes(searchNeedle))
       );
-
-  const resetClassFeeForm = () => {
-    setEditingClassFeeId("");
-    setClassFeeForm({ school_class: "", due_date: "" });
-    setBillLines(createBillLines());
-    setBillNumber(createBillNumber());
-  };
-
-  const handleClassFeeSubmit = async (event) => {
-    event.preventDefault();
-    setClassFeeFeedback("");
-    setClassFeeError("");
-    if (!classFeeForm.school_class || !billTotal || billTotal <= 0 || !classFeeForm.due_date) {
-      setClassFeeError("Select a class, enter at least one bill amount, and choose a due date.");
-      return;
-    }
-    setSavingClassFee(true);
-    try {
-      const result = await onClassFeeSave?.({
-        id: editingClassFeeId,
-        ...classFeeForm,
-        title: "Bills",
-        amount: billTotal,
-      });
-      setClassFeeFeedback(result?.message || (editingClassFeeId ? "School-fee bill updated." : "School-fee bill created."));
-      resetClassFeeForm();
-    } catch (err) {
-      setClassFeeError(err.message || "Could not save school-fee bill.");
-    } finally {
-      setSavingClassFee(false);
-    }
-  };
-
-  const startEditClassFee = (fee) => {
-    setClassFeeFeedback("");
-    setClassFeeError("");
-    setEditingClassFeeId(fee.id);
-    setClassFeeForm({
-      school_class: fee.school_class || "",
-      due_date: fee.due_date || "",
-    });
-    setBillLines([{ label: fee.title || "Bills", amount: fee.amount || "" }, ...createBillLines().slice(0, 4)]);
-  };
-
-  const updateBillLine = (index, field, value) => {
-    setBillLines((current) => current.map((line, lineIndex) => (lineIndex === index ? { ...line, [field]: value } : line)));
-  };
-
-  const addOtherBillLine = () => {
-    setBillLines((current) => [...current, { label: "OTHER", amount: "0.00" }]);
-  };
-
-  const handlePrintBill = () => {
-    const rows = billLines
-      .filter((line) => line.label.trim() || Number(line.amount || 0))
-      .map(
-        (line) => `
-          <tr>
-            <td>${escapeHtml(line.label || "OTHER")}</td>
-            <td>${formatExpenseAmount(line.amount)}</td>
-          </tr>`
-      )
-      .join("");
-    const printWindow = window.open("", "_blank", "width=900,height=1100");
-    if (!printWindow) {
-      setClassFeeError("Allow popups to print this bill.");
-      return;
-    }
-    printWindow.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>${escapeHtml(billNumber)} Bills</title>
-          <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.bill{width:min(100%,900px);margin:14px auto;background:#fff;padding:32px 40px;border:1px solid #d8e0ea}.brand{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:30px}.logo{width:62px;height:62px;border:1px solid #d8e0ea;display:grid;place-items:center;overflow:hidden;font-weight:900;color:#0f3d5e}.logo img{width:100%;height:100%;object-fit:contain}.school{text-align:right}.school h1{margin:0 0 6px;font-size:20px}.school p{margin:2px 0;color:#64748b;font-size:11px}.title{font-size:42px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}.meta strong{display:inline-block;min-width:78px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:9px 10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.bill{width:100%;margin:0;border:none;padding:18px 22px}}
-          </style>
-        </head>
-        <body>
-          <main class="bill">
-            <header class="brand">
-              <div class="logo">${schoolBrand.logo ? `<img src="${escapeHtml(schoolBrand.logo)}" alt="">` : escapeHtml(schoolBrand.initials)}</div>
-              <div class="school">
-                <h1>${escapeHtml(schoolBrand.name)}</h1>
-                <p>${escapeHtml(schoolBrand.address || "School address")}</p>
-                <p>${escapeHtml(schoolBrand.phone || schoolBrand.email || "School phone")}</p>
-              </div>
-            </header>
-            <h2 class="title">Bills</h2>
-            <section class="meta">
-              <div><strong>Bill No:</strong> ${escapeHtml(billNumber)}</div>
-              <div><strong>Date:</strong> ${escapeHtml(formatDate(new Date().toISOString().slice(0, 10)))}</div>
-              <div><strong>Class:</strong> ${escapeHtml(selectedClassLabel || "All classes")}</div>
-              <div><strong>Due Date:</strong> ${escapeHtml(classFeeForm.due_date ? formatDate(classFeeForm.due_date) : "-")}</div>
-            </section>
-            <table>
-              <thead><tr><th>Item</th><th>Amount</th></tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-            <div class="total"><span>Total</span><span>${escapeHtml(formatExpenseAmount(billTotal))}</span></div>
-            <p class="footer">For questions, contact ${escapeHtml(schoolBrand.email || schoolBrand.phone || schoolBrand.name)}.</p>
-          </main>
-          <script>window.onload=function(){window.print();};</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
-  const handleDeleteClassFee = async (feeId) => {
-    setClassFeeFeedback("");
-    setClassFeeError("");
-    setDeletingClassFeeId(feeId);
-    try {
-      await onClassFeeDelete?.(feeId);
-      setClassFeeFeedback("School-fee bill deactivated.");
-      if (editingClassFeeId === feeId) {
-        resetClassFeeForm();
-      }
-    } catch (err) {
-      setClassFeeError(err.message || "Could not deactivate school-fee bill.");
-    } finally {
-      setDeletingClassFeeId("");
-    }
-  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -527,132 +357,6 @@ export default function ExpenseTracker({
       </article>
 
       <div className="expense-workspace">
-        <article
-          className={`app-panel expense-create-panel ${editingClassFeeId ? "edit-modal-card expense-bill-edit-modal" : ""}`}
-          role={editingClassFeeId ? "dialog" : undefined}
-          aria-modal={editingClassFeeId ? "true" : undefined}
-          aria-labelledby="expense-bill-form-title"
-        >
-          <div className="expense-panel-head">
-            <h3 id="expense-bill-form-title">{editingClassFeeId ? "Edit Bills Template" : "Create Bills Template"}</h3>
-            <div className="table-actions-inline">
-              <button type="button" className="table-action" onClick={handlePrintBill}>Print</button>
-              {editingClassFeeId ? <button type="button" className="table-action" onClick={resetClassFeeForm}>Close</button> : null}
-            </div>
-          </div>
-          <form className="panel-form" onSubmit={handleClassFeeSubmit}>
-            <div className="panel-form-grid">
-              <label className="panel-field">
-                Class
-                <select
-                  value={classFeeForm.school_class}
-                  onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))}
-                  required
-                >
-                  <option value="">Select class</option>
-                  {classOptions.map((item) => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="panel-field">
-                Due date
-                <input
-                  type="date"
-                  value={classFeeForm.due_date}
-                  onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))}
-                  required
-                />
-              </label>
-              <label className="panel-field">
-                Bill no.
-                <input value={billNumber} readOnly />
-              </label>
-              <div className="school-bill-template full">
-                <div className="school-bill-paper">
-                  <header className="school-bill-header">
-                    <div className="school-bill-logo">
-                      {schoolBrand.logo ? <img src={schoolBrand.logo} alt={`${schoolBrand.name} logo`} /> : <span>{schoolBrand.initials}</span>}
-                    </div>
-                    <div>
-                      <strong>{schoolBrand.name}</strong>
-                      <span>{schoolBrand.address || "School address"}</span>
-                      <span>{schoolBrand.phone || schoolBrand.email || "School phone"}</span>
-                    </div>
-                  </header>
-                  <div className="school-bill-title-row">
-                    <h4>Bills</h4>
-                    <div>
-                      <span>Bill No: {billNumber}</span>
-                      <span>Date: {formatDate(new Date().toISOString().slice(0, 10))}</span>
-                      <span>Class: {selectedClassLabel || "Select class"}</span>
-                    </div>
-                  </div>
-                  <div className="school-bill-lines">
-                    {billLines.map((line, index) => (
-                      <div className="school-bill-line" key={`${line.label}-${index}`}>
-                        {index >= DEFAULT_BILL_LINES.length ? (
-                          <input
-                            value={line.label}
-                            onChange={(event) => updateBillLine(index, "label", event.target.value)}
-                            aria-label="Other bill item"
-                          />
-                        ) : (
-                          <span>{line.label}</span>
-                        )}
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.amount}
-                          onChange={(event) => updateBillLine(index, "amount", event.target.value)}
-                          aria-label={`${line.label} amount`}
-                          placeholder="0.00"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="school-bill-total">
-                    <span>Total</span>
-                    <strong>{formatExpenseAmount(billTotal)}</strong>
-                  </div>
-                </div>
-                <div className="school-bill-actions">
-                  <button type="button" onClick={addOtherBillLine}>Add Other</button>
-                  <button type="button" onClick={handlePrintBill}>Print</button>
-                </div>
-              </div>
-            </div>
-            {classFeeFeedback ? <p className="form-feedback success">{classFeeFeedback}</p> : null}
-            {classFeeError ? <p className="form-feedback error">{classFeeError}</p> : null}
-            <div className="panel-form-actions">
-              <button type="submit" disabled={savingClassFee || !onClassFeeSave}>
-                {savingClassFee ? "Saving..." : editingClassFeeId ? "Update bill" : "Create bill"}
-              </button>
-              {editingClassFeeId ? <button type="button" onClick={resetClassFeeForm}>Cancel</button> : null}
-            </div>
-          </form>
-          <div className="expense-mini-board">
-            <div className="expense-panel-head">
-              <h3>Recent Bills</h3>
-              <span>{classFees.length} active</span>
-            </div>
-            {latestClassFees.length ? (
-              latestClassFees.map((fee) => (
-                <button key={fee.id} type="button" className="expense-mini-row" onClick={() => startEditClassFee(fee)}>
-                  <span>
-                    {fee.title}
-                    <small>{fee.class_label}</small>
-                  </span>
-                  <strong>{formatExpenseAmount(fee.amount)}</strong>
-                </button>
-              ))
-            ) : (
-              <p className="panel-empty">Created school-fee bills will appear here.</p>
-            )}
-          </div>
-        </article>
-
         <article className="app-panel expense-create-panel">
           <h3>{form.type === "payslip" ? "Generate Payslip" : "Create Expense, Bill, or Receipt"}</h3>
           <label className="panel-field">
@@ -891,58 +595,6 @@ export default function ExpenseTracker({
         ) : null}
 
       </div>
-
-      <article className="app-panel">
-        <div className="expense-panel-head">
-          <h3>School Fee Bills &amp; Receipts</h3>
-          <span>{classFees.length} active</span>
-        </div>
-        <div className="table-scroll">
-          <table className="data-table expense-table">
-            <thead>
-              <tr>
-                <th>Class</th>
-                <th>Bill</th>
-                <th>Students</th>
-                <th>Expected</th>
-                <th>Received</th>
-                <th>Due</th>
-                <th>Due date</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {classFees.map((fee) => (
-                <tr key={fee.id}>
-                  <td>{fee.class_label}</td>
-                  <td>{fee.title}</td>
-                  <td>{fee.student_count ?? 0}</td>
-                  <td>{formatExpenseAmount(fee.expected_amount ?? fee.amount)}</td>
-                  <td>{formatExpenseAmount(fee.amount_received)}</td>
-                  <td>{formatExpenseAmount(fee.outstanding_amount)}</td>
-                  <td>{formatDate(fee.due_date)}</td>
-                  <td>
-                    <div className="table-actions-inline">
-                      <button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button>
-                      <button
-                        type="button"
-                        className="table-action danger"
-                        onClick={() => handleDeleteClassFee(fee.id)}
-                        disabled={deletingClassFeeId === fee.id || !onClassFeeDelete}
-                      >
-                        {deletingClassFeeId === fee.id ? "Deleting..." : "Deactivate"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!classFees.length ? (
-                <tr><td colSpan="8">No school-fee bills have been created yet.</td></tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </article>
 
       <article className="app-panel">
         <div className="expense-panel-head">

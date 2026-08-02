@@ -6501,6 +6501,86 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleAdminBillsLoad = useCallback(
+    async (params) => {
+      const query = new URLSearchParams(Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v))).toString();
+      const result = await requestJson(session, "GET", `/api/finance/admin/bills/${query ? `?${query}` : ""}`);
+      return result?.bills || [];
+    },
+    [session]
+  );
+
+  const handleAdminBillSave = useCallback(
+    async (payload) => {
+      const { id, ...body } = payload;
+      const method = id ? "PATCH" : "POST";
+      const url = id ? `/api/finance/admin/bills/${id}/` : "/api/finance/admin/bills/";
+      const result = await requestJson(session, method, url, body);
+      addAdminNotification({
+        category: "Finance",
+        module: "Bills",
+        action: `${id ? "Updated" : "Created"} bill '${payload?.title || ""}'.`,
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
+  const handleAdminBillPublish = useCallback(
+    async (billId) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/bills/${billId}/publish/`);
+      addAdminNotification({
+        category: "Finance",
+        module: "Bills",
+        action: `Published bill (${result?.synced_count || 0} invoice(s) synced).`,
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleAdminBillDuplicate = useCallback(
+    async (billId) => requestJson(session, "POST", `/api/finance/admin/bills/${billId}/duplicate/`),
+    [session]
+  );
+
+  const handleAdminBillCancel = useCallback(
+    async (billId) => requestJson(session, "DELETE", `/api/finance/admin/bills/${billId}/`),
+    [session]
+  );
+
+  const handleAdminBillRecipientsLoad = useCallback(
+    async (billId) => {
+      const result = await requestJson(session, "GET", `/api/finance/admin/bills/${billId}/recipients/`);
+      return result?.parents || [];
+    },
+    [session]
+  );
+
+  const handleAdminBillSend = useCallback(
+    async (billId, payload) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/bills/${billId}/send/`, payload);
+      addAdminNotification({
+        category: "Finance",
+        module: "Bills",
+        action: `Sent bill to ${result?.sent || 0} parent(s) (${result?.failed || 0} failed).`,
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAdminStudentFeeSave = useCallback(
     async (payload) => {
       const { id, ...body } = payload;
@@ -7647,6 +7727,13 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onPaystackSubaccountSetup={handleAdminPaystackSubaccountSetup}
         onClassFeeSave={handleAdminClassFeeSave}
         onClassFeeDelete={handleAdminClassFeeDelete}
+        onBillsLoad={handleAdminBillsLoad}
+        onBillSave={handleAdminBillSave}
+        onBillPublish={handleAdminBillPublish}
+        onBillDuplicate={handleAdminBillDuplicate}
+        onBillCancel={handleAdminBillCancel}
+        onBillRecipientsLoad={handleAdminBillRecipientsLoad}
+        onBillSend={handleAdminBillSend}
         onStudentFeeSave={handleAdminStudentFeeSave}
         onPurchaseCredits={handleActivationCreditPurchase}
         onVerifyCredits={handleActivationCreditVerify}
@@ -7670,8 +7757,6 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreate={handleAdminExpenseCreate}
         onDelete={handleAdminExpenseDelete}
         onSettle={handleAdminExpenseSettle}
-        onClassFeeSave={handleAdminClassFeeSave}
-        onClassFeeDelete={handleAdminClassFeeDelete}
         onCreatePayslip={handleAdminExpenseCreatePayslip}
         onSendPayslip={handleAdminExpensePayslipSend}
         onLoadStaffOptions={handleLoadHrStaffOptions}

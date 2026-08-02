@@ -22,11 +22,14 @@ from finance.models import (
     AdminWallet,
     BankLink,
     BankPayment,
+    Bill,
+    BillItem,
     ClassFee,
     DocumentGenerationCreditTransaction,
     ExpenseRecord,
     FeeAllocation,
     FinanceLedgerLog,
+    ParentVirtualAccount,
     PaymentReceiptLink,
     SchoolFee,
     SmsBundle,
@@ -1031,6 +1034,8 @@ def send_payment_receipt(
         school_name = d.get("school_name") or "School"
         if receipt_type == "bill":
             subject = f"Fee Statement — {school_name}"
+        elif receipt_type == "invoice":
+            subject = f"Invoice {d.get('invoice_number', '')} — {d.get('bill_title', 'School Fees')} — {school_name}"
         else:
             status_label = "Fully Paid" if d.get("payment_status") == "paid" else "Partial Payment"
             subject = f"Payment Receipt ({status_label}) — {school_name}"
@@ -3517,6 +3522,265 @@ def bulk_fee_paid_amounts(fees):
         else:
             result[fee.id] = Decimal("0.00")
     return result
+
+
+def bill_invoice_number(bill, student):
+    """Deterministic, collision-free invoice number - one Bill x student pair
+    is unique by construction, so this needs no shared counter/extra query
+    and can't race under concurrent or bulk publishes."""
+    student_code = student.student_id or student.admission_number or str(student.id)[:8]
+    return f"INV-{bill.id.hex[:6].upper()}-{student_code}"
+
+
+def sync_bill_invoices(bill, actor=None):
+    """Fan out a Bill to one SchoolFee invoice per student across bill.classes,
+    mirroring sync_tenant_class_fees's bulk create/update-only-if-unpaid
+    pattern. Calling this again after editing the bill's items/classes is
+    exactly "regenerate/resync" - no separate endpoint needed. Never touches
+    a row where amount_paid > 0."""
+    from users.models import StudentProfile
+
+    class_ids = list(bill.classes.values_list("id", flat=True))
+    if not class_ids:
+        return 0
+
+    students = list(
+        StudentProfile.objects.select_related("user").filter(current_class_id__in=class_ids)
+    )
+    if not students:
+        return 0
+
+    total = bill.total
+    existing_by_student = {
+        fee.student_id: fee for fee in SchoolFee.objects.filter(bill=bill, student_id__in=[s.id for s in students])
+    }
+    paid_amounts = bulk_fee_paid_amounts(existing_by_student.values())
+
+    to_create = []
+    to_update = []
+    for student in students:
+        fee = existing_by_student.get(student.id)
+        if fee is None:
+            to_create.append(
+                SchoolFee(
+                    student=student,
+                    bill=bill,
+                    title=bill.title,
+                    amount=total,
+                    currency="NGN",
+                    due_date=bill.due_date or timezone.now().date(),
+                    auto_deduct=False,
+                    invoice_number=bill_invoice_number(bill, student),
+                    created_by=actor,
+                )
+            )
+            continue
+        if (paid_amounts.get(fee.id) or Decimal("0.00")) > 0:
+            continue
+        changed = False
+        for field, value in {
+            "title": bill.title,
+            "amount": total,
+            "due_date": bill.due_date or fee.due_date,
+        }.items():
+            if getattr(fee, field) != value:
+                setattr(fee, field, value)
+                changed = True
+        if changed:
+            fee.updated_at = timezone.now()
+            to_update.append(fee)
+
+    if to_create:
+        SchoolFee.objects.bulk_create(to_create)
+    if to_update:
+        SchoolFee.objects.bulk_update(to_update, ["title", "amount", "due_date", "updated_at"])
+
+    return len(to_create) + len(to_update)
+
+
+def bill_invoice_status(fee, paid_amount):
+    """Per-invoice computed status - never stored, always derived, matching
+    this codebase's "compute don't duplicate" convention. First match wins."""
+    if paid_amount >= fee.amount:
+        return "paid"
+    is_overdue = fee.due_date and fee.due_date < timezone.now().date()
+    if is_overdue and paid_amount < fee.amount:
+        return "overdue"
+    if paid_amount > 0:
+        return "partial"
+    if fee.viewed_at:
+        return "viewed"
+    if fee.sent_at:
+        return "sent"
+    return "published"
+
+
+_BILL_STATUS_RANK = {"overdue": 6, "partial": 5, "viewed": 4, "sent": 3, "published": 2, "paid": 1}
+
+
+def bulk_bill_status_counts(bills):
+    """Batched per-bill rollup: one aggregate pass across every SchoolFee row
+    for the given bills, producing per-status counts plus a single "worst
+    status wins" rollup label per bill (Overdue > Partial > Viewed > Sent >
+    Published; Paid only if every row is Paid) - so a mixed-payment class
+    bill isn't misread as fully one thing."""
+    bills = list(bills)
+    if not bills:
+        return {}
+
+    bill_ids = [b.id for b in bills]
+    fees = list(SchoolFee.objects.filter(bill_id__in=bill_ids))
+    paid_amounts = bulk_fee_paid_amounts(fees)
+
+    counts_by_bill = {b.id: {} for b in bills}
+    for fee in fees:
+        invoice_status = bill_invoice_status(fee, paid_amounts.get(fee.id) or Decimal("0.00"))
+        bucket = counts_by_bill.setdefault(fee.bill_id, {})
+        bucket[invoice_status] = bucket.get(invoice_status, 0) + 1
+
+    result = {}
+    for bill in bills:
+        counts = counts_by_bill.get(bill.id, {})
+        if bill.status == Bill.STATUS_DRAFT:
+            rollup = "draft"
+        elif bill.status == Bill.STATUS_CANCELLED:
+            rollup = "cancelled"
+        elif not counts:
+            rollup = "published"
+        elif sum(counts.values()) == counts.get("paid", 0):
+            rollup = "paid"
+        else:
+            worst = max((s for s in counts if s != "paid"), key=lambda s: _BILL_STATUS_RANK[s], default="published")
+            rollup = worst
+        result[bill.id] = {"status": rollup, "counts": counts, "invoice_count": sum(counts.values())}
+    return result
+
+
+def send_bill_invoices(bill, parent_ids, channels, actor):
+    """Send a Bill's invoices to selected parents, one PaymentReceiptLink +
+    message per (parent, student-invoice) pair - mirrors send_class_broadsheet
+    point-for-point. Auto-provisions a ParentVirtualAccount for any recipient
+    who doesn't have one yet, wrapped in its own try/except so one parent's
+    Paystack failure can't sink the batch; the invoice is still sent even if
+    provisioning fails."""
+    from users.models import ParentProfile
+
+    class_ids = list(bill.classes.values_list("id", flat=True))
+    fees = list(
+        SchoolFee.objects.filter(bill=bill, student__current_class_id__in=class_ids)
+        .select_related("student__user", "student__current_class")
+    )
+    fees_by_student_id = {fee.student_id: fee for fee in fees}
+
+    parents = (
+        ParentProfile.objects.filter(user_id__in=parent_ids, children__current_class_id__in=class_ids, user__tenant=bill.tenant)
+        .distinct()
+        .select_related("user")
+        .prefetch_related("children")
+    )
+
+    school_name = bill.tenant.name if bill.tenant else ""
+    school_address = bill.tenant.address if bill.tenant else ""
+    school_phone = bill.tenant.phone if bill.tenant else ""
+    items = [{"description": item.description, "amount": str(item.amount)} for item in bill.items.all()]
+
+    sent, failed, skipped, provisioned, provisioning_failed = 0, 0, 0, 0, 0
+    errors = []
+
+    for parent in parents:
+        my_children = [child for child in parent.children.all() if child.current_class_id in class_ids]
+        for student in my_children:
+            fee = fees_by_student_id.get(student.id)
+            if not fee:
+                continue
+
+            vac = ParentVirtualAccount.objects.filter(parent=parent.user, is_active=True).first()
+            if not vac:
+                try:
+                    vac, _created = provision_parent_virtual_account(parent.user, actor=actor)
+                    provisioned += 1
+                except Exception as exc:
+                    provisioning_failed += 1
+                    logger.error("Auto-provision virtual account for %s failed: %s", parent.user.email, exc)
+
+            paid = fee_paid_amount(fee)
+            link_data = {
+                "school_name": school_name,
+                "school_address": school_address,
+                "school_phone": school_phone,
+                "invoice_number": fee.invoice_number,
+                "invoice_date": fee.created_at.strftime("%d %b %Y") if fee.created_at else "",
+                "due_date": fee.due_date.strftime("%d %b %Y") if fee.due_date else "",
+                "bill_title": bill.title,
+                "student_name": student.user.get_full_name(),
+                "student_id": student.student_id or student.admission_number,
+                "class_name": student.current_class.name if student.current_class else "",
+                "academic_year": bill.academic_year.name if bill.academic_year else "",
+                "term": bill.term.name if bill.term else "",
+                "items": items,
+                "subtotal": str(bill.subtotal),
+                "discount_amount": str(bill.discount_amount),
+                "tax_amount": str(bill.tax_amount),
+                "total": str(bill.total),
+                "amount_paid": str(paid),
+                "balance": str(max(bill.total - paid, Decimal("0.00"))),
+                "payment_status": bill_invoice_status(fee, paid),
+                "payment_instructions": bill.payment_instructions,
+                "footer_note": bill.footer_note,
+                "virtual_account": (
+                    {"number": vac.account_number, "bank": vac.bank_name, "name": vac.account_name} if vac else None
+                ),
+                "fee_id": str(fee.id),
+                "bill_id": str(bill.id),
+            }
+
+            phone = parent.user.phone or ""
+            email = parent.user.email or ""
+            channel_sent = False
+
+            receipt_url = create_receipt_link(link_data, tenant=bill.tenant, phone=phone, receipt_type=PaymentReceiptLink.INVOICE)
+            link_data["view_url"] = receipt_url
+
+            if "sms" in channels and phone:
+                sms_body = (
+                    f"{school_name} Invoice: {bill.title} for {student.user.get_full_name()}. "
+                    f"Total due: NGN {bill.total}. View: {sms_compact_url(receipt_url)}"
+                )
+                try:
+                    log = send_wallet_sms(bill.tenant, phone, sms_body, category=SmsMessageLog.BULK, actor=actor, narration="Bill invoice")
+                    if log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
+                        channel_sent = True
+                    else:
+                        errors.append(f"{parent.user.get_full_name()} (SMS): {sms_failure_reason(log)}")
+                except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+                    errors.append(f"{parent.user.get_full_name()} (SMS): {exc}")
+
+            if "email" in channels and email:
+                email_message = f"Please find attached your invoice for {bill.title}. Total due: NGN {bill.total}."
+                result = send_payment_receipt(email, email_message, receipt_url=receipt_url, data=link_data, receipt_type=PaymentReceiptLink.INVOICE)
+                if result.get("sent"):
+                    channel_sent = True
+                elif result.get("email_error"):
+                    errors.append(f"{parent.user.get_full_name()} (Email): {result['email_error']}")
+
+            if channel_sent:
+                sent += 1
+                if not fee.sent_at:
+                    fee.sent_at = timezone.now()
+                    fee.save(update_fields=["sent_at"])
+            elif not phone and not email:
+                skipped += 1
+            else:
+                failed += 1
+
+    return {
+        "sent": sent,
+        "failed": failed,
+        "skipped": skipped,
+        "provisioned": provisioned,
+        "provisioning_failed": provisioning_failed,
+        "errors": errors[:10],
+    }
 
 
 def fee_totals_by_student(students, class_ids):

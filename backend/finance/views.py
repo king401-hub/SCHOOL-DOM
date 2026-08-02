@@ -17,18 +17,21 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from academic.models import Class
+from academic.models import AcademicYear, Class, Term
 from core.models import SchoolTenant
 from finance.models import (
     ActivationCreditPool,
     ActivationCreditTransaction,
     AdminWallet,
     BankPayment,
+    Bill,
+    BillItem,
     ClassFee,
     ExpenseRecord,
     FeeAllocation,
     FinanceLedgerLog,
     ParentVirtualAccount,
+    PaymentReceiptLink,
     SchoolFee,
     SmsMessageLog,
     SmsWalletTransaction,
@@ -41,6 +44,9 @@ from finance.serializers import (
     ActivationCreditPoolSerializer,
     AdminWalletSerializer,
     BankPaymentSerializer,
+    BillInvoiceSerializer,
+    BillItemSerializer,
+    BillSerializer,
     ClassFeeSerializer,
     ExpenseRecordSerializer,
     FinanceLedgerLogSerializer,
@@ -53,6 +59,8 @@ from finance.serializers import (
 from finance.services import (
     activation_credit_bonus_for_purchase,
     activation_credit_duration_for_tenant,
+    bill_invoice_status,
+    bulk_bill_status_counts,
     credit_wallet,
     debit_wallet,
     ensure_student_wallet,
@@ -74,6 +82,8 @@ from finance.services import (
     initialize_payment_transaction,
     process_due_fees,
     reconcile_fee_status,
+    send_bill_invoices,
+    sync_bill_invoices,
     sync_class_fee_assignments,
     sync_student_class_fees,
     sync_tenant_class_fees,
@@ -407,6 +417,10 @@ def _render_receipt_link(request, link):
             "<p>Please contact your school for a copy.</p></body></html>",
             status=410,
         )
+    if link.receipt_type == "invoice":
+        fee_id = link.data.get("fee_id")
+        if fee_id:
+            SchoolFee.objects.filter(id=fee_id, viewed_at__isnull=True).update(viewed_at=timezone.now())
     from django.shortcuts import render as django_render
     return django_render(request, "finance/receipt.html", {"link": link, "data": link.data})
 
@@ -1181,6 +1195,417 @@ def admin_class_fee_detail(request, fee_id):
             "finance": _admin_finance_snapshot(user),
         }
     )
+
+
+def _bills_for_user(user):
+    return Bill.objects.filter(tenant=user.tenant).prefetch_related("items", "classes")
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def admin_bills(request):
+    """List (filtered) bills, or create a new draft bill."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == "POST":
+        title = str(request.data.get("title", "")).strip()
+        if not title:
+            return Response({"success": False, "message": "title is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        class_ids = request.data.get("class_ids") or request.data.get("classes") or []
+        classes = list(_classes_for_user(user).filter(id__in=class_ids))
+        if not classes:
+            return Response({"success": False, "message": "Select at least one class."}, status=status.HTTP_400_BAD_REQUEST)
+
+        items_data = request.data.get("items") or []
+        if not items_data:
+            return Response({"success": False, "message": "Add at least one fee item."}, status=status.HTTP_400_BAD_REQUEST)
+
+        due_date = None
+        due_date_raw = str(request.data.get("due_date") or "").strip()
+        if due_date_raw:
+            due_date = parse_date(due_date_raw)
+            if not due_date:
+                return Response({"success": False, "message": "due_date must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+        academic_year = None
+        academic_year_id = request.data.get("academic_year_id") or request.data.get("academic_year")
+        legacy_tenant = _legacy_tenant_for_user(user)
+        if academic_year_id:
+            academic_year = get_object_or_404(AcademicYear, id=academic_year_id)
+        else:
+            academic_year = AcademicYear.objects.filter(tenant=legacy_tenant, is_active=True).first()
+        term = None
+        term_id = request.data.get("term_id") or request.data.get("term")
+        if term_id:
+            term = get_object_or_404(Term, id=term_id)
+        else:
+            term = Term.objects.filter(tenant=legacy_tenant, is_active=True).first()
+
+        try:
+            discount_raw = request.data.get("discount_amount")
+            discount_amount = _parse_amount(discount_raw) if discount_raw not in (None, "") else Decimal("0.00")
+            tax_raw = request.data.get("tax_amount")
+            tax_amount = _parse_amount(tax_raw) if tax_raw not in (None, "") else Decimal("0.00")
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        bill_items = []
+        for idx, item in enumerate(items_data):
+            description = str(item.get("description", "")).strip()
+            if not description:
+                continue
+            try:
+                amount = _parse_amount(item.get("amount"))
+            except ValueError as exc:
+                return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            bill_items.append((description, amount))
+        if not bill_items:
+            return Response({"success": False, "message": "Add at least one valid fee item."}, status=status.HTTP_400_BAD_REQUEST)
+
+        bill = Bill.objects.create(
+            tenant=user.tenant,
+            title=title,
+            academic_year=academic_year,
+            term=term,
+            due_date=due_date,
+            discount_amount=discount_amount,
+            tax_amount=tax_amount,
+            payment_instructions=str(request.data.get("payment_instructions", "")).strip(),
+            footer_note=str(request.data.get("footer_note", "")).strip(),
+            created_by=user,
+        )
+        bill.classes.set(classes)
+        BillItem.objects.bulk_create(
+            [BillItem(bill=bill, description=desc, amount=amt, sort_order=idx) for idx, (desc, amt) in enumerate(bill_items)]
+        )
+
+        record_finance_activity(
+            user.tenant,
+            user,
+            "bill_created",
+            f"Created draft bill '{bill.title}'.",
+            amount=bill.total,
+            currency="NGN",
+            reference=str(bill.id),
+        )
+        return Response(
+            {"success": True, "bill": BillSerializer(bill, context={"bill_status_rollups": {}}).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    # GET - list, filtered
+    bills_qs = _bills_for_user(user)
+    class_id = request.query_params.get("class_id")
+    if class_id:
+        bills_qs = bills_qs.filter(classes__id=class_id)
+    academic_year_id = request.query_params.get("academic_year_id")
+    if academic_year_id:
+        bills_qs = bills_qs.filter(academic_year_id=academic_year_id)
+    term_id = request.query_params.get("term_id")
+    if term_id:
+        bills_qs = bills_qs.filter(term_id=term_id)
+    title_search = request.query_params.get("title")
+    if title_search:
+        bills_qs = bills_qs.filter(title__icontains=title_search)
+    bill_status_filter = request.query_params.get("status")
+    if bill_status_filter:
+        bills_qs = bills_qs.filter(status=bill_status_filter)
+    due_date_from = request.query_params.get("due_date_from")
+    if due_date_from:
+        bills_qs = bills_qs.filter(due_date__gte=due_date_from)
+    due_date_to = request.query_params.get("due_date_to")
+    if due_date_to:
+        bills_qs = bills_qs.filter(due_date__lte=due_date_to)
+
+    bills = list(bills_qs.distinct().order_by("-created_at"))
+    rollups = bulk_bill_status_counts(bills)
+
+    payment_status_filter = request.query_params.get("payment_status")
+    if payment_status_filter:
+        bills = [b for b in bills if rollups.get(b.id, {}).get("status") == payment_status_filter]
+
+    serializer = BillSerializer(bills, many=True, context={"bill_status_rollups": rollups})
+    return Response({"success": True, "bills": serializer.data})
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def admin_bill_detail(request, bill_id):
+    """View, edit, or cancel (soft-delete) a bill. Once a bill is Published,
+    only due_date/payment_instructions/footer_note stay editable - title,
+    items, classes, and discount/tax are locked to protect already-generated
+    invoices; use Duplicate for a real change."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    bill = get_object_or_404(_bills_for_user(user), id=bill_id)
+
+    if request.method == "DELETE":
+        bill.status = Bill.STATUS_CANCELLED
+        bill.save(update_fields=["status", "updated_at"])
+        record_finance_activity(
+            user.tenant, user, "bill_cancelled", f"Cancelled bill '{bill.title}'.",
+            amount=bill.total, currency="NGN", reference=str(bill.id),
+        )
+        return Response({"success": True, "message": "Bill cancelled."})
+
+    if request.method == "GET":
+        rollups = bulk_bill_status_counts([bill])
+        return Response({"success": True, "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data})
+
+    if bill.status == Bill.STATUS_CANCELLED:
+        return Response({"success": False, "message": "Cannot edit a cancelled bill."}, status=status.HTTP_400_BAD_REQUEST)
+
+    editable_core = bill.status == Bill.STATUS_DRAFT
+    update_fields = []
+
+    if editable_core and "title" in request.data:
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"success": False, "message": "title cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        bill.title = title
+        update_fields.append("title")
+    if "due_date" in request.data:
+        due_date_raw = str(request.data.get("due_date") or "").strip()
+        bill.due_date = parse_date(due_date_raw) if due_date_raw else None
+        update_fields.append("due_date")
+    if "payment_instructions" in request.data:
+        bill.payment_instructions = str(request.data.get("payment_instructions") or "").strip()
+        update_fields.append("payment_instructions")
+    if "footer_note" in request.data:
+        bill.footer_note = str(request.data.get("footer_note") or "").strip()
+        update_fields.append("footer_note")
+    if editable_core and "discount_amount" in request.data:
+        try:
+            raw = request.data.get("discount_amount")
+            bill.discount_amount = _parse_amount(raw) if raw not in (None, "") else Decimal("0.00")
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields.append("discount_amount")
+    if editable_core and "tax_amount" in request.data:
+        try:
+            raw = request.data.get("tax_amount")
+            bill.tax_amount = _parse_amount(raw) if raw not in (None, "") else Decimal("0.00")
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields.append("tax_amount")
+    if editable_core and ("class_ids" in request.data or "classes" in request.data):
+        class_ids = request.data.get("class_ids") or request.data.get("classes") or []
+        classes = list(_classes_for_user(user).filter(id__in=class_ids))
+        if not classes:
+            return Response({"success": False, "message": "Select at least one class."}, status=status.HTTP_400_BAD_REQUEST)
+        bill.classes.set(classes)
+    if editable_core and "items" in request.data:
+        items_data = request.data.get("items") or []
+        bill_items = []
+        for idx, item in enumerate(items_data):
+            description = str(item.get("description", "")).strip()
+            if not description:
+                continue
+            try:
+                amount = _parse_amount(item.get("amount"))
+            except ValueError as exc:
+                return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            bill_items.append(BillItem(bill=bill, description=description, amount=amount, sort_order=idx))
+        if not bill_items:
+            return Response({"success": False, "message": "Add at least one valid fee item."}, status=status.HTTP_400_BAD_REQUEST)
+        bill.items.all().delete()
+        BillItem.objects.bulk_create(bill_items)
+
+    if update_fields:
+        update_fields.append("updated_at")
+        bill.save(update_fields=sorted(set(update_fields)))
+
+    record_finance_activity(
+        user.tenant, user, "bill_updated", f"Updated bill '{bill.title}'.",
+        amount=bill.total, currency="NGN", reference=str(bill.id),
+    )
+    rollups = bulk_bill_status_counts([bill])
+    return Response({"success": True, "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_bill_recipients(request, bill_id):
+    """Parents who would receive this bill's invoices - works even before
+    publishing, so the Invoice Designer can preview "who would receive
+    this". Computed lazily, mirrors class_broadsheet_parents."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    bill = get_object_or_404(_bills_for_user(user), id=bill_id)
+    from users.models import ParentProfile
+
+    class_ids = list(bill.classes.values_list("id", flat=True))
+    parents = list(
+        ParentProfile.objects.filter(children__current_class_id__in=class_ids, user__tenant=user.tenant)
+        .distinct()
+        .select_related("user")
+        .prefetch_related("children")
+    )
+    accounts_by_parent = set(
+        ParentVirtualAccount.objects.filter(
+            parent_id__in=[p.user_id for p in parents], is_active=True
+        ).values_list("parent_id", flat=True)
+    )
+    payload = []
+    for parent in parents:
+        in_class_children = [c for c in parent.children.all() if c.current_class_id in class_ids]
+        payload.append(
+            {
+                "user_id": str(parent.user.id),
+                "name": parent.user.get_full_name(),
+                "phone": parent.user.phone or "",
+                "email": parent.user.email or "",
+                "has_virtual_account": parent.user_id in accounts_by_parent,
+                "children": [
+                    {"id": str(c.id), "name": c.user.get_full_name(), "student_id": c.student_id}
+                    for c in in_class_children
+                ],
+            }
+        )
+    return Response({"success": True, "parents": payload})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_bill_publish(request, bill_id):
+    """Publish (or re-publish/regenerate) a bill - fans out to per-student
+    SchoolFee invoices. Calling this again after editing a published bill's
+    due_date/notes, or after new students join a targeted class, is exactly
+    "regenerate/resync" - idempotent, no separate endpoint needed."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    bill = get_object_or_404(_bills_for_user(user), id=bill_id)
+    if bill.status == Bill.STATUS_CANCELLED:
+        return Response({"success": False, "message": "Cannot publish a cancelled bill."}, status=status.HTTP_400_BAD_REQUEST)
+    if not bill.classes.exists():
+        return Response({"success": False, "message": "Select at least one class first."}, status=status.HTTP_400_BAD_REQUEST)
+    if not bill.items.exists():
+        return Response({"success": False, "message": "Add at least one fee item first."}, status=status.HTTP_400_BAD_REQUEST)
+
+    synced_count = sync_bill_invoices(bill, actor=user)
+    was_draft = bill.status == Bill.STATUS_DRAFT
+    if was_draft:
+        bill.status = Bill.STATUS_PUBLISHED
+        bill.published_at = timezone.now()
+        bill.save(update_fields=["status", "published_at", "updated_at"])
+
+    record_finance_activity(
+        user.tenant,
+        user,
+        "bill_published" if was_draft else "bill_regenerated",
+        f"{'Published' if was_draft else 'Regenerated'} bill '{bill.title}' ({synced_count} invoice(s) synced).",
+        amount=bill.total,
+        currency="NGN",
+        reference=str(bill.id),
+    )
+    rollups = bulk_bill_status_counts([bill])
+    return Response(
+        {
+            "success": True,
+            "synced_count": synced_count,
+            "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data,
+            "finance": _admin_finance_snapshot(user),
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_bill_duplicate(request, bill_id):
+    """Clone a bill (title/classes/items/discount/tax/notes) into a new
+    draft. due_date is intentionally left blank to force a fresh one."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    original = get_object_or_404(_bills_for_user(user), id=bill_id)
+    clone = Bill.objects.create(
+        tenant=user.tenant,
+        title=f"{original.title} (Copy)",
+        academic_year=original.academic_year,
+        term=original.term,
+        due_date=None,
+        discount_amount=original.discount_amount,
+        tax_amount=original.tax_amount,
+        payment_instructions=original.payment_instructions,
+        footer_note=original.footer_note,
+        created_by=user,
+    )
+    clone.classes.set(original.classes.all())
+    BillItem.objects.bulk_create(
+        [
+            BillItem(bill=clone, description=item.description, amount=item.amount, sort_order=item.sort_order)
+            for item in original.items.all()
+        ]
+    )
+    record_finance_activity(
+        user.tenant, user, "bill_duplicated", f"Duplicated bill '{original.title}' as '{clone.title}'.",
+        amount=clone.total, currency="NGN", reference=str(clone.id),
+    )
+    return Response(
+        {"success": True, "bill": BillSerializer(clone, context={"bill_status_rollups": {}}).data},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_bill_send(request, bill_id):
+    """Send a published bill's invoices to selected parents or a whole
+    class. Auto-provisions a virtual account for any recipient who doesn't
+    have one yet (see finance.services.send_bill_invoices)."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    bill = get_object_or_404(_bills_for_user(user), id=bill_id)
+    if bill.status != Bill.STATUS_PUBLISHED:
+        return Response({"success": False, "message": "Publish the bill before sending it."}, status=status.HTTP_400_BAD_REQUEST)
+
+    scope = request.data.get("scope") or "selected"
+    channels = [c for c in (request.data.get("channels") or ["sms"]) if c in ("sms", "email")]
+    if not channels:
+        return Response({"success": False, "message": "Select at least one channel (sms/email)."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from users.models import ParentProfile
+
+    bill_class_ids = set(bill.classes.values_list("id", flat=True))
+    if scope == "class":
+        target_class = get_object_or_404(_classes_for_user(user), id=request.data.get("class_id"))
+        if target_class.id not in bill_class_ids:
+            return Response({"success": False, "message": "That class is not part of this bill."}, status=status.HTTP_400_BAD_REQUEST)
+        parent_ids = list(
+            ParentProfile.objects.filter(children__current_class=target_class, user__tenant=user.tenant)
+            .distinct()
+            .values_list("user_id", flat=True)
+        )
+    else:
+        parent_ids = request.data.get("parent_ids") or []
+
+    if not parent_ids:
+        return Response({"success": False, "message": "No parents selected."}, status=status.HTTP_400_BAD_REQUEST)
+
+    result = send_bill_invoices(bill, parent_ids, channels, actor=user)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "bill_sent",
+        f"Sent bill '{bill.title}' to {result['sent']} parent(s) ({result['failed']} failed, {result['skipped']} skipped).",
+        amount=bill.total,
+        currency="NGN",
+        reference=str(bill.id),
+        metadata=result,
+    )
+    return Response({"success": True, **result})
 
 
 @api_view(["PATCH"])

@@ -704,6 +704,382 @@ function AdminPerformanceHeatmapScreen({ data = {}, loading, error, onRetry }) {
   );
 }
 
+function invoiceNaira(value) {
+  return `₦${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const BILL_STATUS_LABELS = {
+  draft: "Draft",
+  published: "Published",
+  sent: "Sent",
+  viewed: "Viewed",
+  partial: "Partially Paid",
+  paid: "Paid",
+  overdue: "Overdue",
+  cancelled: "Cancelled",
+};
+
+function billStatusLabel(status) {
+  return BILL_STATUS_LABELS[status] || status || "Draft";
+}
+
+function InvoiceDocument({ id, school, bill, student, invoiceNumber, virtualAccount, amountPaid = 0, paymentStatus = "published" }) {
+  const items = bill.items || [];
+  const subtotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const discount = Number(bill.discount_amount || 0);
+  const tax = Number(bill.tax_amount || 0);
+  const total = Math.max(subtotal - discount + tax, 0);
+  const paid = Number(amountPaid || 0);
+  const balance = Math.max(total - paid, 0);
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <article id={id} className="official-document invoice-document">
+      <OfficialDocHeader school={school} title="Tuition Invoice" />
+      <div className={`invoice-status-pill status-${paymentStatus}`}>{billStatusLabel(paymentStatus)}</div>
+
+      <section className="doc-info-grid">
+        <div className="doc-line"><strong>Invoice Number</strong><span>{invoiceNumber || "Preview"}</span></div>
+        <div className="doc-line"><strong>Invoice Date</strong><span>{formatDate(today)}</span></div>
+        <div className="doc-line"><strong>Due Date</strong><span>{bill.due_date ? formatDate(bill.due_date) : "-"}</span></div>
+        <div className="doc-line"><strong>Bill</strong><span>{bill.title || "Untitled bill"}</span></div>
+        <div className="doc-line"><strong>Student Name</strong><span>{student?.name || "Sample Student"}</span></div>
+        <div className="doc-line"><strong>Student ID</strong><span>{student?.student_id || "-"}</span></div>
+        <div className="doc-line"><strong>Class</strong><span>{student?.class_name || "-"}</span></div>
+        <div className="doc-line"><strong>Session / Term</strong><span>{[bill.academic_year_name, bill.term_name].filter(Boolean).join(" - ") || "-"}</span></div>
+      </section>
+
+      <table className="document-table">
+        <thead><tr><th>Description of Charges</th><th>Amount</th></tr></thead>
+        <tbody>
+          {items.length ? items.map((item, idx) => (
+            <tr key={idx}><td>{item.description || "Untitled item"}</td><td>{invoiceNaira(item.amount)}</td></tr>
+          )) : <tr><td colSpan="2">Add fee items to see them here.</td></tr>}
+        </tbody>
+      </table>
+
+      <div className="invoice-totals">
+        <div className="row"><span>Subtotal</span><span>{invoiceNaira(subtotal)}</span></div>
+        {discount > 0 ? <div className="row discount"><span>Discount</span><span>-{invoiceNaira(discount)}</span></div> : null}
+        {tax > 0 ? <div className="row tax"><span>Tax</span><span>+{invoiceNaira(tax)}</span></div> : null}
+        <div className="row grand"><span>Total Amount Due</span><span>{invoiceNaira(total)}</span></div>
+        {paid > 0 ? <div className="row"><span>Amount Paid</span><span>{invoiceNaira(paid)}</span></div> : null}
+        {paid > 0 ? <div className="row"><span>Balance</span><span>{invoiceNaira(balance)}</span></div> : null}
+      </div>
+
+      {virtualAccount?.number ? (
+        <div className="invoice-account-box">
+          <strong>Pay via Bank Transfer (this parent's own account)</strong>
+          <span className="invoice-account-number">{virtualAccount.number}</span>
+          <span>{virtualAccount.bank} - {virtualAccount.name}</span>
+        </div>
+      ) : (
+        <div className="invoice-account-box muted">
+          <strong>Pay via Bank Transfer</strong>
+          <span>Each parent's own virtual account number appears here once the invoice is sent.</span>
+        </div>
+      )}
+
+      {bill.payment_instructions ? <p className="document-note"><strong>Payment Instructions:</strong> {bill.payment_instructions}</p> : null}
+      {bill.footer_note ? <p className="document-note">{bill.footer_note}</p> : null}
+    </article>
+  );
+}
+
+function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPublish }) {
+  const isEdit = Boolean(bill?.id);
+  const isPublished = bill?.status === "published";
+  const [form, setForm] = useState({
+    title: bill?.title || "",
+    class_ids: (bill?.classes || []).map(String),
+    due_date: bill?.due_date || "",
+    discount_amount: bill?.discount_amount || "0",
+    tax_amount: bill?.tax_amount || "0",
+    payment_instructions: bill?.payment_instructions || "",
+    footer_note: bill?.footer_note || "",
+  });
+  const [items, setItems] = useState(
+    bill?.items?.length ? bill.items.map((item) => ({ description: item.description, amount: item.amount })) : [{ description: "", amount: "" }]
+  );
+  const [saving, setSaving] = useState("");
+  const [error, setError] = useState("");
+  const [savedBillId, setSavedBillId] = useState(bill?.id || "");
+
+  const previewBill = {
+    title: form.title,
+    due_date: form.due_date,
+    discount_amount: form.discount_amount,
+    tax_amount: form.tax_amount,
+    payment_instructions: form.payment_instructions,
+    footer_note: form.footer_note,
+    academic_year_name: bill?.academic_year_name,
+    term_name: bill?.term_name,
+    items,
+  };
+
+  const updateItem = (index, field, value) => {
+    setItems((current) => current.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  };
+  const addItem = () => setItems((current) => [...current, { description: "", amount: "" }]);
+  const removeItem = (index) => setItems((current) => current.filter((_, i) => i !== index));
+
+  const validItems = () => items.filter((item) => item.description.trim() && Number(item.amount) > 0);
+
+  const buildPayload = () => ({
+    id: savedBillId || undefined,
+    title: form.title.trim(),
+    class_ids: form.class_ids,
+    due_date: form.due_date || null,
+    discount_amount: form.discount_amount || "0",
+    tax_amount: form.tax_amount || "0",
+    payment_instructions: form.payment_instructions,
+    footer_note: form.footer_note,
+    items: validItems(),
+  });
+
+  const validate = () => {
+    if (!form.title.trim()) return "Give this bill a title.";
+    if (!form.class_ids.length) return "Select at least one class.";
+    if (!validItems().length) return "Add at least one fee item with a description and amount.";
+    return "";
+  };
+
+  const handleSaveDraft = async () => {
+    const validationError = validate();
+    if (validationError) { setError(validationError); return; }
+    setError("");
+    setSaving("draft");
+    try {
+      const result = await onSave(buildPayload());
+      if (result?.bill?.id) setSavedBillId(result.bill.id);
+      onClose(true);
+    } catch (err) {
+      setError(err.message || "Could not save bill.");
+    } finally {
+      setSaving("");
+    }
+  };
+
+  const handlePublish = async () => {
+    const validationError = validate();
+    if (validationError) { setError(validationError); return; }
+    setError("");
+    setSaving("publish");
+    try {
+      const result = await onSave(buildPayload());
+      const id = result?.bill?.id || savedBillId;
+      if (id) await onPublish(id);
+      onClose(true);
+    } catch (err) {
+      setError(err.message || "Could not publish bill.");
+    } finally {
+      setSaving("");
+    }
+  };
+
+  return createPortal(
+    <div className="cfm-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(false); }}>
+      <div className="bill-designer-card" role="dialog" aria-modal="true" aria-labelledby="bill-designer-title">
+        <div className="edit-modal-head">
+          <div>
+            <h3 id="bill-designer-title">{isEdit ? "Edit Bill" : "Generate Bill"}</h3>
+            <p className="panel-sub">Design a tuition invoice, preview it, then publish to generate one per student.</p>
+          </div>
+          <button type="button" className="edit-modal-close" onClick={() => onClose(false)} aria-label="Close"><X size={16} /></button>
+        </div>
+
+        <div className="bill-designer-layout">
+          <div className="bill-designer-form">
+            <label className="panel-field full">
+              Bill title
+              <input value={form.title} onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))} placeholder="e.g. First Term School Fees" disabled={isPublished} />
+            </label>
+            <label className="panel-field full">
+              Classes
+              <MultiSelectBox
+                options={classOptions.map((item) => ({ id: item.id || item.value || item.school_class || item.name, label: item.label || item.name || item.class_label || item.value }))}
+                selected={form.class_ids}
+                onChange={(ids) => setForm((c) => ({ ...c, class_ids: ids }))}
+                labelForOption={(opt) => opt.label}
+              />
+            </label>
+            <label className="panel-field">
+              Due date (optional)
+              <input type="date" value={form.due_date || ""} onChange={(e) => setForm((c) => ({ ...c, due_date: e.target.value }))} />
+            </label>
+            <label className="panel-field">
+              Discount (optional)
+              <input type="number" min="0" step="0.01" value={form.discount_amount} onChange={(e) => setForm((c) => ({ ...c, discount_amount: e.target.value }))} disabled={isPublished} />
+            </label>
+            <label className="panel-field">
+              Tax (optional)
+              <input type="number" min="0" step="0.01" value={form.tax_amount} onChange={(e) => setForm((c) => ({ ...c, tax_amount: e.target.value }))} disabled={isPublished} />
+            </label>
+
+            <div className="bill-designer-items">
+              <div className="panel-head"><h4>Description of Charges</h4></div>
+              {items.map((item, index) => (
+                <div className="bill-designer-item-row" key={index}>
+                  <input value={item.description} onChange={(e) => updateItem(index, "description", e.target.value)} placeholder="e.g. Tuition Fee" disabled={isPublished} />
+                  <input type="number" min="0" step="0.01" value={item.amount} onChange={(e) => updateItem(index, "amount", e.target.value)} placeholder="0.00" disabled={isPublished} />
+                  {items.length > 1 && !isPublished ? (
+                    <button type="button" className="table-action danger" onClick={() => removeItem(index)}>Remove</button>
+                  ) : null}
+                </div>
+              ))}
+              {!isPublished ? <button type="button" className="btn-secondary" onClick={addItem}>+ Add fee item</button> : null}
+            </div>
+
+            <label className="panel-field full">
+              Payment instructions (optional)
+              <textarea rows="2" value={form.payment_instructions} onChange={(e) => setForm((c) => ({ ...c, payment_instructions: e.target.value }))} placeholder="e.g. Pay via the account number shown below before the due date." />
+            </label>
+            <label className="panel-field full">
+              Footer note (optional)
+              <textarea rows="2" value={form.footer_note} onChange={(e) => setForm((c) => ({ ...c, footer_note: e.target.value }))} placeholder="e.g. Contact the bursary for any billing questions." />
+            </label>
+
+            {error ? <p className="form-feedback error">{error}</p> : null}
+
+            <div className="panel-form-actions">
+              <button type="button" onClick={handleSaveDraft} disabled={Boolean(saving)}>
+                {saving === "draft" ? <><Spinner /> Saving...</> : isEdit ? "Save changes" : "Save as draft"}
+              </button>
+              <button type="button" className="btn-primary" onClick={handlePublish} disabled={Boolean(saving)}>
+                {saving === "publish" ? <><Spinner /> Publishing...</> : isPublished ? "Regenerate invoices" : "Publish bill"}
+              </button>
+            </div>
+          </div>
+
+          <div className="bill-designer-preview">
+            <p className="panel-sub">Live preview</p>
+            <InvoiceDocument id="bill-designer-preview-doc" school={school} bill={previewBill} paymentStatus={bill?.status || "draft"} />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function BillSendPanel({ bill, classOptions, onLoadRecipients, onSend, onClose }) {
+  const billClassIds = (bill.classes || []).map(String);
+  const [scope, setScope] = useState("class");
+  const [classId, setClassId] = useState(billClassIds[0] || "");
+  const [parents, setParents] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [channels, setChannels] = useState({ sms: true, email: false });
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    onLoadRecipients(bill.id)
+      .then((list) => { if (active) setParents(list || []); })
+      .catch(() => { if (active) setParents([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [bill.id, onLoadRecipients]);
+
+  const toggleParent = (id) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedIds(new Set(parents.filter((p) => p.phone || p.email).map((p) => p.user_id)));
+
+  const handleSend = async () => {
+    setError("");
+    const activeChannels = Object.entries(channels).filter(([, on]) => on).map(([key]) => key);
+    if (!activeChannels.length) { setError("Select at least one channel."); return; }
+    if (scope === "selected" && !selectedIds.size) { setError("Select at least one parent."); return; }
+    setSending(true);
+    try {
+      const payload = scope === "class"
+        ? { scope: "class", class_id: classId, channels: activeChannels }
+        : { scope: "selected", parent_ids: Array.from(selectedIds), channels: activeChannels };
+      const res = await onSend(bill.id, payload);
+      setResult(res);
+    } catch (err) {
+      setError(err.message || "Could not send bill.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return createPortal(
+    <div className="cfm-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bill-send-card" role="dialog" aria-modal="true" aria-labelledby="bill-send-title">
+        <div className="edit-modal-head">
+          <div>
+            <h3 id="bill-send-title">Send &quot;{bill.title}&quot;</h3>
+            <p className="panel-sub">Each parent receives a personalized invoice with their own virtual account number.</p>
+          </div>
+          <button type="button" className="edit-modal-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
+        </div>
+
+        <div className="bill-send-scope">
+          <label><input type="radio" checked={scope === "class"} onChange={() => setScope("class")} /> Send to all parents in a class</label>
+          <label><input type="radio" checked={scope === "selected"} onChange={() => setScope("selected")} /> Send to selected parents</label>
+        </div>
+
+        {scope === "class" ? (
+          <label className="panel-field full">
+            Class
+            <select value={classId} onChange={(e) => setClassId(e.target.value)}>
+              {billClassIds.map((id) => {
+                const match = classOptions.find((c) => String(c.id || c.value) === id);
+                return <option key={id} value={id}>{match?.label || match?.name || id}</option>;
+              })}
+            </select>
+          </label>
+        ) : (
+          <div className="bill-send-parent-list">
+            <div className="table-actions-inline"><button type="button" className="table-action" onClick={selectAll}>Select all</button></div>
+            {loading ? <p className="panel-empty">Loading parents...</p> : parents.length ? parents.map((parent) => (
+              <label key={parent.user_id} className={`bill-send-parent-row ${!parent.phone && !parent.email ? "disabled" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(parent.user_id)}
+                  onChange={() => toggleParent(parent.user_id)}
+                  disabled={!parent.phone && !parent.email}
+                />
+                <span>{parent.name}<small>{(parent.children || []).map((c) => c.name).join(", ")}</small></span>
+                <small>{parent.has_virtual_account ? "Has account" : "Will auto-provision"}</small>
+              </label>
+            )) : <p className="panel-empty">No parents found for this bill's classes.</p>}
+          </div>
+        )}
+
+        <div className="panel-field-row">
+          <label><input type="checkbox" checked={channels.sms} onChange={(e) => setChannels((c) => ({ ...c, sms: e.target.checked }))} /> SMS link</label>
+          <label><input type="checkbox" checked={channels.email} onChange={(e) => setChannels((c) => ({ ...c, email: e.target.checked }))} /> Email</label>
+        </div>
+
+        {error ? <p className="form-feedback error">{error}</p> : null}
+        {result ? (
+          <p className="form-feedback success">
+            Sent {result.sent}, failed {result.failed}, skipped {result.skipped}
+            {result.provisioned ? `, auto-provisioned ${result.provisioned} account(s)` : ""}.
+          </p>
+        ) : null}
+
+        <div className="panel-form-actions">
+          <button type="button" onClick={handleSend} disabled={sending}>{sending ? <><Spinner /> Sending...</> : "Send"}</button>
+          <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function AdminFinanceScreen({
   data,
   school,
@@ -713,6 +1089,13 @@ function AdminFinanceScreen({
   onWithdraw,
   onClassFeeSave,
   onClassFeeDelete,
+  onBillsLoad,
+  onBillSave,
+  onBillPublish,
+  onBillDuplicate,
+  onBillCancel,
+  onBillRecipientsLoad,
+  onBillSend,
   onStudentFeeSave,
   onPaymentAccountSave,
   onPaystackSubaccountSetup,
@@ -761,6 +1144,15 @@ function AdminFinanceScreen({
     due_date: "",
   });
   const [editingClassFeeId, setEditingClassFeeId] = useState("");
+  const [bills, setBills] = useState([]);
+  const [billsLoading, setBillsLoading] = useState(false);
+  const [billsError, setBillsError] = useState("");
+  const [billFilters, setBillFilters] = useState({ status: "", class_id: "", title: "", payment_status: "" });
+  const [showBillDesigner, setShowBillDesigner] = useState(false);
+  const [editingBill, setEditingBill] = useState(null);
+  const [sendingBill, setSendingBill] = useState(null);
+  const [billActionBusyId, setBillActionBusyId] = useState("");
+  const [billActionError, setBillActionError] = useState("");
   const [studentFeeForm, setStudentFeeForm] = useState({
     title: "",
     amount: "",
@@ -1108,6 +1500,95 @@ function AdminFinanceScreen({
     }
   };
 
+  const loadBills = useCallback(async () => {
+    if (!onBillsLoad) return;
+    setBillsLoading(true);
+    setBillsError("");
+    try {
+      const list = await onBillsLoad(billFilters);
+      setBills(list);
+    } catch (err) {
+      setBillsError(err.message || "Could not load bills.");
+    } finally {
+      setBillsLoading(false);
+    }
+  }, [onBillsLoad, billFilters]);
+
+  useEffect(() => {
+    if (mobileFinanceSection === "bills") {
+      loadBills();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileFinanceSection, loadBills]);
+
+  const handleOpenNewBill = () => { setEditingBill(null); setShowBillDesigner(true); };
+  const handleOpenEditBill = (bill) => { setEditingBill(bill); setShowBillDesigner(true); };
+  const handleCloseBillDesigner = (didChange) => {
+    setShowBillDesigner(false);
+    setEditingBill(null);
+    if (didChange) loadBills();
+  };
+
+  const handleBillPublish = async (billId) => {
+    setBillActionBusyId(billId);
+    setBillActionError("");
+    try {
+      await onBillPublish(billId);
+      await loadBills();
+    } catch (err) {
+      setBillActionError(err.message || "Could not publish bill.");
+    } finally {
+      setBillActionBusyId("");
+    }
+  };
+
+  const handleBillDuplicate = async (billId) => {
+    setBillActionBusyId(billId);
+    setBillActionError("");
+    try {
+      await onBillDuplicate(billId);
+      await loadBills();
+    } catch (err) {
+      setBillActionError(err.message || "Could not duplicate bill.");
+    } finally {
+      setBillActionBusyId("");
+    }
+  };
+
+  const handleBillCancel = async (billId) => {
+    if (!window.confirm("Cancel this bill? Already-generated invoices are kept, but no further invoices will be created or sent.")) return;
+    setBillActionBusyId(billId);
+    setBillActionError("");
+    try {
+      await onBillCancel(billId);
+      await loadBills();
+    } catch (err) {
+      setBillActionError(err.message || "Could not cancel bill.");
+    } finally {
+      setBillActionBusyId("");
+    }
+  };
+
+  const [printingBill, setPrintingBill] = useState(null);
+
+  useEffect(() => {
+    if (!printingBill) return;
+    const timer = setTimeout(() => {
+      const { bill, mode } = printingBill;
+      const title = `Invoice - ${bill.title}`;
+      const run = mode === "png"
+        ? downloadPrintablePng("bill-history-print-doc", `invoice-${(bill.title || "bill").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`, title)
+        : Promise.resolve(openPrintableDocument("bill-history-print-doc", title));
+      Promise.resolve(run)
+        .catch((err) => setBillActionError(err.message || "Could not open the printable invoice."))
+        .finally(() => setPrintingBill(null));
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [printingBill]);
+
+  const handlePrintBillDocument = (bill) => setPrintingBill({ bill, mode: "print" });
+  const handleDownloadBillPng = (bill) => setPrintingBill({ bill, mode: "png" });
+
   const startEditStudentFee = (fee) => {
     setFeedback("");
     setFormError("");
@@ -1354,24 +1835,6 @@ function AdminFinanceScreen({
     printWindow.document.close();
   };
 
-  const handlePrintClassBill = (fee) => {
-    const reference = `BILL-${String(fee.id || Date.now()).slice(0, 8).toUpperCase()}`;
-    openFinancePrintout({
-      title: "Bill",
-      reference,
-      metaRows: [
-        ["Bill No", reference],
-        [groupLabels.singular, fee.class_label],
-        ["Fee", fee.title],
-        ["Due Date", formatDate(fee.due_date)],
-      ],
-      tableRows: [[fee.title || "School fee", formatFinanceAmount(fee.amount)]],
-      totalLabel: "Expected Total",
-      total: fee.expected_amount ?? fee.amount,
-      footer: "",
-    });
-  };
-
   const handlePrintTransactionReceipt = (item) => {
     const reference = item.reference || item.bank_reference || item.id || `RCPT-${Date.now()}`;
     openFinancePrintout({
@@ -1596,27 +2059,37 @@ function AdminFinanceScreen({
             >
               <div className="edit-modal-head">
                 <div>
-                  <h3 id="class-fee-form-title">{editingClassFeeId ? `Update ${groupLabels.fee}` : `Create ${groupLabels.fee}`}</h3>
-                  <p className="panel-sub">Create school-focused bills for each {groupLabels.singular.toLowerCase()}.</p>
+                  <h3 id="class-fee-form-title">{editingClassFeeId ? `Update ${groupLabels.fee}` : "Generate Bill"}</h3>
+                  <p className="panel-sub">
+                    {editingClassFeeId
+                      ? `Update this school-focused bill for its ${groupLabels.singular.toLowerCase()}.`
+                      : "Design a branded tuition invoice with line items, an optional due date, discount, and tax - then publish it to every student in the classes you pick."}
+                  </p>
                 </div>
                 {editingClassFeeId ? (
                   <button type="button" className="edit-modal-close" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }} aria-label="Close"><X size={16} /></button>
                 ) : null}
               </div>
-              <form className="panel-form" onSubmit={handleClassFeeSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field full">{groupLabels.singular}<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">{groupLabels.select}</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
-                  <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
-                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
-                  <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
-                </div>
+              {editingClassFeeId ? (
+                <form className="panel-form" onSubmit={handleClassFeeSubmit}>
+                  <div className="panel-form-grid">
+                    <label className="panel-field full">{groupLabels.singular}<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">{groupLabels.select}</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
+                    <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
+                    <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
+                    <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
+                  </div>
+                  <div className="panel-form-actions">
+                    <button type="submit" disabled={!onClassFeeSave || anyBusy}>
+                      {busyAction === "classFee" ? <><Spinner /> Saving...</> : `Update ${groupLabels.fee.toLowerCase()}`}
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={!onClassFeeSave || anyBusy}>
-                    {busyAction === "classFee" ? <><Spinner /> Saving...</> : editingClassFeeId ? `Update ${groupLabels.fee.toLowerCase()}` : `Create ${groupLabels.fee.toLowerCase()}`}
-                  </button>
-                  {editingClassFeeId ? <button type="button" className="btn-secondary" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button> : null}
+                  <button type="button" onClick={handleOpenNewBill} disabled={!onBillSave}>Generate Bill</button>
                 </div>
-              </form>
+              )}
             </article>
 
             <article className="app-panel">
@@ -1803,6 +2276,7 @@ function AdminFinanceScreen({
                 <option value="student-payments">Student Payment Records</option>
                 <option value="student-fees">Student Fees</option>
                 <option value="class-fees">{groupLabels.fee} Schedule</option>
+                <option value="bills">Bills History</option>
                 <option value="transactions">Transaction History</option>
               </select>
             </div>
@@ -1823,9 +2297,79 @@ function AdminFinanceScreen({
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
               <table className="data-table">
                 <thead><tr><th>{groupLabels.singular}</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
-                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => handlePrintClassBill(fee)}>Bill</button><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
+                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("classFees", classFees.length)}
+            </div>
+            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "bills" ? "active" : ""}`}>
+              <div className="bill-history-filters">
+                <input
+                  placeholder="Search by title"
+                  value={billFilters.title}
+                  onChange={(event) => setBillFilters((current) => ({ ...current, title: event.target.value }))}
+                />
+                <select value={billFilters.class_id} onChange={(event) => setBillFilters((current) => ({ ...current, class_id: event.target.value }))}>
+                  <option value="">All classes</option>
+                  {classOptions.map((item) => (
+                    <option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>
+                  ))}
+                </select>
+                <select value={billFilters.status} onChange={(event) => setBillFilters((current) => ({ ...current, status: event.target.value }))}>
+                  <option value="">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <select value={billFilters.payment_status} onChange={(event) => setBillFilters((current) => ({ ...current, payment_status: event.target.value }))}>
+                  <option value="">Any payment status</option>
+                  <option value="sent">Sent</option>
+                  <option value="viewed">Viewed</option>
+                  <option value="partial">Partially Paid</option>
+                  <option value="paid">Paid</option>
+                  <option value="overdue">Overdue</option>
+                </select>
+                <button type="button" className="table-action" onClick={loadBills} disabled={billsLoading}>
+                  {billsLoading ? <><Spinner size={12} /> Loading...</> : "Search"}
+                </button>
+              </div>
+              {billsError ? <p className="form-feedback error">{billsError}</p> : null}
+              {billActionError ? <p className="form-feedback error">{billActionError}</p> : null}
+              <table className="data-table">
+                <thead><tr><th>Title</th><th>Classes</th><th>Total</th><th>Invoices</th><th>Status</th><th>Due</th><th>Action</th></tr></thead>
+                <tbody>
+                  {bills.length ? bills.map((bill) => (
+                    <tr key={bill.id}>
+                      <td>{bill.title}</td>
+                      <td>{(bill.class_labels || []).join(", ") || "-"}</td>
+                      <td>{formatFinanceAmount(bill.total)}</td>
+                      <td>{bill.invoice_count || 0}</td>
+                      <td><span className={`finance-status status-${bill.invoice_status}`}>{billStatusLabel(bill.invoice_status)}</span></td>
+                      <td>{bill.due_date ? formatDate(bill.due_date) : "-"}</td>
+                      <td>
+                        <div className="table-actions-inline">
+                          {bill.status !== "cancelled" ? (
+                            <button type="button" className="table-action" onClick={() => handleOpenEditBill(bill)}>Edit</button>
+                          ) : null}
+                          {bill.status !== "cancelled" ? (
+                            <button type="button" className="table-action" onClick={() => handleBillPublish(bill.id)} disabled={billActionBusyId === bill.id}>
+                              {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : bill.status === "draft" ? "Publish" : "Regenerate"}
+                            </button>
+                          ) : null}
+                          {bill.status === "published" ? (
+                            <button type="button" className="table-action" onClick={() => setSendingBill(bill)}>{bill.invoice_status === "sent" || bill.invoice_status === "viewed" ? "Resend" : "Send"}</button>
+                          ) : null}
+                          <button type="button" className="table-action" onClick={() => handleBillDuplicate(bill.id)} disabled={billActionBusyId === bill.id}>Duplicate</button>
+                          <button type="button" className="table-action" onClick={() => handlePrintBillDocument(bill)}>Print</button>
+                          <button type="button" className="table-action" onClick={() => handleDownloadBillPng(bill)}>PNG</button>
+                          {bill.status !== "cancelled" ? (
+                            <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>Cancel</button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan="7">{billsLoading ? "Loading bills..." : "No bills generated yet."}</td></tr>}
+                </tbody>
+              </table>
             </div>
             <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "transactions" ? "active" : ""}`}>
               <table className="data-table">
@@ -2032,6 +2576,41 @@ function AdminFinanceScreen({
             </div>
           </article>
         </>
+      ) : null}
+
+      {showBillDesigner ? (
+        <BillDesignerModal
+          bill={editingBill}
+          school={schoolBrand}
+          classOptions={classOptions}
+          onClose={handleCloseBillDesigner}
+          onSave={onBillSave}
+          onPublish={onBillPublish}
+        />
+      ) : null}
+
+      {sendingBill ? (
+        <BillSendPanel
+          bill={sendingBill}
+          classOptions={classOptions}
+          onLoadRecipients={onBillRecipientsLoad}
+          onSend={async (billId, payload) => {
+            const result = await onBillSend(billId, payload);
+            return result;
+          }}
+          onClose={() => { setSendingBill(null); loadBills(); }}
+        />
+      ) : null}
+
+      {printingBill ? (
+        <div style={{ position: "fixed", top: 0, left: "-9999px", zIndex: -1 }}>
+          <InvoiceDocument
+            id="bill-history-print-doc"
+            school={schoolBrand}
+            bill={printingBill.bill}
+            paymentStatus={printingBill.bill.invoice_status || printingBill.bill.status}
+          />
+        </div>
       ) : null}
     </section>
   );
@@ -6183,6 +6762,21 @@ function documentStylesForExport() {
     .service-agreement-document .sa-sig-label{flex:0 0 160px;color:#52606d;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
     .service-agreement-document .sa-signature-img{max-height:60px;object-fit:contain}
     .transcript-document .doc-summary-strip{grid-template-columns:repeat(5,1fr)}
+    .invoice-document .invoice-status-pill{display:inline-block;margin:-10px auto 18px;padding:6px 16px;border-radius:999px;font-family:Arial,sans-serif;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;background:#0f766e;color:#fff}
+    .invoice-document .invoice-status-pill.status-paid{background:#16a34a}
+    .invoice-document .invoice-status-pill.status-overdue{background:#dc2626}
+    .invoice-document .invoice-status-pill.status-partial{background:#f59e0b}
+    .invoice-document .invoice-status-pill.status-draft{background:#64748b}
+    .invoice-document .invoice-status-pill.status-cancelled{background:#64748b}
+    .invoice-totals{margin:6px 0 18px;font-family:Arial,sans-serif}
+    .invoice-totals .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155}
+    .invoice-totals .row.grand{border-top:2px solid #0f3d5e;border-bottom:none;margin-top:4px;padding-top:10px;font-size:17px;font-weight:900;color:#0f3d5e}
+    .invoice-totals .row.discount span:last-child{color:#16a34a}
+    .invoice-account-box{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:14px 18px;margin:12px 0;font-family:Arial,sans-serif}
+    .invoice-account-box strong{display:block;font-size:11px;text-transform:uppercase;color:#1d4ed8;margin-bottom:6px}
+    .invoice-account-box .invoice-account-number{display:block;font-size:20px;font-weight:900;color:#1e40af;letter-spacing:.04em}
+    .invoice-account-box.muted{background:#f8fafc;border-color:#cbd5e1}
+    .invoice-account-box.muted strong{color:#64748b}
   `;
 }
 

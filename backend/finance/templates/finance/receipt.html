@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>
-    {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% else %}Fee Statement{% endif %}
+    {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% elif link.receipt_type == "invoice" %}Invoice{% else %}Fee Statement{% endif %}
     — {{ data.school_name|default:"School" }}
   </title>
   <style>
@@ -147,6 +147,28 @@
     }
     .ref-box span { font-family: monospace; font-size: 13px; color: #1e293b; }
 
+    /* ── Invoice ── */
+    .invoice-meta-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px;
+      background: #f8fafc; border-radius: 8px; padding: 14px 16px; margin-bottom: 4px;
+    }
+    .invoice-meta-grid .info-item label { font-size: 10px; }
+    .invoice-totals { margin-top: 4px; }
+    .invoice-totals .row {
+      display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: #475569;
+    }
+    .invoice-totals .row.grand {
+      border-top: 2px solid #0f766e; margin-top: 4px; padding-top: 10px;
+      font-size: 16px; font-weight: 800; color: #0f766e;
+    }
+    .invoice-totals .row.discount span:last-child { color: #16a34a; }
+    .invoice-totals .row.tax span:last-child { color: #475569; }
+    .instructions-box {
+      background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+      padding: 12px 16px; margin-top: 16px; font-size: 12.5px; color: #92400e; white-space: pre-line;
+    }
+    .view-online { text-align: center; margin-top: 12px; font-size: 12px; }
+
     /* ── Footer ── */
     .footer {
       text-align: center;
@@ -186,7 +208,7 @@
     <div class="school-initial">{{ data.school_name|default:"S"|first|upper }}</div>
     <h1>{{ data.school_name|default:"School" }}</h1>
     <p>
-      {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% else %}Fee Statement{% endif %}
+      {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% elif link.receipt_type == "invoice" %}Invoice{% else %}Fee Statement{% endif %}
       &bull; {% firstof data.payment_date data.generated_at "" %}
     </p>
   </div>
@@ -208,6 +230,28 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
         Fee Statement
       </span>
+    {% elif link.receipt_type == "invoice" %}
+      {% if data.payment_status == "paid" %}
+        <span class="badge paid">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+          Paid
+        </span>
+      {% elif data.payment_status == "overdue" %}
+        <span class="badge" style="background:#dc2626;color:#fff;border:2px solid #fff">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          Overdue
+        </span>
+      {% elif data.payment_status == "partial" %}
+        <span class="badge partial">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          Partially Paid
+        </span>
+      {% else %}
+        <span class="badge bill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          Invoice
+        </span>
+      {% endif %}
     {% elif link.receipt_type == "payslip" %}
       <span class="badge" style="background:#7c3aed;color:#fff;border:2px solid #fff">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
@@ -410,6 +454,76 @@
         <div class="balance">Status: {{ data.status|default:"—"|capfirst }}</div>
       </div>
 
+    {% elif link.receipt_type == "invoice" %}
+    <!-- ── INVOICE VIEW ── -->
+
+      <p class="section-title">Invoice Details</p>
+      <div class="invoice-meta-grid">
+        <div class="info-item"><label>Invoice Number</label><span>{{ data.invoice_number|default:"—" }}</span></div>
+        <div class="info-item"><label>Invoice Date</label><span>{{ data.invoice_date|default:"—" }}</span></div>
+        <div class="info-item"><label>Due Date</label><span>{{ data.due_date|default:"—" }}</span></div>
+        <div class="info-item"><label>Bill</label><span>{{ data.bill_title|default:"—" }}</span></div>
+      </div>
+
+      <p class="section-title">Student Details</p>
+      <div class="info-grid">
+        <div class="info-item"><label>Student Name</label><span>{{ data.student_name|default:"—" }}</span></div>
+        <div class="info-item"><label>Student ID</label><span>{{ data.student_id|default:"—" }}</span></div>
+        <div class="info-item"><label>Class</label><span>{{ data.class_name|default:"—" }}</span></div>
+        <div class="info-item"><label>Academic Session / Term</label><span>{{ data.academic_year|default:"—" }} {{ data.term }}</span></div>
+      </div>
+
+      {% if data.items %}
+      <p class="section-title">Description of Charges</p>
+      <table>
+        <thead><tr><th>Description</th><th class="text-right">Amount</th></tr></thead>
+        <tbody>
+          {% for item in data.items %}
+          <tr><td>{{ item.description }}</td><td class="text-right">₦{{ item.amount|floatformat:2 }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      <div class="invoice-totals">
+        <div class="row"><span>Subtotal</span><span>₦{{ data.subtotal|floatformat:2 }}</span></div>
+        {% if data.discount_amount and data.discount_amount != "0.00" %}
+        <div class="row discount"><span>Discount</span><span>-₦{{ data.discount_amount|floatformat:2 }}</span></div>
+        {% endif %}
+        {% if data.tax_amount and data.tax_amount != "0.00" %}
+        <div class="row tax"><span>Tax</span><span>+₦{{ data.tax_amount|floatformat:2 }}</span></div>
+        {% endif %}
+        <div class="row grand"><span>Total Amount Due</span><span>₦{{ data.total|floatformat:2 }}</span></div>
+      </div>
+
+      {% if data.amount_paid and data.amount_paid != "0.00" %}
+        <div class="amount-hero" style="margin-top:12px">
+          <div class="label">Amount Paid</div>
+          <div class="amount" style="color:#16a34a">₦{{ data.amount_paid|floatformat:2 }}</div>
+          {% if data.balance and data.balance != "0.00" %}
+            <div class="balance outstanding">Balance remaining: ₦{{ data.balance|floatformat:2 }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if data.virtual_account and data.virtual_account.number %}
+        <div class="account-box">
+          <div class="acct-label">Pay via Bank Transfer</div>
+          <div class="acct-number">{{ data.virtual_account.number }}</div>
+          <div class="acct-meta">{{ data.virtual_account.bank }} &mdash; {{ data.virtual_account.name }}</div>
+          <div class="note">This account is unique to your ward. Payments are matched automatically.</div>
+        </div>
+      {% endif %}
+
+      {% if data.payment_instructions %}
+        <p class="section-title">Payment Instructions</p>
+        <div class="instructions-box">{{ data.payment_instructions }}</div>
+      {% endif %}
+
+      {% if data.view_url %}
+        <div class="view-online"><a href="{{ data.view_url }}" style="color:#0f766e;font-weight:600">View / print this invoice online</a></div>
+      {% endif %}
+
     {% else %}
     <!-- ── BILL / FEE STATEMENT VIEW ── -->
 
@@ -499,7 +613,12 @@
   </div>
 
   <div class="footer">
+    {% if link.receipt_type == "invoice" %}
+      {% if data.footer_note %}<p style="margin-bottom:8px">{{ data.footer_note }}</p>{% endif %}
+      <p>{{ data.school_name|default:"School" }}{% if data.school_address %} &bull; {{ data.school_address }}{% endif %}{% if data.school_phone %} &bull; {{ data.school_phone }}{% endif %}</p>
+    {% else %}
     <p>Generated {% firstof link.created_at|date:"d M Y" "" %} &bull; {{ data.school_name|default:"School" }}</p>
+    {% endif %}
     {% if link.expires_at %}
       <p style="margin-top:4px">This link expires {{ link.expires_at|date:"d M Y" }}</p>
     {% endif %}
