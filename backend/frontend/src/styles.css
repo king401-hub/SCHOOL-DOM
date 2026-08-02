@@ -24215,9 +24215,9 @@ body[data-theme="dark"] .cbt-session-list button.active {
     min-height: 100vh !important;
     border-radius: 0 20px 20px 0 !important;
     padding: 1rem !important;
-    background: rgba(15, 23, 42, 0.9) !important;
-    backdrop-filter: blur(20px) saturate(140%) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+    background: #0f172a !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     box-shadow: 12px 0 40px rgba(2, 6, 23, 0.45) !important;
     overflow-y: auto !important;
     transform: translateX(-105%) !important;
@@ -24394,11 +24394,11 @@ body[data-dashboard-role="student"] .student-subject-card span {
 
   body[data-dashboard-role="student"] .student-shell.nav-open .student-sidebar,
   body[data-dashboard-role="teacher"] .teacher-workspace-shell.nav-open .teacher-sidebar {
-    background: rgba(15, 23, 42, 0.97) !important;
+    background: #0f172a !important;
     border: 1px solid rgba(255, 255, 255, 0.16) !important;
     box-shadow: 18px 0 42px rgba(15, 23, 42, 0.22) !important;
-    backdrop-filter: blur(18px) saturate(145%) !important;
-    -webkit-backdrop-filter: blur(18px) saturate(145%) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   body[data-dashboard-role="student"] .student-shell.nav-open .student-sidebar-overlay,
