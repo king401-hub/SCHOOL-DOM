@@ -3656,13 +3656,18 @@ def bulk_bill_status_counts(bills):
     return result
 
 
-def send_bill_invoices(bill, parent_ids, channels, actor):
+def send_bill_invoices(bill, parent_ids, channels, actor, school=None):
     """Send a Bill's invoices to selected parents, one PaymentReceiptLink +
     message per (parent, student-invoice) pair - mirrors send_class_broadsheet
     point-for-point. Auto-provisions a ParentVirtualAccount for any recipient
     who doesn't have one yet, wrapped in its own try/except so one parent's
     Paystack failure can't sink the batch; the invoice is still sent even if
-    provisioning fails."""
+    provisioning fails.
+
+    `school` is the view-layer-resolved branding payload (name/logo/address/
+    phone/email, with an absolute logo URL built from the request) - falls
+    back to bare tenant fields (no logo) if not supplied, e.g. from a
+    non-HTTP call site."""
     from users.models import ParentProfile
 
     class_ids = list(bill.classes.values_list("id", flat=True))
@@ -3679,9 +3684,13 @@ def send_bill_invoices(bill, parent_ids, channels, actor):
         .prefetch_related("children")
     )
 
-    school_name = bill.tenant.name if bill.tenant else ""
-    school_address = bill.tenant.address if bill.tenant else ""
-    school_phone = bill.tenant.phone if bill.tenant else ""
+    school = school or {}
+    school_name = school.get("name") or (bill.tenant.name if bill.tenant else "")
+    school_address = school.get("address") or (bill.tenant.address if bill.tenant else "")
+    school_phone = school.get("phone") or (bill.tenant.phone if bill.tenant else "")
+    school_email = school.get("email") or (bill.tenant.email if bill.tenant else "")
+    school_logo = school.get("logo") or ""
+    portal_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy")
     items = [{"description": item.description, "amount": str(item.amount)} for item in bill.items.all()]
 
     sent, failed, skipped, provisioned, provisioning_failed = 0, 0, 0, 0, 0
@@ -3708,6 +3717,10 @@ def send_bill_invoices(bill, parent_ids, channels, actor):
                 "school_name": school_name,
                 "school_address": school_address,
                 "school_phone": school_phone,
+                "school_email": school_email,
+                "school_logo": school_logo,
+                "accent_color": bill.accent_color,
+                "portal_url": portal_url,
                 "invoice_number": fee.invoice_number,
                 "invoice_date": fee.created_at.strftime("%d %b %Y") if fee.created_at else "",
                 "due_date": fee.due_date.strftime("%d %b %Y") if fee.due_date else "",
@@ -3727,6 +3740,7 @@ def send_bill_invoices(bill, parent_ids, channels, actor):
                 "payment_status": bill_invoice_status(fee, paid),
                 "payment_instructions": bill.payment_instructions,
                 "footer_note": bill.footer_note,
+                "parent_name": parent.user.get_full_name(),
                 "virtual_account": (
                     {"number": vac.account_number, "bank": vac.bank_name, "name": vac.account_name} if vac else None
                 ),

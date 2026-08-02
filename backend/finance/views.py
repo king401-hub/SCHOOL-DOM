@@ -3,6 +3,7 @@ from decimal import Decimal
 from hmac import compare_digest
 from datetime import datetime
 from html import escape
+import re
 
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError, transaction
@@ -179,6 +180,19 @@ def _parse_non_negative_amount(raw_amount):
         return amount.quantize(Decimal("0.01"))
     except Exception:
         raise ValueError("Enter a valid amount (0 or more).")
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _parse_hex_color(raw_color, default="#0f766e"):
+    """Validates a #rrggbb hex string before it's ever interpolated into a
+    <style> block (invoice accent color) - never trust an admin-supplied
+    string there unvalidated."""
+    value = str(raw_color or "").strip()
+    if not _HEX_COLOR_RE.match(value):
+        raise ValueError("Enter a valid color as #rrggbb.")
+    return value
 
 
 def _parse_bool(value, default=True):
@@ -1262,6 +1276,8 @@ def admin_bills(request):
             discount_amount = _parse_non_negative_amount(discount_raw) if discount_raw not in (None, "") else Decimal("0.00")
             tax_raw = request.data.get("tax_amount")
             tax_amount = _parse_non_negative_amount(tax_raw) if tax_raw not in (None, "") else Decimal("0.00")
+            accent_color_raw = request.data.get("accent_color")
+            accent_color = _parse_hex_color(accent_color_raw) if accent_color_raw else "#0f766e"
         except ValueError as exc:
             return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1286,6 +1302,7 @@ def admin_bills(request):
             due_date=due_date,
             discount_amount=discount_amount,
             tax_amount=tax_amount,
+            accent_color=accent_color,
             payment_instructions=str(request.data.get("payment_instructions", "")).strip(),
             footer_note=str(request.data.get("footer_note", "")).strip(),
             created_by=user,
@@ -1392,6 +1409,12 @@ def admin_bill_detail(request, bill_id):
     if "footer_note" in request.data:
         bill.footer_note = str(request.data.get("footer_note") or "").strip()
         update_fields.append("footer_note")
+    if "accent_color" in request.data:
+        try:
+            bill.accent_color = _parse_hex_color(request.data.get("accent_color"))
+        except ValueError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        update_fields.append("accent_color")
     if editable_core and "discount_amount" in request.data:
         try:
             raw = request.data.get("discount_amount")
@@ -1549,6 +1572,7 @@ def admin_bill_duplicate(request, bill_id):
         due_date=None,
         discount_amount=original.discount_amount,
         tax_amount=original.tax_amount,
+        accent_color=original.accent_color,
         payment_instructions=original.payment_instructions,
         footer_note=original.footer_note,
         created_by=user,
@@ -1607,7 +1631,8 @@ def admin_bill_send(request, bill_id):
     if not parent_ids:
         return Response({"success": False, "message": "No parents selected."}, status=status.HTTP_400_BAD_REQUEST)
 
-    result = send_bill_invoices(bill, parent_ids, channels, actor=user)
+    school = _school_payload(request, bill.tenant)
+    result = send_bill_invoices(bill, parent_ids, channels, actor=user, school=school)
     record_finance_activity(
         user.tenant,
         user,

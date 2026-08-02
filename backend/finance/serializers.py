@@ -261,6 +261,7 @@ class BillSerializer(serializers.ModelSerializer):
             "due_date",
             "discount_amount",
             "tax_amount",
+            "accent_color",
             "payment_instructions",
             "footer_note",
             "status",

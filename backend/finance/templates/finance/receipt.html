@@ -43,7 +43,10 @@
       background: rgba(255,255,255,.2);
       font-size: 22px; font-weight: 700;
       margin-bottom: 12px;
+      overflow: hidden;
     }
+    .header .school-initial.school-logo { background: #fff; }
+    .header .school-initial.school-logo img { width: 100%; height: 100%; object-fit: contain; }
     .header h1 { font-size: 20px; font-weight: 700; }
     .header p  { font-size: 13px; opacity: .85; margin-top: 4px; }
 
@@ -198,14 +201,26 @@
       .info-grid { grid-template-columns: 1fr; }
     }
   </style>
+  {% if link.receipt_type == "invoice" and data.accent_color %}
+  <style>
+    .badge.bill { background: {{ data.accent_color }}; }
+    .invoice-totals .row.grand { color: {{ data.accent_color }}; }
+    .print-btn { background: {{ data.accent_color }}; }
+    .view-online a { color: {{ data.accent_color }} !important; }
+  </style>
+  {% endif %}
 </head>
 <body>
 
 <div class="card">
 
   <!-- Header -->
-  <div class="header">
-    <div class="school-initial">{{ data.school_name|default:"S"|first|upper }}</div>
+  <div class="header"{% if link.receipt_type == "invoice" and data.accent_color %} style="background:linear-gradient(135deg,{{ data.accent_color }} 0%,{{ data.accent_color }} 100%)"{% endif %}>
+    {% if data.school_logo %}
+      <div class="school-initial school-logo"><img src="{{ data.school_logo }}" alt=""></div>
+    {% else %}
+      <div class="school-initial">{{ data.school_name|default:"S"|first|upper }}</div>
+    {% endif %}
     <h1>{{ data.school_name|default:"School" }}</h1>
     <p>
       {% if link.receipt_type == "receipt" %}Payment Receipt{% elif link.receipt_type == "report_card" %}Report Card{% elif link.receipt_type == "class_broadsheet" %}Class Broadsheet{% elif link.receipt_type == "payslip" %}Payslip{% elif link.receipt_type == "invoice" %}Invoice{% else %}Fee Statement{% endif %}
@@ -459,18 +474,18 @@
 
       <p class="section-title">Invoice Details</p>
       <div class="invoice-meta-grid">
-        <div class="info-item"><label>Invoice Number</label><span>{{ data.invoice_number|default:"—" }}</span></div>
-        <div class="info-item"><label>Invoice Date</label><span>{{ data.invoice_date|default:"—" }}</span></div>
+        <div class="info-item"><label>Bill No.</label><span>{{ data.invoice_number|default:"—" }}</span></div>
+        <div class="info-item"><label>Bill Date</label><span>{{ data.invoice_date|default:"—" }}</span></div>
         <div class="info-item"><label>Due Date</label><span>{{ data.due_date|default:"—" }}</span></div>
-        <div class="info-item"><label>Bill</label><span>{{ data.bill_title|default:"—" }}</span></div>
+        <div class="info-item"><label>Academic Term</label><span>{{ data.academic_year|default:"—" }} {{ data.term }}</span></div>
       </div>
 
-      <p class="section-title">Student Details</p>
+      <p class="section-title">Billed To</p>
       <div class="info-grid">
         <div class="info-item"><label>Student Name</label><span>{{ data.student_name|default:"—" }}</span></div>
         <div class="info-item"><label>Student ID</label><span>{{ data.student_id|default:"—" }}</span></div>
         <div class="info-item"><label>Class</label><span>{{ data.class_name|default:"—" }}</span></div>
-        <div class="info-item"><label>Academic Session / Term</label><span>{{ data.academic_year|default:"—" }} {{ data.term }}</span></div>
+        <div class="info-item"><label>Parent/Guardian</label><span>{{ data.parent_name|default:"—" }}</span></div>
       </div>
 
       {% if data.items %}
@@ -507,8 +522,9 @@
       {% endif %}
 
       {% if data.virtual_account and data.virtual_account.number %}
+        <p class="section-title">Payment Information</p>
         <div class="account-box">
-          <div class="acct-label">Pay via Bank Transfer</div>
+          <div class="acct-label">Parent/Guardian: {{ data.parent_name|default:"—" }}</div>
           <div class="acct-number">{{ data.virtual_account.number }}</div>
           <div class="acct-meta">{{ data.virtual_account.bank }} &mdash; {{ data.virtual_account.name }}</div>
           <div class="note">This account is unique to your ward. Payments are matched automatically.</div>

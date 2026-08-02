@@ -997,6 +997,7 @@ class Bill(models.Model):
     tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     payment_instructions = models.TextField(blank=True)
     footer_note = models.TextField(blank=True)
+    accent_color = models.CharField(max_length=7, default="#0f766e", help_text="Hex color applied to the invoice's headers, borders, and highlights.")
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     published_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(

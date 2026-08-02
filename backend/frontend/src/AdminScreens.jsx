@@ -723,8 +723,18 @@ function billStatusLabel(status) {
   return BILL_STATUS_LABELS[status] || status || "Draft";
 }
 
-function InvoiceDocument({ id, school, bill, student, invoiceNumber, virtualAccount, amountPaid = 0, paymentStatus = "published" }) {
-  const items = bill.items || [];
+const INVOICE_COLOR_PRESETS = [
+  { label: "Teal", value: "#0f766e" },
+  { label: "Navy", value: "#1e3a8a" },
+  { label: "Emerald", value: "#16a34a" },
+  { label: "Purple", value: "#7c3aed" },
+  { label: "Crimson", value: "#b91c1c" },
+  { label: "Amber", value: "#c2410c" },
+];
+
+function InvoiceDocument({ id, school, bill, student, parent, invoiceNumber, virtualAccount, amountPaid = 0, paymentStatus = "published" }) {
+  const brand = resolveSchoolBrand(school);
+  const items = bill.items?.length ? bill.items : [{ description: "", amount: "" }];
   const subtotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const discount = Number(bill.discount_amount || 0);
   const tax = Number(bill.tax_amount || 0);
@@ -732,55 +742,125 @@ function InvoiceDocument({ id, school, bill, student, invoiceNumber, virtualAcco
   const paid = Number(amountPaid || 0);
   const balance = Math.max(total - paid, 0);
   const today = new Date().toISOString().slice(0, 10);
+  const accentColor = bill.accent_color || "#0f766e";
+  const term = [bill.academic_year_name, bill.term_name].filter(Boolean).join(" ") || "-";
 
   return (
-    <article id={id} className="official-document invoice-document">
-      <OfficialDocHeader school={school} title="Tuition Invoice" />
-      <div className={`invoice-status-pill status-${paymentStatus}`}>{billStatusLabel(paymentStatus)}</div>
+    <article id={id} className="official-document invoice-document" style={{ "--invoice-accent": accentColor }}>
+      <header className="invoice-doc-header">
+        <div className="invoice-doc-brand">
+          <div className="invoice-doc-logo">
+            {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
+          </div>
+          <div>
+            <strong>{brand.name}</strong>
+            {brand.address ? <span>{brand.address}</span> : null}
+            {brand.phone ? <span>{brand.phone}</span> : null}
+            {brand.email ? <span>{brand.email}</span> : null}
+          </div>
+        </div>
+        <div className="invoice-doc-title-block">
+          <h2>BILL / INVOICE</h2>
+          <table className="invoice-doc-meta-table">
+            <tbody>
+              <tr><td>Bill No.</td><td>{invoiceNumber || "Preview"}</td></tr>
+              <tr><td>Bill Date</td><td>{formatDate(today)}</td></tr>
+              <tr><td>Due Date</td><td>{bill.due_date ? formatDate(bill.due_date) : "-"}</td></tr>
+              <tr><td>Academic Term</td><td>{term}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </header>
 
-      <section className="doc-info-grid">
-        <div className="doc-line"><strong>Invoice Number</strong><span>{invoiceNumber || "Preview"}</span></div>
-        <div className="doc-line"><strong>Invoice Date</strong><span>{formatDate(today)}</span></div>
-        <div className="doc-line"><strong>Due Date</strong><span>{bill.due_date ? formatDate(bill.due_date) : "-"}</span></div>
-        <div className="doc-line"><strong>Bill</strong><span>{bill.title || "Untitled bill"}</span></div>
-        <div className="doc-line"><strong>Student Name</strong><span>{student?.name || "Sample Student"}</span></div>
-        <div className="doc-line"><strong>Student ID</strong><span>{student?.student_id || "-"}</span></div>
-        <div className="doc-line"><strong>Class</strong><span>{student?.class_name || "-"}</span></div>
-        <div className="doc-line"><strong>Session / Term</strong><span>{[bill.academic_year_name, bill.term_name].filter(Boolean).join(" - ") || "-"}</span></div>
+      <section className="invoice-doc-cards">
+        <div className="invoice-doc-card">
+          <div className="invoice-doc-card-head">Billed To</div>
+          <div className="invoice-doc-card-body">
+            <div><label>Student Name</label><strong>{student?.name || "Sample Student"}</strong></div>
+            <div><label>Student ID</label><strong>{student?.student_id || "-"}</strong></div>
+            <div><label>Class</label><strong>{student?.class_name || "-"}</strong></div>
+            <div><label>Parent/Guardian</label><strong>{parent?.name || student?.parent_name || "-"}</strong></div>
+            <div><label>Phone</label><strong>{parent?.phone || "-"}</strong></div>
+            <div><label>Email</label><strong>{parent?.email || "-"}</strong></div>
+          </div>
+        </div>
+        <div className="invoice-doc-card summary">
+          <div className="invoice-doc-card-head accent">Bill Summary</div>
+          <div className="invoice-doc-card-body">
+            <div className="invoice-doc-summary-total"><span>Total Payable</span><strong>{invoiceNaira(total)}</strong></div>
+            <div className="row"><span>Total Amount</span><span>{invoiceNaira(total)}</span></div>
+            <div className="row"><span>Amount Paid</span><span>{invoiceNaira(paid)}</span></div>
+            <div className="row balance"><span>Balance Due</span><span>{invoiceNaira(balance)}</span></div>
+          </div>
+        </div>
       </section>
 
-      <table className="document-table">
-        <thead><tr><th>Description of Charges</th><th>Amount</th></tr></thead>
+      <table className="document-table invoice-doc-items">
+        <thead><tr><th>S/N</th><th>Description</th><th>Qty</th><th>Unit Price (₦)</th><th>Amount (₦)</th></tr></thead>
         <tbody>
-          {items.length ? items.map((item, idx) => (
-            <tr key={idx}><td>{item.description || "Untitled item"}</td><td>{invoiceNaira(item.amount)}</td></tr>
-          )) : <tr><td colSpan="2">Add fee items to see them here.</td></tr>}
+          {items.map((item, idx) => (
+            <tr key={idx}>
+              <td>{idx + 1}</td>
+              <td>{item.description || "Untitled item"}</td>
+              <td>1</td>
+              <td>{invoiceNaira(item.amount)}</td>
+              <td>{invoiceNaira(item.amount)}</td>
+            </tr>
+          ))}
         </tbody>
+        <tfoot>
+          <tr className="invoice-doc-total-row">
+            <td colSpan="4">Total Payable</td>
+            <td>{invoiceNaira(total)}</td>
+          </tr>
+        </tfoot>
       </table>
-
-      <div className="invoice-totals">
-        <div className="row"><span>Subtotal</span><span>{invoiceNaira(subtotal)}</span></div>
-        {discount > 0 ? <div className="row discount"><span>Discount</span><span>-{invoiceNaira(discount)}</span></div> : null}
-        {tax > 0 ? <div className="row tax"><span>Tax</span><span>+{invoiceNaira(tax)}</span></div> : null}
-        <div className="row grand"><span>Total Amount Due</span><span>{invoiceNaira(total)}</span></div>
-        {paid > 0 ? <div className="row"><span>Amount Paid</span><span>{invoiceNaira(paid)}</span></div> : null}
-        {paid > 0 ? <div className="row"><span>Balance</span><span>{invoiceNaira(balance)}</span></div> : null}
-      </div>
-
-      {virtualAccount?.number ? (
-        <div className="invoice-account-box">
-          <strong>Pay via Bank Transfer (this parent's own account)</strong>
-          <span className="invoice-account-number">{virtualAccount.number}</span>
-          <span>{virtualAccount.bank} - {virtualAccount.name}</span>
+      {(discount > 0 || tax > 0) ? (
+        <div className="invoice-totals">
+          <div className="row"><span>Subtotal</span><span>{invoiceNaira(subtotal)}</span></div>
+          {discount > 0 ? <div className="row discount"><span>Discount</span><span>-{invoiceNaira(discount)}</span></div> : null}
+          {tax > 0 ? <div className="row tax"><span>Tax</span><span>+{invoiceNaira(tax)}</span></div> : null}
         </div>
-      ) : (
-        <div className="invoice-account-box muted">
-          <strong>Pay via Bank Transfer</strong>
-          <span>Each parent's own virtual account number appears here once the invoice is sent.</span>
-        </div>
-      )}
+      ) : null}
 
-      {bill.payment_instructions ? <p className="document-note"><strong>Payment Instructions:</strong> {bill.payment_instructions}</p> : null}
+      <section className="invoice-doc-cards">
+        <div className="invoice-doc-panel">
+          <div className="invoice-doc-panel-head">Payment Information</div>
+          {virtualAccount?.number ? (
+            <div className="invoice-doc-panel-body">
+              <div><label>Parent/Guardian Name</label><strong>{parent?.name || "-"}</strong></div>
+              <div><label>Bank Name</label><strong>{virtualAccount.bank}</strong></div>
+              <div><label>Account Name</label><strong>{virtualAccount.name}</strong></div>
+              <div><label>Virtual Account Number</label><strong className="invoice-account-number">{virtualAccount.number}</strong></div>
+              <a className="invoice-doc-portal-link" href="https://schooldom.academy">Pay online via SchoolDom Parent Portal</a>
+            </div>
+          ) : (
+            <div className="invoice-doc-panel-body muted">
+              <p>Each parent's own SchoolDom virtual account (bank, account name, and number) appears here automatically once the invoice is sent.</p>
+            </div>
+          )}
+        </div>
+        <div className="invoice-doc-panel note">
+          <div className="invoice-doc-panel-head">Please Note</div>
+          <div className="invoice-doc-panel-body">
+            <ul>
+              {bill.due_date ? <li>Payment is due on or before {formatDate(bill.due_date)}.</li> : null}
+              <li>Please include the Bill No. as payment reference.</li>
+              {bill.payment_instructions ? <li>{bill.payment_instructions}</li> : null}
+            </ul>
+            <p className="invoice-doc-thanks">Thank you for your prompt payment.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer className="invoice-doc-signoff">
+        <div className="invoice-doc-signature">
+          {brand.signature ? <img src={brand.signature} alt="Authorised signature" className="doc-signature-img" /> : <span className="invoice-doc-signature-blank" />}
+          <span>Bursar / Authorised Signatory</span>
+          <strong>{brand.name}</strong>
+        </div>
+      </footer>
+
       {bill.footer_note ? <p className="document-note">{bill.footer_note}</p> : null}
     </article>
   );
@@ -797,6 +877,7 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
     tax_amount: bill?.tax_amount || "0",
     payment_instructions: bill?.payment_instructions || "",
     footer_note: bill?.footer_note || "",
+    accent_color: bill?.accent_color || "#0f766e",
   });
   const [items, setItems] = useState(
     bill?.items?.length ? bill.items.map((item) => ({ description: item.description, amount: item.amount })) : [{ description: "", amount: "" }]
@@ -812,6 +893,7 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
     tax_amount: form.tax_amount,
     payment_instructions: form.payment_instructions,
     footer_note: form.footer_note,
+    accent_color: form.accent_color,
     academic_year_name: bill?.academic_year_name,
     term_name: bill?.term_name,
     items,
@@ -832,6 +914,7 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
     due_date: form.due_date || null,
     discount_amount: form.discount_amount || "0",
     tax_amount: form.tax_amount || "0",
+    accent_color: form.accent_color,
     payment_instructions: form.payment_instructions,
     footer_note: form.footer_note,
     items: validItems(),
@@ -914,6 +997,31 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
             <label className="panel-field">
               Tax (optional)
               <input type="number" min="0" step="0.01" value={form.tax_amount} onChange={(e) => setForm((c) => ({ ...c, tax_amount: e.target.value }))} disabled={isPublished} />
+            </label>
+
+            <label className="panel-field full">
+              Template color
+              <div className="invoice-color-picker">
+                {INVOICE_COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    className={`invoice-color-swatch ${form.accent_color === preset.value ? "active" : ""}`}
+                    style={{ "--swatch": preset.value }}
+                    title={preset.label}
+                    aria-label={preset.label}
+                    onClick={() => setForm((c) => ({ ...c, accent_color: preset.value }))}
+                  />
+                ))}
+                <label className="invoice-color-custom" title="Custom brand color">
+                  <input
+                    type="color"
+                    value={form.accent_color}
+                    onChange={(e) => setForm((c) => ({ ...c, accent_color: e.target.value }))}
+                  />
+                  Custom
+                </label>
+              </div>
             </label>
 
             <div className="bill-designer-items">
@@ -6762,21 +6870,55 @@ function documentStylesForExport() {
     .service-agreement-document .sa-sig-label{flex:0 0 160px;color:#52606d;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
     .service-agreement-document .sa-signature-img{max-height:60px;object-fit:contain}
     .transcript-document .doc-summary-strip{grid-template-columns:repeat(5,1fr)}
-    .invoice-document .invoice-status-pill{display:inline-block;margin:-10px auto 18px;padding:6px 16px;border-radius:999px;font-family:Arial,sans-serif;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;background:#0f766e;color:#fff}
-    .invoice-document .invoice-status-pill.status-paid{background:#16a34a}
-    .invoice-document .invoice-status-pill.status-overdue{background:#dc2626}
-    .invoice-document .invoice-status-pill.status-partial{background:#f59e0b}
-    .invoice-document .invoice-status-pill.status-draft{background:#64748b}
-    .invoice-document .invoice-status-pill.status-cancelled{background:#64748b}
-    .invoice-totals{margin:6px 0 18px;font-family:Arial,sans-serif}
+    .invoice-document{--invoice-accent:#0f766e;font-family:Arial,Helvetica,sans-serif;color:#1e293b}
+    .invoice-doc-header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:2px solid var(--invoice-accent);padding-bottom:16px;margin-bottom:18px}
+    .invoice-doc-brand{display:flex;gap:14px;align-items:flex-start}
+    .invoice-doc-logo{width:56px;height:56px;border-radius:14px;overflow:hidden;display:grid;place-items:center;background:#f1f5f9;flex:0 0 auto}
+    .invoice-doc-logo img{width:100%;height:100%;object-fit:contain}
+    .invoice-doc-logo span{font-weight:900;color:var(--invoice-accent)}
+    .invoice-doc-brand strong{display:block;font-size:16px;color:#0f172a;margin-bottom:3px}
+    .invoice-doc-brand span{display:block;font-size:11.5px;color:#64748b;line-height:1.5}
+    .invoice-doc-title-block{text-align:right}
+    .invoice-doc-title-block h2{margin:0 0 8px;font-size:22px;letter-spacing:.04em;color:#0f172a}
+    .invoice-doc-meta-table{border-collapse:collapse;margin-left:auto}
+    .invoice-doc-meta-table td{padding:4px 10px;font-size:12px;border-bottom:1px solid #e2e8f0;text-align:left}
+    .invoice-doc-meta-table td:first-child{color:#64748b}
+    .invoice-doc-meta-table td:last-child{font-weight:700;color:#0f172a}
+    .invoice-doc-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+    .invoice-doc-card,.invoice-doc-panel{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+    .invoice-doc-card-head,.invoice-doc-panel-head{padding:8px 14px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#0f172a}
+    .invoice-doc-card-head.accent{background:var(--invoice-accent)}
+    .invoice-doc-card-body,.invoice-doc-panel-body{padding:12px 14px}
+    .invoice-doc-card-body div{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12.5px;border-bottom:1px dashed #f1f5f9}
+    .invoice-doc-card-body label{color:#64748b}
+    .invoice-doc-card.summary .invoice-doc-summary-total{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid #e2e8f0}
+    .invoice-doc-summary-total span{font-size:12px;color:#64748b;text-transform:uppercase}
+    .invoice-doc-summary-total strong{font-size:20px;color:var(--invoice-accent)}
+    .invoice-doc-card.summary .row{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;color:#475569}
+    .invoice-doc-card.summary .row.balance{font-weight:800;color:#0f172a;border-top:1px solid #e2e8f0;margin-top:4px;padding-top:8px}
+    .invoice-doc-items thead th{background:#0f172a;color:#fff}
+    .invoice-doc-items tbody tr:nth-child(even){background:#f8fafc}
+    .invoice-doc-items td,.invoice-doc-items th{text-align:left}
+    .invoice-doc-items td:first-child,.invoice-doc-items th:first-child,.invoice-doc-items td:nth-child(3),.invoice-doc-items th:nth-child(3){text-align:center}
+    .invoice-doc-items td:last-child,.invoice-doc-items th:last-child,.invoice-doc-items td:nth-child(4),.invoice-doc-items th:nth-child(4){text-align:right}
+    .invoice-doc-total-row td{background:#f0fdfa;background:color-mix(in srgb,var(--invoice-accent) 12%,#ffffff);font-weight:900;font-size:14px;color:var(--invoice-accent);border-top:2px solid var(--invoice-accent);text-align:right}
+    .invoice-doc-total-row td:first-child{text-align:left}
+    .invoice-totals{margin:10px 0 18px;font-family:Arial,sans-serif}
     .invoice-totals .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155}
-    .invoice-totals .row.grand{border-top:2px solid #0f3d5e;border-bottom:none;margin-top:4px;padding-top:10px;font-size:17px;font-weight:900;color:#0f3d5e}
     .invoice-totals .row.discount span:last-child{color:#16a34a}
-    .invoice-account-box{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:14px 18px;margin:12px 0;font-family:Arial,sans-serif}
-    .invoice-account-box strong{display:block;font-size:11px;text-transform:uppercase;color:#1d4ed8;margin-bottom:6px}
-    .invoice-account-box .invoice-account-number{display:block;font-size:20px;font-weight:900;color:#1e40af;letter-spacing:.04em}
-    .invoice-account-box.muted{background:#f8fafc;border-color:#cbd5e1}
-    .invoice-account-box.muted strong{color:#64748b}
+    .invoice-doc-panel.note{border-color:#fde68a}
+    .invoice-doc-panel.note .invoice-doc-panel-head{background:#b45309}
+    .invoice-doc-panel-body.muted{color:#64748b;font-size:12.5px}
+    .invoice-doc-panel-body ul{margin:0 0 10px;padding-left:18px;font-size:12.5px;color:#475569;line-height:1.6}
+    .invoice-doc-thanks{font-weight:700;font-size:12.5px;color:#0f172a;margin:0}
+    .invoice-account-number{letter-spacing:.04em;color:var(--invoice-accent)}
+    .invoice-doc-portal-link{display:inline-block;margin-top:8px;font-size:12px;font-weight:700;color:var(--invoice-accent);text-decoration:none}
+    .invoice-doc-signoff{margin-top:34px;display:flex;justify-content:flex-end}
+    .invoice-doc-signature{text-align:center}
+    .invoice-doc-signature img{display:block;height:40px;max-width:160px;object-fit:contain;margin:0 auto 4px}
+    .invoice-doc-signature-blank{display:block;height:40px;border-bottom:1px solid #94a3b8;width:160px;margin:0 auto 4px}
+    .invoice-doc-signature span{display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+    .invoice-doc-signature strong{display:block;font-size:12px;color:#0f172a;margin-top:2px}
   `;
 }
 
