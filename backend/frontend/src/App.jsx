@@ -1351,15 +1351,17 @@ function StudentDashboard({
   );
 }
 
-function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTitle, children, themePreference, onThemeChange }) {
+function StudentPageShell({ session, student, currentPath, onNavigate, pageKicker, pageTitle, children, themePreference, onThemeChange }) {
   const [navOpen, setNavOpen] = useState(false);
   const studentName = (
+    student?.name ||
     session?.user?.full_name ||
     `${session?.user?.first_name || ""} ${session?.user?.last_name || ""}`.trim() ||
     session?.user?.name ||
     "Student"
   );
-  const studentEmail = session?.user?.email || "";
+  const studentEmail = student?.email || session?.user?.email || "";
+  const profilePicture = sameOriginMediaUrl(student?.profile_picture || session?.user?.profile_picture);
   const schoolName = session?.school?.name || "SchoolDom";
   const nonK12Shell = session?.school?.school_type === "non_k12" || session?.school?.schoolType === "non_k12";
   const initials = userInitials({ full_name: studentName });
@@ -1430,7 +1432,7 @@ function StudentPageShell({ session, currentPath, onNavigate, pageKicker, pageTi
 
           <div className="student-sidebar-footer">
             <div className="student-sidebar-profile">
-              <div className="student-avatar"><span aria-hidden="true">{initials}</span></div>
+              <StudentAvatar src={profilePicture} name={studentName} initials={initials} />
               <div className="student-profile-meta">
                 <strong>{studentName}</strong>
                 <small>{studentEmail || "Student"}</small>
@@ -1497,7 +1499,7 @@ function StudentAttendancePage({ session, onNavigate, themePreference, onThemeCh
   const history = attendance.history || [];
 
   return (
-    <StudentPageShell session={session} currentPath="/attendance" onNavigate={onNavigate}
+    <StudentPageShell session={session} student={data?.student} currentPath="/attendance" onNavigate={onNavigate}
       themePreference={themePreference} onThemeChange={onThemeChange}
       pageKicker="Attendance" pageTitle="Attendance">
       <ScreenState loading={loading && !data} error={error} onRetry={loadAttendance} />
@@ -1578,7 +1580,7 @@ function StudentIdCardPage({ session, onNavigate, themePreference, onThemeChange
   const school = resolveSchoolBrand(data?.school, session?.school, session);
 
   return (
-    <StudentPageShell session={session} currentPath="/id-card" onNavigate={onNavigate}
+    <StudentPageShell session={session} student={data?.person} currentPath="/id-card" onNavigate={onNavigate}
       themePreference={themePreference} onThemeChange={onThemeChange}
       pageKicker="Student ID" pageTitle="ID Card">
       <div className="student-id-card-page">
