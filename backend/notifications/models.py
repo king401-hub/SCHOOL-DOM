@@ -510,12 +510,18 @@ class InAppMessage(TimeStampedModel, UUIDModel):
 
 class MessageGroup(TimeStampedModel, UUIDModel):
     """
-    Student-created group chat. Currently only Non-K12 schools allow students
-    to message each other at all (see users.app_views._is_non_k12_school), so
-    group membership is restricted to students at the same Non-K12 tenant.
+    Admin-managed group chat (Messaging module). Optionally tied to a class
+    (school_class set) or left as a custom, hand-picked roster (school_class
+    null). Membership is managed entirely by admins - students no longer
+    create or self-manage groups.
     """
     tenant = models.ForeignKey(SchoolTenant, on_delete=models.CASCADE, related_name='message_groups')
     name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    school_class = models.ForeignKey(
+        'academic.Class', on_delete=models.SET_NULL, null=True, blank=True, related_name='message_groups'
+    )
+    is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_message_groups')
     members = models.ManyToManyField(User, through='MessageGroupMembership', related_name='message_groups')
 
@@ -556,6 +562,7 @@ class GroupMessage(TimeStampedModel, UUIDModel):
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_group_messages')
     body = models.TextField(blank=True)
     attachments = models.JSONField(default=list, blank=True)
+    is_announcement = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Group Message"
@@ -570,7 +577,14 @@ class GroupMessage(TimeStampedModel, UUIDModel):
 
     def clean(self):
         super().clean()
-        if self.sender_id and self.group_id and not self.group.memberships.filter(user_id=self.sender_id).exists():
+        if not self.sender_id or not self.group_id:
+            return
+        is_member = self.group.memberships.filter(user_id=self.sender_id).exists()
+        # Admins can message any group in their tenant to supervise/announce,
+        # even without being a formal member - members-only applies to
+        # everyone else (students/teachers).
+        is_admin = getattr(self.sender, "role", None) in {"school_admin", "principal", "super_admin"} and self.sender.tenant_id == self.group.tenant_id
+        if not is_member and not is_admin:
             raise ValidationError("Sender must be a member of the group.")
 
     def save(self, *args, **kwargs):

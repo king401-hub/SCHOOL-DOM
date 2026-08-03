@@ -12142,7 +12142,11 @@ function AdminEnrollmentsScreen({ data, loading, error, onRetry, onCreate }) {
   );
 }
 
-function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessage, onMarkRead, onDelete }) {
+function AdminMessagesScreen({
+  user, data, loading, error, onRetry, onSendMessage, onMarkRead, onDelete,
+  onLoadGroupDetail, onSendGroupMessage, onMarkGroupRead,
+  onCreateGroup, onUpdateGroup, onDeleteGroup, onAddGroupMembers, onRemoveGroupMember, onAddGroupClass, onSearchStudentOptions,
+}) {
   const summary = data?.summary || {};
   const announcements = data?.announcements || [];
   const recipients = data?.recipients || [];
@@ -12188,9 +12192,20 @@ function AdminMessagesScreen({ user, data, loading, error, onRetry, onSendMessag
             onMarkRead={onMarkRead}
             onDelete={onDelete}
             onRefresh={onRetry}
+            groups={data?.groups || []}
+            onLoadGroupDetail={onLoadGroupDetail}
+            onSendGroupMessage={onSendGroupMessage}
+            onMarkGroupRead={onMarkGroupRead}
+            canManageGroups={Boolean(data?.can_manage_groups)}
+            classOptions={(data?.class_options || []).map((item) => ({ id: item.id, label: item.label }))}
+            onCreateGroup={onCreateGroup}
+            onUpdateGroup={onUpdateGroup}
+            onDeleteGroup={onDeleteGroup}
+            onAddGroupMembers={onAddGroupMembers}
+            onRemoveGroupMember={onRemoveGroupMember}
+            onAddGroupClass={onAddGroupClass}
+            onSearchStudentOptions={onSearchStudentOptions}
           />
-
-          <p className="panel-empty compact">Broadcast announcements are shown in the notifications popup.</p>
         </>
       ) : null}
     </section>

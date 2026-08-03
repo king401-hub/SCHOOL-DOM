@@ -1879,259 +1879,6 @@ function filterRecipientsForRole(recipients = [], viewer = {}, fallbackClass = "
   });
 }
 
-function GroupChatPanel({ session, groups: initialGroups = [], canCreateGroups, classmateOptions = [], onGroupsChange }) {
-  const [groups, setGroups] = useState(initialGroups);
-  const [activeGroupId, setActiveGroupId] = useState(initialGroups[0]?.id || "");
-  const [groupDetail, setGroupDetail] = useState(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [composeBody, setComposeBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createMembers, setCreateMembers] = useState([]);
-  const [createError, setCreateError] = useState("");
-  const [creating, setCreating] = useState(false);
-  const chatBodyRef = useRef(null);
-
-  useEffect(() => {
-    setGroups(initialGroups);
-  }, [initialGroups]);
-
-  useEffect(() => {
-    if (!activeGroupId && groups[0]?.id) {
-      setActiveGroupId(groups[0].id);
-    }
-  }, [groups, activeGroupId]);
-
-  const loadGroupDetail = useCallback(async (groupId) => {
-    if (!groupId) {
-      setGroupDetail(null);
-      return;
-    }
-    setLoadingDetail(true);
-    try {
-      const response = await requestJson(session, "GET", `/api/app/messages/groups/${groupId}/`);
-      setGroupDetail(response?.group || null);
-    } catch (err) {
-      setError(err.message || "Could not load group.");
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, [session]);
-
-  useEffect(() => {
-    if (activeGroupId) loadGroupDetail(activeGroupId);
-  }, [activeGroupId, loadGroupDetail]);
-
-  useEffect(() => {
-    if (!activeGroupId) return undefined;
-    const pollId = window.setInterval(() => {
-      if (document.visibilityState === "visible") loadGroupDetail(activeGroupId);
-    }, MESSAGE_POLL_INTERVAL_MS);
-    return () => window.clearInterval(pollId);
-  }, [activeGroupId, loadGroupDetail]);
-
-  useEffect(() => {
-    if (chatBodyRef.current) {
-      chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
-    }
-  }, [groupDetail?.messages?.length]);
-
-  const handleSend = async (event) => {
-    event.preventDefault();
-    if (!composeBody.trim() || !activeGroupId || sending) return;
-    setSending(true);
-    setError("");
-    try {
-      await requestJson(session, "POST", `/api/app/messages/groups/${activeGroupId}/messages/`, {
-        body: composeBody.trim(),
-      });
-      setComposeBody("");
-      await loadGroupDetail(activeGroupId);
-      await onGroupsChange?.();
-    } catch (err) {
-      setError(err.message || "Could not send message.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const openGroup = async (groupId) => {
-    setActiveGroupId(groupId);
-    try {
-      await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/read/`);
-      await onGroupsChange?.();
-    } catch {
-      // best effort - unread badge will just clear on next poll
-    }
-  };
-
-  const toggleCreateMember = (email) => {
-    setCreateMembers((previous) =>
-      previous.includes(email) ? previous.filter((item) => item !== email) : [...previous, email]
-    );
-  };
-
-  const handleCreateGroup = async (event) => {
-    event.preventDefault();
-    if (!createName.trim() || createMembers.length === 0 || creating) {
-      setCreateError("Enter a group name and select at least one classmate.");
-      return;
-    }
-    setCreating(true);
-    setCreateError("");
-    try {
-      const response = await requestJson(session, "POST", "/api/app/messages/groups/", {
-        name: createName.trim(),
-        member_emails: createMembers,
-      });
-      setShowCreateModal(false);
-      setCreateName("");
-      setCreateMembers([]);
-      setGroups((previous) => [response.group, ...previous]);
-      setActiveGroupId(response.group.id);
-      await onGroupsChange?.();
-    } catch (err) {
-      setCreateError(err.message || "Could not create group.");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const activeGroup = groups.find((group) => group.id === activeGroupId) || null;
-  const activeMembers = groupDetail?.members || activeGroup?.members || [];
-
-  return (
-    <div className="group-chat-panel">
-      <div className="group-chat-sidebar">
-        <div className="group-chat-sidebar-head">
-          <h4>Groups</h4>
-          {canCreateGroups ? (
-            <button type="button" className="table-action" onClick={() => setShowCreateModal(true)}>
-              New group
-            </button>
-          ) : null}
-        </div>
-        {groups.length === 0 ? (
-          <p className="panel-empty compact">
-            No groups yet.{canCreateGroups ? " Create one to start chatting with classmates." : ""}
-          </p>
-        ) : (
-          <ul className="group-chat-list">
-            {groups.map((group) => (
-              <li key={group.id}>
-                <button
-                  type="button"
-                  className={`group-chat-list-item${group.id === activeGroupId ? " active" : ""}`}
-                  onClick={() => openGroup(group.id)}
-                >
-                  <span className="group-chat-list-name">{group.name}</span>
-                  <small>
-                    {group.member_count} member{group.member_count === 1 ? "" : "s"}
-                  </small>
-                  {group.last_message ? <em>{group.last_message.body || "Attachment"}</em> : null}
-                  {group.unread > 0 ? <span className="student-pill">{group.unread}</span> : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div className="group-chat-main">
-        {!activeGroup ? (
-          <p className="panel-empty">Select a group to view the conversation.</p>
-        ) : (
-          <>
-            <div className="group-chat-main-head">
-              <div>
-                <h4>{activeGroup.name}</h4>
-                <small>{activeMembers.map((member) => member.name).join(", ")}</small>
-              </div>
-            </div>
-            <div className="group-chat-messages" ref={chatBodyRef}>
-              {loadingDetail && !groupDetail ? (
-                <p className="panel-empty compact">Loading messages...</p>
-              ) : (groupDetail?.messages || []).length === 0 ? (
-                <p className="panel-empty compact">No messages yet. Say hello!</p>
-              ) : (
-                (groupDetail?.messages || []).map((message) => (
-                  <div key={message.id} className={`group-chat-bubble${message.outgoing ? " outgoing" : ""}`}>
-                    {!message.outgoing ? <strong>{message.sender_name}</strong> : null}
-                    <p>{message.body}</p>
-                    <small>{formatDate(message.created_at)}</small>
-                  </div>
-                ))
-              )}
-            </div>
-            {error ? <p className="form-feedback error">{error}</p> : null}
-            <form className="group-chat-composer" onSubmit={handleSend}>
-              <input
-                type="text"
-                value={composeBody}
-                onChange={(event) => setComposeBody(event.target.value)}
-                placeholder="Type a message..."
-              />
-              <button type="submit" className="student-primary-btn" disabled={sending || !composeBody.trim()}>
-                {sending ? "Sending..." : "Send"}
-              </button>
-            </form>
-          </>
-        )}
-      </div>
-      {showCreateModal ? (
-        <div className="lesson-plan-dialog-backdrop" role="presentation" onClick={() => setShowCreateModal(false)}>
-          <article
-            className="lesson-plan-dialog"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="lesson-plan-dialog-head">
-              <h3>Create group</h3>
-              <button type="button" className="table-action ghost" onClick={() => setShowCreateModal(false)}>
-                Close
-              </button>
-            </div>
-            <form onSubmit={handleCreateGroup} className="group-chat-create-form">
-              <label>
-                Group name
-                <input
-                  type="text"
-                  value={createName}
-                  onChange={(event) => setCreateName(event.target.value)}
-                  placeholder="e.g. Study Squad"
-                />
-              </label>
-              <p className="panel-sub">Select classmates to add</p>
-              <div className="group-chat-member-picker">
-                {classmateOptions.length === 0 ? (
-                  <p className="panel-empty compact">No classmates found yet.</p>
-                ) : (
-                  classmateOptions.map((option) => (
-                    <label key={option.value} className="group-chat-member-option">
-                      <input
-                        type="checkbox"
-                        checked={createMembers.includes(option.value)}
-                        onChange={() => toggleCreateMember(option.value)}
-                      />
-                      {option.label}
-                    </label>
-                  ))
-                )}
-              </div>
-              {createError ? <p className="form-feedback error">{createError}</p> : null}
-              <button type="submit" className="student-primary-btn" disabled={creating}>
-                {creating ? "Creating..." : "Create group"}
-              </button>
-            </form>
-          </article>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePreference, onThemeChange }) {
   const [messageData, setMessageData] = useState(data || { inbox: [], admin_contacts: [] });
   const [messages, setMessages] = useState((data?.inbox || []).slice(0, 50));
@@ -2145,11 +1892,7 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePr
     value: item.email,
     label: `${item.name || item.email}${normalizeRecipientRole(item) ? ` - ${roleLabel(normalizeRecipientRole(item))}` : ""}`,
   }));
-  const canCreateGroups = Boolean(messageData?.can_create_groups);
   const groups = messageData?.groups || [];
-  const classmateOptions = (messageData?.recipients || [])
-    .filter((item) => normalizeRecipientRole(item) === "student")
-    .map((item) => ({ value: item.email, label: item.name || item.email }));
   const loadMessages = useCallback(async () => {
     setLoading(true);
     try {
@@ -2187,6 +1930,26 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePr
     await loadMessages();
   };
 
+  const handleLoadGroupDetail = useCallback(
+    async (groupId) => (await requestJson(session, "GET", `/api/app/messages/groups/${groupId}/`))?.group || null,
+    [session]
+  );
+  const handleSendGroupMessage = useCallback(
+    async (groupId, payload) => {
+      const result = await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/messages/`, payload);
+      await loadMessages();
+      return result;
+    },
+    [session, loadMessages]
+  );
+  const handleMarkGroupRead = useCallback(
+    async (groupId) => {
+      await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/read/`);
+      await loadMessages();
+    },
+    [session, loadMessages]
+  );
+
   return (
     <StudentPageShell session={session} currentPath="/messages" onNavigate={onNavigate}
       themePreference={themePreference} onThemeChange={onThemeChange}
@@ -2195,6 +1958,10 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePr
         <MessageInboxPanel
           title="Your Messages"
           messages={messages}
+          groups={groups}
+          onLoadGroupDetail={handleLoadGroupDetail}
+          onSendGroupMessage={handleSendGroupMessage}
+          onMarkGroupRead={handleMarkGroupRead}
           recipientOptions={recipientOptions}
           sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
           onComposeSubmit={handleComposeMessage}
@@ -2204,17 +1971,6 @@ function StudentMessagesPage({ session, data, onMessageSend, onNavigate, themePr
         />
         {loading ? <p className="panel-empty compact">Checking for new messages...</p> : null}
       </section>
-      {canCreateGroups || groups.length > 0 ? (
-        <section className="student-panel">
-          <GroupChatPanel
-            session={session}
-            groups={groups}
-            canCreateGroups={canCreateGroups}
-            classmateOptions={classmateOptions}
-            onGroupsChange={loadMessages}
-          />
-        </section>
-      ) : null}
     </StudentPageShell>
   );
 }
@@ -6314,6 +6070,97 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
     );
 
+  const handleLoadGroupDetail = useCallback(
+    async (groupId) => (await requestJson(session, "GET", `/api/app/messages/groups/${groupId}/`))?.group || null,
+    [session]
+  );
+
+  const handleSendGroupMessage = useCallback(
+    async (groupId, payload) => {
+      const result = await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/messages/`, payload);
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleMarkGroupRead = useCallback(
+    async (groupId) => {
+      const result = await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/read/`);
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleCreateGroup = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/messages/groups/", payload);
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleUpdateGroup = useCallback(
+    async (groupId, payload) => {
+      const result = await requestJson(session, "PATCH", `/api/app/messages/groups/${groupId}/`, payload);
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleDeleteGroup = useCallback(
+    async (groupId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/messages/groups/${groupId}/`);
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleAddGroupMembers = useCallback(
+    async (groupId, studentProfileIds) => {
+      const result = await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/members/`, {
+        student_profile_ids: studentProfileIds,
+      });
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleRemoveGroupMember = useCallback(
+    async (groupId, userId) => {
+      const result = await requestJson(session, "DELETE", `/api/app/messages/groups/${groupId}/members/${userId}/`);
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleAddGroupClass = useCallback(
+    async (groupId, classId) => {
+      const result = await requestJson(session, "POST", `/api/app/messages/groups/${groupId}/add-class/`, { class_id: classId });
+      await loadScreen("/messages", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleSearchGroupStudentOptions = useCallback(
+    async ({ q = "", class_id: classId = "" } = {}) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (classId) params.set("class_id", classId);
+      const query = params.toString();
+      const result = await requestJson(session, "GET", `/api/app/messages/groups/student-options/${query ? `?${query}` : ""}`);
+      return result?.students || [];
+    },
+    [session]
+  );
+
   const handleCreateStudent = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/students/create/", payload);
@@ -7827,6 +7674,16 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onSendMessage={handleSendMessage}
         onMarkRead={handleMarkMessageRead}
         onDelete={handleDeleteMessage}
+        onLoadGroupDetail={handleLoadGroupDetail}
+        onSendGroupMessage={handleSendGroupMessage}
+        onMarkGroupRead={handleMarkGroupRead}
+        onCreateGroup={handleCreateGroup}
+        onUpdateGroup={handleUpdateGroup}
+        onDeleteGroup={handleDeleteGroup}
+        onAddGroupMembers={handleAddGroupMembers}
+        onRemoveGroupMember={handleRemoveGroupMember}
+        onAddGroupClass={handleAddGroupClass}
+        onSearchStudentOptions={handleSearchGroupStudentOptions}
       />
     );
   } else if (activePath === "/students") {

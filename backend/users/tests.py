@@ -4208,211 +4208,199 @@ class NonK12StudentSelfRegistrationTests(TestCase):
 
 
 class MessageGroupChatTests(TestCase):
-    """Non-K12 students can create group chats with their classmates; K12
-    students and cross-tenant students must never be able to join or see them."""
+    """Groups are admin-managed (Messaging module): admins create/edit/
+    archive/delete groups and manage membership; students only ever view
+    and chat in groups they've been assigned to, never create/manage them."""
 
     def setUp(self):
         self.client = APIClient()
-        self.non_k12_school = SchoolTenant.objects.create(
-            name="Vocational Academy",
-            schema_name="msggroup_non_k12",
-            school_type=SchoolTenant.NON_K12,
-            is_active=True,
-        )
-        self.k12_school = SchoolTenant.objects.create(
-            name="Primary Academy",
-            schema_name="msggroup_k12",
-            school_type=SchoolTenant.K12,
-            is_active=True,
-        )
-        self.other_non_k12_school = SchoolTenant.objects.create(
-            name="Other Vocational Academy",
-            schema_name="msggroup_other_non_k12",
-            school_type=SchoolTenant.NON_K12,
-            is_active=True,
-        )
+        self.school = SchoolTenant.objects.create(name="Vocational Academy", schema_name="msggroup_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name="Vocational Academy Legacy", slug="msggroup_school")
+        self.other_school = SchoolTenant.objects.create(name="Other Academy", schema_name="msggroup_other_school", is_active=True)
 
-        def make_student(email, tenant, first_name="Student"):
-            return User.objects.create_user(
-                email=email,
-                password="StudentPass123",
-                first_name=first_name,
-                last_name="Learner",
-                role="student",
-                tenant=tenant,
-                is_active=True,
-                is_verified=True,
+        self.admin = User.objects.create_user(
+            email="admin@msggroup.edu", password="AdminPass123", first_name="Admin", last_name="Boss",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.classroom = Class.objects.create(name="Grade 9", section="A", tenant=self.legacy_tenant)
+        self.other_classroom = Class.objects.create(name="Grade 10", section="A", tenant=self.legacy_tenant)
+
+        def make_student(email, first_name, classroom=None):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name=first_name, last_name="Learner",
+                role="student", tenant=self.school, is_active=True, is_verified=True,
             )
+            profile = StudentProfile.objects.create(
+                user=user, student_id=f"STU-{first_name.upper()}", admission_number=f"ADM-{first_name.upper()}",
+                admission_date=timezone.now().date(), current_class=classroom,
+                guardian_name="Guardian", guardian_phone="+15550001111", guardian_relation="Parent",
+            )
+            return user, profile
 
-        self.alice = make_student("alice@msggroup.edu", self.non_k12_school, "Alice")
-        self.bob = make_student("bob@msggroup.edu", self.non_k12_school, "Bob")
-        self.carol = make_student("carol@msggroup.edu", self.non_k12_school, "Carol")
+        self.alice, self.alice_profile = make_student("alice@msggroup.edu", "Alice", self.classroom)
+        self.bob, self.bob_profile = make_student("bob@msggroup.edu", "Bob", self.classroom)
+        self.carol, self.carol_profile = make_student("carol@msggroup.edu", "Carol", self.other_classroom)
         self.teacher = User.objects.create_user(
-            email="teacher@msggroup.edu",
-            password="TeacherPass123",
-            first_name="Teacher",
-            last_name="Staff",
-            role="teacher",
-            tenant=self.non_k12_school,
-            is_active=True,
-            is_verified=True,
+            email="teacher@msggroup.edu", password="TeacherPass123", first_name="Teacher", last_name="Staff",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
         )
-        self.k12_student = make_student("k12student@msggroup.edu", self.k12_school, "K12")
-        self.outsider = make_student("outsider@msggroup.edu", self.other_non_k12_school, "Outsider")
+        self.outsider_admin = User.objects.create_user(
+            email="outsider@msggroup.edu", password="AdminPass123", first_name="Outsider", last_name="Admin",
+            role="school_admin", tenant=self.other_school, is_active=True, is_verified=True,
+        )
 
-    def _create_group(self, user, name="Study Squad", member_emails=None):
-        self.client.force_authenticate(user=user)
+    def _create_group(self, name="Study Squad", class_id=None, student_profile_ids=None):
+        self.client.force_authenticate(user=self.admin)
         return self.client.post(
             "/api/app/messages/groups/",
-            data={"name": f"{name} [{self._testMethodName}]", "member_emails": member_emails or []},
+            data={
+                "name": f"{name} [{self._testMethodName}]",
+                "class_id": str(class_id) if class_id else "",
+                "student_profile_ids": [str(i) for i in (student_profile_ids or [])],
+            },
             format="json",
         )
 
-    def test_non_k12_student_can_create_group_with_classmates(self):
-        response = self._create_group(self.alice, member_emails=[self.bob.email, self.carol.email])
+    def test_admin_can_create_group_tied_to_a_class(self):
+        response = self._create_group(class_id=self.classroom.id)
 
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertTrue(response.data["success"])
         group = response.data["group"]
-        self.assertTrue(group["name"].startswith("Study Squad"))
-        self.assertEqual(group["member_count"], 3)
+        self.assertEqual(group["member_count"], 2)  # alice + bob, both in self.classroom
+        self.assertEqual(group["status"], "active")
         member_emails = {m["email"] for m in group["members"]}
-        self.assertEqual(member_emails, {self.alice.email, self.bob.email, self.carol.email})
+        self.assertEqual(member_emails, {self.alice.email, self.bob.email})
 
-    def test_k12_student_cannot_create_group(self):
-        response = self._create_group(self.k12_student, member_emails=[self.bob.email])
+    def test_admin_can_create_custom_group_from_individual_students(self):
+        response = self._create_group(student_profile_ids=[self.alice_profile.id, self.carol_profile.id])
+
+        self.assertEqual(response.status_code, 201, response.data)
+        group = response.data["group"]
+        self.assertIsNone(group["school_class"])
+        self.assertEqual(group["member_count"], 2)
+
+    def test_student_cannot_create_group(self):
+        self.client.force_authenticate(user=self.alice)
+        response = self.client.post("/api/app/messages/groups/", data={"name": "Nope"}, format="json")
 
         self.assertEqual(response.status_code, 403)
-        self.assertFalse(response.data["success"])
         self.assertFalse(MessageGroup.objects.exists())
 
     def test_teacher_cannot_create_group(self):
-        response = self._create_group(self.teacher, member_emails=[self.bob.email])
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post("/api/app/messages/groups/", data={"name": "Nope"}, format="json")
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(MessageGroup.objects.exists())
 
-    def test_cannot_add_student_from_another_tenant(self):
-        response = self._create_group(self.alice, member_emails=[self.outsider.email])
+    def test_admin_can_edit_archive_and_reactivate_group(self):
+        group_id = self._create_group(student_profile_ids=[self.alice_profile.id]).data["group"]["id"]
 
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(response.data["success"])
-        self.assertFalse(MessageGroup.objects.exists())
+        rename = self.client.patch(f"/api/app/messages/groups/{group_id}/", data={"name": "Renamed"}, format="json")
+        self.assertEqual(rename.status_code, 200)
+        self.assertEqual(rename.data["group"]["name"], "Renamed")
 
-    def test_group_requires_at_least_one_valid_member(self):
-        response = self._create_group(self.alice, member_emails=[])
+        archive = self.client.patch(f"/api/app/messages/groups/{group_id}/", data={"is_active": False}, format="json")
+        self.assertEqual(archive.data["group"]["status"], "inactive")
 
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(MessageGroup.objects.exists())
+        reactivate = self.client.patch(f"/api/app/messages/groups/{group_id}/", data={"is_active": True}, format="json")
+        self.assertEqual(reactivate.data["group"]["status"], "active")
 
-    def test_member_can_send_and_read_group_messages(self):
-        create_response = self._create_group(self.alice, member_emails=[self.bob.email])
-        group_id = create_response.data["group"]["id"]
+    def test_admin_can_add_and_remove_individual_member(self):
+        group_id = self._create_group(student_profile_ids=[self.alice_profile.id]).data["group"]["id"]
+
+        add = self.client.post(
+            f"/api/app/messages/groups/{group_id}/members/",
+            data={"student_profile_ids": [str(self.carol_profile.id)]},
+            format="json",
+        )
+        self.assertEqual(add.status_code, 200, add.data)
+        self.assertEqual(add.data["group"]["member_count"], 2)
+
+        remove = self.client.delete(f"/api/app/messages/groups/{group_id}/members/{self.carol.id}/")
+        self.assertEqual(remove.status_code, 200)
+        self.assertEqual(remove.data["group"]["member_count"], 1)
+
+    def test_admin_can_add_entire_class_in_one_click(self):
+        group_id = self._create_group(student_profile_ids=[self.carol_profile.id]).data["group"]["id"]
+
+        response = self.client.post(
+            f"/api/app/messages/groups/{group_id}/add-class/", data={"class_id": str(self.classroom.id)}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["group"]["member_count"], 3)  # carol + alice + bob
+
+    def test_admin_can_delete_group(self):
+        group_id = self._create_group(student_profile_ids=[self.alice_profile.id]).data["group"]["id"]
+        response = self.client.delete(f"/api/app/messages/groups/{group_id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(MessageGroup.objects.filter(id=group_id).exists())
+
+    def test_admin_can_message_any_group_without_being_a_member(self):
+        group_id = self._create_group(student_profile_ids=[self.alice_profile.id]).data["group"]["id"]
+
+        response = self.client.post(
+            f"/api/app/messages/groups/{group_id}/messages/",
+            data={"body": "Welcome everyone!", "is_announcement": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["group_message"]["is_announcement"])
+
+    def test_member_can_read_and_reply_but_non_member_cannot(self):
+        group_id = self._create_group(student_profile_ids=[self.alice_profile.id, self.bob_profile.id]).data["group"]["id"]
 
         self.client.force_authenticate(user=self.alice)
-        send_response = self.client.post(
-            f"/api/app/messages/groups/{group_id}/messages/",
-            data={"body": "Anyone free to study tonight?"},
-            format="json",
-        )
-        self.assertEqual(send_response.status_code, 201, send_response.data)
-        self.assertTrue(send_response.data["group_message"]["outgoing"])
+        send = self.client.post(f"/api/app/messages/groups/{group_id}/messages/", data={"body": "Hi Bob"}, format="json")
+        self.assertEqual(send.status_code, 201, send.data)
 
         self.client.force_authenticate(user=self.bob)
-        detail_response = self.client.get(f"/api/app/messages/groups/{group_id}/")
-        self.assertEqual(detail_response.status_code, 200)
-        messages = detail_response.data["group"]["messages"]
-        self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0]["body"], "Anyone free to study tonight?")
-        self.assertFalse(messages[0]["outgoing"])
-        self.assertEqual(detail_response.data["group"]["unread"], 1)
+        detail = self.client.get(f"/api/app/messages/groups/{group_id}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(len(detail.data["group"]["messages"]), 1)
+        self.assertEqual(detail.data["group"]["unread"], 1)
 
-        mark_read_response = self.client.post(f"/api/app/messages/groups/{group_id}/read/")
-        self.assertEqual(mark_read_response.status_code, 200)
-        detail_after_read = self.client.get(f"/api/app/messages/groups/{group_id}/")
-        self.assertEqual(detail_after_read.data["group"]["unread"], 0)
-
-    def test_non_member_cannot_view_or_message_group(self):
-        create_response = self._create_group(self.alice, member_emails=[self.bob.email])
-        group_id = create_response.data["group"]["id"]
+        mark_read = self.client.post(f"/api/app/messages/groups/{group_id}/read/")
+        self.assertEqual(mark_read.status_code, 200)
 
         self.client.force_authenticate(user=self.carol)
-        detail_response = self.client.get(f"/api/app/messages/groups/{group_id}/")
-        self.assertEqual(detail_response.status_code, 404)
+        forbidden = self.client.get(f"/api/app/messages/groups/{group_id}/")
+        self.assertEqual(forbidden.status_code, 404)
 
-        send_response = self.client.post(
-            f"/api/app/messages/groups/{group_id}/messages/",
-            data={"body": "I shouldn't be able to post this."},
-            format="json",
-        )
-        self.assertEqual(send_response.status_code, 404)
+    def test_students_only_see_their_own_assigned_groups(self):
+        self._create_group(name="Alice Group", student_profile_ids=[self.alice_profile.id])
+        self._create_group(name="Carol Group", student_profile_ids=[self.carol_profile.id])
 
-    def test_cross_tenant_student_cannot_access_group_even_with_id(self):
-        create_response = self._create_group(self.alice, member_emails=[self.bob.email])
-        group_id = create_response.data["group"]["id"]
+        self.client.force_authenticate(user=self.alice)
+        response = self.client.get("/api/app/messages/groups/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["groups"]), 1)
+        self.assertTrue(response.data["groups"][0]["name"].startswith("Alice Group"))
 
-        self.client.force_authenticate(user=self.outsider)
+    def test_admin_list_shows_every_tenant_group_regardless_of_membership(self):
+        self._create_group(name="Alice Group", student_profile_ids=[self.alice_profile.id])
+        self._create_group(name="Carol Group", student_profile_ids=[self.carol_profile.id])
+
+        response = self.client.get("/api/app/messages/groups/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["groups"]), 2)
+
+    def test_cross_tenant_admin_cannot_access_group(self):
+        group_id = self._create_group(student_profile_ids=[self.alice_profile.id]).data["group"]["id"]
+
+        self.client.force_authenticate(user=self.outsider_admin)
         response = self.client.get(f"/api/app/messages/groups/{group_id}/")
         self.assertEqual(response.status_code, 404)
 
-    def test_member_can_add_new_classmate(self):
-        create_response = self._create_group(self.alice, member_emails=[self.bob.email])
-        group_id = create_response.data["group"]["id"]
+    def test_messages_snapshot_reports_can_manage_groups_flag(self):
+        self.client.force_authenticate(user=self.admin)
+        admin_response = self.client.get("/api/app/messages/")
+        self.assertTrue(admin_response.data["can_manage_groups"])
+        self.assertTrue(len(admin_response.data["class_options"]) >= 1)
 
-        self.client.force_authenticate(user=self.bob)
-        response = self.client.post(
-            f"/api/app/messages/groups/{group_id}/members/",
-            data={"member_emails": [self.carol.email]},
-            format="json",
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["group"]["member_count"], 3)
-
-    def test_member_can_leave_group_and_group_survives_with_remaining_members(self):
-        create_response = self._create_group(self.alice, member_emails=[self.bob.email, self.carol.email])
-        group_id = create_response.data["group"]["id"]
-
-        self.client.force_authenticate(user=self.carol)
-        response = self.client.post(f"/api/app/messages/groups/{group_id}/leave/")
-        self.assertEqual(response.status_code, 200)
-
-        group = MessageGroup.objects.get(id=group_id)
-        self.assertEqual(group.memberships.count(), 2)
-        self.assertFalse(group.memberships.filter(user=self.carol).exists())
-
-    def test_group_is_deleted_once_last_member_leaves(self):
-        create_response = self._create_group(self.alice, member_emails=[self.bob.email])
-        group_id = create_response.data["group"]["id"]
-
-        # Both leave calls hit the identical (method, path, body) tuple, and the
-        # idempotency middleware can't see the real user under force_authenticate
-        # (DRF auth resolves after this middleware runs) — clear the cache between
-        # them so the second call isn't served a replayed response from the first.
-        self.client.force_authenticate(user=self.bob)
-        self.client.post(f"/api/app/messages/groups/{group_id}/leave/")
-        from django.core.cache import cache as django_cache
-        django_cache.clear()
         self.client.force_authenticate(user=self.alice)
-        self.client.post(f"/api/app/messages/groups/{group_id}/leave/")
-
-        self.assertFalse(MessageGroup.objects.filter(id=group_id).exists())
-
-    def test_groups_list_only_shows_own_tenant_groups(self):
-        self._create_group(self.alice, member_emails=[self.bob.email])
-
-        self.client.force_authenticate(user=self.outsider)
-        response = self.client.get("/api/app/messages/groups/")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["groups"], [])
-
-    def test_messages_snapshot_reports_can_create_groups_flag(self):
-        self.client.force_authenticate(user=self.alice)
-        non_k12_response = self.client.get("/api/app/messages/")
-        self.assertTrue(non_k12_response.data["can_create_groups"])
-
-        self.client.force_authenticate(user=self.k12_student)
-        k12_response = self.client.get("/api/app/messages/")
-        self.assertFalse(k12_response.data["can_create_groups"])
+        student_response = self.client.get("/api/app/messages/")
+        self.assertFalse(student_response.data["can_manage_groups"])
 
 
 class KidsMonitorExpiryTests(TestCase):

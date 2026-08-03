@@ -2446,13 +2446,34 @@ def _collect_message_attachments(request):
     return attachments
 
 
-def _non_k12_student_peers_queryset(user):
-    """Other students at the same Non-K12 school - the only users eligible to
-    be in a group chat with this user. Group chat mirrors the 1:1 student-to-
-    student messaging restriction: Non-K12 only, same tenant, students only."""
-    if not (_is_non_k12_school(user) and getattr(user, "role", "") == "student"):
-        return User.objects.none()
-    return User.objects.filter(tenant=user.tenant, role="student", is_active=True).exclude(id=user.id)
+def _group_student_candidates_queryset(user, class_id=None, search=None):
+    """Active students in the admin's tenant eligible to be added to a group -
+    any student, any class, no Non-K12 restriction (admin-managed groups are
+    supervised, unlike freeform peer-to-peer messaging)."""
+    qs = StudentProfile.objects.select_related("user", "current_class").filter(
+        user__tenant=user.tenant, user__is_active=True
+    )
+    if class_id:
+        qs = qs.filter(current_class_id=class_id)
+    if search:
+        needle = str(search).strip()
+        qs = qs.filter(
+            Q(user__first_name__icontains=needle)
+            | Q(user__last_name__icontains=needle)
+            | Q(student_id__icontains=needle)
+            | Q(admission_number__icontains=needle)
+        )
+    return qs.order_by("user__first_name", "user__last_name")
+
+
+def _student_option_payload(student_profile):
+    return {
+        "student_profile_id": str(student_profile.id),
+        "user_id": str(student_profile.user_id),
+        "name": student_profile.user.get_full_name(),
+        "student_id": student_profile.student_id or student_profile.admission_number or "",
+        "class_label": _class_label(student_profile.current_class) if student_profile.current_class_id else "",
+    }
 
 
 def _group_message_payload(message, request=None, viewer=None):
@@ -2473,6 +2494,7 @@ def _group_message_payload(message, request=None, viewer=None):
         "outgoing": bool(viewer_id and message.sender_id == viewer_id),
         "body": message.body,
         "attachments": attachments,
+        "is_announcement": message.is_announcement,
         "created_at": message.created_at,
     }
 
@@ -2492,6 +2514,11 @@ def _group_payload(group, viewer=None, request=None, include_messages=False, mes
     payload = {
         "id": str(group.id),
         "name": group.name,
+        "description": group.description,
+        "school_class": str(group.school_class_id) if group.school_class_id else None,
+        "class_label": _class_label(group.school_class) if group.school_class_id else "",
+        "is_active": group.is_active,
+        "status": "active" if group.is_active else "inactive",
         "created_by": group.created_by.get_full_name(),
         "created_by_id": str(group.created_by_id),
         "members": [
@@ -2522,18 +2549,25 @@ def message_groups(request):
     user = request.user
 
     if request.method == "GET":
-        groups = (
-            MessageGroup.objects.filter(tenant=user.tenant, memberships__user=user)
-            .distinct()
-            .order_by("-updated_at")
-        )
+        if _can_manage_school_settings(user):
+            # Admins manage every group in the tenant, not just ones they're a
+            # member of - this same list backs both the Groups management
+            # dropdown and the Groups tab in the chat UI.
+            groups = MessageGroup.objects.filter(tenant=user.tenant).select_related("school_class", "created_by").order_by("-updated_at")
+        else:
+            groups = (
+                MessageGroup.objects.filter(tenant=user.tenant, memberships__user=user, is_active=True)
+                .select_related("school_class", "created_by")
+                .distinct()
+                .order_by("-updated_at")
+            )
         return Response(
             {"success": True, "groups": [_group_payload(group, viewer=user, request=request) for group in groups]}
         )
 
-    if not (_is_non_k12_school(user) and user.role == "student"):
+    if not _can_manage_school_settings(user):
         return Response(
-            {"success": False, "message": "Group chats are only available to students at Non-K12 schools."},
+            {"success": False, "message": "Only administrators can create groups."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
@@ -2541,25 +2575,31 @@ def message_groups(request):
     if not name:
         return Response({"success": False, "message": "A group name is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    member_emails = request.data.get("member_emails") or request.data.get("members") or []
-    if isinstance(member_emails, str):
-        member_emails = re.split(r"[\s,;]+", member_emails)
-    normalized_emails = {str(email).strip().lower() for email in member_emails if str(email).strip()}
+    description = str(request.data.get("description", "")).strip()
+    school_class = None
+    school_class_id = request.data.get("school_class_id") or request.data.get("class_id")
+    if school_class_id:
+        school_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=school_class_id)
 
-    peers_by_email = {peer.email.lower(): peer for peer in _non_k12_student_peers_queryset(user)}
-    members = [peers_by_email[email] for email in normalized_emails if email in peers_by_email]
-    if not members:
-        return Response(
-            {"success": False, "message": "Select at least one classmate to add to the group."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    student_profile_ids = request.data.get("student_profile_ids") or request.data.get("student_ids") or []
+    member_users = [
+        sp.user for sp in StudentProfile.objects.select_related("user").filter(user__tenant=user.tenant, id__in=student_profile_ids)
+    ]
 
     with db_transaction.atomic():
-        group = MessageGroup.objects.create(tenant=user.tenant, name=name, created_by=user)
-        MessageGroupMembership.objects.create(group=group, user=user, last_read_at=timezone.now())
-        MessageGroupMembership.objects.bulk_create(
-            [MessageGroupMembership(group=group, user=member) for member in members]
+        group = MessageGroup.objects.create(
+            tenant=user.tenant, name=name, description=description, school_class=school_class, created_by=user
         )
+        if school_class:
+            member_users += [
+                sp.user
+                for sp in _group_student_candidates_queryset(user, class_id=school_class.id)
+                if sp.user not in member_users
+            ]
+        if member_users:
+            MessageGroupMembership.objects.bulk_create(
+                [MessageGroupMembership(group=group, user=member) for member in member_users]
+            )
 
     return Response(
         {"success": True, "message": "Group created.", "group": _group_payload(group, viewer=user, request=request)},
@@ -2568,10 +2608,14 @@ def message_groups(request):
 
 
 def _user_message_group_or_404(user, group_id):
+    """Admins can access/manage any group in their tenant; everyone else
+    (students, teachers) must be an actual member to view or chat in it."""
+    if _can_manage_school_settings(user):
+        return get_object_or_404(MessageGroup, id=group_id, tenant=user.tenant)
     return get_object_or_404(MessageGroup, id=group_id, tenant=user.tenant, memberships__user=user)
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def message_group_detail(request, group_id):
     if not MessageGroup:
@@ -2579,9 +2623,53 @@ def message_group_detail(request, group_id):
             {"success": False, "message": "Group messaging module is not available."},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    group = _user_message_group_or_404(request.user, group_id)
+    user = request.user
+    group = _user_message_group_or_404(user, group_id)
+
+    if request.method == "GET":
+        return Response(
+            {"success": True, "group": _group_payload(group, viewer=user, request=request, include_messages=True)}
+        )
+
+    if not _can_manage_school_settings(user):
+        return Response(
+            {"success": False, "message": "Only administrators can edit or delete groups."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == "DELETE":
+        group.delete()
+        return Response({"success": True, "message": "Group deleted."})
+
+    # PATCH - edit name/description/class, or archive/reactivate via is_active
+    update_fields = []
+    if "name" in request.data:
+        name = str(request.data.get("name") or "").strip()
+        if not name:
+            return Response({"success": False, "message": "name cannot be blank."}, status=status.HTTP_400_BAD_REQUEST)
+        group.name = name
+        update_fields.append("name")
+    if "description" in request.data:
+        group.description = str(request.data.get("description") or "").strip()
+        update_fields.append("description")
+    if "school_class_id" in request.data or "class_id" in request.data:
+        school_class_id = request.data.get("school_class_id") or request.data.get("class_id")
+        group.school_class = (
+            get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=school_class_id)
+            if school_class_id
+            else None
+        )
+        update_fields.append("school_class")
+    if "is_active" in request.data:
+        raw_active = request.data.get("is_active")
+        group.is_active = raw_active if isinstance(raw_active, bool) else str(raw_active).strip().lower() in {"1", "true", "yes", "on"}
+        update_fields.append("is_active")
+
+    if update_fields:
+        group.save(update_fields=update_fields + ["updated_at"])
+
     return Response(
-        {"success": True, "group": _group_payload(group, viewer=request.user, request=request, include_messages=True)}
+        {"success": True, "message": "Group updated.", "group": _group_payload(group, viewer=user, request=request)}
     )
 
 
@@ -2595,6 +2683,7 @@ def send_group_message(request, group_id):
         )
     group = _user_message_group_or_404(request.user, group_id)
     body = str(request.data.get("body", "")).strip()
+    is_announcement = str(request.data.get("is_announcement", "")).strip().lower() in {"1", "true", "yes", "on"}
     try:
         attachments = _collect_message_attachments(request)
     except ValueError as exc:
@@ -2606,7 +2695,9 @@ def send_group_message(request, group_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    message = GroupMessage.objects.create(group=group, sender=request.user, body=body, attachments=attachments)
+    message = GroupMessage.objects.create(
+        group=group, sender=request.user, body=body, attachments=attachments, is_announcement=is_announcement
+    )
     group.save(update_fields=["updated_at"])
     MessageGroupMembership.objects.filter(group=group, user=request.user).update(last_read_at=timezone.now())
 
@@ -2616,7 +2707,7 @@ def send_group_message(request, group_id):
                 Notification(
                     tenant=request.user.tenant,
                     user_id=membership.user_id,
-                    title=f"New message in {group.name}",
+                    title=f"{'Announcement' if is_announcement else 'New message'} in {group.name}",
                     message=body or "Sent an attachment",
                     notification_type="info",
                     priority=2,
@@ -2659,44 +2750,112 @@ def mark_group_read(request, group_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def add_group_members(request, group_id):
+    """Admin-only: add one or more students (by StudentProfile id) to a group."""
     if not MessageGroup:
         return Response(
             {"success": False, "message": "Group messaging module is not available."},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    group = _user_message_group_or_404(request.user, group_id)
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can manage group members."}, status=status.HTTP_403_FORBIDDEN)
 
-    member_emails = request.data.get("member_emails") or request.data.get("members") or []
-    if isinstance(member_emails, str):
-        member_emails = re.split(r"[\s,;]+", member_emails)
-    normalized_emails = {str(email).strip().lower() for email in member_emails if str(email).strip()}
-    if not normalized_emails:
-        return Response(
-            {"success": False, "message": "Provide at least one classmate to add."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    group = _user_message_group_or_404(user, group_id)
 
-    peers_by_email = {peer.email.lower(): peer for peer in _non_k12_student_peers_queryset(request.user)}
+    student_profile_ids = request.data.get("student_profile_ids") or request.data.get("student_ids") or []
+    if not student_profile_ids:
+        return Response({"success": False, "message": "Select at least one student to add."}, status=status.HTTP_400_BAD_REQUEST)
+
+    candidates = {
+        str(sp.id): sp.user
+        for sp in StudentProfile.objects.select_related("user").filter(user__tenant=user.tenant, id__in=student_profile_ids)
+    }
     existing_member_ids = set(group.memberships.values_list("user_id", flat=True))
     to_add = [
-        peers_by_email[email]
-        for email in normalized_emails
-        if email in peers_by_email and peers_by_email[email].id not in existing_member_ids
+        candidates[str(sp_id)] for sp_id in student_profile_ids
+        if str(sp_id) in candidates and candidates[str(sp_id)].id not in existing_member_ids
     ]
     if not to_add:
-        return Response(
-            {"success": False, "message": "No new eligible classmates to add."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response({"success": False, "message": "No new eligible students to add."}, status=status.HTTP_400_BAD_REQUEST)
 
     MessageGroupMembership.objects.bulk_create([MessageGroupMembership(group=group, user=member) for member in to_add])
     return Response(
         {
             "success": True,
             "message": f"Added {len(to_add)} member(s).",
-            "group": _group_payload(group, viewer=request.user, request=request),
+            "group": _group_payload(group, viewer=user, request=request),
         }
     )
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def remove_group_member(request, group_id, user_id):
+    """Admin-only: remove a single member from a group."""
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can manage group members."}, status=status.HTTP_403_FORBIDDEN)
+
+    group = _user_message_group_or_404(user, group_id)
+    MessageGroupMembership.objects.filter(group=group, user_id=user_id).delete()
+    return Response(
+        {"success": True, "message": "Member removed.", "group": _group_payload(group, viewer=user, request=request)}
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_group_class(request, group_id):
+    """Admin-only: add every active student in a class to a group in one click."""
+    if not MessageGroup:
+        return Response(
+            {"success": False, "message": "Group messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can manage group members."}, status=status.HTTP_403_FORBIDDEN)
+
+    group = _user_message_group_or_404(user, group_id)
+    class_id = request.data.get("class_id")
+    if not class_id:
+        return Response({"success": False, "message": "class_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+    target_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=class_id)
+
+    existing_member_ids = set(group.memberships.values_list("user_id", flat=True))
+    to_add = [
+        sp.user for sp in _group_student_candidates_queryset(user, class_id=target_class.id)
+        if sp.user_id not in existing_member_ids
+    ]
+    if to_add:
+        MessageGroupMembership.objects.bulk_create([MessageGroupMembership(group=group, user=member) for member in to_add])
+
+    return Response(
+        {
+            "success": True,
+            "message": f"Added {len(to_add)} student(s) from {_class_label(target_class)}.",
+            "group": _group_payload(group, viewer=user, request=request),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def group_student_options(request):
+    """Admin-only: searchable student list for the group member picker."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can view this."}, status=status.HTTP_403_FORBIDDEN)
+
+    class_id = request.query_params.get("class_id") or ""
+    search = request.query_params.get("q") or ""
+    students = _group_student_candidates_queryset(user, class_id=class_id or None, search=search or None)[:200]
+    return Response({"success": True, "students": [_student_option_payload(sp) for sp in students]})
 
 
 @api_view(["POST"])
@@ -8407,12 +8566,24 @@ def messages_snapshot(request):
     can_manage_messages = _can_manage_school_settings(user)
     guardian_sms_recipients = _guardian_sms_contacts_for_school(user.tenant) if can_manage_messages else []
     sms_config = _kudisms_config_for_school(user.tenant) if can_manage_messages else {}
+    class_options = []
+    if can_manage_messages:
+        class_options = [
+            {"id": item.id, "name": item.name, "section": item.section or "", "label": _class_label(item)}
+            for item in _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")[:200]
+        ]
+
     groups_payload = []
     if MessageGroup:
-        groups_qs = (
-            MessageGroup.objects.filter(tenant=user.tenant, memberships__user=user).distinct().order_by("-updated_at")
-        )
-        groups_payload = [_group_payload(group, viewer=user, request=request) for group in groups_qs[:20]]
+        if can_manage_messages:
+            groups_qs = MessageGroup.objects.filter(tenant=user.tenant).distinct().order_by("-updated_at")
+        else:
+            groups_qs = (
+                MessageGroup.objects.filter(tenant=user.tenant, memberships__user=user, is_active=True)
+                .distinct()
+                .order_by("-updated_at")
+            )
+        groups_payload = [_group_payload(group, viewer=user, request=request) for group in groups_qs[:50]]
 
     return Response(
         {
@@ -8459,7 +8630,8 @@ def messages_snapshot(request):
                 for item in recipients[:100]
             ],
             "groups": groups_payload,
-            "can_create_groups": _is_non_k12_school(user) and user.role == "student",
+            "can_manage_groups": can_manage_messages,
+            "class_options": class_options,
             "guardian_sms_recipients": guardian_sms_recipients,
             "sms_configured": bool(sms_config.get("token") and sms_config.get("is_active")) if can_manage_messages else False,
         }

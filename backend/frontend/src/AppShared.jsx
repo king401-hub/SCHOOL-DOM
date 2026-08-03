@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon } from "lucide-react";
+import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone } from "lucide-react";
 import {
   API_BASE_URL,
   LEGACY_SESSION_KEY,
@@ -1219,6 +1219,19 @@ export function MessageInboxPanel({
   onDelete,
   onRefresh,
   refreshIntervalMs = MESSAGE_POLL_INTERVAL_MS,
+  groups = [],
+  onLoadGroupDetail,
+  onSendGroupMessage,
+  onMarkGroupRead,
+  canManageGroups = false,
+  classOptions = [],
+  onCreateGroup,
+  onUpdateGroup,
+  onDeleteGroup,
+  onAddGroupMembers,
+  onRemoveGroupMember,
+  onAddGroupClass,
+  onSearchStudentOptions,
 }) {
   const [filter, setFilter] = useState("all");
   const [activeThreadKey, setActiveThreadKey] = useState("");
@@ -1237,6 +1250,174 @@ export function MessageInboxPanel({
   const emojiPickerRef = useRef(null);
   const textareaRef = useRef(null);
   const chatBodyRef = useRef(null);
+
+  // ── Groups (view + chat) ──────────────────────────────────────────
+  const [chatMode, setChatMode] = useState("contact"); // "contact" | "group"
+  const [activeGroupId, setActiveGroupId] = useState("");
+  const [groupDetail, setGroupDetail] = useState(null);
+  const [loadingGroupDetail, setLoadingGroupDetail] = useState(false);
+  const [groupComposeBody, setGroupComposeBody] = useState("");
+  const [groupComposeAttachments, setGroupComposeAttachments] = useState([]);
+  const [groupComposeIsAnnouncement, setGroupComposeIsAnnouncement] = useState(false);
+  const [groupSending, setGroupSending] = useState(false);
+  const [groupComposeError, setGroupComposeError] = useState("");
+  const groupAttachmentInputRef = useRef(null);
+  const groupChatBodyRef = useRef(null);
+
+  // ── Groups management (admin only) ────────────────────────────────
+  const [showGroupsManagement, setShowGroupsManagement] = useState(false);
+  const [groupModalMode, setGroupModalMode] = useState(null); // null | "create" | <group object>
+  const [openGroupMenuId, setOpenGroupMenuId] = useState("");
+  const [groupActionError, setGroupActionError] = useState("");
+
+  // ── Voice notes ────────────────────────────────────────────────────
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceRecordError, setVoiceRecordError] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+
+  const loadGroupDetail = useCallback(async (groupId) => {
+    if (!groupId || !onLoadGroupDetail) {
+      setGroupDetail(null);
+      return;
+    }
+    setLoadingGroupDetail(true);
+    try {
+      const detail = await onLoadGroupDetail(groupId);
+      setGroupDetail(detail);
+    } catch (err) {
+      setGroupComposeError(err.message || "Could not load group.");
+    } finally {
+      setLoadingGroupDetail(false);
+    }
+  }, [onLoadGroupDetail]);
+
+  useEffect(() => {
+    if (chatMode === "group" && activeGroupId) loadGroupDetail(activeGroupId);
+  }, [chatMode, activeGroupId, loadGroupDetail]);
+
+  useEffect(() => {
+    if (chatMode !== "group" || !activeGroupId || !refreshIntervalMs) return undefined;
+    const pollId = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadGroupDetail(activeGroupId);
+    }, refreshIntervalMs);
+    return () => window.clearInterval(pollId);
+  }, [chatMode, activeGroupId, refreshIntervalMs, loadGroupDetail]);
+
+  useEffect(() => {
+    if (groupChatBodyRef.current) groupChatBodyRef.current.scrollTop = groupChatBodyRef.current.scrollHeight;
+  }, [groupDetail?.messages?.length]);
+
+  const activeGroup = groups.find((group) => group.id === activeGroupId) || null;
+  const totalGroupUnread = groups.reduce((sum, group) => sum + (group.unread || 0), 0);
+
+  const filteredGroups = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return groups.filter((group) => {
+      const matchesFilter = filter !== "unread" || group.unread > 0;
+      const haystack = `${group.name} ${group.class_label || ""} ${group.description || ""} ${group.last_message?.body || ""}`.toLowerCase();
+      return matchesFilter && (!query || haystack.includes(query));
+    });
+  }, [groups, searchTerm, filter]);
+
+  const openGroup = (groupId) => {
+    setChatMode("group");
+    setActiveGroupId(groupId);
+    setSidebarOpen(false);
+    onMarkGroupRead?.(groupId).catch(() => {});
+  };
+
+  const handleGroupAttachmentChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    setGroupComposeAttachments((previous) => [...previous, ...files].slice(0, 5));
+    setGroupComposeError("");
+  };
+
+  const handleGroupComposeSubmit = async (event) => {
+    event.preventDefault();
+    if (!onSendGroupMessage || !activeGroupId) return;
+    if (!groupComposeBody.trim() && groupComposeAttachments.length === 0) {
+      setGroupComposeError("Add a message or attachment before sending.");
+      return;
+    }
+    setGroupComposeError("");
+    setGroupSending(true);
+    try {
+      await onSendGroupMessage(activeGroupId, {
+        body: groupComposeBody.trim(),
+        is_announcement: groupComposeIsAnnouncement,
+        attachments: groupComposeAttachments,
+      });
+      setGroupComposeBody("");
+      setGroupComposeAttachments([]);
+      setGroupComposeIsAnnouncement(false);
+      if (groupAttachmentInputRef.current) groupAttachmentInputRef.current.value = "";
+      await loadGroupDetail(activeGroupId);
+    } catch (err) {
+      setGroupComposeError(err.message || "Could not send message.");
+    } finally {
+      setGroupSending(false);
+    }
+  };
+
+  const handleToggleVoiceRecording = async () => {
+    setVoiceRecordError("");
+    if (isRecordingVoice) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceRecordError("Voice recording is not supported on this device/browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordedChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: "audio/webm" });
+        setGroupComposeAttachments((previous) => [...previous, file].slice(0, 5));
+        setIsRecordingVoice(false);
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecordingVoice(true);
+    } catch (err) {
+      setVoiceRecordError("Microphone access was denied or is unavailable.");
+    }
+  };
+
+  const handleToggleGroupActive = async (group) => {
+    if (!onUpdateGroup) return;
+    setGroupActionError("");
+    setOpenGroupMenuId("");
+    try {
+      await onUpdateGroup(group.id, { is_active: !group.is_active });
+    } catch (err) {
+      setGroupActionError(err.message || "Could not update group.");
+    }
+  };
+
+  const handleDeleteGroup = async (group) => {
+    if (!onDeleteGroup) return;
+    setOpenGroupMenuId("");
+    if (typeof window !== "undefined" && !window.confirm(`Delete "${group.name}"? This cannot be undone.`)) return;
+    setGroupActionError("");
+    try {
+      await onDeleteGroup(group.id);
+      if (activeGroupId === group.id) {
+        setActiveGroupId("");
+        setGroupDetail(null);
+      }
+    } catch (err) {
+      setGroupActionError(err.message || "Could not delete group.");
+    }
+  };
 
   useEffect(() => {
     const handler = (e) => {
@@ -1482,6 +1663,7 @@ export function MessageInboxPanel({
   };
 
   const openThread = (thread) => {
+    setChatMode("contact");
     setActiveThreadKey(thread.key);
     if (thread.email) {
       setComposeForm((prev) => ({ ...prev, recipient: thread.email }));
@@ -1522,17 +1704,90 @@ export function MessageInboxPanel({
         <div className="chat-filter-tabs">
           <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All</button>
           <button type="button" className={filter === "unread" ? "active" : ""} onClick={() => setFilter("unread")}>Unread {totalUnread > 0 && <b>{totalUnread}</b>}</button>
+          <button type="button" className={filter === "groups" ? "active" : ""} onClick={() => setFilter("groups")}>Groups {totalGroupUnread > 0 && <b>{totalGroupUnread}</b>}</button>
         </div>
 
+        {canManageGroups ? (
+          <div className="chat-groups-manage">
+            <button
+              type="button"
+              className={`chat-groups-manage-toggle${showGroupsManagement ? " open" : ""}`}
+              onClick={() => setShowGroupsManagement((previous) => !previous)}
+            >
+              <span>Manage Groups</span>
+              <ChevronDown size={16} className="chat-groups-manage-chevron" />
+            </button>
+            <div className={`chat-groups-manage-panel${showGroupsManagement ? " open" : ""}`}>
+              <button type="button" className="chat-groups-new-btn" onClick={() => setGroupModalMode("create")}>+ New Group</button>
+              {groupActionError ? <p className="form-feedback error compact">{groupActionError}</p> : null}
+              <div className="chat-groups-manage-list">
+                {groups.length === 0 ? (
+                  <p className="chat-empty-hint">No groups yet. Create one to get started.</p>
+                ) : (
+                  groups.map((group) => (
+                    <div key={group.id} className="chat-groups-manage-row">
+                      <button type="button" className="chat-groups-manage-row-main" onClick={() => openGroup(group.id)}>
+                        <span className={`chat-groups-status-dot${group.is_active ? " active" : ""}`} />
+                        <span className="chat-groups-manage-row-text">
+                          <span className="chat-groups-manage-row-name">{group.name}</span>
+                          <small>{group.class_label || "Custom group"} · {group.member_count} member{group.member_count === 1 ? "" : "s"}</small>
+                        </span>
+                      </button>
+                      <div className="chat-groups-manage-row-actions">
+                        <button type="button" onClick={() => setOpenGroupMenuId((current) => (current === group.id ? "" : group.id))} aria-label="Group actions">
+                          <MoreVertical size={16} />
+                        </button>
+                        {openGroupMenuId === group.id ? (
+                          <div className="chat-groups-menu">
+                            <button type="button" onClick={() => { setGroupModalMode(group); setOpenGroupMenuId(""); }}>Edit</button>
+                            <button type="button" onClick={() => handleToggleGroupActive(group)}>{group.is_active ? "Archive" : "Activate"}</button>
+                            <button type="button" className="danger" onClick={() => handleDeleteGroup(group)}>Delete</button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="chat-thread-list">
-          {filteredThreads.length === 0 ? (
+          {filter === "groups" ? (
+            filteredGroups.length === 0 ? (
+              <p className="chat-empty-hint">No groups yet.</p>
+            ) : (
+              filteredGroups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  className={`chat-thread-item${chatMode === "group" && activeGroupId === group.id ? " active" : ""}${group.unread ? " unread" : ""}`}
+                  onClick={() => openGroup(group.id)}
+                >
+                  <span className="chat-thread-avatar group-avatar" data-letter={group.name.slice(0, 1).toUpperCase()}>{group.name.slice(0, 1).toUpperCase()}</span>
+                  <span className="chat-thread-body">
+                    <span className="chat-thread-name">{group.name}</span>
+                    <span className="chat-thread-preview">
+                      {group.last_message ? (group.last_message.body || "Attachment") : `${group.member_count} member${group.member_count === 1 ? "" : "s"}`}
+                    </span>
+                  </span>
+                  <span className="chat-thread-meta">
+                    {group.last_message ? <span className="chat-thread-time">{formatDate(group.last_message.created_at)}</span> : null}
+                    <small className="chat-thread-member-count">{group.member_count} members</small>
+                    {group.unread > 0 ? <span className="chat-thread-badge">{group.unread}</span> : null}
+                  </span>
+                </button>
+              ))
+            )
+          ) : filteredThreads.length === 0 ? (
             <p className="chat-empty-hint">No conversations found.</p>
           ) : (
             filteredThreads.map((thread) => (
               <button
                 key={thread.key}
                 type="button"
-                className={`chat-thread-item${activeThread?.key === thread.key ? " active" : ""}${thread.unread ? " unread" : ""}`}
+                className={`chat-thread-item${chatMode === "contact" && activeThread?.key === thread.key ? " active" : ""}${thread.unread ? " unread" : ""}`}
                 onClick={() => { openThread(thread); setSidebarOpen(false); }}
               >
                 <span className="chat-thread-avatar" data-letter={thread.name.slice(0, 1).toUpperCase()}>{thread.name.slice(0, 1).toUpperCase()}</span>
@@ -1557,7 +1812,15 @@ export function MessageInboxPanel({
           <button type="button" className="chat-mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
             <span /><span /><span />
           </button>
-          {activeThread ? (
+          {chatMode === "group" && activeGroup ? (
+            <div className="chat-head-contact">
+              <span className="chat-head-avatar group-avatar" data-letter={activeGroup.name.slice(0,1).toUpperCase()}>{activeGroup.name.slice(0,1).toUpperCase()}</span>
+              <div>
+                <strong>{activeGroup.name}</strong>
+                <small>{activeGroup.member_count} member{activeGroup.member_count === 1 ? "" : "s"}{activeGroup.class_label ? ` · ${activeGroup.class_label}` : ""}</small>
+              </div>
+            </div>
+          ) : chatMode === "contact" && activeThread ? (
             <div className="chat-head-contact">
               <span className="chat-head-avatar" data-letter={activeThread.name.slice(0,1).toUpperCase()}>{activeThread.name.slice(0,1).toUpperCase()}</span>
               <div>
@@ -1569,7 +1832,7 @@ export function MessageInboxPanel({
             <div className="chat-head-contact"><strong>New conversation</strong></div>
           )}
           <div className="chat-head-actions">
-            {activeThread?.unread > 0 && (
+            {chatMode === "contact" && activeThread?.unread > 0 && (
               <button type="button" className="chat-icon-btn" onClick={markThreadRead} title="Mark all read">
                 <CheckCheck size={18} />
               </button>
@@ -1578,6 +1841,43 @@ export function MessageInboxPanel({
         </header>
 
         {/* Message body */}
+        {chatMode === "group" ? (
+        <div className="chat-body" ref={groupChatBodyRef}>
+          {loadingGroupDetail && !groupDetail ? (
+            <div className="chat-empty-state"><span className="chat-empty-icon">💬</span><p>Loading messages…</p></div>
+          ) : (groupDetail?.messages || []).length ? (
+            groupDetail.messages.map((message) => (
+              <div key={message.id} className={`chat-bubble-wrap${message.outgoing ? " out" : " in"}`}>
+                {!message.outgoing && (
+                  <span className="chat-bubble-avatar" data-letter={(message.sender_name || "?").slice(0,1).toUpperCase()}>
+                    {(message.sender_name || "?").slice(0,1).toUpperCase()}
+                  </span>
+                )}
+                <div className={`chat-bubble${message.outgoing ? " out" : " in"}${message.is_announcement ? " announcement" : ""}`}>
+                  {message.is_announcement ? <span className="chat-bubble-announcement-tag"><Megaphone size={12} /> Announcement</span> : null}
+                  {!message.outgoing && <p className="chat-bubble-subject">{message.sender_name}</p>}
+                  {message.body && <p className="chat-bubble-text">{message.body}</p>}
+                  {(message.attachments || []).length > 0 && (
+                    <div className="chat-bubble-attachments">
+                      {message.attachments.map((att, idx) => (
+                        <MessageAttachment key={`${attachmentUrl(att) || attachmentLabel(att)}-${idx}`} attachment={att} index={idx} />
+                      ))}
+                    </div>
+                  )}
+                  <div className="chat-bubble-foot">
+                    <span className="chat-bubble-time">{formatDate(message.created_at)}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="chat-empty-state">
+              <span className="chat-empty-icon">💬</span>
+              <p>{activeGroup ? "No messages yet — say hello!" : "Select a group to view the conversation."}</p>
+            </div>
+          )}
+        </div>
+        ) : (
         <div className="chat-body" ref={chatBodyRef}>
           {activeThread?.messages.length ? (
             <>
@@ -1629,9 +1929,61 @@ export function MessageInboxPanel({
             </div>
           )}
         </div>
+        )}
 
         {/* Composer */}
-        {onComposeSubmit ? (
+        {chatMode === "group" ? (
+          onSendGroupMessage && activeGroupId ? (
+            <form className="chat-composer" onSubmit={handleGroupComposeSubmit}>
+              {groupComposeAttachments.length > 0 && (
+                <div className="chat-attachment-preview">
+                  {groupComposeAttachments.map((file, idx) => (
+                    <span key={`${file.name}-${file.size}-${idx}`} className="chat-attachment-chip">
+                      <Paperclip size={11} />
+                      {file.name}
+                      <button type="button" onClick={() => setGroupComposeAttachments((p) => p.filter((f) => f !== file))}><XIcon size={10}/></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {(groupComposeError || voiceRecordError) && (
+                <div className="chat-composer-feedback error">{groupComposeError || voiceRecordError}</div>
+              )}
+              {canManageGroups ? (
+                <label className="chat-announcement-toggle">
+                  <input type="checkbox" checked={groupComposeIsAnnouncement} onChange={(e) => setGroupComposeIsAnnouncement(e.target.checked)} />
+                  <Megaphone size={13} /> Send as announcement
+                </label>
+              ) : null}
+              <div className="chat-composer-row">
+                <textarea
+                  className="chat-composer-input"
+                  value={groupComposeBody}
+                  onChange={(e) => setGroupComposeBody(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGroupComposeSubmit(e); } }}
+                  placeholder={`Message ${activeGroup?.name || "group"}…`}
+                  rows={1}
+                />
+                <label className="chat-composer-icon-btn" title="Attach file" aria-label="Attach file">
+                  <Paperclip size={20} />
+                  <input ref={groupAttachmentInputRef} type="file" multiple onChange={handleGroupAttachmentChange} style={{display:"none"}} />
+                </label>
+                <button
+                  type="button"
+                  className={`chat-composer-icon-btn${isRecordingVoice ? " recording" : ""}`}
+                  onClick={handleToggleVoiceRecording}
+                  title={isRecordingVoice ? "Stop recording" : "Record voice note"}
+                  aria-label="Record voice note"
+                >
+                  <Mic size={20} />
+                </button>
+                <button type="submit" className="chat-send-btn" disabled={groupSending} aria-label="Send" title="Send (Enter)">
+                  {groupSending ? <span className="chat-send-spinner" /> : <Send size={18} />}
+                </button>
+              </div>
+            </form>
+          ) : null
+        ) : onComposeSubmit ? (
           <form className="chat-composer" onSubmit={handleComposeSubmit}>
             {composeAttachments.length > 0 && (
               <div className="chat-attachment-preview">
@@ -1703,7 +2055,231 @@ export function MessageInboxPanel({
           </form>
         ) : null}
       </section>
+
+      {groupModalMode ? (
+        <GroupFormModal
+          group={groupModalMode === "create" ? null : groupModalMode}
+          classOptions={classOptions}
+          onSearchStudentOptions={onSearchStudentOptions}
+          onCreateGroup={onCreateGroup}
+          onUpdateGroup={onUpdateGroup}
+          onAddGroupMembers={onAddGroupMembers}
+          onRemoveGroupMember={onRemoveGroupMember}
+          onAddGroupClass={onAddGroupClass}
+          onClose={() => setGroupModalMode(null)}
+        />
+      ) : null}
     </article>
+  );
+}
+
+function GroupFormModal({
+  group,
+  classOptions = [],
+  onSearchStudentOptions,
+  onCreateGroup,
+  onUpdateGroup,
+  onAddGroupMembers,
+  onRemoveGroupMember,
+  onAddGroupClass,
+  onClose,
+}) {
+  const isEdit = Boolean(group?.id);
+  const [name, setName] = useState(group?.name || "");
+  const [description, setDescription] = useState(group?.description || "");
+  const [classId, setClassId] = useState(group?.school_class || "");
+  const [members, setMembers] = useState(group?.members || []);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedNewIds, setSelectedNewIds] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
+  const [error, setError] = useState("");
+
+  const memberUserIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
+
+  const runSearch = useCallback(async () => {
+    if (!onSearchStudentOptions) return;
+    setSearching(true);
+    try {
+      const results = await onSearchStudentOptions({ q: searchTerm, class_id: "" });
+      setSearchResults(results || []);
+    } catch (err) {
+      setError(err.message || "Could not search students.");
+    } finally {
+      setSearching(false);
+    }
+  }, [onSearchStudentOptions, searchTerm]);
+
+  useEffect(() => {
+    runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm]);
+
+  const toggleSelectNew = (studentProfileId) => {
+    setSelectedNewIds((previous) =>
+      previous.includes(studentProfileId) ? previous.filter((id) => id !== studentProfileId) : [...previous, studentProfileId]
+    );
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    if (!name.trim()) {
+      setError("Give this group a name.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      if (isEdit) {
+        await onUpdateGroup?.(group.id, { name: name.trim(), description, school_class_id: classId || null });
+        if (selectedNewIds.length) {
+          await onAddGroupMembers?.(group.id, selectedNewIds);
+        }
+        onClose();
+      } else {
+        await onCreateGroup?.({ name: name.trim(), description, school_class_id: classId || null, student_profile_ids: selectedNewIds });
+        onClose();
+      }
+    } catch (err) {
+      setError(err.message || "Could not save group.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddSelected = async () => {
+    if (!isEdit || !selectedNewIds.length) return;
+    setBusyAction("add-selected");
+    setError("");
+    try {
+      const result = await onAddGroupMembers?.(group.id, selectedNewIds);
+      if (result?.group?.members) setMembers(result.group.members);
+      setSelectedNewIds([]);
+    } catch (err) {
+      setError(err.message || "Could not add students.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleAddClass = async () => {
+    if (!isEdit || !classId) return;
+    setBusyAction("add-class");
+    setError("");
+    try {
+      const result = await onAddGroupClass?.(group.id, classId);
+      if (result?.group?.members) setMembers(result.group.members);
+    } catch (err) {
+      setError(err.message || "Could not add the class.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const handleRemoveMember = async (userId) => {
+    if (!isEdit) return;
+    setBusyAction(`remove-${userId}`);
+    setError("");
+    try {
+      const result = await onRemoveGroupMember?.(group.id, userId);
+      if (result?.group?.members) setMembers(result.group.members);
+    } catch (err) {
+      setError(err.message || "Could not remove member.");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  return (
+    <div className="chat-groups-modal-backdrop" role="presentation" onClick={onClose}>
+      <article className="chat-groups-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <header className="chat-groups-modal-head">
+          <h3>{isEdit ? "Edit Group" : "Create New Group"}</h3>
+          <button type="button" className="chat-sidebar-close-btn" onClick={onClose} aria-label="Close"><XIcon size={16} /></button>
+        </header>
+
+        <form className="chat-groups-modal-body" onSubmit={handleSave}>
+          <label className="panel-field">
+            Group Name
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Science Stars" required />
+          </label>
+          <label className="panel-field">
+            Group Description
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Optional description" />
+          </label>
+          <label className="panel-field">
+            Select Class
+            <select value={classId} onChange={(e) => setClassId(e.target.value)}>
+              <option value="">Custom group (no class)</option>
+              {classOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          {isEdit && classId ? (
+            <button type="button" className="btn-secondary" onClick={handleAddClass} disabled={busyAction === "add-class"}>
+              {busyAction === "add-class" ? "Adding class…" : "+ Add entire class to this group"}
+            </button>
+          ) : null}
+
+          {isEdit && members.length > 0 ? (
+            <div className="chat-groups-modal-members">
+              <p className="panel-sub">Current members ({members.length})</p>
+              <div className="chat-groups-member-chip-list">
+                {members.map((member) => (
+                  <span key={member.id} className="chat-groups-member-chip">
+                    {member.name}
+                    <button type="button" onClick={() => handleRemoveMember(member.id)} disabled={busyAction === `remove-${member.id}`} aria-label={`Remove ${member.name}`}>
+                      <XIcon size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <label className="panel-field">
+            Search Students
+            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or Student ID" />
+          </label>
+          <div className="chat-groups-student-picker">
+            {searching ? (
+              <p className="panel-empty compact">Searching…</p>
+            ) : searchResults.length === 0 ? (
+              <p className="panel-empty compact">No students found.</p>
+            ) : (
+              searchResults
+                .filter((student) => !memberUserIds.has(student.user_id))
+                .map((student) => (
+                  <label key={student.student_profile_id} className="chat-groups-student-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedNewIds.includes(student.student_profile_id)}
+                      onChange={() => toggleSelectNew(student.student_profile_id)}
+                    />
+                    <span>{student.name}</span>
+                    <small>{student.student_id}{student.class_label ? ` · ${student.class_label}` : ""}</small>
+                  </label>
+                ))
+            )}
+          </div>
+          {isEdit ? (
+            <button type="button" className="btn-secondary" onClick={handleAddSelected} disabled={!selectedNewIds.length || busyAction === "add-selected"}>
+              {busyAction === "add-selected" ? "Adding…" : `Add Selected Students${selectedNewIds.length ? ` (${selectedNewIds.length})` : ""}`}
+            </button>
+          ) : null}
+
+          {error ? <p className="form-feedback error">{error}</p> : null}
+
+          <div className="chat-groups-modal-actions">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" disabled={saving}>{saving ? "Saving…" : "Save Group"}</button>
+          </div>
+        </form>
+      </article>
+    </div>
   );
 }
 
