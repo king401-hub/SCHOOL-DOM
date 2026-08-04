@@ -16,6 +16,7 @@ urlpatterns = [
     path("student/dashboard/", app_views.student_dashboard, name="app_student_dashboard"),
     path("teacher/dashboard/", app_views.teacher_dashboard, name="app_teacher_dashboard"),
     path("school/settings/", app_views.school_settings, name="app_school_settings"),
+    path("document-theme/", app_views.document_theme, name="app_document_theme"),
     path("account/deletion-request/", app_views.account_deletion_request, name="app_account_deletion_request"),
     path("support-tickets/", app_views.support_tickets, name="app_support_tickets"),
     path("loan-applications/", app_views.loan_applications, name="app_loan_applications"),

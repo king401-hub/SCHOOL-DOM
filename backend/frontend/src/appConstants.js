@@ -63,6 +63,7 @@ export const ADMIN_ROUTES = [
     children: [
       { path: "/id-cards", label: "ID Cards" },
       { path: "/documents", label: "Transcripts & Testimonials" },
+      { path: "/document-customization", label: "Document Customization" },
       { path: "/alumni", label: "Alumni" },
       { path: "/inventory", label: "Inventory" },
       { path: "/database-import", label: "Database Import" },
@@ -123,6 +124,7 @@ export const ADMIN_ENDPOINTS = {
   "/inventory": "/api/inventory/dashboard/",
   "/alumni": "/api/alumni/overview/",
   "/settings": "/api/app/school/settings/",
+  "/document-customization": "/api/app/document-theme/",
   "/compliance": "/api/app/school/settings/",
   "/service-agreement": "/api/app/legal/service-agreement/",
 };

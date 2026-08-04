@@ -56,6 +56,7 @@ from academic.models import (
     TimetableEntry,
 )
 from core.models import SchoolTenant, Domain
+from settings_app.models import DocumentTheme
 from django_countries import countries as django_countries_list
 from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
 from tenants.models import Tenant
@@ -866,6 +867,13 @@ def _resolve_school_signature_url(school, request=None):
     return _media_url(request, signer.director_signature) if signer else ""
 
 
+def _document_theme_for_school(school):
+    if not school:
+        return None
+    theme = DocumentTheme.objects.filter(school_tenant=school).first()
+    return _document_theme_payload(theme) if theme else _document_theme_payload(DocumentTheme(school_tenant=school))
+
+
 def _school_payload(school, request=None):
     if not school:
         return {}
@@ -894,6 +902,7 @@ def _school_payload(school, request=None):
         "state": getattr(school, "state", "") or "",
         "signature": _resolve_school_signature_url(school, request),
         "compliance_status": getattr(school, "compliance_status", "") or "not_submitted",
+        "document_theme": _document_theme_for_school(school),
     }
 
 
@@ -1446,6 +1455,7 @@ def _school_identity_payload(tenant, request=None):
         "motto": getattr(tenant, "motto", "") or getattr(tenant, "tagline", "") or "",
         "tagline": getattr(tenant, "tagline", "") or getattr(tenant, "motto", "") or "",
         "signature": _resolve_school_signature_url(tenant, request),
+        "document_theme": _document_theme_for_school(tenant),
     }
 
 
@@ -6672,6 +6682,151 @@ def teacher_detail(request, teacher_id):
             "teacher": _teacher_payload(teacher_profile, request=request),
         }
     )
+
+
+_DOCUMENT_THEME_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _parse_document_theme_hex(raw_color, default):
+    value = str(raw_color or "").strip()
+    if not _DOCUMENT_THEME_HEX_RE.match(value):
+        raise ValueError("Enter a valid color as #rrggbb.")
+    return value
+
+
+def _document_theme_payload(theme):
+    return {
+        "orientation": theme.orientation,
+        "id_card_orientation": theme.id_card_orientation,
+        "page_size": theme.page_size,
+        "margin_mm": theme.margin_mm,
+        "font_family": theme.font_family,
+        "font_size_body": theme.font_size_body,
+        "font_size_heading": theme.font_size_heading,
+        "primary_color": theme.primary_color,
+        "secondary_color": theme.secondary_color,
+        "accent_color": theme.accent_color,
+        "table_style": theme.table_style,
+        "border_style": theme.border_style,
+        "border_width": theme.border_width,
+        "header_note": theme.header_note,
+        "footer_text": theme.footer_text,
+        "show_logo": theme.show_logo,
+        "show_signature": theme.show_signature,
+        "watermark_enabled": theme.watermark_enabled,
+        "watermark_source": theme.watermark_source,
+        "watermark_text": theme.watermark_text,
+        "watermark_opacity": theme.watermark_opacity,
+    }
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def document_theme(request):
+    user = request.user
+    school = getattr(user, "tenant", None)
+    if not school:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    theme, _created = DocumentTheme.objects.get_or_create(school_tenant=school)
+
+    if request.method == "PATCH":
+        if not _can_manage_school_settings(user):
+            return Response(
+                {"success": False, "message": "Only school administrators can update document customization."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        data = request.data
+        update_fields = []
+
+        for field, choices in (
+            ("orientation", {"portrait", "landscape"}),
+            ("id_card_orientation", {"portrait", "landscape"}),
+            ("page_size", {"A4", "letter"}),
+            ("table_style", {"bordered", "striped", "minimal"}),
+            ("border_style", {"solid", "double", "dashed", "none"}),
+            ("watermark_source", {"text", "logo"}),
+        ):
+            if field in data:
+                new_value = str(data.get(field) or "").strip()
+                if new_value not in choices:
+                    return Response(
+                        {"success": False, "message": f"Invalid value for {field}."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if getattr(theme, field) != new_value:
+                    setattr(theme, field, new_value)
+                    update_fields.append(field)
+
+        for field in ("primary_color", "secondary_color", "accent_color"):
+            if field in data:
+                try:
+                    new_value = _parse_document_theme_hex(data.get(field), getattr(theme, field))
+                except ValueError as exc:
+                    return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                if getattr(theme, field) != new_value:
+                    setattr(theme, field, new_value)
+                    update_fields.append(field)
+
+        for field, minimum, maximum in (
+            ("margin_mm", 0, 50),
+            ("font_size_body", 8, 30),
+            ("font_size_heading", 10, 48),
+            ("border_width", 0, 6),
+            ("watermark_opacity", 1, 40),
+        ):
+            if field in data:
+                try:
+                    new_value = int(data.get(field))
+                except (TypeError, ValueError):
+                    return Response(
+                        {"success": False, "message": f"{field} must be a number."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                new_value = max(minimum, min(maximum, new_value))
+                if getattr(theme, field) != new_value:
+                    setattr(theme, field, new_value)
+                    update_fields.append(field)
+
+        if "font_family" in data:
+            new_value = str(data.get("font_family") or "").strip()[:100] or "Segoe UI"
+            if theme.font_family != new_value:
+                theme.font_family = new_value
+                update_fields.append("font_family")
+
+        if "header_note" in data:
+            new_value = str(data.get("header_note") or "").strip()[:255]
+            if theme.header_note != new_value:
+                theme.header_note = new_value
+                update_fields.append("header_note")
+
+        if "footer_text" in data:
+            new_value = str(data.get("footer_text") or "").strip()
+            if theme.footer_text != new_value:
+                theme.footer_text = new_value
+                update_fields.append("footer_text")
+
+        if "watermark_text" in data:
+            new_value = str(data.get("watermark_text") or "").strip()[:60]
+            if theme.watermark_text != new_value:
+                theme.watermark_text = new_value
+                update_fields.append("watermark_text")
+
+        for field in ("show_logo", "show_signature", "watermark_enabled"):
+            if field in data:
+                new_value = bool(data.get(field))
+                if getattr(theme, field) != new_value:
+                    setattr(theme, field, new_value)
+                    update_fields.append(field)
+
+        if update_fields:
+            theme.save(update_fields=sorted(set(update_fields)))
+
+    return Response({"success": True, "theme": _document_theme_payload(theme)})
 
 
 @api_view(["GET", "PATCH"])

@@ -8,15 +8,19 @@
     — {{ data.school_name|default:"School" }}
   </title>
   <style>
+    @page { size: {{ theme.page_size|default:"A4" }} {{ theme.orientation|default:"portrait" }}; margin: {{ theme.margin_mm|default:15 }}mm; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: "{{ theme.font_family|default:"Segoe UI" }}", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      font-size: {{ theme.font_size_body|default:13 }}px;
       background: #f1f5f9;
       color: #1e293b;
       min-height: 100vh;
       padding: 24px 16px 48px;
+      position: relative;
     }
+    h1, h2, .amount-hero .amount { font-size: {{ theme.font_size_heading|default:20 }}px; }
 
     .card {
       background: #ffffff;
@@ -25,11 +29,36 @@
       border-radius: 12px;
       box-shadow: 0 4px 24px rgba(0,0,0,.10);
       overflow: hidden;
+      position: relative;
     }
+
+    .doc-watermark {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .doc-watermark span {
+      font-size: 64px;
+      font-weight: 800;
+      color: {{ theme.primary_color|default:"#0f766e" }};
+      opacity: {{ theme.watermark_opacity|default:8|floatformat:0 }}%;
+      transform: rotate(-30deg);
+      white-space: nowrap;
+    }
+    .doc-watermark img {
+      max-width: 60%;
+      opacity: {{ theme.watermark_opacity|default:8|floatformat:0 }}%;
+    }
+    .card > *:not(.doc-watermark) { position: relative; z-index: 1; }
 
     /* ── Header ── */
     .header {
-      background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+      background: linear-gradient(135deg, {{ theme.primary_color|default:"#0f766e" }} 0%, {{ theme.secondary_color|default:"#0d9488" }} 100%);
       color: #fff;
       padding: 28px 24px 20px;
       text-align: center;
@@ -61,7 +90,7 @@
     }
     .badge.paid    { background: #16a34a; color: #fff; }
     .badge.partial { background: #f59e0b; color: #fff; }
-    .badge.bill    { background: #0f766e; color: #fff; }
+    .badge.bill    { background: {{ theme.accent_color|default:"#0f766e" }}; color: #fff; }
     .badge svg { width: 16px; height: 16px; }
 
     /* ── Body ── */
@@ -93,7 +122,7 @@
       margin: 16px 0;
     }
     .amount-hero .label { font-size: 12px; color: #64748b; }
-    .amount-hero .amount { font-size: 32px; font-weight: 800; color: #0f766e; }
+    .amount-hero .amount { font-weight: 800; color: {{ theme.primary_color|default:"#0f766e" }}; }
     .amount-hero .balance { font-size: 13px; color: #64748b; margin-top: 4px; }
     .amount-hero .balance.outstanding { color: #dc2626; font-weight: 600; }
 
@@ -107,7 +136,14 @@
       padding: 8px 10px; text-align: left; font-size: 11px;
       text-transform: uppercase; letter-spacing: .05em;
     }
-    td { padding: 10px 10px; border-bottom: 1px solid #f1f5f9; }
+    {% if theme.table_style == "striped" %}
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    td { padding: 10px 10px; border-bottom: none; }
+    {% elif theme.table_style == "minimal" %}
+    td { padding: 10px 10px; border-bottom: none; }
+    {% else %}
+    td { padding: 10px 10px; border-bottom: {{ theme.border_width|default:1 }}px {{ theme.border_style|default:"solid" }} #f1f5f9; }
+    {% endif %}
     tr:last-child td { border-bottom: none; }
     .text-right { text-align: right; }
     .text-muted  { color: #94a3b8; }
@@ -161,8 +197,8 @@
       display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: #475569;
     }
     .invoice-totals .row.grand {
-      border-top: 2px solid #0f766e; margin-top: 4px; padding-top: 10px;
-      font-size: 16px; font-weight: 800; color: #0f766e;
+      border-top: 2px solid {{ theme.accent_color|default:"#0f766e" }}; margin-top: 4px; padding-top: 10px;
+      font-size: 16px; font-weight: 800; color: {{ theme.accent_color|default:"#0f766e" }};
     }
     .invoice-totals .row.discount span:last-child { color: #16a34a; }
     .invoice-totals .row.tax span:last-child { color: #475569; }
@@ -179,18 +215,18 @@
       border-top: 1px solid #f1f5f9;
       font-size: 12px; color: #94a3b8;
     }
-    .footer a { color: #0f766e; text-decoration: none; }
+    .footer a { color: {{ theme.accent_color|default:"#0f766e" }}; text-decoration: none; }
 
     /* ── Print ── */
     .print-btn {
       display: flex; align-items: center; justify-content: center; gap: 6px;
       width: 100%; padding: 12px;
-      background: #0f766e; color: #fff;
+      background: {{ theme.accent_color|default:"#0f766e" }}; color: #fff;
       border: none; border-radius: 8px;
       font-size: 14px; font-weight: 600; cursor: pointer;
       margin-top: 20px;
     }
-    .print-btn:hover { background: #0d9488; }
+    .print-btn:hover { opacity: .9; }
 
     @media print {
       body { background: #fff; padding: 0; }
@@ -201,18 +237,29 @@
       .info-grid { grid-template-columns: 1fr; }
     }
   </style>
-  {% if link.receipt_type == "invoice" and data.accent_color %}
+  {% if data.accent_color %}
   <style>
     .badge.bill { background: {{ data.accent_color }}; }
-    .invoice-totals .row.grand { color: {{ data.accent_color }}; }
+    .invoice-totals .row.grand { border-top-color: {{ data.accent_color }}; color: {{ data.accent_color }}; }
     .print-btn { background: {{ data.accent_color }}; }
     .view-online a { color: {{ data.accent_color }} !important; }
+    .header { background: linear-gradient(135deg, {{ data.accent_color }} 0%, {{ data.accent_color }} 100%) !important; }
   </style>
   {% endif %}
 </head>
 <body>
 
 <div class="card">
+
+  {% if theme.watermark_enabled %}
+  <div class="doc-watermark">
+    {% if theme.watermark_source == "logo" and data.school_logo %}
+      <img src="{{ data.school_logo }}" alt="">
+    {% else %}
+      <span>{{ theme.watermark_text|default:data.school_name|default:"SCHOOLDOM" }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <!-- Header -->
   <div class="header"{% if link.receipt_type == "invoice" and data.accent_color %} style="background:linear-gradient(135deg,{{ data.accent_color }} 0%,{{ data.accent_color }} 100%)"{% endif %}>
@@ -629,6 +676,7 @@
   </div>
 
   <div class="footer">
+    {% if theme.footer_text %}<p style="margin-bottom:8px">{{ theme.footer_text }}</p>{% endif %}
     {% if link.receipt_type == "invoice" %}
       {% if data.footer_note %}<p style="margin-bottom:8px">{{ data.footer_note }}</p>{% endif %}
       <p>{{ data.school_name|default:"School" }}{% if data.school_address %} &bull; {{ data.school_address }}{% endif %}{% if data.school_phone %} &bull; {{ data.school_phone }}{% endif %}</p>

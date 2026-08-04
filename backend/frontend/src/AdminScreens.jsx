@@ -27,6 +27,13 @@ import {
   ScreenState,
   Spinner,
   TimetableGridTable,
+  DEFAULT_DOCUMENT_THEME,
+  resolveDocumentTheme,
+  themeToCssVars,
+  documentStylesForExport,
+  openPrintableDocument,
+  downloadPrintablePng,
+  OfficialDocHeader,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
 import SignaturePad from "./components/SignaturePad";
@@ -732,8 +739,9 @@ const INVOICE_COLOR_PRESETS = [
   { label: "Amber", value: "#c2410c" },
 ];
 
-function InvoiceDocument({ id, school, bill, student, parent, invoiceNumber, virtualAccount, amountPaid = 0, paymentStatus = "published" }) {
+function InvoiceDocument({ id, school, bill, student, parent, invoiceNumber, virtualAccount, amountPaid = 0, paymentStatus = "published", theme }) {
   const brand = resolveSchoolBrand(school);
+  const docTheme = theme || resolveDocumentTheme(school);
   const items = bill.items?.length ? bill.items : [{ description: "", amount: "" }];
   const subtotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const discount = Number(bill.discount_amount || 0);
@@ -742,11 +750,11 @@ function InvoiceDocument({ id, school, bill, student, parent, invoiceNumber, vir
   const paid = Number(amountPaid || 0);
   const balance = Math.max(total - paid, 0);
   const today = new Date().toISOString().slice(0, 10);
-  const accentColor = bill.accent_color || "#0f766e";
+  const accentColor = bill.accent_color || docTheme.accent_color;
   const term = [bill.academic_year_name, bill.term_name].filter(Boolean).join(" ") || "-";
 
   return (
-    <article id={id} className="official-document invoice-document" style={{ "--invoice-accent": accentColor }}>
+    <article id={id} className="official-document invoice-document" style={{ ...themeToCssVars(docTheme), "--invoice-accent": accentColor }}>
       <header className="invoice-doc-header">
         <div className="invoice-doc-brand">
           <div className="invoice-doc-logo">
@@ -1219,6 +1227,7 @@ function AdminFinanceScreen({
 }) {
   const finance = data?.finance_overview || data || {};
   const schoolBrand = resolveSchoolBrand(finance?.school, data?.school, school, finance?.tenant, data?.tenant);
+  const documentTheme = resolveDocumentTheme(finance?.school, data?.school, school);
   const groupLabels = academicGroupLabels(schoolBrand);
   const adminWallet = finance?.admin_wallet || {};
   const classFees = finance?.class_fee_rows || [];
@@ -1685,8 +1694,8 @@ function AdminFinanceScreen({
       const { bill, mode } = printingBill;
       const title = `Invoice - ${bill.title}`;
       const run = mode === "png"
-        ? downloadPrintablePng("bill-history-print-doc", `invoice-${(bill.title || "bill").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`, title)
-        : Promise.resolve(openPrintableDocument("bill-history-print-doc", title));
+        ? downloadPrintablePng("bill-history-print-doc", `invoice-${(bill.title || "bill").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`, title, documentTheme)
+        : Promise.resolve(openPrintableDocument("bill-history-print-doc", title, documentTheme));
       Promise.resolve(run)
         .catch((err) => setBillActionError(err.message || "Could not open the printable invoice."))
         .finally(() => setPrintingBill(null));
@@ -1917,8 +1926,8 @@ function AdminFinanceScreen({
       <html>
         <head>
           <title>${escapeHtml(reference || title)}</title>
-          <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea}.brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}.brand-logo{width:56px;height:56px;border:1px solid #d8e0ea;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fff;color:#0f3d5e;font-weight:900}.brand-logo img{width:100%;height:100%;object-fit:contain}.brand strong{display:block;font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;margin:12px 0 18px}th,td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}th{text-transform:uppercase;font-size:11px}td:last-child,th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
+          <style>${documentStylesForExport(documentTheme)}
+            .sheet{width:min(100%,900px);margin:14px auto;background:#fff;padding:34px 42px;border:1px solid #d8e0ea;font-family:var(--doc-font-family),Arial,sans-serif}.brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}.brand-logo{width:56px;height:56px;border:1px solid #d8e0ea;border-radius:12px;display:grid;place-items:center;overflow:hidden;background:#fff;color:var(--doc-secondary);font-weight:900}.brand-logo img{width:100%;height:100%;object-fit:contain}.brand strong{display:block;font-size:20px}.doc-title{font-size:38px;letter-spacing:0;text-transform:uppercase;margin:0 0 18px;color:var(--doc-secondary)}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-bottom:20px;font-size:12px}.sheet table{width:100%;border-collapse:collapse;margin:12px 0 18px}.sheet th,.sheet td{border-bottom:1px dashed #9ca3af;padding:10px;text-align:left}.sheet th{text-transform:uppercase;font-size:11px}.sheet td:last-child,.sheet th:last-child{text-align:right}.total{display:flex;justify-content:flex-end;gap:34px;font-size:20px;font-weight:900;margin-top:14px;color:var(--doc-accent)}.footer{border-top:1px dashed #9ca3af;margin-top:28px;padding-top:12px;text-align:center;color:#64748b;font-size:11px}@media print{body{background:#fff}.sheet{width:100%;margin:0;border:none;padding:18px 22px}}
           </style>
         </head>
         <body>
@@ -2715,6 +2724,7 @@ function AdminFinanceScreen({
           <InvoiceDocument
             id="bill-history-print-doc"
             school={schoolBrand}
+            theme={documentTheme}
             bill={printingBill.bill}
             paymentStatus={printingBill.bill.invoice_status || printingBill.bill.status}
           />
@@ -2917,6 +2927,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     return !["PHY", "CHEM"].includes(code) && !["physics", "chemistry"].includes(name);
   });
   const broadsheetSchool = resolveSchoolBrand(data?.school, session?.school, session?.user?.school);
+  const documentTheme = resolveDocumentTheme(data?.school, session?.school, session?.user?.school);
 
   const [activeView, setActiveView] = useState("desktop");
   const [editingExam, setEditingExam] = useState(null);
@@ -3249,8 +3260,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       <html>
         <head>
           <title>${escapeHtml(broadsheetType || "Exam Broadsheet")}</title>
-          <style>
-            *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#111827;font-family:Arial,sans-serif}.sheet{width:max-content;min-width:100%;padding:24px}.paper{background:#fff;border:1px solid #cbd5e1;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.12)}.school-name{margin:0 0 4px;font-size:18px;font-weight:900;text-transform:uppercase;color:#0f172a}h1{margin:0 0 6px;font-size:24px;text-transform:uppercase}p{margin:0 0 18px;color:#475569}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #94a3b8;padding:8px 10px;text-align:left;white-space:nowrap}th{background:#e8f2fb;text-transform:uppercase;font-size:11px}td:last-child,th:last-child{font-weight:900;background:#f8fafc}.actions{margin:0 0 14px;display:flex;gap:10px}.actions button{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff}.actions{display:none}.sheet{padding:0}.paper{box-shadow:none;border:0}}
+          <style>${documentStylesForExport(documentTheme)}
+            .sheet{width:max-content;min-width:100%;padding:24px;font-family:var(--doc-font-family),Arial,sans-serif}.paper{background:#fff;border:1px solid #cbd5e1;padding:24px;box-shadow:0 18px 45px rgba(15,23,42,.12)}.school-name{margin:0 0 4px;font-size:18px;font-weight:900;text-transform:uppercase;color:var(--doc-secondary)}.sheet h1{margin:0 0 6px;font-size:24px;text-transform:uppercase;color:var(--doc-secondary)}.sheet p{margin:0 0 18px;color:#475569}.sheet table{border-collapse:collapse;width:100%;font-size:12px}.sheet th,.sheet td{border:var(--doc-border-width) var(--doc-border-style) #94a3b8;padding:8px 10px;text-align:left;white-space:nowrap}.sheet th{background:#e8f2fb;text-transform:uppercase;font-size:11px}.sheet td:last-child,.sheet th:last-child{font-weight:900;background:#f8fafc}.actions{margin:0 0 14px;display:flex;gap:10px}.actions button{border:0;border-radius:8px;background:var(--doc-accent);color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff}.actions{display:none}.sheet{padding:0}.paper{box-shadow:none;border:0}}
           </style>
         </head>
         <body>
@@ -3801,9 +3812,10 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
 
 function AdminResultsScreen({
   data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onSendSms,
-  onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet,
+  onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
 }) {
   const summary = data?.summary || {};
+  const documentTheme = resolveDocumentTheme(data?.school, session?.school);
   const leaderboard = data?.leaderboard || [];
   const batches = data?.result_batches || [];
   const classOptions = data?.options?.classes || [];
@@ -3961,6 +3973,14 @@ function AdminResultsScreen({
   };
 
   const handlePrintReport = () => {
+    const pageRule = `@page{size:${documentTheme.page_size} ${documentTheme.orientation};margin:${documentTheme.margin_mm}mm}`;
+    let styleTag = document.getElementById("report-card-page-style");
+    if (!styleTag) {
+      styleTag = document.createElement("style");
+      styleTag.id = "report-card-page-style";
+      document.head.appendChild(styleTag);
+    }
+    styleTag.textContent = pageRule;
     window.print();
   };
 
@@ -4102,7 +4122,7 @@ function AdminResultsScreen({
       </article>
 
       {report ? (
-        <article className="app-panel report-card" id="report-card-printable">
+        <article className="app-panel report-card" id="report-card-printable" style={themeToCssVars(documentTheme)}>
           <div className="report-card-topbar no-print">
             <div className="report-school-brand">
               <SchoolBrand school={report.school} subtitle="Official report card" compact />
@@ -6228,8 +6248,9 @@ function blobToDataUrl(blob) {
   });
 }
 
-export function IdCardPreview({ person, school, qrDataUrl }) {
+export function IdCardPreview({ person, school, qrDataUrl, theme }) {
   const brand = resolveSchoolBrand(school);
+  const docTheme = theme || resolveDocumentTheme(school);
   const [isFlipped, setIsFlipped] = useState(false);
   if (!person) {
     return (
@@ -6241,7 +6262,7 @@ export function IdCardPreview({ person, school, qrDataUrl }) {
   }
 
   return (
-    <div id="schooldom-id-card-document" className="id-card-print-area id-card-flip-stage">
+    <div id="schooldom-id-card-document" className="id-card-print-area id-card-flip-stage" style={themeToCssVars(docTheme)}>
       <div className={`id-card-flip-inner ${isFlipped ? "flipped" : ""}`}>
         <article className="id-card-preview-card id-card-face id-card-front">
           <div className="id-card-ribbon">{person.display_type}</div>
@@ -6582,6 +6603,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
   const [actionSuccess, setActionSuccess] = useState("");
 
   const cardSchool = data?.school || school;
+  const documentTheme = resolveDocumentTheme(cardSchool);
   const filteredPeople = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return people.filter((person) => {
@@ -6667,6 +6689,13 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
       setQrDataUrl(result.dataUrl);
       await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
       setActionSuccess(result.tokenMessage || "ID card generated.");
+      let styleTag = document.getElementById("id-card-page-style");
+      if (!styleTag) {
+        styleTag = document.createElement("style");
+        styleTag.id = "id-card-page-style";
+        document.head.appendChild(styleTag);
+      }
+      styleTag.textContent = `@page{size:${documentTheme.page_size} ${documentTheme.id_card_orientation};margin:${documentTheme.margin_mm}mm}`;
       window.print();
     } catch (printError) {
       setActionError(printError.message || "Could not generate ID card for printing.");
@@ -6741,7 +6770,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               </div>
               {actionSuccess ? <div className="token-usage-toast" role="status">{actionSuccess}</div> : null}
               {actionError ? <p className="form-feedback error">{actionError}</p> : null}
-              <IdCardPreview person={selectedPerson} school={cardSchool} qrDataUrl={qrDataUrl} />
+              <IdCardPreview person={selectedPerson} school={cardSchool} qrDataUrl={qrDataUrl} theme={documentTheme} />
               <div className="panel-form-actions id-card-actions">
                 <button type="button" className="table-action" onClick={handlePrint} disabled={!selectedPerson || qrLoading}>
                   Generate / Print Card
@@ -6763,188 +6792,15 @@ function documentFileName(prefix, student) {
   return `${prefix}-${base || "student"}.png`;
 }
 
-function openPrintableDocument(elementId, title) {
-  const element = document.getElementById(elementId);
-  if (!element) {
-    throw new Error("The document preview is not ready yet.");
-  }
-
-  const content = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${escapeHtml(title)}</title><style>${documentStylesForExport()}</style></head><body>${element.outerHTML}<script>window.onload=()=>{window.focus();window.print();};</script></body></html>`;
-
-  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=980,height=1200");
-  if (printWindow) {
-    printWindow.document.write(content);
-    printWindow.document.close();
-    return;
-  }
-
-  const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  iframe.style.overflow = "hidden";
-  document.body.appendChild(iframe);
-
-  const iframeDoc = iframe.contentWindow?.document;
-  if (!iframeDoc) {
-    iframe.remove();
-    throw new Error("Unable to open print preview.");
-  }
-
-  iframeDoc.open();
-  iframeDoc.write(content);
-  iframeDoc.close();
-  iframe.onload = () => {
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
-    setTimeout(() => iframe.remove(), 1000);
-  };
-}
-
-async function downloadPrintablePng(elementId, filename, title) {
-  const element = document.getElementById(elementId);
-  if (!element) {
-    throw new Error("The document preview is not ready yet.");
-  }
-  const clone = element.cloneNode(true);
-  clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-  const rect = element.getBoundingClientRect();
-  const width = Math.max(850, Math.ceil(rect.width || element.scrollWidth || 850));
-  const height = Math.max(1100, Math.ceil(element.scrollHeight || rect.height || 1100));
-  const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">${clone.outerHTML}</div>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport()}</style>${html}</foreignObject></svg>`;
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-  const image = new Image();
-  const pngUrl = await new Promise((resolve, reject) => {
-    image.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const scale = 2;
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const context = canvas.getContext("2d");
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.scale(scale, scale);
-        context.drawImage(image, 0, 0);
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(new Error("Could not render PNG."));
-            return;
-          }
-          resolve(URL.createObjectURL(blob));
-        }, "image/png");
-      } catch (renderError) {
-        reject(renderError);
-      }
-    };
-    image.onerror = () => reject(new Error(`Could not render ${title || "document"} as PNG.`));
-    image.src = svgUrl;
-  });
-  URL.revokeObjectURL(svgUrl);
-  const link = document.createElement("a");
-  link.href = pngUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(pngUrl);
-}
-
-function documentStylesForExport() {
-  return `
-    *{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#0f172a;font-family:Georgia,'Times New Roman',serif}.official-document{width:min(100%,850px);margin:24px auto;background:#fff;color:#111827;padding:42px;border:1px solid #d7e0ec;box-shadow:0 18px 45px rgba(15,23,42,.12)}.official-doc-header{text-align:center;border-bottom:3px double #0f3d5e;padding-bottom:18px;margin-bottom:24px}.official-doc-logo{width:82px;height:82px;border-radius:18px;border:1px solid #cbd5e1;display:grid;place-items:center;margin:0 auto 10px;overflow:hidden;background:#f8fafc}.official-doc-logo img{width:100%;height:100%;object-fit:contain}.official-doc-logo span{font-family:Arial,sans-serif;font-weight:900;color:#0f3d5e}.official-doc-header h1{font-size:28px;text-transform:uppercase;letter-spacing:.04em;margin:0}.official-doc-header p{margin:5px 0 0;color:#475569;font-family:Arial,sans-serif}.official-doc-motto{font-style:italic;font-weight:800;color:#0f3d5e}.official-doc-title{text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:22px;margin:20px 0;color:#0f3d5e}.doc-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:22px}.doc-line{display:flex;gap:10px;border-bottom:1px solid #94a3b8;min-height:30px;align-items:flex-end}.doc-line strong{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;white-space:nowrap;color:#334155}.doc-line span{font-weight:700}.document-table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-family:Arial,sans-serif;font-size:13px}.document-table th,.document-table td{border:1px solid #cbd5e1;padding:8px;text-align:left}.document-table th{background:#eef6f3;color:#0f3d5e;text-transform:uppercase;font-size:11px}.term-record{break-inside:avoid;margin-bottom:18px}.term-record h3{margin:0 0 8px;font-family:Arial,sans-serif;color:#0f3d5e}.testimonial-border{border:12px double #198754;padding:28px;background:linear-gradient(0deg,rgba(25,135,84,.035),rgba(25,135,84,.035)),#fff}.testimonial-title{font-size:42px;color:#b42318;font-weight:900;text-align:center;font-family:Georgia,'Times New Roman',serif;margin:12px 0 24px}.testimonial-list{display:grid;gap:10px;counter-reset:item}.testimonial-row{display:grid;grid-template-columns:34px 190px 1fr;gap:10px;align-items:end}.testimonial-row:before{counter-increment:item;content:counter(item) ".";font-weight:800}.testimonial-row strong{font-family:Arial,sans-serif;font-size:12px}.testimonial-row span{border-bottom:1px solid #334155;min-height:24px;font-weight:700;padding:0 6px}.doc-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.doc-summary-strip div{border:1px solid #cbd5e1;padding:10px;background:#f8fafc}.doc-summary-strip strong,.doc-summary-strip span{display:block}.doc-summary-strip strong{font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase}.doc-summary-strip span{font-size:18px;font-weight:900}.signature-row{display:grid;grid-template-columns:1fr 120px 1fr;gap:20px;align-items:end;margin-top:42px}.signature-line{border-top:1px solid #111827;text-align:center;padding-top:8px;font-family:Arial,sans-serif;font-weight:800;font-size:12px}.doc-signature-img{display:block;height:34px;max-width:150px;object-fit:contain;margin:0 auto 4px}.stamp-seal{width:98px;height:98px;border-radius:50%;background:#dc2626;box-shadow:inset 0 0 0 8px rgba(255,255,255,.18);margin:auto}.stamp-box{border:2px dashed #94a3b8;min-height:86px;display:grid;place-items:center;color:#64748b;font-family:Arial,sans-serif;text-transform:uppercase;font-weight:800}.document-note{font-family:Arial,sans-serif;color:#64748b;font-size:12px}.no-print{display:none}.id-card-print-area{width:100%;min-height:620px;background:#fff;display:grid;grid-template-columns:370px 370px;gap:18px;place-content:center;place-items:center;font-family:Inter,Arial,sans-serif}.id-card-flip-inner{display:contents;transform:none!important}.id-card-face{position:relative;inset:auto;backface-visibility:visible}.id-card-back{transform:none}.id-card-preview-card{width:370px;min-height:560px;background:#fff;color:#102033;border:1px solid #d7e0ec;border-radius:22px;overflow:hidden;box-shadow:none}.id-card-back{display:grid;grid-template-rows:auto 1fr auto;background:#08111f;color:#fff}.id-card-ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900;padding:10px}.id-card-top,.id-card-back-head{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.id-card-back-head{background:#102033;color:#fff}.id-card-school-logo,.id-card-photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.id-card-school-logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.id-card-school-logo img,.id-card-photo img,.id-card-back-qr img{width:100%;height:100%;object-fit:cover}.id-card-school-logo span,.id-card-photo span{font-weight:900;color:#0f3d5e}.id-card-top strong,.id-card-back-head strong{display:block;font-size:18px}.id-card-motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.id-card-back-head .id-card-motto{color:#a7f3d0}.id-card-top span,.id-card-back-head span{display:block;color:#64748b;font-size:12px;margin-top:2px}.id-card-back-head span{color:#cbd5e1}.id-card-person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.id-card-photo{width:94px;height:112px;border-radius:18px}.id-card-person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.id-card-person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.id-card-person span{display:block;color:#475569;margin-top:10px;font-weight:700}.id-card-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.id-card-details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.id-card-details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-details dd{margin:4px 0 0;font-weight:800;font-size:13px}.id-card-signature-block{display:grid;justify-items:center;gap:2px;margin:0 22px 14px}.id-card-signature-img{height:36px;max-width:140px;object-fit:contain}.id-card-signature-block span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-front-footer{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.id-card-front-footer strong,.id-card-front-footer span{display:block}.id-card-front-footer span{color:#cbd5e1;font-size:12px;margin-top:6px}.id-card-back-qr-panel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.id-card-back-qr-panel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.id-card-back-qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.id-card-back-qr img{object-fit:contain}.id-card-back-qr-panel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.id-card-back-qr-panel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.id-card-back-footer{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.id-card-flip-button{display:none}@media print{body{background:#fff}.official-document{box-shadow:none;margin:0 auto;border:none;min-height:100vh}.testimonial-border{min-height:calc(100vh - 84px)}}@media(max-width:720px){.official-document{padding:24px}.doc-info-grid,.doc-summary-strip,.signature-row{grid-template-columns:1fr}.testimonial-row{grid-template-columns:28px 1fr}.testimonial-row span{grid-column:2}}
-    @page{size:A4 portrait;margin:15mm}
-    .service-agreement-document{font-family:Georgia,'Times New Roman',serif;color:#1f2933;line-height:1.55;max-width:800px;margin:0 auto;padding:0 6px}
-    .service-agreement-document h1{text-align:center;font-size:20px;letter-spacing:.03em;margin:0 0 4px}
-    .service-agreement-document .sa-subtitle{text-align:center;color:#52606d;margin-bottom:20px}
-    .service-agreement-document h2{font-size:15px;color:#1a365d;margin:20px 0 8px;page-break-inside:avoid}
-    .service-agreement-document p{margin:6px 0}
-    .service-agreement-document .sa-fill{border-bottom:1px solid #94a3b8;padding:0 4px;font-weight:600}
-    .service-agreement-document .sa-input{display:none}
-    .service-agreement-document .sa-signature-block{margin-top:32px}
-    .service-agreement-document .sa-sig-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid #cbd5e1;padding:10px 0}
-    .service-agreement-document .sa-sig-label{flex:0 0 160px;color:#52606d;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-    .service-agreement-document .sa-signature-img{max-height:60px;object-fit:contain}
-    .transcript-document .doc-summary-strip{grid-template-columns:repeat(5,1fr)}
-    .invoice-document{--invoice-accent:#0f766e;font-family:Arial,Helvetica,sans-serif;color:#1e293b}
-    .invoice-doc-header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:2px solid var(--invoice-accent);padding-bottom:16px;margin-bottom:18px}
-    .invoice-doc-brand{display:flex;gap:14px;align-items:flex-start}
-    .invoice-doc-logo{width:56px;height:56px;border-radius:14px;overflow:hidden;display:grid;place-items:center;background:#f1f5f9;flex:0 0 auto}
-    .invoice-doc-logo img{width:100%;height:100%;object-fit:contain}
-    .invoice-doc-logo span{font-weight:900;color:var(--invoice-accent)}
-    .invoice-doc-brand strong{display:block;font-size:16px;color:#0f172a;margin-bottom:3px}
-    .invoice-doc-brand span{display:block;font-size:11.5px;color:#64748b;line-height:1.5}
-    .invoice-doc-title-block{text-align:right}
-    .invoice-doc-title-block h2{margin:0 0 8px;font-size:22px;letter-spacing:.04em;color:#0f172a}
-    .invoice-doc-meta-table{border-collapse:collapse;margin-left:auto}
-    .invoice-doc-meta-table td{padding:4px 10px;font-size:12px;border-bottom:1px solid #e2e8f0;text-align:left}
-    .invoice-doc-meta-table td:first-child{color:#64748b}
-    .invoice-doc-meta-table td:last-child{font-weight:700;color:#0f172a}
-    .invoice-doc-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
-    .invoice-doc-card,.invoice-doc-panel{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
-    .invoice-doc-card-head,.invoice-doc-panel-head{padding:8px 14px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#0f172a}
-    .invoice-doc-card-head.accent{background:var(--invoice-accent)}
-    .invoice-doc-card-body,.invoice-doc-panel-body{padding:12px 14px}
-    .invoice-doc-card-body div{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12.5px;border-bottom:1px dashed #f1f5f9}
-    .invoice-doc-card-body label{color:#64748b}
-    .invoice-doc-card.summary .invoice-doc-summary-total{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid #e2e8f0}
-    .invoice-doc-summary-total span{font-size:12px;color:#64748b;text-transform:uppercase}
-    .invoice-doc-summary-total strong{font-size:20px;color:var(--invoice-accent)}
-    .invoice-doc-card.summary .row{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;color:#475569}
-    .invoice-doc-card.summary .row.balance{font-weight:800;color:#0f172a;border-top:1px solid #e2e8f0;margin-top:4px;padding-top:8px}
-    .invoice-doc-items thead th{background:#0f172a;color:#fff}
-    .invoice-doc-items tbody tr:nth-child(even){background:#f8fafc}
-    .invoice-doc-items td,.invoice-doc-items th{text-align:left}
-    .invoice-doc-items td:first-child,.invoice-doc-items th:first-child,.invoice-doc-items td:nth-child(3),.invoice-doc-items th:nth-child(3){text-align:center}
-    .invoice-doc-items td:last-child,.invoice-doc-items th:last-child,.invoice-doc-items td:nth-child(4),.invoice-doc-items th:nth-child(4){text-align:right}
-    .invoice-doc-total-row td{background:#f0fdfa;background:color-mix(in srgb,var(--invoice-accent) 12%,#ffffff);font-weight:900;font-size:14px;color:var(--invoice-accent);border-top:2px solid var(--invoice-accent);text-align:right}
-    .invoice-doc-total-row td:first-child{text-align:left}
-    .invoice-totals{margin:10px 0 18px;font-family:Arial,sans-serif}
-    .invoice-totals .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155}
-    .invoice-totals .row.discount span:last-child{color:#16a34a}
-    .invoice-doc-panel.note{border-color:#fde68a}
-    .invoice-doc-panel.note .invoice-doc-panel-head{background:#b45309}
-    .invoice-doc-panel-body.muted{color:#64748b;font-size:12.5px}
-    .invoice-doc-panel-body ul{margin:0 0 10px;padding-left:18px;font-size:12.5px;color:#475569;line-height:1.6}
-    .invoice-doc-thanks{font-weight:700;font-size:12.5px;color:#0f172a;margin:0}
-    .invoice-account-number{letter-spacing:.04em;color:var(--invoice-accent)}
-    .invoice-doc-portal-link{display:inline-block;margin-top:8px;font-size:12px;font-weight:700;color:var(--invoice-accent);text-decoration:none}
-    .invoice-doc-signoff{margin-top:34px;display:flex;justify-content:flex-end}
-    .invoice-doc-signature{text-align:center}
-    .invoice-doc-signature img{display:block;height:40px;max-width:160px;object-fit:contain;margin:0 auto 4px}
-    .invoice-doc-signature-blank{display:block;height:40px;border-bottom:1px solid #94a3b8;width:160px;margin:0 auto 4px}
-    .invoice-doc-signature span{display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
-    .invoice-doc-signature strong{display:block;font-size:12px;color:#0f172a;margin-top:2px}
-  `;
-}
-
-function OfficialDocHeader({ school, title }) {
-  const brand = resolveSchoolBrand(school);
-  return (
-    <header className="official-doc-header">
-      <div className="official-doc-logo">
-        {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
-      </div>
-      <h1>{brand.name}</h1>
-      {brand.motto ? <p className="official-doc-motto">{brand.motto}</p> : null}
-      <p>{school?.address || brand.code || "Official School Record"}</p>
-      <h2 className="official-doc-title">{title}</h2>
-    </header>
-  );
-}
-
-function TranscriptPreview({ transcript, school }) {
+function TranscriptPreview({ transcript, school, theme }) {
   const selectedSchool = transcript?.school || school;
   const brand = resolveSchoolBrand(selectedSchool);
+  const docTheme = theme || resolveDocumentTheme(selectedSchool);
   const student = transcript?.student || {};
   const termRecords = transcript?.term_records || [];
   const cumulative = transcript?.cumulative || {};
   return (
-    <article id="schooldom-transcript-document" className="official-document transcript-document">
+    <article id="schooldom-transcript-document" className="official-document transcript-document" style={themeToCssVars(docTheme)}>
       <OfficialDocHeader school={selectedSchool} title="Official Student Transcript" />
       <section className="doc-info-grid">
         <div className="doc-line"><strong>Student Name</strong><span>{student.name || "-"}</span></div>
@@ -7006,9 +6862,10 @@ function TranscriptPreview({ transcript, school }) {
   );
 }
 
-function TestimonialPreview({ detail, school }) {
+function TestimonialPreview({ detail, school, theme }) {
   const selectedSchool = detail?.school || school;
   const brand = resolveSchoolBrand(selectedSchool);
+  const docTheme = theme || resolveDocumentTheme(selectedSchool);
   const student = detail?.student || {};
   const testimonial = detail?.testimonial || {};
   const rows = [
@@ -7031,7 +6888,7 @@ function TestimonialPreview({ detail, school }) {
     ["Principal / Admin Remarks", testimonial.administrator_remarks],
   ];
   return (
-    <article id="schooldom-testimonial-document" className="official-document testimonial-document">
+    <article id="schooldom-testimonial-document" className="official-document testimonial-document" style={themeToCssVars(docTheme)}>
       <div className="testimonial-border">
         <OfficialDocHeader school={selectedSchool} title="" />
         <div className="testimonial-title">Testimonial</div>
@@ -7082,6 +6939,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
   const [isGenerating, setIsGenerating] = useState(false);
   const selectedStudent = students.find((student) => student.id === selectedStudentId) || students[0] || null;
   const eligibleStudents = students.filter((student) => student.is_testimonial_eligible);
+  const documentTheme = resolveDocumentTheme(data?.school, school);
 
   useEffect(() => {
     if (!selectedStudentId && students[0]) {
@@ -7207,7 +7065,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
     setIsGenerating(true);
     try {
       await loadGeneratedDocument();
-      openPrintableDocument(documentId, documentTitle);
+      openPrintableDocument(documentId, documentTitle, documentTheme);
     } catch (printError) {
       setActionError(printError.message || `Could not generate ${mode}.`);
     } finally {
@@ -7221,7 +7079,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
     setIsGenerating(true);
     try {
       await loadGeneratedDocument();
-      await downloadPrintablePng(documentId, documentFileName(filePrefix, selectedStudent), documentTitle);
+      await downloadPrintablePng(documentId, documentFileName(filePrefix, selectedStudent), documentTitle, documentTheme);
     } catch (downloadError) {
       setActionError(downloadError.message || `Could not generate ${mode} PNG.`);
     } finally {
@@ -7376,9 +7234,9 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
                 {detailLoading ? (
                   <p className="panel-empty">Preparing document...</p>
                 ) : mode === "testimonial" ? (
-                  <TestimonialPreview detail={detail} school={data?.school || school} />
+                  <TestimonialPreview detail={detail} school={data?.school || school} theme={documentTheme} />
                 ) : (
-                  <TranscriptPreview transcript={detail} school={data?.school || school} />
+                  <TranscriptPreview transcript={detail} school={data?.school || school} theme={documentTheme} />
                 )}
               </div>
               <div className="panel-form-actions document-actions">
@@ -8039,6 +7897,399 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
   );
 }
 
+const DOCUMENT_THEME_COLOR_PRESETS = [
+  { label: "Teal", value: "#0f766e" },
+  { label: "Navy", value: "#1e3a8a" },
+  { label: "Emerald", value: "#16a34a" },
+  { label: "Purple", value: "#7c3aed" },
+  { label: "Crimson", value: "#b91c1c" },
+  { label: "Amber", value: "#c2410c" },
+];
+
+const DOCUMENT_PREVIEW_TYPES = [
+  { key: "report_card", label: "Report Card" },
+  { key: "transcript", label: "Transcript" },
+  { key: "testimonial", label: "Testimonial" },
+  { key: "invoice", label: "Invoice" },
+  { key: "id_card", label: "ID Card" },
+  { key: "service_agreement", label: "Service Agreement" },
+];
+
+function mockTranscript(brand) {
+  return {
+    school: brand,
+    student: { name: "Sample Student", student_id: "STU-0001", class_name: "JSS 1", gender: "female" },
+    admission_date: "2023-09-01",
+    session_history: ["2023/2024", "2024/2025"],
+    cumulative: { total_score: 452, total_max: 500, average: 90.4, grade: "A", gpa: 4.8 },
+    term_records: [
+      {
+        session: "2024/2025",
+        term: "First Term",
+        class_name: "JSS 1",
+        gpa: 4.8,
+        subjects: [
+          { subject: "Mathematics", score: 88, max_score: 100, percentage: 88, grade: "A", remark: "Excellent" },
+          { subject: "English Language", score: 91, max_score: 100, percentage: 91, grade: "A", remark: "Excellent" },
+        ],
+      },
+    ],
+  };
+}
+
+function mockTestimonial(brand) {
+  return {
+    school: brand,
+    student: { name: "Sample Student", student_id: "STU-0001" },
+    testimonial: {
+      student_name: "Sample Student",
+      date_of_birth: "2012-05-14",
+      gender: "female",
+      admission_date: "2023-09-01",
+      class_of_admission: "JSS 1",
+      principal_name: "Principal / Administrator",
+      issue_date: new Date().toISOString().slice(0, 10),
+    },
+  };
+}
+
+const MOCK_INVOICE_BILL = {
+  title: "Third Term Tuition",
+  due_date: new Date().toISOString().slice(0, 10),
+  academic_year_name: "2024/2025",
+  term_name: "Third Term",
+  discount_amount: "0",
+  tax_amount: "0",
+  payment_instructions: "Payment is due before resumption.",
+  items: [
+    { description: "Tuition Fee", amount: "120000" },
+    { description: "Development Levy", amount: "15000" },
+  ],
+};
+const MOCK_INVOICE_STUDENT = { name: "Sample Student", student_id: "STU-0001", class_name: "JSS 1" };
+const MOCK_INVOICE_PARENT = { name: "Sample Parent", phone: "0800 000 0000", email: "parent@example.com" };
+const MOCK_VIRTUAL_ACCOUNT = { number: "0123456789", bank: "Sample Bank", name: "SchoolDom / Sample Parent" };
+
+const MOCK_ID_CARD_PERSON = {
+  person_type: "student",
+  display_type: "Student",
+  name: "Sample Student",
+  unique_id: "STU-0001",
+  primary_label: "JSS 1",
+  secondary_label: "Learner",
+  gender: "female",
+  admission_or_employment_date: "2023-09-01",
+  date_of_birth: "2012-05-14",
+  guardian_name: "Sample Parent",
+  guardian_phone: "0800 000 0000",
+};
+
+function mockServiceAgreementForm(brand) {
+  return {
+    agreement_date: new Date().toISOString().slice(0, 10),
+    school_legal_name: brand.name,
+    school_registered_address: brand.address || "School address",
+    representative_name: "Representative Name",
+    representative_title: "Proprietor",
+    notice_days: "14",
+    cure_period_days: "14",
+    negotiation_days: "30",
+  };
+}
+
+function AdminDocumentCustomizationScreen({ data, loading, error, onRetry, school, session, onSave }) {
+  const brand = resolveSchoolBrand(session?.school, school);
+  const savedTheme = useMemo(
+    () => resolveDocumentTheme(data?.theme ? { document_theme: data.theme } : null, session?.school, school),
+    [data?.theme, session?.school, school]
+  );
+  const [draft, setDraft] = useState(savedTheme);
+  const [previewType, setPreviewType] = useState("invoice");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+
+  useEffect(() => {
+    setDraft(savedTheme);
+  }, [savedTheme]);
+
+  const update = (field, value) => {
+    setSaveSuccess("");
+    setDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setSaveError("");
+    setSaveSuccess("");
+    try {
+      await onSave(draft);
+      setSaveSuccess("Document theme saved.");
+    } catch (saveErr) {
+      setSaveError(saveErr.message || "Could not save the document theme.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setDraft(savedTheme);
+    setSaveError("");
+    setSaveSuccess("");
+  };
+
+  if (loading && !data) return <ScreenState state="loading" message="Loading document customization..." />;
+  if (error && !data) return <ScreenState state="error" message={error} onRetry={onRetry} />;
+
+  const previewSchool = { ...brand, document_theme: draft };
+
+  return (
+    <section className="screen-grid document-theme-screen">
+      <div className="screen-hero">
+        <h2>Document Customization</h2>
+        <p>
+          Personalize the look of every generated document - report cards, transcripts, testimonials, invoices,
+          receipts, bills, payslips, ID cards, broadsheets, and the service agreement - and preview changes live
+          before saving or printing.
+        </p>
+      </div>
+
+      <div className="document-theme-layout">
+        <form className="app-panel document-theme-form" onSubmit={handleSave}>
+          <h3>Layout</h3>
+          <div className="panel-field-row">
+            <label>
+              Orientation
+              <select value={draft.orientation} onChange={(event) => update("orientation", event.target.value)}>
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+            </label>
+            <label>
+              Page size
+              <select value={draft.page_size} onChange={(event) => update("page_size", event.target.value)}>
+                <option value="A4">A4</option>
+                <option value="letter">Letter</option>
+              </select>
+            </label>
+          </div>
+          <div className="panel-field-row">
+            <label>
+              ID card orientation
+              <select value={draft.id_card_orientation} onChange={(event) => update("id_card_orientation", event.target.value)}>
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </label>
+            <label>
+              Margin (mm)
+              <input type="number" min="0" max="50" value={draft.margin_mm} onChange={(event) => update("margin_mm", Number(event.target.value))} />
+            </label>
+          </div>
+
+          <h3>Typography</h3>
+          <div className="panel-field-row">
+            <label>
+              Font family
+              <select value={draft.font_family} onChange={(event) => update("font_family", event.target.value)}>
+                <option value="Segoe UI">Segoe UI</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Arial">Arial</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Manrope">Manrope</option>
+              </select>
+            </label>
+          </div>
+          <div className="panel-field-row">
+            <label>
+              Body size (px)
+              <input type="number" min="8" max="30" value={draft.font_size_body} onChange={(event) => update("font_size_body", Number(event.target.value))} />
+            </label>
+            <label>
+              Heading size (px)
+              <input type="number" min="10" max="48" value={draft.font_size_heading} onChange={(event) => update("font_size_heading", Number(event.target.value))} />
+            </label>
+          </div>
+
+          <h3>Colors</h3>
+          {[
+            ["primary_color", "Primary"],
+            ["secondary_color", "Secondary"],
+            ["accent_color", "Accent"],
+          ].map(([field, label]) => (
+            <div key={field} className="document-theme-color-field">
+              <span>{label}</span>
+              <div className="document-theme-swatches">
+                {DOCUMENT_THEME_COLOR_PRESETS.map((preset) => (
+                  <button
+                    type="button"
+                    key={preset.value}
+                    className={`document-theme-swatch ${draft[field] === preset.value ? "active" : ""}`}
+                    style={{ background: preset.value }}
+                    title={preset.label}
+                    onClick={() => update(field, preset.value)}
+                  />
+                ))}
+                <input type="color" value={draft[field]} onChange={(event) => update(field, event.target.value)} />
+              </div>
+            </div>
+          ))}
+
+          <h3>Tables &amp; borders</h3>
+          <div className="panel-field-row">
+            <label>
+              Table style
+              <select value={draft.table_style} onChange={(event) => update("table_style", event.target.value)}>
+                <option value="bordered">Bordered</option>
+                <option value="striped">Striped</option>
+                <option value="minimal">Minimal</option>
+              </select>
+            </label>
+            <label>
+              Border style
+              <select value={draft.border_style} onChange={(event) => update("border_style", event.target.value)}>
+                <option value="solid">Solid</option>
+                <option value="double">Double</option>
+                <option value="dashed">Dashed</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+            <label>
+              Border width (px)
+              <input type="number" min="0" max="6" value={draft.border_width} onChange={(event) => update("border_width", Number(event.target.value))} />
+            </label>
+          </div>
+
+          <h3>Branding</h3>
+          <label className="document-theme-toggle">
+            <input type="checkbox" checked={draft.show_logo} onChange={(event) => update("show_logo", event.target.checked)} /> Show school logo
+          </label>
+          <label className="document-theme-toggle">
+            <input type="checkbox" checked={draft.show_signature} onChange={(event) => update("show_signature", event.target.checked)} /> Show authorized signature
+          </label>
+          <label>
+            Header note
+            <input
+              type="text"
+              maxLength={255}
+              value={draft.header_note}
+              onChange={(event) => update("header_note", event.target.value)}
+              placeholder="Optional line shown near the header"
+            />
+          </label>
+          <label>
+            Footer text
+            <textarea
+              rows={2}
+              maxLength={500}
+              value={draft.footer_text}
+              onChange={(event) => update("footer_text", event.target.value)}
+              placeholder="Optional text shown at the bottom of every document"
+            />
+          </label>
+
+          <h3>Watermark</h3>
+          <label className="document-theme-toggle">
+            <input type="checkbox" checked={draft.watermark_enabled} onChange={(event) => update("watermark_enabled", event.target.checked)} /> Enable watermark
+          </label>
+          {draft.watermark_enabled ? (
+            <>
+              <div className="panel-field-row">
+                <label>
+                  Source
+                  <select value={draft.watermark_source} onChange={(event) => update("watermark_source", event.target.value)}>
+                    <option value="text">Text</option>
+                    <option value="logo">School logo</option>
+                  </select>
+                </label>
+                <label>
+                  Opacity (%)
+                  <input type="number" min="1" max="40" value={draft.watermark_opacity} onChange={(event) => update("watermark_opacity", Number(event.target.value))} />
+                </label>
+              </div>
+              {draft.watermark_source === "text" ? (
+                <label>
+                  Watermark text
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={draft.watermark_text}
+                    onChange={(event) => update("watermark_text", event.target.value)}
+                    placeholder={brand.name}
+                  />
+                </label>
+              ) : null}
+            </>
+          ) : null}
+
+          {saveError ? <p className="form-feedback error">{saveError}</p> : null}
+          {saveSuccess ? <p className="form-feedback success">{saveSuccess}</p> : null}
+          <div className="panel-form-actions">
+            <button type="button" className="btn-secondary" onClick={handleReset} disabled={saving}>Reset</button>
+            <button type="submit" disabled={saving}>{saving ? "Saving..." : "Save Theme"}</button>
+          </div>
+        </form>
+
+        <div className="app-panel document-theme-preview">
+          <div className="document-theme-preview-tabs">
+            {DOCUMENT_PREVIEW_TYPES.map((type) => (
+              <button
+                type="button"
+                key={type.key}
+                className={previewType === type.key ? "active" : ""}
+                onClick={() => setPreviewType(type.key)}
+              >
+                {type.label}
+              </button>
+            ))}
+          </div>
+          <div className="document-theme-preview-scroll">
+            {previewType === "report_card" ? (
+              <div className="report-sheet-inner" style={themeToCssVars(draft)}>
+                <div className="report-letterhead">
+                  <div className="report-letterhead-logo">
+                    {brand.logo ? <img src={brand.logo} alt="" /> : <span>{brand.initials}</span>}
+                  </div>
+                  <div className="report-letterhead-text">
+                    <h1>{brand.name}</h1>
+                    <p className="report-letterhead-line">{brand.address || "School address"}</p>
+                    {brand.motto ? <p className="report-letterhead-motto">{brand.motto}</p> : null}
+                  </div>
+                </div>
+                <p>Sample Student &bull; JSS 1 &bull; First Term Report</p>
+              </div>
+            ) : previewType === "transcript" ? (
+              <TranscriptPreview transcript={mockTranscript(brand)} school={previewSchool} theme={draft} />
+            ) : previewType === "testimonial" ? (
+              <TestimonialPreview detail={mockTestimonial(brand)} school={previewSchool} theme={draft} />
+            ) : previewType === "invoice" ? (
+              <InvoiceDocument
+                id="document-theme-invoice-preview"
+                school={previewSchool}
+                bill={MOCK_INVOICE_BILL}
+                student={MOCK_INVOICE_STUDENT}
+                parent={MOCK_INVOICE_PARENT}
+                virtualAccount={MOCK_VIRTUAL_ACCOUNT}
+                invoiceNumber="INV-PREVIEW"
+                theme={draft}
+              />
+            ) : previewType === "id_card" ? (
+              <IdCardPreview person={MOCK_ID_CARD_PERSON} school={previewSchool} theme={draft} />
+            ) : (
+              <ServiceAgreementDocument mode="print" form={mockServiceAgreementForm(brand)} theme={draft} />
+            )}
+          </div>
+          <p className="document-theme-preview-note">
+            Receipts, fee statements, payslips, and broadsheets are generated by the server and automatically pick
+            up this same theme - preview them from their own screens after saving.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AgreementField({ mode, value, onChange, type = "text", width = 160, placeholder = "" }) {
   if (mode === "print") {
     return <span className="sa-fill">{value || "—"}</span>;
@@ -8067,14 +8318,14 @@ function AgreementField({ mode, value, onChange, type = "text", width = 160, pla
   );
 }
 
-function ServiceAgreementDocument({ mode, form, onFieldChange, signatureUrl }) {
+function ServiceAgreementDocument({ mode, form, onFieldChange, signatureUrl, theme }) {
   const values = form || {};
   const field = (key, opts) => (
     <AgreementField mode={mode} value={values[key]} onChange={(value) => onFieldChange?.(key, value)} {...opts} />
   );
 
   return (
-    <div className={`service-agreement-document mode-${mode}`}>
+    <div className={`service-agreement-document mode-${mode}`} style={themeToCssVars(theme || DEFAULT_DOCUMENT_THEME)}>
       <h1>SCHOOLDOM SCHOOL SERVICES AGREEMENT</h1>
       <p className="sa-subtitle">This Agreement is made on {field("agreement_date", { type: "date", width: 150 })} between:</p>
 
@@ -8172,9 +8423,10 @@ function ServiceAgreementDocument({ mode, form, onFieldChange, signatureUrl }) {
   );
 }
 
-function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) {
+function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave, school }) {
   const agreements = data?.agreements || [];
   const prefill = data?.school_prefill || {};
+  const documentTheme = resolveDocumentTheme(school, data?.school_prefill);
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const [form, setForm] = useState({
@@ -8228,7 +8480,7 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
     }
   };
 
-  const printNode = (elementId) => openPrintableDocument(elementId, "Service Agreement");
+  const printNode = (elementId) => openPrintableDocument(elementId, "Service Agreement", documentTheme);
 
   return (
     <section className="screen-grid service-agreement-screen">
@@ -8246,7 +8498,7 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
                 <small>Every bracketed field is editable. The preview on the right is exactly what will print.</small>
               </div>
               <form className="panel-form" onSubmit={handleSubmit}>
-                <ServiceAgreementDocument mode="edit" form={form} onFieldChange={updateField} signatureUrl={signaturePreview} />
+                <ServiceAgreementDocument mode="edit" form={form} onFieldChange={updateField} signatureUrl={signaturePreview} theme={documentTheme} />
 
                 <div className="sa-signature-capture">
                   <span className="panel-field-label">Signature</span>
@@ -8312,7 +8564,7 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
               </div>
               <div className="document-preview-scroll">
                 <div id="service-agreement-print-node">
-                  <ServiceAgreementDocument mode="print" form={form} signatureUrl={signaturePreview} />
+                  <ServiceAgreementDocument mode="print" form={form} signatureUrl={signaturePreview} theme={documentTheme} />
                 </div>
               </div>
             </article>
@@ -8371,7 +8623,7 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
                 </div>
                 <div className="document-preview-scroll" style={{ padding: "1rem 1.5rem" }}>
                   <div id="service-agreement-history-node">
-                    <ServiceAgreementDocument mode="print" form={historyPreview} signatureUrl={historyPreview.signature_url} />
+                    <ServiceAgreementDocument mode="print" form={historyPreview} signatureUrl={historyPreview.signature_url} theme={documentTheme} />
                   </div>
                 </div>
                 <div className="panel-form-actions" style={{ padding: "0 1.5rem 1.5rem" }}>
@@ -12454,6 +12706,7 @@ export {
   AdminHRActivityScreen,
   AdminIdCardsScreen,
   AdminDocumentsScreen,
+  AdminDocumentCustomizationScreen,
   AdminSettingsScreen,
   AdminParentsScreen,
   AdminStudentsScreen,

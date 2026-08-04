@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DashboardIcon, ScreenState, formatDate, openPrintableDocument, resolveSchoolBrand } from "./AppShared";
+import { DashboardIcon, ScreenState, formatDate, openPrintableDocument, resolveSchoolBrand, resolveDocumentTheme } from "./AppShared";
 
 const PAYSLIP_STATUS_OPTIONS = [
   { value: "draft", label: "Draft" },
@@ -30,6 +30,7 @@ export default function ExpenseTracker({
   const items = data?.records || [];
   const salaryPaymentSummary = data?.salary_payment_summary || {};
   const schoolBrand = resolveSchoolBrand(data?.school, school);
+  const documentTheme = resolveDocumentTheme(data?.school, school);
   const [form, setForm] = useState({
     title: "",
     vendor: "",
@@ -251,7 +252,7 @@ export default function ExpenseTracker({
 
   const handlePrintPayslip = () => {
     try {
-      openPrintableDocument("payslip-document", `Payslip - ${generatedPayslip?.staff_name || ""} - ${generatedPayslip?.period || ""}`);
+      openPrintableDocument("payslip-document", `Payslip - ${generatedPayslip?.staff_name || ""} - ${generatedPayslip?.period || ""}`, documentTheme);
     } catch (err) {
       setSendError(err.message || "Could not open the printable payslip.");
     }

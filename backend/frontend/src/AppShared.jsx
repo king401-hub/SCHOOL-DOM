@@ -491,29 +491,189 @@ export function resolveSchoolBrand(...sources) {
   };
 }
 
+export const DEFAULT_DOCUMENT_THEME = {
+  orientation: "portrait",
+  id_card_orientation: "landscape",
+  page_size: "A4",
+  margin_mm: 15,
+  font_family: "Segoe UI",
+  font_size_body: 13,
+  font_size_heading: 20,
+  primary_color: "#0f766e",
+  secondary_color: "#0f172a",
+  accent_color: "#0f766e",
+  table_style: "bordered",
+  border_style: "solid",
+  border_width: 1,
+  header_note: "",
+  footer_text: "",
+  show_logo: true,
+  show_signature: true,
+  watermark_enabled: false,
+  watermark_source: "text",
+  watermark_text: "",
+  watermark_opacity: 8,
+};
+
+/** Reads a `document_theme` payload off the first source object that has one
+ * (as folded into `_school_payload`/`_school_identity_payload` server-side),
+ * merged over the defaults so a school that never saved a theme still gets a
+ * complete, renderable object. */
+export function resolveDocumentTheme(...sources) {
+  for (const source of sources) {
+    const theme = source?.document_theme || source?.documentTheme;
+    if (theme && Object.keys(theme).length) {
+      return { ...DEFAULT_DOCUMENT_THEME, ...theme };
+    }
+  }
+  return DEFAULT_DOCUMENT_THEME;
+}
+
+/** Maps a DocumentTheme into the CSS custom properties consumed by
+ * documentStylesForExport() - the single theme -> CSS mapping shared by the
+ * live preview and the real print/PDF/PNG output, so they can never drift. */
+export function themeToCssVars(theme) {
+  const t = { ...DEFAULT_DOCUMENT_THEME, ...(theme || {}) };
+  return {
+    "--doc-primary": t.primary_color,
+    "--doc-secondary": t.secondary_color,
+    "--doc-accent": t.accent_color,
+    "--invoice-accent": t.accent_color,
+    "--doc-font-family": `'${t.font_family}'`,
+    "--doc-font-size-body": `${t.font_size_body}px`,
+    "--doc-font-size-heading": `${t.font_size_heading}px`,
+    "--doc-border-width": `${t.border_width}px`,
+    "--doc-border-style": t.border_style,
+    // Overrides the .id-card-workspace/.id-card-print-area class defaults
+    // (inline style always wins) so ID cards pick up the school's theme too.
+    "--id-card-teal": t.secondary_color,
+    "--id-card-green": t.primary_color,
+  };
+}
+
 const escapePrintableHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+
+/** The single shared stylesheet for every generated document (report cards,
+ * transcripts, testimonials, invoices, receipts, bills, payslips, ID cards,
+ * broadsheets, service agreements) across popup-print, PDF (browser
+ * print-to-PDF), and PNG (canvas rasterization) output, so a school's
+ * Document Customization theme renders identically everywhere. */
+export function documentStylesForExport(theme) {
+  const t = { ...DEFAULT_DOCUMENT_THEME, ...(theme || {}) };
+  const tableStyleCss =
+    t.table_style === "striped"
+      ? `.document-table tbody tr:nth-child(even),.invoice-doc-items tbody tr:nth-child(even){background:#f1f5f9}.document-table td,.document-table th,.invoice-doc-items td,.invoice-doc-items th{border-left:none;border-right:none;border-top:none}`
+      : t.table_style === "minimal"
+      ? `.document-table td,.document-table th,.invoice-doc-items td,.invoice-doc-items th{border-left:none;border-right:none;border-top:none}`
+      : "";
+  const watermarkCss = t.watermark_enabled
+    ? `.doc-watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0;overflow:hidden}.doc-watermark span{font-size:64px;font-weight:800;color:var(--doc-primary);opacity:${Math.max(1, Math.min(40, Number(t.watermark_opacity) || 8))}%;transform:rotate(-30deg);white-space:nowrap}.doc-watermark img{max-width:60%;opacity:${Math.max(1, Math.min(40, Number(t.watermark_opacity) || 8))}%}.official-document,.invoice-document,.service-agreement-document{position:relative}.official-document>*:not(.doc-watermark),.invoice-document>*:not(.doc-watermark),.service-agreement-document>*:not(.doc-watermark){position:relative;z-index:1}`
+    : "";
+  return `
+    @page{size:${t.page_size} ${t.orientation};margin:${t.margin_mm}mm}
+    :root{--doc-primary:${t.primary_color};--doc-secondary:${t.secondary_color};--doc-accent:${t.accent_color};--invoice-accent:${t.accent_color};--doc-font-family:'${t.font_family}';--doc-font-size-body:${t.font_size_body}px;--doc-font-size-heading:${t.font_size_heading}px;--doc-border-width:${t.border_width}px;--doc-border-style:${t.border_style}}
+    *{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#0f172a;font-family:var(--doc-font-family),'Segoe UI',Georgia,'Times New Roman',serif;font-size:var(--doc-font-size-body);padding:40px}
+    .print-letterhead{display:flex;align-items:center;gap:14px;border-bottom:2px solid var(--doc-secondary);padding-bottom:14px;margin-bottom:24px}
+    .print-letterhead img{width:56px;height:56px;object-fit:contain}.print-letterhead h1{font-size:1.15rem;margin:0}
+    .print-letterhead p{margin:2px 0 0;font-size:0.85rem;color:#4b5563}.print-body p{line-height:1.7;font-size:0.95rem}
+    .print-meta{margin-bottom:18px;font-size:0.85rem;color:#4b5563}.print-signature{margin-top:48px;font-size:0.9rem}
+    .official-document{width:min(100%,850px);margin:24px auto;background:#fff;color:#111827;padding:42px;border:1px solid #d7e0ec;box-shadow:0 18px 45px rgba(15,23,42,.12)}.official-doc-header{text-align:center;border-bottom:3px double var(--doc-secondary);padding-bottom:18px;margin-bottom:24px}.official-doc-logo{width:82px;height:82px;border-radius:18px;border:1px solid #cbd5e1;display:grid;place-items:center;margin:0 auto 10px;overflow:hidden;background:#f8fafc}.official-doc-logo img{width:100%;height:100%;object-fit:contain}.official-doc-logo span{font-family:Arial,sans-serif;font-weight:900;color:var(--doc-secondary)}.official-doc-header h1{font-size:calc(var(--doc-font-size-heading) * 1.4);text-transform:uppercase;letter-spacing:.04em;margin:0}.official-doc-header p{margin:5px 0 0;color:#475569;font-family:Arial,sans-serif}.official-doc-motto{font-style:italic;font-weight:800;color:var(--doc-secondary)}.official-doc-title{text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:var(--doc-font-size-heading);margin:20px 0;color:var(--doc-secondary)}.doc-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-bottom:22px}.doc-line{display:flex;gap:10px;border-bottom:1px solid #94a3b8;min-height:30px;align-items:flex-end}.doc-line strong{font-family:Arial,sans-serif;font-size:12px;text-transform:uppercase;white-space:nowrap;color:#334155}.doc-line span{font-weight:700}.document-table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-family:Arial,sans-serif;font-size:13px}.document-table th,.document-table td{border:var(--doc-border-width) var(--doc-border-style) #cbd5e1;padding:8px;text-align:left}.document-table th{background:#eef6f3;color:var(--doc-secondary);text-transform:uppercase;font-size:11px}.term-record{break-inside:avoid;margin-bottom:18px}.term-record h3{margin:0 0 8px;font-family:Arial,sans-serif;color:var(--doc-secondary)}.testimonial-border{border:12px double var(--doc-accent);padding:28px;background:linear-gradient(0deg,rgba(15,118,110,.035),rgba(15,118,110,.035)),#fff}.testimonial-title{font-size:42px;color:var(--doc-accent);font-weight:900;text-align:center;font-family:var(--doc-font-family),Georgia,'Times New Roman',serif;margin:12px 0 24px}.testimonial-list{display:grid;gap:10px;counter-reset:item}.testimonial-row{display:grid;grid-template-columns:34px 190px 1fr;gap:10px;align-items:end}.testimonial-row:before{counter-increment:item;content:counter(item) ".";font-weight:800}.testimonial-row strong{font-family:Arial,sans-serif;font-size:12px}.testimonial-row span{border-bottom:1px solid #334155;min-height:24px;font-weight:700;padding:0 6px}.doc-summary-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.doc-summary-strip div{border:1px solid #cbd5e1;padding:10px;background:#f8fafc}.doc-summary-strip strong,.doc-summary-strip span{display:block}.doc-summary-strip strong{font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase}.doc-summary-strip span{font-size:18px;font-weight:900}.signature-row{display:grid;grid-template-columns:1fr 120px 1fr;gap:20px;align-items:end;margin-top:42px}.signature-line{border-top:1px solid #111827;text-align:center;padding-top:8px;font-family:Arial,sans-serif;font-weight:800;font-size:12px}.doc-signature-img{display:block;height:34px;max-width:150px;object-fit:contain;margin:0 auto 4px}.stamp-seal{width:98px;height:98px;border-radius:50%;background:#dc2626;box-shadow:inset 0 0 0 8px rgba(255,255,255,.18);margin:auto}.stamp-box{border:2px dashed #94a3b8;min-height:86px;display:grid;place-items:center;color:#64748b;font-family:Arial,sans-serif;text-transform:uppercase;font-weight:800}.document-note{font-family:Arial,sans-serif;color:#64748b;font-size:12px}.no-print{display:none}.id-card-print-area{width:100%;min-height:620px;background:#fff;display:grid;grid-template-columns:370px 370px;gap:18px;place-content:center;place-items:center;font-family:Inter,Arial,sans-serif}.id-card-flip-inner{display:contents;transform:none!important}.id-card-face{position:relative;inset:auto;backface-visibility:visible}.id-card-back{transform:none}.id-card-preview-card{width:370px;min-height:560px;background:#fff;color:#102033;border:1px solid #d7e0ec;border-radius:22px;overflow:hidden;box-shadow:none}.id-card-back{display:grid;grid-template-rows:auto 1fr auto;background:#08111f;color:#fff}.id-card-ribbon{background:var(--doc-secondary);color:#fff;text-align:center;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900;padding:10px}.id-card-top,.id-card-back-head{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.id-card-back-head{background:#102033;color:#fff}.id-card-school-logo,.id-card-photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.id-card-school-logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.id-card-school-logo img,.id-card-photo img,.id-card-back-qr img{width:100%;height:100%;object-fit:cover}.id-card-school-logo span,.id-card-photo span{font-weight:900;color:var(--doc-secondary)}.id-card-top strong,.id-card-back-head strong{display:block;font-size:18px}.id-card-motto{display:block;color:var(--doc-secondary);font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.id-card-back-head .id-card-motto{color:#a7f3d0}.id-card-top span,.id-card-back-head span{display:block;color:#64748b;font-size:12px;margin-top:2px}.id-card-back-head span{color:#cbd5e1}.id-card-person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.id-card-photo{width:94px;height:112px;border-radius:18px}.id-card-person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.id-card-person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.id-card-person span{display:block;color:#475569;margin-top:10px;font-weight:700}.id-card-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.id-card-details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.id-card-details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-details dd{margin:4px 0 0;font-weight:800;font-size:13px}.id-card-signature-block{display:grid;justify-items:center;gap:2px;margin:0 22px 14px}.id-card-signature-img{height:36px;max-width:140px;object-fit:contain}.id-card-signature-block span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.id-card-front-footer{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.id-card-front-footer strong,.id-card-front-footer span{display:block}.id-card-front-footer span{color:#cbd5e1;font-size:12px;margin-top:6px}.id-card-back-qr-panel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.id-card-back-qr-panel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.id-card-back-qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:var(--doc-secondary);font-weight:900}.id-card-back-qr img{object-fit:contain}.id-card-back-qr-panel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.id-card-back-qr-panel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.id-card-back-footer{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.id-card-flip-button{display:none}table.print-generic{width:100%;border-collapse:collapse;margin:12px 0}table.print-generic th,table.print-generic td{border-bottom:1px solid #e5e7eb;padding:8px 10px;text-align:left}table.print-generic th:last-child,table.print-generic td:last-child{text-align:right}@media print{body{background:#fff}.official-document{box-shadow:none;margin:0 auto;border:none;min-height:100vh}.testimonial-border{min-height:calc(100vh - 84px)}}@media(max-width:720px){.official-document{padding:24px}.doc-info-grid,.doc-summary-strip,.signature-row{grid-template-columns:1fr}.testimonial-row{grid-template-columns:28px 1fr}.testimonial-row span{grid-column:2}}
+    .service-agreement-document{font-family:var(--doc-font-family),Georgia,'Times New Roman',serif;color:#1f2933;line-height:1.55;max-width:800px;margin:0 auto;padding:0 6px}
+    .service-agreement-document h1{text-align:center;font-size:20px;letter-spacing:.03em;margin:0 0 4px}
+    .service-agreement-document .sa-subtitle{text-align:center;color:#52606d;margin-bottom:20px}
+    .service-agreement-document h2{font-size:15px;color:var(--doc-secondary);margin:20px 0 8px;page-break-inside:avoid}
+    .service-agreement-document p{margin:6px 0}
+    .service-agreement-document .sa-fill{border-bottom:1px solid #94a3b8;padding:0 4px;font-weight:600}
+    .service-agreement-document .sa-input{display:none}
+    .service-agreement-document .sa-signature-block{margin-top:32px}
+    .service-agreement-document .sa-sig-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid #cbd5e1;padding:10px 0}
+    .service-agreement-document .sa-sig-label{flex:0 0 160px;color:#52606d;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+    .service-agreement-document .sa-signature-img{max-height:60px;object-fit:contain}
+    .transcript-document .doc-summary-strip{grid-template-columns:repeat(5,1fr)}
+    .invoice-document{--invoice-accent:${t.accent_color};font-family:Arial,Helvetica,sans-serif;color:#1e293b}
+    .invoice-doc-header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:2px solid var(--invoice-accent);padding-bottom:16px;margin-bottom:18px}
+    .invoice-doc-brand{display:flex;gap:14px;align-items:flex-start}
+    .invoice-doc-logo{width:56px;height:56px;border-radius:14px;overflow:hidden;display:grid;place-items:center;background:#f1f5f9;flex:0 0 auto}
+    .invoice-doc-logo img{width:100%;height:100%;object-fit:contain}
+    .invoice-doc-logo span{font-weight:900;color:var(--invoice-accent)}
+    .invoice-doc-brand strong{display:block;font-size:16px;color:#0f172a;margin-bottom:3px}
+    .invoice-doc-brand span{display:block;font-size:11.5px;color:#64748b;line-height:1.5}
+    .invoice-doc-title-block{text-align:right}
+    .invoice-doc-title-block h2{margin:0 0 8px;font-size:22px;letter-spacing:.04em;color:#0f172a}
+    .invoice-doc-meta-table{border-collapse:collapse;margin-left:auto}
+    .invoice-doc-meta-table td{padding:4px 10px;font-size:12px;border-bottom:1px solid #e2e8f0;text-align:left}
+    .invoice-doc-meta-table td:first-child{color:#64748b}
+    .invoice-doc-meta-table td:last-child{font-weight:700;color:#0f172a}
+    .invoice-doc-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+    .invoice-doc-card,.invoice-doc-panel{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+    .invoice-doc-card-head,.invoice-doc-panel-head{padding:8px 14px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#0f172a}
+    .invoice-doc-card-head.accent{background:var(--invoice-accent)}
+    .invoice-doc-card-body,.invoice-doc-panel-body{padding:12px 14px}
+    .invoice-doc-card-body div{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12.5px;border-bottom:1px dashed #f1f5f9}
+    .invoice-doc-card-body label{color:#64748b}
+    .invoice-doc-card.summary .invoice-doc-summary-total{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid #e2e8f0}
+    .invoice-doc-summary-total span{font-size:12px;color:#64748b;text-transform:uppercase}
+    .invoice-doc-summary-total strong{font-size:20px;color:var(--invoice-accent)}
+    .invoice-doc-card.summary .row{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;color:#475569}
+    .invoice-doc-card.summary .row.balance{font-weight:800;color:#0f172a;border-top:1px solid #e2e8f0;margin-top:4px;padding-top:8px}
+    .invoice-doc-items thead th{background:#0f172a;color:#fff}
+    .invoice-doc-items tbody tr:nth-child(even){background:#f8fafc}
+    .invoice-doc-items td,.invoice-doc-items th{text-align:left}
+    .invoice-doc-items td:first-child,.invoice-doc-items th:first-child,.invoice-doc-items td:nth-child(3),.invoice-doc-items th:nth-child(3){text-align:center}
+    .invoice-doc-items td:last-child,.invoice-doc-items th:last-child,.invoice-doc-items td:nth-child(4),.invoice-doc-items th:nth-child(4){text-align:right}
+    .invoice-doc-total-row td{background:#f0fdfa;background:color-mix(in srgb,var(--invoice-accent) 12%,#ffffff);font-weight:900;font-size:14px;color:var(--invoice-accent);border-top:2px solid var(--invoice-accent);text-align:right}
+    .invoice-doc-total-row td:first-child{text-align:left}
+    .invoice-totals{margin:10px 0 18px;font-family:Arial,sans-serif}
+    .invoice-totals .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155}
+    .invoice-totals .row.discount span:last-child{color:#16a34a}
+    .invoice-doc-panel.note{border-color:#fde68a}
+    .invoice-doc-panel.note .invoice-doc-panel-head{background:#b45309}
+    .invoice-doc-panel-body.muted{color:#64748b;font-size:12.5px}
+    .invoice-doc-panel-body ul{margin:0 0 10px;padding-left:18px;font-size:12.5px;color:#475569;line-height:1.6}
+    .invoice-doc-thanks{font-weight:700;font-size:12.5px;color:#0f172a;margin:0}
+    .invoice-account-number{letter-spacing:.04em;color:var(--invoice-accent)}
+    .invoice-doc-portal-link{display:inline-block;margin-top:8px;font-size:12px;font-weight:700;color:var(--invoice-accent);text-decoration:none}
+    .invoice-doc-signoff{margin-top:34px;display:flex;justify-content:flex-end}
+    .invoice-doc-signature{text-align:center}
+    .invoice-doc-signature img{display:block;height:40px;max-width:160px;object-fit:contain;margin:0 auto 4px}
+    .invoice-doc-signature-blank{display:block;height:40px;border-bottom:1px solid #94a3b8;width:160px;margin:0 auto 4px}
+    .invoice-doc-signature span{display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+    .invoice-doc-signature strong{display:block;font-size:12px;color:#0f172a;margin-top:2px}
+    ${tableStyleCss}
+    ${watermarkCss}
+  `;
+}
+
+export function OfficialDocHeader({ school, title }) {
+  const brand = resolveSchoolBrand(school);
+  return (
+    <header className="official-doc-header">
+      <div className="official-doc-logo">
+        {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
+      </div>
+      <h1>{brand.name}</h1>
+      {brand.motto ? <p className="official-doc-motto">{brand.motto}</p> : null}
+      <p>{school?.address || brand.code || "Official School Record"}</p>
+      <h2 className="official-doc-title">{title}</h2>
+    </header>
+  );
+}
 
 /** Opens a popup (or, if popups are blocked, a hidden iframe) containing a
  * clone of the given element's markup and triggers the browser's print
  * dialog on load - this app's "Download as PDF" is the browser's own
- * Print -> Save as PDF, there is no server-side PDF generator. */
-export function openPrintableDocument(elementId, title) {
+ * Print -> Save as PDF, there is no server-side PDF generator. Optional
+ * `theme` (a DocumentTheme payload) drives colors/fonts/page setup via
+ * documentStylesForExport(); omit it to fall back to the shared defaults. */
+export function openPrintableDocument(elementId, title, theme) {
   const element = document.getElementById(elementId);
   if (!element) {
     throw new Error("The document preview is not ready yet.");
   }
-  const printStyles =
-    "body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;padding:40px;} " +
-    ".print-letterhead{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1f2937;padding-bottom:14px;margin-bottom:24px;} " +
-    ".print-letterhead img{width:56px;height:56px;object-fit:contain;} .print-letterhead h1{font-size:1.15rem;margin:0;} " +
-    ".print-letterhead p{margin:2px 0 0;font-size:0.85rem;color:#4b5563;} .print-body p{line-height:1.7;font-size:0.95rem;} " +
-    ".print-meta{margin-bottom:18px;font-size:0.85rem;color:#4b5563;} .print-signature{margin-top:48px;font-size:0.9rem;} " +
-    "table{width:100%;border-collapse:collapse;margin:12px 0;} th,td{border-bottom:1px solid #e5e7eb;padding:8px 10px;text-align:left;} " +
-    "th:last-child,td:last-child{text-align:right;}";
-  const content = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${escapePrintableHtml(title)}</title><style>${printStyles}</style></head><body>${element.outerHTML}<script>window.onload=()=>{window.focus();window.print();};</script></body></html>`;
+  const content = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${escapePrintableHtml(title)}</title><style>${documentStylesForExport(theme)}</style></head><body>${element.outerHTML}<script>window.onload=()=>{window.focus();window.print();};</script></body></html>`;
 
-  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=1100");
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=980,height=1200");
   if (printWindow) {
     printWindow.document.write(content);
     printWindow.document.close();
@@ -527,6 +687,7 @@ export function openPrintableDocument(elementId, title) {
   iframe.style.width = "0";
   iframe.style.height = "0";
   iframe.style.border = "0";
+  iframe.style.overflow = "hidden";
   document.body.appendChild(iframe);
   const iframeDoc = iframe.contentWindow?.document;
   if (!iframeDoc) {
@@ -541,6 +702,59 @@ export function openPrintableDocument(elementId, title) {
     iframe.contentWindow?.print();
     setTimeout(() => iframe.remove(), 1000);
   };
+}
+
+/** Rasterizes the given element (via an SVG foreignObject -> canvas, no
+ * external library) into a downloaded PNG, styled with the same
+ * documentStylesForExport(theme) used by print/PDF output. */
+export async function downloadPrintablePng(elementId, filename, title, theme) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    throw new Error("The document preview is not ready yet.");
+  }
+  const clone = element.cloneNode(true);
+  clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  const rect = element.getBoundingClientRect();
+  const width = Math.max(850, Math.ceil(rect.width || element.scrollWidth || 850));
+  const height = Math.max(1100, Math.ceil(element.scrollHeight || rect.height || 1100));
+  const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">${clone.outerHTML}</div>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport(theme)}</style>${html}</foreignObject></svg>`;
+  const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  const image = new Image();
+  const pngUrl = await new Promise((resolve, reject) => {
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const scale = 2;
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.scale(scale, scale);
+        context.drawImage(image, 0, 0);
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("Could not render PNG."));
+            return;
+          }
+          resolve(URL.createObjectURL(blob));
+        }, "image/png");
+      } catch (renderError) {
+        reject(renderError);
+      }
+    };
+    image.onerror = () => reject(new Error(`Could not render ${title || "document"} as PNG.`));
+    image.src = svgUrl;
+  });
+  URL.revokeObjectURL(svgUrl);
+  const link = document.createElement("a");
+  link.href = pngUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(pngUrl);
 }
 
 export function academicGroupLabels(...sources) {

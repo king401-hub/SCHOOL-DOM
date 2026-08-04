@@ -464,7 +464,20 @@ def _render_receipt_link(request, link):
         if fee_id:
             SchoolFee.objects.filter(id=fee_id, viewed_at__isnull=True).update(viewed_at=timezone.now())
     from django.shortcuts import render as django_render
-    return django_render(request, "finance/receipt.html", {"link": link, "data": link.data})
+    from settings_app.models import DocumentTheme
+
+    theme = None
+    data = dict(link.data or {})
+    if link.tenant_id:
+        theme = DocumentTheme.objects.filter(school_tenant_id=link.tenant_id).first()
+        if not data.get("school_logo") and getattr(link.tenant, "logo", None):
+            try:
+                data["school_logo"] = request.build_absolute_uri(link.tenant.logo.url)
+            except Exception:
+                pass
+    if theme is None:
+        theme = DocumentTheme(school_tenant=link.tenant)
+    return django_render(request, "finance/receipt.html", {"link": link, "data": data, "theme": theme})
 
 
 def receipt_page(request, token):

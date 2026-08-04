@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive,
+  Package, Archive, Palette,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -119,6 +119,7 @@ const AdminNonTeachingStaffScreen = lazyAdminScreen("AdminNonTeachingStaffScreen
 const AdminHRActivityScreen = lazyAdminScreen("AdminHRActivityScreen");
 const AdminIdCardsScreen = lazyAdminScreen("AdminIdCardsScreen");
 const AdminDocumentsScreen = lazyAdminScreen("AdminDocumentsScreen");
+const AdminDocumentCustomizationScreen = lazyAdminScreen("AdminDocumentCustomizationScreen");
 const AdminSettingsScreen = lazyAdminScreen("AdminSettingsScreen");
 const AdminStudentsScreen = lazyAdminScreen("AdminStudentsScreen");
 const AdminParentsScreen = lazyAdminScreen("AdminParentsScreen");
@@ -5781,6 +5782,7 @@ const ADMIN_ROUTE_ICONS = {
   "/parents": Users,
   "/id-cards": CreditCard,
   "/documents": FileText,
+  "/document-customization": Palette,
   "/inventory": Package,
   "/alumni": Archive,
   "/people-group": Users,
@@ -7072,6 +7074,31 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, onSessionUpdate, session]
     );
 
+  const handleSaveDocumentTheme = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "PATCH", "/api/app/document-theme/", payload);
+      if (result?.theme) {
+        const nextSession = {
+          ...session,
+          school: { ...(session?.school || {}), document_theme: result.theme },
+        };
+        writeStoredSession(nextSession);
+        onSessionUpdate?.(nextSession);
+      }
+      setScreenData((previous) => ({ ...previous, "/document-customization": result }));
+      addAdminNotification({
+        category: "System",
+        module: "Admin Settings",
+        action: "Updated the Document Customization theme.",
+        status: "Success",
+        priority: "Normal",
+        tone: "success",
+      });
+      return result;
+    },
+    [addAdminNotification, onSessionUpdate, session]
+  );
+
   const handleSubmitSupportTicket = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/app/support-tickets/", payload);
@@ -7769,6 +7796,18 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onSaveTestimonial={handleSaveTestimonial}
       />
     );
+  } else if (activePath === "/document-customization") {
+    content = (
+      <AdminDocumentCustomizationScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        school={schoolBrand}
+        session={session}
+        onSave={handleSaveDocumentTheme}
+      />
+    );
   } else if (activePath === "/teachers") {
     content = (
       <AdminTeachersScreen
@@ -7855,6 +7894,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onLoadBroadsheet={handleLoadBroadsheet}
         onLoadBroadsheetParents={handleLoadBroadsheetParents}
         onSendBroadsheet={handleSendBroadsheet}
+        session={session}
       />
     );
   } else if (activePath === "/database-import") {
