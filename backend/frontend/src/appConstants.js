@@ -44,6 +44,7 @@ export const ADMIN_ROUTES = [
       { path: "/exams", label: "CBT Exams" },
       { path: "/timetables", label: "Timetables" },
       { path: "/results", label: "Results" },
+      { path: "/alumni", label: "Alumni" },
     ]
   },
   {
@@ -64,7 +65,6 @@ export const ADMIN_ROUTES = [
       { path: "/id-cards", label: "ID Cards" },
       { path: "/documents", label: "Transcripts & Testimonials" },
       { path: "/document-customization", label: "Document Customization" },
-      { path: "/alumni", label: "Alumni" },
       { path: "/inventory", label: "Inventory" },
       { path: "/database-import", label: "Database Import" },
       { path: "/messages", label: "Messages" },
