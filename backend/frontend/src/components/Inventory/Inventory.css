@@ -39,6 +39,36 @@
   border-color: #fecaca;
 }
 
+/* Dark theme. Matches the shell's card palette (see .metric-card in
+   styles.css); the warning/danger tints become translucent washes so they
+   still read as tinted against a dark card instead of glaring. */
+body[data-theme="dark"] .inventory-stat-card {
+  background: #111827;
+  border-color: #1e293b;
+}
+
+body[data-theme="dark"] .inventory-stat-card .stat-value {
+  color: #f1f5f9;
+}
+
+body[data-theme="dark"] .inventory-stat-card .stat-label {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .inventory-stat-card.warning {
+  background: rgba(180, 83, 9, 0.18);
+  border-color: #92400e;
+}
+
+body[data-theme="dark"] .inventory-stat-card.danger {
+  background: rgba(153, 27, 27, 0.18);
+  border-color: #991b1b;
+}
+
+body[data-theme="dark"] .inventory-item-images img {
+  border-color: #1e293b;
+}
+
 .inventory-pill {
   display: inline-flex;
   align-items: center;

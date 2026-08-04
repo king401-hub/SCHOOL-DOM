@@ -49,6 +49,22 @@
   color: #6b7280;
 }
 
+/* Dark theme. Matches the shell's card palette (see .metric-card in
+   styles.css) so these tiles sit on the dark page the same way every other
+   admin card does. */
+body[data-theme="dark"] .alumni-stat-card {
+  background: #111827;
+  border-color: #1e293b;
+}
+
+body[data-theme="dark"] .alumni-stat-card .stat-value {
+  color: #f1f5f9;
+}
+
+body[data-theme="dark"] .alumni-stat-card .stat-label {
+  color: #94a3b8;
+}
+
 .alumni-pill {
   display: inline-flex;
   align-items: center;
@@ -125,6 +141,34 @@
   color: #1e40af;
   font-size: 0.85rem;
   margin-bottom: 16px;
+}
+
+body[data-theme="dark"] .alumni-avatar,
+body[data-theme="dark"] .alumni-detail-photo {
+  border-color: #1e293b;
+  background: #1e293b;
+}
+
+body[data-theme="dark"] .alumni-detail-identity p,
+body[data-theme="dark"] .alumni-empty,
+body[data-theme="dark"] .alumni-filters label,
+body[data-theme="dark"] .alumni-report-card header span {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .alumni-muted,
+body[data-theme="dark"] .alumni-fact .fact-label {
+  color: #64748b;
+}
+
+body[data-theme="dark"] .alumni-readonly-banner {
+  background: rgba(30, 64, 175, 0.18);
+  border-color: #1e3a8a;
+  color: #bfdbfe;
+}
+
+body[data-theme="dark"] .alumni-report-card {
+  border-color: #1e293b;
 }
 
 .alumni-section {
