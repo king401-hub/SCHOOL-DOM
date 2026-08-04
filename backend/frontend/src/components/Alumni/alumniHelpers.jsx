@@ -12,12 +12,6 @@ export function formatDay(value) {
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export const STATUS_COLORS = {
-  Active: "#16a34a",
-  Inactive: "#f59e0b",
-  Archived: "#6b7280",
-};
-
 export const REASON_COLORS = {
   graduated: "#0ea5e9",
   transferred: "#9333ea",

@@ -2,13 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ScreenState, requestJson } from "../../AppShared";
 import "./Alumni.css";
 import AlumniStudentDetail from "./AlumniStudentDetail";
-import { AlumniPill, REASON_COLORS, STATUS_COLORS, Value, formatDay } from "./alumniHelpers";
-
-const SCOPES = [
-  { key: "all", label: "All students" },
-  { key: "active", label: "Currently enrolled" },
-  { key: "archived", label: "Archived only" },
-];
+import { AlumniPill, REASON_COLORS, Value, formatDay } from "./alumniHelpers";
 
 export default function AlumniScreen({ data, loading, error, onRetry, session }) {
   const [students, setStudents] = useState([]);
@@ -19,11 +13,12 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
   const [search, setSearch] = useState("");
   const [academicYear, setAcademicYear] = useState("");
   const [className, setClassName] = useState("");
-  const [scope, setScope] = useState("all");
+  const [reason, setReason] = useState("");
 
   const summary = data?.summary || {};
   const academicYears = data?.academic_years || [];
   const classes = data?.classes || [];
+  const reasons = data?.archive_reasons || [];
 
   const loadStudents = useCallback(async () => {
     setListLoading(true);
@@ -33,7 +28,7 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
       if (search.trim()) params.set("search", search.trim());
       if (academicYear) params.set("academic_year", academicYear);
       if (className) params.set("class_name", className);
-      if (scope) params.set("scope", scope);
+      if (reason) params.set("reason", reason);
       const query = params.toString();
       const result = await requestJson(
         session,
@@ -46,7 +41,7 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
     } finally {
       setListLoading(false);
     }
-  }, [session, search, academicYear, className, scope]);
+  }, [session, search, academicYear, className, reason]);
 
   // Debounced so typing in the search box does not fire a request per keystroke.
   useEffect(() => {
@@ -78,8 +73,9 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
         <div>
           <h2>Alumni &amp; Student Archive</h2>
           <p>
-            Every student the school has ever had, kept permanently. Pick a session and class, or search by
-            name or Student ID, then open a student to see their complete read-only history.
+            Every student who has left the school, kept permanently. Students are added here by promoting them
+            to Alumni from Classes. Pick a session and class, or search by name or Student ID, then open a
+            student to see their complete read-only history.
           </p>
         </div>
       </div>
@@ -88,20 +84,20 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
 
       <div className="alumni-stats">
         <div className="alumni-stat-card">
-          <div className="stat-value">{summary.active_students ?? 0}</div>
-          <div className="stat-label">Currently enrolled</div>
+          <div className="stat-value">{summary.total_alumni ?? 0}</div>
+          <div className="stat-label">Total alumni</div>
         </div>
         <div className="alumni-stat-card">
-          <div className="stat-value">{summary.archived_students ?? 0}</div>
-          <div className="stat-label">Archived records</div>
+          <div className="stat-value">{summary.graduated ?? 0}</div>
+          <div className="stat-label">Graduated</div>
+        </div>
+        <div className="alumni-stat-card">
+          <div className="stat-value">{summary.transferred ?? 0}</div>
+          <div className="stat-label">Transferred</div>
         </div>
         <div className="alumni-stat-card">
           <div className="stat-value">{summary.sealed_records ?? 0}</div>
           <div className="stat-label">Permanently sealed</div>
-        </div>
-        <div className="alumni-stat-card">
-          <div className="stat-value">{summary.total_records ?? 0}</div>
-          <div className="stat-label">Students on record</div>
         </div>
       </div>
 
@@ -126,10 +122,11 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
             </select>
           </label>
           <label>
-            Show
-            <select value={scope} onChange={(event) => setScope(event.target.value)}>
-              {SCOPES.map((item) => (
-                <option key={item.key} value={item.key}>{item.label}</option>
+            Reason for leaving
+            <select value={reason} onChange={(event) => setReason(event.target.value)}>
+              <option value="">All reasons</option>
+              {reasons.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
               ))}
             </select>
           </label>
@@ -147,9 +144,12 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
         {listError ? <p className="form-feedback error">{listError}</p> : null}
 
         {listLoading ? (
-          <p>Loading students...</p>
+          <p>Loading alumni...</p>
         ) : students.length === 0 ? (
-          <p>No students match these filters.</p>
+          <p>
+            No alumni match these filters. Students appear here once they are promoted to Alumni from the
+            Classes screen, or when they are transferred, withdrawn, or removed from the school.
+          </p>
         ) : (
           <div className="alumni-table-scroll">
             <table className="data-table">
@@ -158,10 +158,11 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
                   <th></th>
                   <th>Name</th>
                   <th>Student ID</th>
-                  <th>Class</th>
+                  <th>Last class</th>
                   <th>Session</th>
                   <th>Admitted</th>
-                  <th>Status</th>
+                  <th>Left</th>
+                  <th>Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -183,15 +184,8 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
                     <td><Value>{student.class_name}</Value></td>
                     <td><Value>{student.academic_year}</Value></td>
                     <td>{student.admission_date ? formatDay(student.admission_date) : "-"}</td>
-                    <td>
-                      <AlumniPill value={student.status} colorMap={STATUS_COLORS} />
-                      {student.archive_reason ? (
-                        <>
-                          {" "}
-                          <AlumniPill value={student.archive_reason} colorMap={REASON_COLORS} />
-                        </>
-                      ) : null}
-                    </td>
+                    <td>{student.archived_at ? formatDay(student.archived_at) : "-"}</td>
+                    <td><AlumniPill value={student.archive_reason} colorMap={REASON_COLORS} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -200,8 +194,8 @@ export default function AlumniScreen({ data, loading, error, onRetry, session })
         )}
 
         <p className="alumni-empty">
-          Showing {students.length} student{students.length === 1 ? "" : "s"}. Archived records stay here permanently,
-          including students who have graduated, transferred, or been removed from the active list.
+          Showing {students.length} alumnus{students.length === 1 ? "" : "es"}. These records stay here permanently,
+          even after a former student is removed from the school entirely.
         </p>
       </article>
     </section>

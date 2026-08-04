@@ -2105,12 +2105,23 @@ def _promotion_scope_students(user, payload):
     return scope, scope_value, source_class, source_term, students.order_by("user__first_name", "user__last_name")
 
 
+# Sentinel destination for the "Promote / Transfer To" dropdown. Graduating is
+# a promotion out of the school rather than into another class, so it travels
+# through the same preview/apply flow with no real Class on the other end.
+PROMOTION_TARGET_ALUMNI = "alumni"
+
+
 def _build_promotion_preview(user, payload):
     scope, scope_value, source_class, source_term, students_qs = _promotion_scope_students(user, payload)
     target_class_id = payload.get("target_class_id")
     if target_class_id in (None, ""):
         raise ValueError("Select the destination class.")
-    target_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=target_class_id)
+
+    to_alumni = str(target_class_id).strip().lower() == PROMOTION_TARGET_ALUMNI
+    target_class = (
+        None if to_alumni
+        else get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=target_class_id)
+    )
 
     target_term = None
     target_term_id = payload.get("target_term_id")
@@ -2123,27 +2134,45 @@ def _build_promotion_preview(user, payload):
     source_year = source_term.academic_year if source_term and source_term.academic_year_id else _active_academic_year(user)
     target_year = target_term.academic_year if target_term and target_term.academic_year_id else source_year
 
-    if source_class and source_class.id == target_class.id:
+    if source_class and target_class and source_class.id == target_class.id:
         raise ValueError("Source and destination class cannot be the same.")
 
-    existing_qs = StudentClassPromotion.objects.filter(
-        tenant=_tenant_for_model(StudentClassPromotion, user),
-        student_id__in=students_qs.values_list("id", flat=True),
-        to_class=target_class,
-        from_term=source_term,
-        to_term=target_term,
-        from_academic_year=source_year,
-        to_academic_year=target_year,
-    )
-    if source_class:
-        existing_qs = existing_qs.filter(from_class=source_class)
-    existing = set(existing_qs.values_list("student_id", flat=True))
+    # Graduating has no destination class, so a repeat is detected by the
+    # student already holding an alumni archive record rather than by a
+    # duplicate promotion row.
+    already_alumni = set()
+    if to_alumni:
+        from alumni.models import ArchivedStudentRecord
+
+        already_alumni = set(
+            ArchivedStudentRecord.objects.filter(
+                tenant=user.tenant,
+                source_student_id__in=students_qs.values_list("id", flat=True),
+            ).values_list("source_student_id", flat=True)
+        )
+        existing = set()
+    else:
+        existing_qs = StudentClassPromotion.objects.filter(
+            tenant=_tenant_for_model(StudentClassPromotion, user),
+            student_id__in=students_qs.values_list("id", flat=True),
+            to_class=target_class,
+            from_term=source_term,
+            to_term=target_term,
+            from_academic_year=source_year,
+            to_academic_year=target_year,
+        )
+        if source_class:
+            existing_qs = existing_qs.filter(from_class=source_class)
+        existing = set(existing_qs.values_list("student_id", flat=True))
 
     eligible = []
     blocked = []
     for student in students_qs[:1000]:
         reason = ""
-        if student.current_class_id == target_class.id:
+        if to_alumni:
+            if student.id in already_alumni:
+                reason = "Already an alumnus"
+        elif student.current_class_id == target_class.id:
             reason = "Already in destination class"
         elif student.id in existing:
             reason = "Already promoted for this class/session"
@@ -2155,8 +2184,8 @@ def _build_promotion_preview(user, payload):
             "email": student.user.email,
             "from_class_id": student.current_class_id,
             "from_class_name": _class_label(student.current_class) if student.current_class else "Unassigned",
-            "to_class_id": target_class.id,
-            "to_class_name": _class_label(target_class),
+            "to_class_id": None if to_alumni else target_class.id,
+            "to_class_name": "Alumni" if to_alumni else _class_label(target_class),
             "current_term_id": student.current_term_id,
             "current_term_name": student.current_term.name if student.current_term else "",
         }
@@ -2168,8 +2197,9 @@ def _build_promotion_preview(user, payload):
     return {
         "scope": scope,
         "scope_value": scope_value,
+        "to_alumni": to_alumni,
         "source_class": _class_payload(source_class) if source_class else None,
-        "target_class": _class_payload(target_class),
+        "target_class": None if to_alumni else _class_payload(target_class),
         "source_term": _term_payload(source_term),
         "target_term": _term_payload(target_term),
         "source_academic_year": _academic_year_payload(source_year),
@@ -2179,8 +2209,14 @@ def _build_promotion_preview(user, payload):
             "eligible_students": len(eligible),
             "blocked_students": len(blocked),
             "already_in_target": len([item for item in blocked if item["reason"] == "Already in destination class"]),
-            "duplicate_promotions": len([item for item in blocked if item["reason"] == "Already promoted for this class/session"]),
+            "duplicate_promotions": len(
+                [
+                    item for item in blocked
+                    if item["reason"] in {"Already promoted for this class/session", "Already an alumnus"}
+                ]
+            ),
         },
+        "target_label": "Alumni" if to_alumni else _class_label(target_class),
         "students": eligible[:100],
         "blocked_students": blocked[:100],
     }
@@ -7872,7 +7908,11 @@ def class_promotions(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    target_class = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=preview["target_class"]["id"])
+    to_alumni = bool(preview.get("to_alumni"))
+    target_class = (
+        None if to_alumni
+        else get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=preview["target_class"]["id"])
+    )
     target_term = None
     if preview.get("target_term"):
         target_term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=preview["target_term"]["id"])
@@ -7919,32 +7959,45 @@ def class_promotions(request):
             ],
             ignore_conflicts=True,
         )
-        for student in students:
-            student.current_class = target_class
-            if target_term:
-                student.current_term = target_term
-            student.save(update_fields=["current_class", "current_term"] if target_term else ["current_class"])
+        if to_alumni:
+            # Graduating archives each student's full history and takes them off
+            # the active roll. Inside the same transaction as the promotion rows,
+            # so a student is never left half-graduated.
+            from alumni.services import graduate_student_to_alumni
+
+            for student in students:
+                graduate_student_to_alumni(student, actor=user, note=note)
+        else:
+            for student in students:
+                student.current_class = target_class
+                if target_term:
+                    student.current_term = target_term
+                student.save(update_fields=["current_class", "current_term"] if target_term else ["current_class"])
 
     # Carry forward any credit balance (from overpayment) into the new term's
     # fees, so a family sees it already applied instead of needing to first
     # visit the Fees screen. Kept outside the promotion's own atomic block -
     # each student's own sync+sweep is independent, and a failure here must
     # never undo or block the promotion itself, which has already committed.
-    for student in students:
-        try:
-            sync_student_class_fees(student, actor=user)
-            process_due_fees(student, actor=user)
-        except Exception:
-            logger.exception(
-                "Post-promotion fee sync/sweep failed for student %s (batch %s).",
-                student.id, batch_reference,
-            )
+    # Skipped for graduates: they have left the school, so billing them for a
+    # new term would be wrong.
+    if not to_alumni:
+        for student in students:
+            try:
+                sync_student_class_fees(student, actor=user)
+                process_due_fees(student, actor=user)
+            except Exception:
+                logger.exception(
+                    "Post-promotion fee sync/sweep failed for student %s (batch %s).",
+                    student.id, batch_reference,
+                )
 
     applied_preview = _build_promotion_preview(user, request.data)
+    destination = "Alumni" if to_alumni else _class_label(target_class)
     return Response(
         {
             "success": True,
-            "message": f"Promoted {len(students)} student(s) to {_class_label(target_class)}.",
+            "message": f"Promoted {len(students)} student(s) to {destination}.",
             "batch_reference": batch_reference,
             "applied_count": len(students),
             "preview": applied_preview,

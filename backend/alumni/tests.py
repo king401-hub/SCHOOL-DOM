@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from academic.models import AcademicYear, AttendanceRecord, Class, StudentClassPromotion, StudentSubjectScore, Subject, Term
 from alumni.models import ArchivedStudentRecord, ArchiveProtectedError
-from alumni.services import build_student_archive_payload, snapshot_student
+from alumni.services import build_student_archive_payload, graduate_student_to_alumni, snapshot_student
 from core.models import SchoolTenant
 from finance.models import SchoolFee
 from tenants.models import Tenant
@@ -153,37 +153,55 @@ class AlumniApiTests(AlumniTestBase):
         response = self._client(self.student_user).get("/api/alumni/students/")
         self.assertEqual(response.status_code, 403)
 
+    def test_an_actively_enrolled_student_never_appears(self):
+        """The archive is for former students only."""
+        response = self._client().get("/api/alumni/students/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["students"], [])
+
+        overview = self._client().get("/api/alumni/overview/")
+        self.assertEqual(overview.data["summary"]["total_alumni"], 0)
+
     def test_overview_lists_filter_options(self):
         response = self._client().get("/api/alumni/overview/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["summary"]["active_students"], 1)
         self.assertIn("2024/2025", [year["name"] for year in response.data["academic_years"]])
         self.assertIn("SSS 3 - A", [item["name"] for item in response.data["classes"]])
 
-    def test_active_student_appears_in_the_list(self):
-        response = self._client().get("/api/alumni/students/")
-        self.assertEqual(response.status_code, 200)
-        rows = response.data["students"]
+    def test_graduated_student_appears_and_counts_as_graduated(self):
+        graduate_student_to_alumni(self.student, actor=self.admin)
+
+        rows = self._client().get("/api/alumni/students/").data["students"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["student_id"], "STAR001")
-        self.assertTrue(rows[0]["is_active_student"])
+        self.assertEqual(rows[0]["archive_reason"], ArchivedStudentRecord.REASON_GRADUATED)
+
+        summary = self._client().get("/api/alumni/overview/").data["summary"]
+        self.assertEqual(summary["total_alumni"], 1)
+        self.assertEqual(summary["graduated"], 1)
 
     def test_search_matches_name_and_student_id(self):
+        graduate_student_to_alumni(self.student, actor=self.admin)
         client = self._client()
         self.assertEqual(len(client.get("/api/alumni/students/?search=Scholar").data["students"]), 1)
         self.assertEqual(len(client.get("/api/alumni/students/?search=STAR001").data["students"]), 1)
         self.assertEqual(len(client.get("/api/alumni/students/?search=nobody").data["students"]), 0)
 
-    def test_class_and_year_filters_narrow_the_list(self):
+    def test_class_year_and_reason_filters_narrow_the_list(self):
+        graduate_student_to_alumni(self.student, actor=self.admin)
         client = self._client()
         self.assertEqual(len(client.get("/api/alumni/students/?class_name=SSS 3 - A").data["students"]), 1)
         self.assertEqual(len(client.get("/api/alumni/students/?class_name=JSS 1 A").data["students"]), 0)
         self.assertEqual(len(client.get("/api/alumni/students/?academic_year=2024/2025").data["students"]), 1)
         self.assertEqual(len(client.get("/api/alumni/students/?academic_year=1999/2000").data["students"]), 0)
+        self.assertEqual(len(client.get("/api/alumni/students/?reason=graduated").data["students"]), 1)
+        self.assertEqual(len(client.get("/api/alumni/students/?reason=transferred").data["students"]), 0)
 
-    def test_detail_returns_the_full_history_for_an_active_student(self):
+    def test_detail_reads_live_while_the_graduates_records_still_exist(self):
         self._add_history()
-        response = self._client().get(f"/api/alumni/students/active:{self.student.id}/")
+        record = graduate_student_to_alumni(self.student, actor=self.admin)
+
+        response = self._client().get(f"/api/alumni/students/archived:{record.id}/")
         self.assertEqual(response.status_code, 200)
         student = response.data["student"]
         self.assertTrue(student["is_live"])
@@ -201,22 +219,25 @@ class AlumniApiTests(AlumniTestBase):
         self.assertFalse(student["is_live"])
         self.assertEqual(student["profile"]["name"], "Sam Scholar")
         self.assertEqual(len(student["academics"]["report_cards"]), 1)
-        self.assertEqual(student["archive"]["status"], "Archived")
 
     def test_archived_student_stays_searchable_after_deletion(self):
         self.student.delete()
-        response = self._client().get("/api/alumni/students/?search=STAR001")
-        rows = response.data["students"]
+        rows = self._client().get("/api/alumni/students/?search=STAR001").data["students"]
         self.assertEqual(len(rows), 1)
-        self.assertFalse(rows[0]["is_active_student"])
         self.assertTrue(rows[0]["is_sealed"])
 
     def test_detail_accepts_a_bare_student_id(self):
+        graduate_student_to_alumni(self.student, actor=self.admin)
         response = self._client().get("/api/alumni/students/STAR001/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["student"]["profile"]["student_id"], "STAR001")
 
+    def test_detail_404s_for_a_student_who_is_still_enrolled(self):
+        response = self._client().get("/api/alumni/students/STAR001/")
+        self.assertEqual(response.status_code, 404)
+
     def test_archive_is_scoped_to_the_viewers_school(self):
+        record = graduate_student_to_alumni(self.student, actor=self.admin)
         other_school = SchoolTenant.objects.create(name="Rival School", schema_name="rival_school", is_active=True)
         other_admin = User.objects.create_user(
             email="admin@rival.edu", password="AdminPass123", first_name="Rio", last_name="Rival",
@@ -225,17 +246,97 @@ class AlumniApiTests(AlumniTestBase):
         response = self._client(other_admin).get("/api/alumni/students/")
         self.assertEqual(len(response.data["students"]), 0)
 
-        detail = self._client(other_admin).get(f"/api/alumni/students/active:{self.student.id}/")
+        detail = self._client(other_admin).get(f"/api/alumni/students/archived:{record.id}/")
         self.assertEqual(detail.status_code, 404)
 
     def test_the_api_is_read_only(self):
         """Every archive endpoint rejects anything that could change a record."""
+        record = graduate_student_to_alumni(self.student, actor=self.admin)
         client = self._client()
         for method, url in (
             ("post", "/api/alumni/students/"),
-            ("patch", f"/api/alumni/students/active:{self.student.id}/"),
-            ("delete", f"/api/alumni/students/active:{self.student.id}/"),
+            ("patch", f"/api/alumni/students/archived:{record.id}/"),
+            ("delete", f"/api/alumni/students/archived:{record.id}/"),
             ("put", "/api/alumni/overview/"),
         ):
             response = getattr(client, method)(url, {}, format="json")
             self.assertEqual(response.status_code, 405, f"{method.upper()} {url} should not be allowed")
+
+
+class GraduateToAlumniTests(AlumniTestBase):
+    def test_graduating_archives_and_takes_the_student_off_the_active_roll(self):
+        self._add_history()
+        record = graduate_student_to_alumni(self.student, actor=self.admin)
+
+        self.student.refresh_from_db()
+        self.student_user.refresh_from_db()
+        self.assertFalse(self.student_user.is_active)
+        self.assertIsNone(self.student.current_class_id)
+
+        self.assertEqual(record.archive_reason, ArchivedStudentRecord.REASON_GRADUATED)
+        self.assertEqual(record.last_class_name, "SSS 3 - A")
+        # Not sealed - the rows still exist, so the archive keeps reading them live.
+        self.assertFalse(record.is_sealed)
+        self.assertEqual(record.source_student_id, self.student.id)
+
+    def test_graduating_preserves_the_history_through_a_later_deletion(self):
+        self._add_history()
+        graduate_student_to_alumni(self.student, actor=self.admin)
+        self.student.delete()
+
+        record = ArchivedStudentRecord.objects.get(student_id="STAR001")
+        self.assertTrue(record.is_sealed)
+        self.assertEqual(len(record.snapshot["academics"]["report_cards"]), 1)
+
+    def test_promotion_endpoint_graduates_a_whole_class_to_alumni(self):
+        self._add_history()
+        response = self._client().post(
+            "/api/app/classes/promotions/",
+            {
+                "action": "apply",
+                "scope": "class",
+                "source_class_id": self.classroom.id,
+                "target_class_id": "alumni",
+                "confirm": True,
+                "note": "Class of 2025",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["applied_count"], 1)
+        self.assertIn("Alumni", response.data["message"])
+
+        self.student_user.refresh_from_db()
+        self.assertFalse(self.student_user.is_active)
+
+        record = ArchivedStudentRecord.objects.get(student_id="STAR001")
+        self.assertEqual(record.archive_reason, ArchivedStudentRecord.REASON_GRADUATED)
+        self.assertEqual(record.archive_note, "Class of 2025")
+
+        rows = self._client().get("/api/alumni/students/").data["students"]
+        self.assertEqual(len(rows), 1)
+
+    def test_promotion_preview_blocks_students_who_are_already_alumni(self):
+        graduate_student_to_alumni(self.student, actor=self.admin)
+        # Reactivate so the student is matched by the scope query again - this
+        # is the "graduated by mistake, re-run the batch" case.
+        self.student_user.is_active = True
+        self.student_user.save(update_fields=["is_active"])
+        self.student.current_class = self.classroom
+        self.student.save(update_fields=["current_class"])
+
+        response = self._client().post(
+            "/api/app/classes/promotions/",
+            {
+                "action": "preview",
+                "scope": "class",
+                "source_class_id": self.classroom.id,
+                "target_class_id": "alumni",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        preview = response.data["preview"]
+        self.assertTrue(preview["to_alumni"])
+        self.assertEqual(preview["summary"]["eligible_students"], 0)
+        self.assertEqual(preview["blocked_students"][0]["reason"], "Already an alumnus")

@@ -6,7 +6,6 @@ import {
   EmptySection,
   FEE_STATUS_COLORS,
   REASON_COLORS,
-  STATUS_COLORS,
   Value,
   formatDay,
   formatMoney,
@@ -572,12 +571,9 @@ export default function AlumniStudentDetail({ session, studentKey, onBack }) {
           <p>{[identity.studentId, identity.admissionNumber].filter(Boolean).join(" • ")}</p>
           <p>{[identity.className, schoolName].filter(Boolean).join(" • ")}</p>
           <p>
-            <AlumniPill value={identity.status} colorMap={STATUS_COLORS} />
-            {identity.reason ? (
-              <>
-                {" "}
-                <AlumniPill value={identity.reason} colorMap={REASON_COLORS} />
-              </>
+            <AlumniPill value={identity.reason} colorMap={REASON_COLORS} />
+            {identity.archivedAt ? (
+              <span className="alumni-muted"> {`Left ${formatDay(identity.archivedAt)}`}</span>
             ) : null}
           </p>
         </div>
@@ -586,8 +582,8 @@ export default function AlumniStudentDetail({ session, studentKey, onBack }) {
       <p className="alumni-readonly-banner">
         This is a permanent read-only archive record. Nothing on this page can be edited.
         {identity.isLive
-          ? " It is showing live data for a student who is still on the system."
-          : ` It was archived${identity.archivedAt ? ` on ${formatDay(identity.archivedAt)}` : ""} and is retained permanently.`}
+          ? " Their underlying records are still on the system, so this history is read live and stays current."
+          : " Their records have been removed from the school, so this is the sealed snapshot taken at the time — it is retained permanently."}
       </p>
 
       <Section title="Personal information"><ProfileSection profile={student?.profile} /></Section>

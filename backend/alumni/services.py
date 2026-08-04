@@ -716,6 +716,31 @@ def seal_archive_for_student(student_profile, reason=ArchivedStudentRecord.REASO
     return snapshot_student(student_profile, reason=reason, actor=actor, note=note, seal=True)
 
 
+def graduate_student_to_alumni(student_profile, actor=None, note="", reason=ArchivedStudentRecord.REASON_GRADUATED):
+    """Move a student out of the active roll and into the alumni archive.
+
+    Deliberately does *not* seal: the student's rows are still in the database,
+    so the archive can keep reading them live and stay accurate. Sealing happens
+    only if they are later deleted, at which point the pre_delete signal takes a
+    final snapshot.
+
+    The student account is deactivated and unassigned from its class, which is
+    what keeps a graduate out of every active-student list on the platform.
+    """
+    record = snapshot_student(student_profile, reason=reason, actor=actor, note=note)
+
+    student_user = student_profile.user
+    if student_user.is_active:
+        student_user.is_active = False
+        student_user.save(update_fields=["is_active"])
+
+    if student_profile.current_class_id is not None:
+        student_profile.current_class = None
+        student_profile.save(update_fields=["current_class"])
+
+    return record
+
+
 def archived_record_payload(record):
     """List-row shape for an archived student."""
     return {
@@ -735,6 +760,5 @@ def archived_record_payload(record):
         "archive_reason_display": record.get_archive_reason_display(),
         "archived_at": record.archived_at.isoformat() if record.archived_at else None,
         "is_sealed": record.is_sealed,
-        "is_active_student": False,
-        "status": "Archived",
+        "status": record.get_archive_reason_display(),
     }

@@ -5003,9 +5003,17 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
       setPromotionError("Confirm the promotion before applying.");
       return;
     }
-    const targetName = promotionPreview?.target_class?.label || "the destination class";
+    const toAlumni = Boolean(promotionPreview?.to_alumni);
+    const targetName = promotionPreview?.target_label || promotionPreview?.target_class?.label || "the destination class";
     const count = promotionPreview?.summary?.eligible_students || 0;
-    const ok = await confirm({ title: "Apply Bulk Promotion", message: `Promote ${count} student(s) to ${targetName}? This will update their class assignment.`, confirmLabel: "Promote", danger: false });
+    const ok = await confirm({
+      title: toAlumni ? "Graduate Students to Alumni" : "Apply Bulk Promotion",
+      message: toAlumni
+        ? `Graduate ${count} student(s) to Alumni? Their full history is archived permanently and they are removed from the active student list. This cannot be undone.`
+        : `Promote ${count} student(s) to ${targetName}? This will update their class assignment.`,
+      confirmLabel: toAlumni ? "Graduate" : "Promote",
+      danger: toAlumni,
+    });
     if (!ok) {
       return;
     }
@@ -5144,6 +5152,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
               <select value={promotionForm.target_class_id} onChange={(event) => setPromotionForm((prev) => ({ ...prev, target_class_id: event.target.value }))}>
                 <option value="">Select destination</option>
                 {classes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                <option value="alumni">Alumni (graduate &amp; archive)</option>
               </select>
             </label>
             <label className="panel-field">
