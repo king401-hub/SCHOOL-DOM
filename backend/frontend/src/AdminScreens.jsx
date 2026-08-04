@@ -7999,19 +7999,28 @@ function mockServiceAgreementForm(brand) {
 
 function AdminDocumentCustomizationScreen({ data, loading, error, onRetry, school, session, onSave }) {
   const brand = resolveSchoolBrand(session?.school, school);
-  const savedTheme = useMemo(
-    () => resolveDocumentTheme(data?.theme ? { document_theme: data.theme } : null, session?.school, school),
-    [data?.theme, session?.school, school]
-  );
-  const [draft, setDraft] = useState(savedTheme);
+  const initialTheme = () => resolveDocumentTheme(data?.theme ? { document_theme: data.theme } : null, session?.school, school);
+  const [savedTheme, setSavedTheme] = useState(initialTheme);
+  const [draft, setDraft] = useState(initialTheme);
   const [previewType, setPreviewType] = useState("invoice");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
+  const loadedServerThemeRef = useRef(Boolean(data?.theme));
 
+  // Only pull the server's theme into draft/savedTheme once, the first time
+  // real data arrives - `school`/`session` are freshly recomputed on every
+  // parent render (background polling elsewhere in the app included), so
+  // resyncing on every change here would silently overwrite in-progress,
+  // unsaved edits (e.g. a color or orientation pick reverting on its own).
   useEffect(() => {
-    setDraft(savedTheme);
-  }, [savedTheme]);
+    if (data?.theme && !loadedServerThemeRef.current) {
+      const resolved = resolveDocumentTheme({ document_theme: data.theme });
+      setSavedTheme(resolved);
+      setDraft(resolved);
+      loadedServerThemeRef.current = true;
+    }
+  }, [data?.theme]);
 
   const update = (field, value) => {
     setSaveSuccess("");
@@ -8024,7 +8033,10 @@ function AdminDocumentCustomizationScreen({ data, loading, error, onRetry, schoo
     setSaveError("");
     setSaveSuccess("");
     try {
-      await onSave(draft);
+      const result = await onSave(draft);
+      const resolved = resolveDocumentTheme({ document_theme: result?.theme || draft });
+      setSavedTheme(resolved);
+      setDraft(resolved);
       setSaveSuccess("Document theme saved.");
     } catch (saveErr) {
       setSaveError(saveErr.message || "Could not save the document theme.");
