@@ -99,7 +99,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-slate-600 text-xs">
-            © {year} Schooldom Academy. All rights reserved. Built with love for African schools.
+            © {year} Schooldom Academy. All rights reserved. Built with love, Powered by Xcel Technologies Limited.
           </p>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
