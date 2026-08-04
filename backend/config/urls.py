@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/hr/', include('hr.urls')),
     path('api/request-queue/', include('request_queue.urls')),
     path('api/inventory/', include('inventory.urls')),
+    path('api/alumni/', include('alumni.urls')),
     path('api/attendance/', include('attendance.urls')),
     path('api/app/', include('users.app_urls')),
     path('api/quizzes/', include('quizzes.urls')),

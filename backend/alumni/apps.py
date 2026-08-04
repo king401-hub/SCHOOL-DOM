@@ -1,0 +1,10 @@
+from django.apps import AppConfig
+
+
+class AlumniConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "alumni"
+    verbose_name = "Alumni & Student Archive"
+
+    def ready(self):
+        from alumni import signals  # noqa: F401
