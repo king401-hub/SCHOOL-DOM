@@ -30,6 +30,7 @@ export const ADMIN_ROUTES = [
     label: "People",
     children: [
       { path: "/students", label: "Students" },
+      { path: "/alumni", label: "Alumni" },
       { path: "/parents", label: "Parent Directory" },
       { path: "/teachers", label: "Teachers" },
       { path: "/non-teaching-staff", label: "Non-Teaching Staff" },
@@ -44,7 +45,6 @@ export const ADMIN_ROUTES = [
       { path: "/exams", label: "CBT Exams" },
       { path: "/timetables", label: "Timetables" },
       { path: "/results", label: "Results" },
-      { path: "/alumni", label: "Alumni" },
     ]
   },
   {
