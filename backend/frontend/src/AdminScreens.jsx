@@ -285,6 +285,7 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
   const dashboardSchool = resolveSchoolBrand(data?.school, user?.school, user);
   const displayRole = userRoleLabel(user);
   const complianceStatus = data?.school?.compliance_status || "";
+  const complianceDaysRemaining = data?.school?.compliance_days_remaining;
   const announcements = data?.announcements || [];
   const alerts = data?.alerts || [];
   const recentStudents = data?.recent_students || [];
@@ -350,6 +351,11 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
             >
               <ShieldAlert size={13} className="compliance-badge-icon" />
               {complianceStatus === "submitted" ? "Pending Review" : "Unverified"}
+              {complianceStatus !== "submitted" && typeof complianceDaysRemaining === "number" ? (
+                <span className="compliance-badge-days">
+                  &bull; {complianceDaysRemaining} day{complianceDaysRemaining === 1 ? "" : "s"} left
+                </span>
+              ) : null}
             </button>
           ) : null}
         </div>
@@ -7607,6 +7613,7 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
   const director = data?.director || {};
   const canEdit = Boolean(data?.can_edit);
   const complianceStatus = school.compliance_status;
+  const complianceDaysRemaining = school.compliance_days_remaining;
 
   const [cacRegisteredName, setCacRegisteredName] = useState("");
   const [ministryApprovalNumber, setMinistryApprovalNumber] = useState("");
@@ -7726,6 +7733,11 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
           {complianceStatus ? (
             <span className={`compliance-badge tone-${complianceStatus === "approved" ? "approved" : complianceStatus === "submitted" ? "pending" : "unverified"}`}>
               {statusLabel}
+              {typeof complianceDaysRemaining === "number" ? (
+                <span className="compliance-badge-days">
+                  &bull; {complianceDaysRemaining} day{complianceDaysRemaining === 1 ? "" : "s"} left
+                </span>
+              ) : null}
             </span>
           ) : null}
         </div>

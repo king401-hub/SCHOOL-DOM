@@ -902,6 +902,11 @@ def _school_payload(school, request=None):
         "state": getattr(school, "state", "") or "",
         "signature": _resolve_school_signature_url(school, request),
         "compliance_status": getattr(school, "compliance_status", "") or "not_submitted",
+        "compliance_days_remaining": (
+            school.compliance_days_remaining()
+            if getattr(school, "compliance_status", "not_submitted") in ("not_submitted", "rejected")
+            else None
+        ),
         "document_theme": _document_theme_for_school(school),
     }
 

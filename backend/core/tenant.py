@@ -175,6 +175,14 @@ class SchoolTenant(models.Model):
             django_timezone.datetime.combine(self.created_on, django_timezone.datetime.min.time())
         )
 
+    def compliance_days_remaining(self):
+        """Days left on the 30-day compliance clock (core.tasks.send_compliance_reminders
+        enforces the same window), clamped to 0. Schools onboarded before
+        compliance_deadline_reference_at existed still get a correct count via
+        compliance_deadline_reference()'s fallback to created_on."""
+        elapsed = (django_timezone.now() - self.compliance_deadline_reference()).days
+        return max(30 - elapsed, 0)
+
     def is_feature_enabled(self, feature_code):
         """Check if a feature is enabled for this school"""
         from settings_app.models import FeatureFlag

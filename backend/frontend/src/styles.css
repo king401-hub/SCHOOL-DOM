@@ -3959,6 +3959,13 @@ body[data-theme="dark"] .screen-hero p  { color: #64748b; }
   flex: 0 0 auto;
 }
 
+.compliance-badge-days {
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.85;
+}
+
 .compliance-badge.tone-unverified {
   background: #fee2e2;
   color: #b91c1c;
