@@ -60,6 +60,7 @@ from finance.services import (
     refund_sms_wallet,
     send_bulk_message_to_parents,
     send_parent_virtual_account_fee_reminder,
+    send_payment_receipt_sms,
     send_wallet_sms,
     sms_failure_reason,
     sync_class_fee_assignments,
@@ -1762,6 +1763,75 @@ class CashPaymentTests(TestCase):
     def test_record_cash_payment_rejects_non_positive_amount(self):
         with self.assertRaises(ValueError):
             record_cash_payment(self.student, Decimal("0.00"), actor=self.admin_user)
+
+    @patch("finance.services.send_ebulksms")
+    def test_offline_payment_texts_the_guardian_a_receipt_link_free_of_charge(self, mock_send):
+        """This SMS is the only thing carrying the receipt link to a parent who
+        paid offline, so it must actually send - and never bill the school."""
+        self.student.guardian_phone = "2348012345678"
+        self.student.save(update_fields=["guardian_phone"])
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 25
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        payment = record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        result = send_payment_receipt_sms(payment)
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["phone"], "2348012345678")
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 25)  # not billed
+
+        log = SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT)
+        self.assertEqual(log.credits_charged, 0)
+        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
+        # The receipt link is the whole point of the message.
+        self.assertIn("/r/", log.message)
+        self.assertTrue(PaymentReceiptLink.objects.filter(tenant=self.school).exists())
+
+    @patch("finance.services.send_ebulksms")
+    def test_offline_payment_receipt_sends_even_when_the_wallet_is_empty(self, mock_send):
+        self.student.guardian_phone = "2348012345678"
+        self.student.save(update_fields=["guardian_phone"])
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        payment = record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        self.assertTrue(send_payment_receipt_sms(payment)["sent"])
+
+    @patch("finance.services.send_ebulksms")
+    def test_receipt_sms_falls_back_to_the_second_guardian_and_skips_when_none(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        self.student.guardian_phone = ""
+        self.student.second_guardian_phone = "2348099999999"
+        self.student.save(update_fields=["guardian_phone", "second_guardian_phone"])
+
+        payment = record_cash_payment(self.student, Decimal("5000.00"), actor=self.admin_user)
+        self.assertEqual(send_payment_receipt_sms(payment)["phone"], "2348099999999")
+
+        self.student.second_guardian_phone = ""
+        self.student.save(update_fields=["second_guardian_phone"])
+        second = record_cash_payment(self.student, Decimal("1000.00"), actor=self.admin_user)
+        result = send_payment_receipt_sms(second)
+        self.assertFalse(result["sent"])
+        self.assertIn("No guardian phone", result["reason"])
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_failed_receipt_sms_never_breaks_the_payment(self, mock_send):
+        """The money is already banked - a texting failure must not surface as an error."""
+        self.student.guardian_phone = "2348012345678"
+        self.student.save(update_fields=["guardian_phone"])
+        mock_send.side_effect = RuntimeError("provider down")
+
+        payment = record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        result = send_payment_receipt_sms(payment)
+
+        self.assertFalse(result["sent"])
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
 
     def test_admin_cash_payment_endpoint_requires_finance_role(self):
         non_finance_user = User.objects.create_user(

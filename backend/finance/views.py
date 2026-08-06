@@ -99,7 +99,7 @@ from finance.services import (
     record_cash_payment,
     provision_kuda_admin_virtual_account,
     record_finance_activity,
-    receipt_message_for_payment,
+    send_payment_receipt_sms,
     send_fee_reminders,
     send_parent_balance_response,
     send_payment_receipt,
@@ -373,12 +373,7 @@ def bank_credit_webhook(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        phone = payment.student.guardian_phone or payment.student.second_guardian_phone
-        if phone:
-            try:
-                send_payment_receipt(phone, receipt_message_for_payment(payment))
-            except Exception:
-                pass
+        send_payment_receipt_sms(payment)
     return Response({"success": True, "created": created, "payment": BankPaymentSerializer(payment).data})
 
 
@@ -2057,12 +2052,7 @@ def admin_bank_payment_ingest(request):
             )
             processed.append({"created": created, "payment": BankPaymentSerializer(payment).data})
             if created and payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-                phone = payment.student.guardian_phone or payment.student.second_guardian_phone
-                if phone:
-                    try:
-                        send_payment_receipt(phone, receipt_message_for_payment(payment))
-                    except Exception:
-                        pass
+                send_payment_receipt_sms(payment)
             record_finance_activity(
                 user.tenant,
                 user,
@@ -2115,12 +2105,7 @@ def admin_bank_payment_recover(request, payment_id):
     payment.save(update_fields=["payment_reference", "updated_at"])
     payment = apply_bank_payment_to_student(payment, student, actor=user)
     if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        phone = payment.student.guardian_phone or payment.student.second_guardian_phone
-        if phone:
-            try:
-                send_payment_receipt(phone, receipt_message_for_payment(payment))
-            except Exception:
-                pass
+        send_payment_receipt_sms(payment)
     record_finance_activity(
         user.tenant,
         user,
@@ -2166,12 +2151,7 @@ def admin_cash_payment_record(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     if payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        phone = student.guardian_phone or student.second_guardian_phone
-        if phone:
-            try:
-                send_payment_receipt(phone, receipt_message_for_payment(payment))
-            except Exception:
-                pass
+        send_payment_receipt_sms(payment)
 
     record_finance_activity(
         user.tenant,

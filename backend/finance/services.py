@@ -4628,6 +4628,68 @@ def receipt_message_for_payment(payment):
     )
 
 
+def send_payment_receipt_sms(payment) -> dict:
+    """Text a guardian their receipt link after a bank transfer or cash payment.
+
+    This SMS is the only thing that carries the receipt link to a parent who
+    paid offline - they have no email in the flow and may never open the portal
+    - so it is sent free of the school's wallet (charge_wallet=False), exactly
+    like the online payment receipt. Never billed, never blocked by an empty
+    wallet: the school has already been paid.
+
+    Returns a small result dict rather than raising; a receipt that fails to
+    send must never roll back or obscure a payment that succeeded.
+    """
+    student = getattr(payment, "student", None)
+    if student is None:
+        return {"sent": False, "reason": "Payment is not matched to a student."}
+
+    phone = (student.guardian_phone or student.second_guardian_phone or "").strip()
+    if not phone:
+        return {"sent": False, "reason": "No guardian phone on file."}
+
+    tenant = getattr(payment, "tenant", None) or getattr(student.user, "tenant", None)
+    school_name = getattr(tenant, "name", "") or "School"
+    student_name = student.user.get_full_name() or student.user.email
+    amount_paid = _as_decimal(payment.applied_amount or payment.amount)
+
+    outstanding = Decimal("0.00")
+    for fee in SchoolFee.objects.filter(student=student).exclude(status=SchoolFee.STATUS_PAID):
+        outstanding += max(_as_decimal(fee.amount) - _as_decimal(fee.amount_paid), Decimal("0.00"))
+
+    receipt_data = {
+        "type": "receipt",
+        "school_name": school_name,
+        "student_name": student_name,
+        "class_name": getattr(student.current_class, "name", "") or "",
+        "amount_paid": str(amount_paid),
+        "balance_remaining": str(outstanding),
+        "payment_status": "paid" if outstanding <= 0 else "partial",
+        "payment_date": timezone.now().strftime("%d %b %Y"),
+        "reference": payment.receipt_number or payment.bank_reference or "",
+    }
+
+    try:
+        receipt_url = create_receipt_link(receipt_data, tenant=tenant, phone=phone)
+        log = send_wallet_sms(
+            tenant,
+            phone,
+            _sms_message_with_receipt_link(receipt_message_for_payment(payment), receipt_url),
+            category=SmsMessageLog.RECEIPT,
+            narration="Payment receipt (not billed)",
+            charge_wallet=False,
+        )
+    except Exception:
+        logger.exception("Payment receipt SMS failed for payment %s", getattr(payment, "id", "?"))
+        return {"sent": False, "reason": "Receipt SMS could not be sent."}
+
+    return {
+        "sent": log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED),
+        "phone": phone,
+        "receipt_url": receipt_url,
+    }
+
+
 def _match_payment_reference_from_narration(tenant, narration):
     narration_upper = str(narration or "").upper()
     refs = StudentPaymentReference.objects.select_related("student", "student__user").filter(is_active=True)
