@@ -583,7 +583,9 @@ function AdminPerformanceHeatmapScreen({ data = {}, loading, error, onRetry }) {
   const feeTrends = data.fee_trends || {};
   const examStats = data.examination_statistics || {};
   const departments = data.departmental_performance || [];
-  const generatedAt = data.generated_at ? formatDate(data.generated_at) : "Live";
+  const generatedAt = data.generated_at
+    ? new Date(data.generated_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "Live";
 
   return (
     <section className="performance-heatmap-screen">

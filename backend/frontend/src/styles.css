@@ -21422,15 +21422,19 @@ body[data-theme="dark"] .form-feedback.error {
 }
 
 .heat-risk-orb {
-  width: 138px;
-  min-height: 138px;
+  width: 158px;
+  height: 158px;
+  min-height: 158px;
   flex: 0 0 auto;
+  box-sizing: border-box;
   display: grid;
   place-items: center;
   text-align: center;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  padding: 0.9rem;
 }
 
 .heat-risk-orb span,
@@ -21439,8 +21443,21 @@ body[data-theme="dark"] .form-feedback.error {
   color: rgba(255, 255, 255, 0.78);
 }
 
+.heat-risk-orb span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .heat-risk-orb strong {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+
+.heat-risk-orb small {
+  font-size: 0.6rem;
+  line-height: 1.25;
+  max-width: 90px;
 }
 
 .heat-metric-grid {
