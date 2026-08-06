@@ -7937,7 +7937,6 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         error={error}
         onRetry={handleRetry}
         onSave={handleSaveServiceAgreement}
-        school={session?.school}
       />
     );
   } else {
