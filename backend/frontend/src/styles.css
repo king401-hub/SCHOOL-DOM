@@ -22470,6 +22470,32 @@ body[data-theme="dark"] .heat-bar-track {
   gap: 18px;
 }
 
+/* Confirmation shown after a student ID card scan, so whoever is on the gate
+   can see at a glance whether that scan clocked the student in or out. */
+.attendance-clock-result {
+  display: grid;
+  gap: 2px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.attendance-clock-result span {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+body[data-theme="dark"] .attendance-clock-result {
+  background: rgba(37, 99, 235, 0.16);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+body[data-theme="dark"] .attendance-clock-result span {
+  color: #94a3b8;
+}
+
 .qr-scanner-grid {
   display: grid;
   grid-template-columns: minmax(220px, 360px) 1fr;
@@ -23045,7 +23071,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
 
 .official-doc-header {
   text-align: center;
-  border-bottom: 3px double var(--doc-secondary, #0f3d5e);
+  border-bottom: 3px double var(--doc-accent, #0f3d5e);
   padding-bottom: 18px;
   margin-bottom: 24px;
 }
@@ -23071,7 +23097,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
 .official-doc-logo span {
   font-family: "Manrope", Arial, sans-serif;
   font-weight: 900;
-  color: var(--doc-secondary, #0f3d5e);
+  color: var(--doc-accent, #0f3d5e);
 }
 
 .official-doc-header h1 {
@@ -23089,7 +23115,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
 
 .official-doc-motto {
   margin: 5px 0 0;
-  color: var(--doc-secondary, #0f3d5e);
+  color: var(--doc-accent, #0f3d5e);
   font-family: "Manrope", Arial, sans-serif;
   font-size: 0.9rem;
   font-style: italic;
@@ -23102,7 +23128,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
   letter-spacing: 0.12em;
   font-size: 1.4rem;
   margin: 20px 0;
-  color: var(--doc-secondary, #0f3d5e);
+  color: var(--doc-accent, #0f3d5e);
 }
 
 .doc-info-grid {
@@ -23149,7 +23175,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
 
 .document-table th {
   background: #eef6f3;
-  color: var(--doc-secondary, #0f3d5e);
+  color: var(--doc-accent, #0f3d5e);
   text-transform: uppercase;
   font-size: 0.68rem;
 }
@@ -23162,7 +23188,7 @@ body[data-theme="dark"] .qr-scanner-copy p {
 .term-record h3 {
   margin: 0 0 8px;
   font-family: "Manrope", Arial, sans-serif;
-  color: var(--doc-secondary, #0f3d5e);
+  color: var(--doc-accent, #0f3d5e);
 }
 
 .doc-summary-strip {
