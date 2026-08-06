@@ -3002,6 +3002,176 @@ class AttendanceAndPromptTests(TestCase):
         self.assertIsNone(record.latitude)
         self.assertIsNone(record.longitude)
 
+    # --- Clock in / clock out ------------------------------------------------
+
+    def _id_card_token(self):
+        student_profile = StudentProfile.objects.get(user=self.student_user)
+        return signing.dumps(
+            {
+                "tenant_id": str(self.school.id),
+                "person_type": "student",
+                "person_id": str(student_profile.id),
+                "unique_id": student_profile.student_id,
+            },
+            salt=ID_CARD_SIGNING_SALT,
+            compress=True,
+        )
+
+    def _scan(self, token, **extra):
+        return self.client.post(
+            "/api/app/id-cards/scan-attendance/",
+            data={"token": token, **extra},
+            format="json",
+        )
+
+    def _backdate_clock_in(self, minutes=30):
+        """Push clock-in back so the double-scan guard does not block a clock-out."""
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        record.clock_in_at = timezone.now() - timedelta(minutes=minutes)
+        record.save(update_fields=["clock_in_at"])
+        return record
+
+    def test_first_scan_clocks_in_and_second_scan_clocks_out(self):
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+
+        first = self._scan(token)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.data["action"], "clock_in")
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertIsNotNone(record.clock_in_at)
+        self.assertIsNone(record.clock_out_at)
+
+        self._backdate_clock_in()
+        second = self._scan(token)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["action"], "clock_out")
+        record.refresh_from_db()
+        self.assertIsNotNone(record.clock_out_at)
+        self.assertEqual(record.clock_out_recorded_by, self.teacher_user)
+        self.assertGreater(record.hours_on_site, 0)
+
+    def test_accidental_double_scan_does_not_clock_the_student_straight_out(self):
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+        self._scan(token)
+
+        immediate = self._scan(token)
+        self.assertEqual(immediate.status_code, 400)
+        self.assertIn("just clocked in", immediate.data["message"])
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertIsNone(record.clock_out_at)
+
+    def test_scanning_again_after_clocking_out_is_rejected(self):
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+        self._scan(token)
+        self._backdate_clock_in()
+        self._scan(token)
+
+        third = self._scan(token)
+        self.assertEqual(third.status_code, 400)
+        self.assertIn("already clocked out", third.data["message"])
+
+    def test_clock_out_before_clocking_in_is_rejected(self):
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+
+        response = self._scan(token, action="clock_out")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("has not clocked in", response.data["message"])
+        self.assertFalse(AttendanceRecord.objects.filter(student=self.student_user).exists())
+
+    def test_explicit_clock_in_mode_never_clocks_a_student_out(self):
+        """A dedicated entry-gate scanner must not send anyone home."""
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+        self._scan(token, action="clock_in")
+        self._backdate_clock_in()
+
+        again = self._scan(token, action="clock_in")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.data["action"], "clock_in")
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertIsNone(record.clock_out_at)
+
+    def test_teacher_can_clock_a_student_out_manually(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-1", "status": "present"},
+            format="json",
+        )
+        self._backdate_clock_in()
+
+        response = self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-1", "action": "clock_out"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["action"], "clock_out")
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertIsNotNone(record.clock_out_at)
+
+    def test_marking_present_records_arrival_but_marking_absent_does_not(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-1", "status": "present"},
+            format="json",
+        )
+        record = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertIsNotNone(record.clock_in_at)
+
+        self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-1", "status": "absent"},
+            format="json",
+        )
+        record.refresh_from_db()
+        self.assertEqual(record.status, "absent")
+
+        AttendanceRecord.objects.filter(pk=record.pk).delete()
+        self.client.post(
+            "/api/app/attendance/teacher-mark/",
+            data={"student_id": "STU-ATT-1", "status": "absent"},
+            format="json",
+        )
+        fresh = AttendanceRecord.objects.get(student=self.student_user, date=timezone.localdate())
+        self.assertIsNone(fresh.clock_in_at)
+
+    def test_parent_sms_says_arrived_or_left_rather_than_marked_present(self):
+        from users.app_views import _attendance_sms_text
+
+        now = timezone.now()
+        arrival = _attendance_sms_text(
+            "Ada Obi", "Sunrise Academy", "present", timezone.localdate(), "clock_in", now
+        )
+        departure = _attendance_sms_text(
+            "Ada Obi", "Sunrise Academy", "present", timezone.localdate(), "clock_out", now
+        )
+        self.assertIn("arrived at school at Sunrise Academy", arrival)
+        self.assertIn("left school at Sunrise Academy", departure)
+
+        # Absence has no clock time, so it keeps the original wording.
+        absence = _attendance_sms_text(
+            "Ada Obi", "Sunrise Academy", "absent", timezone.localdate(), "status", None
+        )
+        self.assertIn("marked ABSENT", absence)
+
+    def test_clock_events_notify_parents_on_both_directions(self):
+        token = self._id_card_token()
+        self.client.force_authenticate(user=self.teacher_user)
+
+        with patch("users.app_views._notify_parents_on_attendance") as notify:
+            self._scan(token)
+            self._backdate_clock_in()
+            self._scan(token)
+
+        events = [call.kwargs.get("event") for call in notify.call_args_list]
+        self.assertEqual(events, ["clock_in", "clock_out"])
+
     def test_document_endpoints_do_not_consume_tokens(self):
         admin_user = User.objects.create_user(
             email="admin@attendance.edu",

@@ -12,6 +12,14 @@ export function formatDay(value) {
   return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+/** Clock-in/out timestamps show the time of day; the date is already its own column. */
+export function formatClockTime(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export const REASON_COLORS = {
   graduated: "#0ea5e9",
   transferred: "#9333ea",

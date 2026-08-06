@@ -188,6 +188,9 @@ def _attendance_section(student_profile):
                 "class_name": _class_label(record.class_group) if record.class_group_id else "",
                 "noted_by": record.noted_by.get_full_name() if record.noted_by_id else "",
                 "location": record.location_address or "",
+                "clock_in_at": record.clock_in_at,
+                "clock_out_at": record.clock_out_at,
+                "hours_on_site": record.hours_on_site,
             }
         )
 

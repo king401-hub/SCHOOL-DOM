@@ -7,6 +7,7 @@ import {
   FEE_STATUS_COLORS,
   REASON_COLORS,
   Value,
+  formatClockTime,
   formatDay,
   formatMoney,
 } from "./alumniHelpers";
@@ -166,13 +167,15 @@ function AttendanceSection({ attendance }) {
       <div className="alumni-table-scroll">
         <table className="data-table">
           <thead>
-            <tr><th>Date</th><th>Status</th><th>Class</th><th>Recorded by</th></tr>
+            <tr><th>Date</th><th>Status</th><th>Clocked in</th><th>Clocked out</th><th>Class</th><th>Recorded by</th></tr>
           </thead>
           <tbody>
             {records.map((row, index) => (
               <tr key={`${row.date}-${index}`}>
                 <td>{formatDay(row.date)}</td>
                 <td><AlumniPill value={row.status} colorMap={ATTENDANCE_COLORS} /></td>
+                <td><Value>{formatClockTime(row.clock_in_at)}</Value></td>
+                <td><Value>{formatClockTime(row.clock_out_at)}</Value></td>
                 <td><Value>{row.class_name}</Value></td>
                 <td><Value>{row.noted_by}</Value></td>
               </tr>

@@ -105,6 +105,16 @@ except Exception:  # pragma: no cover - optional app fallback
 # have their own endpoints in proprietor_views.py, keyed off school_group.
 ADMIN_ROLES = {"school_admin", "principal", "super_admin"}
 ID_CARD_SIGNING_SALT = "schooldom.id-card.verify"
+
+# Student clock-in / clock-out. A scanner sends the same request every time, so
+# the second scan of the day is what clocks a student out - see
+# _record_attendance_clock. The guard interval stops an accidental double-scan
+# at the gate from instantly clocking a child back out again.
+ATTENDANCE_EVENT_CLOCK_IN = "clock_in"
+ATTENDANCE_EVENT_CLOCK_OUT = "clock_out"
+ATTENDANCE_EVENT_STATUS = "status"
+ATTENDANCE_CLOCK_ACTIONS = {ATTENDANCE_EVENT_CLOCK_IN, ATTENDANCE_EVENT_CLOCK_OUT}
+ATTENDANCE_DOUBLE_SCAN_SECONDS = 120
 ADMIN_EXAM_HIDDEN_SUBJECT_CODES = {"PHY", "CHEM"}
 ADMIN_EXAM_HIDDEN_SUBJECT_NAMES = {"physics", "chemistry"}
 DEFAULT_STUDENT_ACTIVITY_TITLES = [
@@ -4397,32 +4407,31 @@ def student_qr_mark_attendance(request):
         )
 
     today = timezone.localdate()
-    with db_transaction.atomic():
-        attendance, created = AttendanceRecord.objects.update_or_create(
-            student=user,
-            date=today,
-            defaults={
-                "tenant": tenant_obj,
-                "class_group": student_profile.current_class,
-                "status": "present",
-                "noted_by": user,
-                "latitude": location["latitude"],
-                "longitude": location["longitude"],
-                "location_accuracy_meters": location["accuracy"],
-                "location_address": location["address"],
-                "device_info": location["device_info"],
-            },
+    try:
+        attendance, action, message = _record_attendance_clock(
+            student_user=user,
+            student_profile=student_profile,
+            tenant_obj=tenant_obj,
+            actor=user,
+            location=location,
+            attendance_date=today,
+            requested_action=request.data.get("action"),
+            school_name=school.name,
         )
+    except AttendanceClockError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response(
         {
             "success": True,
-            "message": "Attendance marked successfully." if created else "Attendance updated successfully.",
+            "message": message,
+            "action": action,
             "attendance": {
                 "status": attendance.status,
                 "date": attendance.date,
                 "class_name": _class_label(attendance.class_group) if attendance.class_group else "Unassigned",
                 "noted_by": attendance.noted_by.get_full_name() if attendance.noted_by else None,
+                **_attendance_clock_payload(attendance),
             },
         }
     )
@@ -4472,6 +4481,10 @@ def student_attendance_list(request):
             "success": True,
             "date": attendance_date,
             "total_present": sum(1 for item in records if item.status in {"present", "late"}),
+            "total_clocked_out": sum(1 for item in records if item.clock_out_at is not None),
+            "total_on_site": sum(
+                1 for item in records if item.clock_in_at is not None and item.clock_out_at is None
+            ),
             "records": [
                 {
                     "id": item.id,
@@ -4488,8 +4501,10 @@ def student_attendance_list(request):
                     "accuracy": item.location_accuracy_meters,
                     "address": item.location_address,
                     "device_info": item.device_info,
+                    "clocked_out_by": item.clock_out_recorded_by.get_full_name() if item.clock_out_recorded_by else "",
                     "created_at": item.created_at,
                     "updated_at": item.updated_at,
+                    **_attendance_clock_payload(item),
                 }
                 for item in records
             ],
@@ -6344,27 +6359,26 @@ def id_card_scan_attendance(request):
 
     attendance_date = parse_date(str(request.data.get("date") or "")) or timezone.localdate()
     tenant_obj = _tenant_for_model(AttendanceRecord, user)
-    attendance, created = AttendanceRecord.objects.update_or_create(
-        student=student_profile.user,
-        date=attendance_date,
-        defaults={
-            "status": "present",
-            "class_group": student_profile.current_class,
-            "noted_by": user,
-            "tenant": tenant_obj,
-            "latitude": location["latitude"],
-            "longitude": location["longitude"],
-            "location_accuracy_meters": location["accuracy"],
-            "location_address": location["address"],
-            "device_info": location["device_info"],
-        },
-    )
-    _notify_parents_on_attendance(student_profile.user, "present", attendance_date, school.name)
+    try:
+        attendance, action, message = _record_attendance_clock(
+            student_user=student_profile.user,
+            student_profile=student_profile,
+            tenant_obj=tenant_obj,
+            actor=user,
+            location=location,
+            attendance_date=attendance_date,
+            requested_action=request.data.get("action"),
+            school_name=school.name,
+        )
+    except AttendanceClockError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
     return Response(
         {
             "success": True,
-            "message": f"{student_profile.user.get_full_name() or student_profile.student_id} marked present from ID card.",
-            "created": created,
+            "message": message,
+            "action": action,
+            "created": action == ATTENDANCE_EVENT_CLOCK_IN,
             "attendance": {
                 "id": str(attendance.id),
                 "student_id": student_profile.student_id,
@@ -6372,6 +6386,7 @@ def id_card_scan_attendance(request):
                 "class_name": _class_label(attendance.class_group) if attendance.class_group else "Unassigned",
                 "date": attendance.date,
                 "status": attendance.status,
+                **_attendance_clock_payload(attendance),
             },
         }
     )
@@ -9952,8 +9967,17 @@ def teacher_mark_student_attendance(request):
         or request.data.get("student_name")
         or ""
     ).strip()
+    # A clock-out carries no status of its own - the student's present/late
+    # standing was already set when they clocked in - so status is only
+    # required for the ordinary marking path.
+    clock_action = str(request.data.get("action") or "").strip().lower()
+    if clock_action and clock_action not in ATTENDANCE_CLOCK_ACTIONS:
+        return Response(
+            {"success": False, "message": "action must be clock_in or clock_out."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     status_value = str(request.data.get("status") or "").strip().lower()
-    if status_value not in {"present", "absent", "late"}:
+    if not clock_action and status_value not in {"present", "absent", "late"}:
         return Response({"success": False, "message": "status must be present, absent, or late."}, status=status.HTTP_400_BAD_REQUEST)
     assigned_classes = _teacher_assigned_classes(user)
     assigned_class_ids = set(assigned_classes.values_list("id", flat=True))
@@ -9975,10 +9999,28 @@ def teacher_mark_student_attendance(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     attendance_date = parse_date(str(request.data.get("date") or "")) or timezone.localdate()
     tenant_obj = _tenant_for_model(AttendanceRecord, user)
-    attendance, _created = AttendanceRecord.objects.update_or_create(
-        student=student_profile.user,
-        date=attendance_date,
-        defaults={
+    school_name = user.tenant.name if user.tenant else "School"
+
+    if clock_action:
+        try:
+            attendance, action, message = _record_attendance_clock(
+                student_user=student_profile.user,
+                student_profile=student_profile,
+                tenant_obj=tenant_obj,
+                actor=user,
+                location=location,
+                attendance_date=attendance_date,
+                requested_action=clock_action,
+                school_name=school_name,
+                status_value=status_value or "present",
+            )
+        except AttendanceClockError as exc:
+            return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        # Marking a student present or late is also their arrival, so it sets
+        # the clock-in when one is not already recorded. Marking them absent
+        # must not - an absent student never arrived.
+        defaults = {
             "status": status_value,
             "class_group": student_profile.current_class,
             "noted_by": user,
@@ -9988,13 +10030,24 @@ def teacher_mark_student_attendance(request):
             "location_accuracy_meters": location["accuracy"],
             "location_address": location["address"],
             "device_info": location["device_info"],
-        },
-    )
-    _notify_parents_on_attendance(student_profile.user, status_value, attendance_date, user.tenant.name if user.tenant else "School")
+        }
+        attendance, _created = AttendanceRecord.objects.update_or_create(
+            student=student_profile.user,
+            date=attendance_date,
+            defaults=defaults,
+        )
+        if status_value in {"present", "late"} and attendance.clock_in_at is None:
+            attendance.clock_in_at = timezone.now()
+            attendance.save(update_fields=["clock_in_at", "updated_at"])
+        _notify_parents_on_attendance(student_profile.user, status_value, attendance_date, school_name)
+        action = ATTENDANCE_EVENT_STATUS
+        message = f"{student_profile.user.get_full_name()} marked {status_value}."
+
     return Response(
         {
             "success": True,
-            "message": f"{student_profile.user.get_full_name()} marked {status_value}.",
+            "message": message,
+            "action": action,
             "attendance": {
                 "id": str(attendance.id),
                 "student_id": student_profile.student_id,
@@ -10006,6 +10059,7 @@ def teacher_mark_student_attendance(request):
                 "longitude": attendance.longitude,
                 "location_accuracy_meters": attendance.location_accuracy_meters,
                 "location_address": attendance.location_address,
+                **_attendance_clock_payload(attendance),
             },
         }
     )
@@ -11537,7 +11591,155 @@ def _send_attendance_sms_batch(phones_and_messages):
             logger.exception("Attendance SMS to %s failed", phone)
 
 
-def _notify_parents_on_attendance(student_user, attendance_status, attendance_date, school_name):
+class AttendanceClockError(ValueError):
+    """A clock-in/out that cannot be applied (already clocked out, out before in)."""
+
+
+def _record_attendance_clock(
+    *,
+    student_user,
+    student_profile,
+    tenant_obj,
+    actor,
+    location,
+    attendance_date,
+    requested_action="",
+    school_name="",
+    status_value="present",
+):
+    """Clock a student in or out for one day.
+
+    Returns (attendance, action, message). `requested_action` forces a direction
+    when the caller knows it; left blank, the direction is inferred, which is
+    what a gate scanner needs - it sends an identical request every scan and the
+    second one of the day is the departure.
+
+    Raises AttendanceClockError when the action cannot apply, so callers can turn
+    it straight into a 400 rather than silently recording the wrong thing.
+    """
+    now = timezone.now()
+    requested_action = str(requested_action or "").strip().lower()
+    if requested_action and requested_action not in ATTENDANCE_CLOCK_ACTIONS:
+        raise AttendanceClockError("action must be clock_in or clock_out.")
+
+    existing = AttendanceRecord.objects.filter(student=student_user, date=attendance_date).first()
+    student_name = student_user.get_full_name() or getattr(student_profile, "student_id", "") or student_user.email
+
+    if requested_action:
+        action = requested_action
+    elif existing is None or existing.clock_in_at is None:
+        action = ATTENDANCE_EVENT_CLOCK_IN
+    elif existing.clock_out_at is None:
+        action = ATTENDANCE_EVENT_CLOCK_OUT
+    else:
+        raise AttendanceClockError(f"{student_name} has already clocked out today.")
+
+    if action == ATTENDANCE_EVENT_CLOCK_OUT:
+        if existing is None or existing.clock_in_at is None:
+            raise AttendanceClockError(f"{student_name} has not clocked in today.")
+        if existing.clock_out_at is not None:
+            raise AttendanceClockError(f"{student_name} has already clocked out today.")
+        # An accidental second scan at the gate would otherwise clock the child
+        # straight back out and fire a "left school" SMS seconds after arrival.
+        if (now - existing.clock_in_at).total_seconds() < ATTENDANCE_DOUBLE_SCAN_SECONDS:
+            raise AttendanceClockError(
+                f"{student_name} just clocked in. Wait a moment before clocking out."
+            )
+
+    with db_transaction.atomic():
+        if action == ATTENDANCE_EVENT_CLOCK_IN:
+            attendance, _created = AttendanceRecord.objects.update_or_create(
+                student=student_user,
+                date=attendance_date,
+                defaults={
+                    "status": status_value,
+                    "class_group": getattr(student_profile, "current_class", None),
+                    "noted_by": actor,
+                    "tenant": tenant_obj,
+                    "clock_in_at": now,
+                    "latitude": location["latitude"],
+                    "longitude": location["longitude"],
+                    "location_accuracy_meters": location["accuracy"],
+                    "location_address": location["address"],
+                    "device_info": location["device_info"],
+                },
+            )
+            event_time = attendance.clock_in_at
+            message = f"{student_name} clocked in at {timezone.localtime(event_time).strftime('%I:%M %p').lstrip('0')}."
+        else:
+            attendance = AttendanceRecord.objects.select_for_update().get(pk=existing.pk)
+            if attendance.clock_out_at is not None:
+                raise AttendanceClockError(f"{student_name} has already clocked out today.")
+            attendance.clock_out_at = now
+            attendance.clock_out_latitude = location["latitude"]
+            attendance.clock_out_longitude = location["longitude"]
+            attendance.clock_out_accuracy_meters = location["accuracy"]
+            attendance.clock_out_address = location["address"]
+            attendance.clock_out_device_info = location["device_info"]
+            attendance.clock_out_recorded_by = actor
+            attendance.save(
+                update_fields=[
+                    "clock_out_at",
+                    "clock_out_latitude",
+                    "clock_out_longitude",
+                    "clock_out_accuracy_meters",
+                    "clock_out_address",
+                    "clock_out_device_info",
+                    "clock_out_recorded_by",
+                    "updated_at",
+                ]
+            )
+            event_time = attendance.clock_out_at
+            message = f"{student_name} clocked out at {timezone.localtime(event_time).strftime('%I:%M %p').lstrip('0')}."
+
+    _notify_parents_on_attendance(
+        student_user,
+        attendance.status,
+        attendance_date,
+        school_name,
+        event=action,
+        event_time=event_time,
+    )
+    return attendance, action, message
+
+
+def _attendance_clock_payload(attendance):
+    """Clock fields shared by every attendance response."""
+    return {
+        "clock_in_at": attendance.clock_in_at,
+        "clock_out_at": attendance.clock_out_at,
+        "clock_out_address": attendance.clock_out_address,
+        "is_clocked_out": attendance.is_clocked_out,
+        "hours_on_site": attendance.hours_on_site,
+    }
+
+
+def _attendance_sms_text(student_name, school_name, attendance_status, attendance_date, event, event_time):
+    """The SMS a parent receives for one attendance event.
+
+    Arrival and departure read as the plain facts a parent cares about - who,
+    where, what time - rather than as a status change, because "marked present"
+    tells a parent nothing about whether their child has left school yet.
+    """
+    date_str = attendance_date.strftime("%d/%m/%Y")
+    place = f" at {school_name}" if school_name else ""
+    if event in {ATTENDANCE_EVENT_CLOCK_IN, ATTENDANCE_EVENT_CLOCK_OUT} and event_time:
+        time_str = timezone.localtime(event_time).strftime("%I:%M %p").lstrip("0")
+        verb = "arrived at school" if event == ATTENDANCE_EVENT_CLOCK_IN else "left school"
+        return f"{student_name} {verb}{place} at {time_str} on {date_str}. -SchoolDom"
+
+    status_label = {"present": "present", "absent": "ABSENT", "late": "late"}.get(attendance_status, attendance_status)
+    return f"{student_name} was marked {status_label} on {date_str}. -SchoolDom"
+
+
+def _notify_parents_on_attendance(
+    student_user,
+    attendance_status,
+    attendance_date,
+    school_name,
+    event=ATTENDANCE_EVENT_STATUS,
+    event_time=None,
+):
     """
     Queue SMS to parents who have Child Monitor active when attendance is marked.
     Only parents with an active KidsMonitorSubscription receive anything — this is
@@ -11551,9 +11753,9 @@ def _notify_parents_on_attendance(student_user, attendance_status, attendance_da
 
     parents = ParentProfile.objects.filter(children=student_profile).select_related("user", "kids_monitor")
     student_name = student_user.get_full_name() or student_user.email
-    status_label = {"present": "present", "absent": "ABSENT", "late": "late"}.get(attendance_status, attendance_status)
-    date_str = attendance_date.strftime("%d/%m/%Y")
-    message = f"{student_name} was marked {status_label} on {date_str}. -SchoolDom"
+    message = _attendance_sms_text(
+        student_name, school_name, attendance_status, attendance_date, event, event_time
+    )
 
     to_send = []
     for parent_profile in parents:

@@ -9,6 +9,20 @@ IDEMPOTENCY_TTL = 10  # seconds — window in which identical requests are dedup
 SKIP_METHODS = {"GET", "HEAD", "OPTIONS"}
 SKIP_PREFIXES = ("/admin/", "/static/", "/media/")
 
+# Endpoints that record a real-world event rather than create a resource. Here a
+# repeated identical request is a *distinct* event, not a double-submit: a gate
+# scanner sends byte-identical bodies for a student's arrival and departure, so
+# replaying the first response would swallow the clock-out entirely and report
+# the arrival back a second time.
+SKIP_PATHS = frozenset(
+    {
+        "/api/app/id-cards/scan-attendance/",
+        "/api/app/attendance/teacher-mark/",
+        "/api/app/attendance/student-qr-mark/",
+        "/api/app/attendance/mark/",
+    }
+)
+
 
 def _fingerprint(request):
     user_id = request.user.pk if request.user and request.user.is_authenticated else "anon"
@@ -25,6 +39,8 @@ class IdempotencyMiddleware:
         if request.method in SKIP_METHODS:
             return self.get_response(request)
         if any(request.path.startswith(p) for p in SKIP_PREFIXES):
+            return self.get_response(request)
+        if request.path in SKIP_PATHS:
             return self.get_response(request)
 
         key = _fingerprint(request)

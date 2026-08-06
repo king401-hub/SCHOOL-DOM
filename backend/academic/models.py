@@ -334,10 +334,46 @@ class AttendanceRecord(TenantAwareModel, TimeStampedModel):
     location_address = models.TextField(blank=True, default="")
     device_info = models.TextField(blank=True, default="")
 
+    # Arrival/departure times. The existing latitude/longitude/address columns
+    # above describe the clock-IN, matching what they already held before
+    # clock-out existed; the clock_out_* columns below mirror them for the
+    # departure. Same split TeacherAttendance already uses for staff
+    # (attendance/models.py check_in_*/check_out_*).
+    clock_in_at = models.DateTimeField(null=True, blank=True)
+    clock_out_at = models.DateTimeField(null=True, blank=True)
+    clock_out_latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    clock_out_longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    clock_out_accuracy_meters = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    clock_out_address = models.TextField(blank=True, default="")
+    clock_out_device_info = models.TextField(blank=True, default="")
+    clock_out_recorded_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="clocked_out_attendance",
+    )
+
     class Meta:
         unique_together = ("student", "date")
         verbose_name = "Attendance Record"
         verbose_name_plural = "Attendance Records"
+
+    @property
+    def is_clocked_in(self):
+        return self.clock_in_at is not None
+
+    @property
+    def is_clocked_out(self):
+        return self.clock_out_at is not None
+
+    @property
+    def hours_on_site(self):
+        """Time between clock-in and clock-out, or None while still on site."""
+        if not self.clock_in_at or not self.clock_out_at:
+            return None
+        seconds = (self.clock_out_at - self.clock_in_at).total_seconds()
+        return round(seconds / 3600, 2) if seconds > 0 else 0.0
 
 
 class QuestionPrompt(TenantAwareModel, TimeStampedModel):

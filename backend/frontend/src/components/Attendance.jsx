@@ -4,6 +4,14 @@ import { requestJson } from "../AppShared";
 const ADMIN_ROLES = new Set(["school_admin", "principal", "super_admin"]);
 const ATTENDANCE_ROLES = new Set(["teacher", "staff", "school_admin", "principal", "super_admin"]);
 
+/** Clock timestamps show the time of day; the date is carried by the row itself. */
+function formatClockTime(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 function authHeaders(session, extra = {}) {
   return extra;
 }
@@ -392,32 +400,76 @@ export function StudentQrAttendanceScanner({ session, onRefresh, attendanceToday
   );
 }
 
-export function IdCardAttendanceScanner({ session, onMarked, title = "Scan Student ID Card", subtitle = "Scan the QR code on the back of a student's ID card to verify it and mark attendance." }) {
+const CLOCK_MODES = [
+  { key: "", label: "Auto", hint: "First scan of the day clocks in, the next one clocks out." },
+  { key: "clock_in", label: "Clock in", hint: "Every scan records an arrival." },
+  { key: "clock_out", label: "Clock out", hint: "Every scan records a departure." },
+];
+
+export function IdCardAttendanceScanner({ session, onMarked, title = "Scan Student ID Card", subtitle = "Scan the QR code on the back of a student's ID card to clock them in or out." }) {
+  // Auto suits one scanner at the gate handling both directions. The explicit
+  // modes are for schools running separate in and out points, where a student
+  // arriving should never be able to clock themselves out by mistake.
+  const [mode, setMode] = useState("");
+  const [lastResult, setLastResult] = useState(null);
+
   const handleScan = useCallback(
     async (token, location) => {
       const payload = { token };
       if (location) {
         payload.location = location;
       }
+      if (mode) {
+        payload.action = mode;
+      }
       const result = await requestJson(session, "POST", "/api/app/id-cards/scan-attendance/", payload);
+      setLastResult(result);
       await onMarked?.(result);
       return result;
     },
-    [onMarked, session]
+    [mode, onMarked, session]
   );
+
+  const activeMode = CLOCK_MODES.find((item) => item.key === mode) || CLOCK_MODES[0];
+  const scanned = lastResult?.attendance;
 
   return (
     <article className="app-panel">
+      <div className="table-actions-inline" style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        {CLOCK_MODES.map((item) => (
+          <button
+            key={item.key || "auto"}
+            type="button"
+            className={`table-action${mode === item.key ? " active" : ""}`}
+            onClick={() => setMode(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <p className="student-panel-sub" style={{ marginTop: 0 }}>{activeMode.hint}</p>
+
       <QrScannerPanel
         title={title}
         subtitle={subtitle}
         tokenLabel="ID card QR fallback"
         placeholder="Paste student ID card QR URL or token"
-        submitLabel="Verify & mark present"
+        submitLabel={mode === "clock_out" ? "Verify & clock out" : "Verify & clock in"}
         scanningLabel="Point the camera at the QR code on the back of the student ID card."
         requireLocation={false}
         onScan={handleScan}
       />
+
+      {scanned ? (
+        <div className="attendance-clock-result">
+          <strong>{scanned.student_name || scanned.student_id}</strong>
+          <span>
+            {`Clocked in ${formatClockTime(scanned.clock_in_at) || "—"}`}
+            {scanned.clock_out_at ? ` • Clocked out ${formatClockTime(scanned.clock_out_at)}` : " • still on site"}
+            {scanned.hours_on_site != null ? ` • ${scanned.hours_on_site}h on site` : ""}
+          </span>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -729,7 +781,12 @@ export function StudentAttendanceDashboard({ session }) {
     try {
       const result = await requestJson(session, "GET", "/api/app/attendance/students/");
       setRecords(result.records || []);
-      setSummary({ date: result.date, total_present: result.total_present || 0 });
+      setSummary({
+        date: result.date,
+        total_present: result.total_present || 0,
+        total_on_site: result.total_on_site || 0,
+        total_clocked_out: result.total_clocked_out || 0,
+      });
       setMapLocation((current) => {
         if (!current) return current;
         const stillExists = (result.records || []).some((record) => record.id === current.recordId);
@@ -759,6 +816,8 @@ export function StudentAttendanceDashboard({ session }) {
           <h3>Today&apos;s Student Attendance</h3>
           <p className="panel-empty" style={{ margin: 0 }}>
             {summary.date || new Date().toISOString().slice(0, 10)} - {summary.total_present} marked present
+            {" • "}{summary.total_on_site || 0} still on site
+            {" • "}{summary.total_clocked_out || 0} clocked out
           </p>
         </div>
         <div className="panel-form-actions" style={{ margin: 0 }}>
@@ -789,7 +848,9 @@ export function StudentAttendanceDashboard({ session }) {
                 <th>Email</th>
                 <th>Class</th>
                 <th>Status</th>
-                <th>Marked</th>
+                <th>Clocked in</th>
+                <th>Clocked out</th>
+                <th>On site</th>
                 <th>Location</th>
                 <th>Device</th>
               </tr>
@@ -815,7 +876,13 @@ export function StudentAttendanceDashboard({ session }) {
                     <td>{record.student_email || "-"}</td>
                     <td>{record.class_name || "-"}</td>
                     <td><AttendanceStatusPill status={record.status} /></td>
-                    <td>{formatDateTime(record.updated_at || record.created_at)}</td>
+                    <td>{formatClockTime(record.clock_in_at) || "-"}</td>
+                    <td>{formatClockTime(record.clock_out_at) || "-"}</td>
+                    <td>
+                      {record.clock_out_at
+                        ? (record.hours_on_site != null ? `${record.hours_on_site}h` : "-")
+                        : record.clock_in_at ? "On site" : "-"}
+                    </td>
                     <td>
                       {location ? (
                         <button type="button" className="link-button" onClick={() => setMapLocation(location)}>
