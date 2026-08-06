@@ -868,6 +868,7 @@ def send_wallet_sms(
     narration: str = "",
     metadata=None,
     sender: str = "SchoolDom",
+    charge_wallet: bool = True,
 ) -> "SmsMessageLog":
     """
     Send via eBulkSMS, then charge the school's SMS wallet (SMS_CREDITS_PER_MESSAGE
@@ -884,17 +885,27 @@ def send_wallet_sms(
     Monitor attendance alerts are funded by the parent's own subscription and
     must never call this.
 
+    `charge_wallet=False` sends and logs without debiting anything, and without
+    the balance/lock pre-flight - so the message goes out even on an empty or
+    locked wallet. Reserved for messages a school must never be billed for and
+    must never fail to deliver: a payment receipt confirms money the school has
+    already received, so charging for it would bill them to be told they were
+    paid, and suppressing it on a flat wallet would leave the payer with no
+    confirmation. The SmsMessageLog row is still written (credits_charged=0) so
+    delivery is auditable exactly like a billed send.
+
     Sent synchronously rather than via Celery: this codebase has no confirmed Celery
     worker running in production (users/signals.py falls back to sync for the same
     reason), so queuing SMS there risks messages silently never sending.
     """
     wallet = get_or_create_sms_wallet(tenant)
-    if wallet.is_locked:
-        raise SmsWalletLockedError("This school's SMS wallet is locked.")
-    if wallet.balance < SMS_CREDITS_PER_MESSAGE:
-        raise InsufficientSmsCreditsError(
-            f"Insufficient SMS credits: need {SMS_CREDITS_PER_MESSAGE}, have {wallet.balance}."
-        )
+    if charge_wallet:
+        if wallet.is_locked:
+            raise SmsWalletLockedError("This school's SMS wallet is locked.")
+        if wallet.balance < SMS_CREDITS_PER_MESSAGE:
+            raise InsufficientSmsCreditsError(
+                f"Insufficient SMS credits: need {SMS_CREDITS_PER_MESSAGE}, have {wallet.balance}."
+            )
 
     log = SmsMessageLog.objects.create(
         tenant=tenant,
@@ -917,6 +928,12 @@ def send_wallet_sms(
     if not accepted:
         log.delivery_status = SmsMessageLog.FAILED
         log.save(update_fields=["delivery_status", "provider_response"])
+        return log
+
+    if not charge_wallet:
+        log.delivery_status = SmsMessageLog.SENT
+        log.sent_at = timezone.now()
+        log.save(update_fields=["delivery_status", "provider_response", "sent_at"])
         return log
 
     try:
@@ -5288,16 +5305,17 @@ def process_virtual_account_payment(
 
             parent_phone = (getattr(parent_user, "phone", "") or "").strip()
             if parent_phone:
-                try:
-                    send_wallet_sms(
-                        resolved_tenant,
-                        parent_phone,
-                        _sms_message_with_receipt_link(receipt_message, receipt_url),
-                        category=SmsMessageLog.RECEIPT,
-                        narration="Payment receipt",
-                    )
-                except (InsufficientSmsCreditsError, SmsWalletLockedError):
-                    logger.warning("Payment receipt SMS skipped for fee %s: SMS wallet unavailable.", fee.id)
+                # Free to the school: this confirms money they have already been
+                # paid, so it is never billed to their wallet and still goes out
+                # when that wallet is empty or locked.
+                send_wallet_sms(
+                    resolved_tenant,
+                    parent_phone,
+                    _sms_message_with_receipt_link(receipt_message, receipt_url),
+                    category=SmsMessageLog.RECEIPT,
+                    narration="Payment receipt (not billed)",
+                    charge_wallet=False,
+                )
         except Exception:
             logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 

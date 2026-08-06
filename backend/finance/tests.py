@@ -1095,6 +1095,59 @@ class SmsWalletTests(TestCase):
         self.assertEqual(debit_tx.balance_after, 49)
 
     @patch("finance.services.send_ebulksms")
+    def test_uncharged_send_delivers_and_logs_without_touching_the_wallet(self, mock_send):
+        """Payment receipts confirm money already received, so they are never billed."""
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 50
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        log = send_wallet_sms(
+            self.school, "2348012345678", "Payment received",
+            category=SmsMessageLog.RECEIPT, charge_wallet=False,
+        )
+        wallet.refresh_from_db()
+
+        self.assertEqual(wallet.balance, 50)
+        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
+        self.assertEqual(log.credits_charged, 0)
+        self.assertIsNotNone(log.sent_at)
+        self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.DEBIT).count(), 0)
+        mock_send.assert_called_once()
+
+    @patch("finance.services.send_ebulksms")
+    def test_uncharged_send_still_goes_out_on_an_empty_or_locked_wallet(self, mock_send):
+        """A school with no credits must still be able to receive money and have
+        the payer confirmed - the receipt cannot be gated on their balance."""
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.is_locked = True
+        wallet.save(update_fields=["balance", "is_locked", "updated_at"])
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        log = send_wallet_sms(
+            self.school, "2348012345678", "Payment received",
+            category=SmsMessageLog.RECEIPT, charge_wallet=False,
+        )
+
+        self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
+        self.assertEqual(log.credits_charged, 0)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 0)
+
+    @patch("finance.services.send_ebulksms")
+    def test_billed_sends_are_unaffected_by_the_uncharged_path(self, mock_send):
+        """The default stays charge-the-wallet, so reminders and bulk still bill."""
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 10
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        send_wallet_sms(self.school, "2348012345678", "Reminder", category=SmsMessageLog.FEE_REMINDER)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 9)
+
+    @patch("finance.services.send_ebulksms")
     def test_send_wallet_sms_never_charges_on_provider_failure(self, mock_send):
         # No charge-then-refund anymore: a confirmed provider failure must
         # never touch the wallet balance at all, and never create a debit or
