@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -1231,6 +1231,15 @@ const FINANCE_RECORD_TABS = [
   { key: "ledger", label: "Ledger Log" },
 ];
 
+const FINANCE_ACTION_LABELS = {
+  "cash-payment": "Record Cash Payment",
+  "generate-bill": "Generate Bill",
+  "assign-tokens": "Assign Tokens",
+  "buy-tokens": "Buy Tokens",
+  "virtual-accounts": "Provision Virtual Accounts",
+  "settlement-account": "Settlement Bank Account",
+};
+
 /* An action stays collapsed until asked for. Several of these forms are long,
    and open-by-default is what made the page feel endless. */
 function FinanceActionCard({ id, title, description, icon, open, onToggle, children }) {
@@ -1401,7 +1410,11 @@ function AdminFinanceScreen({
     enabled: false,
     scope: "all",
   });
-  const [mobileFinanceSection, setMobileFinanceSection] = useState("student-payments");
+  // Which of Overview / Actions / Records is on screen, which record type is
+  // being viewed, and which single action card is expanded ("" = all collapsed).
+  const [financeSection, setFinanceSection] = useState("overview");
+  const [recordSection, setRecordSection] = useState("cash-payments");
+  const [openActionCard, setOpenActionCard] = useState("");
   const [expandedFinanceTables, setExpandedFinanceTables] = useState({});
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
@@ -1561,8 +1574,27 @@ function AdminFinanceScreen({
       </div>
     );
   };
+  // Jumping between the two halves: a summary card opens the action that
+  // changes it, and a record opens the action that produced it. Keeping them in
+  // separate sections only works if moving between them is one click.
+  const openFinanceAction = (actionId) => {
+    setFinanceSection("actions");
+    setOpenActionCard(actionId);
+    setFeedback("");
+    setFormError("");
+  };
+  const openFinanceRecords = (sectionKey) => {
+    setFinanceSection("records");
+    setRecordSection(sectionKey);
+  };
+  const activeRecordTab = FINANCE_RECORD_TABS.find((tab) => tab.key === recordSection);
+  // The Available Tokens card is a shortcut into the action that changes it.
+  // Section state has to land before the scroll, or the target is still unmounted.
   const scrollToTokenPurchase = () => {
-    tokenPurchaseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    openFinanceAction("buy-tokens");
+    requestAnimationFrame(() => {
+      tokenPurchaseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   useEffect(() => {
@@ -1744,11 +1776,11 @@ function AdminFinanceScreen({
   }, [onBillsLoad, billFilters]);
 
   useEffect(() => {
-    if (mobileFinanceSection === "bills") {
+    if (financeSection === "records" && recordSection === "bills") {
       loadBills();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobileFinanceSection, loadBills]);
+  }, [financeSection, recordSection, loadBills]);
 
   const handleOpenNewBill = () => { setEditingBill(null); setShowBillDesigner(true); };
   const handleOpenEditBill = (bill) => { setEditingBill(bill); setShowBillDesigner(true); };
@@ -2132,9 +2164,25 @@ function AdminFinanceScreen({
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
       {data ? (
         <>
+          <nav className="finance-section-nav" aria-label="Finance sections">
+            {FINANCE_SECTIONS.map((section) => (
+              <button
+                key={section.key}
+                type="button"
+                className={`finance-section-tab${financeSection === section.key ? " active" : ""}`}
+                onClick={() => setFinanceSection(section.key)}
+                aria-current={financeSection === section.key ? "page" : undefined}
+              >
+                {section.label}
+              </button>
+            ))}
+          </nav>
+
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {formError ? <p className="form-feedback error">{formError}</p> : null}
 
+          {financeSection === "overview" ? (
+          <>
           <div className="finance-summary-grid">
             <article className="finance-summary-card tone-expected">
               <div className="finance-summary-icon" aria-hidden="true">
@@ -2222,36 +2270,6 @@ function AdminFinanceScreen({
             </article>
           </div>
 
-          {editingStudentFeeId ? (
-            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="student-fee-edit-title" onClick={(e) => { if (e.target === e.currentTarget) resetStudentFeeForm(); }}>
-              <article className="app-panel edit-modal-card student-fee-modal">
-                <div className="edit-modal-head">
-                  <div>
-                    <h3 id="student-fee-edit-title">Edit Payment Record</h3>
-                    <p>{selectedStudentFee?.student_name || "Selected student"}{selectedStudentFee?.student_identifier ? ` · ${selectedStudentFee.student_identifier}` : ""}</p>
-                  </div>
-                  <button type="button" className="edit-modal-close" onClick={resetStudentFeeForm} aria-label="Close"><X size={16} /></button>
-                </div>
-                <form className="modal-form-wrap" onSubmit={handleStudentFeeSubmit}>
-                  <div className="form-section">
-                    <div className="panel-form-grid">
-                      <label className="panel-field">Fee title<input value={studentFeeForm.title} onChange={(e) => setStudentFeeForm((c) => ({ ...c, title: e.target.value }))} required /></label>
-                      <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(e) => setStudentFeeForm((c) => ({ ...c, amount: e.target.value }))} required /></label>
-                      <label className="panel-field">Due date<input type="date" value={studentFeeForm.due_date} onChange={(e) => setStudentFeeForm((c) => ({ ...c, due_date: e.target.value }))} required /></label>
-                      <label className="panel-field">Status<select value={studentFeeForm.status} onChange={(e) => setStudentFeeForm((c) => ({ ...c, status: e.target.value }))}><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></label>
-                    </div>
-                  </div>
-                  <div className="panel-form-actions" style={{margin:"0.75rem 1.5rem 0",paddingTop:"1rem",borderTop:"1px solid #f1f5f9"}}>
-                    <button type="submit" disabled={!onStudentFeeSave || anyBusy}>
-                      {busyAction === "studentFee" ? <><Spinner /> Updating...</> : "Update record"}
-                    </button>
-                    <button type="button" className="btn-secondary" onClick={resetStudentFeeForm}>Cancel</button>
-                  </div>
-                </form>
-              </article>
-            </div>
-          ) : null}
-
           <div className="finance-analytics-grid">
             <article className="app-panel finance-chart-panel">
               <div className="panel-head">
@@ -2297,551 +2315,713 @@ function AdminFinanceScreen({
             </article>
           </div>
 
-          {editingClassFeeId && <div className="modal-overlay-bg" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }} />}
+          </>
+          ) : null}
 
-          <div className="finance-workspace">
-            <article
-              className={`app-panel ${editingClassFeeId ? "edit-modal-card class-fee-edit-modal" : ""}`}
-              role={editingClassFeeId ? "dialog" : undefined}
-              aria-modal={editingClassFeeId ? "true" : undefined}
-              aria-labelledby="class-fee-form-title"
+          {financeSection === "actions" ? (
+          <section className="finance-actions-section" ref={tokenPurchaseRef}>
+            <header className="finance-section-head">
+              <h3>Finance Actions</h3>
+              <p>Everything you can start from here. Each card stays collapsed until you open it, so the page shows only the form you are working in.</p>
+            </header>
+
+            <FinanceActionCard
+              id="cash-payment"
+              title="Record Cash Payment"
+              description="Log money taken at the front desk. The parent is texted and emailed a receipt automatically."
+              icon="currency-naira"
+              open={openActionCard === "cash-payment"}
+              onToggle={setOpenActionCard}
             >
-              <div className="edit-modal-head">
-                <div>
-                  <h3 id="class-fee-form-title">{editingClassFeeId ? `Update ${groupLabels.fee}` : "Generate Bill"}</h3>
-                  <p className="panel-sub">
-                    {editingClassFeeId
-                      ? `Update this school-focused bill for its ${groupLabels.singular.toLowerCase()}.`
-                      : "Design a branded tuition invoice with line items, an optional due date, discount, and tax - then publish it to every student in the classes you pick."}
-                  </p>
+              <form className="panel-form-grid" onSubmit={handleCashPaymentSubmit}>
+                <label className="panel-field">
+                  Student ID / Admission No. / Email
+                  <input
+                    value={cashPaymentForm.student_id}
+                    onChange={(event) => setCashPaymentForm((current) => ({ ...current, student_id: event.target.value }))}
+                    placeholder="e.g. STU0012"
+                    required
+                  />
+                </label>
+                <label className="panel-field">
+                  Amount
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    value={cashPaymentForm.amount}
+                    onChange={(event) => setCashPaymentForm((current) => ({ ...current, amount: event.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="panel-field full">
+                  Note (optional)
+                  <input
+                    value={cashPaymentForm.note}
+                    onChange={(event) => setCashPaymentForm((current) => ({ ...current, note: event.target.value }))}
+                    placeholder="e.g. Term 2 fees, paid at the front desk"
+                  />
+                </label>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onCashPaymentRecord || anyBusy}>
+                    {busyAction === "cashPayment" ? <><Spinner /> Recording...</> : "Record Cash Payment"}
+                  </button>
                 </div>
-                {editingClassFeeId ? (
-                  <button type="button" className="edit-modal-close" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }} aria-label="Close"><X size={16} /></button>
-                ) : null}
+              </form>
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="generate-bill"
+              title="Generate Bill"
+              description="Design a branded tuition invoice with line items, due date, discount and tax, then publish it to whole classes."
+              icon="money"
+              open={openActionCard === "generate-bill"}
+              onToggle={setOpenActionCard}
+            >
+              <p className="finance-action-note">Opens the bill designer, where you pick classes, add line items, set a due date, and publish.</p>
+              <div className="panel-form-actions">
+                <button type="button" onClick={handleOpenNewBill} disabled={!onBillSave}>Open bill designer</button>
+                <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("bills")}>View generated bills</button>
               </div>
-              {editingClassFeeId ? (
-                <form className="panel-form" onSubmit={handleClassFeeSubmit}>
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="assign-tokens"
+              title="Assign Tokens"
+              description="Activate student logins - one student, everyone inactive, or only those who have paid at least half."
+              icon="check"
+              open={openActionCard === "assign-tokens"}
+              onToggle={setOpenActionCard}
+            >
+                <form className="panel-form" onSubmit={handleCreditAssignSubmit}>
                   <div className="panel-form-grid">
-                    <label className="panel-field full">{groupLabels.singular}<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">{groupLabels.select}</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
-                    <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
-                    <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
-                    <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
+                    <label className="panel-field">Scope<select value={creditAssignForm.scope} onChange={(event) => setCreditAssignForm((current) => ({ ...current, scope: event.target.value, student_id: event.target.value === "student" ? current.student_id : "" }))}><option value="student">Selected inactive student</option><option value="all">All inactive students ({creditSummary.eligible_all || 0})</option><option value="paid_50">Paid 50% and above ({creditSummary.eligible_paid_50 || 0})</option></select></label>
+                    <label className="panel-field">Tokens to assign<input type="number" min="1" value={creditAssignForm.months} onChange={(event) => setCreditAssignForm((current) => ({ ...current, months: event.target.value }))} /></label>
+                    {creditAssignForm.scope === "student" && (
+                      <>
+                        <label className="panel-field">Search inactive student<input value={creditStudentSearch} onChange={(event) => setCreditStudentSearch(event.target.value)} placeholder="Name, email, or student ID" /></label>
+                        <label className="panel-field">Assign to inactive student<select value={creditAssignForm.student_id} onChange={(event) => setCreditAssignForm((current) => ({ ...current, student_id: event.target.value }))}><option value="">Select inactive student</option>{filteredInactiveCreditRows.map((row) => (<option key={row.student_id} value={row.student_id}>{row.student_name || "Unnamed student"}{row.student_identifier ? ` - ${row.student_identifier}` : ""}{row.student_email ? ` - ${row.student_email}` : ""}</option>))}</select></label>
+                      </>
+                    )}
                   </div>
+                  {creditAssignForm.scope === "student" && !filteredInactiveCreditRows.length && (
+                    <p className="form-hint">No inactive student matches that search.</p>
+                  )}
                   <div className="panel-form-actions">
-                    <button type="submit" disabled={!onClassFeeSave || anyBusy}>
-                      {busyAction === "classFee" ? <><Spinner /> Saving...</> : `Update ${groupLabels.fee.toLowerCase()}`}
+                    <button type="submit" disabled={!onAssignCredits || anyBusy}>
+                      {busyAction === "creditAssign" ? <><Spinner /> Assigning...</> : "Assign tokens"}
                     </button>
-                    <button type="button" className="btn-secondary" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button>
+                    <button type="button" className="table-action" onClick={handleRunAutoCredits} disabled={!onRunAutoCredits || anyBusy}>
+                      {busyAction === "creditAutoAssign" ? <><Spinner size={12} /> Running...</> : "Run auto assign"}
+                    </button>
                   </div>
                 </form>
-              ) : (
-                <div className="panel-form-actions">
-                  <button type="button" onClick={handleOpenNewBill} disabled={!onBillSave}>Generate Bill</button>
-                </div>
-              )}
-            </article>
+                <form className="panel-form" onSubmit={handleCreditSettingsSubmit}>
+                  <div className="panel-form-grid">
+                    <label className="panel-field">Auto assignment<select value={creditSettingsForm.enabled ? "on" : "off"} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, enabled: event.target.value === "on" }))}><option value="off">Off</option><option value="on">On</option></select></label>
+                    <label className="panel-field">Auto scope<select value={creditSettingsForm.scope} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, scope: event.target.value }))}><option value="all">All inactive students</option><option value="paid_50">Paid 50% and above</option></select></label>
+                  </div>
+                  <div className="panel-form-actions">
+                    <button type="submit" disabled={!onCreditSettings || anyBusy}>
+                      {busyAction === "creditSettings" ? <><Spinner /> Saving...</> : "Save token settings"}
+                    </button>
+                  </div>
+                </form>
+            </FinanceActionCard>
 
-            <article className="app-panel">
-              <div className="panel-head">
-                <h3>Settlement Bank Account</h3>
-                <small>
-                  {adminWallet.subaccount_code
-                    ? "Configured - parents' bank transfers split automatically to this account."
-                    : "Required before parent virtual accounts can be provisioned."}
-                </small>
-              </div>
-              {subaccountMessage ? <p className="form-feedback success">{subaccountMessage}</p> : null}
-              {subaccountError ? <p className="form-feedback error">{subaccountError}</p> : null}
-              <form className="panel-form" onSubmit={handleSubaccountSetupSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field full">
-                    Settlement bank
-                    <input
-                      list="settlement-bank-options"
-                      value={subaccountBankQuery}
-                      onChange={(event) => handleSubaccountBankQueryChange(event.target.value)}
-                      placeholder={subaccountBanksLoading ? "Loading banks..." : "Start typing to search banks"}
-                      autoComplete="off"
-                      required
-                    />
-                    <datalist id="settlement-bank-options">
-                      {subaccountBanks.map((bank) => (
-                        <option key={bank.code} value={bank.name} />
-                      ))}
-                    </datalist>
-                    {subaccountBankQuery && !subaccountForm.bank_code ? (
-                      <small className="field-note">No matching bank - pick one from the suggestions.</small>
-                    ) : null}
-                  </label>
-                  <label className="panel-field">
-                    Account number
-                    <input
-                      value={subaccountForm.account_number}
-                      onChange={(event) => setSubaccountForm((current) => ({ ...current, account_number: event.target.value.replace(/\D/g, "").slice(0, 10), account_name: "" }))}
-                      placeholder="0123456789"
-                      maxLength={10}
-                      inputMode="numeric"
-                      required
-                    />
-                  </label>
-                  <label className="panel-field">
-                    Account name
-                    <input
-                      value={resolveLoading ? "" : subaccountForm.account_name}
-                      onChange={(event) => setSubaccountForm((current) => ({ ...current, account_name: event.target.value }))}
-                      placeholder={resolveLoading ? "Fetching account name…" : "Auto-filled after account number"}
-                      readOnly={resolveLoading}
-                      required
-                    />
-                    {resolveError ? <small className="field-note" style={{ color: "#ef4444" }}>{resolveError}</small> : null}
-                  </label>
+            <FinanceActionCard
+              id="buy-tokens"
+              title="Buy Tokens"
+              description="Top up the school's activation token balance, then verify the payment reference."
+              icon="money"
+              open={openActionCard === "buy-tokens"}
+              onToggle={setOpenActionCard}
+            >
+                <div className="activation-credit-summary">
+                  <span>Balance <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong></span>
+                  <span>Active <strong>{Number(creditSummary.active_students || 0).toLocaleString()}</strong></span>
+                  <span>Inactive <strong>{Number(creditSummary.inactive_students || 0).toLocaleString()}</strong></span>
+                  <span>Excluded <strong>{Number(creditSummary.excluded_students || 0).toLocaleString()}</strong></span>
                 </div>
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onPaystackSubaccountSetup || anyBusy}>
-                    {busyAction === "subaccount" ? <><Spinner /> Saving...</> : adminWallet.subaccount_code ? "Update bank account" : "Create subaccount"}
+                <form className="panel-form" onSubmit={handleCreditPurchaseSubmit}>
+                  <div className="panel-form-grid">
+                    <label className="panel-field">Tokens to buy<input type="number" min="1" value={creditPurchaseForm.credits} onChange={(event) => setCreditPurchaseForm({ credits: event.target.value })} placeholder="100" /></label>
+                    <label className="panel-field">Estimated total<input value={formatFinanceAmount(Math.max(requestedCreditCount, 0) * tokenUnitPrice)} readOnly /></label>
+                    <label className="panel-field">Bonus tokens<input value={bonusCreditCount ? `${bonusCreditCount} bonus` : "No bonus"} readOnly /></label>
+                  </div>
+                  <div className="panel-form-actions">
+                    <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1 || anyBusy}>
+                      {busyAction === "creditPurchase" ? <><Spinner /> Starting...</> : "Buy tokens"}
+                    </button>
+                    {creditPurchaseUrl ? <a className="table-action" href={creditPurchaseUrl} target="_blank" rel="noreferrer">Open checkout</a> : null}
+                  </div>
+                </form>
+                <form className="panel-form inline-credit-form" onSubmit={handleCreditVerifySubmit}>
+                  <label className="panel-field full">Payment reference<input value={creditPurchaseReference} onChange={(event) => setCreditPurchaseReference(event.target.value)} placeholder="Flutterwave reference" /></label>
+                  <button type="submit" disabled={!onVerifyCredits || !creditPurchaseReference || anyBusy}>
+                    {busyAction === "creditVerify" ? <><Spinner /> Verifying...</> : "Verify payment"}
                   </button>
-                </div>
-              </form>
-            </article>
+                </form>
+            </FinanceActionCard>
 
-          </div>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Student Bank Payment History</h3>
-              <small>{bankTransferRows.length} bank payment records</small>
-            </div>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Receipt Delivery</th><th>Date</th><th>Action</th></tr></thead>
-                <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map((payment) => {
-                  const recovery = recoveryForm[payment.id] || {};
-                  const canRecover = ["unmatched", "pending"].includes(payment.status);
-                  return (
-                    <tr key={payment.id}>
-                      <td>{payment.student_name || "Unmatched"}<small>{payment.student_id || "No student linked"}</small></td>
-                      <td>{payment.reference_code || "-"}</td>
-                      <td>{payment.bank_reference || "-"}</td>
-                      <td>{payment.narration || "-"}</td>
-                      <td>{formatFinanceAmount(payment.amount)}</td>
-                      <td>{formatFinanceAmount(payment.applied_amount)}</td>
-                      <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
-                      <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
-                      <td>
-                        {payment.student ? (
-                          <ReceiptDeliveryCell
-                            payment={payment}
-                            onResend={onPaymentReceiptResend ? handleResendReceipt : null}
-                            busy={resendBusyId === payment.id || anyBusy}
-                          />
-                        ) : (
-                          <span className="field-note">Not matched</span>
-                        )}
-                      </td>
-                      <td>{formatDate(payment.matched_at || payment.created_at)}</td>
-                      <td>
-                        {canRecover ? (
-                          <div className="table-actions-inline">
-                            <input
-                              className="table-inline-input"
-                              value={recovery.reference_code || recovery.student_id || ""}
-                              onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { reference_code: event.target.value } }))}
-                              placeholder="Student ref"
-                              aria-label="Student payment reference"
-                            />
+            <FinanceActionCard
+              id="virtual-accounts"
+              title="Provision Virtual Accounts"
+              description="Give each parent a dedicated account number so their bank transfers reconcile on their own."
+              icon="requests"
+              open={openActionCard === "virtual-accounts"}
+              onToggle={setOpenActionCard}
+            >
+              {vaActionMessage ? <p className="form-feedback success">{vaActionMessage}</p> : null}
+              {vaActionError ? <p className="form-feedback error">{vaActionError}</p> : null}
+              {vaListError ? <p className="form-feedback error">{vaListError}</p> : null}
+              <div className="panel-form-actions" style={{ margin: "0.5rem 0 0.75rem" }}>
+                <input
+                  type="text"
+                  placeholder="Search parents awaiting an account"
+                  value={vaSearch}
+                  onChange={(event) => setVaSearch(event.target.value)}
+                  style={{ maxWidth: "320px" }}
+                />
+                <button type="button" onClick={loadVirtualAccountsList} disabled={anyBusy}>
+                  {vaListLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
+                </button>
+              </div>
+              {filteredVaParentsWithoutAccount.length ? (
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead><tr><th>Parent (no account yet)</th><th>Email</th><th>Action</th></tr></thead>
+                    <tbody>
+                      {filteredVaParentsWithoutAccount.map((row) => (
+                        <tr key={row.parent_id}>
+                          <td>{row.parent_name}</td>
+                          <td>{row.parent_email}</td>
+                          <td>
                             <button
                               type="button"
-                              className="table-action"
-                              onClick={() => handleRecoverPayment(payment.id)}
-                              disabled={!onBankPaymentRecover || anyBusy}
+                              className="table-action active"
+                              onClick={() => handleProvisionVirtualAccount(row.parent_id)}
+                              disabled={anyBusy}
                             >
-                              {recoverBusyId === payment.id ? <><Spinner size={12} /> Matching...</> : "Match"}
+                              {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Provisioning...</> : "Provision Account"}
                             </button>
-                          </div>
-                        ) : (
-                          <span className="field-note">Matched</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                }) : <tr><td colSpan="11">No student bank payments found.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("bankPaymentHistory", bankTransferRows.length)}
-            </div>
-          </article>
-
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Cash Payments</h3>
-              <small>{cashPaymentRows.length} cash payment records</small>
-            </div>
-            <form className="panel-form-grid" onSubmit={handleCashPaymentSubmit}>
-              <label className="panel-field">
-                Student ID / Admission No. / Email
-                <input
-                  value={cashPaymentForm.student_id}
-                  onChange={(event) => setCashPaymentForm((current) => ({ ...current, student_id: event.target.value }))}
-                  placeholder="e.g. STU0012"
-                  required
-                />
-              </label>
-              <label className="panel-field">
-                Amount
-                <input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  value={cashPaymentForm.amount}
-                  onChange={(event) => setCashPaymentForm((current) => ({ ...current, amount: event.target.value }))}
-                  required
-                />
-              </label>
-              <label className="panel-field full">
-                Note (optional)
-                <input
-                  value={cashPaymentForm.note}
-                  onChange={(event) => setCashPaymentForm((current) => ({ ...current, note: event.target.value }))}
-                  placeholder="e.g. Term 2 fees, paid at the front desk"
-                />
-              </label>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
               <div className="panel-form-actions">
-                <button type="submit" disabled={!onCashPaymentRecord || anyBusy}>
-                  {busyAction === "cashPayment" ? <><Spinner /> Recording...</> : "Record Cash Payment"}
-                </button>
+                <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("virtual-accounts")}>View assigned accounts</button>
               </div>
-            </form>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Receipt Delivery</th><th>Date</th></tr></thead>
-                <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map((payment) => (
-                  <tr key={payment.id}>
-                    <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
-                    <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
-                    <td>{payment.note || "-"}</td>
-                    <td>{formatFinanceAmount(payment.amount)}</td>
-                    <td>{formatFinanceAmount(payment.applied_amount)}</td>
-                    <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
-                    <td>
-                      <ReceiptDeliveryCell
-                        payment={payment}
-                        onResend={onPaymentReceiptResend ? handleResendReceipt : null}
-                        busy={resendBusyId === payment.id || anyBusy}
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="settlement-account"
+              title="Settlement Bank Account"
+              description="The account parents' transfers settle into. Required before virtual accounts can be provisioned."
+              icon="currency-naira"
+              open={openActionCard === "settlement-account"}
+              onToggle={setOpenActionCard}
+            >
+                {subaccountMessage ? <p className="form-feedback success">{subaccountMessage}</p> : null}
+                {subaccountError ? <p className="form-feedback error">{subaccountError}</p> : null}
+                <form className="panel-form" onSubmit={handleSubaccountSetupSubmit}>
+                  <div className="panel-form-grid">
+                    <label className="panel-field full">
+                      Settlement bank
+                      <input
+                        list="settlement-bank-options"
+                        value={subaccountBankQuery}
+                        onChange={(event) => handleSubaccountBankQueryChange(event.target.value)}
+                        placeholder={subaccountBanksLoading ? "Loading banks..." : "Start typing to search banks"}
+                        autoComplete="off"
+                        required
                       />
-                    </td>
-                    <td>{formatDate(payment.matched_at || payment.created_at)}</td>
-                  </tr>
-                )) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
-            </div>
-          </article>
+                      <datalist id="settlement-bank-options">
+                        {subaccountBanks.map((bank) => (
+                          <option key={bank.code} value={bank.name} />
+                        ))}
+                      </datalist>
+                      {subaccountBankQuery && !subaccountForm.bank_code ? (
+                        <small className="field-note">No matching bank - pick one from the suggestions.</small>
+                      ) : null}
+                    </label>
+                    <label className="panel-field">
+                      Account number
+                      <input
+                        value={subaccountForm.account_number}
+                        onChange={(event) => setSubaccountForm((current) => ({ ...current, account_number: event.target.value.replace(/\D/g, "").slice(0, 10), account_name: "" }))}
+                        placeholder="0123456789"
+                        maxLength={10}
+                        inputMode="numeric"
+                        required
+                      />
+                    </label>
+                    <label className="panel-field">
+                      Account name
+                      <input
+                        value={resolveLoading ? "" : subaccountForm.account_name}
+                        onChange={(event) => setSubaccountForm((current) => ({ ...current, account_name: event.target.value }))}
+                        placeholder={resolveLoading ? "Fetching account name…" : "Auto-filled after account number"}
+                        readOnly={resolveLoading}
+                        required
+                      />
+                      {resolveError ? <small className="field-note" style={{ color: "#ef4444" }}>{resolveError}</small> : null}
+                    </label>
+                  </div>
+                  <div className="panel-form-actions">
+                    <button type="submit" disabled={!onPaystackSubaccountSetup || anyBusy}>
+                      {busyAction === "subaccount" ? <><Spinner /> Saving...</> : adminWallet.subaccount_code ? "Update bank account" : "Create subaccount"}
+                    </button>
+                  </div>
+                </form>
+            </FinanceActionCard>
 
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Student Payment Records</h3>
-              <select value={mobileFinanceSection} onChange={(event) => setMobileFinanceSection(event.target.value)}>
-                <option value="student-payments">Student Payment Records</option>
-                <option value="student-fees">Student Fees</option>
-                <option value="class-fees">{groupLabels.fee} Schedule</option>
-                <option value="bills">Bills History</option>
-                <option value="transactions">Transaction History</option>
-              </select>
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-payments" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
-                <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("studentPayments", paymentRows.length)}
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "student-fees" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Edit</th></tr></thead>
-                <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "class-fees" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>{groupLabels.singular}</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
-                <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("classFees", classFees.length)}
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "bills" ? "active" : ""}`}>
-              <div className="bill-history-filters">
-                <input
-                  placeholder="Search by title"
-                  value={billFilters.title}
-                  onChange={(event) => setBillFilters((current) => ({ ...current, title: event.target.value }))}
-                />
-                <select value={billFilters.class_id} onChange={(event) => setBillFilters((current) => ({ ...current, class_id: event.target.value }))}>
-                  <option value="">All classes</option>
-                  {classOptions.map((item) => (
-                    <option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>
-                  ))}
-                </select>
-                <select value={billFilters.status} onChange={(event) => setBillFilters((current) => ({ ...current, status: event.target.value }))}>
-                  <option value="">All statuses</option>
-                  <option value="draft">Draft</option>
-                  <option value="published">Published</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-                <select value={billFilters.payment_status} onChange={(event) => setBillFilters((current) => ({ ...current, payment_status: event.target.value }))}>
-                  <option value="">Any payment status</option>
-                  <option value="sent">Sent</option>
-                  <option value="viewed">Viewed</option>
-                  <option value="partial">Partially Paid</option>
-                  <option value="paid">Paid</option>
-                  <option value="overdue">Overdue</option>
-                </select>
-                <button type="button" className="table-action" onClick={loadBills} disabled={billsLoading}>
-                  {billsLoading ? <><Spinner size={12} /> Loading...</> : "Search"}
-                </button>
-              </div>
-              {billsError ? <p className="form-feedback error">{billsError}</p> : null}
-              {billActionError ? <p className="form-feedback error">{billActionError}</p> : null}
-              <table className="data-table">
-                <thead><tr><th>Title</th><th>Classes</th><th>Total</th><th>Invoices</th><th>Status</th><th>Due</th><th>Action</th></tr></thead>
-                <tbody>
-                  {bills.length ? bills.map((bill) => (
-                    <tr key={bill.id}>
-                      <td>{bill.title}</td>
-                      <td>{(bill.class_labels || []).join(", ") || "-"}</td>
-                      <td>{formatFinanceAmount(bill.total)}</td>
-                      <td>{bill.invoice_count || 0}</td>
-                      <td><span className={`finance-status status-${bill.invoice_status}`}>{billStatusLabel(bill.invoice_status)}</span></td>
-                      <td>{bill.due_date ? formatDate(bill.due_date) : "-"}</td>
-                      <td>
-                        <div className="table-actions-inline">
-                          {bill.status !== "cancelled" ? (
-                            <button type="button" className="table-action" onClick={() => handleOpenEditBill(bill)}>Edit</button>
-                          ) : null}
-                          {bill.status !== "cancelled" ? (
-                            <button type="button" className="table-action" onClick={() => handleBillPublish(bill.id)} disabled={billActionBusyId === bill.id}>
-                              {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : bill.status === "draft" ? "Publish" : "Regenerate"}
-                            </button>
-                          ) : null}
-                          {bill.status === "published" ? (
-                            <button type="button" className="table-action" onClick={() => setSendingBill(bill)}>{bill.invoice_status === "sent" || bill.invoice_status === "viewed" ? "Resend" : "Send"}</button>
-                          ) : null}
-                          <button type="button" className="table-action" onClick={() => handleBillDuplicate(bill.id)} disabled={billActionBusyId === bill.id}>Duplicate</button>
-                          <button type="button" className="table-action" onClick={() => handlePrintBillDocument(bill)}>Print</button>
-                          <button type="button" className="table-action" onClick={() => handleDownloadBillPng(bill)}>PNG</button>
-                          {bill.status !== "cancelled" ? (
-                            <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>Cancel</button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  )) : <tr><td colSpan="7">{billsLoading ? "Loading bills..." : "No bills generated yet."}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <div className={`table-scroll mobile-finance-panel ${mobileFinanceSection === "transactions" ? "active" : ""}`}>
-              <table className="data-table">
-                <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th><th>Action</th></tr></thead>
-                <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td><td><button type="button" className="table-action" onClick={() => handlePrintTransactionReceipt(item)}>Receipt</button></td></tr>)) : <tr><td colSpan="5">No transactions yet.</td></tr>}</tbody>
-              </table>
-            </div>
-          </article>
-
-          <section className="activation-credit-grid">
-            <article className="app-panel activation-credit-panel" ref={tokenPurchaseRef} style={{ order: 2 }}>
-              <div className="panel-head">
-                <h3>Activation Tokens</h3>
-                <small>Buy tokens, verify payments, and activate student access from this finance page. {tokenDurationText}.</small>
-              </div>
-              <div className="activation-credit-summary">
-                <span>Balance <strong>{Number(creditSummary.available_credits ?? creditPool.balance ?? 0).toLocaleString()}</strong></span>
-                <span>Active <strong>{Number(creditSummary.active_students || 0).toLocaleString()}</strong></span>
-                <span>Inactive <strong>{Number(creditSummary.inactive_students || 0).toLocaleString()}</strong></span>
-                <span>Excluded <strong>{Number(creditSummary.excluded_students || 0).toLocaleString()}</strong></span>
-              </div>
-              <form className="panel-form" onSubmit={handleCreditPurchaseSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">Tokens to buy<input type="number" min="1" value={creditPurchaseForm.credits} onChange={(event) => setCreditPurchaseForm({ credits: event.target.value })} placeholder="100" /></label>
-                  <label className="panel-field">Estimated total<input value={formatFinanceAmount(Math.max(requestedCreditCount, 0) * tokenUnitPrice)} readOnly /></label>
-                  <label className="panel-field">Bonus tokens<input value={bonusCreditCount ? `${bonusCreditCount} bonus` : "No bonus"} readOnly /></label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onPurchaseCredits || requestedCreditCount < 1 || anyBusy}>
-                    {busyAction === "creditPurchase" ? <><Spinner /> Starting...</> : "Buy tokens"}
-                  </button>
-                  {creditPurchaseUrl ? <a className="table-action" href={creditPurchaseUrl} target="_blank" rel="noreferrer">Open checkout</a> : null}
-                </div>
-              </form>
-              <form className="panel-form inline-credit-form" onSubmit={handleCreditVerifySubmit}>
-                <label className="panel-field full">Payment reference<input value={creditPurchaseReference} onChange={(event) => setCreditPurchaseReference(event.target.value)} placeholder="Flutterwave reference" /></label>
-                <button type="submit" disabled={!onVerifyCredits || !creditPurchaseReference || anyBusy}>
-                  {busyAction === "creditVerify" ? <><Spinner /> Verifying...</> : "Verify payment"}
-                </button>
-              </form>
-            </article>
-
-            <article className="app-panel activation-credit-panel" style={{ order: 1 }}>
-              <div className="panel-head">
-                <h3>Assign Tokens</h3>
-                <small>Activate all eligible students or students who have paid at least 50%.</small>
-              </div>
-              <form className="panel-form" onSubmit={handleCreditAssignSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">Scope<select value={creditAssignForm.scope} onChange={(event) => setCreditAssignForm((current) => ({ ...current, scope: event.target.value, student_id: event.target.value === "student" ? current.student_id : "" }))}><option value="student">Selected inactive student</option><option value="all">All inactive students ({creditSummary.eligible_all || 0})</option><option value="paid_50">Paid 50% and above ({creditSummary.eligible_paid_50 || 0})</option></select></label>
-                  <label className="panel-field">Tokens to assign<input type="number" min="1" value={creditAssignForm.months} onChange={(event) => setCreditAssignForm((current) => ({ ...current, months: event.target.value }))} /></label>
-                  {creditAssignForm.scope === "student" && (
-                    <>
-                      <label className="panel-field">Search inactive student<input value={creditStudentSearch} onChange={(event) => setCreditStudentSearch(event.target.value)} placeholder="Name, email, or student ID" /></label>
-                      <label className="panel-field">Assign to inactive student<select value={creditAssignForm.student_id} onChange={(event) => setCreditAssignForm((current) => ({ ...current, student_id: event.target.value }))}><option value="">Select inactive student</option>{filteredInactiveCreditRows.map((row) => (<option key={row.student_id} value={row.student_id}>{row.student_name || "Unnamed student"}{row.student_identifier ? ` - ${row.student_identifier}` : ""}{row.student_email ? ` - ${row.student_email}` : ""}</option>))}</select></label>
-                    </>
-                  )}
-                </div>
-                {creditAssignForm.scope === "student" && !filteredInactiveCreditRows.length && (
-                  <p className="form-hint">No inactive student matches that search.</p>
-                )}
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onAssignCredits || anyBusy}>
-                    {busyAction === "creditAssign" ? <><Spinner /> Assigning...</> : "Assign tokens"}
-                  </button>
-                  <button type="button" className="table-action" onClick={handleRunAutoCredits} disabled={!onRunAutoCredits || anyBusy}>
-                    {busyAction === "creditAutoAssign" ? <><Spinner size={12} /> Running...</> : "Run auto assign"}
-                  </button>
-                </div>
-              </form>
-              <form className="panel-form" onSubmit={handleCreditSettingsSubmit}>
-                <div className="panel-form-grid">
-                  <label className="panel-field">Auto assignment<select value={creditSettingsForm.enabled ? "on" : "off"} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, enabled: event.target.value === "on" }))}><option value="off">Off</option><option value="on">On</option></select></label>
-                  <label className="panel-field">Auto scope<select value={creditSettingsForm.scope} onChange={(event) => setCreditSettingsForm((current) => ({ ...current, scope: event.target.value }))}><option value="all">All inactive students</option><option value="paid_50">Paid 50% and above</option></select></label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="submit" disabled={!onCreditSettings || anyBusy}>
-                    {busyAction === "creditSettings" ? <><Spinner /> Saving...</> : "Save token settings"}
-                  </button>
-                </div>
-              </form>
-            </article>
           </section>
+          ) : null}
 
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Finance Ledger Log</h3>
-              <small>Append-only record of financial activity</small>
-            </div>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr><th>Date</th><th>Action</th><th>Description</th><th>Amount</th><th>Reference</th><th>Actor</th></tr></thead>
-                <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatDate(item.created_at)}</td>
-                    <td>{item.action}</td>
-                    <td>{item.description}</td>
-                    <td>{formatFinanceAmount(item.amount)}</td>
-                    <td>{item.reference || "-"}</td>
-                    <td>{item.actor_name || "System"}</td>
-                  </tr>
-                )) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("financeLedger", financeLedgerRows.length)}
-            </div>
-          </article>
+          {financeSection === "records" ? (
+          <section className="finance-records-section">
+            <header className="finance-section-head">
+              <h3>Finance Records</h3>
+              <p>Everything already saved. Pick a record type - each shows the most recent entries, with More to open the full history.</p>
+            </header>
 
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Token Activity</h3>
-            </div>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr><th>Student</th><th>Status</th><th>Assigned</th><th>Active Until</th><th>Inactive Since</th><th>Excluded</th></tr></thead>
-                <tbody>{creditRows.length ? visibleCreditRows.map((row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>)) : <tr><td colSpan="6">No activation token records yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("activationAlerts", creditRows.length)}
-            </div>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr><th>Date</th><th>Reference</th><th>Tokens</th><th>Amount</th><th>Status</th></tr></thead>
-                <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map((row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>)) : <tr><td colSpan="5">No token purchases yet.</td></tr>}</tbody>
-              </table>
-              {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
-            </div>
-          </article>
+            <nav className="finance-record-nav" aria-label="Record types">
+              {FINANCE_RECORD_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`finance-record-tab${recordSection === tab.key ? " active" : ""}`}
+                  onClick={() => setRecordSection(tab.key)}
+                  aria-current={recordSection === tab.key ? "true" : undefined}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
 
-          <article className="app-panel">
-            <div className="mobile-section-head">
-              <h3>Virtual Accounts</h3>
-              <small>Auto-generate a dedicated account number per parent for bank-transfer fee payments.</small>
-            </div>
-            {vaActionMessage ? <p className="form-feedback success">{vaActionMessage}</p> : null}
-            {vaActionError ? <p className="form-feedback error">{vaActionError}</p> : null}
-            {vaListError ? <p className="form-feedback error">{vaListError}</p> : null}
-            <div className="panel-form-actions" style={{ margin: "0.5rem 0 0.75rem" }}>
-              <input
-                type="text"
-                placeholder="Search parent by name, email, or account number"
-                value={vaSearch}
-                onChange={(event) => setVaSearch(event.target.value)}
-                style={{ maxWidth: "320px" }}
-              />
-              <button type="button" onClick={loadVirtualAccountsList} disabled={anyBusy}>
-                {vaListLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
-              </button>
-            </div>
+            {activeRecordTab?.action ? (
+              <p className="finance-record-crosslink">
+                Need to add one?{" "}
+                <button type="button" className="link-button" onClick={() => openFinanceAction(activeRecordTab.action)}>
+                  Go to {FINANCE_ACTION_LABELS[activeRecordTab.action]}
+                </button>
+              </p>
+            ) : null}
 
-            {filteredVaParentsWithoutAccount.length ? (
+            {recordSection === "cash-payments" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Cash Payments</h3>
+                  <small>{cashPaymentRows.length} cash payment records</small>
+                </div>
               <div className="table-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Parent (no account yet)</th><th>Email</th><th>Action</th></tr></thead>
-                  <tbody>
-                    {filteredVaParentsWithoutAccount.map((row) => (
-                      <tr key={row.parent_id}>
-                        <td>{row.parent_name}</td>
-                        <td>{row.parent_email}</td>
+                  <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Receipt Delivery</th><th>Date</th></tr></thead>
+                  <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map((payment) => (
+                    <tr key={payment.id}>
+                      <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
+                      <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
+                      <td>{payment.note || "-"}</td>
+                      <td>{formatFinanceAmount(payment.amount)}</td>
+                      <td>{formatFinanceAmount(payment.applied_amount)}</td>
+                      <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                      <td>
+                        <ReceiptDeliveryCell
+                          payment={payment}
+                          onResend={onPaymentReceiptResend ? handleResendReceipt : null}
+                          busy={resendBusyId === payment.id || anyBusy}
+                        />
+                      </td>
+                      <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                    </tr>
+                  )) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "bank-payments" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Student Bank Payments</h3>
+                  <small>{bankTransferRows.length} bank payment records</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Receipt Delivery</th><th>Date</th><th>Action</th></tr></thead>
+                  <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map((payment) => {
+                    const recovery = recoveryForm[payment.id] || {};
+                    const canRecover = ["unmatched", "pending"].includes(payment.status);
+                    return (
+                      <tr key={payment.id}>
+                        <td>{payment.student_name || "Unmatched"}<small>{payment.student_id || "No student linked"}</small></td>
+                        <td>{payment.reference_code || "-"}</td>
+                        <td>{payment.bank_reference || "-"}</td>
+                        <td>{payment.narration || "-"}</td>
+                        <td>{formatFinanceAmount(payment.amount)}</td>
+                        <td>{formatFinanceAmount(payment.applied_amount)}</td>
+                        <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
+                        <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
                         <td>
-                          <button
-                            type="button"
-                            className="table-action active"
-                            onClick={() => handleProvisionVirtualAccount(row.parent_id)}
-                            disabled={anyBusy}
-                          >
-                            {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Provisioning...</> : "Provision Account"}
-                          </button>
+                          {payment.student ? (
+                            <ReceiptDeliveryCell
+                              payment={payment}
+                              onResend={onPaymentReceiptResend ? handleResendReceipt : null}
+                              busy={resendBusyId === payment.id || anyBusy}
+                            />
+                          ) : (
+                            <span className="field-note">Not matched</span>
+                          )}
+                        </td>
+                        <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                        <td>
+                          {canRecover ? (
+                            <div className="table-actions-inline">
+                              <input
+                                className="table-inline-input"
+                                value={recovery.reference_code || recovery.student_id || ""}
+                                onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { reference_code: event.target.value } }))}
+                                placeholder="Student ref"
+                                aria-label="Student payment reference"
+                              />
+                              <button
+                                type="button"
+                                className="table-action"
+                                onClick={() => handleRecoverPayment(payment.id)}
+                                disabled={!onBankPaymentRecover || anyBusy}
+                              >
+                                {recoverBusyId === payment.id ? <><Spinner size={12} /> Matching...</> : "Match"}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="field-note">Matched</span>
+                          )}
                         </td>
                       </tr>
+                    );
+                  }) : <tr><td colSpan="11">No student bank payments found.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("bankPaymentHistory", bankTransferRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "student-payments" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Student Payment Records</h3>
+                  <small>{paymentRows.length} students</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
+                  <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("studentPayments", paymentRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "student-fees" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Student Fees</h3>
+                  <small>{studentFeeRows.length} fees generated</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Edit</th></tr></thead>
+                  <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "class-fees" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>{`${groupLabels.fee} Schedule`}</h3>
+                  <small>{classFees.length} fee schedules</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>{groupLabels.singular}</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
+                  <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("classFees", classFees.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "bills" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Bills</h3>
+                  <small>{bills.length} bills</small>
+                </div>
+              <div className="table-scroll">
+                <div className="bill-history-filters">
+                  <input
+                    placeholder="Search by title"
+                    value={billFilters.title}
+                    onChange={(event) => setBillFilters((current) => ({ ...current, title: event.target.value }))}
+                  />
+                  <select value={billFilters.class_id} onChange={(event) => setBillFilters((current) => ({ ...current, class_id: event.target.value }))}>
+                    <option value="">All classes</option>
+                    {classOptions.map((item) => (
+                      <option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>
                     ))}
+                  </select>
+                  <select value={billFilters.status} onChange={(event) => setBillFilters((current) => ({ ...current, status: event.target.value }))}>
+                    <option value="">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="published">Published</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <select value={billFilters.payment_status} onChange={(event) => setBillFilters((current) => ({ ...current, payment_status: event.target.value }))}>
+                    <option value="">Any payment status</option>
+                    <option value="sent">Sent</option>
+                    <option value="viewed">Viewed</option>
+                    <option value="partial">Partially Paid</option>
+                    <option value="paid">Paid</option>
+                    <option value="overdue">Overdue</option>
+                  </select>
+                  <button type="button" className="table-action" onClick={loadBills} disabled={billsLoading}>
+                    {billsLoading ? <><Spinner size={12} /> Loading...</> : "Search"}
+                  </button>
+                </div>
+                {billsError ? <p className="form-feedback error">{billsError}</p> : null}
+                {billActionError ? <p className="form-feedback error">{billActionError}</p> : null}
+                <table className="data-table">
+                  <thead><tr><th>Title</th><th>Classes</th><th>Total</th><th>Invoices</th><th>Status</th><th>Due</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {bills.length ? bills.map((bill) => (
+                      <tr key={bill.id}>
+                        <td>{bill.title}</td>
+                        <td>{(bill.class_labels || []).join(", ") || "-"}</td>
+                        <td>{formatFinanceAmount(bill.total)}</td>
+                        <td>{bill.invoice_count || 0}</td>
+                        <td><span className={`finance-status status-${bill.invoice_status}`}>{billStatusLabel(bill.invoice_status)}</span></td>
+                        <td>{bill.due_date ? formatDate(bill.due_date) : "-"}</td>
+                        <td>
+                          <div className="table-actions-inline">
+                            {bill.status !== "cancelled" ? (
+                              <button type="button" className="table-action" onClick={() => handleOpenEditBill(bill)}>Edit</button>
+                            ) : null}
+                            {bill.status !== "cancelled" ? (
+                              <button type="button" className="table-action" onClick={() => handleBillPublish(bill.id)} disabled={billActionBusyId === bill.id}>
+                                {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : bill.status === "draft" ? "Publish" : "Regenerate"}
+                              </button>
+                            ) : null}
+                            {bill.status === "published" ? (
+                              <button type="button" className="table-action" onClick={() => setSendingBill(bill)}>{bill.invoice_status === "sent" || bill.invoice_status === "viewed" ? "Resend" : "Send"}</button>
+                            ) : null}
+                            <button type="button" className="table-action" onClick={() => handleBillDuplicate(bill.id)} disabled={billActionBusyId === bill.id}>Duplicate</button>
+                            <button type="button" className="table-action" onClick={() => handlePrintBillDocument(bill)}>Print</button>
+                            <button type="button" className="table-action" onClick={() => handleDownloadBillPng(bill)}>PNG</button>
+                            {bill.status !== "cancelled" ? (
+                              <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>Cancel</button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    )) : <tr><td colSpan="7">{billsLoading ? "Loading bills..." : "No bills generated yet."}</td></tr>}
                   </tbody>
                 </table>
               </div>
+              </article>
             ) : null}
 
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr><th>Parent</th><th>Account Number</th><th>Bank</th><th>Provider</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody>
-                  {filteredVaAccounts.length ? filteredVaAccounts.map((row) => (
-                    <tr key={row.parent_id}>
-                      <td>{row.parent_name}<small>{row.parent_email}</small></td>
-                      <td>{row.account_number}</td>
-                      <td>{row.bank_name}</td>
-                      <td>{row.provider === "paystack" ? "Automated" : row.provider}</td>
-                      <td><span className={`finance-status status-${row.is_active ? "paid" : "pending"}`}>{row.is_active ? "active" : "inactive"}</span></td>
-                      <td>
-                        {row.provider === "paystack" ? (
-                          <button
-                            type="button"
-                            className="table-action"
-                            onClick={() => handleProvisionVirtualAccount(row.parent_id)}
-                            disabled={anyBusy}
-                          >
-                            {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Working...</> : "Re-provision"}
-                          </button>
-                        ) : (
-                          <small>Manually assigned</small>
-                        )}
-                      </td>
+            {recordSection === "transactions" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Transaction History</h3>
+                  <small>{recentTransactions.length} recent transactions</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th><th>Action</th></tr></thead>
+                  <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td><td><button type="button" className="table-action" onClick={() => handlePrintTransactionReceipt(item)}>Receipt</button></td></tr>)) : <tr><td colSpan="5">No transactions yet.</td></tr>}</tbody>
+                </table>
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "token-activity" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Token Activity</h3>
+                  <small>{creditRows.length} student token records</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Student</th><th>Status</th><th>Assigned</th><th>Active Until</th><th>Inactive Since</th><th>Excluded</th></tr></thead>
+                  <tbody>{creditRows.length ? visibleCreditRows.map((row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>)) : <tr><td colSpan="6">No activation token records yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("activationAlerts", creditRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "token-purchases" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Token Purchases</h3>
+                  <small>{creditPurchaseHistory.length} purchases</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Date</th><th>Reference</th><th>Tokens</th><th>Amount</th><th>Status</th></tr></thead>
+                  <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map((row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>)) : <tr><td colSpan="5">No token purchases yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "virtual-accounts" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Virtual Accounts</h3>
+                  <small>{filteredVaAccounts.length} assigned accounts</small>
+                </div>
+              <div className="panel-form-actions" style={{ margin: "0.5rem 0 0.75rem" }}>
+                <input
+                  type="text"
+                  placeholder="Search by parent, email, or account number"
+                  value={vaSearch}
+                  onChange={(event) => setVaSearch(event.target.value)}
+                  style={{ maxWidth: "320px" }}
+                />
+                <button type="button" onClick={loadVirtualAccountsList} disabled={anyBusy}>
+                  {vaListLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
+                </button>
+              </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Parent</th><th>Account Number</th><th>Bank</th><th>Provider</th><th>Status</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {filteredVaAccounts.length ? filteredVaAccounts.map((row) => (
+                      <tr key={row.parent_id}>
+                        <td>{row.parent_name}<small>{row.parent_email}</small></td>
+                        <td>{row.account_number}</td>
+                        <td>{row.bank_name}</td>
+                        <td>{row.provider === "paystack" ? "Automated" : row.provider}</td>
+                        <td><span className={`finance-status status-${row.is_active ? "paid" : "pending"}`}>{row.is_active ? "active" : "inactive"}</span></td>
+                        <td>
+                          {row.provider === "paystack" ? (
+                            <button
+                              type="button"
+                              className="table-action"
+                              onClick={() => handleProvisionVirtualAccount(row.parent_id)}
+                              disabled={anyBusy}
+                            >
+                              {vaBusyParentId === row.parent_id ? <><Spinner size={12} /> Working...</> : "Re-provision"}
+                            </button>
+                          ) : (
+                            <small>Manually assigned</small>
+                          )}
+                        </td>
+                      </tr>
+                    )) : <tr><td colSpan="6">No virtual accounts assigned yet.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              </article>
+            ) : null}
+
+            {recordSection === "ledger" ? (
+              <article className="app-panel finance-record-panel">
+                <div className="mobile-section-head">
+                  <h3>Finance Ledger Log</h3>
+                  <small>Append-only record of financial activity</small>
+                </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Date</th><th>Action</th><th>Description</th><th>Amount</th><th>Reference</th><th>Actor</th></tr></thead>
+                  <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map((item) => (
+                    <tr key={item.id}>
+                      <td>{formatDate(item.created_at)}</td>
+                      <td>{item.action}</td>
+                      <td>{item.description}</td>
+                      <td>{formatFinanceAmount(item.amount)}</td>
+                      <td>{item.reference || "-"}</td>
+                      <td>{item.actor_name || "System"}</td>
                     </tr>
-                  )) : <tr><td colSpan="6">No virtual accounts assigned yet.</td></tr>}
-                </tbody>
-              </table>
+                  )) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
+                </table>
+                {renderFinanceMoreButton("financeLedger", financeLedgerRows.length)}
+              </div>
+              </article>
+            ) : null}
+
+          </section>
+          ) : null}
+
+          {editingClassFeeId ? (
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="class-fee-form-title" onClick={(e) => { if (e.target === e.currentTarget) { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); } }}>
+              <article className="app-panel edit-modal-card class-fee-edit-modal">
+                <div className="edit-modal-head">
+                  <div>
+                    <h3 id="class-fee-form-title">{`Update ${groupLabels.fee}`}</h3>
+                    <p className="panel-sub">{`Update this school-focused bill for its ${groupLabels.singular.toLowerCase()}.`}</p>
+                  </div>
+                  <button type="button" className="edit-modal-close" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }} aria-label="Close"><X size={16} /></button>
+                </div>
+              <form className="panel-form" onSubmit={handleClassFeeSubmit}>
+                <div className="panel-form-grid">
+                  <label className="panel-field full">{groupLabels.singular}<select value={classFeeForm.school_class} onChange={(event) => setClassFeeForm((current) => ({ ...current, school_class: event.target.value }))} required><option value="">{groupLabels.select}</option>{classOptions.map((item) => (<option key={item.id || item.value || item.name} value={item.id || item.value || item.school_class || item.name}>{item.label || item.name || item.class_label || item.value}</option>))}</select></label>
+                  <label className="panel-field">Fee title<input value={classFeeForm.title} onChange={(event) => setClassFeeForm((current) => ({ ...current, title: event.target.value }))} placeholder="Term school fees" required /></label>
+                  <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={classFeeForm.amount} onChange={(event) => setClassFeeForm((current) => ({ ...current, amount: event.target.value }))} required /></label>
+                  <label className="panel-field">Due date<input type="date" value={classFeeForm.due_date} onChange={(event) => setClassFeeForm((current) => ({ ...current, due_date: event.target.value }))} required /></label>
+                </div>
+                <div className="panel-form-actions">
+                  <button type="submit" disabled={!onClassFeeSave || anyBusy}>
+                    {busyAction === "classFee" ? <><Spinner /> Saving...</> : `Update ${groupLabels.fee.toLowerCase()}`}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => { setEditingClassFeeId(""); setClassFeeForm({ school_class: "", title: "", amount: "", due_date: "" }); }}>Cancel</button>
+                </div>
+              </form>
+              </article>
             </div>
-          </article>
+          ) : null}
+
+          {editingStudentFeeId ? (
+            <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="student-fee-edit-title" onClick={(e) => { if (e.target === e.currentTarget) resetStudentFeeForm(); }}>
+              <article className="app-panel edit-modal-card student-fee-modal">
+                <div className="edit-modal-head">
+                  <div>
+                    <h3 id="student-fee-edit-title">Edit Payment Record</h3>
+                    <p>{selectedStudentFee?.student_name || "Selected student"}{selectedStudentFee?.student_identifier ? ` · ${selectedStudentFee.student_identifier}` : ""}</p>
+                  </div>
+                  <button type="button" className="edit-modal-close" onClick={resetStudentFeeForm} aria-label="Close"><X size={16} /></button>
+                </div>
+                <form className="modal-form-wrap" onSubmit={handleStudentFeeSubmit}>
+                  <div className="form-section">
+                    <div className="panel-form-grid">
+                      <label className="panel-field">Fee title<input value={studentFeeForm.title} onChange={(e) => setStudentFeeForm((c) => ({ ...c, title: e.target.value }))} required /></label>
+                      <label className="panel-field">Amount<input type="number" min="0" step="0.01" value={studentFeeForm.amount} onChange={(e) => setStudentFeeForm((c) => ({ ...c, amount: e.target.value }))} required /></label>
+                      <label className="panel-field">Due date<input type="date" value={studentFeeForm.due_date} onChange={(e) => setStudentFeeForm((c) => ({ ...c, due_date: e.target.value }))} required /></label>
+                      <label className="panel-field">Status<select value={studentFeeForm.status} onChange={(e) => setStudentFeeForm((c) => ({ ...c, status: e.target.value }))}><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></label>
+                    </div>
+                  </div>
+                  <div className="panel-form-actions" style={{margin:"0.75rem 1.5rem 0",paddingTop:"1rem",borderTop:"1px solid #f1f5f9"}}>
+                    <button type="submit" disabled={!onStudentFeeSave || anyBusy}>
+                      {busyAction === "studentFee" ? <><Spinner /> Updating...</> : "Update record"}
+                    </button>
+                    <button type="button" className="btn-secondary" onClick={resetStudentFeeForm}>Cancel</button>
+                  </div>
+                </form>
+              </article>
+            </div>
+          ) : null}
+
         </>
       ) : null}
 

@@ -19529,6 +19529,285 @@ body[data-theme="dark"] .activation-credit-summary span {
   background: #fef3c7;
 }
 
+/* ── Finance information architecture ─────────────────────────────────────
+   Overview / Actions / Records. The visual job here is to make the boundary
+   between "something I can do" and "something already recorded" obvious at a
+   glance, so an admin never hunts through tables to find a form. */
+
+.finance-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.finance-section-tab {
+  flex: 1;
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.finance-section-tab:hover {
+  background: #eef2f7;
+  color: #0f172a;
+}
+
+.finance-section-tab.active {
+  background: #ffffff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.finance-section-head {
+  margin: 0.25rem 0 0.25rem;
+}
+
+.finance-section-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.finance-section-head p {
+  margin: 0.25rem 0 0;
+  max-width: 68ch;
+  font-size: 0.83rem;
+  color: #64748b;
+}
+
+.finance-actions-section,
+.finance-records-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Collapsible action cards */
+.finance-action-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.finance-action-card.is-open {
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.finance-action-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finance-action-head:hover {
+  background: #f8fafc;
+}
+
+.finance-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.finance-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.finance-action-text strong {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.finance-action-text small {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.finance-action-chevron {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  transition: transform 160ms ease;
+}
+
+.finance-action-card.is-open .finance-action-chevron {
+  transform: rotate(180deg);
+}
+
+.finance-action-body {
+  padding: 0.25rem 1rem 1rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.finance-action-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+/* Record navigation + panels */
+.finance-record-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.finance-record-tab {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.79rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.finance-record-tab:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.finance-record-tab.active {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
+.finance-record-crosslink {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.finance-record-panel {
+  margin: 0;
+}
+
+body[data-theme="dark"] .finance-section-nav {
+  border-color: #1e293b;
+  background: #0b1220;
+}
+
+body[data-theme="dark"] .finance-section-tab {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .finance-section-tab:hover {
+  background: #1e293b;
+  color: #f1f5f9;
+}
+
+body[data-theme="dark"] .finance-section-tab.active {
+  background: #1e293b;
+  color: #93c5fd;
+  box-shadow: none;
+}
+
+body[data-theme="dark"] .finance-section-head h3 { color: #f1f5f9; }
+body[data-theme="dark"] .finance-section-head p { color: #94a3b8; }
+
+body[data-theme="dark"] .finance-action-card {
+  border-color: #1e293b;
+  background: #111827;
+}
+
+body[data-theme="dark"] .finance-action-card.is-open {
+  border-color: #1d4ed8;
+  box-shadow: none;
+}
+
+body[data-theme="dark"] .finance-action-head:hover {
+  background: #0b1220;
+}
+
+body[data-theme="dark"] .finance-action-icon {
+  background: #1e293b;
+  color: #93c5fd;
+}
+
+body[data-theme="dark"] .finance-action-text strong { color: #f1f5f9; }
+body[data-theme="dark"] .finance-action-text small { color: #94a3b8; }
+body[data-theme="dark"] .finance-action-body { border-top-color: #1e293b; }
+body[data-theme="dark"] .finance-action-note { color: #94a3b8; }
+
+body[data-theme="dark"] .finance-record-tab {
+  border-color: #1e293b;
+  background: #111827;
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .finance-record-tab:hover {
+  border-color: #334155;
+  background: #0b1220;
+}
+
+body[data-theme="dark"] .finance-record-tab.active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+body[data-theme="dark"] .finance-record-crosslink { color: #94a3b8; }
+
+@media (max-width: 640px) {
+  .finance-section-tab {
+    padding: 0.5rem 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .finance-action-head {
+    gap: 0.6rem;
+    padding: 0.75rem 0.8rem;
+  }
+
+  .finance-action-body {
+    padding: 0.25rem 0.8rem 0.85rem;
+  }
+
+  .finance-record-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 /* Receipt delivery statuses */
 .finance-status.status-sent {
   color: #166534;
