@@ -3172,6 +3172,35 @@ class AttendanceAndPromptTests(TestCase):
         events = [call.kwargs.get("event") for call in notify.call_args_list]
         self.assertEqual(events, ["clock_in", "clock_out"])
 
+    def test_performance_heatmap_loads_with_attendance_records_present(self):
+        """The heatmap selects AttendanceRecord, so it breaks the moment that
+        table's columns and the model disagree - which is what an unapplied
+        migration looks like in production."""
+        AttendanceRecord.objects.create(
+            student=self.student_user,
+            class_group=self.classroom,
+            date=timezone.localdate(),
+            status="present",
+            clock_in_at=timezone.now(),
+            tenant=self.legacy_tenant,
+        )
+        admin_user = User.objects.create_user(
+            email="heatmap.admin@attendance.edu",
+            password="AdminPass123",
+            first_name="Hana",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        self.client.force_authenticate(user=admin_user)
+        response = self.client.get("/api/app/performance-heatmap/")
+
+        self.assertEqual(response.status_code, 200, getattr(response, "data", response))
+        self.assertTrue(response.data.get("success", True))
+
     def test_document_endpoints_do_not_consume_tokens(self):
         admin_user = User.objects.create_user(
             email="admin@attendance.edu",
