@@ -1,5 +1,8 @@
+import re
 from datetime import timedelta
+from pathlib import Path
 
+from django.conf import settings
 from django.test import TestCase
 from django.utils import timezone
 
@@ -7,6 +10,80 @@ from core.models import SchoolTenant
 from core.tasks import send_compliance_reminders
 from notifications.models import Notification
 from users.models import User
+
+
+class NoInterpolatedSqlTests(TestCase):
+    """Guard against SQL injection by keeping interpolated SQL out of the codebase.
+
+    Nothing here reaches the database. The ORM already parameterizes every query
+    this platform makes, so injection can only appear if someone reintroduces
+    raw SQL built by string formatting. This test is what stops that landing
+    unnoticed - it fails the build instead of leaving it for a security review.
+
+    Static and parameterized raw SQL are fine and deliberately not flagged; the
+    danger is only ever the value pasted straight into the string.
+    """
+
+    # f-string, %-format, .format(), or concatenation feeding a raw-SQL entry point.
+    DANGEROUS = re.compile(
+        r"""(?:\.raw\(|cursor\.execute\()\s*(?:f["']|["'][^"']*["']\s*(?:%|\+|\.format\())""",
+        re.IGNORECASE,
+    )
+    # A second net, for SQL assembled into a variable before being executed
+    # somewhere else. DANGEROUS above already covers every f-string handed
+    # straight to .raw()/cursor.execute() whatever it contains, so this one is
+    # deliberately conservative: it demands a full statement shape, because a
+    # bare keyword match turns ordinary English into a build failure
+    # ("{prefix} update: {status}" is an email subject; "Select a class from the
+    # list" is a form hint). A guard that cries wolf gets deleted.
+    FSTRING_SQL = re.compile(
+        r"""f["'][^"']*(?:"""
+        r"""\bSELECT\b.*\bFROM\b.*\b(?:WHERE|JOIN|GROUP\s+BY|ORDER\s+BY|LIMIT|HAVING)\b"""
+        r"""|\bINSERT\s+INTO\b.*\b(?:VALUES|SELECT)\b"""
+        r"""|\bDELETE\s+FROM\b.*\bWHERE\b"""
+        r"""|\bUPDATE\b.*\bSET\b"""
+        r""")[^"']*\{""",
+        re.IGNORECASE,
+    )
+    # .extra() and RawSQL() splice a fragment into the query with no parameter
+    # binding of their own, so their safety depends entirely on the caller.
+    # Django's own docs steer away from .extra(); nothing here uses either, so
+    # any appearance is worth a deliberate decision rather than a silent merge.
+    ESCAPE_HATCH = re.compile(r"\.extra\(|RawSQL\(")
+
+    SKIP_DIRS = {"migrations", "node_modules", "venv", ".venv", "__pycache__", "frontend", "landing-page"}
+
+    def _python_sources(self):
+        root = Path(settings.BASE_DIR)
+        for path in root.rglob("*.py"):
+            if any(part in self.SKIP_DIRS for part in path.parts):
+                continue
+            if path.name == "tests.py" or path.name == Path(__file__).name:
+                continue
+            yield path
+
+    def test_no_sql_is_built_by_string_interpolation(self):
+        offenders = []
+        for path in self._python_sources():
+            try:
+                source = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(source.splitlines(), start=1):
+                if (
+                    self.DANGEROUS.search(line)
+                    or self.FSTRING_SQL.search(line)
+                    or self.ESCAPE_HATCH.search(line)
+                ):
+                    offenders.append(f"{path}:{number}: {line.strip()}")
+
+        self.assertEqual(
+            offenders,
+            [],
+            "SQL built by string interpolation is an injection risk. Use the ORM, or "
+            "pass values as parameters (cursor.execute(sql, [value])) instead of "
+            "formatting them into the query:\n" + "\n".join(offenders),
+        )
 
 
 class ComplianceReminderTaskTests(TestCase):
