@@ -38,6 +38,7 @@ import {
 import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
 import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
+import { FinanceHistoryModal } from "./FinanceHistoryModal";
 
 function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
   useEffect(() => {
@@ -1524,7 +1525,7 @@ function AdminFinanceScreen({
   const [financeSection, setFinanceSection] = useState("overview");
   const [recordSection, setRecordSection] = useState("cash-payments");
   const [openActionCard, setOpenActionCard] = useState("");
-  const [expandedFinanceTables, setExpandedFinanceTables] = useState({});
+  const [historyTable, setHistoryTable] = useState("");
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
   const [vaAccounts, setVaAccounts] = useState([]);
@@ -1622,9 +1623,93 @@ function AdminFinanceScreen({
   const bonusCreditCount = Math.floor(requestedCreditCount / 100) * 10;
   const totalCreditCount = requestedCreditCount + bonusCreditCount;
   const selectedStudentFee = studentFeeRows.find((fee) => fee.id === editingStudentFeeId);
-  const visibleClassFees = expandedFinanceTables.classFees ? classFees : classFees.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visibleStudentFeeRows = expandedFinanceTables.studentFees ? studentFeeRows : studentFeeRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visiblePaymentRows = expandedFinanceTables.studentPayments ? paymentRows : paymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const renderCashPaymentRow = (payment) => (
+                    <tr key={payment.id}>
+                      <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
+                      <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
+                      <td>{payment.note || "-"}</td>
+                      <td>{formatFinanceAmount(payment.amount)}</td>
+                      <td>{formatFinanceAmount(payment.applied_amount)}</td>
+                      <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                      <td>
+                        <ReceiptDeliveryCell
+                          payment={payment}
+                          onResend={onPaymentReceiptResend ? handleResendReceipt : null}
+                          busy={resendBusyId === payment.id || anyBusy}
+                        />
+                      </td>
+                      <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                    </tr>
+                  );
+  const renderBankPaymentRow = (payment) => {
+                    const recovery = recoveryForm[payment.id] || {};
+                    const canRecover = ["unmatched", "pending"].includes(payment.status);
+                    return (
+                      <tr key={payment.id}>
+                        <td>{payment.student_name || "Unmatched"}<small>{payment.student_id || "No student linked"}</small></td>
+                        <td>{payment.reference_code || "-"}</td>
+                        <td>{payment.bank_reference || "-"}</td>
+                        <td>{payment.narration || "-"}</td>
+                        <td>{formatFinanceAmount(payment.amount)}</td>
+                        <td>{formatFinanceAmount(payment.applied_amount)}</td>
+                        <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
+                        <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                        <td>
+                          {payment.student ? (
+                            <ReceiptDeliveryCell
+                              payment={payment}
+                              onResend={onPaymentReceiptResend ? handleResendReceipt : null}
+                              busy={resendBusyId === payment.id || anyBusy}
+                            />
+                          ) : (
+                            <span className="field-note">Not matched</span>
+                          )}
+                        </td>
+                        <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                        <td>
+                          {canRecover ? (
+                            <div className="table-actions-inline">
+                              <input
+                                className="table-inline-input"
+                                value={recovery.reference_code || recovery.student_id || ""}
+                                onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { reference_code: event.target.value } }))}
+                                placeholder="Student ref"
+                                aria-label="Student payment reference"
+                              />
+                              <button
+                                type="button"
+                                className="table-action"
+                                onClick={() => handleRecoverPayment(payment.id)}
+                                disabled={!onBankPaymentRecover || anyBusy}
+                              >
+                                {recoverBusyId === payment.id ? <><Spinner size={12} /> Matching...</> : "Match"}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="field-note">Matched</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  };
+  const renderStudentPaymentRow = (row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>);
+  const renderStudentFeeRow = (fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>);
+  const renderClassFeeRow = (fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>);
+  const renderTokenActivityRow = (row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>);
+  const renderTokenPurchaseRow = (row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>);
+  const renderLedgerRow = (item) => (
+                    <tr key={item.id}>
+                      <td>{formatDate(item.created_at)}</td>
+                      <td>{item.action}</td>
+                      <td>{item.description}</td>
+                      <td>{formatFinanceAmount(item.amount)}</td>
+                      <td>{item.reference || "-"}</td>
+                      <td>{item.actor_name || "System"}</td>
+                    </tr>
+                  );
+  const visibleClassFees = classFees.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleStudentFeeRows = studentFeeRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visiblePaymentRows = paymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const inactiveCreditRows = creditRows.filter((row) => !row.has_login_credit);
   const normalizedCreditStudentSearch = creditStudentSearch.trim().toLowerCase();
   const filteredInactiveCreditRows = inactiveCreditRows.filter((row) => {
@@ -1643,34 +1728,105 @@ function AdminFinanceScreen({
       .toLowerCase();
     return searchable.includes(normalizedCreditStudentSearch);
   });
-  const visibleCreditRows = expandedFinanceTables.activationAlerts ? creditRows : creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visibleBankPaymentRows = expandedFinanceTables.bankPaymentHistory
-    ? bankTransferRows
-    : bankTransferRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visibleCashPaymentRows = expandedFinanceTables.cashPaymentHistory
-    ? cashPaymentRows
-    : cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visibleCreditPurchaseHistory = expandedFinanceTables.creditHistory
-    ? creditPurchaseHistory
-    : creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visibleFinanceLedgerRows = expandedFinanceTables.financeLedger
-    ? financeLedgerRows
-    : financeLedgerRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const toggleFinanceTable = (tableKey) => {
-    setExpandedFinanceTables((current) => ({
-      ...current,
-      [tableKey]: !current[tableKey],
-    }));
+  const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleBankPaymentRows = bankTransferRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleCreditPurchaseHistory = creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  const visibleFinanceLedgerRows = financeLedgerRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
+  /* What each "View More" popup shows. Columns and renderRow are the same ones
+     the preview table uses, so the popup can never drift out of step with it;
+     searchText/dateOf/statusOf simply say which fields the popup may filter on. */
+  const financeHistoryTables = {
+    cashPaymentHistory: {
+      title: "Cash Payments",
+      description: "Every cash payment recorded at the front desk, newest first.",
+      columns: ["Student", "Receipt", "Note", "Amount", "Applied", "Status", "Receipt Delivery", "Date"],
+      rows: cashPaymentRows,
+      renderRow: renderCashPaymentRow,
+      searchText: (row) => [row.student_name, row.student_id, row.receipt_number, row.bank_reference, row.note],
+      dateOf: (row) => row.matched_at || row.created_at,
+      statusOf: (row) => row.status,
+    },
+    bankPaymentHistory: {
+      title: "Student Bank Payments",
+      description: "Every bank transfer matched to a student, newest first.",
+      columns: ["Student", "Reference", "Bank Ref", "Narration", "Amount", "Applied", "Balance", "Status", "Receipt Delivery", "Date", "Action"],
+      rows: bankTransferRows,
+      renderRow: renderBankPaymentRow,
+      searchText: (row) => [row.student_name, row.student_id, row.reference_code, row.bank_reference, row.narration],
+      dateOf: (row) => row.matched_at || row.created_at,
+      statusOf: (row) => row.status,
+    },
+    studentPayments: {
+      title: "Student Payment Records",
+      description: "What every student is expected to pay, and what has been received.",
+      columns: ["Student", groupLabels.singular, "Status", "Expected", "Paid", "Balance"],
+      rows: paymentRows,
+      renderRow: renderStudentPaymentRow,
+      searchText: (row) => [row.name, row.student_id, row.class_name],
+      statusOf: (row) => row.payment_status,
+    },
+    studentFees: {
+      title: "Student Fees",
+      description: "Every fee generated for a student.",
+      columns: ["Student", groupLabels.singular, "Fee", "Amount", "Paid", "Balance", "Status", "Edit"],
+      rows: studentFeeRows,
+      renderRow: renderStudentFeeRow,
+      searchText: (row) => [row.student_name, row.student_identifier, row.class_label, row.title],
+      dateOf: (row) => row.due_date,
+      statusOf: (row) => row.payment_status || row.status,
+    },
+    classFees: {
+      title: `${groupLabels.fee} Schedule`,
+      description: `Every ${groupLabels.fee.toLowerCase()} configured for a ${groupLabels.singular.toLowerCase()}.`,
+      columns: [groupLabels.singular, "Fee", "Students", "Expected", "Received", "Due", "Action"],
+      rows: classFees,
+      renderRow: renderClassFeeRow,
+      searchText: (row) => [row.class_label, row.title],
+      dateOf: (row) => row.due_date,
+    },
+    activationAlerts: {
+      title: "Token Activity",
+      description: "Activation state for every student.",
+      columns: ["Student", "Status", "Assigned", "Active Until", "Inactive Since", "Excluded"],
+      rows: creditRows,
+      renderRow: renderTokenActivityRow,
+      searchText: (row) => [row.student_name, row.student_id, row.student_email],
+      dateOf: (row) => row.active_until,
+    },
+    creditHistory: {
+      title: "Token Purchases",
+      description: "Every activation token purchase, newest first.",
+      columns: ["Date", "Reference", "Tokens", "Amount", "Status"],
+      rows: creditPurchaseHistory,
+      renderRow: renderTokenPurchaseRow,
+      searchText: (row) => [row.reference, row.narration, row.created_by],
+      dateOf: (row) => row.created_at,
+      statusOf: (row) => row.status,
+    },
+    financeLedger: {
+      title: "Finance Ledger Log",
+      description: "Append-only record of financial activity, newest first.",
+      columns: ["Date", "Action", "Description", "Amount", "Reference", "Actor"],
+      rows: financeLedgerRows,
+      renderRow: renderLedgerRow,
+      searchText: (row) => [row.action, row.description, row.reference, row.actor_name],
+      dateOf: (row) => row.created_at,
+    },
   };
+  const activeHistoryTable = historyTable ? financeHistoryTables[historyTable] : null;
+
+  // Every record table offers the same "View More" popup the SMS wallet uses,
+  // rather than growing a hundred rows in place under the preview.
   const renderFinanceMoreButton = (tableKey, rowCount) => {
     if (rowCount <= FINANCE_TABLE_PREVIEW_COUNT) {
       return null;
     }
-    const isExpanded = Boolean(expandedFinanceTables[tableKey]);
     return (
       <div className="finance-table-actions">
-        <button type="button" className="pill-button ghost" onClick={() => toggleFinanceTable(tableKey)}>
-          {isExpanded ? "Show less" : `More (${rowCount - FINANCE_TABLE_PREVIEW_COUNT})`}
+        <small className="finance-table-count">Showing {FINANCE_TABLE_PREVIEW_COUNT} of {rowCount}</small>
+        <button type="button" className="btn-secondary" onClick={() => setHistoryTable(tableKey)}>
+          View More
         </button>
       </div>
     );
@@ -2714,24 +2870,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Receipt Delivery</th><th>Date</th></tr></thead>
-                  <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map((payment) => (
-                    <tr key={payment.id}>
-                      <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
-                      <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
-                      <td>{payment.note || "-"}</td>
-                      <td>{formatFinanceAmount(payment.amount)}</td>
-                      <td>{formatFinanceAmount(payment.applied_amount)}</td>
-                      <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
-                      <td>
-                        <ReceiptDeliveryCell
-                          payment={payment}
-                          onResend={onPaymentReceiptResend ? handleResendReceipt : null}
-                          busy={resendBusyId === payment.id || anyBusy}
-                        />
-                      </td>
-                      <td>{formatDate(payment.matched_at || payment.created_at)}</td>
-                    </tr>
-                  )) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
+                  <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map(renderCashPaymentRow) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
               </div>
@@ -2747,57 +2886,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Receipt Delivery</th><th>Date</th><th>Action</th></tr></thead>
-                  <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map((payment) => {
-                    const recovery = recoveryForm[payment.id] || {};
-                    const canRecover = ["unmatched", "pending"].includes(payment.status);
-                    return (
-                      <tr key={payment.id}>
-                        <td>{payment.student_name || "Unmatched"}<small>{payment.student_id || "No student linked"}</small></td>
-                        <td>{payment.reference_code || "-"}</td>
-                        <td>{payment.bank_reference || "-"}</td>
-                        <td>{payment.narration || "-"}</td>
-                        <td>{formatFinanceAmount(payment.amount)}</td>
-                        <td>{formatFinanceAmount(payment.applied_amount)}</td>
-                        <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
-                        <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
-                        <td>
-                          {payment.student ? (
-                            <ReceiptDeliveryCell
-                              payment={payment}
-                              onResend={onPaymentReceiptResend ? handleResendReceipt : null}
-                              busy={resendBusyId === payment.id || anyBusy}
-                            />
-                          ) : (
-                            <span className="field-note">Not matched</span>
-                          )}
-                        </td>
-                        <td>{formatDate(payment.matched_at || payment.created_at)}</td>
-                        <td>
-                          {canRecover ? (
-                            <div className="table-actions-inline">
-                              <input
-                                className="table-inline-input"
-                                value={recovery.reference_code || recovery.student_id || ""}
-                                onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { reference_code: event.target.value } }))}
-                                placeholder="Student ref"
-                                aria-label="Student payment reference"
-                              />
-                              <button
-                                type="button"
-                                className="table-action"
-                                onClick={() => handleRecoverPayment(payment.id)}
-                                disabled={!onBankPaymentRecover || anyBusy}
-                              >
-                                {recoverBusyId === payment.id ? <><Spinner size={12} /> Matching...</> : "Match"}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="field-note">Matched</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  }) : <tr><td colSpan="11">No student bank payments found.</td></tr>}</tbody>
+                  <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map(renderBankPaymentRow) : <tr><td colSpan="11">No student bank payments found.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("bankPaymentHistory", bankTransferRows.length)}
               </div>
@@ -2813,7 +2902,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Status</th><th>Expected</th><th>Paid</th><th>Balance</th></tr></thead>
-                  <tbody>{paymentRows.length ? visiblePaymentRows.map((row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>)) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
+                  <tbody>{paymentRows.length ? visiblePaymentRows.map(renderStudentPaymentRow) : <tr><td colSpan="6">No student payments found.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("studentPayments", paymentRows.length)}
               </div>
@@ -2829,7 +2918,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Student</th><th>{groupLabels.singular}</th><th>Fee</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Edit</th></tr></thead>
-                  <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map((fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>)) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
+                  <tbody>{studentFeeRows.length ? visibleStudentFeeRows.map(renderStudentFeeRow) : <tr><td colSpan="8">No student fees generated yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("studentFees", studentFeeRows.length)}
               </div>
@@ -2845,7 +2934,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>{groupLabels.singular}</th><th>Fee</th><th>Students</th><th>Expected</th><th>Received</th><th>Due</th><th>Action</th></tr></thead>
-                  <tbody>{classFees.length ? visibleClassFees.map((fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>)) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
+                  <tbody>{classFees.length ? visibleClassFees.map(renderClassFeeRow) : <tr><td colSpan="7">No {groupLabels.fee.toLowerCase()} configured yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("classFees", classFees.length)}
               </div>
@@ -2954,7 +3043,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Student</th><th>Status</th><th>Assigned</th><th>Active Until</th><th>Inactive Since</th><th>Excluded</th></tr></thead>
-                  <tbody>{creditRows.length ? visibleCreditRows.map((row) => (<tr key={row.id}><td>{row.student_name}<small>{row.student_id}</small></td><td><span className={`finance-status status-${row.active_until ? "paid" : "pending"}`}>{row.active_until ? "active" : "inactive"}</span></td><td>{row.credits_assigned}</td><td>{formatDate(row.active_until)}</td><td>{formatDate(row.inactive_since)}</td><td>{row.is_excluded_from_auto_deductions ? "Yes" : "No"}</td></tr>)) : <tr><td colSpan="6">No activation token records yet.</td></tr>}</tbody>
+                  <tbody>{creditRows.length ? visibleCreditRows.map(renderTokenActivityRow) : <tr><td colSpan="6">No activation token records yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("activationAlerts", creditRows.length)}
               </div>
@@ -2970,7 +3059,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Date</th><th>Reference</th><th>Tokens</th><th>Amount</th><th>Status</th></tr></thead>
-                  <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map((row) => (<tr key={row.id || row.reference}><td>{formatDate(row.created_at)}</td><td>{row.reference}</td><td>{Number(row.total_credits || row.credits || 0).toLocaleString()}<small>{Number(row.bonus_credits || 0) ? `${row.bonus_credits} bonus` : ""}</small></td><td>{formatFinanceAmount(row.amount)}</td><td><span className={`finance-status status-${row.status || "pending"}`}>{row.status || "pending"}</span></td></tr>)) : <tr><td colSpan="5">No token purchases yet.</td></tr>}</tbody>
+                  <tbody>{creditPurchaseHistory.length ? visibleCreditPurchaseHistory.map(renderTokenPurchaseRow) : <tr><td colSpan="5">No token purchases yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("creditHistory", creditPurchaseHistory.length)}
               </div>
@@ -3037,16 +3126,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Date</th><th>Action</th><th>Description</th><th>Amount</th><th>Reference</th><th>Actor</th></tr></thead>
-                  <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map((item) => (
-                    <tr key={item.id}>
-                      <td>{formatDate(item.created_at)}</td>
-                      <td>{item.action}</td>
-                      <td>{item.description}</td>
-                      <td>{formatFinanceAmount(item.amount)}</td>
-                      <td>{item.reference || "-"}</td>
-                      <td>{item.actor_name || "System"}</td>
-                    </tr>
-                  )) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
+                  <tbody>{financeLedgerRows.length ? visibleFinanceLedgerRows.map(renderLedgerRow) : <tr><td colSpan="6">No finance activity logged yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("financeLedger", financeLedgerRows.length)}
               </div>
@@ -3138,6 +3218,20 @@ function AdminFinanceScreen({
             return result;
           }}
           onClose={() => { setSendingBill(null); loadBills(); }}
+        />
+      ) : null}
+
+      {activeHistoryTable ? (
+        <FinanceHistoryModal
+          title={activeHistoryTable.title}
+          description={activeHistoryTable.description}
+          columns={activeHistoryTable.columns}
+          rows={activeHistoryTable.rows}
+          renderRow={activeHistoryTable.renderRow}
+          searchText={activeHistoryTable.searchText}
+          dateOf={activeHistoryTable.dateOf}
+          statusOf={activeHistoryTable.statusOf}
+          onClose={() => setHistoryTable("")}
         />
       ) : null}
 

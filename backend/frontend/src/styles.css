@@ -8080,8 +8080,28 @@ body[data-theme="dark"] .hr-action-tag { background: rgba(255,255,255,0.05); bor
 
 .finance-table-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.65rem;
   padding-top: 0.7rem;
+}
+
+.finance-table-count {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+body[data-theme="dark"] .finance-table-count {
+  color: #94a3b8;
+}
+
+/* The history popup carries wide tables (bank payments runs to 11 columns), so
+   it gets more room than the edit modals and scrolls internally rather than
+   pushing the page sideways. */
+.finance-history-modal {
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
 }
 
 .directory-tools {
