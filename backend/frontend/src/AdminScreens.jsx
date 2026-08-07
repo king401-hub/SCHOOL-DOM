@@ -1204,6 +1204,53 @@ function BillSendPanel({ bill, classOptions, onLoadRecipients, onSend, onClose }
   );
 }
 
+const RECEIPT_CHANNEL_LABELS = {
+  sent: "Sent",
+  failed: "Failed",
+  pending: "Pending",
+  skipped: "No contact",
+};
+
+/* Whether the parent actually got their receipt, per channel. Receipts go out
+   automatically on every recorded payment, so this column exists to answer the
+   one question the admin still has afterwards: did it arrive? */
+function ReceiptDeliveryCell({ payment, onResend, busy }) {
+  const overall = payment.receipt_notification_status || "pending";
+  const sms = payment.receipt_sms_status || "pending";
+  const email = payment.receipt_email_status || "pending";
+  // Offered whenever a channel hasn't delivered - including one skipped for a
+  // missing phone or email, which is exactly the case an admin fixes on the
+  // student record and then wants to retry. Already-delivered channels are
+  // skipped server-side, so pressing this can't double-notify.
+  const canResend = Boolean(onResend) && payment.student && (sms !== "sent" || email !== "sent");
+
+  return (
+    <div className="receipt-delivery">
+      <span className={`finance-status status-${overall}`}>
+        {overall === "sent" ? "Receipt sent" : RECEIPT_CHANNEL_LABELS[overall] || overall}
+      </span>
+      <small className="receipt-delivery-channels">
+        SMS: {RECEIPT_CHANNEL_LABELS[sms] || sms} &middot; Email: {RECEIPT_CHANNEL_LABELS[email] || email}
+      </small>
+      {payment.receipt_notification_error ? (
+        <small className="receipt-delivery-error" title={payment.receipt_notification_error}>
+          {payment.receipt_notification_error}
+        </small>
+      ) : null}
+      {payment.receipt_link_url ? (
+        <a className="receipt-delivery-link" href={payment.receipt_link_url} target="_blank" rel="noreferrer">
+          View receipt
+        </a>
+      ) : null}
+      {canResend ? (
+        <button type="button" className="table-action" onClick={() => onResend(payment.id)} disabled={busy}>
+          {busy ? <><Spinner size={12} /> Sending...</> : "Resend"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function AdminFinanceScreen({
   data,
   school,
@@ -1231,6 +1278,7 @@ function AdminFinanceScreen({
   onBankPaymentsIngest,
   onBankPaymentRecover,
   onCashPaymentRecord,
+  onPaymentReceiptResend,
   session,
 }) {
   const finance = data?.finance_overview || data || {};
@@ -1321,9 +1369,10 @@ function AdminFinanceScreen({
   // does the same for the per-row "Match" button in the bank payment table.
   const [busyAction, setBusyAction] = useState("");
   const [recoverBusyId, setRecoverBusyId] = useState("");
+  const [resendBusyId, setResendBusyId] = useState("");
   const [subaccountMessage, setSubaccountMessage] = useState("");
   const [subaccountError, setSubaccountError] = useState("");
-  const anyBusy = Boolean(busyAction) || Boolean(recoverBusyId) || vaListLoading || Boolean(vaBusyParentId);
+  const anyBusy = Boolean(busyAction) || Boolean(recoverBusyId) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
   const tokenPurchaseRef = useRef(null);
@@ -1912,6 +1961,26 @@ function AdminFinanceScreen({
     }
   };
 
+  const handleResendReceipt = async (paymentId) => {
+    if (!onPaymentReceiptResend) return;
+    setFeedback("");
+    setFormError("");
+    setResendBusyId(paymentId);
+    try {
+      const result = await onPaymentReceiptResend(paymentId);
+      const status = result?.notification?.status;
+      setFeedback(
+        status === "sent"
+          ? "Receipt re-sent to the parent."
+          : "Receipt re-send attempted — check the delivery status on the payment row."
+      );
+    } catch (err) {
+      setFormError(err.message || "Unable to re-send the receipt.");
+    } finally {
+      setResendBusyId("");
+    }
+  };
+
   const openFinancePrintout = ({ title, reference, metaRows = [], tableRows = [], totalLabel = "Total", total = 0, footer = "" }) => {
     const printWindow = window.open("", "_blank", "width=900,height=1100");
     if (!printWindow) {
@@ -2289,7 +2358,7 @@ function AdminFinanceScreen({
             </div>
             <div className="table-scroll">
               <table className="data-table">
-                <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+                <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Receipt Delivery</th><th>Date</th><th>Action</th></tr></thead>
                 <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map((payment) => {
                   const recovery = recoveryForm[payment.id] || {};
                   const canRecover = ["unmatched", "pending"].includes(payment.status);
@@ -2303,6 +2372,17 @@ function AdminFinanceScreen({
                       <td>{formatFinanceAmount(payment.applied_amount)}</td>
                       <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
                       <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                      <td>
+                        {payment.student ? (
+                          <ReceiptDeliveryCell
+                            payment={payment}
+                            onResend={onPaymentReceiptResend ? handleResendReceipt : null}
+                            busy={resendBusyId === payment.id || anyBusy}
+                          />
+                        ) : (
+                          <span className="field-note">Not matched</span>
+                        )}
+                      </td>
                       <td>{formatDate(payment.matched_at || payment.created_at)}</td>
                       <td>
                         {canRecover ? (
@@ -2329,7 +2409,7 @@ function AdminFinanceScreen({
                       </td>
                     </tr>
                   );
-                }) : <tr><td colSpan="10">No student bank payments found.</td></tr>}</tbody>
+                }) : <tr><td colSpan="11">No student bank payments found.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("bankPaymentHistory", bankTransferRows.length)}
             </div>
@@ -2377,7 +2457,7 @@ function AdminFinanceScreen({
             </form>
             <div className="table-scroll">
               <table className="data-table">
-                <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Date</th></tr></thead>
+                <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Receipt Delivery</th><th>Date</th></tr></thead>
                 <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map((payment) => (
                   <tr key={payment.id}>
                     <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
@@ -2386,9 +2466,16 @@ function AdminFinanceScreen({
                     <td>{formatFinanceAmount(payment.amount)}</td>
                     <td>{formatFinanceAmount(payment.applied_amount)}</td>
                     <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
+                    <td>
+                      <ReceiptDeliveryCell
+                        payment={payment}
+                        onResend={onPaymentReceiptResend ? handleResendReceipt : null}
+                        busy={resendBusyId === payment.id || anyBusy}
+                      />
+                    </td>
                     <td>{formatDate(payment.matched_at || payment.created_at)}</td>
                   </tr>
-                )) : <tr><td colSpan="7">No cash payments recorded yet.</td></tr>}</tbody>
+                )) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
               </table>
               {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
             </div>

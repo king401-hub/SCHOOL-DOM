@@ -590,18 +590,31 @@ class SchoolFee(models.Model):
             'class': self.student.class_name if hasattr(self.student, 'class_name') else ''
         }
     
+    def _paid_amount(self):
+        """What has actually been received against this fee.
+
+        The amount_paid column only ever gets written by the online Paystack
+        paths; cash, POS and matched bank transfers are booked as Transaction
+        and FeeAllocation rows instead. fee_paid_amount reads all of them, and
+        is what the serializers and admin tables already use - reading the
+        column directly here reported an offline payer as owing the full fee.
+        Imported lazily because finance.services imports this module.
+        """
+        from finance.services import fee_paid_amount
+
+        return float(fee_paid_amount(self))
+
     def get_remaining_balance(self):
         """Get remaining balance including fees"""
         tuition = float(self.amount)
-        paid = float(self.amount_paid or 0)
-        remaining_tuition = tuition - paid
+        remaining_tuition = tuition - self._paid_amount()
         if remaining_tuition <= 0:
             return 0
         # Add fees only if not fully paid
         return remaining_tuition + 400  # 100 Schooldom + 300 Paystack
-    
+
     def is_fully_paid(self):
-        return float(self.amount_paid or 0) >= float(self.amount)
+        return self._paid_amount() >= float(self.amount)
 
     def __str__(self):
         return f"{self.title} • {self.student.user.email}"
@@ -654,6 +667,21 @@ class BankPayment(models.Model):
         (STATUS_UNMATCHED, "Unmatched"),
     ]
 
+    # Delivery state of the receipt sent to the parent, tracked per channel so
+    # an admin can see at a glance whether the parent actually got it.
+    # "skipped" is a deliberate no-op (no phone/email on file) rather than a
+    # failure, so the retry task leaves it alone instead of hammering it.
+    NOTIFY_PENDING = "pending"
+    NOTIFY_SENT = "sent"
+    NOTIFY_FAILED = "failed"
+    NOTIFY_SKIPPED = "skipped"
+    NOTIFY_CHOICES = [
+        (NOTIFY_PENDING, "Pending"),
+        (NOTIFY_SENT, "Sent"),
+        (NOTIFY_FAILED, "Failed"),
+        (NOTIFY_SKIPPED, "Skipped"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         "core.SchoolTenant",
@@ -685,6 +713,12 @@ class BankPayment(models.Model):
     unapplied_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     matched_at = models.DateTimeField(null=True, blank=True)
     receipt_number = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    receipt_sms_status = models.CharField(max_length=12, choices=NOTIFY_CHOICES, default=NOTIFY_PENDING)
+    receipt_email_status = models.CharField(max_length=12, choices=NOTIFY_CHOICES, default=NOTIFY_PENDING)
+    receipt_notified_at = models.DateTimeField(null=True, blank=True)
+    receipt_notification_attempts = models.PositiveIntegerField(default=0)
+    receipt_notification_error = models.TextField(blank=True)
+    receipt_link_url = models.CharField(max_length=300, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -695,10 +729,32 @@ class BankPayment(models.Model):
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["student", "created_at"]),
             models.Index(fields=["bank_reference"]),
+            # Serves the retry sweep, which scans for any channel still
+            # pending or failed.
+            models.Index(fields=["receipt_sms_status", "receipt_email_status"]),
         ]
 
     def __str__(self):
         return f"{self.bank_reference} • {self.status} • {self.amount}"
+
+    @property
+    def receipt_notification_status(self):
+        """One rolled-up label for the admin table.
+
+        A receipt only counts as fully "sent" when every channel that could
+        deliver it did. A channel skipped for want of a phone number or email
+        address is not a failure - it is simply not a channel for this parent -
+        so a parent with only a phone still shows a clean "sent"; only a real
+        delivery failure downgrades the row.
+        """
+        channels = [self.receipt_sms_status, self.receipt_email_status]
+        if self.NOTIFY_PENDING in channels:
+            return self.NOTIFY_PENDING
+        if self.NOTIFY_SENT in channels:
+            return self.NOTIFY_FAILED if self.NOTIFY_FAILED in channels else self.NOTIFY_SENT
+        if self.NOTIFY_FAILED in channels:
+            return self.NOTIFY_FAILED
+        return self.NOTIFY_SKIPPED
 
 
 class BankLink(models.Model):

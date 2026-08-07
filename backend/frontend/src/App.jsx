@@ -6564,12 +6564,33 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       addAdminNotification({
         category: "Finance",
         module: "Cash Payments",
-        action: "Recorded a cash payment for a student.",
+        action: "Recorded a cash payment for a student. Receipt sent to the parent by SMS and email.",
         status: "Success",
         priority: "High",
         tone: "success",
       });
       await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
+      // The receipt is delivered only after the payment commits, so the row
+      // above still reads "Pending" when this response lands. One follow-up
+      // refresh lets the delivery status settle without the admin reloading.
+      setTimeout(() => { loadScreen("/finance", true); }, 6000);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handlePaymentReceiptResend = useCallback(
+    async (paymentId) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/payments/${paymentId}/resend-receipt/`, {});
+      addAdminNotification({
+        category: "Finance",
+        module: "Payment Receipts",
+        action: "Re-sent a payment receipt to the parent.",
+        status: result?.notification?.status === "sent" ? "Success" : "Pending",
+        priority: "Medium",
+        tone: result?.notification?.status === "sent" ? "success" : "warning",
+      });
+      await loadScreen("/finance", true);
       return result;
     },
     [addAdminNotification, loadScreen, session]
@@ -7619,6 +7640,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onBankPaymentsIngest={handleBankPaymentsIngest}
         onBankPaymentRecover={handleBankPaymentRecover}
         onCashPaymentRecord={handleCashPaymentRecord}
+        onPaymentReceiptResend={handlePaymentReceiptResend}
         session={session}
       />
     );

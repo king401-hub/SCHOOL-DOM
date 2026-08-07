@@ -1204,7 +1204,7 @@ def allocate_split_payment(
     except ParentProfile.DoesNotExist:
         students = []
 
-    unpaid_fees = (
+    unpaid_fees = list(
         SchoolFee.objects.filter(
             student__in=students,
             status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
@@ -1219,11 +1219,18 @@ def allocate_split_payment(
     allocations = []
     last_student = None
 
+    # What each fee has already received, from the ledger rather than the
+    # amount_paid column. This decides how much the parent is charged online:
+    # reading the column missed cash and bank-transfer payments entirely, so a
+    # parent who had part-paid at the front desk was billed for the whole fee
+    # again and the school over-collected.
+    prior_paid = bulk_fee_paid_amounts(unpaid_fees)
+
     for fee in unpaid_fees:
         if remaining <= 0:
             break
 
-        already_paid = fee.amount_paid or Decimal("0.00")
+        already_paid = prior_paid.get(fee.id, Decimal("0.00"))
         tuition_left = fee.amount - already_paid
         if tuition_left <= 0:
             continue
@@ -3500,14 +3507,55 @@ def fee_recorded_paid_amount(fee):
     return min(total, fee.amount)
 
 
+def _amount_paid_column_floor(fee):
+    """The amount_paid column, clamped, as a floor under the ledger total.
+
+    Money is normally proven by ledger rows, but a fee part-paid before
+    FeeAllocation existed has nothing but this column to show for it - and this
+    function already trusts status == PAID as evidence on the same grounds, so
+    ignoring a non-zero amount_paid was an asymmetry, not a safeguard. Taking
+    the larger of the two never loses a payment either source can prove.
+    """
+    return min(max(_as_decimal(fee.amount_paid), Decimal("0.00")), _as_decimal(fee.amount))
+
+
 def fee_paid_amount(fee):
     """Return successful payment amount already booked for a fee."""
-    recorded_total = fee_recorded_paid_amount(fee)
+    recorded_total = max(fee_recorded_paid_amount(fee), _amount_paid_column_floor(fee))
     if recorded_total > 0:
         return recorded_total
     if fee.status == SchoolFee.STATUS_PAID:
         return fee.amount
     return Decimal("0.00")
+
+
+def fee_outstanding_amount(fee, paid_amounts=None):
+    """What is still owed on a single fee.
+
+    Always derive a balance from fee_paid_amount, never from
+    SchoolFee.amount_paid. The offline payment path (cash, POS, cheque, matched
+    bank transfer) books what it received as Transaction/FeeAllocation rows and
+    never writes the amount_paid column, so subtracting that column reports a
+    parent who has part-paid as still owing the entire fee.
+
+    Pass `paid_amounts` (from bulk_fee_paid_amounts) when working through a list
+    of fees, so a reminder run costs three queries instead of three per fee.
+    """
+    if paid_amounts is not None and fee.id in paid_amounts:
+        paid = paid_amounts[fee.id]
+    else:
+        paid = fee_paid_amount(fee)
+    return max(_as_decimal(fee.amount) - _as_decimal(paid), Decimal("0.00"))
+
+
+def total_outstanding_for_fees(fees, paid_amounts=None):
+    """Sum of fee_outstanding_amount across `fees`, batching the paid lookup."""
+    fees = list(fees)
+    if not fees:
+        return Decimal("0.00")
+    if paid_amounts is None:
+        paid_amounts = bulk_fee_paid_amounts(fees)
+    return sum((fee_outstanding_amount(fee, paid_amounts) for fee in fees), Decimal("0.00"))
 
 
 def bulk_fee_paid_amounts(fees):
@@ -3557,7 +3605,9 @@ def bulk_fee_paid_amounts(fees):
             + (bank_credit_totals.get(fee_id_str) or Decimal("0.00"))
             + (split_payment_totals.get(fee.id) or Decimal("0.00"))
         )
-        recorded_total = min(recorded_total, fee.amount)
+        # Same floor as fee_paid_amount - the batched path must not disagree
+        # with the per-fee one about how much a parent has paid.
+        recorded_total = max(min(recorded_total, fee.amount), _amount_paid_column_floor(fee))
         if recorded_total > 0:
             result[fee.id] = recorded_total
         elif fee.status == SchoolFee.STATUS_PAID:
@@ -4229,18 +4279,17 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
         lines.append("No children linked to your account yet.")
     else:
         for student in students:
-            unpaid_fees = SchoolFee.objects.filter(
+            unpaid_fees = list(SchoolFee.objects.filter(
                 student=student,
                 status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
-            )
-            total_outstanding = sum(
-                (f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid_fees
-            )
+            ))
+            paid_amounts = bulk_fee_paid_amounts(unpaid_fees)
+            total_outstanding = total_outstanding_for_fees(unpaid_fees, paid_amounts)
             if total_outstanding > 0:
                 student_name = student.user.get_full_name() if student.user else "Child"
                 lines.append(f"\n{student_name}: {_format_naira(total_outstanding)} outstanding")
                 for fee in unpaid_fees[:4]:
-                    remaining = fee.amount - (fee.amount_paid or Decimal("0"))
+                    remaining = fee_outstanding_amount(fee, paid_amounts)
                     lines.append(f"  • {fee.title}: {_format_naira(remaining)}")
 
     if virtual_account:
@@ -4260,11 +4309,12 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
     bill_students = []
     if students:
         for student in students:
-            unpaid_fees = SchoolFee.objects.filter(
+            unpaid_fees = list(SchoolFee.objects.filter(
                 student=student,
                 status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
-            )
-            student_total = sum((f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid_fees)
+            ))
+            paid_amounts = bulk_fee_paid_amounts(unpaid_fees)
+            student_total = total_outstanding_for_fees(unpaid_fees, paid_amounts)
             if student_total > 0:
                 bill_students.append({
                     "name": student.user.get_full_name() if student.user else "Child",
@@ -4273,8 +4323,8 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
                         {
                             "title": f.title,
                             "amount": str(f.amount),
-                            "paid": str(f.amount_paid or Decimal("0")),
-                            "balance": str(f.amount - (f.amount_paid or Decimal("0"))),
+                            "paid": str(paid_amounts.get(f.id, Decimal("0.00"))),
+                            "balance": str(fee_outstanding_amount(f, paid_amounts)),
                         }
                         for f in unpaid_fees
                     ],
@@ -4372,7 +4422,8 @@ def _build_personalized_fee_reminder(parent_user, channel: str):
             status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
         )
         unpaid = list(unpaid)
-        balance = sum((f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid)
+        paid_amounts = bulk_fee_paid_amounts(unpaid)
+        balance = total_outstanding_for_fees(unpaid, paid_amounts)
         if balance > 0:
             child_name = student.user.get_full_name() if student.user else "Child"
             per_child.append((child_name, balance))
@@ -4384,8 +4435,8 @@ def _build_personalized_fee_reminder(parent_user, channel: str):
                     {
                         "title": f.title,
                         "amount": str(f.amount),
-                        "paid": str(f.amount_paid or Decimal("0")),
-                        "balance": str(f.amount - (f.amount_paid or Decimal("0"))),
+                        "paid": str(paid_amounts.get(f.id, Decimal("0.00"))),
+                        "balance": str(fee_outstanding_amount(f, paid_amounts)),
                     }
                     for f in unpaid
                 ],
@@ -4556,20 +4607,19 @@ def send_fee_reminders(limit=None):
         class_obj = getattr(student, "current_class", None)
         class_name = class_obj.name if class_obj else ""
 
-        unpaid_fees = SchoolFee.objects.filter(
+        unpaid_fees = list(SchoolFee.objects.filter(
             student=student,
             status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
-        ).order_by("due_date", "created_at")
+        ).order_by("due_date", "created_at"))
 
-        total_balance = sum(
-            (f.amount - (f.amount_paid or Decimal("0"))) for f in unpaid_fees
-        )
+        paid_amounts = bulk_fee_paid_amounts(unpaid_fees)
+        total_balance = total_outstanding_for_fees(unpaid_fees, paid_amounts)
         if total_balance <= 0:
             continue
 
         fee_lines = []
         for f in unpaid_fees[:6]:
-            remaining = f.amount - (f.amount_paid or Decimal("0"))
+            remaining = fee_outstanding_amount(f, paid_amounts)
             if remaining > 0:
                 fee_lines.append(f"  • {f.title}: {_format_naira(remaining)}")
 
@@ -4595,10 +4645,10 @@ def send_fee_reminders(limit=None):
                     {
                         "title": f.title,
                         "amount": str(f.amount),
-                        "paid": str(f.amount_paid or Decimal("0")),
-                        "balance": str(f.amount - (f.amount_paid or Decimal("0"))),
+                        "paid": str(paid_amounts.get(f.id, Decimal("0.00"))),
+                        "balance": str(fee_outstanding_amount(f, paid_amounts)),
                     }
-                    for f in unpaid_fees if (f.amount - (f.amount_paid or Decimal("0"))) > 0
+                    for f in unpaid_fees if fee_outstanding_amount(f, paid_amounts) > 0
                 ],
                 "total_outstanding": str(total_balance),
                 "generated_at": timezone.now().strftime("%d %b %Y"),
@@ -4617,60 +4667,149 @@ def send_fee_reminders(limit=None):
     return sent
 
 
+PAYMENT_METHOD_LABELS = {
+    "cash": "Cash payment received at school",
+    "pos": "POS payment received at school",
+    "cheque": "Cheque payment received at school",
+}
+
+
+def _payment_method_of(payment) -> str:
+    metadata = getattr(payment, "metadata", None) or {}
+    return str(metadata.get("payment_method") or "bank_transfer").strip().lower()
+
+
+def _payment_outstanding_balance(student) -> Decimal:
+    """What the student still owes across every unsettled fee, after this
+    payment has been applied.
+
+    Reads what was actually banked against each fee (fee_paid_amount) rather
+    than SchoolFee.amount_paid: the offline payment path books allocations as
+    Transaction rows and never writes amount_paid, so trusting that column
+    reports a partial payer as still owing the full fee on their own receipt.
+    """
+    outstanding = Decimal("0.00")
+    for fee in SchoolFee.objects.filter(student=student).exclude(status=SchoolFee.STATUS_PAID):
+        outstanding += max(_as_decimal(fee.amount) - _as_decimal(fee_paid_amount(fee)), Decimal("0.00"))
+    return outstanding
+
+
+def guardian_contacts_for_student(student):
+    """Best phone and email for the parent of a student, as a (phone, email) pair.
+
+    Falls back from the first guardian to the second, then - for email only -
+    to a linked parent account, which is often the only address on file when
+    the guardian fields were left blank at enrolment.
+    """
+    if student is None:
+        return "", ""
+
+    phone = (student.guardian_phone or student.second_guardian_phone or "").strip()
+    email = (student.guardian_email or student.second_guardian_email or "").strip()
+    if not email:
+        parent = student.parents.select_related("user").first()
+        email = (getattr(getattr(parent, "user", None), "email", "") or "").strip()
+    return phone, email
+
+
+def _school_branding_for_receipt(tenant) -> dict:
+    """School identity for the receipt document, from bare tenant fields.
+
+    Receipts are minted from webhooks and Celery tasks as often as from a
+    request, so there is no request here to build an absolute logo URL from -
+    FRONTEND_BASE_URL serves /media on the same host.
+    """
+    if not tenant:
+        return {"school_name": "School", "school_address": "", "school_phone": "", "school_email": "", "school_logo": ""}
+
+    logo = ""
+    try:
+        if getattr(tenant, "logo", None):
+            base_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
+            logo = f"{base_url}{tenant.logo.url}"
+    except Exception:
+        logo = ""
+
+    return {
+        "school_name": tenant.name or "School",
+        "school_address": tenant.address or "",
+        "school_phone": tenant.phone or "",
+        "school_email": tenant.email or "",
+        "school_logo": logo,
+    }
+
+
+def build_payment_receipt_data(payment) -> dict:
+    """The official receipt payload for a recorded payment.
+
+    One builder for every offline channel - cash, POS, cheque, bank transfer -
+    so a cash receipt is the same document, rendered by the same
+    finance/receipt.html, as an auto-reconciled one.
+    """
+    student = payment.student
+    tenant = getattr(payment, "tenant", None) or getattr(student.user, "tenant", None)
+    amount_paid = _as_decimal(payment.applied_amount or payment.amount)
+    outstanding = _payment_outstanding_balance(student)
+    paid_at = payment.matched_at or payment.created_at or timezone.now()
+
+    data = {
+        "type": "receipt",
+        "student_name": student.user.get_full_name() or student.user.email,
+        "student_id": student.student_id or student.admission_number or "",
+        "class_name": getattr(student.current_class, "name", "") or "",
+        "parent_name": student.guardian_name or "",
+        "amount_paid": str(amount_paid),
+        "balance_remaining": str(outstanding),
+        "payment_status": "paid" if outstanding <= 0 else "partial",
+        "payment_date": timezone.localtime(paid_at).strftime("%d %b %Y"),
+        "payment_method": _payment_method_of(payment).replace("_", " ").title(),
+        "description": payment.narration or "",
+        "reference": payment.receipt_number or payment.bank_reference or "",
+    }
+    data.update(_school_branding_for_receipt(tenant))
+    return data
+
+
 def receipt_message_for_payment(payment):
     student = payment.student
     school = payment.tenant
     student_name = student.user.get_full_name() or student.user.email if student else "student"
     school_name = getattr(school, "name", "") or "School"
+    method = PAYMENT_METHOD_LABELS.get(_payment_method_of(payment), "Auto-matched via bank transfer")
     return (
         f"{school_name}: Payment confirmed! {_format_naira(payment.applied_amount or payment.amount)} received for "
-        f"{student_name}. Auto-matched via bank transfer."
+        f"{student_name}. {method}."
     )
 
 
-def send_payment_receipt_sms(payment) -> dict:
-    """Text a guardian their receipt link after a bank transfer or cash payment.
+def send_payment_receipt_sms(payment, receipt_data=None, receipt_url="") -> dict:
+    """Text a guardian their receipt link after an offline payment.
 
     This SMS is the only thing that carries the receipt link to a parent who
-    paid offline - they have no email in the flow and may never open the portal
+    paid offline - they may have no email on file and may never open the portal
     - so it is sent free of the school's wallet (charge_wallet=False), exactly
     like the online payment receipt. Never billed, never blocked by an empty
     wallet: the school has already been paid.
+
+    Pass an already-built `receipt_data`/`receipt_url` to text and email the
+    *same* receipt; called bare it mints its own.
 
     Returns a small result dict rather than raising; a receipt that fails to
     send must never roll back or obscure a payment that succeeded.
     """
     student = getattr(payment, "student", None)
     if student is None:
-        return {"sent": False, "reason": "Payment is not matched to a student."}
+        return {"sent": False, "skipped": True, "reason": "Payment is not matched to a student."}
 
-    phone = (student.guardian_phone or student.second_guardian_phone or "").strip()
+    phone, _email = guardian_contacts_for_student(student)
     if not phone:
-        return {"sent": False, "reason": "No guardian phone on file."}
+        return {"sent": False, "skipped": True, "reason": "No guardian phone on file."}
 
     tenant = getattr(payment, "tenant", None) or getattr(student.user, "tenant", None)
-    school_name = getattr(tenant, "name", "") or "School"
-    student_name = student.user.get_full_name() or student.user.email
-    amount_paid = _as_decimal(payment.applied_amount or payment.amount)
-
-    outstanding = Decimal("0.00")
-    for fee in SchoolFee.objects.filter(student=student).exclude(status=SchoolFee.STATUS_PAID):
-        outstanding += max(_as_decimal(fee.amount) - _as_decimal(fee.amount_paid), Decimal("0.00"))
-
-    receipt_data = {
-        "type": "receipt",
-        "school_name": school_name,
-        "student_name": student_name,
-        "class_name": getattr(student.current_class, "name", "") or "",
-        "amount_paid": str(amount_paid),
-        "balance_remaining": str(outstanding),
-        "payment_status": "paid" if outstanding <= 0 else "partial",
-        "payment_date": timezone.now().strftime("%d %b %Y"),
-        "reference": payment.receipt_number or payment.bank_reference or "",
-    }
-
     try:
-        receipt_url = create_receipt_link(receipt_data, tenant=tenant, phone=phone)
+        if not receipt_url:
+            receipt_data = receipt_data or build_payment_receipt_data(payment)
+            receipt_url = create_receipt_link(receipt_data, tenant=tenant, phone=phone)
         log = send_wallet_sms(
             tenant,
             phone,
@@ -4679,15 +4818,187 @@ def send_payment_receipt_sms(payment) -> dict:
             narration="Payment receipt (not billed)",
             charge_wallet=False,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Payment receipt SMS failed for payment %s", getattr(payment, "id", "?"))
-        return {"sent": False, "reason": "Receipt SMS could not be sent."}
+        return {"sent": False, "reason": f"Receipt SMS could not be sent: {exc}"}
 
+    sent = log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED)
     return {
-        "sent": log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED),
+        "sent": sent,
         "phone": phone,
         "receipt_url": receipt_url,
+        # send_wallet_sms swallows provider errors into a failed log rather than
+        # raising, so re-derive why - "SMS provider returned failed" tells an
+        # admin nothing they can act on.
+        "reason": "" if sent else sms_failure_reason(log),
     }
+
+
+def send_payment_receipt_email_for_payment(payment, receipt_data=None, receipt_url="") -> dict:
+    """Email the same receipt document to the parent's registered address."""
+    student = getattr(payment, "student", None)
+    if student is None:
+        return {"sent": False, "skipped": True, "reason": "Payment is not matched to a student."}
+
+    _phone, email = guardian_contacts_for_student(student)
+    if not email:
+        return {"sent": False, "skipped": True, "reason": "No guardian email on file."}
+
+    tenant = getattr(payment, "tenant", None) or getattr(student.user, "tenant", None)
+    try:
+        receipt_data = receipt_data or build_payment_receipt_data(payment)
+        if not receipt_url:
+            receipt_url = create_receipt_link(receipt_data, tenant=tenant)
+        result = send_payment_receipt(
+            email,
+            receipt_message_for_payment(payment),
+            receipt_url=receipt_url,
+            data=receipt_data,
+            receipt_type="receipt",
+        )
+    except Exception as exc:
+        logger.exception("Payment receipt email failed for payment %s", getattr(payment, "id", "?"))
+        return {"sent": False, "reason": f"Receipt email could not be sent: {exc}"}
+
+    return {
+        "sent": bool(result.get("sent")),
+        "email": email,
+        "receipt_url": receipt_url,
+        "reason": result.get("email_error") or result.get("error") or "",
+    }
+
+
+def send_payment_receipt_notifications(payment, force=False) -> dict:
+    """Generate the official receipt and deliver it to the parent by SMS and email.
+
+    This is the single notification path for every recorded payment - cash,
+    POS, cheque, bank transfer, webhook-reconciled - so a walk-in cash payment
+    produces exactly the same receipt, through exactly the same channels, as an
+    auto-reconciled one. Both channels share one PaymentReceiptLink, so the
+    parent sees the same document whichever message they open first.
+
+    Delivery outcome is written back to the payment per channel, which is what
+    the admin table reads and what the retry sweep queries. Nothing here
+    raises: the money is already banked, and a messaging failure must never
+    reverse, duplicate, or obscure a payment that succeeded. A channel that
+    already succeeded is never re-sent, so retrying can't double-text a parent.
+    """
+    student = getattr(payment, "student", None)
+    if student is None:
+        return {"sent": False, "reason": "Payment is not matched to a student.", "sms": {}, "email": {}}
+
+    sms_done = payment.receipt_sms_status == BankPayment.NOTIFY_SENT
+    email_done = payment.receipt_email_status == BankPayment.NOTIFY_SENT
+    if sms_done and email_done and not force:
+        return {
+            "sent": True,
+            "status": payment.receipt_notification_status,
+            "receipt_url": payment.receipt_link_url,
+            "reason": "Receipt already delivered.",
+            "sms": {},
+            "email": {},
+        }
+
+    receipt_data = build_payment_receipt_data(payment)
+    tenant = getattr(payment, "tenant", None) or getattr(student.user, "tenant", None)
+    phone, _email = guardian_contacts_for_student(student)
+    try:
+        receipt_url = payment.receipt_link_url or create_receipt_link(receipt_data, tenant=tenant, phone=phone)
+    except Exception as exc:
+        logger.exception("Receipt link could not be minted for payment %s", payment.id)
+        receipt_url, link_error = "", f"Receipt link could not be created: {exc}"
+    else:
+        link_error = ""
+
+    sms_result = {} if (sms_done and not force) else send_payment_receipt_sms(payment, receipt_data, receipt_url)
+    email_result = {} if (email_done and not force) else send_payment_receipt_email_for_payment(payment, receipt_data, receipt_url)
+
+    def _status_for(result, previous):
+        if not result:
+            return previous
+        if result.get("sent"):
+            return BankPayment.NOTIFY_SENT
+        if result.get("skipped"):
+            return BankPayment.NOTIFY_SKIPPED
+        return BankPayment.NOTIFY_FAILED
+
+    payment.receipt_sms_status = _status_for(sms_result, payment.receipt_sms_status)
+    payment.receipt_email_status = _status_for(email_result, payment.receipt_email_status)
+    payment.receipt_link_url = receipt_url or payment.receipt_link_url
+    payment.receipt_notification_attempts = (payment.receipt_notification_attempts or 0) + 1
+    # Only genuine failures. A channel skipped for a missing phone or email is
+    # already shown as such on the row - recording it here would light up the
+    # admin's error text for a parent who simply has one contact method.
+    payment.receipt_notification_error = " | ".join(
+        reason
+        for reason in (
+            link_error,
+            "" if sms_result.get("skipped") else sms_result.get("reason", ""),
+            "" if email_result.get("skipped") else email_result.get("reason", ""),
+        )
+        if reason
+    )[:1000]
+    if BankPayment.NOTIFY_SENT in (payment.receipt_sms_status, payment.receipt_email_status):
+        payment.receipt_notified_at = payment.receipt_notified_at or timezone.now()
+    payment.save(update_fields=[
+        "receipt_sms_status",
+        "receipt_email_status",
+        "receipt_link_url",
+        "receipt_notification_attempts",
+        "receipt_notification_error",
+        "receipt_notified_at",
+        "updated_at",
+    ])
+
+    if payment.receipt_notification_error:
+        logger.warning(
+            "Payment receipt for %s finished with sms=%s email=%s: %s",
+            payment.bank_reference,
+            payment.receipt_sms_status,
+            payment.receipt_email_status,
+            payment.receipt_notification_error,
+        )
+
+    return {
+        "sent": payment.receipt_notification_status == BankPayment.NOTIFY_SENT,
+        "status": payment.receipt_notification_status,
+        "receipt_url": payment.receipt_link_url,
+        "sms": sms_result,
+        "email": email_result,
+    }
+
+
+def dispatch_payment_receipt_notifications(payment):
+    """Send the receipt once the payment is durably committed - never before.
+
+    Every finance endpoint runs under ATOMIC_REQUESTS, so at the moment a view
+    records a payment the row is not committed yet. Delivering from inside that
+    transaction would mean texting a parent about a payment that a later error
+    could still roll back, and would hand a Celery worker an ID it cannot yet
+    read. on_commit is what makes "only after the payment is confirmed" true.
+
+    Celery first so the admin's request returns immediately; falls back to
+    sending inline when no broker is reachable, the same shape used for parent
+    virtual-account provisioning.
+    """
+    payment_id = str(payment.id)
+
+    def _deliver():
+        try:
+            from finance.tasks import send_payment_receipt_task
+
+            send_payment_receipt_task.delay(payment_id)
+            return
+        except Exception:
+            pass  # No broker - fall through and send inline.
+
+        try:
+            fresh = BankPayment.objects.select_related("student__user", "tenant").get(id=payment_id)
+            send_payment_receipt_notifications(fresh)
+        except Exception:
+            logger.exception("Inline payment receipt delivery failed for payment %s", payment_id)
+
+    transaction.on_commit(_deliver)
 
 
 def _match_payment_reference_from_narration(tenant, narration):
@@ -5257,7 +5568,7 @@ def process_virtual_account_payment(
     except ParentProfile.DoesNotExist:
         students = []
 
-    unpaid_fees = (
+    unpaid_fees = list(
         SchoolFee.objects.filter(
             student__in=students,
             status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
@@ -5288,10 +5599,14 @@ def process_virtual_account_payment(
     allocations = []
     last_student = None
 
+    # Ledger-backed, not the amount_paid column - see allocate_split_payment.
+    # A DVA payment must not re-charge a fee the parent already part-paid in cash.
+    prior_paid = bulk_fee_paid_amounts(unpaid_fees)
+
     for fee in unpaid_fees:
         if remaining <= 0:
             break
-        already_paid = fee.amount_paid or Decimal("0.00")
+        already_paid = prior_paid.get(fee.id, Decimal("0.00"))
         tuition_left = fee.amount - already_paid
         if tuition_left <= 0:
             continue
@@ -5331,7 +5646,9 @@ def process_virtual_account_payment(
         school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
         school_name = getattr(school_name, "name", "") if school_name else (resolved_tenant.name if resolved_tenant else "")
         try:
-            balance_left = float(fee.amount) - float(fee.amount_paid or 0)
+            # fee_paid_amount, not the amount_paid column, so a parent who part-paid
+            # in cash before topping up online sees their real remaining balance.
+            balance_left = float(fee_outstanding_amount(fee))
             receipt_data = {
                 "type": "receipt",
                 "school_name": school_name,

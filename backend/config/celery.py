@@ -42,6 +42,13 @@ app.conf.beat_schedule = {
         "task": "finance.tasks.process_token_allocation_expirations",
         "schedule": crontab(hour=6, minute=0),
     },
+    # Every 15 minutes — re-send payment receipts that never reached the parent
+    # (SMS gateway down, mail server refused, worker died mid-send). Channels
+    # that already delivered are skipped, so this can never double-notify.
+    "retry-failed-payment-receipts": {
+        "task": "finance.tasks.retry_failed_payment_receipts",
+        "schedule": crontab(minute="*/15"),
+    },
     # Every 5 minutes — re-dispatch any queued request stuck without a live
     # Celery task (e.g. Redis was restarted and lost in-flight task state).
     # QueuedRequest rows live in Postgres, so this is the safety net that

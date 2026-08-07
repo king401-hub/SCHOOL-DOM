@@ -359,8 +359,9 @@ def _exam_section(student_profile):
 
 def _finance_section(student_profile):
     from finance.models import BankPayment, FeeAllocation, SchoolFee
+    from finance.services import bulk_fee_paid_amounts
 
-    fees = (
+    fees = list(
         SchoolFee.objects.filter(student=student_profile)
         .select_related("class_fee", "bill", "created_by")
         .order_by("-due_date")
@@ -369,9 +370,13 @@ def _finance_section(student_profile):
     invoices = []
     total_billed = Decimal("0.00")
     total_paid = Decimal("0.00")
+    # Payments taken as cash or matched from a bank transfer are booked as
+    # ledger rows, not onto SchoolFee.amount_paid - so an archive built from
+    # that column would preserve, permanently, a debt the student had settled.
+    paid_amounts = bulk_fee_paid_amounts(fees)
     for fee in fees:
         amount = Decimal(str(fee.amount or 0))
-        paid = Decimal(str(fee.amount_paid or 0))
+        paid = paid_amounts.get(fee.id, Decimal("0.00"))
         total_billed += amount
         total_paid += paid
         invoices.append(

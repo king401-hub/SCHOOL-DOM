@@ -19529,6 +19529,73 @@ body[data-theme="dark"] .activation-credit-summary span {
   background: #fef3c7;
 }
 
+/* Receipt delivery statuses */
+.finance-status.status-sent {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.finance-status.status-skipped {
+  color: #374151;
+  background: #e5e7eb;
+}
+
+.receipt-delivery {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 160px;
+}
+
+.receipt-delivery-channels {
+  color: #64748b;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.receipt-delivery-error {
+  color: #b91c1c;
+  font-size: 0.7rem;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receipt-delivery-link {
+  color: #4f46e5;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.receipt-delivery-link:hover {
+  text-decoration: underline;
+}
+
+body[data-theme="dark"] .receipt-delivery-channels {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .receipt-delivery-error {
+  color: #fca5a5;
+}
+
+body[data-theme="dark"] .receipt-delivery-link {
+  color: #a5b4fc;
+}
+
+body[data-theme="dark"] .finance-status.status-sent {
+  color: #bbf7d0;
+  background: #14532d;
+}
+
+body[data-theme="dark"] .finance-status.status-skipped {
+  color: #e2e8f0;
+  background: #334155;
+}
+
 .table-actions {
   display: flex;
   gap: 0.35rem;

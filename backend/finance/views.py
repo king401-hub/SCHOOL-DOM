@@ -99,7 +99,8 @@ from finance.services import (
     record_cash_payment,
     provision_kuda_admin_virtual_account,
     record_finance_activity,
-    send_payment_receipt_sms,
+    dispatch_payment_receipt_notifications,
+    send_payment_receipt_notifications,
     send_fee_reminders,
     send_parent_balance_response,
     send_payment_receipt,
@@ -373,7 +374,7 @@ def bank_credit_webhook(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        send_payment_receipt_sms(payment)
+        dispatch_payment_receipt_notifications(payment)
     return Response({"success": True, "created": created, "payment": BankPaymentSerializer(payment).data})
 
 
@@ -2052,7 +2053,7 @@ def admin_bank_payment_ingest(request):
             )
             processed.append({"created": created, "payment": BankPaymentSerializer(payment).data})
             if created and payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-                send_payment_receipt_sms(payment)
+                dispatch_payment_receipt_notifications(payment)
             record_finance_activity(
                 user.tenant,
                 user,
@@ -2105,7 +2106,7 @@ def admin_bank_payment_recover(request, payment_id):
     payment.save(update_fields=["payment_reference", "updated_at"])
     payment = apply_bank_payment_to_student(payment, student, actor=user)
     if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        send_payment_receipt_sms(payment)
+        dispatch_payment_receipt_notifications(payment)
     record_finance_activity(
         user.tenant,
         user,
@@ -2151,7 +2152,7 @@ def admin_cash_payment_record(request):
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     if payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        send_payment_receipt_sms(payment)
+        dispatch_payment_receipt_notifications(payment)
 
     record_finance_activity(
         user.tenant,
@@ -2164,6 +2165,49 @@ def admin_cash_payment_record(request):
         metadata={"student_id": str(student.id), "status": payment.status},
     )
     return Response({"success": True, "payment": BankPaymentSerializer(payment).data, "finance": _admin_finance_snapshot(user)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_payment_receipt_resend(request, payment_id):
+    """Re-send a receipt that never reached the parent.
+
+    Receipts go out automatically on every recorded payment and are retried on
+    a schedule, so this is the escape hatch for the case the sweep gives up on
+    - a wrong phone number corrected after the fact, a mailbox that was full.
+    Channels that already delivered are skipped by the notification service, so
+    pressing this twice cannot double-notify a parent.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    payment = get_object_or_404(BankPayment.objects.filter(tenant=user.tenant), id=payment_id)
+    if not payment.student_id:
+        return Response(
+            {"success": False, "message": "This payment is not matched to a student yet."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Resending is an explicit admin action on an existing payment, so it runs
+    # inline - the admin gets the delivery outcome in the response instead of
+    # having to reload to find out whether it worked.
+    result = send_payment_receipt_notifications(payment)
+    record_finance_activity(
+        user.tenant,
+        user,
+        "payment_receipt_resent",
+        f"Re-sent payment receipt for {payment.bank_reference}.",
+        amount=payment.amount,
+        currency=payment.currency,
+        reference=payment.bank_reference,
+        metadata={"status": result.get("status"), "attempts": payment.receipt_notification_attempts},
+    )
+    return Response({
+        "success": True,
+        "notification": {"status": result.get("status"), "receipt_url": result.get("receipt_url")},
+        "payment": BankPaymentSerializer(payment).data,
+    })
 
 
 @api_view(["GET", "POST"])
@@ -3248,14 +3292,19 @@ def parent_dashboard(request):
     total_paid = Decimal("0")
 
     for student in parent_profile.children.select_related("user", "current_class").all():
-        fees_qs = SchoolFee.objects.filter(student=student).order_by("due_date")
-        student_expected = sum(Decimal(str(f.amount or 0)) for f in fees_qs)
-        student_paid = sum(Decimal(str(f.amount_paid or 0)) for f in fees_qs)
+        fees_qs = list(SchoolFee.objects.filter(student=student).order_by("due_date"))
+        # fee_paid_amount, not the amount_paid column: offline payments (cash,
+        # POS, matched bank transfer) never write that column, so reading it
+        # here showed parents who had already paid at the front desk a balance
+        # of the full fee.
+        paid_amounts = bulk_fee_paid_amounts(fees_qs)
+        student_expected = sum((Decimal(str(f.amount or 0)) for f in fees_qs), Decimal("0"))
+        student_paid = sum((paid_amounts.get(f.id, Decimal("0.00")) for f in fees_qs), Decimal("0"))
         student_remaining = max(student_expected - student_paid, Decimal("0"))
 
         fee_rows = []
         for f in fees_qs:
-            paid = Decimal(str(f.amount_paid or 0))
+            paid = paid_amounts.get(f.id, Decimal("0.00"))
             remaining = max(Decimal(str(f.amount or 0)) - paid, Decimal("0"))
             fee_rows.append({
                 "id": str(f.id),

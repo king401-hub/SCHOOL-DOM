@@ -106,6 +106,7 @@ urlpatterns = [
     path("admin/bank-payments/ingest/", views.admin_bank_payment_ingest, name="admin_bank_payment_ingest"),
     path("admin/bank-payments/<uuid:payment_id>/recover/", views.admin_bank_payment_recover, name="admin_bank_payment_recover"),
     path("admin/cash-payments/record/", views.admin_cash_payment_record, name="admin_cash_payment_record"),
+    path("admin/payments/<uuid:payment_id>/resend-receipt/", views.admin_payment_receipt_resend, name="admin_payment_receipt_resend"),
     path("admin/expenses/", views.admin_expense_records, name="admin_expense_records"),
     path("admin/expenses/payslip/", views.admin_expense_payslip_create, name="admin_expense_payslip_create"),
     path("admin/expenses/payslip/<uuid:record_id>/send/", views.admin_expense_payslip_send, name="admin_expense_payslip_send"),

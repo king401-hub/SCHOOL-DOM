@@ -47,6 +47,7 @@ from finance.services import (
     credit_wallet,
     deduct_document_generation_credit,
     ensure_student_wallet,
+    bulk_fee_paid_amounts,
     fee_paid_amount,
     get_or_create_activation_credit_pool,
     get_or_create_sms_wallet,
@@ -60,6 +61,10 @@ from finance.services import (
     refund_sms_wallet,
     send_bulk_message_to_parents,
     send_parent_virtual_account_fee_reminder,
+    build_payment_receipt_data,
+    fee_outstanding_amount,
+    send_payment_receipt_notifications,
+    total_outstanding_for_fees,
     send_payment_receipt_sms,
     send_wallet_sms,
     sms_failure_reason,
@@ -69,6 +74,7 @@ from finance.services import (
     verify_activation_credit_purchase,
 )
 from finance.models import SmsMessageLog
+from finance.tasks import MAX_RECEIPT_NOTIFICATION_ATTEMPTS, retry_failed_payment_receipts
 from finance.queue_handlers import handle_wallet_withdrawal
 from notifications.models import Notification
 from request_queue.exceptions import RequestRejectedError, RetriableRequestError
@@ -1858,6 +1864,315 @@ class CashPaymentTests(TestCase):
         self.assertEqual(response.data["payment"]["payment_method"], "cash")
         self.fee.refresh_from_db()
         self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+
+
+class CashPaymentReceiptNotificationTests(TestCase):
+    """A recorded cash payment must reach the parent by itself.
+
+    The admin takes the money at the front desk and moves on; nothing else in
+    the flow tells the parent it was received, so the receipt has to generate
+    and deliver on its own - and the admin has to be able to see whether it
+    landed.
+    """
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Receipt School", schema_name="receipt_school", is_active=True,
+            address="12 School Road, Ikeja", phone="08011112222", email="office@receipt.edu",
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@receipt.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="pupil@receipt.edu", password="StudentPass123", first_name="Chidi", last_name="Okafor",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS 2", section="B")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="RCP001", admission_number="ADM-RCP-001",
+            admission_date=timezone.localdate(), guardian_name="Ngozi Okafor", guardian_relation="Mother",
+            guardian_phone="2348012345678", guardian_email="ngozi@example.com",
+            current_class=self.school_class,
+        )
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("50000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+    def _record(self, amount="50000.00", note="Paid at the front desk"):
+        return record_cash_payment(self.student, Decimal(amount), note=note, actor=self.admin_user)
+
+    def test_receipt_payload_carries_everything_the_document_must_show(self):
+        payment = self._record(amount="20000.00", note="Part payment for Term 2")
+        data = build_payment_receipt_data(payment)
+
+        self.assertEqual(data["amount_paid"], "20000.00")
+        self.assertEqual(data["balance_remaining"], "30000.00")
+        self.assertEqual(data["payment_status"], "partial")
+        self.assertEqual(data["student_name"], "Chidi Okafor")
+        self.assertEqual(data["student_id"], "RCP001")
+        self.assertEqual(data["class_name"], "JSS 2")
+        self.assertEqual(data["payment_method"], "Cash")
+        self.assertEqual(data["description"], "Part payment for Term 2")
+        self.assertEqual(data["reference"], payment.receipt_number or payment.bank_reference)
+        self.assertTrue(data["payment_date"])
+        # School information, so the receipt stands on its own as a document.
+        self.assertEqual(data["school_name"], "Receipt School")
+        self.assertEqual(data["school_address"], "12 School Road, Ikeja")
+        self.assertEqual(data["school_phone"], "08011112222")
+        self.assertEqual(data["school_email"], "office@receipt.edu")
+
+    @patch("finance.services.send_ebulksms")
+    def test_cash_payment_sends_both_sms_and_email_from_one_receipt(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        payment = self._record()
+
+        result = send_payment_receipt_notifications(payment)
+
+        self.assertTrue(result["sent"])
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_notification_status, BankPayment.NOTIFY_SENT)
+        self.assertIsNotNone(payment.receipt_notified_at)
+        self.assertEqual(payment.receipt_notification_error, "")
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("ngozi@example.com", mail.outbox[0].to)
+        self.assertIn("Payment Receipt", mail.outbox[0].subject)
+
+        # Both channels point the parent at the same document.
+        self.assertEqual(PaymentReceiptLink.objects.filter(tenant=self.school).count(), 1)
+        link = PaymentReceiptLink.objects.get(tenant=self.school)
+        self.assertIn(link.short_code, payment.receipt_link_url)
+        self.assertIn(link.short_code, SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).message)
+
+    @patch("finance.services.send_ebulksms")
+    def test_recording_a_cash_payment_delivers_the_receipt_without_being_asked(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = client.post(
+                "/api/finance/admin/cash-payments/record/",
+                {"student_id": self.student.student_id, "amount": "50000", "note": "Cash at desk"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payment = BankPayment.objects.get(id=response.data["payment"]["id"])
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_failing_channel_is_recorded_and_never_touches_the_payment(self, mock_send):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+
+        result = send_payment_receipt_notifications(payment)
+
+        self.assertFalse(result["sent"])
+        payment.refresh_from_db()
+        # The money is banked and applied regardless of what the SMS gateway did.
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(payment.status, BankPayment.STATUS_CONFIRMED)
+        self.assertEqual(payment.applied_amount, Decimal("50000.00"))
+        # ...and the failure is on the record for the admin to see.
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_FAILED)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_notification_status, BankPayment.NOTIFY_FAILED)
+        self.assertIn("gateway down", payment.receipt_notification_error)
+        self.assertEqual(BankPayment.objects.filter(student=self.student).count(), 1)
+
+    @patch("finance.services.send_ebulksms")
+    def test_retry_resends_only_the_channel_that_failed(self, mock_send):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+        send_payment_receipt_notifications(payment)
+        self.assertEqual(len(mail.outbox), 1)
+
+        mock_send.side_effect = None
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        result = retry_failed_payment_receipts()
+
+        self.assertEqual(result, {"retried": 1, "delivered": 1})
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_notification_attempts, 2)
+        # The email already landed, so the parent is not mailed a second time.
+        self.assertEqual(len(mail.outbox), 1)
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_delivered_receipt_is_never_swept_up_again(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        payment = self._record()
+        send_payment_receipt_notifications(payment)
+
+        self.assertEqual(retry_failed_payment_receipts(), {"retried": 0, "delivered": 0})
+        self.assertEqual(mock_send.call_count, 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    @patch("finance.services.send_ebulksms")
+    def test_retry_gives_up_after_the_attempt_ceiling(self, mock_send):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+        payment.receipt_notification_attempts = MAX_RECEIPT_NOTIFICATION_ATTEMPTS
+        payment.receipt_sms_status = BankPayment.NOTIFY_FAILED
+        payment.save(update_fields=["receipt_notification_attempts", "receipt_sms_status"])
+
+        self.assertEqual(retry_failed_payment_receipts(), {"retried": 0, "delivered": 0})
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_parent_with_no_email_still_gets_a_clean_sent_status(self, mock_send):
+        """"Skipped" is not a failure - it means there was no such channel to
+        try, so a phone-only parent must not leave the row looking broken."""
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        self.student.guardian_email = ""
+        self.student.save(update_fields=["guardian_email"])
+        payment = self._record()
+
+        send_payment_receipt_notifications(payment)
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SKIPPED)
+        self.assertEqual(payment.receipt_notification_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @patch("finance.services.send_ebulksms")
+    def test_receipt_email_falls_back_to_a_linked_parent_account(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        self.student.guardian_email = ""
+        self.student.save(update_fields=["guardian_email"])
+        parent_user = User.objects.create_user(
+            email="parent@receipt.edu", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        parent_profile = ParentProfile.objects.create(user=parent_user)
+        parent_profile.children.add(self.student)
+
+        send_payment_receipt_notifications(self._record())
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("parent@receipt.edu", mail.outbox[0].to)
+
+    @patch("finance.services.send_ebulksms")
+    def test_the_receipt_sms_is_still_free_of_the_schools_wallet(self, mock_send):
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 25
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        send_payment_receipt_notifications(self._record())
+
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 25)
+        self.assertEqual(SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).credits_charged, 0)
+
+    @patch("finance.services.send_ebulksms")
+    def test_admin_can_resend_a_receipt_that_failed(self, mock_send):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+        send_payment_receipt_notifications(payment)
+
+        mock_send.side_effect = None
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(f"/api/finance/admin/payments/{payment.id}/resend-receipt/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["notification"]["status"], BankPayment.NOTIFY_SENT)
+        self.assertEqual(response.data["payment"]["receipt_sms_status"], BankPayment.NOTIFY_SENT)
+
+    def test_an_offline_part_payment_reduces_what_is_still_owed_everywhere(self):
+        """Cash and bank transfers book to the ledger, never to
+        SchoolFee.amount_paid - so anything that derives a balance from that
+        column tells a parent who paid at the front desk that they still owe
+        the whole fee."""
+        record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.amount_paid, Decimal("0.00"))  # the column stays untouched
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("20000.00"))
+        self.assertEqual(fee_outstanding_amount(self.fee), Decimal("30000.00"))
+        self.assertEqual(total_outstanding_for_fees([self.fee]), Decimal("30000.00"))
+        self.assertFalse(self.fee.is_fully_paid())
+        self.assertEqual(self.fee.get_remaining_balance(), 30000.0 + 400)
+
+    def test_paying_online_after_a_cash_part_payment_only_charges_the_remainder(self):
+        """The expensive version of the same bug: allocation read amount_paid
+        to decide how much was still owed, so a parent who part-paid in cash
+        got billed for the whole fee again and the school over-collected."""
+        parent_user = User.objects.create_user(
+            email="payer@receipt.edu", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        ParentProfile.objects.create(user=parent_user).children.add(self.student)
+        record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+
+        # ₦30,000 of tuition left, plus Schooldom's 0.3% on that remainder.
+        tx = Transaction.objects.create(
+            tx_type=Transaction.SPLIT_PAYMENT, status=Transaction.STATUS_SUCCESS,
+            amount=Decimal("30090.00"), reference="PSK-AFTER-CASH", parent_id=parent_user.id,
+        )
+        result = allocate_split_payment(
+            parent_id=parent_user.id,
+            amount_paid=Decimal("30090.00"),
+            paystack_ref="PSK-AFTER-CASH",
+            transaction_id=tx.id,
+        )
+
+        self.assertEqual(len(result["allocations"]), 1)
+        self.assertEqual(result["allocations"][0]["status"], "paid")
+        self.assertEqual(result["allocations"][0]["tuition_paid"], 30000.0)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        # ₦20,000 cash + ₦30,000 online settles a ₦50,000 fee exactly - the fee
+        # must never absorb more than it is worth.
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("50000.00"))
+        self.assertEqual(fee_outstanding_amount(self.fee), Decimal("0.00"))
+
+    def test_a_legacy_part_payment_recorded_only_on_the_column_still_counts(self):
+        """Fees part-paid before FeeAllocation existed have nothing but
+        amount_paid to show for it. fee_paid_amount already trusts
+        status == PAID on those grounds, so it must trust this too - otherwise
+        the fix for offline payments would silently zero out old ones."""
+        self.fee.amount_paid = Decimal("20000.00")
+        self.fee.status = SchoolFee.STATUS_PARTIAL
+        self.fee.save(update_fields=["amount_paid", "status"])
+
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("20000.00"))
+        self.assertEqual(fee_outstanding_amount(self.fee), Decimal("30000.00"))
+        # The batched path must not disagree with the per-fee one.
+        self.assertEqual(bulk_fee_paid_amounts([self.fee])[self.fee.id], Decimal("20000.00"))
+
+    def test_ledger_and_column_are_never_double_counted(self):
+        """Online payments write both the column and a ledger row for the same
+        money - taking the larger of the two must not read as paying twice."""
+        record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        self.fee.refresh_from_db()
+        self.fee.amount_paid = Decimal("20000.00")  # as the online path would also write
+        self.fee.save(update_fields=["amount_paid"])
+
+        self.assertEqual(fee_paid_amount(self.fee), Decimal("20000.00"))
+        self.assertEqual(bulk_fee_paid_amounts([self.fee])[self.fee.id], Decimal("20000.00"))
+
+    def test_resending_a_receipt_requires_a_finance_role(self):
+        payment = self._record()
+        teacher = User.objects.create_user(
+            email="teacher@receipt.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        client = APIClient()
+        client.force_authenticate(user=teacher)
+        response = client.post(f"/api/finance/admin/payments/{payment.id}/resend-receipt/")
+        self.assertEqual(response.status_code, 403)
 
 
 class PaystackReceiptMessageTests(TestCase):

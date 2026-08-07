@@ -268,3 +268,84 @@ def process_token_allocation_expirations():
         expired_count, notified_7d, notified_1d,
     )
     return {"expired": expired_count, "notified_7d": notified_7d, "notified_1d": notified_1d}
+
+
+# A payment receipt is worth chasing for a few days, not forever: after this
+# many sweeps the provider is not going to start working, and the admin can see
+# the failure on the payment row and resend by hand.
+MAX_RECEIPT_NOTIFICATION_ATTEMPTS = 5
+RECEIPT_RETRY_WINDOW_DAYS = 7
+
+
+@shared_task
+def send_payment_receipt_task(payment_id):
+    """Deliver a recorded payment's receipt to the parent by SMS and email.
+
+    Queued by the finance views on transaction commit, so the payment is
+    already saved and confirmed by the time this runs. Delivery outcome is
+    written onto the payment per channel; anything that fails is picked up
+    later by retry_failed_payment_receipts.
+    """
+    from finance.models import BankPayment
+    from finance.services import send_payment_receipt_notifications
+
+    try:
+        payment = BankPayment.objects.select_related("student__user", "tenant").get(id=payment_id)
+    except BankPayment.DoesNotExist:
+        logger.warning("send_payment_receipt_task: payment %s not found", payment_id)
+        return {"status": "skipped", "reason": "payment_not_found"}
+
+    result = send_payment_receipt_notifications(payment)
+    return {"status": result.get("status"), "payment": str(payment_id)}
+
+
+@shared_task
+def retry_failed_payment_receipts():
+    """Re-attempt receipts that never reached the parent.
+
+    The retry lives here rather than in Celery's own retry machinery because
+    the state that matters is in Postgres, not in the broker: a receipt still
+    marked pending because the worker died, or failed because the SMS gateway
+    was down, is found on the next sweep whatever happened to the queue.
+
+    Channels that already succeeded are never re-sent - the notification
+    service skips them - so a parent cannot be texted twice about one payment.
+    """
+    from datetime import timedelta
+
+    from django.db.models import Q
+    from django.utils import timezone
+
+    from finance.models import BankPayment
+    from finance.services import send_payment_receipt_notifications
+
+    cutoff = timezone.now() - timedelta(days=RECEIPT_RETRY_WINDOW_DAYS)
+    unfinished = Q(receipt_sms_status__in=[BankPayment.NOTIFY_PENDING, BankPayment.NOTIFY_FAILED]) | Q(
+        receipt_email_status__in=[BankPayment.NOTIFY_PENDING, BankPayment.NOTIFY_FAILED]
+    )
+    payments = (
+        BankPayment.objects.select_related("student__user", "tenant")
+        .filter(
+            student__isnull=False,
+            status__in=[BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL],
+            created_at__gte=cutoff,
+            receipt_notification_attempts__lt=MAX_RECEIPT_NOTIFICATION_ATTEMPTS,
+        )
+        .filter(unfinished)
+        .order_by("created_at")[:200]
+    )
+
+    retried, delivered = 0, 0
+    for payment in payments:
+        retried += 1
+        try:
+            result = send_payment_receipt_notifications(payment)
+        except Exception:
+            logger.exception("retry_failed_payment_receipts: payment %s raised", payment.id)
+            continue
+        if result.get("sent"):
+            delivered += 1
+
+    if retried:
+        logger.info("retry_failed_payment_receipts: retried=%d delivered=%d", retried, delivered)
+    return {"retried": retried, "delivered": delivered}

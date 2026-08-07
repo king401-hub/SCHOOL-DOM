@@ -162,6 +162,7 @@ class BankPaymentSerializer(serializers.ModelSerializer):
     reference_code = serializers.SerializerMethodField()
     payment_method = serializers.SerializerMethodField()
     note = serializers.SerializerMethodField()
+    receipt_notification_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = BankPayment
@@ -182,6 +183,13 @@ class BankPaymentSerializer(serializers.ModelSerializer):
             "receipt_number",
             "payment_method",
             "note",
+            "receipt_notification_status",
+            "receipt_sms_status",
+            "receipt_email_status",
+            "receipt_notified_at",
+            "receipt_notification_attempts",
+            "receipt_notification_error",
+            "receipt_link_url",
             "created_at",
         ]
 

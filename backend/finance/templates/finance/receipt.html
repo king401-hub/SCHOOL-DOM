@@ -443,10 +443,22 @@
           <label>Student Name</label>
           <span>{{ data.student_name|default:"—" }}</span>
         </div>
+        {% if data.student_id %}
+        <div class="info-item">
+          <label>Student ID</label>
+          <span>{{ data.student_id }}</span>
+        </div>
+        {% endif %}
         <div class="info-item">
           <label>Class</label>
           <span>{{ data.class_name|default:"—" }}</span>
         </div>
+        {% if data.parent_name %}
+        <div class="info-item">
+          <label>Parent/Guardian</label>
+          <span>{{ data.parent_name }}</span>
+        </div>
+        {% endif %}
       </div>
 
       <p class="section-title">Payment Summary</p>
@@ -454,11 +466,37 @@
         <div class="label">Amount Paid</div>
         <div class="amount">₦{{ data.amount_paid|floatformat:2 }}</div>
         {% if data.payment_status == "partial" %}
-          <div class="balance outstanding">Balance remaining: ₦{{ data.balance_remaining|floatformat:2 }}</div>
-        {% else %}
+          <div class="balance outstanding">Outstanding balance: ₦{{ data.balance_remaining|floatformat:2 }}</div>
+        {% elif data.fee_total %}
           <div class="balance">Total fee: ₦{{ data.fee_total|floatformat:2 }}</div>
+        {% else %}
+          <div class="balance">No outstanding balance</div>
         {% endif %}
       </div>
+
+      {% if data.payment_date or data.payment_method or data.description %}
+        <p class="section-title">Payment Details</p>
+        <div class="info-grid">
+          {% if data.payment_date %}
+          <div class="info-item">
+            <label>Payment Date</label>
+            <span>{{ data.payment_date }}</span>
+          </div>
+          {% endif %}
+          {% if data.payment_method %}
+          <div class="info-item">
+            <label>Payment Method</label>
+            <span>{{ data.payment_method }}</span>
+          </div>
+          {% endif %}
+          {% if data.description %}
+          <div class="info-item" style="grid-column:1/-1">
+            <label>Description</label>
+            <span>{{ data.description }}</span>
+          </div>
+          {% endif %}
+        </div>
+      {% endif %}
 
       {% if data.reference %}
         <p class="section-title">Transaction Reference</p>
@@ -682,6 +720,9 @@
       <p>{{ data.school_name|default:"School" }}{% if data.school_address %} &bull; {{ data.school_address }}{% endif %}{% if data.school_phone %} &bull; {{ data.school_phone }}{% endif %}</p>
     {% else %}
     <p>Generated {% firstof link.created_at|date:"d M Y" "" %} &bull; {{ data.school_name|default:"School" }}</p>
+    {% if data.school_address or data.school_phone or data.school_email %}
+      <p style="margin-top:4px">{% if data.school_address %}{{ data.school_address }}{% endif %}{% if data.school_phone %} &bull; {{ data.school_phone }}{% endif %}{% if data.school_email %} &bull; {{ data.school_email }}{% endif %}</p>
+    {% endif %}
     {% endif %}
     {% if link.expires_at %}
       <p style="margin-top:4px">This link expires {{ link.expires_at|date:"d M Y" }}</p>
