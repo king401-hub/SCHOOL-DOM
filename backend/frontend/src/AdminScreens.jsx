@@ -1367,11 +1367,14 @@ function LiveTransactionFeed({ transactions, onRefresh, onViewAll, formatAmount,
           );
         }) : <p className="panel-empty">No transactions yet.</p>}
       </div>
+      {/* Same btn-secondary as every View More, but this one navigates to the
+          Transactions record instead of opening a popup - the feed is a glance
+          at the newest rows, not a second window onto the same history. */}
       <div className="live-feed-actions">
-        <button type="button" className="pill-button ghost" onClick={refresh} disabled={refreshing || !onRefresh}>
+        <button type="button" className="btn-secondary" onClick={refresh} disabled={refreshing || !onRefresh}>
           {refreshing ? <><Spinner size={12} /> Refreshing...</> : "Refresh now"}
         </button>
-        <button type="button" className="pill-button ghost" onClick={onViewAll}>View all transactions</button>
+        <button type="button" className="btn-secondary" onClick={onViewAll}>View all transactions</button>
       </div>
     </article>
   );
