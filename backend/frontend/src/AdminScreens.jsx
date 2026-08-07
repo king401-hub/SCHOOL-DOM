@@ -1489,14 +1489,6 @@ function AdminFinanceScreen({
       .toLowerCase()
       .includes(normalizedVaSearch);
   });
-  const filteredVaParentsWithoutAccount = vaParentsWithoutAccount.filter((row) => {
-    if (!normalizedVaSearch) return true;
-    return [row.parent_name, row.parent_email]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedVaSearch);
-  });
   const financeCurrency = "NGN";
   const formatFinanceAmount = (value) =>
     `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString(undefined, {
@@ -1835,20 +1827,16 @@ function AdminFinanceScreen({
   useEffect(() => {
     if (!printingBill) return;
     const timer = setTimeout(() => {
-      const { bill, mode } = printingBill;
+      const { bill } = printingBill;
       const title = `Invoice - ${bill.title}`;
-      const run = mode === "png"
-        ? downloadPrintablePng("bill-history-print-doc", `invoice-${(bill.title || "bill").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`, title, documentTheme)
-        : Promise.resolve(openPrintableDocument("bill-history-print-doc", title, documentTheme));
-      Promise.resolve(run)
+      Promise.resolve(openPrintableDocument("bill-history-print-doc", title, documentTheme))
         .catch((err) => setBillActionError(err.message || "Could not open the printable invoice."))
         .finally(() => setPrintingBill(null));
     }, 60);
     return () => clearTimeout(timer);
   }, [printingBill]);
 
-  const handlePrintBillDocument = (bill) => setPrintingBill({ bill, mode: "print" });
-  const handleDownloadBillPng = (bill) => setPrintingBill({ bill, mode: "png" });
+  const handlePrintBillDocument = (bill) => setPrintingBill({ bill });
 
   const startEditStudentFee = (fee) => {
     setFeedback("");
@@ -2475,24 +2463,12 @@ function AdminFinanceScreen({
               {vaActionMessage ? <p className="form-feedback success">{vaActionMessage}</p> : null}
               {vaActionError ? <p className="form-feedback error">{vaActionError}</p> : null}
               {vaListError ? <p className="form-feedback error">{vaListError}</p> : null}
-              <div className="panel-form-actions" style={{ margin: "0.5rem 0 0.75rem" }}>
-                <input
-                  type="text"
-                  placeholder="Search parents awaiting an account"
-                  value={vaSearch}
-                  onChange={(event) => setVaSearch(event.target.value)}
-                  style={{ maxWidth: "320px" }}
-                />
-                <button type="button" onClick={loadVirtualAccountsList} disabled={anyBusy}>
-                  {vaListLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
-                </button>
-              </div>
-              {filteredVaParentsWithoutAccount.length ? (
+              {vaParentsWithoutAccount.length ? (
                 <div className="table-scroll">
                   <table className="data-table">
                     <thead><tr><th>Parent (no account yet)</th><th>Email</th><th>Action</th></tr></thead>
                     <tbody>
-                      {filteredVaParentsWithoutAccount.map((row) => (
+                      {vaParentsWithoutAccount.map((row) => (
                         <tr key={row.parent_id}>
                           <td>{row.parent_name}</td>
                           <td>{row.parent_email}</td>
@@ -2824,7 +2800,6 @@ function AdminFinanceScreen({
                             ) : null}
                             <button type="button" className="table-action" onClick={() => handleBillDuplicate(bill.id)} disabled={billActionBusyId === bill.id}>Duplicate</button>
                             <button type="button" className="table-action" onClick={() => handlePrintBillDocument(bill)}>Print</button>
-                            <button type="button" className="table-action" onClick={() => handleDownloadBillPng(bill)}>PNG</button>
                             {bill.status !== "cancelled" ? (
                               <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>Cancel</button>
                             ) : null}
