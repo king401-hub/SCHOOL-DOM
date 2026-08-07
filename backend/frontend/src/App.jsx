@@ -5948,6 +5948,14 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     }
   }, [loadScreen, screenData, screenError, screenLoading]);
 
+  // SMS Wallet's Bulk Messaging panel needs the parent directory - only fetch it
+  // once the admin actually visits that screen, not on every session.
+  useEffect(() => {
+    if (activePath === "/sms-wallet" && !screenData["/parents"] && !screenLoading["/parents"] && !screenError["/parents"]) {
+      loadScreen("/parents");
+    }
+  }, [activePath, loadScreen, screenData, screenError, screenLoading]);
+
   const handleRetry = useCallback(() => {
     loadScreen(activePath, true);
   }, [activePath, loadScreen]);
@@ -7052,6 +7060,15 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleSmsBundleCancel = useCallback(
+    async (reference) => {
+      const result = await requestJson(session, "POST", `/api/finance/admin/sms-wallet/cancel/${reference}/`);
+      await loadScreen("/sms-wallet", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
   const handleUpdateTeacher = useCallback(
     async (teacherId, payload) => {
       const result = await requestJson(session, "PATCH", `/api/app/teachers/${teacherId}/`, payload);
@@ -7803,6 +7820,10 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onRetry={handleRetry}
         onPurchase={handleSmsBundlePurchase}
         onVerifyPurchase={handleSmsBundleVerify}
+        onCancelPurchase={handleSmsBundleCancel}
+        session={session}
+        school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
+        parentsData={screenData["/parents"]}
       />
     );
   } else if (activePath === "/id-cards") {

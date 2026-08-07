@@ -41,9 +41,11 @@ from finance.services import (
     allocate_split_payment,
     apply_bank_payment_to_student,
     build_paystack_receipt_message,
+    cancel_sms_wallet_purchase,
     charge_sms_wallet,
     complete_wallet_funding,
     credit_sms_wallet_from_purchase,
+    mark_sms_wallet_purchase_failed,
     credit_wallet,
     deduct_document_generation_credit,
     ensure_student_wallet,
@@ -1001,6 +1003,70 @@ class SmsWalletTests(TestCase):
         self.assertEqual(wallet.balance, 100)  # unchanged from welcome credit
         self.assertEqual(tx.status, SmsWalletTransaction.STATUS_FAILED)
 
+    def test_cancel_pending_purchase_transitions_to_cancelled(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_PENDING,
+            credits=200, amount=Decimal("2000.00"), reference="SMSWCANCEL0001", created_by=self.admin,
+        )
+
+        cancelled_tx = cancel_sms_wallet_purchase(tx.reference, tenant=self.school)
+
+        self.assertEqual(cancelled_tx.status, SmsWalletTransaction.STATUS_CANCELLED)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 100)  # unchanged from welcome credit - no credit was ever added
+
+    def test_cancel_is_a_noop_against_an_already_successful_purchase(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=200, amount=Decimal("2000.00"), reference="SMSWCANCEL0002", created_by=self.admin,
+            balance_before=100, balance_after=300,
+        )
+
+        result_tx = cancel_sms_wallet_purchase(tx.reference, tenant=self.school)
+
+        # A cancel request racing behind a webhook that already confirmed success must
+        # never clobber the successful row - onClose firing after onSuccess is a real
+        # Paystack SDK quirk this guards against.
+        self.assertEqual(result_tx.status, SmsWalletTransaction.STATUS_SUCCESS)
+
+    def test_cancel_is_a_noop_against_an_already_failed_purchase(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_FAILED,
+            credits=200, amount=Decimal("2000.00"), reference="SMSWCANCEL0003", created_by=self.admin,
+        )
+
+        result_tx = cancel_sms_wallet_purchase(tx.reference, tenant=self.school)
+
+        self.assertEqual(result_tx.status, SmsWalletTransaction.STATUS_FAILED)
+
+    def test_mark_purchase_failed_transitions_pending_to_failed(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_PENDING,
+            credits=200, amount=Decimal("2000.00"), reference="SMSWFAILED0001", created_by=self.admin,
+        )
+
+        failed_tx = mark_sms_wallet_purchase_failed(tx.reference, verification={"status": "failed"})
+
+        self.assertEqual(failed_tx.status, SmsWalletTransaction.STATUS_FAILED)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 100)  # unchanged from welcome credit
+
+    def test_mark_purchase_failed_is_a_noop_against_an_already_successful_purchase(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=200, amount=Decimal("2000.00"), reference="SMSWFAILED0002", created_by=self.admin,
+            balance_before=100, balance_after=300,
+        )
+
+        result_tx = mark_sms_wallet_purchase_failed(tx.reference)
+
+        self.assertEqual(result_tx.status, SmsWalletTransaction.STATUS_SUCCESS)
+
     def test_charge_debits_wallet_and_records_before_after(self):
         wallet = get_or_create_sms_wallet(self.school)
         wallet.balance = 100
@@ -1298,6 +1364,36 @@ class CrossTenantIsolationTests(TestCase):
         wallet_b.refresh_from_db()
         self.assertEqual(wallet_b.balance, 0)
 
+    def test_admin_cannot_cancel_another_schools_sms_purchase_via_guessed_reference(self):
+        from finance.models import SmsWallet
+        wallet_b = SmsWallet.objects.create(tenant=self.school_b, balance=0)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet_b,
+            tx_type=SmsWalletTransaction.PURCHASE,
+            status=SmsWalletTransaction.STATUS_PENDING,
+            credits=100,
+            amount=Decimal("1000.00"),
+            reference="SMSWCROSSTENANT02",
+        )
+        response = self.client.post(f"/api/finance/admin/sms-wallet/cancel/{tx.reference}/")
+        self.assertEqual(response.status_code, 404)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_PENDING)
+
+    def test_admin_cannot_see_another_schools_sms_wallet_transaction_history(self):
+        from finance.models import SmsWallet
+        wallet_b = SmsWallet.objects.create(tenant=self.school_b, balance=500)
+        SmsWalletTransaction.objects.create(
+            wallet=wallet_b, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=500, amount=Decimal("5000.00"), reference="SMSWCROSSTENANT03",
+        )
+        response = self.client.get("/api/finance/admin/sms-wallet/transactions/")
+        self.assertEqual(response.status_code, 200)
+        # Only school A's own welcome-credit transaction should appear - school B's
+        # purchase must never leak across the tenant boundary.
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["tx_type"], SmsWalletTransaction.ADMIN_CREDIT)
+
     def test_parent_cannot_see_another_familys_fee_breakdown(self):
         from academic.models import Class
         from tenants.models import Tenant as LegacyTenant
@@ -1332,6 +1428,117 @@ class CrossTenantIsolationTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class SmsWalletHistoryApiTests(TestCase):
+    """API-level coverage for the redesigned SMS Wallet: the 3-row preview, the
+    paginated/filterable history endpoint, and the cancel endpoint - all must never
+    leak the raw Paystack reference to the admin-facing transaction interface."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="SMS History School", schema_name="sms_history_school", is_active=True)
+        self.admin = User.objects.create_user(
+            email="admin@smshistory.test", password="AdminPass123", first_name="Sms", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_overview_returns_at_most_three_transactions_newest_first_without_reference(self):
+        wallet = get_or_create_sms_wallet(self.school)  # 1 welcome-credit transaction already exists
+        for index in range(4):
+            SmsWalletTransaction.objects.create(
+                wallet=wallet, tx_type=SmsWalletTransaction.DEBIT, status=SmsWalletTransaction.STATUS_SUCCESS,
+                credits=-1, balance_before=100, balance_after=99, reference=f"SMSDOVERVIEW{index:03d}",
+            )
+
+        response = self.client.get("/api/finance/admin/sms-wallet/")
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["recent_transactions"]
+        self.assertEqual(len(rows), 3)
+        for row in rows:
+            self.assertNotIn("reference", row)
+        created_dates = [row["created_at"] for row in rows]
+        self.assertEqual(created_dates, sorted(created_dates, reverse=True))
+
+    def test_transaction_history_paginates_filters_and_hides_reference(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=100, balance_before=100, balance_after=200, reference="SMSWHIST0001",
+            narration="SMS credit purchase: 100 units",
+        )
+        SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_CANCELLED,
+            credits=200, reference="SMSWHIST0002", narration="SMS credit purchase: 200 units",
+        )
+        SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.DEBIT, status=SmsWalletTransaction.STATUS_SUCCESS,
+            credits=-1, balance_before=200, balance_after=199, reference="SMSDHIST0001", narration="Bulk message",
+        )
+
+        response = self.client.get("/api/finance/admin/sms-wallet/transactions/?limit=2&page=1")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["limit"], 2)
+        self.assertEqual(response.data["page"], 1)
+        self.assertEqual(response.data["count"], 4)  # 3 created above + 1 welcome credit
+        self.assertEqual(len(response.data["results"]), 2)
+        for row in response.data["results"]:
+            self.assertNotIn("reference", row)
+
+        status_response = self.client.get("/api/finance/admin/sms-wallet/transactions/?status=cancelled")
+        self.assertEqual(status_response.data["count"], 1)
+        self.assertEqual(status_response.data["results"][0]["narration"], "SMS credit purchase: 200 units")
+
+        type_response = self.client.get("/api/finance/admin/sms-wallet/transactions/?tx_type=debit")
+        self.assertEqual(type_response.data["count"], 1)
+        self.assertEqual(type_response.data["results"][0]["tx_type"], SmsWalletTransaction.DEBIT)
+
+        search_response = self.client.get("/api/finance/admin/sms-wallet/transactions/?search=Bulk")
+        self.assertEqual(search_response.data["count"], 1)
+        self.assertEqual(search_response.data["results"][0]["narration"], "Bulk message")
+
+    def test_cancel_endpoint_transitions_pending_purchase_and_is_idempotent(self):
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_PENDING,
+            credits=100, amount=Decimal("1000.00"), reference="SMSWCANCELAPI001",
+        )
+
+        response = self.client.post(f"/api/finance/admin/sms-wallet/cancel/{tx.reference}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], SmsWalletTransaction.STATUS_CANCELLED)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_CANCELLED)
+
+        # Idempotent repeat call - still succeeds, status unchanged. (A byte-identical
+        # repeat POST within 10s is actually served by middleware.idempotency's cache
+        # rather than re-entering the view, so this checks .json() rather than DRF's
+        # .data - the view's own pending-only guard is covered directly in
+        # SmsWalletTests.test_cancel_is_a_noop_against_an_already_successful_purchase.)
+        second_response = self.client.post(f"/api/finance/admin/sms-wallet/cancel/{tx.reference}/")
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.json()["status"], SmsWalletTransaction.STATUS_CANCELLED)
+
+    def test_cancel_endpoint_rejects_non_finance_roles(self):
+        teacher = User.objects.create_user(
+            email="teacher@smshistory.test", password="TeacherPass123", first_name="Teach", last_name="Er",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_PENDING,
+            credits=100, amount=Decimal("1000.00"), reference="SMSWCANCELAPI002",
+        )
+        client = APIClient()
+        client.force_authenticate(teacher)
+
+        response = client.post(f"/api/finance/admin/sms-wallet/cancel/{tx.reference}/")
+
+        self.assertEqual(response.status_code, 403)
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_PENDING)
 
 
 class PaystackDvaReconciliationTests(TestCase):
@@ -2574,6 +2781,49 @@ class PaymentRaceConditionTests(TestCase):
         self.assertEqual(result["status"], "success")
         tx.refresh_from_db()
         self.assertEqual(tx.status, Transaction.STATUS_SUCCESS)
+
+    def test_webhook_charge_failed_marks_pending_sms_purchase_as_failed(self):
+        from finance.services import process_paystack_webhook
+
+        wallet = get_or_create_sms_wallet(self.school)
+        tx = SmsWalletTransaction.objects.create(
+            wallet=wallet, tx_type=SmsWalletTransaction.PURCHASE, status=SmsWalletTransaction.STATUS_PENDING,
+            credits=100, amount=Decimal("1000.00"), reference="SMSWWEBHOOKFAIL01",
+        )
+        webhook_payload = {
+            "event": "charge.failed",
+            "data": {"reference": tx.reference, "channel": "card", "amount": 100000, "metadata": {"type": "sms_bundle"}},
+        }
+
+        result = process_paystack_webhook(webhook_payload)
+
+        self.assertEqual(result["status"], "success")
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, SmsWalletTransaction.STATUS_FAILED)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 100)  # unchanged - only the welcome credit
+
+    def test_webhook_charge_failed_for_non_sms_bundle_events_is_still_ignored(self):
+        # Regression guard: fees, Kids Monitor, and DVA payments only ever reacted to
+        # charge.success before this change and must continue to do so - charge.failed
+        # handling is scoped narrowly to the SMS bundle purchase flow only.
+        from finance.services import process_paystack_webhook
+
+        tx = Transaction.objects.create(
+            amount=Decimal("1000.00"), tx_type=Transaction.SPLIT_PAYMENT,
+            status=Transaction.STATUS_PENDING, reference="PAYFAILEDSPLIT001",
+            paystack_ref="PAYFAILEDSPLIT001", school_id=self.school.id, parent_id=uuid.uuid4(),
+        )
+        webhook_payload = {
+            "event": "charge.failed",
+            "data": {"reference": tx.paystack_ref, "channel": "card", "amount": 100000, "metadata": {}},
+        }
+
+        result = process_paystack_webhook(webhook_payload)
+
+        self.assertEqual(result["status"], "ignored")
+        tx.refresh_from_db()
+        self.assertEqual(tx.status, Transaction.STATUS_PENDING)
 
 
 class WebhookFailClosedTests(TestCase):

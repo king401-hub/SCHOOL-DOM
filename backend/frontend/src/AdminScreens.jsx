@@ -37,6 +37,7 @@ import {
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
 import SignaturePad from "./components/SignaturePad";
+import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
 
 function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
   useEffect(() => {
@@ -108,7 +109,7 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-function CbtStatusPill({ tone = "info", children }) {
+export function CbtStatusPill({ tone = "info", children }) {
   return <span className={`cbt-status-pill tone-${tone}`}>{children}</span>;
 }
 
@@ -1201,6 +1202,60 @@ function BillSendPanel({ bill, classOptions, onLoadRecipients, onSend, onClose }
       </div>
     </div>,
     document.body
+  );
+}
+
+/* The Finance page splits into three: what the school's money looks like, what
+   the admin can do about it, and what has already happened. An action and its
+   own history are deliberately kept in separate sections - an admin looking for
+   a form should never have to scroll past a hundred-row table to reach it. */
+const FINANCE_SECTIONS = [
+  { key: "overview", label: "Overview" },
+  { key: "actions", label: "Actions" },
+  { key: "records", label: "Records" },
+];
+
+/* Each record type names the action that produces it, so the two halves stay
+   findable from each other without being interleaved on screen. */
+const FINANCE_RECORD_TABS = [
+  { key: "cash-payments", label: "Cash Payments", action: "cash-payment" },
+  { key: "bank-payments", label: "Bank Payments" },
+  { key: "student-payments", label: "Student Payments" },
+  { key: "student-fees", label: "Student Fees" },
+  { key: "class-fees", label: "Fee Schedule", action: "generate-bill" },
+  { key: "bills", label: "Bills", action: "generate-bill" },
+  { key: "transactions", label: "Transactions" },
+  { key: "token-activity", label: "Token Activity", action: "assign-tokens" },
+  { key: "token-purchases", label: "Token Purchases", action: "buy-tokens" },
+  { key: "virtual-accounts", label: "Virtual Accounts", action: "virtual-accounts" },
+  { key: "ledger", label: "Ledger Log" },
+];
+
+/* An action stays collapsed until asked for. Several of these forms are long,
+   and open-by-default is what made the page feel endless. */
+function FinanceActionCard({ id, title, description, icon, open, onToggle, children }) {
+  return (
+    <article className={`finance-action-card${open ? " is-open" : ""}`}>
+      <button
+        type="button"
+        className="finance-action-head"
+        onClick={() => onToggle(open ? "" : id)}
+        aria-expanded={open}
+        aria-controls={`finance-action-body-${id}`}
+      >
+        <span className="finance-action-icon" aria-hidden="true">
+          <DashboardIcon name={icon} className="inline-icon" />
+        </span>
+        <span className="finance-action-text">
+          <strong>{title}</strong>
+          <small>{description}</small>
+        </span>
+        <ChevronDown size={18} className="finance-action-chevron" aria-hidden="true" />
+      </button>
+      <div className="finance-action-body" id={`finance-action-body-${id}`} hidden={!open}>
+        {children}
+      </div>
+    </article>
   );
 }
 
@@ -9504,15 +9559,6 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   const [sendingReminder, setSendingReminder] = useState("");
   const [reminderFeedback, setReminderFeedback] = useState("");
 
-  // Bulk messaging state
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkChannel, setBulkChannel] = useState("sms");
-  const [bulkMessage, setBulkMessage] = useState("");
-  const [bulkTemplate, setBulkTemplate] = useState(null);
-  const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
-  const [bulkSending, setBulkSending] = useState(false);
-  const [bulkResult, setBulkResult] = useState(null);
-
   // Preload Paystack inline SDK so it's ready before the user clicks
   useEffect(() => {
     if (window.PaystackPop || !data?.paystack_public_key) return;
@@ -9576,70 +9622,6 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
     setCmConfirmParent(null);
     const result = await onChildMonitorDeactivate(parent.id);
     if (!result?.success) alert(result?.message || "Failed to deactivate.");
-  };
-
-  const buildTemplate = (tpl) => {
-    const schoolName = data?.school?.name || school?.name || "School";
-    const now = new Date();
-
-    // SMS has a 160-char budget, so it gets its own compact, single-line copy
-    // instead of the longer email/WhatsApp wording sliced mid-sentence.
-    if (bulkChannel === "sms") {
-      const shortDate = now.toLocaleDateString("en-NG", { day: "numeric", month: "short" });
-      const shortTime = now.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit", hour12: true });
-      const smsTpls = {
-        fee_reminder: `${schoolName}: School fees for your ward are outstanding. Please pay via the school portal or contact the office. Thank you.`,
-        meeting: `${schoolName}: You're invited to a parent-teacher meeting on ${shortDate} at ${shortTime}. Please endeavour to attend.`,
-        general: `${schoolName}: Important notice - please check the school portal or contact the office for details.`,
-        resumption: `${schoolName}: Reminder - school resumes on ${shortDate}. Kindly ensure your ward is present. Thank you.`,
-      };
-      return (smsTpls[tpl] || smsTpls.general).slice(0, 160);
-    }
-
-    const date = now.toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-    const time = now.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: true });
-    const tpls = {
-      fee_reminder: `Dear Parent,\n\n${schoolName} reminds you that your ward's school fees are currently outstanding. Kindly ensure payment is made promptly.\n\nFor payment details, please log in to the school portal or contact the school office.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName} Administration`,
-      meeting: `Dear Parent,\n\n${schoolName} invites you to an important parent-teacher meeting.\n\nDate: ${date}\nTime: ${time}\n\nPlease endeavour to attend.\n\n— ${schoolName} Administration`,
-      general: `Dear Parent,\n\n${schoolName} has an important announcement for you. Please visit the school office or check the school portal for further details.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName}`,
-      resumption: `Dear Parent,\n\n${schoolName} wishes to remind you that resumption for the new term is scheduled. Kindly ensure your ward is in school on the appropriate date.\n\nDate: ${date}\n\n— ${schoolName} Administration`,
-    };
-    return tpls[tpl] || tpls.general;
-  };
-
-  const handleBulkSelectToggle = (parentUserId) => {
-    setBulkSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(parentUserId)) { next.delete(parentUserId); } else { next.add(parentUserId); }
-      return next;
-    });
-  };
-
-  const handleBulkSelectAll = () => {
-    setBulkSelectedIds((prev) =>
-      prev.size === filteredParents.length
-        ? new Set()
-        : new Set(filteredParents.map((p) => p.user_id))
-    );
-  };
-
-  const handleBulkSend = async () => {
-    if (bulkSelectedIds.size === 0 || !bulkMessage.trim()) return;
-    setBulkSending(true);
-    setBulkResult(null);
-    try {
-      const result = await requestJson(session, "POST", "/api/finance/admin/parents/bulk-message/", {
-        parent_ids: Array.from(bulkSelectedIds),
-        channel: bulkChannel,
-        message: bulkMessage,
-        personalize: bulkTemplate === "fee_reminder",
-      });
-      setBulkResult(result);
-    } catch (err) {
-      setBulkResult({ success: false, message: err.message || "Could not send." });
-    } finally {
-      setBulkSending(false);
-    }
   };
 
   const buildEditForm = (parent) => ({
@@ -9880,252 +9862,59 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
             </article>
           ) : null}
 
-          {/* Bulk Messaging Panel */}
-          <article className="app-panel" style={{ borderLeft: bulkOpen ? "4px solid #6366f1" : undefined }}>
-            <div className="bulk-panel-header">
-              <h3>Bulk Message</h3>
-              <button
-                type="button"
-                className={`table-action${bulkOpen ? " active" : ""}`}
-                style={bulkOpen ? { background: "#6366f1", color: "#fff", borderColor: "#6366f1" } : undefined}
-                onClick={() => { setBulkOpen((p) => !p); setBulkResult(null); if (bulkOpen) setBulkSelectedIds(new Set()); }}
-              >
-                {bulkOpen ? "Close Bulk Message" : "Open Bulk Message"}
-              </button>
-            </div>
-
-            {bulkOpen ? (
-              <div className="bulk-panel-body">
-                {/* Channel picker */}
-                <div className="bulk-channel-row">
-                  {[["sms", "SMS"], ["whatsapp", "WhatsApp"], ["email", "Email"]].map(([val, label]) => (
+          <ParentDirectoryTable
+            parents={filteredParents}
+            groupLabels={groupLabels}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            emptyMessage={searchTerm ? "No parents match your filter." : "No parents found yet. Creating a student with a guardian phone will add one here."}
+            renderChildMonitorCell={(parent) => (
+              <div className="km-toggle-cell">
+                {parent.child_monitor_active ? (
+                  <>
+                    <span className="km-badge km-badge--active">Active</span>
+                    {parent.child_monitor_expires_at ? (
+                      <small style={{ color: "#94a3b8" }}>
+                        Renews {new Date(parent.child_monitor_expires_at).toLocaleDateString()}
+                      </small>
+                    ) : null}
                     <button
-                      key={val}
                       type="button"
-                      className={`bulk-channel-btn${bulkChannel === val ? " active" : ""}`}
-                      onClick={() => {
-                        setBulkChannel(val);
-                        if (val === "sms") setBulkMessage((prev) => prev.slice(0, 160));
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Template picker */}
-                <div className="bulk-template-row">
-                  <span className="bulk-template-label">Templates:</span>
-                  {[["fee_reminder", "Fee Reminder"], ["meeting", "Meeting Notice"], ["general", "General Notice"], ["resumption", "Resumption Reminder"]].map(([tpl, lbl]) => (
-                    <button
-                      key={tpl}
-                      type="button"
-                      className="bulk-template-btn"
-                      onClick={() => {
-                        const text = buildTemplate(tpl);
-                        setBulkMessage(bulkChannel === "sms" ? text.slice(0, 160) : text);
-                        setBulkTemplate(tpl);
-                      }}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Message textarea */}
-                <label className="bulk-message-label">
-                  Message<span className="bulk-message-hint">(school name, date &amp; time are pre-filled in templates)</span>
-                  <textarea
-                    className="bulk-message-field"
-                    rows={6}
-                    value={bulkMessage}
-                    onChange={(e) => {
-                      setBulkMessage(bulkChannel === "sms" ? e.target.value.slice(0, 160) : e.target.value);
-                      setBulkTemplate(null);
-                    }}
-                    maxLength={bulkChannel === "sms" ? 160 : undefined}
-                    placeholder="Type your message or pick a template above…"
-                  />
-                  {bulkChannel === "sms" && (
-                    <span className={`bulk-sms-counter${bulkMessage.length >= 160 ? " bulk-sms-counter--limit" : ""}`}>
-                      {bulkMessage.length}/160 characters (SMS limit)
-                    </span>
-                  )}
-                  {bulkTemplate === "fee_reminder" && (
-                    <span className="bulk-message-hint">
-                      Each parent will get their own children's names, outstanding balance, and payment account instead of this preview text.
-                    </span>
-                  )}
-                </label>
-
-                {/* Select controls + send */}
-                <div className="bulk-controls-row">
-                  <label className="bulk-select-label">
-                    <input
-                      type="checkbox"
-                      checked={filteredParents.length > 0 && bulkSelectedIds.size === filteredParents.length}
-                      onChange={handleBulkSelectAll}
-                    />
-                    Select all ({filteredParents.length})
-                  </label>
-                  <span className="bulk-selected-count">{bulkSelectedIds.size} selected</span>
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={() => setCmConfirmParent(parent)}
+                    >Off</button>
+                  </>
+                ) : (
                   <button
                     type="button"
-                    className="table-action"
-                    style={{ background: "#6366f1", color: "#fff", borderColor: "#6366f1", opacity: bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim() ? 0.45 : 1 }}
-                    disabled={bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim()}
-                    onClick={handleBulkSend}
+                    className={`btn btn-sm btn-primary km-enable-btn${cmPaying === parent.id ? " loading" : ""}`}
+                    onClick={() => handleChildMonitorEnable(parent)}
+                    disabled={cmPaying === parent.id || !parent.phone || !data.paystack_public_key}
+                    title={!parent.phone ? "Parent has no phone number on file" : ""}
                   >
-                    {bulkSending ? "Sending…" : `Send ${bulkChannel.toUpperCase()} to ${bulkSelectedIds.size}`}
+                    {cmPaying === parent.id ? "Processing…" : `Enable — ₦${((parent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()}`}
                   </button>
-                  {bulkSelectedIds.size > 0 && (
-                    <button type="button" className="table-action" onClick={() => setBulkSelectedIds(new Set())}>
-                      Clear selection
-                    </button>
-                  )}
-                </div>
-
-                {/* Result feedback */}
-                {bulkResult && (
-                  <div className={`bulk-result ${bulkResult.success ? "success" : "error"}`}>
-                    {bulkResult.success
-                      ? `Sent to ${bulkResult.sent} parent${bulkResult.sent !== 1 ? "s" : ""}${bulkResult.failed > 0 ? `, ${bulkResult.failed} failed` : ""}${bulkResult.skipped > 0 ? `, ${bulkResult.skipped} skipped (no outstanding balance)` : ""}.`
-                      : bulkResult.message || "Send failed."}
-                    {bulkResult.errors?.length > 0 && (
-                      <ul>{bulkResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                    )}
-                  </div>
                 )}
               </div>
-            ) : (
-              <p className="field-note" style={{ margin: "0.4rem 0 0" }}>
-                Send SMS, WhatsApp, or Email to selected parents at once with school-branded templates.
-              </p>
             )}
-          </article>
-
-          <article className="app-panel">
-            <h3>Directory</h3>
-            <div className="directory-tools">
-              <label className="panel-field full search-field">
-                Search by parent, phone, email, or student
-                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Example: 0803 or Amina" />
-              </label>
-            </div>
-            {filteredParents.length > 0 ? (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {bulkOpen ? (
-                      <th style={{ width: "2.5rem", textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          title="Select all visible"
-                          checked={filteredParents.length > 0 && bulkSelectedIds.size === filteredParents.length}
-                          onChange={handleBulkSelectAll}
-                        />
-                      </th>
-                    ) : null}
-                    <th>Parent</th>
-                    <th>Phone</th>
-                    <th>Email</th>
-                    <th>Ward(s)</th>
-                    <th>Virtual Account</th>
-                    <th>Child Monitor</th>
-                    <th>Contact</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredParents.map((parent) => (
-                    <tr key={parent.id} className={bulkSelectedIds.has(parent.user_id) ? "bulk-row-selected" : undefined}>
-                      {bulkOpen ? (
-                        <td style={{ textAlign: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={bulkSelectedIds.has(parent.user_id)}
-                            onChange={() => handleBulkSelectToggle(parent.user_id)}
-                          />
-                        </td>
-                      ) : null}
-                      <td>{parent.name || "Parent"}<br /><small>{parent.is_active ? "Active" : "Inactive"}</small></td>
-                      <td>{parent.phone || "-"}</td>
-                      <td>{parent.email || "-"}</td>
-                      <td>
-                        {(parent.children || []).length ? (
-                          (parent.children || []).map((child) => (
-                            <small key={child.id} style={{ display: "block" }}>{child.name} — {child.student_id} — {child.class_name || groupLabels.unassigned}</small>
-                          ))
-                        ) : (
-                          <small>No ward linked</small>
-                        )}
-                      </td>
-                      <td>
-                        {parent.virtual_account ? (
-                          <>
-                            <strong style={{ fontSize: "0.85rem", letterSpacing: "0.05em" }}>{parent.virtual_account.account_number}</strong>
-                            <br />
-                            <small style={{ color: "#64748b" }}>{parent.virtual_account.bank_name}</small>
-                          </>
-                        ) : (
-                          <small style={{ color: "#94a3b8" }}>Not assigned</small>
-                        )}
-                      </td>
-                      <td>
-                        <div className="km-toggle-cell">
-                          {parent.child_monitor_active ? (
-                            <>
-                              <span className="km-badge km-badge--active">Active</span>
-                              {parent.child_monitor_expires_at ? (
-                                <small style={{ color: "#94a3b8" }}>
-                                  Renews {new Date(parent.child_monitor_expires_at).toLocaleDateString()}
-                                </small>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => setCmConfirmParent(parent)}
-                              >Off</button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className={`btn btn-sm btn-primary km-enable-btn${cmPaying === parent.id ? " loading" : ""}`}
-                              onClick={() => handleChildMonitorEnable(parent)}
-                              disabled={cmPaying === parent.id || !parent.phone || !data.paystack_public_key}
-                              title={!parent.phone ? "Parent has no phone number on file" : ""}
-                            >
-                              {cmPaying === parent.id ? "Processing…" : `Enable — ₦${((parent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()}`}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td>{parent.preferred_contact || "email"}</td>
-                      <td>
-                        <div className="table-actions-inline">
-                          <button type="button" className="table-action" onClick={() => handleStartEdit(parent)}>Edit</button>
-                          <button
-                            type="button"
-                            className="table-action"
-                            title="Send WhatsApp/SMS fee reminder"
-                            onClick={() => handleSendReminder(parent.user_id)}
-                            disabled={sendingReminder === parent.user_id || !parent.phone}
-                          >
-                            {sendingReminder === parent.user_id ? "Sending…" : "Remind"}
-                          </button>
-                          <button type="button" className="table-action danger" onClick={() => setPendingDeleteParent(parent)} disabled={deletingParentId === parent.id}>
-                            {deletingParentId === parent.id ? "Deleting..." : "Delete"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="panel-empty">{searchTerm ? "No parents match your filter." : "No parents found yet. Creating a student with a guardian phone will add one here."}</p>
+            actionsColumn={(parent) => (
+              <div className="table-actions-inline">
+                <button type="button" className="table-action" onClick={() => handleStartEdit(parent)}>Edit</button>
+                <button
+                  type="button"
+                  className="table-action"
+                  title="Send WhatsApp/SMS fee reminder"
+                  onClick={() => handleSendReminder(parent.user_id)}
+                  disabled={sendingReminder === parent.user_id || !parent.phone}
+                >
+                  {sendingReminder === parent.user_id ? "Sending…" : "Remind"}
+                </button>
+                <button type="button" className="table-action danger" onClick={() => setPendingDeleteParent(parent)} disabled={deletingParentId === parent.id}>
+                  {deletingParentId === parent.id ? "Deleting..." : "Delete"}
+                </button>
+              </div>
             )}
-          </article>
+          />
 
           {reminderFeedback ? (
             <div className="student-delete-success" role="status" aria-live="polite">
@@ -10358,12 +10147,322 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   );
 }
 
-function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase }) {
+function ParentDirectoryTable({
+  parents,
+  groupLabels,
+  searchTerm,
+  onSearchChange,
+  selection,
+  actionsColumn,
+  renderChildMonitorCell,
+  title = "Directory",
+  searchLabel = "Search by parent, phone, email, or student",
+  searchPlaceholder = "Example: 0803 or Amina",
+  emptyMessage,
+}) {
+  const allSelected = Boolean(selection) && parents.length > 0 && selection.selectedIds.size === parents.length;
+  return (
+    <article className="app-panel">
+      <h3>{title}</h3>
+      <div className="directory-tools">
+        <label className="panel-field full search-field">
+          {searchLabel}
+          <input value={searchTerm} onChange={(event) => onSearchChange(event.target.value)} placeholder={searchPlaceholder} />
+        </label>
+      </div>
+      {parents.length > 0 ? (
+        <table className="data-table">
+          <thead>
+            <tr>
+              {selection ? (
+                <th style={{ width: "2.5rem", textAlign: "center" }}>
+                  <input type="checkbox" title="Select all visible" checked={allSelected} onChange={selection.onSelectAll} />
+                </th>
+              ) : null}
+              <th>Parent</th>
+              <th>Phone</th>
+              <th>Email</th>
+              <th>Ward(s)</th>
+              <th>Virtual Account</th>
+              <th>Child Monitor</th>
+              <th>Contact</th>
+              {actionsColumn ? <th>Actions</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {parents.map((parent) => (
+              <tr key={parent.id} className={selection?.selectedIds.has(parent.user_id) ? "bulk-row-selected" : undefined}>
+                {selection ? (
+                  <td style={{ textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={selection.selectedIds.has(parent.user_id)}
+                      onChange={() => selection.onToggle(parent.user_id)}
+                    />
+                  </td>
+                ) : null}
+                <td>{parent.name || "Parent"}<br /><small>{parent.is_active ? "Active" : "Inactive"}</small></td>
+                <td>{parent.phone || "-"}</td>
+                <td>{parent.email || "-"}</td>
+                <td>
+                  {(parent.children || []).length ? (
+                    (parent.children || []).map((child) => (
+                      <small key={child.id} style={{ display: "block" }}>{child.name} — {child.student_id} — {child.class_name || groupLabels.unassigned}</small>
+                    ))
+                  ) : (
+                    <small>No ward linked</small>
+                  )}
+                </td>
+                <td>
+                  {parent.virtual_account ? (
+                    <>
+                      <strong style={{ fontSize: "0.85rem", letterSpacing: "0.05em" }}>{parent.virtual_account.account_number}</strong>
+                      <br />
+                      <small style={{ color: "#64748b" }}>{parent.virtual_account.bank_name}</small>
+                    </>
+                  ) : (
+                    <small style={{ color: "#94a3b8" }}>Not assigned</small>
+                  )}
+                </td>
+                <td>
+                  {renderChildMonitorCell ? renderChildMonitorCell(parent) : (
+                    <div className="km-toggle-cell">
+                      {parent.child_monitor_active ? (
+                        <span className="km-badge km-badge--active">Active</span>
+                      ) : (
+                        <small style={{ color: "#94a3b8" }}>Not enabled</small>
+                      )}
+                    </div>
+                  )}
+                </td>
+                <td>{parent.preferred_contact || "email"}</td>
+                {actionsColumn ? <td>{actionsColumn(parent)}</td> : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="panel-empty">{emptyMessage || (searchTerm ? "No parents match your filter." : "No parents found yet.")}</p>
+      )}
+    </article>
+  );
+}
+
+function BulkMessagingPanel({ session, school, schoolData, parents }) {
+  const groupLabels = academicGroupLabels(schoolData?.school, school);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [bulkChannel, setBulkChannel] = useState("sms");
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [bulkTemplate, setBulkTemplate] = useState(null);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+
+  const filteredParents = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return parents;
+    return parents.filter((item) => {
+      const childrenText = (item.children || []).map((child) => `${child.name} ${child.student_id}`).join(" ");
+      const haystack = [item.name, item.email, item.phone, childrenText].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [parents, searchTerm]);
+
+  const buildTemplate = (tpl) => {
+    const schoolName = schoolData?.school?.name || school?.name || "School";
+    const now = new Date();
+
+    // SMS has a 160-char budget, so it gets its own compact, single-line copy
+    // instead of the longer email/WhatsApp wording sliced mid-sentence.
+    if (bulkChannel === "sms") {
+      const shortDate = now.toLocaleDateString("en-NG", { day: "numeric", month: "short" });
+      const shortTime = now.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit", hour12: true });
+      const smsTpls = {
+        fee_reminder: `${schoolName}: School fees for your ward are outstanding. Please pay via the school portal or contact the office. Thank you.`,
+        meeting: `${schoolName}: You're invited to a parent-teacher meeting on ${shortDate} at ${shortTime}. Please endeavour to attend.`,
+        general: `${schoolName}: Important notice - please check the school portal or contact the office for details.`,
+        resumption: `${schoolName}: Reminder - school resumes on ${shortDate}. Kindly ensure your ward is present. Thank you.`,
+      };
+      return (smsTpls[tpl] || smsTpls.general).slice(0, 160);
+    }
+
+    const date = now.toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const time = now.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const tpls = {
+      fee_reminder: `Dear Parent,\n\n${schoolName} reminds you that your ward's school fees are currently outstanding. Kindly ensure payment is made promptly.\n\nFor payment details, please log in to the school portal or contact the school office.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName} Administration`,
+      meeting: `Dear Parent,\n\n${schoolName} invites you to an important parent-teacher meeting.\n\nDate: ${date}\nTime: ${time}\n\nPlease endeavour to attend.\n\n— ${schoolName} Administration`,
+      general: `Dear Parent,\n\n${schoolName} has an important announcement for you. Please visit the school office or check the school portal for further details.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName}`,
+      resumption: `Dear Parent,\n\n${schoolName} wishes to remind you that resumption for the new term is scheduled. Kindly ensure your ward is in school on the appropriate date.\n\nDate: ${date}\n\n— ${schoolName} Administration`,
+    };
+    return tpls[tpl] || tpls.general;
+  };
+
+  const handleBulkSelectToggle = (parentUserId) => {
+    setBulkSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentUserId)) { next.delete(parentUserId); } else { next.add(parentUserId); }
+      return next;
+    });
+  };
+
+  const handleBulkSelectAll = () => {
+    setBulkSelectedIds((prev) =>
+      prev.size === filteredParents.length
+        ? new Set()
+        : new Set(filteredParents.map((p) => p.user_id))
+    );
+  };
+
+  const handleBulkSend = async () => {
+    if (bulkSelectedIds.size === 0 || !bulkMessage.trim()) return;
+    setBulkSending(true);
+    setBulkResult(null);
+    try {
+      const result = await requestJson(session, "POST", "/api/finance/admin/parents/bulk-message/", {
+        parent_ids: Array.from(bulkSelectedIds),
+        channel: bulkChannel,
+        message: bulkMessage,
+        personalize: bulkTemplate === "fee_reminder",
+      });
+      setBulkResult(result);
+    } catch (err) {
+      setBulkResult({ success: false, message: err.message || "Could not send." });
+    } finally {
+      setBulkSending(false);
+    }
+  };
+
+  return (
+    <>
+    <article className="app-panel">
+      <div className="bulk-panel-header">
+        <h3>Bulk Message</h3>
+      </div>
+      <div className="bulk-panel-body">
+        {/* Channel picker */}
+        <div className="bulk-channel-row">
+          {[["sms", "SMS"], ["whatsapp", "WhatsApp"], ["email", "Email"]].map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              className={`bulk-channel-btn${bulkChannel === val ? " active" : ""}`}
+              onClick={() => {
+                setBulkChannel(val);
+                if (val === "sms") setBulkMessage((prev) => prev.slice(0, 160));
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Template picker */}
+        <div className="bulk-template-row">
+          <span className="bulk-template-label">Templates:</span>
+          {[["fee_reminder", "Fee Reminder"], ["meeting", "Meeting Notice"], ["general", "General Notice"], ["resumption", "Resumption Reminder"]].map(([tpl, lbl]) => (
+            <button
+              key={tpl}
+              type="button"
+              className="bulk-template-btn"
+              onClick={() => {
+                const text = buildTemplate(tpl);
+                setBulkMessage(bulkChannel === "sms" ? text.slice(0, 160) : text);
+                setBulkTemplate(tpl);
+              }}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {/* Message textarea */}
+        <label className="bulk-message-label">
+          Message<span className="bulk-message-hint">(school name, date &amp; time are pre-filled in templates)</span>
+          <textarea
+            className="bulk-message-field"
+            rows={6}
+            value={bulkMessage}
+            onChange={(e) => {
+              setBulkMessage(bulkChannel === "sms" ? e.target.value.slice(0, 160) : e.target.value);
+              setBulkTemplate(null);
+            }}
+            maxLength={bulkChannel === "sms" ? 160 : undefined}
+            placeholder="Type your message or pick a template above…"
+          />
+          {bulkChannel === "sms" && (
+            <span className={`bulk-sms-counter${bulkMessage.length >= 160 ? " bulk-sms-counter--limit" : ""}`}>
+              {bulkMessage.length}/160 characters (SMS limit)
+            </span>
+          )}
+          {bulkTemplate === "fee_reminder" && (
+            <span className="bulk-message-hint">
+              Each parent will get their own children's names, outstanding balance, and payment account instead of this preview text.
+            </span>
+          )}
+        </label>
+
+        {/* Select controls + send */}
+        <div className="bulk-controls-row">
+          <label className="bulk-select-label">
+            <input
+              type="checkbox"
+              checked={filteredParents.length > 0 && bulkSelectedIds.size === filteredParents.length}
+              onChange={handleBulkSelectAll}
+            />
+            Select all ({filteredParents.length})
+          </label>
+          <span className="bulk-selected-count">{bulkSelectedIds.size} selected</span>
+          <button
+            type="button"
+            className="table-action"
+            style={{ background: "#6366f1", color: "#fff", borderColor: "#6366f1", opacity: bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim() ? 0.45 : 1 }}
+            disabled={bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim()}
+            onClick={handleBulkSend}
+          >
+            {bulkSending ? "Sending…" : `Send ${bulkChannel.toUpperCase()} to ${bulkSelectedIds.size}`}
+          </button>
+          {bulkSelectedIds.size > 0 && (
+            <button type="button" className="table-action" onClick={() => setBulkSelectedIds(new Set())}>
+              Clear selection
+            </button>
+          )}
+        </div>
+
+        {/* Result feedback */}
+        {bulkResult && (
+          <div className={`bulk-result ${bulkResult.success ? "success" : "error"}`}>
+            {bulkResult.success
+              ? `Sent to ${bulkResult.sent} parent${bulkResult.sent !== 1 ? "s" : ""}${bulkResult.failed > 0 ? `, ${bulkResult.failed} failed` : ""}${bulkResult.skipped > 0 ? `, ${bulkResult.skipped} skipped (no outstanding balance)` : ""}.`
+              : bulkResult.message || "Send failed."}
+            {bulkResult.errors?.length > 0 && (
+              <ul>{bulkResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
+
+      <ParentDirectoryTable
+        parents={filteredParents}
+        groupLabels={groupLabels}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        title="Recipients"
+        searchLabel="Search recipients by parent, phone, email, or student"
+        selection={{ selectedIds: bulkSelectedIds, onToggle: handleBulkSelectToggle, onSelectAll: handleBulkSelectAll }}
+      />
+    </>
+  );
+}
+
+function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData }) {
   const pricing = data?.unit_pricing || { block_size: 100, block_price: "1000.00", minimum_units: 100, currency: "NGN" };
   const blockSize = pricing.block_size || 100;
   const blockPrice = Number(pricing.block_price || 1000);
   const [units, setUnits] = useState(blockSize);
   const [paying, setPaying] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const paidRef = useRef(false);
 
   useEffect(() => {
     if (window.PaystackPop || !data?.paystack_public_key) return;
@@ -10399,10 +10498,12 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
     }
     if (!window.PaystackPop) { alert("Payment system unavailable. Try again."); return; }
     setPaying(true);
+    paidRef.current = false;
     try {
       const result = await onPurchase(units);
       if (!result?.success) { alert(result?.message || "Failed to initiate purchase."); return; }
       const verifyPayment = (tx) => {
+        paidRef.current = true;
         const ref = tx?.reference || result.reference;
         onVerifyPurchase(ref).then((verifyResult) => {
           if (!verifyResult?.success) alert(verifyResult?.message || "Payment verification failed. Contact support.");
@@ -10416,7 +10517,12 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
         // Paystack inline v1 fires `callback`; keep onSuccess for v2 compatibility.
         callback: verifyPayment,
         onSuccess: verifyPayment,
-        onClose: () => {},
+        onClose: () => {
+          // Some Paystack SDK versions call onClose even after a successful
+          // charge - only treat this as a cancellation if onSuccess never fired.
+          if (paidRef.current) return;
+          onCancelPurchase?.(result.reference).catch(() => {});
+        },
         onCancel: () => {},
       });
       handler.openIframe();
@@ -10444,7 +10550,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
         <>
           <div className="metric-grid">
             <MetricCard label="SMS Credits" value={wallet.balance ?? 0} helper={wallet.is_locked ? "Wallet locked" : "Available to send"} />
-            <MetricCard label="Recent Purchases" value={transactions.filter((t) => t.tx_type === "purchase").length} helper="Last 20 transactions" />
+            <MetricCard label="Recent Purchases" value={transactions.filter((t) => t.tx_type === "purchase").length} helper="Recent activity" />
           </div>
 
           {lowBalance ? (
@@ -10452,6 +10558,8 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
               SMS credits are running low. Buy more below to avoid interrupted alerts.
             </div>
           ) : null}
+
+          <BulkMessagingPanel session={session} school={school} schoolData={data} parents={parentsData?.parents || []} />
 
           <article className="app-panel cm-pricing-card">
             <h3>Buy SMS Credits</h3>
@@ -10494,36 +10602,47 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
           <article className="app-panel">
             <h3>Recent Transactions</h3>
             {transactions.length > 0 ? (
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Reference</th>
-                      <th>Type</th>
-                      <th>Credits</th>
-                      <th>Balance After</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((tx) => (
-                      <tr key={tx.id}>
-                        <td>{tx.reference}</td>
-                        <td style={{ textTransform: "capitalize" }}>{tx.tx_type}</td>
-                        <td>{tx.credits > 0 ? `+${tx.credits}` : tx.credits}</td>
-                        <td>{tx.balance_after ?? "—"}</td>
-                        <td>{tx.created_at ? new Date(tx.created_at).toLocaleString() : ""}</td>
+              <>
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Narration</th>
+                        <th>Status</th>
+                        <th>Credits</th>
+                        <th>Balance After</th>
+                        <th>Date</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {transactions.map((tx) => (
+                        <tr key={tx.id}>
+                          <td style={{ textTransform: "capitalize" }}>{tx.tx_type}</td>
+                          <td>{tx.narration || "-"}</td>
+                          <td><SmsWalletStatusPill status={tx.status} /></td>
+                          <td>{tx.credits > 0 ? `+${tx.credits}` : tx.credits}</td>
+                          <td>{tx.balance_after ?? "—"}</td>
+                          <td>{tx.created_at ? new Date(tx.created_at).toLocaleString() : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="panel-form-actions" style={{ marginTop: "0.75rem" }}>
+                  <button type="button" className="btn-secondary" onClick={() => setHistoryOpen(true)}>
+                    View More
+                  </button>
+                </div>
+              </>
             ) : (
               <p className="panel-empty compact">No SMS wallet activity yet.</p>
             )}
           </article>
         </>
       ) : null}
+
+      {historyOpen ? <SmsTransactionHistoryModal session={session} onClose={() => setHistoryOpen(false)} /> : null}
     </section>
   );
 }

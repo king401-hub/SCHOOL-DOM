@@ -1163,10 +1163,12 @@ class SmsWalletTransaction(models.Model):
     STATUS_PENDING = "pending"
     STATUS_SUCCESS = "successful"
     STATUS_FAILED = "failed"
+    STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_SUCCESS, "Successful"),
         (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELLED, "Cancelled"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

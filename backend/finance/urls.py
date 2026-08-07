@@ -81,6 +81,8 @@ urlpatterns = [
     path("admin/sms-wallet/", views.sms_wallet_overview, name="sms_wallet_overview"),
     path("admin/sms-wallet/purchase/", views.sms_wallet_purchase, name="sms_wallet_purchase"),
     path("admin/sms-wallet/verify/<str:reference>/", views.sms_wallet_verify, name="sms_wallet_verify"),
+    path("admin/sms-wallet/transactions/", views.sms_wallet_transaction_history, name="sms_wallet_transaction_history"),
+    path("admin/sms-wallet/cancel/<str:reference>/", views.sms_wallet_cancel, name="sms_wallet_cancel"),
 
     # ============================================================
     # EXISTING ADMIN ENDPOINTS

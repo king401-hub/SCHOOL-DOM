@@ -128,6 +128,7 @@ from finance.services import (
     get_or_create_sms_wallet,
     initialize_sms_credit_purchase,
     credit_sms_wallet_from_purchase,
+    cancel_sms_wallet_purchase,
     InsufficientSmsCreditsError,
     SmsWalletLockedError,
     SMS_UNIT_BLOCK_SIZE,
@@ -3656,6 +3657,15 @@ def _sms_wallet_transaction_payload(tx):
     }
 
 
+def _sms_wallet_transaction_list_payload(tx):
+    """Same as _sms_wallet_transaction_payload but with the raw Paystack reference
+    stripped - used for every response that feeds a user-facing transaction list.
+    The reference stays available server-side (Django admin) for reconciliation."""
+    payload = _sms_wallet_transaction_payload(tx)
+    payload.pop("reference", None)
+    return payload
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def sms_wallet_overview(request):
@@ -3667,7 +3677,7 @@ def sms_wallet_overview(request):
         return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
 
     wallet = get_or_create_sms_wallet(user.tenant)
-    recent_transactions = wallet.transactions.all()[:20]
+    recent_transactions = wallet.transactions.all()[:3]
 
     return Response({
         "success": True,
@@ -3682,9 +3692,85 @@ def sms_wallet_overview(request):
             "minimum_units": SMS_UNIT_BLOCK_SIZE,
             "currency": SMS_UNIT_CURRENCY,
         },
-        "recent_transactions": [_sms_wallet_transaction_payload(tx) for tx in recent_transactions],
+        "recent_transactions": [_sms_wallet_transaction_list_payload(tx) for tx in recent_transactions],
         "paystack_public_key": getattr(settings, "PAYSTACK_PUBLIC_KEY", ""),
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sms_wallet_transaction_history(request):
+    """Paginated, searchable, filterable SMS wallet transaction history for the
+    'View More' modal. Query: ?page=1&limit=20&status=successful&tx_type=purchase&
+    search=...&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD"""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    wallet = get_or_create_sms_wallet(user.tenant)
+    qs = wallet.transactions.all()
+
+    status_filter = str(request.query_params.get("status") or "").strip()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    type_filter = str(request.query_params.get("tx_type") or "").strip()
+    if type_filter:
+        qs = qs.filter(tx_type=type_filter)
+    search = str(request.query_params.get("search") or "").strip()
+    if search:
+        qs = qs.filter(narration__icontains=search)
+    start_date = request.query_params.get("start_date")
+    if start_date:
+        qs = qs.filter(created_at__date__gte=start_date)
+    end_date = request.query_params.get("end_date")
+    if end_date:
+        qs = qs.filter(created_at__date__lte=end_date)
+
+    try:
+        limit = max(1, min(int(request.query_params.get("limit") or 20), 100))
+        page = max(1, int(request.query_params.get("page") or 1))
+    except (ValueError, TypeError):
+        limit, page = 20, 1
+
+    offset = (page - 1) * limit
+    total = qs.count()
+    transactions = qs[offset: offset + limit]
+
+    return Response({
+        "success": True,
+        "count": total,
+        "page": page,
+        "limit": limit,
+        "results": [_sms_wallet_transaction_list_payload(tx) for tx in transactions],
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def sms_wallet_cancel(request, reference):
+    """Mark a pending SMS bundle purchase as cancelled (Paystack popup closed without
+    paying). No-op if the transaction already resolved to successful/failed/cancelled."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        tx_lookup = SmsWalletTransaction.objects.select_related("wallet").get(reference=reference)
+    except SmsWalletTransaction.DoesNotExist:
+        return Response({"success": False, "message": "Purchase reference not found."}, status=status.HTTP_404_NOT_FOUND)
+    if tx_lookup.wallet.tenant_id != user.tenant_id:
+        return Response({"success": False, "message": "Purchase reference not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        tx = cancel_sms_wallet_purchase(reference, tenant=user.tenant)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({"success": True, "status": tx.status})
 
 
 @api_view(["POST"])

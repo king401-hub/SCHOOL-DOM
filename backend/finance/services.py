@@ -1448,13 +1448,27 @@ def process_paystack_webhook(data: dict) -> dict:
     """
     event = data.get('event')
 
-    if event != 'charge.success':
+    if event not in ('charge.success', 'charge.failed'):
         return {'status': 'ignored', 'event': event}
 
     transaction_data = data.get('data', {})
     reference = transaction_data.get('reference')
     channel = transaction_data.get('channel', '')
     metadata = transaction_data.get('metadata') or {}
+
+    if event == 'charge.failed':
+        # Only the SMS bundle purchase flow reacts automatically to a reported failure
+        # today - every other payment type (fees, Kids Monitor, DVA) only ever reacted to
+        # charge.success before this change and continues to do so, to avoid altering
+        # behavior this feature wasn't asked to touch.
+        if metadata.get('type') == 'sms_bundle' or str(reference or '').startswith('SMSW'):
+            try:
+                mark_sms_wallet_purchase_failed(reference, verification=transaction_data)
+                return {'status': 'success', 'type': 'sms_bundle', 'reference': reference}
+            except Exception as exc:
+                logger.warning("SMS bundle charge.failed webhook %s: %s", reference, exc)
+                return {'status': 'ignored', 'type': 'sms_bundle', 'reference': reference}
+        return {'status': 'ignored', 'event': event}
 
     # Kids/Child Monitor subscription payment — activate even if the browser
     # popup callback never fired (closed tab, network drop, etc.)
@@ -2561,6 +2575,43 @@ def credit_sms_wallet_from_purchase(reference, verification: Optional[dict] = No
         amount=tx.amount,
         reference=reference,
     )
+    tx.refresh_from_db()
+    return tx
+
+
+def cancel_sms_wallet_purchase(reference, tenant=None) -> SmsWalletTransaction:
+    """Mark a pending SMS bundle purchase as cancelled (admin closed the Paystack popup
+    without paying). Only ever transitions pending -> cancelled; a no-op if the payment
+    already resolved to successful/failed/cancelled via the verify call or the webhook."""
+    tx = SmsWalletTransaction.objects.select_related("wallet").get(reference=reference)
+    if tx.tx_type != SmsWalletTransaction.PURCHASE:
+        raise ValueError("Invalid SMS bundle purchase reference.")
+    if tenant is not None and tx.wallet.tenant_id != getattr(tenant, "id", tenant):
+        raise ValueError("Purchase reference not found.")
+
+    with transaction.atomic():
+        locked_tx = SmsWalletTransaction.objects.select_for_update().get(pk=tx.pk)
+        if locked_tx.status == SmsWalletTransaction.STATUS_PENDING:
+            locked_tx.status = SmsWalletTransaction.STATUS_CANCELLED
+            locked_tx.save(update_fields=["status"])
+    tx.refresh_from_db()
+    return tx
+
+
+def mark_sms_wallet_purchase_failed(reference, verification: Optional[dict] = None) -> SmsWalletTransaction:
+    """Mark a pending SMS bundle purchase as failed (Paystack reported the charge did not
+    succeed). Only ever transitions pending -> failed; a no-op if the payment already
+    resolved some other way."""
+    tx = SmsWalletTransaction.objects.select_related("wallet").get(reference=reference)
+    if tx.tx_type != SmsWalletTransaction.PURCHASE:
+        raise ValueError("Invalid SMS bundle purchase reference.")
+
+    with transaction.atomic():
+        locked_tx = SmsWalletTransaction.objects.select_for_update().get(pk=tx.pk)
+        if locked_tx.status == SmsWalletTransaction.STATUS_PENDING:
+            locked_tx.status = SmsWalletTransaction.STATUS_FAILED
+            locked_tx.metadata = {**locked_tx.metadata, "verification": verification or {}}
+            locked_tx.save(update_fields=["status", "metadata"])
     tx.refresh_from_db()
     return tx
 
