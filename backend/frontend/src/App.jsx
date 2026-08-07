@@ -6556,23 +6556,6 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
-  const handleBankPaymentRecover = useCallback(
-    async (paymentId, payload) => {
-      const result = await requestJson(session, "POST", `/api/finance/admin/bank-payments/${paymentId}/recover/`, payload);
-      addAdminNotification({
-        category: "Finance",
-        module: "Payment Recovery",
-        action: "Recovered or matched a bank payment to a student account.",
-        status: "Success",
-        priority: "High",
-        tone: "success",
-      });
-      await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
-      return result;
-    },
-    [addAdminNotification, loadScreen, session]
-  );
-
   const handleCashPaymentRecord = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/cash-payments/record/", payload);
@@ -7662,7 +7645,6 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreditSettings={handleActivationCreditSettings}
         onRunAutoCredits={handleActivationCreditRunAuto}
         onBankPaymentsIngest={handleBankPaymentsIngest}
-        onBankPaymentRecover={handleBankPaymentRecover}
         onCashPaymentRecord={handleCashPaymentRecord}
         onPaymentReceiptResend={handlePaymentReceiptResend}
         onLiveRefresh={handleFinanceLiveRefresh}

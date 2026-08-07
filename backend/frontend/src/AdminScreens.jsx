@@ -1220,7 +1220,6 @@ const FINANCE_SECTIONS = [
    findable from each other without being interleaved on screen. */
 const FINANCE_RECORD_TABS = [
   { key: "cash-payments", label: "Cash Payments", action: "cash-payment" },
-  { key: "bank-payments", label: "Bank Payments" },
   { key: "student-payments", label: "Student Payments" },
   { key: "student-fees", label: "Student Fees" },
   { key: "class-fees", label: "Fee Schedule", action: "generate-bill" },
@@ -1452,7 +1451,6 @@ function AdminFinanceScreen({
   onCreditSettings,
   onRunAutoCredits,
   onBankPaymentsIngest,
-  onBankPaymentRecover,
   onCashPaymentRecord,
   onPaymentReceiptResend,
   onLiveRefresh,
@@ -1473,7 +1471,6 @@ function AdminFinanceScreen({
   const creditPurchaseHistory = finance?.activation_credit_purchase_history || [];
   const bankPaymentRows = finance?.bank_payment_rows || [];
   const cashPaymentRows = bankPaymentRows.filter((payment) => payment.payment_method === "cash");
-  const bankTransferRows = bankPaymentRows.filter((payment) => payment.payment_method !== "cash");
   const transactionHistory = finance?.transaction_history || [];
   const financeLedgerRows = finance?.finance_ledger_logs || [];
   const [withdrawForm, setWithdrawForm] = useState({
@@ -1512,7 +1509,6 @@ function AdminFinanceScreen({
   });
   const [editingStudentFeeId, setEditingStudentFeeId] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
-  const [recoveryForm, setRecoveryForm] = useState({});
   const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "" });
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
@@ -1546,14 +1542,13 @@ function AdminFinanceScreen({
   // Shared across all of this screen's action buttons: while any one action is
   // in flight, every other button disables too, so a second click can't fire
   // a second request before the first finishes. busyAction identifies which
-  // single-instance action is running (for its own spinner); recoverBusyId
-  // does the same for the per-row "Match" button in the bank payment table.
+  // single-instance action is running (for its own spinner); resendBusyId
+  // does the same for the per-row "Resend" button in the payment tables.
   const [busyAction, setBusyAction] = useState("");
-  const [recoverBusyId, setRecoverBusyId] = useState("");
   const [resendBusyId, setResendBusyId] = useState("");
   const [subaccountMessage, setSubaccountMessage] = useState("");
   const [subaccountError, setSubaccountError] = useState("");
-  const anyBusy = Boolean(busyAction) || Boolean(recoverBusyId) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
+  const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
   const tokenPurchaseRef = useRef(null);
@@ -1644,57 +1639,6 @@ function AdminFinanceScreen({
                       <td>{formatDate(payment.matched_at || payment.created_at)}</td>
                     </tr>
                   );
-  const renderBankPaymentRow = (payment) => {
-                    const recovery = recoveryForm[payment.id] || {};
-                    const canRecover = ["unmatched", "pending"].includes(payment.status);
-                    return (
-                      <tr key={payment.id}>
-                        <td>{payment.student_name || "Unmatched"}<small>{payment.student_id || "No student linked"}</small></td>
-                        <td>{payment.reference_code || "-"}</td>
-                        <td>{payment.bank_reference || "-"}</td>
-                        <td>{payment.narration || "-"}</td>
-                        <td>{formatFinanceAmount(payment.amount)}</td>
-                        <td>{formatFinanceAmount(payment.applied_amount)}</td>
-                        <td>{formatFinanceAmount(payment.unapplied_amount)}</td>
-                        <td><span className={`finance-status status-${payment.status || "pending"}`}>{payment.status || "pending"}</span></td>
-                        <td>
-                          {payment.student ? (
-                            <ReceiptDeliveryCell
-                              payment={payment}
-                              onResend={onPaymentReceiptResend ? handleResendReceipt : null}
-                              busy={resendBusyId === payment.id || anyBusy}
-                            />
-                          ) : (
-                            <span className="field-note">Not matched</span>
-                          )}
-                        </td>
-                        <td>{formatDate(payment.matched_at || payment.created_at)}</td>
-                        <td>
-                          {canRecover ? (
-                            <div className="table-actions-inline">
-                              <input
-                                className="table-inline-input"
-                                value={recovery.reference_code || recovery.student_id || ""}
-                                onChange={(event) => setRecoveryForm((current) => ({ ...current, [payment.id]: { reference_code: event.target.value } }))}
-                                placeholder="Student ref"
-                                aria-label="Student payment reference"
-                              />
-                              <button
-                                type="button"
-                                className="table-action"
-                                onClick={() => handleRecoverPayment(payment.id)}
-                                disabled={!onBankPaymentRecover || anyBusy}
-                              >
-                                {recoverBusyId === payment.id ? <><Spinner size={12} /> Matching...</> : "Match"}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="field-note">Matched</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  };
   const renderStudentPaymentRow = (row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>);
   const renderStudentFeeRow = (fee) => (<tr key={fee.id}><td>{fee.student_name}<small>{fee.student_identifier}</small></td><td>{fee.class_label}</td><td>{fee.title}</td><td>{formatFinanceAmount(fee.amount)}</td><td>{formatFinanceAmount(fee.amount_paid)}</td><td>{formatFinanceAmount(fee.remaining_balance)}</td><td><span className={`finance-status status-${fee.payment_status || fee.status}`}>{fee.payment_status || fee.status}</span></td><td><button type="button" className="table-action" onClick={() => startEditStudentFee(fee)}>Edit</button></td></tr>);
   const renderClassFeeRow = (fee) => (<tr key={fee.id}><td>{fee.class_label}</td><td>{fee.title}<small>{formatFinanceAmount(fee.amount)}</small></td><td>{fee.student_count}</td><td>{formatFinanceAmount(fee.expected_amount)}</td><td>{formatFinanceAmount(fee.amount_received)}</td><td>{formatDate(fee.due_date)}</td><td><div className="table-actions-inline"><button type="button" className="table-action" onClick={() => startEditClassFee(fee)}>Edit</button><button type="button" className="table-action danger" onClick={() => handleDeactivateClassFee(fee.id)}>Deactivate</button></div></td></tr>);
@@ -1732,7 +1676,6 @@ function AdminFinanceScreen({
     return searchable.includes(normalizedCreditStudentSearch);
   });
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
-  const visibleBankPaymentRows = bankTransferRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCreditPurchaseHistory = creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleFinanceLedgerRows = financeLedgerRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -1747,16 +1690,6 @@ function AdminFinanceScreen({
       rows: cashPaymentRows,
       renderRow: renderCashPaymentRow,
       searchText: (row) => [row.student_name, row.student_id, row.receipt_number, row.bank_reference, row.note],
-      dateOf: (row) => row.matched_at || row.created_at,
-      statusOf: (row) => row.status,
-    },
-    bankPaymentHistory: {
-      title: "Student Bank Payments",
-      description: "Every bank transfer matched to a student, newest first.",
-      columns: ["Student", "Reference", "Bank Ref", "Narration", "Amount", "Applied", "Balance", "Status", "Receipt Delivery", "Date", "Action"],
-      rows: bankTransferRows,
-      renderRow: renderBankPaymentRow,
-      searchText: (row) => [row.student_name, row.student_id, row.reference_code, row.bank_reference, row.narration],
       dateOf: (row) => row.matched_at || row.created_at,
       statusOf: (row) => row.status,
     },
@@ -2286,21 +2219,6 @@ function AdminFinanceScreen({
       setFormError(err.message || "Unable to record cash payment.");
     } finally {
       setBusyAction("");
-    }
-  };
-
-  const handleRecoverPayment = async (paymentId) => {
-    setFeedback("");
-    setFormError("");
-    setRecoverBusyId(paymentId);
-    try {
-      await onBankPaymentRecover(paymentId, recoveryForm[paymentId] || {});
-      setFeedback("Payment recovered and applied.");
-      setRecoveryForm((current) => ({ ...current, [paymentId]: { student_id: "", reference_code: "" } }));
-    } catch (err) {
-      setFormError(err.message || "Unable to recover payment.");
-    } finally {
-      setRecoverBusyId("");
     }
   };
 
@@ -2876,22 +2794,6 @@ function AdminFinanceScreen({
                   <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map(renderCashPaymentRow) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
-              </div>
-              </article>
-            ) : null}
-
-            {recordSection === "bank-payments" ? (
-              <article className="app-panel finance-record-panel">
-                <div className="mobile-section-head">
-                  <h3>Student Bank Payments</h3>
-                  <small>{bankTransferRows.length} bank payment records</small>
-                </div>
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead><tr><th>Student</th><th>Reference</th><th>Bank Ref</th><th>Narration</th><th>Amount</th><th>Applied</th><th>Balance</th><th>Status</th><th>Receipt Delivery</th><th>Date</th><th>Action</th></tr></thead>
-                  <tbody>{bankTransferRows.length ? visibleBankPaymentRows.map(renderBankPaymentRow) : <tr><td colSpan="11">No student bank payments found.</td></tr>}</tbody>
-                </table>
-                {renderFinanceMoreButton("bankPaymentHistory", bankTransferRows.length)}
               </div>
               </article>
             ) : null}
