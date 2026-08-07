@@ -1268,6 +1268,114 @@ function FinanceActionCard({ id, title, description, icon, open, onToggle, child
   );
 }
 
+const LIVE_FEED_POLL_MS = 30000;
+const LIVE_FEED_ROWS = 8;
+
+/* Money arriving in near-real time, on the Overview where an admin is already
+   looking. Polls the finance endpoint silently, and only while this is the
+   visible section and the browser tab is in front - a background tab hammering
+   the server every 30s for a panel nobody is reading is pure waste. */
+function LiveTransactionFeed({ transactions, onRefresh, onViewAll, formatAmount, active }) {
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const seenIds = useRef(null);
+  const inFlight = useRef(false);
+  const [newIds, setNewIds] = useState(() => new Set());
+
+  const rows = (transactions || []).slice(0, LIVE_FEED_ROWS);
+
+  const refresh = useCallback(async () => {
+    if (!onRefresh || inFlight.current) return;
+    inFlight.current = true;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+      setLastUpdated(new Date());
+    } catch {
+      // A missed poll is not worth surfacing - the next tick retries, and the
+      // rows already on screen stay valid.
+    } finally {
+      inFlight.current = false;
+      setRefreshing(false);
+    }
+  }, [onRefresh]);
+
+  // The refresh callback gets a new identity after every load (it closes over
+  // the screen cache), so the interval reads it through a ref. Depending on it
+  // directly would tear the timer down and rebuild it on each tick.
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
+  const canPoll = active && Boolean(onRefresh);
+  useEffect(() => {
+    if (!canPoll) return undefined;
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      refreshRef.current?.();
+    }, LIVE_FEED_POLL_MS);
+    return () => clearInterval(timer);
+  }, [canPoll]);
+
+  // Flag arrivals so they can announce themselves, but never on the first
+  // render - everything is "new" then, and flashing the whole list is noise.
+  useEffect(() => {
+    const ids = rows.map((row) => row.id || row.reference).filter(Boolean);
+    if (seenIds.current === null) {
+      seenIds.current = new Set(ids);
+      return;
+    }
+    const arrivals = ids.filter((id) => !seenIds.current.has(id));
+    seenIds.current = new Set(ids);
+    if (arrivals.length) {
+      setNewIds(new Set(arrivals));
+      const timer = setTimeout(() => setNewIds(new Set()), 6000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <article className="app-panel live-feed-panel">
+      <div className="panel-head">
+        <h3>
+          <span className={`live-dot${active ? " is-live" : ""}`} aria-hidden="true" />
+          Live Transaction History
+        </h3>
+        <small>
+          {refreshing
+            ? "Refreshing..."
+            : lastUpdated
+            ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+            : "Updates every 30 seconds"}
+        </small>
+      </div>
+      <div className="live-feed-list">
+        {rows.length ? rows.map((item) => {
+          const id = item.id || item.reference;
+          return (
+            <div key={id || item.description} className={`live-feed-row${newIds.has(id) ? " is-new" : ""}`}>
+              <div className="live-feed-main">
+                <strong>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</strong>
+                <small>{formatDate(item.created_at || item.date)}{item.reference ? ` · ${item.reference}` : ""}</small>
+              </div>
+              <div className="live-feed-meta">
+                <span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span>
+                <strong>{formatAmount(item.amount || item.value)}</strong>
+              </div>
+            </div>
+          );
+        }) : <p className="panel-empty">No transactions yet.</p>}
+      </div>
+      <div className="live-feed-actions">
+        <button type="button" className="pill-button ghost" onClick={refresh} disabled={refreshing || !onRefresh}>
+          {refreshing ? <><Spinner size={12} /> Refreshing...</> : "Refresh now"}
+        </button>
+        <button type="button" className="pill-button ghost" onClick={onViewAll}>View all transactions</button>
+      </div>
+    </article>
+  );
+}
+
 const RECEIPT_CHANNEL_LABELS = {
   sent: "Sent",
   failed: "Failed",
@@ -1343,6 +1451,7 @@ function AdminFinanceScreen({
   onBankPaymentRecover,
   onCashPaymentRecord,
   onPaymentReceiptResend,
+  onLiveRefresh,
   session,
 }) {
   const finance = data?.finance_overview || data || {};
@@ -2302,6 +2411,14 @@ function AdminFinanceScreen({
               </div>
             </article>
           </div>
+
+          <LiveTransactionFeed
+            transactions={transactionHistory}
+            onRefresh={onLiveRefresh}
+            onViewAll={() => openFinanceRecords("transactions")}
+            formatAmount={formatFinanceAmount}
+            active={financeSection === "overview"}
+          />
 
           </>
           ) : null}

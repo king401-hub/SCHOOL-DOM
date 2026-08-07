@@ -5964,6 +5964,13 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     loadScreen("/messages", true);
   }, [loadScreen]);
 
+  // Silent so the live transaction feed can poll without flashing the whole
+  // Finance screen back into its loading state every time it ticks.
+  const handleFinanceLiveRefresh = useCallback(
+    () => loadScreen("/finance", true, true),
+    [loadScreen]
+  );
+
   useEffect(() => {
     let refreshTimer = null;
     const handleDataMutation = () => {
@@ -7658,6 +7665,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onBankPaymentRecover={handleBankPaymentRecover}
         onCashPaymentRecord={handleCashPaymentRecord}
         onPaymentReceiptResend={handlePaymentReceiptResend}
+        onLiveRefresh={handleFinanceLiveRefresh}
         session={session}
       />
     );
