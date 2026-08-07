@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { requestJson } from "../AppShared";
+import { AttendanceLogsPanel } from "../AttendanceLogs";
 
 const ADMIN_ROLES = new Set(["school_admin", "principal", "super_admin"]);
 const ATTENDANCE_ROLES = new Set(["teacher", "staff", "school_admin", "principal", "super_admin"]);
@@ -52,7 +53,7 @@ async function attendanceRequest(session, endpoint, options = {}) {
   return readJsonResponse(response);
 }
 
-function formatDateTime(value) {
+export function formatDateTime(value) {
   if (!value) return "-";
   return new Date(value).toLocaleString([], {
     year: "numeric",
@@ -182,8 +183,18 @@ function roleLabel(role) {
     .join(" ");
 }
 
-function AttendanceStatusPill({ status = "present" }) {
-  const isPresent = status === "present" || status === "checked_in" || status === "checked_out";
+const ATTENDANCE_STATUS_TONES = {
+  present: { background: "#dcfce7", color: "#166534" },
+  checked_in: { background: "#dcfce7", color: "#166534" },
+  checked_out: { background: "#dcfce7", color: "#166534" },
+  absent: { background: "#fee2e2", color: "#b91c1c" },
+  late: { background: "#fef3c7", color: "#92400e" },
+  half_day: { background: "#fef3c7", color: "#92400e" },
+  excused: { background: "#dbeafe", color: "#1e40af" },
+};
+
+export function AttendanceStatusPill({ status = "present" }) {
+  const tone = ATTENDANCE_STATUS_TONES[status] || ATTENDANCE_STATUS_TONES.late;
   return (
     <span
       style={{
@@ -193,8 +204,8 @@ function AttendanceStatusPill({ status = "present" }) {
         padding: "4px 10px",
         fontSize: "0.82rem",
         fontWeight: 700,
-        background: isPresent ? "#dcfce7" : "#fef3c7",
-        color: isPresent ? "#166534" : "#92400e",
+        background: tone.background,
+        color: tone.color,
       }}
     >
       {statusLabel(status)}
@@ -1118,11 +1129,13 @@ export function AttendanceModule({ session }) {
             { id: "qr", label: "Student QR", render: () => <QRCodeManagement session={session} /> },
             { id: "scan", label: "Scan ID Card", render: () => <IdCardAttendanceScanner session={session} /> },
             { id: "students", label: "Student List", render: () => <StudentAttendanceDashboard session={session} /> },
+            { id: "logs", label: "Attendance Logs", render: () => <AttendanceLogsPanel session={session} /> },
           ]
         : [
             { id: "dashboard", label: "Today", render: () => <AttendanceDashboard session={session} /> },
             { id: "qr", label: "QR Code", render: () => <QRCodeManagement session={session} /> },
             { id: "scan", label: "Scan ID Card", render: () => <IdCardAttendanceScanner session={session} /> },
+            { id: "logs", label: "Attendance Logs", render: () => <AttendanceLogsPanel session={session} /> },
           ],
     [nonK12, session]
   );

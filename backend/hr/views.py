@@ -1,6 +1,7 @@
 import csv
 import io
 import qrcode
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Count, Q, Sum
@@ -490,6 +491,165 @@ def download_staff_csv(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def attendance_logs_staff_lookup(request):
+    """Uncapped staff list for the Attendance Logs staff picker - hr_snapshot
+    caps staff at [:100], too small for a full roster."""
+    if not _require_admin(request.user):
+        return Response({"success": False, "message": "Only admins can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    staff_type = str(request.query_params.get("staff_type") or "").strip()
+    if staff_type not in {StaffProfile.TEACHING, StaffProfile.NON_TEACHING}:
+        return Response({"success": False, "message": "staff_type must be teaching or non_teaching."}, status=status.HTTP_400_BAD_REQUEST)
+    staff = _staff_queryset(request.user).filter(staff_type=staff_type).order_by("first_name", "last_name")
+    return Response(
+        {
+            "success": True,
+            "staff": [{"id": item.id, "staff_code": item.staff_code, "name": item.full_name, "role": item.role, "department": item.department} for item in staff],
+        }
+    )
+
+
+def _staff_attendance_log_row(record):
+    """Shared row-shaping for the Attendance Logs JSON endpoint and its CSV
+    export. StaffAttendance has no dedicated "method" field, so it's derived
+    from the exact marker strings the two marking flows already write into
+    notes (mark_attendance/scan_staff_attendance) - a pragmatic v1 approach."""
+    notes = record.notes or ""
+    if "qr code" in notes.lower():
+        method = "QR scan"
+    elif notes:
+        method = "Manual"
+    else:
+        method = "-"
+    # check_in is a bare TimeField (no date) - combine with the row's own date
+    # into a real datetime so the frontend can format it the same way as the
+    # student endpoint's always-datetime time_marked, instead of needing two
+    # different date-vs-time-only parsing paths.
+    if record.check_in:
+        combined = datetime.combine(record.date, record.check_in)
+        time_marked = timezone.make_aware(combined) if timezone.is_naive(combined) else combined
+    else:
+        time_marked = record.created_at
+    return {
+        "date": record.date,
+        "staff_name": record.staff.full_name,
+        "staff_code": record.staff.staff_code,
+        "staff_type": record.staff.get_staff_type_display(),
+        "role": record.staff.role,
+        "department": record.staff.department,
+        "status": record.status,
+        "time_marked": time_marked,
+        "marked_by": record.marked_by.get_full_name() if record.marked_by else "-",
+        "method": method,
+        "remarks": notes,
+    }
+
+
+def _staff_attendance_logs_queryset(request, user):
+    staff_id = str(request.query_params.get("staff_id") or "").strip()
+    if not staff_id:
+        raise ValueError("staff_id is required.")
+    tenant = _tenant_for_user(user)
+    qs = StaffAttendance.objects.filter(staff_id=staff_id, staff__tenant=tenant).select_related("staff", "marked_by")
+    start_date = parse_date(str(request.query_params.get("start_date") or "").strip())
+    end_date = parse_date(str(request.query_params.get("end_date") or "").strip())
+    if start_date:
+        qs = qs.filter(date__gte=start_date)
+    if end_date:
+        qs = qs.filter(date__lte=end_date)
+    status_filter = str(request.query_params.get("status") or "").strip().lower()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    search = str(request.query_params.get("search") or "").strip()
+    if search:
+        qs = qs.filter(Q(notes__icontains=search) | Q(marked_by__first_name__icontains=search) | Q(marked_by__last_name__icontains=search))
+    return qs
+
+
+_STAFF_ATTENDANCE_LOG_SORT_FIELDS = {
+    "date": "date",
+    "-date": "-date",
+    "status": "status",
+    "-status": "-status",
+}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def staff_attendance_logs(request):
+    """Full historical attendance for one staff member, across every
+    term/session ever recorded unless start_date/end_date narrow it -
+    StaffAttendance has no Term/AcademicYear FK at all."""
+    user = request.user
+    if not _require_admin(user):
+        return Response({"success": False, "message": "Only admins can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        qs = _staff_attendance_logs_queryset(request, user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    totals = qs.aggregate(
+        present=Count("id", filter=Q(status=StaffAttendance.PRESENT)),
+        absent=Count("id", filter=Q(status=StaffAttendance.ABSENT)),
+        late=Count("id", filter=Q(status=StaffAttendance.LATE)),
+        excused=Count("id", filter=Q(status=StaffAttendance.EXCUSED)),
+        total=Count("id"),
+    )
+    present_and_late = totals["present"] + totals["late"]
+    percentage = round(present_and_late / totals["total"] * 100, 1) if totals["total"] else 0.0
+
+    sort_field = _STAFF_ATTENDANCE_LOG_SORT_FIELDS.get(str(request.query_params.get("sort") or "-date"), "-date")
+    limit = max(1, min(int(request.query_params.get("limit") or 20), 100))
+    page = max(1, int(request.query_params.get("page") or 1))
+    offset = (page - 1) * limit
+    page_rows = list(qs.order_by(sort_field)[offset: offset + limit])
+
+    return Response(
+        {
+            "success": True,
+            "count": totals["total"],
+            "page": page,
+            "limit": limit,
+            "summary": {
+                "total_school_days": totals["total"],
+                "days_present": totals["present"],
+                "days_absent": totals["absent"],
+                "days_late": totals["late"],
+                "days_excused": totals["excused"],
+                "attendance_percentage": percentage,
+            },
+            "results": [_staff_attendance_log_row(record) for record in page_rows],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def staff_attendance_logs_export(request):
+    user = request.user
+    if not _require_admin(user):
+        return Response({"success": False, "message": "Only admins can export attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        qs = _staff_attendance_logs_queryset(request, user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    sort_field = _STAFF_ATTENDANCE_LOG_SORT_FIELDS.get(str(request.query_params.get("sort") or "-date"), "-date")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Staff Name", "Staff Code", "Staff Type", "Role", "Department", "Status", "Time Marked", "Marked By", "Method", "Remarks"])
+    for record in qs.order_by(sort_field).iterator():
+        row = _staff_attendance_log_row(record)
+        writer.writerow([
+            row["date"], row["staff_name"], row["staff_code"], row["staff_type"], row["role"], row["department"],
+            row["status"], row["time_marked"], row["marked_by"], row["method"], row["remarks"],
+        ])
+    response = HttpResponse(output.getvalue(), content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="staff_attendance_logs.csv"'
+    return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def download_staff_qr(request, staff_id):
     staff = get_object_or_404(_staff_queryset(request.user), id=staff_id)
     scan_url = request.build_absolute_uri(f"/api/hr/attendance/scan/{staff.attendance_token}/")
@@ -523,6 +683,37 @@ def scan_staff_attendance(request, token):
     )
     _activity(staff.tenant, staff, request.user, "attendance_qr_marked", f"QR attendance marked for {attendance.date}")
     return Response({"success": True, "message": f"Attendance marked for {staff.full_name}.", "attendance": _attendance_payload(attendance)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def mark_attendance_manual(request):
+    """Admin-only manual attendance override - no QR token required, unlike
+    mark_attendance() above. This is the only way to set a status other than
+    "present" for staff (absent/late/half day/excused), since the shared-QR
+    flow is inherently a self-check-in and always records present."""
+    if not _require_admin(request.user):
+        return Response({"success": False, "message": "Only admins can record manual attendance."}, status=status.HTTP_403_FORBIDDEN)
+    staff = get_object_or_404(_staff_queryset(request.user), id=request.data.get("staff_id"))
+    status_value = str(request.data.get("status") or "").strip().lower()
+    valid_statuses = {choice for choice, _label in StaffAttendance.STATUS_CHOICES}
+    if status_value not in valid_statuses:
+        return Response(
+            {"success": False, "message": f"status must be one of: {', '.join(sorted(valid_statuses))}."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    date = parse_date(str(request.data.get("date") or "")) or timezone.localdate()
+    attendance, _created = StaffAttendance.objects.update_or_create(
+        staff=staff,
+        date=date,
+        defaults={
+            "status": status_value,
+            "notes": str(request.data.get("notes", "")).strip(),
+            "marked_by": request.user,
+        },
+    )
+    _activity(staff.tenant, staff, request.user, "attendance_manual_marked", f"{attendance.status} on {attendance.date} (manual)")
+    return Response({"success": True, "message": f"Attendance saved for {staff.full_name}.", "attendance": _attendance_payload(attendance)})
 
 
 @api_view(["POST"])

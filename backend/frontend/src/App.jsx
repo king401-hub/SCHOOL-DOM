@@ -4851,6 +4851,7 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
               <div className="swipe-actions">
                 <button type="button" className="danger" onClick={() => mark("absent")} disabled={Boolean(savingStatus)}>{savingStatus === "absent" ? "Saving..." : "Absent"}</button>
                 <button type="button" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? "Saving..." : "Late"}</button>
+                <button type="button" onClick={() => mark("excused")} disabled={Boolean(savingStatus)}>{savingStatus === "excused" ? "Saving..." : "Excused"}</button>
                 <button type="button" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? "Saving..." : "Present"}</button>
               </div>
               <small>Tap a status to save and move to the next student. Already-marked students won't reappear, even after a refresh.</small>
@@ -6681,6 +6682,15 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [refreshHr, session]
   );
 
+  const handleMarkHrAttendanceManual = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/hr/attendance/mark-manual/", payload);
+      await refreshHr();
+      return result;
+    },
+    [refreshHr, session]
+  );
+
   const handleCreateHrPayroll = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/hr/payroll/create/", payload);
@@ -7665,6 +7675,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         error={error}
         onRetry={handleRetry}
         onMarkAttendance={handleMarkHrAttendance}
+        onMarkAttendanceManual={handleMarkHrAttendanceManual}
         onCreateLeave={handleCreateHrLeave}
         onReviewLeave={handleReviewHrLeave}
         onCreateAdvance={handleCreateHrAdvance}
@@ -7694,6 +7705,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         error={error}
         onRetry={handleRetry}
         onMarkAttendance={handleMarkHrAttendance}
+        onMarkAttendanceManual={handleMarkHrAttendanceManual}
         onCreateLeave={handleCreateHrLeave}
         onReviewLeave={handleReviewHrLeave}
         onCreateAdvance={handleCreateHrAdvance}

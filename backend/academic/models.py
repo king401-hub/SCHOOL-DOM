@@ -305,6 +305,7 @@ class AttendanceRecord(TenantAwareModel, TimeStampedModel):
         ("present", "Present"),
         ("absent", "Absent"),
         ("late", "Late"),
+        ("excused", "Excused"),
     ]
 
     student = models.ForeignKey(
@@ -353,6 +354,7 @@ class AttendanceRecord(TenantAwareModel, TimeStampedModel):
         blank=True,
         related_name="clocked_out_attendance",
     )
+    remarks = models.TextField(blank=True, default="")
 
     class Meta:
         unique_together = ("student", "date")

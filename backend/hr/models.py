@@ -109,11 +109,13 @@ class StaffAttendance(models.Model):
     ABSENT = "absent"
     LATE = "late"
     HALF_DAY = "half_day"
+    EXCUSED = "excused"
     STATUS_CHOICES = [
         (PRESENT, "Present"),
         (ABSENT, "Absent"),
         (LATE, "Late"),
         (HALF_DAY, "Half day"),
+        (EXCUSED, "Excused"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

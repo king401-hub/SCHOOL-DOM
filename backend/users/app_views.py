@@ -22,7 +22,7 @@ from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Exists, OuterRef, Q, Sum, Prefetch
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
@@ -4510,6 +4510,186 @@ def student_attendance_list(request):
             ],
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def attendance_logs_classes(request):
+    """Uncapped class list for the Attendance Logs class picker - the
+    existing classes_snapshot() caps at [:20], too small for a full roster."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    classes = _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")
+    return Response(
+        {
+            "success": True,
+            "classes": [{"id": item.id, "name": item.name, "section": item.section, "label": _class_label(item)} for item in classes],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def attendance_logs_class_students(request, class_id):
+    """Uncapped student roster for one class - feeds the Attendance Logs
+    student picker once a class is selected."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    students = (
+        StudentProfile.objects.filter(current_class_id=class_id, user__tenant=user.tenant)
+        .select_related("user")
+        .order_by("user__first_name", "user__last_name")
+    )
+    return Response(
+        {
+            "success": True,
+            "students": [{"id": item.user_id, "student_id": item.student_id, "name": item.user.get_full_name() or item.user.email} for item in students],
+        }
+    )
+
+
+def _student_attendance_log_row(record):
+    """Shared row-shaping for the Attendance Logs JSON endpoint and its CSV
+    export, so the two can never drift out of sync on the derivation rules
+    below (time_marked/marked_by/method have no dedicated field on
+    AttendanceRecord and must be derived the same way everywhere)."""
+    student_profile = getattr(record.student, "student_profile", None)
+    if record.clock_in_at:
+        time_marked = record.clock_in_at
+        method = "QR / ID card scan"
+    else:
+        time_marked = record.created_at
+        method = "Teacher marked" if record.noted_by_id else "-"
+    if record.noted_by_id:
+        marked_by = record.noted_by.get_full_name() or record.noted_by.email
+    elif record.clock_in_at:
+        marked_by = "QR / ID scan"
+    else:
+        marked_by = "-"
+    return {
+        "date": record.date,
+        "student_name": record.student.get_full_name() or record.student.email,
+        "student_id": student_profile.student_id if student_profile else "",
+        "class_name": _class_label(record.class_group) if record.class_group else "Unassigned",
+        "status": record.status,
+        "time_marked": time_marked,
+        "marked_by": marked_by,
+        "method": method,
+        "remarks": record.remarks,
+    }
+
+
+def _student_attendance_logs_queryset(request, user):
+    student_id = str(request.query_params.get("student_id") or "").strip()
+    if not student_id:
+        raise ValueError("student_id is required.")
+    qs = _scope_to_user_tenant(
+        AttendanceRecord.objects.filter(student_id=student_id).select_related("class_group", "noted_by", "student__student_profile"),
+        user,
+    )
+    start_date = parse_date(str(request.query_params.get("start_date") or "").strip())
+    end_date = parse_date(str(request.query_params.get("end_date") or "").strip())
+    if start_date:
+        qs = qs.filter(date__gte=start_date)
+    if end_date:
+        qs = qs.filter(date__lte=end_date)
+    status_filter = str(request.query_params.get("status") or "").strip().lower()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    search = str(request.query_params.get("search") or "").strip()
+    if search:
+        qs = qs.filter(
+            Q(noted_by__first_name__icontains=search)
+            | Q(noted_by__last_name__icontains=search)
+            | Q(remarks__icontains=search)
+        )
+    return qs
+
+
+_ATTENDANCE_LOG_SORT_FIELDS = {
+    "date": "date",
+    "-date": "-date",
+    "status": "status",
+    "-status": "-status",
+}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def student_attendance_logs(request):
+    """Full historical attendance for one student, across every term/session
+    ever recorded unless start_date/end_date narrow it - AttendanceRecord has
+    no Term/AcademicYear FK at all, so there is nothing to scope to besides
+    the date range itself."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        qs = _student_attendance_logs_queryset(request, user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    totals = qs.aggregate(
+        present=Count("id", filter=Q(status="present")),
+        absent=Count("id", filter=Q(status="absent")),
+        late=Count("id", filter=Q(status="late")),
+        excused=Count("id", filter=Q(status="excused")),
+        total=Count("id"),
+    )
+    present_and_late = totals["present"] + totals["late"]
+    percentage = round(present_and_late / totals["total"] * 100, 1) if totals["total"] else 0.0
+
+    sort_field = _ATTENDANCE_LOG_SORT_FIELDS.get(str(request.query_params.get("sort") or "-date"), "-date")
+    limit = max(1, min(int(request.query_params.get("limit") or 20), 100))
+    page = max(1, int(request.query_params.get("page") or 1))
+    offset = (page - 1) * limit
+    page_rows = list(qs.order_by(sort_field)[offset: offset + limit])
+
+    return Response(
+        {
+            "success": True,
+            "count": totals["total"],
+            "page": page,
+            "limit": limit,
+            "summary": {
+                "total_school_days": totals["total"],
+                "days_present": totals["present"],
+                "days_absent": totals["absent"],
+                "days_late": totals["late"],
+                "days_excused": totals["excused"],
+                "attendance_percentage": percentage,
+            },
+            "results": [_student_attendance_log_row(record) for record in page_rows],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def student_attendance_logs_export(request):
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only school administrators can export attendance logs."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        qs = _student_attendance_logs_queryset(request, user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    sort_field = _ATTENDANCE_LOG_SORT_FIELDS.get(str(request.query_params.get("sort") or "-date"), "-date")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Student Name", "Student ID", "Class", "Status", "Time Marked", "Marked By", "Method", "Remarks"])
+    for record in qs.order_by(sort_field).iterator():
+        row = _student_attendance_log_row(record)
+        writer.writerow([
+            row["date"], row["student_name"], row["student_id"], row["class_name"], row["status"],
+            row["time_marked"], row["marked_by"], row["method"], row["remarks"],
+        ])
+    response = HttpResponse(output.getvalue(), content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="student_attendance_logs.csv"'
+    return response
 
 
 @api_view(["POST"])
@@ -9977,8 +10157,8 @@ def teacher_mark_student_attendance(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     status_value = str(request.data.get("status") or "").strip().lower()
-    if not clock_action and status_value not in {"present", "absent", "late"}:
-        return Response({"success": False, "message": "status must be present, absent, or late."}, status=status.HTTP_400_BAD_REQUEST)
+    if not clock_action and status_value not in {"present", "absent", "late", "excused"}:
+        return Response({"success": False, "message": "status must be present, absent, late, or excused."}, status=status.HTTP_400_BAD_REQUEST)
     assigned_classes = _teacher_assigned_classes(user)
     assigned_class_ids = set(assigned_classes.values_list("id", flat=True))
     student_profile = get_object_or_404(StudentProfile.objects.select_related("user", "current_class"), student_id__iexact=student_code, user__tenant=user.tenant)
@@ -10031,6 +10211,8 @@ def teacher_mark_student_attendance(request):
             "location_address": location["address"],
             "device_info": location["device_info"],
         }
+        if "remarks" in request.data:
+            defaults["remarks"] = str(request.data.get("remarks") or "").strip()
         attendance, _created = AttendanceRecord.objects.update_or_create(
             student=student_profile.user,
             date=attendance_date,

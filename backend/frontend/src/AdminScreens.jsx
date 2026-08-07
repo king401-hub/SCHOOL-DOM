@@ -5460,6 +5460,7 @@ function AdminHRPayrollScreen({
   error,
   onRetry,
   onMarkAttendance,
+  onMarkAttendanceManual,
   onCreateLeave,
   onReviewLeave,
   onCreateAdvance,
@@ -5473,6 +5474,7 @@ function AdminHRPayrollScreen({
   const advances = data?.advances || [];
   const activity = data?.activity || [];
   const [attendanceForm, setAttendanceForm] = useState({ staff_id: "", qr_token: "", date: "", notes: "" });
+  const [manualAttendanceForm, setManualAttendanceForm] = useState({ staff_id: "", date: "", status: "present", notes: "" });
   const [leaveForm, setLeaveForm] = useState({ staff_id: "", leave_type: "Annual", start_date: "", end_date: "", reason: "" });
   const [advanceForm, setAdvanceForm] = useState({ staff_id: "", amount: "", reason: "" });
   const [busy, setBusy] = useState("");
@@ -5504,6 +5506,12 @@ function AdminHRPayrollScreen({
     event.preventDefault();
     const result = await runAction("attendance", () => onMarkAttendance(attendanceForm), "Attendance saved.");
     if (result) setAttendanceForm((prev) => ({ ...prev, qr_token: "", notes: "" }));
+  };
+
+  const handleManualAttendanceSubmit = async (event) => {
+    event.preventDefault();
+    const result = await runAction("manual-attendance", () => onMarkAttendanceManual(manualAttendanceForm), "Attendance saved.");
+    if (result) setManualAttendanceForm((prev) => ({ ...prev, notes: "" }));
   };
 
   const handleLeaveSubmit = async (event) => {
@@ -5545,6 +5553,28 @@ function AdminHRPayrollScreen({
               <label className="panel-field">Notes<input value={attendanceForm.notes} onChange={(e) => setAttendanceForm((p) => ({ ...p, notes: e.target.value }))} /></label>
             </div>
             <div className="panel-form-actions"><button type="submit" disabled={busy === "attendance" || !attendanceForm.qr_token || !attendanceForm.staff_id}>Mark from shared QR</button></div>
+          </form>
+        </article>
+
+        <article className="app-panel">
+          <div className="panel-head"><h3>Manual attendance override</h3><small>Record absent, late, half day, or excused - no QR code needed.</small></div>
+          <form className="panel-form" onSubmit={handleManualAttendanceSubmit}>
+            <div className="panel-form-grid">
+              <label className="panel-field">Staff<select value={manualAttendanceForm.staff_id} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, staff_id: e.target.value }))}><option value="">Select staff</option>{staffOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+              <label className="panel-field">Date<input type="date" value={manualAttendanceForm.date} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, date: e.target.value }))} /></label>
+              <label className="panel-field">
+                Status
+                <select value={manualAttendanceForm.status} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, status: e.target.value }))}>
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="late">Late</option>
+                  <option value="half_day">Half day</option>
+                  <option value="excused">Excused</option>
+                </select>
+              </label>
+              <label className="panel-field">Notes<input value={manualAttendanceForm.notes} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, notes: e.target.value }))} /></label>
+            </div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "manual-attendance" || !manualAttendanceForm.staff_id}>Save attendance</button></div>
           </form>
         </article>
 
