@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
 import RichText from "./components/RichText";
 import { formatDate, MetricCard, requestJson } from "./AppShared";
+import { useExamAutosave, loadLocalDraft, localDraftKey } from "./examBuilderDraft";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
 A. Paris
@@ -448,6 +449,116 @@ const questionMarkValue = (question) => {
 const sumQuestionMarks = (list) => (list || []).reduce((total, item) => total + questionMarkValue(item), 0);
 
 const filePreviewUrl = (file) => (file ? URL.createObjectURL(file) : "");
+
+const makeDateTime = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+};
+
+// Shared by the manual Save/Publish flow and auto-save so the two request
+// bodies can never drift apart. `id` carries the real DB Question id for a
+// question that's already been synced (server-loaded, or created by an
+// earlier auto-save tick) - the backend upserts by this id instead of always
+// creating a new row. Brand-new, never-synced questions use the
+// Date.now()+Math.random() float id newBuilderQuestion() assigns locally,
+// which is never an integer, so it's simply omitted here.
+function buildPreparedQuestion(question) {
+  const questionType = question.questionType || "mcq";
+  const isTheory = THEORY_QUESTION_TYPES.has(questionType);
+  const options = isTheory ? [] : (question.options || []).map((option) => option.trim()).filter(Boolean);
+  const groupKey = question.groupKey || "";
+  return {
+    id: Number.isInteger(question.id) ? question.id : undefined,
+    text: question.text.trim(),
+    question_type: questionType,
+    points: Number(question.marks) || 1,
+    options,
+    correct_answer: isTheory ? "" : (question.options || [])[Number(question.correctIndex)]?.trim() || "",
+    explanation: question.explanation?.trim() || "",
+    source_question_id: question.cbtBankQuestionId || undefined,
+    question_image_field: question.questionImageFile ? `question_image_${question.id}` : "",
+    question_attachment_field: question.questionAttachmentFile ? `question_attachment_${question.id}` : "",
+    group_key: groupKey,
+    group: groupKey
+      ? {
+          key: groupKey,
+          title: question.group?.title || "",
+          group_type: question.group?.group_type || "passage",
+          passage_text: question.group?.passage_text || "",
+          image_field: question.group?.imageFile ? `passage_image_${groupKey}` : "",
+        }
+      : null,
+  };
+}
+
+// A question only needs to be individually complete (matching the backend's
+// own minimum bar) to be worth auto-saving - an in-progress/incomplete
+// question is simply held back until it's valid, rather than blocking the
+// whole auto-save tick or erroring. The local draft (localStorage) already
+// holds the true, complete state regardless.
+function isQuestionMinimallyValid(question) {
+  const questionType = question.questionType || "mcq";
+  const isTheory = THEORY_QUESTION_TYPES.has(questionType);
+  if (!question.text || question.text.trim().length < 3) return false;
+  if (isTheory) return true;
+  const options = (question.options || []).map((option) => option.trim()).filter(Boolean);
+  if (options.length < 2) return false;
+  const correctAnswer = (question.options || [])[Number(question.correctIndex)]?.trim();
+  return Boolean(correctAnswer) && options.includes(correctAnswer);
+}
+
+// Builds the auto-save request body: same shape/fields as the manual Save
+// payload, but (a) only ever-valid fields are included (empty/unset ones are
+// omitted rather than sent as invalid placeholders, since exam_detail's PATCH
+// only validates a field when its key is present at all), and (b) only
+// currently-valid questions are included, so one half-typed question never
+// blocks the rest of the exam from staying in sync.
+function buildAutosavePayload({ form, questions }) {
+  const validQuestions = questions.filter(isQuestionMinimallyValid);
+  const preparedQuestions = validQuestions.map(buildPreparedQuestion);
+
+  const payload = { autosave: true, questions: preparedQuestions };
+  const title = (form.title || "").trim();
+  if (title) payload.title = title;
+  if (form.classId) payload.class_id = form.classId;
+  if (form.subjectId) payload.subject_id = form.subjectId;
+  if (form.examFormat) payload.exam_format = form.examFormat;
+  const startDate = makeDateTime(form.startDate);
+  const endDate = makeDateTime(form.endDate);
+  if (startDate && endDate && new Date(endDate) > new Date(startDate)) {
+    payload.start_date = startDate;
+    payload.end_date = endDate;
+  }
+  const duration = Number(form.duration);
+  if (duration > 0) payload.duration_minutes = duration;
+  if (form.instructions) payload.instructions = form.instructions;
+  payload.shuffle_questions = Boolean(form.randomizeQuestions);
+
+  const hasFiles = validQuestions.some((question) => question.questionImageFile || question.questionAttachmentFile || question.group?.imageFile);
+  let requestPayload = payload;
+  if (hasFiles) {
+    const formData = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+      formData.append(key, key === "questions" ? JSON.stringify(value) : value);
+    });
+    const addedPassageImages = new Set();
+    validQuestions.forEach((question) => {
+      if (question.questionImageFile) {
+        formData.append(`question_image_${question.id}`, question.questionImageFile);
+      }
+      if (question.questionAttachmentFile) {
+        formData.append(`question_attachment_${question.id}`, question.questionAttachmentFile);
+      }
+      if (question.groupKey && question.group?.imageFile && !addedPassageImages.has(question.groupKey)) {
+        formData.append(`passage_image_${question.groupKey}`, question.group.imageFile);
+        addedPassageImages.add(question.groupKey);
+      }
+    });
+    requestPayload = formData;
+  }
+  return { requestPayload };
+}
 export function TeacherExamManager({
   questionTemplates = [],
   pendingSubmissions = [],
@@ -640,6 +751,21 @@ export function TeacherExamManager({
   );
 }
 
+const AUTOSAVE_STATUS_COPY = {
+  idle: null,
+  saving: { label: "Saving...", tone: "info" },
+  saved: { label: "Saved", tone: "success" },
+  offline: { label: "Offline — Changes Saved Locally", tone: "warning" },
+  syncing: { label: "Syncing...", tone: "info" },
+  error: { label: "Save error — changes kept locally", tone: "danger" },
+};
+
+function AutosaveStatusPill({ status }) {
+  const copy = AUTOSAVE_STATUS_COPY[status];
+  if (!copy) return null;
+  return <span className={`cbt-status-pill tone-${copy.tone}`}>{copy.label}</span>;
+}
+
 export function TeacherExamBuilder({
   session,
   classOptions = [],
@@ -684,6 +810,16 @@ export function TeacherExamBuilder({
   const [publishedPin, setPublishedPin] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
   const isEditing = Boolean(initialExam?.id);
+
+  const autosave = useExamAutosave({
+    session,
+    userId: session?.user?.id || "anon",
+    initialExamId: initialExam?.id || null,
+    form,
+    sections,
+    questions,
+    buildAutosavePayload,
+  });
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
   const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
@@ -706,11 +842,6 @@ export function TeacherExamBuilder({
     const hours = String(date.getHours()).padStart(2, "0");
     const minutes = String(date.getMinutes()).padStart(2, "0");
     return `${date.getFullYear()}-${month}-${day}T${hours}:${minutes}`;
-  };
-  const makeDateTime = (value) => {
-    if (!value) return "";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? "" : date.toISOString();
   };
   const manualDuration = Number(form.duration) || 0;
   const normalizeBankQuestion = (item) => {
@@ -816,6 +947,27 @@ export function TeacherExamBuilder({
     setError("");
   }, [initialExam]);
 
+  // Restore-on-mount: overlay any local draft that's newer than what the server
+  // just returned above (offline/mid-autosave edits that hadn't synced yet
+  // before a refresh), or - for a brand-new exam - restore a draft that never
+  // made it to the server at all. Deliberately declared after the effect above
+  // so a newer local draft correctly wins over server data, per the "restore
+  // the latest saved draft automatically" requirement.
+  useEffect(() => {
+    const key = initialExam?.id ? localDraftKey("edit", initialExam.id) : localDraftKey("new", session?.user?.id || "anon");
+    const local = loadLocalDraft(key);
+    if (!local) return;
+    const serverUpdatedAt = initialExam?.updated_at ? new Date(initialExam.updated_at).getTime() : 0;
+    if (initialExam?.id && local.lastModified && local.lastModified <= serverUpdatedAt) return;
+    if (local.form) setForm(local.form);
+    if (local.sections) setSections(local.sections);
+    if (local.questions?.length) setQuestions(local.questions);
+    autosave.setRestoredNotice(
+      initialExam?.id ? "Restored your unsaved changes from this device." : "Restored your unsaved draft from this device."
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialExam?.id]);
+
   const handleSaveExam = async () => {
     setError("");
     setFeedback("");
@@ -836,33 +988,7 @@ export function TeacherExamBuilder({
       setActiveSection("details");
       return;
     }
-    const preparedQuestions = questions.map((question) => {
-      const questionType = question.questionType || "mcq";
-      const isTheory = THEORY_QUESTION_TYPES.has(questionType);
-      const options = isTheory ? [] : (question.options || []).map((option) => option.trim()).filter(Boolean);
-      const groupKey = question.groupKey || "";
-      return {
-        text: question.text.trim(),
-        question_type: questionType,
-        points: Number(question.marks) || 1,
-        options,
-        correct_answer: isTheory ? "" : (question.options || [])[Number(question.correctIndex)]?.trim() || "",
-        explanation: question.explanation?.trim() || "",
-        source_question_id: question.cbtBankQuestionId || undefined,
-        question_image_field: question.questionImageFile ? `question_image_${question.id}` : "",
-        question_attachment_field: question.questionAttachmentFile ? `question_attachment_${question.id}` : "",
-        group_key: groupKey,
-        group: groupKey
-          ? {
-              key: groupKey,
-              title: question.group?.title || "",
-              group_type: question.group?.group_type || "passage",
-              passage_text: question.group?.passage_text || "",
-              image_field: question.group?.imageFile ? `passage_image_${groupKey}` : "",
-            }
-          : null,
-      };
-    });
+    const preparedQuestions = questions.map(buildPreparedQuestion);
     const invalidQuestion = preparedQuestions.find((question) => {
       if (!question.text) return true;
       if (THEORY_QUESTION_TYPES.has(question.question_type)) return false;
@@ -919,6 +1045,8 @@ export function TeacherExamBuilder({
       }
       const result = isEditing ? await onUpdateExam(initialExam.id, requestPayload) : await onCreateExam(requestPayload);
       const savedExam = result?.exam || {};
+      // The server is now authoritative - nothing left for the local draft to protect.
+      autosave.clearDraft();
       const hasExistingPin = Boolean(
         savedExam.pin_required ||
           Number(savedExam.active_pin_count || 0) > 0 ||
@@ -1182,11 +1310,26 @@ export function TeacherExamBuilder({
             <button type="button" className="table-action" onClick={() => setActiveSection("review")}>
               Preview Exam
             </button>
+            <AutosaveStatusPill status={autosave.status} />
             <button type="button" onClick={handleSaveExam} disabled={saving}>
               {saving ? "Saving..." : canPublishExam ? "Save Exam" : "Send to Admin"}
             </button>
           </div>
         </div>
+
+        {autosave.restoredNotice ? (
+          <div className="form-feedback success" role="status">
+            {autosave.restoredNotice}
+            <button
+              type="button"
+              className="table-action"
+              style={{ marginLeft: "0.6rem" }}
+              onClick={() => autosave.setRestoredNotice("")}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         {(feedback || error) ? (
           <div className={`form-feedback ${error ? "error" : "success"}`}>

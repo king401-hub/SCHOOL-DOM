@@ -58,6 +58,7 @@ urlpatterns = [
     path("exams/pins/<int:pin_id>/", app_views.cbt_exam_pin_detail, name="app_cbt_exam_pin_detail"),
     path("exams/question-bank/", app_views.cbt_question_bank, name="app_cbt_question_bank"),
     path("exams/create/", app_views.create_exam, name="app_create_exam"),
+    path("exams/autosave/", app_views.autosave_exam_draft, name="app_autosave_exam_draft"),
     path("exams/<int:exam_id>/", app_views.exam_detail, name="app_exam_detail"),
     path("exams/<int:exam_id>/results/upload/", app_views.upload_exam_results, name="app_upload_exam_results"),
     path("exams/results/<int:attempt_id>/", app_views.delete_exam_attempt_result, name="app_delete_exam_attempt_result"),

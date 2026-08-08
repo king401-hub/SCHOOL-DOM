@@ -102,6 +102,10 @@ class Exam(TenantAwareModel, TimeStampedModel):
     last_sync = models.DateTimeField(null=True, blank=True)
     is_published = models.BooleanField(default=False)
 
+    # Exam Builder auto-save bookkeeping only - not used for access control or
+    # CBT sync decisions (those still key off is_published exclusively).
+    last_autosaved_at = models.DateTimeField(null=True, blank=True)
+
 
 class ExamPin(TenantAwareModel, TimeStampedModel):
     USE_ONE_TIME = "one_time"

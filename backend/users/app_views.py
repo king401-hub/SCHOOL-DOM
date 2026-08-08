@@ -8613,6 +8613,7 @@ def _exam_editor_payload(exam, request=None):
         "shuffle_questions": exam.shuffle_questions,
         "show_results_immediately": exam.show_results_immediately,
         "is_published": exam.is_published,
+        "updated_at": exam.updated_at,
         "question_count": len(questions),
         "questions": [
             {
@@ -8636,14 +8637,19 @@ def _exam_editor_payload(exam, request=None):
     return payload
 
 
-def _clean_exam_questions_payload(raw_questions, exam_format="objective"):
+def _clean_exam_questions_payload(raw_questions, exam_format="objective", allow_empty=False):
     if isinstance(raw_questions, str):
         try:
             raw_questions = json.loads(raw_questions)
         except Exception:
             return None, "Questions payload must be valid JSON."
-    if not isinstance(raw_questions, list) or not raw_questions:
+    if not isinstance(raw_questions, list):
         return None, "Add at least one question before saving the exam."
+    if not raw_questions:
+        # Auto-save must tolerate a transient zero-question state (e.g. the user
+        # just deleted their only question mid-edit) without erroring - only the
+        # final manual Save/Publish enforces "at least one question."
+        return ([], "") if allow_empty else (None, "Add at least one question before saving the exam.")
 
     allowed_types = {
         "objective": set(Question.OBJECTIVE_TYPES),
@@ -8672,6 +8678,10 @@ def _clean_exam_questions_payload(raw_questions, exam_format="objective"):
             source_question_id = int(item.get("source_question_id") or 0) or None
         except Exception:
             source_question_id = None
+        try:
+            question_id = int(item.get("id")) if isinstance(item, dict) and item.get("id") not in (None, "") else None
+        except (TypeError, ValueError):
+            question_id = None
         group_payload = item.get("group") if isinstance(item.get("group"), dict) else {}
         group_key = str(item.get("group_key") or group_payload.get("key") or "").strip()
         group_type = str(group_payload.get("group_type") or item.get("group_type") or "").strip() or "passage"
@@ -8695,6 +8705,7 @@ def _clean_exam_questions_payload(raw_questions, exam_format="objective"):
 
         cleaned_questions.append(
             {
+                "id": question_id,
                 "text": text,
                 "question_type": question_type,
                 "options": options,
@@ -8716,7 +8727,30 @@ def _clean_exam_questions_payload(raw_questions, exam_format="objective"):
     return cleaned_questions, ""
 
 
-def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_key=None, group_order=0):
+def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_key=None, group_order=0, existing=None):
+    image_file = request.FILES.get(item.get("question_image_field")) if request and item.get("question_image_field") else None
+    attachment_file = request.FILES.get(item.get("question_attachment_field")) if request and item.get("question_attachment_field") else None
+
+    if existing is not None:
+        # Update in place - this is the upsert path used when a payload item's id
+        # already matches a question attached to this exam (see
+        # _sync_exam_questions). Never clear an existing image/attachment just
+        # because this save didn't re-attach a file.
+        existing.question_type = item.get("question_type") or "mcq"
+        existing.text = item["text"]
+        existing.options = item["options"]
+        existing.correct_answer = item["correct_answer"]
+        existing.points = item["points"]
+        existing.explanation = item["explanation"]
+        existing.group = (groups_by_key or {}).get(item.get("group_key"))
+        existing.group_order = group_order
+        if image_file:
+            existing.image = image_file
+        if attachment_file:
+            existing.attachment = attachment_file
+        existing.save()
+        return existing
+
     source_question_id = item.get("source_question_id")
     # Question bank entries are always objective (mcq) - only worth checking
     # for reuse when this item is objective too.
@@ -8738,8 +8772,8 @@ def _exam_question_from_payload(item, tenant_obj, user, request=None, groups_by_
         tenant=tenant_obj,
         question_type=item.get("question_type") or "mcq",
         text=item["text"],
-        image=request.FILES.get(item.get("question_image_field")) if request and item.get("question_image_field") else None,
-        attachment=request.FILES.get(item.get("question_attachment_field")) if request and item.get("question_attachment_field") else None,
+        image=image_file,
+        attachment=attachment_file,
         options=item["options"],
         correct_answer=item["correct_answer"],
         points=item["points"],
@@ -8766,6 +8800,37 @@ def _question_groups_from_payload(cleaned_questions, tenant_obj, user, request=N
         )
         groups_by_key[group_key] = group
     return groups_by_key
+
+
+def _sync_exam_questions(exam, cleaned_questions, tenant_obj, user, request=None):
+    """Upsert-by-id sync of an exam's question set. A payload item whose id
+    already matches a question attached to this exam is updated in place instead
+    of recreated - critical for auto-save, which would otherwise create fresh
+    Question/QuestionGroup rows and orphan the previous ones on every tick (the
+    same thing exam.questions.set(...) with freshly-created rows always did, even
+    for a single manual re-save - this fixes that too, not just auto-save).
+    Questions detached by this sync are hard-deleted only if they aren't shared
+    with any other exam or question bank."""
+    previously_attached = {question.id: question for question in exam.questions.all()}
+    groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, user, request)
+
+    synced_questions = []
+    for index, item in enumerate(cleaned_questions, start=1):
+        existing = previously_attached.get(item.get("id")) if item.get("id") else None
+        synced_questions.append(
+            _exam_question_from_payload(item, tenant_obj, user, request, groups_by_key, index, existing=existing)
+        )
+
+    exam.questions.set(synced_questions)
+
+    kept_ids = {question.id for question in synced_questions}
+    for question_id, question in previously_attached.items():
+        if question_id in kept_ids:
+            continue
+        if not question.exams.exclude(id=exam.id).exists() and not question.question_banks.exists():
+            question.delete()
+
+    return synced_questions
 
 
 def _cbt_bank_question_payload(question, bank=None):
@@ -9529,6 +9594,101 @@ def timetable_entry_detail(request, entry_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+def autosave_exam_draft(request):
+    """Creates the very first backend row for a brand-new Exam Builder draft, as
+    soon as the teacher/admin has entered enough to be worth persisting (a title
+    or a first question). Unlike create_exam, every field here is optional -
+    missing-but-required fields get sane defaults instead of a 400, since a draft
+    is by definition incomplete. Always created unpublished; never notifies
+    admins - that notification is reserved for an explicit Save/Send action, see
+    exam_detail's `autosave` flag for the same rule on subsequent auto-save ticks.
+    """
+    title = str(request.data.get("title") or "").strip()
+    if len(title) < 3:
+        title = "Untitled Draft"
+
+    start_date = parse_datetime(request.data.get("start_date")) if request.data.get("start_date") else None
+    end_date = parse_datetime(request.data.get("end_date")) if request.data.get("end_date") else None
+    if not start_date or not end_date or end_date <= start_date:
+        start_date = timezone.now()
+        end_date = start_date + timedelta(days=1)
+
+    duration_minutes = _positive_duration_minutes(request.data.get("duration_minutes"))
+    if duration_minutes <= 0:
+        duration_minutes = 60
+
+    tenant_obj = _tenant_for_model(Exam, request.user, school_code=request.data.get("school_code"))
+    if not tenant_obj:
+        return Response(
+            {
+                "success": False,
+                "message": "Could not resolve tenant for exam creation. Use a valid school code when signing in.",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    class_group = None
+    class_id = request.data.get("class_id")
+    if class_id not in (None, ""):
+        class_group = _scope_to_user_tenant(Class.objects.all(), request.user).filter(id=class_id).first()
+
+    subject = None
+    subject_id = request.data.get("subject_id")
+    if subject_id not in (None, ""):
+        subject = _scope_to_user_tenant(Subject.objects.all(), request.user).filter(id=subject_id).first()
+        if subject and request.user.role in ADMIN_ROLES and _hide_from_admin_exam_subjects(subject):
+            subject = None
+
+    assessment_type = str(request.data.get("assessment_type", "exam")).strip().lower()
+    if assessment_type not in {"exam", "test"}:
+        assessment_type = "exam"
+    exam_type_name = "Test" if assessment_type == "test" else "Exam"
+    exam_type = ExamType.objects.filter(tenant=tenant_obj, name__iexact=exam_type_name).first()
+    if not exam_type:
+        exam_type = ExamType.objects.create(tenant=tenant_obj, name=exam_type_name)
+
+    exam_format = str(request.data.get("exam_format", "objective")).strip().lower() or "objective"
+    if exam_format not in dict(Exam.EXAM_FORMATS):
+        exam_format = "objective"
+
+    exam = Exam.objects.create(
+        title=title,
+        subject=subject,
+        class_group=class_group,
+        teacher=request.user,
+        exam_type=exam_type,
+        exam_format=exam_format,
+        start_date=start_date,
+        end_date=end_date,
+        duration_minutes=duration_minutes,
+        instructions=str(request.data.get("instructions") or "").strip(),
+        shuffle_questions=_to_bool(request.data.get("shuffle_questions"), default=False),
+        show_results_immediately=False,
+        is_published=False,
+        tenant=tenant_obj,
+        last_autosaved_at=timezone.now(),
+    )
+
+    raw_questions = request.data.get("questions") or []
+    if raw_questions:
+        cleaned_questions, questions_error = _clean_exam_questions_payload(raw_questions, exam_format)
+        # Best-effort: a single not-yet-finished question (e.g. an objective
+        # question still missing its correct answer) shouldn't block the draft
+        # row itself from being created - the local draft already holds the true
+        # in-progress state regardless.
+        if not questions_error and cleaned_questions:
+            _sync_exam_questions(exam, cleaned_questions, tenant_obj, request.user, request)
+
+    exam = (
+        Exam.objects.select_related("subject", "class_group", "exam_type")
+        .prefetch_related("questions")
+        .get(id=exam.id)
+    )
+    return Response({"success": True, "exam": _exam_editor_payload(exam, request)}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def create_exam(request):
     title = str(request.data.get("title", "")).strip()
     if len(title) < 3:
@@ -9812,30 +9972,35 @@ def exam_detail(request, exam_id):
                 )
         exam.save(update_fields=list(dict.fromkeys(update_fields)))
 
+    is_autosave = _to_bool(request.data.get("autosave"), default=False)
+
     if "questions" in request.data:
-        cleaned_questions, questions_error = _clean_exam_questions_payload(request.data.get("questions") or [], exam.exam_format)
+        cleaned_questions, questions_error = _clean_exam_questions_payload(
+            request.data.get("questions") or [], exam.exam_format, allow_empty=is_autosave
+        )
         if questions_error:
             return Response(
                 {"success": False, "message": questions_error},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         tenant_obj = exam.tenant or _tenant_for_model(Question, request.user, school_code=request.data.get("school_code"))
-        groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
-        replacement_questions = [
-            _exam_question_from_payload(item, tenant_obj, request.user, request, groups_by_key, index)
-            for index, item in enumerate(cleaned_questions, start=1)
-        ]
-        exam.questions.set(replacement_questions)
+        _sync_exam_questions(exam, cleaned_questions, tenant_obj, request.user, request)
         if request.user.role == "teacher" and exam.is_published:
             exam.is_published = False
             exam.save(update_fields=["is_published", "updated_at"])
+
+    if is_autosave:
+        exam.last_autosaved_at = timezone.now()
+        exam.save(update_fields=["last_autosaved_at"])
 
     exam = (
         Exam.objects.select_related("subject", "class_group", "exam_type")
         .prefetch_related("questions")
         .get(id=exam.id)
     )
-    if request.user.role == "teacher":
+    # Auto-save ticks must never spam admins with "exam ready for review" -
+    # that notification is only meaningful for an explicit Save/Send action.
+    if request.user.role == "teacher" and not is_autosave:
         _notify_admins_exam_ready(exam, request.user)
 
     return Response(
