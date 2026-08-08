@@ -59,12 +59,26 @@ $installCmd = Join-Path $packageDir "install.cmd"
 @'
 @echo off
 setlocal
-set APPDIR=%LOCALAPPDATA%\Programs\SchoolDom Student CBT Win7
+rem %LOCALAPPDATA% does not exist on Windows XP — fall back to %APPDATA%
+if defined LOCALAPPDATA (
+    set APPDIR=%LOCALAPPDATA%\Programs\SchoolDom Student CBT Win7
+) else (
+    set APPDIR=%APPDATA%\SchoolDom Student CBT Win7
+)
 if not exist "%APPDIR%" mkdir "%APPDIR%"
 copy /Y "%~dp0SchoolDom.StudentCbt.Win7.exe" "%APPDIR%\SchoolDom.StudentCbt.Win7.exe" >nul
 copy /Y "%~dp0SchoolDom.StudentCbt.Win7.exe.config" "%APPDIR%\SchoolDom.StudentCbt.Win7.exe.config" >nul
 copy /Y "%~dp0README.txt" "%APPDIR%\README.txt" >nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop') + '\SchoolDom Student CBT Win7.lnk'); $s.TargetPath=$env:LOCALAPPDATA + '\Programs\SchoolDom Student CBT Win7\SchoolDom.StudentCbt.Win7.exe'; $s.WorkingDirectory=$env:LOCALAPPDATA + '\Programs\SchoolDom Student CBT Win7'; $s.Save()"
+rem Create desktop shortcut via VBScript — works on XP/Vista/7/10/11 without PowerShell
+set VBS=%TEMP%\mkshortcut_%RANDOM%.vbs
+echo Set oWS = WScript.CreateObject("WScript.Shell")                              > "%VBS%"
+echo sLink = oWS.SpecialFolders("Desktop") ^& "\SchoolDom Student CBT Win7.lnk" >> "%VBS%"
+echo Set oLink = oWS.CreateShortcut(sLink)                                       >> "%VBS%"
+echo oLink.TargetPath = "%APPDIR%\SchoolDom.StudentCbt.Win7.exe"                 >> "%VBS%"
+echo oLink.WorkingDirectory = "%APPDIR%"                                          >> "%VBS%"
+echo oLink.Save                                                                   >> "%VBS%"
+cscript //nologo "%VBS%"
+del "%VBS%" >nul 2>&1
 start "" "%APPDIR%\SchoolDom.StudentCbt.Win7.exe"
 endlocal
 '@ | Set-Content -Encoding ASCII $installCmd
@@ -79,7 +93,7 @@ if (!(Test-Path $inno)) {
     $inno = Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"
 }
 if (Test-Path $inno) {
-    & $inno (Join-Path $Root "installer\SchoolDomStudentCbtWin7.iss") "/DAppVersion=$Version"
+    try { & $inno (Join-Path $Root "installer\SchoolDomStudentCbtWin7.iss") "/DAppVersion=$Version" } catch {}
     if ($LASTEXITCODE -ne 0) { Write-Warning "Inno Setup failed (exit $LASTEXITCODE) - ZIP is still available." }
 }
 
