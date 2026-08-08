@@ -24359,6 +24359,119 @@ body[data-theme="dark"] .metric-card .metric-trend {
   opacity: 0.55;
 }
 
+/* Featured "Download Admin App" button - a gentle glow/pulse, a periodic
+   light sweep, and a lift-on-hover to draw an admin's eye without feeling
+   like an ad. Scoped to this one modifier class so it never leaks onto the
+   plain .cbt-action-row/.cbt-download-button buttons elsewhere (e.g. the
+   "Download Again" button inside the confirmation modal). */
+.cbt-download-button--featured {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  gap: 0.45rem;
+  background: linear-gradient(135deg, #102033, #16324f);
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55), 0 10px 24px -12px rgba(15, 23, 42, 0.55);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  animation: cbt-download-glow 2.6s ease-in-out infinite;
+}
+
+.cbt-download-button-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.cbt-download-button-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.32) 46%,
+    rgba(255, 255, 255, 0.05) 54%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: cbt-download-sheen 4.5s ease-in-out infinite;
+}
+
+.cbt-download-button--featured:hover,
+.cbt-download-button--featured:focus-visible {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.22), 0 16px 32px -14px rgba(15, 23, 42, 0.65);
+  filter: brightness(1.06);
+}
+
+.cbt-download-button--featured:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.cbt-download-button--featured.is-preparing {
+  animation: none;
+  cursor: progress;
+  filter: brightness(0.97);
+}
+
+.cbt-download-button--featured.is-preparing .cbt-download-button-sheen {
+  animation: none;
+  opacity: 0;
+}
+
+.cbt-download-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(248, 250, 252, 0.35);
+  border-top-color: #f8fafc;
+  animation: cbt-download-spin 0.7s linear infinite;
+}
+
+@keyframes cbt-download-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45), 0 10px 24px -12px rgba(15, 23, 42, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(37, 99, 235, 0), 0 10px 24px -12px rgba(15, 23, 42, 0.55);
+  }
+}
+
+@keyframes cbt-download-sheen {
+  0%, 12% {
+    transform: translateX(-120%);
+  }
+  35%, 100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes cbt-download-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cbt-download-button--featured {
+    animation: none;
+    box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.55);
+  }
+  .cbt-download-button-sheen {
+    animation: none;
+    opacity: 0;
+  }
+  .cbt-download-button--featured:hover,
+  .cbt-download-button--featured:focus-visible {
+    transform: none;
+  }
+  .cbt-download-spinner {
+    animation-duration: 1.4s;
+  }
+}
+
 .cbt-security-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

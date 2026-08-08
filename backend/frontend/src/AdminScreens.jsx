@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, Download } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -140,6 +140,7 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
   const adminAppDownloadUrl = `${API_BASE_URL}/api/app/admin-desktop/download/${schoolCode ? `?school_code=${encodeURIComponent(schoolCode)}` : ""}`;
   const [downloadNotice, setDownloadNotice] = useState(false);
   const [downloadState, setDownloadState] = useState({ error: "", message: "" });
+  const [preparingDownload, setPreparingDownload] = useState(false);
   const publishedExams = exams.filter((exam) => Boolean(exam.is_published));
   const openExams = publishedExams.filter((exam) => {
     const now = Date.now();
@@ -186,7 +187,12 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
 
   const handleAdminAppDownload = (event) => {
     event.preventDefault();
-    downloadAdminApp();
+    if (preparingDownload) return;
+    setPreparingDownload(true);
+    window.setTimeout(() => {
+      downloadAdminApp();
+      setPreparingDownload(false);
+    }, 700);
   };
 
   return (
@@ -219,8 +225,26 @@ function SchoolDomCbtDesktop({ exams = [], results = [], downloads = {}, school 
             <CbtStatusPill tone="success">No JWT token needed</CbtStatusPill>
           </div>
           <div className="cbt-action-row">
-            <a className="cbt-download-button" href={adminAppDownloadUrl} onClick={handleAdminAppDownload}>
-              Download Admin App
+            <a
+              className={`cbt-download-button cbt-download-button--featured${preparingDownload ? " is-preparing" : ""}`}
+              href={adminAppDownloadUrl}
+              onClick={handleAdminAppDownload}
+              aria-busy={preparingDownload}
+            >
+              <span className="cbt-download-button-sheen" aria-hidden="true" />
+              <span className="cbt-download-button-content">
+                {preparingDownload ? (
+                  <>
+                    <span className="cbt-download-spinner" aria-hidden="true" />
+                    Preparing Download…
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} aria-hidden="true" />
+                    Download Admin App
+                  </>
+                )}
+              </span>
             </a>
           </div>
           <div className="cbt-security-grid">
