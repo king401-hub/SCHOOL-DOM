@@ -22,7 +22,7 @@ from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Exists, OuterRef, Q, Sum, Prefetch
-from django.http import FileResponse, HttpResponse
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
@@ -3803,14 +3803,33 @@ def admin_desktop_bootstrap(request):
 @permission_classes([AllowAny])
 def admin_desktop_download(request):
     app_path = admin_app_installer_path()
-    if not app_path:
-        return Response(
-            {
-                "success": False,
-                "message": "SchoolDom Admin installer is not available on this server yet.",
-            },
-            status=status.HTTP_404_NOT_FOUND,
+
+    # When no proper installer exists locally (only a ZIP is present), redirect to the
+    # GitHub release URL from settings so users always get a runnable Setup.exe.
+    if app_path is None or app_path.suffix.lower() == ".zip":
+        version_info = getattr(settings, "CBT_ADMIN_APP_VERSION", {})
+        github_url = version_info.get("download_url", "")
+        if github_url:
+            return HttpResponseRedirect(github_url)
+        if app_path is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "SchoolDom Admin installer is not available on this server yet.",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # Serve ZIP with correct content-type so the browser doesn't try to run it
+        response = FileResponse(
+            app_path.open("rb"),
+            as_attachment=True,
+            filename=ADMIN_APP_FILENAME.replace(".exe", ".zip"),
+            content_type="application/zip",
         )
+        response["Cache-Control"] = "no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+
     response = FileResponse(
         app_path.open("rb"),
         as_attachment=True,
