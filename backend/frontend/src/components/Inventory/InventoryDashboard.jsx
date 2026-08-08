@@ -49,22 +49,24 @@ export default function InventoryDashboard({ data, onRetry }) {
           {recentlyAdded.length === 0 ? (
             <p>No items added yet.</p>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr><th>Inventory ID</th><th>Name</th><th>Category</th><th>Qty</th><th>Added</th></tr>
-              </thead>
-              <tbody>
-                {recentlyAdded.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.inventory_id}</td>
-                    <td>{item.name}</td>
-                    <td>{item.category}</td>
-                    <td>{item.quantity}</td>
-                    <td>{formatDate(item.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Inventory ID</th><th>Name</th><th>Category</th><th>Qty</th><th>Added</th></tr>
+                </thead>
+                <tbody>
+                  {recentlyAdded.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.inventory_id}</td>
+                      <td>{item.name}</td>
+                      <td>{item.category}</td>
+                      <td>{item.quantity}</td>
+                      <td>{formatDate(item.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </article>
 
@@ -75,22 +77,24 @@ export default function InventoryDashboard({ data, onRetry }) {
           {recentActivity.length === 0 ? (
             <p>No activity recorded yet.</p>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr><th>Action</th><th>Item</th><th>Details</th><th>Actor</th><th>Date</th></tr>
-              </thead>
-              <tbody>
-                {recentActivity.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.action.replace(/_/g, " ")}</td>
-                    <td>{entry.item_inventory_id || "-"}</td>
-                    <td>{entry.description}</td>
-                    <td>{entry.actor_name}</td>
-                    <td>{formatDate(entry.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Action</th><th>Item</th><th>Details</th><th>Actor</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                  {recentActivity.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.action.replace(/_/g, " ")}</td>
+                      <td>{entry.item_inventory_id || "-"}</td>
+                      <td>{entry.description}</td>
+                      <td>{entry.actor_name}</td>
+                      <td>{formatDate(entry.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </article>
       </div>
