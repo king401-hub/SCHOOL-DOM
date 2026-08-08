@@ -5089,15 +5089,31 @@ body[data-theme="dark"] .notification-drawer {
 }
 
 /* ── Modal overlay ───────────────────────────────────────────────────────── */
+/* Canonical shared popup animation for the whole app: a slow slide-up +
+   fade-in on open, slide-down + fade-out on close. Reused (directly or via
+   the same keyframe shapes under other class names) by every modal/dialog/
+   drawer overlay in the app - see the Popup component in AppShared.jsx and
+   the CSS-only rollout further down this file for the other overlay families
+   that mirror this same animation language. */
 
 @keyframes modal-overlay-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
+@keyframes modal-overlay-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
 @keyframes modal-card-in {
-  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  from { opacity: 0; transform: translateY(40px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes modal-card-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(28px) scale(0.98); }
 }
 
 .modal-overlay {
@@ -5110,8 +5126,12 @@ body[data-theme="dark"] .notification-drawer {
   display: grid;
   place-items: center;
   padding: 1rem;
-  animation: modal-overlay-in 180ms ease;
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
   overflow-y: auto;
+}
+
+.modal-overlay.is-closing {
+  animation: modal-overlay-out 240ms ease both;
 }
 
 /* ── Standalone backdrop (for dual-purpose create/edit panels) ───────────── */
@@ -5123,7 +5143,11 @@ body[data-theme="dark"] .notification-drawer {
   background: rgba(2, 6, 23, 0.52);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
-  animation: modal-overlay-in 180ms ease;
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.modal-overlay-bg.is-closing {
+  animation: modal-overlay-out 240ms ease both;
 }
 
 .edit-modal-card {
@@ -5139,9 +5163,13 @@ body[data-theme="dark"] .notification-drawer {
   border: 1px solid #e2e8f0;
   border-radius: 20px;
   box-shadow: 0 32px 80px rgba(15, 23, 42, 0.28), 0 8px 32px rgba(15, 23, 42, 0.12);
-  animation: modal-card-in-fixed 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: modal-card-in-fixed 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
+}
+
+.edit-modal-card.is-closing {
+  animation: modal-card-out-fixed 240ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 /* When inside .modal-overlay, use relative positioning */
@@ -5150,12 +5178,54 @@ body[data-theme="dark"] .notification-drawer {
   top: auto;
   left: auto;
   transform: none;
-  animation: modal-card-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.modal-overlay > .edit-modal-card.is-closing {
+  animation: modal-card-out 240ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 @keyframes modal-card-in-fixed {
-  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  from { opacity: 0; transform: translateY(40px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes modal-card-out-fixed {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(28px) scale(0.98); }
+}
+
+/* Every modal/dialog/popup overlay in the app shares this one reduced-motion
+   guard - popups still open/close instantly, they just skip the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .modal-overlay-bg,
+  .edit-modal-card,
+  .modal-overlay > .edit-modal-card,
+  .cfm-overlay,
+  .cfm-card,
+  .chat-groups-modal-backdrop,
+  .chat-groups-modal,
+  .student-delete-dialog,
+  .student-delete-card,
+  .activity-remove-dialog,
+  .activity-remove-card,
+  .terms-modal-overlay,
+  .terms-modal,
+  .lesson-plan-dialog-backdrop,
+  .lesson-plan-dialog,
+  .cbt-flag-modal,
+  .cbt-flag-card,
+  .cbt-info-modal,
+  .cbt-info-card,
+  .cbt-download-modal,
+  .cbt-download-card,
+  .result-delete-modal,
+  .result-delete-card,
+  .notification-drawer-overlay,
+  .notification-drawer {
+    animation: none !important;
+  }
 }
 
 body[data-theme="dark"] .edit-modal-card {
@@ -5292,6 +5362,7 @@ body[data-theme="dark"] .modal-form-wrap .panel-form-actions { border-top-color:
   padding: 1rem;
   background: rgba(15, 23, 42, 0.48);
   backdrop-filter: blur(6px);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .student-delete-card {
@@ -5302,7 +5373,7 @@ body[data-theme="dark"] .modal-form-wrap .panel-form-actions { border-top-color:
   color: #172033;
   box-shadow: 0 28px 90px rgba(15, 23, 42, 0.34);
   padding: 1.15rem;
-  animation: student-delete-pop 180ms ease-out;
+  animation: student-delete-pop 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .student-delete-icon {
@@ -5424,7 +5495,7 @@ body[data-theme="dark"] .modal-form-wrap .panel-form-actions { border-top-color:
 @keyframes student-delete-pop {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(40px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -8202,6 +8273,7 @@ body[data-theme="dark"] .finance-table-count {
   padding: 1.5rem;
   background: rgba(15, 23, 42, 0.62);
   backdrop-filter: blur(6px);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .result-delete-card {
@@ -8212,6 +8284,7 @@ body[data-theme="dark"] .finance-table-count {
   color: #111827;
   padding: 1.35rem;
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.32);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .result-delete-icon {
@@ -16548,6 +16621,7 @@ body[data-theme="dark"] .service-agreement-document .sa-signature-img {
   padding: 1rem;
   background: rgba(15, 23, 42, 0.52);
   backdrop-filter: blur(6px);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .activity-remove-card {
@@ -16558,7 +16632,7 @@ body[data-theme="dark"] .service-agreement-document .sa-signature-img {
   color: #172033;
   box-shadow: 0 28px 90px rgba(15, 23, 42, 0.34);
   padding: 1.15rem;
-  animation: student-delete-pop 180ms ease-out;
+  animation: student-delete-pop 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .activity-remove-kicker {
@@ -18658,6 +18732,7 @@ body[data-theme="light"] .notepad-toggle-thumb { background: #94a3b8; }
   place-items: center;
   padding: 20px;
   background: rgba(15, 23, 42, 0.58);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .lesson-plan-dialog {
@@ -18670,6 +18745,7 @@ body[data-theme="light"] .notepad-toggle-thumb { background: #94a3b8; }
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
   color: #0f172a;
   padding: 20px;
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .lesson-plan-dialog-head {
@@ -20164,6 +20240,15 @@ body[data-theme="dark"] .finance-status.status-skipped {
   align-items: start;
 }
 
+/* Inventory Items panel: form and table stack full-width instead of sharing
+   .expense-workspace's 2-column grid, so the table never gets squeezed into
+   a narrow column and clipped. */
+.inventory-items-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .expense-tracker .panel-field input,
 .expense-tracker .panel-field select,
 .expense-tracker .panel-field textarea {
@@ -21352,6 +21437,7 @@ body[data-theme="dark"] .finance-status.status-skipped {
   place-items: center;
   padding: 1.5rem;
   background: rgba(15, 23, 42, 0.58);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .cbt-flag-card {
@@ -21361,6 +21447,7 @@ body[data-theme="dark"] .finance-status.status-skipped {
   color: #111827;
   padding: 1.5rem;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .cbt-flag-card h3 {
@@ -21415,6 +21502,7 @@ body[data-theme="dark"] .finance-status.status-skipped {
   place-items: center;
   padding: 1.5rem;
   background: rgba(15, 23, 42, 0.58);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .cbt-info-card {
@@ -21424,6 +21512,7 @@ body[data-theme="dark"] .finance-status.status-skipped {
   color: #111827;
   padding: 1.6rem;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .cbt-pin-card {
@@ -24511,6 +24600,7 @@ body[data-theme="dark"] .metric-card .metric-trend {
   padding: 1.25rem;
   background: rgba(15, 23, 42, 0.62);
   backdrop-filter: blur(8px);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .cbt-download-card {
@@ -24522,7 +24612,7 @@ body[data-theme="dark"] .metric-card .metric-trend {
   color: #0f172a;
   text-align: center;
   box-shadow: 0 30px 90px rgba(15, 23, 42, 0.28);
-  animation: cbtDownloadPop 220ms ease-out;
+  animation: cbtDownloadPop 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .cbt-download-check {
@@ -24577,7 +24667,7 @@ body[data-theme="dark"] .metric-card .metric-trend {
 @keyframes cbtDownloadPop {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(40px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -25918,15 +26008,16 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
   position: fixed; inset: 0; background: rgba(0,0,0,0.65);
   z-index: 9000; display: flex; align-items: center; justify-content: center;
   padding: 1rem; backdrop-filter: blur(3px);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .terms-modal {
   background: #1e1e2e; border-radius: 14px; width: 100%; max-width: 660px;
   max-height: 88vh; display: flex; flex-direction: column;
   box-shadow: 0 28px 64px rgba(0,0,0,0.55);
-  animation: termsModalIn 0.22s cubic-bezier(.22,.68,0,1.2);
+  animation: termsModalIn 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes termsModalIn {
-  from { opacity: 0; transform: translateY(22px) scale(0.96); }
+  from { opacity: 0; transform: translateY(40px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .terms-modal-header {
@@ -25997,9 +26088,13 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
   z-index: 9500;
   display: flex; align-items: center; justify-content: center;
   padding: 1rem;
-  animation: cfmFadeIn 0.18s ease;
+  animation: cfmFadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.cfm-overlay.is-closing {
+  animation: cfmFadeOut 0.22s ease both;
 }
 @keyframes cfmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cfmFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
 .cfm-card {
   background: #1e1e2e;
@@ -26009,11 +26104,18 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
   width: 100%; max-width: 400px;
   padding: 2rem 2rem 1.5rem;
   display: flex; flex-direction: column; align-items: center; text-align: center;
-  animation: cfmSlideUp 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: cfmSlideUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.cfm-card.is-closing {
+  animation: cfmSlideDown 0.22s cubic-bezier(0.4, 0, 1, 1) both;
 }
 @keyframes cfmSlideUp {
-  from { opacity: 0; transform: translateY(24px) scale(0.95); }
+  from { opacity: 0; transform: translateY(40px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@keyframes cfmSlideDown {
+  from { opacity: 1; transform: translateY(0)   scale(1); }
+  to   { opacity: 0; transform: translateY(28px) scale(0.97); }
 }
 
 .cfm-icon {

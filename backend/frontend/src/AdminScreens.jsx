@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, Download } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -34,50 +34,51 @@ import {
   openPrintableDocument,
   downloadPrintablePng,
   OfficialDocHeader,
+  Popup,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
 import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
 import { FinanceHistoryModal } from "./FinanceHistoryModal";
 
-function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onCancel(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
-  return createPortal(
-    <div className="cfm-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div className="cfm-card" role="alertdialog" aria-modal="true" aria-labelledby="cfm-title">
-        <div className={`cfm-icon ${danger ? "cfm-icon--danger" : "cfm-icon--neutral"}`}>
-          {danger
-            ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          }
-        </div>
-        <h3 className="cfm-title" id="cfm-title">{title}</h3>
-        {message && <p className="cfm-message">{message}</p>}
-        <div className="cfm-actions">
-          <button type="button" className="cfm-btn cfm-btn--cancel" onClick={onCancel}>Cancel</button>
-          <button type="button" className={`cfm-btn cfm-btn--ok${danger ? " cfm-btn--danger" : " cfm-btn--neutral"}`} onClick={onConfirm}>{confirmLabel}</button>
-        </div>
+function ConfirmModal({ open, title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
+  return (
+    <Popup
+      open={open}
+      onClose={onCancel}
+      overlayClassName="cfm-overlay"
+      cardClassName="cfm-card"
+      role="alertdialog"
+      labelledBy="cfm-title"
+    >
+      <div className={`cfm-icon ${danger ? "cfm-icon--danger" : "cfm-icon--neutral"}`}>
+        {danger
+          ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        }
       </div>
-    </div>,
-    document.body
+      <h3 className="cfm-title" id="cfm-title">{title}</h3>
+      {message && <p className="cfm-message">{message}</p>}
+      <div className="cfm-actions">
+        <button type="button" className="cfm-btn cfm-btn--cancel" onClick={onCancel}>Cancel</button>
+        <button type="button" className={`cfm-btn cfm-btn--ok${danger ? " cfm-btn--danger" : " cfm-btn--neutral"}`} onClick={onConfirm}>{confirmLabel}</button>
+      </div>
+    </Popup>
   );
 }
 
 function useConfirm() {
   const [state, setState] = useState(null);
+  const [open, setOpen] = useState(false);
   const resolveRef = useRef(null);
   const confirm = useCallback((options) => new Promise((resolve) => {
     resolveRef.current = resolve;
     setState(options);
+    setOpen(true);
   }), []);
-  const handleConfirm = useCallback(() => { setState(null); resolveRef.current?.(true); }, []);
-  const handleCancel = useCallback(() => { setState(null); resolveRef.current?.(false); }, []);
-  const dialog = state ? <ConfirmModal {...state} onConfirm={handleConfirm} onCancel={handleCancel} /> : null;
+  const handleConfirm = useCallback(() => { setOpen(false); resolveRef.current?.(true); }, []);
+  const handleCancel = useCallback(() => { setOpen(false); resolveRef.current?.(false); }, []);
+  const dialog = state ? <ConfirmModal {...state} open={open} onConfirm={handleConfirm} onCancel={handleCancel} /> : null;
   return [confirm, dialog];
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { openPrintableDocument, requestJson } from "../../AppShared";
+import { openPrintableDocument, requestJson, Popup } from "../../AppShared";
 import { API_BASE_URL } from "../../appConstants";
 import { CONDITION_COLORS, InventoryPill, formatMoney } from "./inventoryHelpers";
 
@@ -13,6 +13,131 @@ const emptyForm = {
   record_finance_expense: false,
 };
 
+function formStateFromItem(item) {
+  return {
+    name: item.name || "", description: item.description || "", category: item.category || "Other",
+    brand: item.brand || "", model_number: item.model_number || "", serial_number: item.serial_number || "",
+    supplier: item.supplier || "", purchase_date: item.purchase_date || "", purchase_price: item.purchase_price ?? "",
+    current_value: item.current_value ?? "", quantity: String(item.quantity ?? 1), reorder_level: String(item.reorder_level ?? 1),
+    unit_of_measurement: item.unit_of_measurement || "unit", warranty_period_months: item.warranty_period_months ?? "",
+    expected_lifespan_years: item.expected_lifespan_years ?? "", storage_location: item.storage_location || "",
+    assigned_department: item.assigned_department || "", condition: item.condition || "new",
+    next_maintenance_date: item.next_maintenance_date || "", record_finance_expense: false,
+  };
+}
+
+// Shared field set for both the "Add Inventory Item" form and the Edit modal, so the
+// two never drift apart. showQuantity mirrors the backend's PATCH whitelist, which
+// deliberately excludes quantity - stock changes have to go through the dedicated
+// stock-movement endpoint instead.
+function InventoryItemFields({ form, setForm, categories, showQuantity, imageFiles, setImageFiles }) {
+  return (
+    <>
+      <div className="panel-form-grid">
+        <label className="panel-field">
+          Item Name
+          <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required />
+        </label>
+        <label className="panel-field">
+          Category
+          <input list="inventory-categories" value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} />
+          <datalist id="inventory-categories">
+            {(categories.length ? categories : ["Furniture", "ICT Equipment", "Laboratory", "Library", "Sports", "Office Supplies", "Classroom Materials", "Vehicles"]).map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </label>
+        <label className="panel-field">
+          Brand
+          <input value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Model Number
+          <input value={form.model_number} onChange={(e) => setForm((f) => ({ ...f, model_number: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Serial Number
+          <input value={form.serial_number} onChange={(e) => setForm((f) => ({ ...f, serial_number: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Supplier
+          <input value={form.supplier} onChange={(e) => setForm((f) => ({ ...f, supplier: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Purchase Date
+          <input type="date" value={form.purchase_date} onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Purchase Price
+          <input type="number" step="0.01" value={form.purchase_price} onChange={(e) => setForm((f) => ({ ...f, purchase_price: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Current Value
+          <input type="number" step="0.01" value={form.current_value} onChange={(e) => setForm((f) => ({ ...f, current_value: e.target.value }))} />
+        </label>
+        {showQuantity ? (
+          <label className="panel-field">
+            Quantity
+            <input type="number" min="1" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} />
+          </label>
+        ) : null}
+        <label className="panel-field">
+          Reorder Level
+          <input type="number" min="0" value={form.reorder_level} onChange={(e) => setForm((f) => ({ ...f, reorder_level: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Unit of Measurement
+          <input value={form.unit_of_measurement} onChange={(e) => setForm((f) => ({ ...f, unit_of_measurement: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Warranty Period (months)
+          <input type="number" min="0" value={form.warranty_period_months} onChange={(e) => setForm((f) => ({ ...f, warranty_period_months: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Expected Lifespan (years)
+          <input type="number" min="0" value={form.expected_lifespan_years} onChange={(e) => setForm((f) => ({ ...f, expected_lifespan_years: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Storage Location
+          <input value={form.storage_location} onChange={(e) => setForm((f) => ({ ...f, storage_location: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Assigned Department
+          <input value={form.assigned_department} onChange={(e) => setForm((f) => ({ ...f, assigned_department: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Condition
+          <select value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))}>
+            {CONDITION_OPTIONS.map((c) => (
+              <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
+            ))}
+          </select>
+        </label>
+        <label className="panel-field">
+          Next Maintenance Date
+          <input type="date" value={form.next_maintenance_date} onChange={(e) => setForm((f) => ({ ...f, next_maintenance_date: e.target.value }))} />
+        </label>
+        <label className="panel-field">
+          Images
+          <input type="file" accept="image/*" multiple onChange={(e) => setImageFiles(Array.from(e.target.files || []))} />
+        </label>
+        <label className="panel-field checkbox-field">
+          <input
+            type="checkbox"
+            checked={form.record_finance_expense}
+            onChange={(e) => setForm((f) => ({ ...f, record_finance_expense: e.target.checked }))}
+          />
+          Record purchase as a Finance expense
+        </label>
+      </div>
+      <div className="panel-form full-width">
+        Description
+        <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} />
+      </div>
+    </>
+  );
+}
+
 export default function InventoryItemsPanel({ session }) {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -23,12 +148,20 @@ export default function InventoryItemsPanel({ session }) {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [conditionFilter, setConditionFilter] = useState("");
 
+  // "Add Inventory Item" form - create-only.
   const [form, setForm] = useState(emptyForm);
-  const [editingId, setEditingId] = useState("");
   const [imageFiles, setImageFiles] = useState([]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [formError, setFormError] = useState("");
+
+  // Edit modal - separate state so editing an item never touches the Add form.
+  const [editingId, setEditingId] = useState("");
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [editImageFiles, setEditImageFiles] = useState([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
   const [busyId, setBusyId] = useState("");
 
   const load = async () => {
@@ -67,29 +200,6 @@ export default function InventoryItemsPanel({ session }) {
     });
   }, [items, searchTerm, categoryFilter, conditionFilter]);
 
-  const resetForm = () => {
-    setForm(emptyForm);
-    setEditingId("");
-    setImageFiles([]);
-  };
-
-  const startEdit = (item) => {
-    setForm({
-      name: item.name || "", description: item.description || "", category: item.category || "Other",
-      brand: item.brand || "", model_number: item.model_number || "", serial_number: item.serial_number || "",
-      supplier: item.supplier || "", purchase_date: item.purchase_date || "", purchase_price: item.purchase_price ?? "",
-      current_value: item.current_value ?? "", quantity: String(item.quantity ?? 1), reorder_level: String(item.reorder_level ?? 1),
-      unit_of_measurement: item.unit_of_measurement || "unit", warranty_period_months: item.warranty_period_months ?? "",
-      expected_lifespan_years: item.expected_lifespan_years ?? "", storage_location: item.storage_location || "",
-      assigned_department: item.assigned_department || "", condition: item.condition || "new",
-      next_maintenance_date: item.next_maintenance_date || "", record_finance_expense: false,
-    });
-    setEditingId(item.id);
-    setImageFiles([]);
-    setFeedback("");
-    setFormError("");
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -97,19 +207,42 @@ export default function InventoryItemsPanel({ session }) {
     setFormError("");
     try {
       const payload = { ...form, images: imageFiles };
-      if (editingId) {
-        await requestJson(session, "PATCH", `/api/inventory/items/${editingId}/`, payload);
-        setFeedback("Item updated.");
-      } else {
-        await requestJson(session, "POST", "/api/inventory/items/", payload);
-        setFeedback("Item created.");
-      }
-      resetForm();
+      await requestJson(session, "POST", "/api/inventory/items/", payload);
+      setFeedback("Item created.");
+      setForm(emptyForm);
+      setImageFiles([]);
       await load();
     } catch (err) {
       setFormError(err.message || "Unable to save item.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const startEdit = (item) => {
+    setEditForm(formStateFromItem(item));
+    setEditImageFiles([]);
+    setEditError("");
+    setEditingId(item.id);
+  };
+
+  const closeEditModal = () => {
+    setEditingId("");
+  };
+
+  const handleEditSubmit = async (event) => {
+    event.preventDefault();
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const payload = { ...editForm, images: editImageFiles };
+      await requestJson(session, "PATCH", `/api/inventory/items/${editingId}/`, payload);
+      await load();
+      closeEditModal();
+    } catch (err) {
+      setEditError(err.message || "Unable to save item.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -162,120 +295,19 @@ export default function InventoryItemsPanel({ session }) {
   };
 
   return (
-    <div className="expense-workspace">
+    <div className="inventory-items-stack">
       <div id="inventory-qr-label" className="inventory-qr-label" />
 
       <article className="app-panel">
         <div className="expense-panel-head">
-          <h3>{editingId ? "Edit Item" : "Add Inventory Item"}</h3>
-          {editingId ? <button type="button" className="table-action" onClick={resetForm}>Close</button> : null}
+          <h3>Add Inventory Item</h3>
         </div>
         {formError ? <p className="form-feedback error">{formError}</p> : null}
         {feedback ? <p className="form-feedback success">{feedback}</p> : null}
         <form className="panel-form" onSubmit={handleSubmit}>
-          <div className="panel-form-grid">
-            <label className="panel-field">
-              Item Name
-              <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required />
-            </label>
-            <label className="panel-field">
-              Category
-              <input list="inventory-categories" value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} />
-              <datalist id="inventory-categories">
-                {(categories.length ? categories : ["Furniture", "ICT Equipment", "Laboratory", "Library", "Sports", "Office Supplies", "Classroom Materials", "Vehicles"]).map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </label>
-            <label className="panel-field">
-              Brand
-              <input value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Model Number
-              <input value={form.model_number} onChange={(e) => setForm((f) => ({ ...f, model_number: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Serial Number
-              <input value={form.serial_number} onChange={(e) => setForm((f) => ({ ...f, serial_number: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Supplier
-              <input value={form.supplier} onChange={(e) => setForm((f) => ({ ...f, supplier: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Purchase Date
-              <input type="date" value={form.purchase_date} onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Purchase Price
-              <input type="number" step="0.01" value={form.purchase_price} onChange={(e) => setForm((f) => ({ ...f, purchase_price: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Current Value
-              <input type="number" step="0.01" value={form.current_value} onChange={(e) => setForm((f) => ({ ...f, current_value: e.target.value }))} />
-            </label>
-            {!editingId ? (
-              <label className="panel-field">
-                Quantity
-                <input type="number" min="1" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} />
-              </label>
-            ) : null}
-            <label className="panel-field">
-              Reorder Level
-              <input type="number" min="0" value={form.reorder_level} onChange={(e) => setForm((f) => ({ ...f, reorder_level: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Unit of Measurement
-              <input value={form.unit_of_measurement} onChange={(e) => setForm((f) => ({ ...f, unit_of_measurement: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Warranty Period (months)
-              <input type="number" min="0" value={form.warranty_period_months} onChange={(e) => setForm((f) => ({ ...f, warranty_period_months: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Expected Lifespan (years)
-              <input type="number" min="0" value={form.expected_lifespan_years} onChange={(e) => setForm((f) => ({ ...f, expected_lifespan_years: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Storage Location
-              <input value={form.storage_location} onChange={(e) => setForm((f) => ({ ...f, storage_location: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Assigned Department
-              <input value={form.assigned_department} onChange={(e) => setForm((f) => ({ ...f, assigned_department: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Condition
-              <select value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))}>
-                {CONDITION_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
-                ))}
-              </select>
-            </label>
-            <label className="panel-field">
-              Next Maintenance Date
-              <input type="date" value={form.next_maintenance_date} onChange={(e) => setForm((f) => ({ ...f, next_maintenance_date: e.target.value }))} />
-            </label>
-            <label className="panel-field">
-              Images
-              <input type="file" accept="image/*" multiple onChange={(e) => setImageFiles(Array.from(e.target.files || []))} />
-            </label>
-            <label className="panel-field checkbox-field">
-              <input
-                type="checkbox"
-                checked={form.record_finance_expense}
-                onChange={(e) => setForm((f) => ({ ...f, record_finance_expense: e.target.checked }))}
-              />
-              Record purchase as a Finance expense
-            </label>
-          </div>
-          <div className="panel-form full-width">
-            Description
-            <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} />
-          </div>
+          <InventoryItemFields form={form} setForm={setForm} categories={categories} showQuantity imageFiles={imageFiles} setImageFiles={setImageFiles} />
           <button type="submit" className="btn-primary" disabled={saving}>
-            {saving ? "Saving..." : editingId ? "Save Changes" : "Add Item"}
+            {saving ? "Saving..." : "Add Item"}
           </button>
         </form>
       </article>
@@ -309,48 +341,79 @@ export default function InventoryItemsPanel({ session }) {
         ) : filtered.length === 0 ? (
           <p>No inventory items match this filter.</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Inventory ID</th><th>Name</th><th>Category</th><th>Condition</th>
-                <th>Available / Total</th><th>Value</th><th>Location</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.inventory_id}</td>
-                  <td>
-                    {item.name}
-                    {item.images?.length ? (
-                      <div className="inventory-item-images">
-                        {item.images.slice(0, 3).map((img) => <img key={img.id} src={img.image} alt={item.name} />)}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>{item.category}</td>
-                  <td><InventoryPill value={item.condition} colorMap={CONDITION_COLORS} /></td>
-                  <td>{item.quantity_available} / {item.quantity} {item.unit_of_measurement}</td>
-                  <td>{formatMoney(item.stock_value)}</td>
-                  <td>{item.storage_location || "-"}</td>
-                  <td>
-                    <div className="table-actions-inline">
-                      <button type="button" className="table-action" onClick={() => startEdit(item)}>Edit</button>
-                      <button type="button" className="table-action" onClick={() => handlePrintQr(item)}>QR Label</button>
-                      <button type="button" className="table-action" disabled={busyId === item.id} onClick={() => handleArchive(item)}>
-                        {busyId === item.id ? "..." : "Archive"}
-                      </button>
-                      <button type="button" className="table-action danger" disabled={busyId === item.id} onClick={() => handleDelete(item)}>
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Inventory ID</th><th>Name</th><th>Category</th><th>Condition</th>
+                  <th>Available / Total</th><th>Value</th><th>Location</th><th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.inventory_id}</td>
+                    <td>
+                      {item.name}
+                      {item.images?.length ? (
+                        <div className="inventory-item-images">
+                          {item.images.slice(0, 3).map((img) => <img key={img.id} src={img.image} alt={item.name} />)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>{item.category}</td>
+                    <td><InventoryPill value={item.condition} colorMap={CONDITION_COLORS} /></td>
+                    <td>{item.quantity_available} / {item.quantity} {item.unit_of_measurement}</td>
+                    <td>{formatMoney(item.stock_value)}</td>
+                    <td>{item.storage_location || "-"}</td>
+                    <td>
+                      <div className="table-actions-inline">
+                        <button type="button" className="table-action" onClick={() => startEdit(item)}>Edit</button>
+                        <button type="button" className="table-action" onClick={() => handlePrintQr(item)}>QR Label</button>
+                        <button type="button" className="table-action" disabled={busyId === item.id} onClick={() => handleArchive(item)}>
+                          {busyId === item.id ? "..." : "Archive"}
+                        </button>
+                        <button type="button" className="table-action danger" disabled={busyId === item.id} onClick={() => handleDelete(item)}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </article>
+
+      <Popup open={Boolean(editingId)} onClose={closeEditModal} labelledBy="inventory-edit-title">
+        <div className="edit-modal-head">
+          <div>
+            <h3 id="inventory-edit-title">Edit Item</h3>
+            <p>Update this inventory item's details.</p>
+          </div>
+          <button type="button" className="edit-modal-close" onClick={closeEditModal} disabled={editSaving} aria-label="Close">×</button>
+        </div>
+        {editError ? <p className="form-feedback error">{editError}</p> : null}
+        <form className="panel-form" onSubmit={handleEditSubmit}>
+          <InventoryItemFields
+            form={editForm}
+            setForm={setEditForm}
+            categories={categories}
+            showQuantity={false}
+            imageFiles={editImageFiles}
+            setImageFiles={setEditImageFiles}
+          />
+          <div className="panel-form-actions">
+            <button type="submit" className="btn-primary" disabled={editSaving}>
+              {editSaving ? "Saving..." : "Save Changes"}
+            </button>
+            <button type="button" className="table-action" onClick={closeEditModal} disabled={editSaving}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Popup>
     </div>
   );
 }

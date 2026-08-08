@@ -238,6 +238,7 @@
   justify-content: center;
   padding: 20px;
   background: rgba(17, 24, 39, 0.58);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .exam-pin-card {
@@ -246,6 +247,14 @@
   border-radius: 8px;
   padding: 24px;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exam-pin-modal,
+  .exam-pin-card {
+    animation: none !important;
+  }
 }
 
 .exam-pin-card h2 {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone } from "lucide-react";
 import {
   API_BASE_URL,
@@ -8,6 +9,81 @@ import {
   TEACHER_ATTENDANCE_PREFIX,
   UI_THEME_KEY,
 } from "./appConstants";
+
+// Shared popup/modal animation primitive used app-wide: a slow slide-up +
+// fade-in on open, a matching slide-down + fade-out on close (real exit
+// animation, not just entrance - the component delays unmounting until the
+// close animation finishes). Defaults to the same `modal-overlay`/
+// `edit-modal-card` classes/keyframes used by most existing modals in the
+// app (see styles.css) so new consumers automatically match the established
+// look; pass overlayClassName/cardClassName to drive a different existing
+// overlay family (e.g. "cfm-overlay"/"cfm-card") instead of inventing a new
+// visual style. Respects prefers-reduced-motion by skipping the closing
+// delay entirely.
+const POPUP_CLOSE_DURATION_MS = 260;
+
+export function Popup({
+  open,
+  onClose,
+  children,
+  overlayClassName = "modal-overlay",
+  cardClassName = "edit-modal-card",
+  extraCardClassName = "",
+  labelledBy,
+  role = "dialog",
+  closeOnBackdrop = true,
+}) {
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      setClosing(false);
+      return undefined;
+    }
+    if (!mounted) return undefined;
+    const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      setMounted(false);
+      return undefined;
+    }
+    setClosing(true);
+    const timer = window.setTimeout(() => {
+      setMounted(false);
+      setClosing(false);
+    }, POPUP_CLOSE_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [open, mounted]);
+
+  useEffect(() => {
+    if (!mounted) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") onClose?.();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mounted, onClose]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      className={`${overlayClassName}${closing ? " is-closing" : ""}`}
+      role={role}
+      aria-modal="true"
+      aria-labelledby={labelledBy}
+      onClick={(event) => {
+        if (closeOnBackdrop && event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      <div className={`${cardClassName}${extraCardClassName ? ` ${extraCardClassName}` : ""}${closing ? " is-closing" : ""}`}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 export function MultiSelectBox({ options = [], selected = [], onChange, labelForOption, emptyText = "No options available." }) {
   const selectedSet = new Set((selected || []).map((item) => String(item)));

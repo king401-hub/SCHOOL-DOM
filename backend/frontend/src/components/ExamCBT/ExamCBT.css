@@ -73,6 +73,7 @@
   place-items: center;
   padding: 24px;
   background: rgba(15, 23, 42, 0.62);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .exam-security-alert-card {
@@ -84,6 +85,7 @@
   padding: 28px;
   text-align: center;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .exam-security-alert-kicker {
@@ -476,6 +478,7 @@
   place-items: center;
   padding: 64px 24px 24px;
   background: rgba(15, 23, 42, 0.88);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .question-image-modal img {
@@ -644,6 +647,7 @@
   place-items: center;
   padding: 24px;
   background: rgba(15, 23, 42, 0.58);
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .question-flag-card {
@@ -653,6 +657,7 @@
   color: #111827;
   padding: 24px;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .question-flag-card h3 {
@@ -975,6 +980,7 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: modal-overlay-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .modal-content {
@@ -983,6 +989,19 @@
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   max-width: 500px;
   width: 90%;
+  animation: modal-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exam-security-alert,
+  .exam-security-alert-card,
+  .question-image-modal,
+  .question-flag-modal,
+  .question-flag-card,
+  .modal-overlay,
+  .modal-content {
+    animation: none !important;
+  }
 }
 
 .submit-modal {
