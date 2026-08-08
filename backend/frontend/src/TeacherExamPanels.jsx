@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
+import RichText from "./components/RichText";
 import { formatDate, MetricCard, requestJson } from "./AppShared";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
@@ -405,7 +406,25 @@ const isBlankBuilderQuestion = (question) =>
 
 const THEORY_QUESTION_TYPES = new Set(["short_answer", "paragraph", "essay"]);
 
-const newBuilderQuestion = (questionType = "mcq") => ({
+/* A composition is an essay - one long written response against a topic - so it
+   is stored as `essay`, the type the backend, the grading queue and the student
+   apps already understand. What it gets here is its own way in: a roomier
+   instructions box and its own label, rather than a new question_type that
+   every consumer of this data would have to learn. */
+const COMPOSITION_KIND = "composition";
+
+const isCompositionQuestion = (question) =>
+  question?.kind === COMPOSITION_KIND && (question?.questionType || "") === "essay";
+
+const QUESTION_TYPE_LABELS = {
+  mcq: "Objective (MCQ)",
+  true_false: "True / False",
+  short_answer: "Theory - Short Answer",
+  paragraph: "Theory - Paragraph",
+  essay: "Theory - Essay",
+};
+
+const newBuilderQuestion = (questionType = "mcq", extra = {}) => ({
   id: Date.now() + Math.random(),
   questionType,
   text: "",
@@ -417,7 +436,16 @@ const newBuilderQuestion = (questionType = "mcq") => ({
   group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
   questionImagePreview: "",
   questionAttachmentName: "",
+  kind: "",
+  ...extra,
 });
+
+const questionMarkValue = (question) => {
+  const parsed = Number(question?.marks);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const sumQuestionMarks = (list) => (list || []).reduce((total, item) => total + questionMarkValue(item), 0);
 
 const filePreviewUrl = (file) => (file ? URL.createObjectURL(file) : "");
 export function TeacherExamManager({
@@ -652,6 +680,7 @@ export function TeacherExamBuilder({
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState(null);
   const [publishedPin, setPublishedPin] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
   const isEditing = Boolean(initialExam?.id);
@@ -933,12 +962,28 @@ export function TeacherExamBuilder({
     }
   };
 
+  // Recomputed from the questions array on every render, so removing, adding or
+  // re-marking a question keeps the total honest without any extra bookkeeping.
+  const totalMarks = sumQuestionMarks(questions);
+
   const addSection = () => {
     setSections((previous) => [...previous, { id: Date.now(), title: `Section ${String.fromCharCode(65 + previous.length)}`, marks: "10" }]);
   };
 
-  const addQuestion = (questionType = "mcq") => {
-    setQuestions((previous) => [...previous, newBuilderQuestion(questionType)]);
+  const addQuestion = (questionType = "mcq", extra = {}) => {
+    setQuestions((previous) => [...previous, newBuilderQuestion(questionType, extra)]);
+  };
+
+  /* Removing a question needs no renumbering or re-totalling code of its own:
+     the numbers are rendered from the array index and the total is summed from
+     the array on every render, so dropping the item is the whole update. The
+     exam is only persisted by the existing Save, so this stays local until the
+     teacher saves - same as adding or editing a question. */
+  const removeQuestion = (questionId) => {
+    setQuestions((previous) => previous.filter((item) => item.id !== questionId));
+    setPendingRemoval(null);
+    setFeedback("Question removed. Save the exam to keep this change.");
+    setError("");
   };
 
   const moveQuestion = (questionId, direction) => {
@@ -1026,6 +1071,19 @@ export function TeacherExamBuilder({
     updateQuestion(questionId, {
       groupKey,
       group: source?.group || { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+    });
+  };
+
+  /* Starts a comprehension: one new question already carrying its own passage
+     group. Further questions join it by picking the group from their own
+     "Passage / group" selector, and each keeps its own marks and its own type -
+     objective in an objective or mixed exam, theory otherwise. */
+  const addPassageQuestion = () => {
+    const groupKey = `group-${Date.now()}`;
+    const questionType = form.examFormat === "theory" ? "short_answer" : "mcq";
+    addQuestion(questionType, {
+      groupKey,
+      group: { title: "", group_type: "comprehension", passage_text: "", imagePreview: "" },
     });
   };
 
@@ -1273,27 +1331,51 @@ export function TeacherExamBuilder({
               {questions.map((question, index) => {
                 const questionType = question.questionType || "mcq";
                 const isTheoryQuestion = THEORY_QUESTION_TYPES.has(questionType);
+                const isComposition = isCompositionQuestion(question);
                 return (
                 <div key={question.id} className="exam-builder-question">
                   {question.sourceLabel ? <div className="cbt-question-source">From {question.sourceLabel}</div> : null}
                   <div className="exam-builder-row question-reorder-row">
-                    <span className="question-index">Question {index + 1}</span>
+                    <span className="question-index">
+                      Question {index + 1}
+                      <small className="question-index-kind">
+                        {isComposition ? "Composition" : QUESTION_TYPE_LABELS[questionType] || questionType}
+                        {question.groupKey ? " · in passage" : ""}
+                      </small>
+                    </span>
                     <div className="table-actions-inline">
                       <button type="button" className="table-action" onClick={() => moveQuestion(question.id, -1)} disabled={index === 0} aria-label="Move question up">↑</button>
                       <button type="button" className="table-action" onClick={() => moveQuestion(question.id, 1)} disabled={index === questions.length - 1} aria-label="Move question down">↓</button>
+                      <button
+                        type="button"
+                        className="table-action danger"
+                        onClick={() => setPendingRemoval({ id: question.id, number: index + 1, marks: questionMarkValue(question) })}
+                        aria-label={`Remove question ${index + 1}`}
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
                   <div className="exam-builder-row">
-                    <label className="panel-field full">Question text<FormattedTextarea value={question.text} onChange={(event) => updateQuestion(question.id, { text: event.target.value })} rows={3} /></label>
+                    <label className="panel-field full">
+                      {isComposition ? "Composition topic / instructions" : "Question text"}
+                      <FormattedTextarea
+                        value={question.text}
+                        onChange={(event) => updateQuestion(question.id, { text: event.target.value })}
+                        rows={isComposition ? 6 : 3}
+                      />
+                    </label>
                     {form.examFormat === "mixed" ? (
                       <label className="panel-field">
                         Type
                         <select
-                          value={questionType}
+                          value={isComposition ? COMPOSITION_KIND : questionType}
                           onChange={(event) => {
-                            const nextType = event.target.value;
+                            const choice = event.target.value;
+                            const nextType = choice === COMPOSITION_KIND ? "essay" : choice;
                             updateQuestion(question.id, {
                               questionType: nextType,
+                              kind: choice === COMPOSITION_KIND ? COMPOSITION_KIND : "",
                               options: THEORY_QUESTION_TYPES.has(nextType) ? question.options : (question.options?.length ? question.options : ["", "", "", ""]),
                             });
                           }}
@@ -1302,15 +1384,26 @@ export function TeacherExamBuilder({
                           <option value="short_answer">Theory - Short Answer</option>
                           <option value="paragraph">Theory - Paragraph</option>
                           <option value="essay">Theory - Essay</option>
+                          <option value={COMPOSITION_KIND}>Composition</option>
                         </select>
                       </label>
                     ) : form.examFormat === "theory" ? (
                       <label className="panel-field">
                         Answer space
-                        <select value={questionType} onChange={(event) => updateQuestion(question.id, { questionType: event.target.value })}>
+                        <select
+                          value={isComposition ? COMPOSITION_KIND : questionType}
+                          onChange={(event) => {
+                            const choice = event.target.value;
+                            updateQuestion(question.id, {
+                              questionType: choice === COMPOSITION_KIND ? "essay" : choice,
+                              kind: choice === COMPOSITION_KIND ? COMPOSITION_KIND : "",
+                            });
+                          }}
+                        >
                           <option value="short_answer">Short Answer</option>
                           <option value="paragraph">Paragraph</option>
                           <option value="essay">Essay</option>
+                          <option value={COMPOSITION_KIND}>Composition</option>
                         </select>
                       </label>
                     ) : (
@@ -1479,16 +1572,30 @@ export function TeacherExamBuilder({
                 </div>
                 );
               })}
-              <div className="table-actions-inline">
+              <div className="table-actions-inline exam-builder-add-row">
                 {form.examFormat !== "theory" ? (
                   <button type="button" className="table-action" onClick={() => addQuestion("mcq")}>
                     {form.examFormat === "mixed" ? "Add Objective Question" : "Add question"}
                   </button>
                 ) : null}
                 {form.examFormat !== "objective" ? (
-                  <button type="button" className="table-action" onClick={() => addQuestion("essay")}>Add Theory Question</button>
+                  <button type="button" className="table-action" onClick={() => addQuestion("short_answer")}>Add Theory Question</button>
                 ) : null}
+                {form.examFormat !== "objective" ? (
+                  <button type="button" className="table-action" onClick={() => addQuestion("essay", { kind: COMPOSITION_KIND, marks: "20" })}>
+                    Add Composition
+                  </button>
+                ) : null}
+                {/* A passage question is an ordinary question with a group attached;
+                    the group carries the passage, and further questions join it from
+                    the "Passage / group" picker on each question. */}
+                <button type="button" className="table-action" onClick={addPassageQuestion}>
+                  Add Passage / Comprehension
+                </button>
               </div>
+              <p className="exam-builder-total">
+                {questions.length} question{questions.length === 1 ? "" : "s"} &bull; {totalMarks} total mark{totalMarks === 1 ? "" : "s"}
+              </p>
             </div>
           ) : null}
 
@@ -1509,10 +1616,10 @@ export function TeacherExamBuilder({
               <MetricCard label="Exam" value={form.title || "Untitled"} trend={form.code || "No code"} />
               <MetricCard label="Class" value={selectedClass?.label || selectedClass?.name || "All classes"} trend={selectedSubject?.name || "General"} />
               <MetricCard label="Duration" value={`${manualDuration || 0} mins`} trend={`${form.startDate || "-"} to ${form.endDate || "-"}`} />
-              <MetricCard label="Questions" value={questions.length} trend={`${sections.length} sections`} />
+              <MetricCard label="Questions" value={questions.length} trend={`${totalMarks} total marks`} />
               <article className="app-panel full">
                 <h3>Instructions</h3>
-                <p className="message-body">{form.instructions}</p>
+                <RichText className="message-body" value={form.instructions} placeholder={<em>(No instructions)</em>} />
               </article>
               <article className="app-panel full">
                 <h3>Student preview</h3>
@@ -1520,20 +1627,47 @@ export function TeacherExamBuilder({
                 {questions.map((question, index) => {
                   const questionType = question.questionType || "mcq";
                   const isTheory = THEORY_QUESTION_TYPES.has(questionType);
+                  const isComposition = isCompositionQuestion(question);
+                  // A passage is printed once, above the first question that uses
+                  // it, rather than repeated under every question in the group.
+                  const groupKey = question.groupKey || "";
+                  const isFirstOfGroup = Boolean(groupKey)
+                    && questions.findIndex((item) => item.groupKey === groupKey) === index;
                   return (
                     <div key={question.id} className="exam-preview-question">
+                      {isFirstOfGroup ? (
+                        <div className="exam-preview-passage">
+                          {question.group?.title ? <h4>{question.group.title}</h4> : null}
+                          <RichText value={question.group?.passage_text} placeholder={<em>(Empty passage)</em>} />
+                        </div>
+                      ) : null}
                       <p className="exam-preview-question-text">
-                        <strong>Q{index + 1}.</strong> {question.text || <em>(Empty question text)</em>} <small>({question.marks || 1} mark{question.marks === "1" ? "" : "s"})</small>
+                        <strong>Q{index + 1}.</strong>{" "}
+                        <small className="exam-preview-kind">
+                          {isComposition ? "Composition" : QUESTION_TYPE_LABELS[questionType] || questionType}
+                        </small>{" "}
+                        <small>({questionMarkValue(question) || 1} mark{questionMarkValue(question) === 1 ? "" : "s"})</small>
                       </p>
-                      {question.group?.passage_text ? <p className="message-meta">{question.group.passage_text}</p> : null}
+                      {/* Rendered, not escaped - this is the editor's own HTML, so
+                          showing it as text is what put raw <br> and <strong> on
+                          screen in the first place. */}
+                      <RichText className="exam-preview-question-body" value={question.text} placeholder={<em>(Empty question text)</em>} />
                       {isTheory ? (
-                        <textarea className="theory-answer-box" rows={3} placeholder="Student answer space" disabled />
+                        <textarea
+                          className="theory-answer-box"
+                          rows={isComposition ? 8 : 3}
+                          placeholder={isComposition ? "Student composition space" : "Student answer space"}
+                          disabled
+                        />
                       ) : (
                         <div className="exam-preview-options">
                           {(question.options || []).map((option, optionIndex) => (
                             <label key={optionIndex} className="option-label">
                               <input type="radio" disabled />
-                              <span>{String.fromCharCode(65 + optionIndex)}. {option || <em>(empty option)</em>}</span>
+                              <span>
+                                {String.fromCharCode(65 + optionIndex)}.{" "}
+                                <RichText as="span" value={option} placeholder={<em>(empty option)</em>} />
+                              </span>
                             </label>
                           ))}
                         </div>
@@ -1546,6 +1680,36 @@ export function TeacherExamBuilder({
           ) : null}
         </article>
       </main>
+
+      {pendingRemoval ? (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-question-title"
+          onClick={(event) => { if (event.target === event.currentTarget) setPendingRemoval(null); }}
+        >
+          <article className="app-panel edit-modal-card" style={{ maxWidth: "28rem" }}>
+            <div className="edit-modal-head">
+              <div>
+                <h3 id="remove-question-title">Remove question {pendingRemoval.number}?</h3>
+                <p>
+                  The questions after it are renumbered, and {pendingRemoval.marks} mark
+                  {pendingRemoval.marks === 1 ? "" : "s"} come off the total. Nothing is
+                  removed from the saved exam until you save.
+                </p>
+              </div>
+              <button type="button" className="edit-modal-close" onClick={() => setPendingRemoval(null)} aria-label="Close">×</button>
+            </div>
+            <div className="panel-form-actions">
+              <button type="button" className="table-action danger" onClick={() => removeQuestion(pendingRemoval.id)}>
+                Remove question
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setPendingRemoval(null)}>Cancel</button>
+            </div>
+          </article>
+        </div>
+      ) : null}
     </section>
   );
 }
