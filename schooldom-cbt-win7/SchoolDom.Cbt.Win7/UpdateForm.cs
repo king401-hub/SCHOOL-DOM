@@ -35,7 +35,7 @@ namespace SchoolDom.Cbt.Win7
             StartPosition   = FormStartPosition.CenterScreen;
             BackColor       = Palette.Background;
             Font            = new Font("Segoe UI", 10);
-            AutoScaleMode   = AutoScaleMode.Font;
+            AutoScaleMode   = AutoScaleMode.None;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox     = false;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
@@ -47,15 +47,29 @@ namespace SchoolDom.Cbt.Win7
         private void Build()
         {
             // ---- Left hero panel ----------------------------------------
-            var hero = new Panel { Dock = DockStyle.Left, Width = 380, BackColor = Palette.Navy };
-            hero.Controls.Add(Lbl("SchoolDom",         38, 46,  22, true,  300, Color.White));
-            hero.Controls.Add(Lbl("Admin Sync Win7",   40, 94,  11, false, 280, Palette.SoftText));
-            hero.Controls.Add(Lbl("⬆",             40, 180, 40, false, 80,  Color.FromArgb(255, 200, 60)));
-            hero.Controls.Add(Lbl("Update Available",  40, 238, 16, true,  280, Color.White));
-            hero.Controls.Add(Lbl(
-                "A newer version of SchoolDom Admin Sync has been released.\n\n" +
-                "Update now to receive the latest exam sync improvements and fixes.",
-                40, 282, 10, false, 300, Palette.SoftText));
+            const int heroW = 420;
+            const int heroLabelLeft = 38;
+            const int heroLabelWidth = heroW - heroLabelLeft - 16;  // fills panel with right margin
+
+            var hero = new Panel { Dock = DockStyle.Left, Width = heroW, BackColor = Palette.Navy };
+            hero.Controls.Add(Lbl("SchoolDom",        heroLabelLeft, 46,  22, true,  heroLabelWidth, Color.White));
+            hero.Controls.Add(Lbl("Admin Sync Win7",  heroLabelLeft, 94,  11, false, heroLabelWidth, Palette.SoftText));
+            hero.Controls.Add(Lbl("⬆",           heroLabelLeft, 180, 40, false, 80,              Color.FromArgb(255, 200, 60)));
+            hero.Controls.Add(Lbl("Update Available", heroLabelLeft, 248, 16, true,  heroLabelWidth, Color.White));
+
+            // Multi-line description — use AutoSize so it grows to fit all lines
+            var desc = new Label
+            {
+                Text        = "A newer version of SchoolDom Admin Sync has been released.\n\nUpdate now to receive the latest exam sync improvements and fixes.",
+                Left        = heroLabelLeft,
+                Top         = 300,
+                MaximumSize = new Size(heroLabelWidth, 0),
+                AutoSize    = true,
+                ForeColor   = Palette.SoftText,
+                Font        = new Font("Segoe UI", 10),
+                BackColor   = Color.Transparent,
+            };
+            hero.Controls.Add(desc);
 
             // ---- Right content area -------------------------------------
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
@@ -357,14 +371,16 @@ namespace SchoolDom.Cbt.Win7
         {
             return new Label
             {
-                Text      = text,
-                Left      = left,
-                Top       = top,
-                Width     = width,
-                Height    = (int)(size * 2.8f),
-                ForeColor = color,
-                Font      = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular),
-                AutoSize  = false,
+                Text         = text,
+                Left         = left,
+                Top          = top,
+                Width        = width,
+                Height       = (int)(size * 4.5f),   // generous — prevents clipping at any DPI
+                ForeColor    = color,
+                Font         = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular),
+                AutoSize     = false,
+                AutoEllipsis = false,
+                BackColor    = Color.Transparent,
             };
         }
     }
