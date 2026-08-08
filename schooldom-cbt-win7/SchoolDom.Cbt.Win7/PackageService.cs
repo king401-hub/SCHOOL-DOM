@@ -204,7 +204,7 @@ namespace SchoolDom.Cbt.Win7
         public string ExportResults(string path)
         {
             var json = ExportResultsJson(markExported: true);
-            File.WriteAllText(path, json);
+            File.WriteAllText(path, json, System.Text.Encoding.UTF8);
             return "Exported " + _lastExportCount + " submitted result(s).";
         }
 

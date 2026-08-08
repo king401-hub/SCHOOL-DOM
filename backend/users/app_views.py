@@ -4916,6 +4916,15 @@ def teacher_dashboard(request):
     submitted_attempts = list(submitted_attempts_qs[:20])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
     announcements = _visible_announcements_for_user(user, now=now)
+    # Pre-fetch grade scale once to avoid N+1 in the cbt_results loop below
+    _gs_tenant = _tenant_for_model(GradeScale, user)
+    _grade_scales_teacher = list(GradeScale.objects.filter(tenant=_gs_tenant, is_active=True).order_by("-min_percentage"))
+
+    def _teacher_grade_label(pct):
+        for gs in _grade_scales_teacher:
+            if gs.min_percentage <= float(pct or 0) <= gs.max_percentage:
+                return gs.letter
+        return ""
     inbox_qs = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     if teacher_profile:
         classes_qs = _teacher_assigned_classes(user).order_by("name", "section")
@@ -4988,17 +4997,23 @@ def teacher_dashboard(request):
                     "attempt_id": attempt.id,
                     "exam_id": attempt.exam_id,
                     "exam_title": attempt.exam.title,
+                    "exam_format": attempt.exam.exam_format,
                     "student_name": attempt.student.get_full_name() or attempt.student.email,
                     "student_email": attempt.student.email,
                     "student_id": getattr(getattr(attempt.student, "student_profile", None), "student_id", ""),
+                    "admission_number": getattr(getattr(attempt.student, "student_profile", None), "admission_number", ""),
                     "subject": attempt.exam.subject.name if attempt.exam.subject else "General",
                     "subject_id": attempt.exam.subject_id,
                     "class_name": _class_label(attempt.exam.class_group) if attempt.exam.class_group else "All classes",
                     "class_id": attempt.exam.class_group_id,
                     "score": attempt.score,
                     "total_points": attempt.total_points,
+                    "total_marks": attempt.total_points,
                     "percentage": round(float(attempt.percentage or 0), 1),
+                    "grade_letter": _teacher_grade_label(attempt.percentage or 0),
                     "submitted_at": attempt.end_time,
+                    "is_offline": attempt.is_offline,
+                    "sync_status": attempt.sync_status,
                     "needs_theory_grading": attempt.needs_theory_grading,
                     "answer_summary": [
                         {
@@ -8367,6 +8382,15 @@ def exams_snapshot(request):
     auto_submitted_attempts_qs = monitor_attempts.filter(auto_submitted=True, is_submitted=True).order_by("-end_time")
     auto_submitted_attempts = list(auto_submitted_attempts_qs[:50])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
+    # Pre-fetch grade scale once to avoid N+1 in the submitted_results loop below
+    _gs_tenant_admin = _tenant_for_model(GradeScale, user)
+    _grade_scales_admin = list(GradeScale.objects.filter(tenant=_gs_tenant_admin, is_active=True).order_by("-min_percentage"))
+
+    def _admin_grade_label(pct):
+        for gs in _grade_scales_admin:
+            if gs.min_percentage <= float(pct or 0) <= gs.max_percentage:
+                return gs.letter
+        return ""
 
     class_options = _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")
     subject_options = _admin_exam_subject_options(
@@ -8433,6 +8457,7 @@ def exams_snapshot(request):
                     "attempt_id": attempt.id,
                     "exam_id": attempt.exam_id,
                     "exam_title": attempt.exam.title,
+                    "exam_format": attempt.exam.exam_format,
                     "student_name": attempt.student.get_full_name() or attempt.student.email,
                     "student_email": attempt.student.email,
                     "student_id": getattr(getattr(attempt.student, "student_profile", None), "student_id", ""),
@@ -8442,8 +8467,12 @@ def exams_snapshot(request):
                     "class_id": attempt.exam.class_group_id,
                     "score": attempt.score,
                     "total_points": attempt.total_points,
+                    "total_marks": attempt.total_points,
                     "percentage": round(float(attempt.percentage or 0), 1),
+                    "grade_letter": _admin_grade_label(attempt.percentage or 0),
                     "submitted_at": attempt.end_time,
+                    "is_offline": attempt.is_offline,
+                    "sync_status": attempt.sync_status,
                     "needs_theory_grading": attempt.needs_theory_grading,
                     "answer_summary": [
                         {

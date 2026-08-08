@@ -188,6 +188,10 @@ def _offline_question_payload(question, request=None):
     payload = _question_payload(question, request)
     payload["type"] = payload.get("question_type")
     payload["marks"] = payload.get("points")
+    # correct_answer is needed by the admin desktop app for local scoring in the
+    # pre-upload broadsheet.  It is safe to include here because the package is
+    # only ever decrypted on the admin's machine, not on student devices.
+    payload["correct_answer"] = question.correct_answer
     return payload
 
 
@@ -1625,9 +1629,25 @@ def _ingest_cbt_offline_result(actor, payload):
     sync_device_id = str(payload.get("device_id") or envelope.get("device_id") or "").strip()
     sync_package_id = str(payload.get("package_id") or envelope.get("package_id") or "").strip()
     if offline_session_id:
-        existing = ExamAttempt.objects.filter(device_id=offline_session_id, student=student, exam=exam, is_submitted=True).first()
+        # Primary dedup: exact session ID match
+        existing = ExamAttempt.objects.filter(
+            device_id=offline_session_id, student=student, exam=exam, is_submitted=True
+        ).first()
         if existing:
             return {"success": True, "attempt_id": existing.id, "message": "Offline result already synced."}, status.HTTP_200_OK
+    else:
+        # Fallback dedup when session_id is missing: prevent re-upload of the
+        # same offline result for a student who has already been synced via this
+        # device/package combination.
+        if sync_device_id and sync_package_id:
+            existing = ExamAttempt.objects.filter(
+                student=student, exam=exam, is_submitted=True, is_offline=True,
+                sync_status="synced",
+            ).filter(
+                auto_submit_activity_logs__contains=[{"device_id": sync_device_id}]
+            ).first()
+            if existing:
+                return {"success": True, "attempt_id": existing.id, "message": "Offline result already synced."}, status.HTTP_200_OK
 
     attempt = ExamAttempt.objects.create(
         exam=exam,

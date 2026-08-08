@@ -3629,15 +3629,6 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const subjects = new Set();
     const students = new Map();
 
-    const subjectScoreEntries = (row) => {
-      const breakdown = row.score_by_subject || row.correct_attempt_by_subject || row.attempt_by_subject;
-      if (breakdown && typeof breakdown === "object" && !Array.isArray(breakdown)) {
-        return Object.entries(breakdown).map(([subject, value]) => [subject, typeof value === "object" ? value.score ?? value.percentage ?? value.total ?? "" : value]);
-      }
-      const subject = row.subject || (Array.isArray(row.subjects) ? row.subjects[0] : "") || "Score";
-      return [[subject, row.score ?? row.obtained ?? row.percentage ?? ""]];
-    };
-
     sourceRows.forEach((row) => {
       const studentId = row.student_id || row.admission_number || row.reg_no || row.registration_no || row.student_email || row.student_name || "Unknown";
       const key = String(studentId);
@@ -3649,26 +3640,46 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           name: row.student_name || row.name || "Student",
           className,
           department,
-          scores: {},
+          scores: {},     // subject → { score, max }
+          grade: "",
+          percentage: 0,
         });
       }
       const student = students.get(key);
-      subjectScoreEntries(row).forEach(([subject, value]) => {
-        const label = String(subject || "Score").trim() || "Score";
+
+      // Resolve subject and score/max from this result row
+      const breakdown = row.score_by_subject || row.correct_attempt_by_subject || row.attempt_by_subject;
+      if (breakdown && typeof breakdown === "object" && !Array.isArray(breakdown)) {
+        Object.entries(breakdown).forEach(([subject, value]) => {
+          const label = String(subject || "Score").trim() || "Score";
+          subjects.add(label);
+          const scoreVal = typeof value === "object" ? (value.score ?? value.total ?? 0) : Number(value);
+          const maxVal = typeof value === "object" ? (value.max ?? value.total_points ?? 0) : 0;
+          student.scores[label] = { score: Number.isFinite(scoreVal) ? scoreVal : 0, max: Number.isFinite(maxVal) ? maxVal : 0 };
+        });
+      } else {
+        const label = String(row.subject || (Array.isArray(row.subjects) ? row.subjects[0] : "") || "Score").trim() || "Score";
         subjects.add(label);
-        const numeric = Number(value);
-        student.scores[label] = Number.isFinite(numeric) ? numeric : value;
-      });
+        const scoreVal = Number(row.score ?? row.obtained ?? 0);
+        const maxVal = Number(row.total_points ?? row.total_marks ?? 0);
+        student.scores[label] = { score: Number.isFinite(scoreVal) ? scoreVal : 0, max: Number.isFinite(maxVal) ? maxVal : 0 };
+      }
+
+      // Keep last result's grade/percentage (single-exam view is most common)
+      if (row.grade_letter) student.grade = row.grade_letter;
+      if (row.percentage != null) student.percentage = Number(row.percentage) || 0;
     });
 
     const subjectList = Array.from(subjects).sort((a, b) => a.localeCompare(b));
     const rows = Array.from(students.values())
       .map((student) => {
-        const total = subjectList.reduce((sum, subject) => {
-          const value = Number(student.scores[subject]);
-          return sum + (Number.isFinite(value) ? value : 0);
-        }, 0);
-        return { ...student, total };
+        let totalScore = 0, totalMax = 0;
+        subjectList.forEach((subject) => {
+          const d = student.scores[subject];
+          if (d) { totalScore += d.score; totalMax += d.max; }
+        });
+        const percentage = totalMax > 0 ? Math.round((totalScore / totalMax) * 100) : student.percentage;
+        return { ...student, totalScore, totalMax, percentage };
       })
       .sort((a, b) => String(a.className).localeCompare(String(b.className)) || String(a.name).localeCompare(String(b.name)));
 
@@ -3682,20 +3693,27 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     return `${String(examPart).replace(/[^a-z0-9]+/gi, "-")}-${String(classPart).replace(/[^a-z0-9]+/gi, "-")}-broadsheet`;
   };
 
+  const fmtScore = (d) => {
+    if (!d) return "-";
+    return d.max > 0 ? `${d.score}/${d.max}` : String(d.score);
+  };
+
   const openBroadsheet = () => {
     const printWindow = window.open("", "_blank", "width=1200,height=800");
     if (!printWindow) {
       setUploadError("Allow popups to open the broadsheet.");
       return;
     }
-    const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total"];
+    const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total", "%", "Grade"];
     const rows = broadsheetData.rows.map((student) => [
       student.studentId,
       student.name,
       student.className,
       student.department || "-",
-      ...broadsheetData.subjects.map((subject) => student.scores[subject] ?? ""),
-      student.total,
+      ...broadsheetData.subjects.map((subject) => fmtScore(student.scores[subject])),
+      student.totalMax > 0 ? `${student.totalScore}/${student.totalMax}` : String(student.totalScore),
+      student.percentage != null ? `${student.percentage}%` : "-",
+      student.grade || "-",
     ]);
     const tableHead = headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
     const tableRows = rows.length
@@ -3727,7 +3745,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   };
 
   const downloadBroadsheetCsv = () => {
-    const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total"];
+    const headers = ["Student ID", "Name", "Class", "Department", ...broadsheetData.subjects, "Total", "Percentage", "Grade"];
     const csvEscape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const lines = [
       [broadsheetSchool.name],
@@ -3738,8 +3756,10 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         student.name,
         student.className,
         student.department || "",
-        ...broadsheetData.subjects.map((subject) => student.scores[subject] ?? ""),
-        student.total,
+        ...broadsheetData.subjects.map((subject) => fmtScore(student.scores[subject])),
+        student.totalMax > 0 ? `${student.totalScore}/${student.totalMax}` : String(student.totalScore),
+        student.percentage != null ? `${student.percentage}%` : "",
+        student.grade || "",
       ]),
     ].map((row) => row.map(csvEscape).join(","));
     const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
