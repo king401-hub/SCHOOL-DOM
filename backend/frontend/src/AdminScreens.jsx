@@ -12352,11 +12352,16 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     }
   };
 
+  const teachersRef = useRef(teachers);
+  useEffect(() => {
+    teachersRef.current = teachers;
+  }, [teachers]);
+
   useEffect(() => {
     if (!selectedTeacherId) {
       return;
     }
-    const current = teachers.find((item) => item.id === selectedTeacherId);
+    const current = teachersRef.current.find((item) => item.id === selectedTeacherId);
     if (!current) {
       setSelectedTeacherId("");
       setEditError("");
@@ -12364,7 +12369,11 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
       return;
     }
     setEditForm(buildEditForm(current));
-  }, [selectedTeacherId, teachers]);
+    // Only reset the edit form when the admin switches to a different teacher
+    // - not on every background refresh of the teachers list, which would
+    // otherwise wipe an in-progress password (or any other field) being typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTeacherId]);
 
   return (
     <section className="screen-grid">
