@@ -1902,10 +1902,13 @@ body[data-theme="dark"] .app-sidebar {
   border: none;
   border-right: 1px solid #d1d5db;
   background-color: #f3f4f6;
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+  background-size: 9px 6px;
   color: #111827;
   font-size: 0.82rem;
   font-family: inherit;
-  padding: 0 0.5rem;
+  padding: 0 1.1rem 0 0.4rem;
   height: 100%;
   min-height: 38px;
   width: 60px;
