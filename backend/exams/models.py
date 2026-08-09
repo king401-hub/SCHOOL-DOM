@@ -266,6 +266,20 @@ class ExamAttempt(TenantAwareModel, TimeStampedModel):
     auto_submit_warning_history = models.JSONField(default=list, blank=True)
     auto_submit_activity_logs = models.JSONField(default=list, blank=True)
     question_order = models.JSONField(default=list, blank=True)
+
+    # Set when an admin or teacher releases this result. Until then a student
+    # gets "Exam Completed" with no score - submitting is not the same event as
+    # being told how you did, and theory papers are not even graded yet at that
+    # point. Also the marker for whether the score has been pushed into
+    # StudentSubjectScore for report cards and broadsheets.
+    results_published_at = models.DateTimeField(null=True, blank=True)
+    results_published_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="published_exam_results",
+    )
     
     # Sync fields
     device_id = models.CharField(max_length=255, null=True, blank=True)

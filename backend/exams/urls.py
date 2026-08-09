@@ -31,6 +31,8 @@ urlpatterns = [
     path('theory/queue/', exam_views.theory_grading_queue, name='theory_grading_queue'),
     path('attempt/<int:attempt_id>/theory-answers/', exam_views.attempt_theory_answers, name='attempt_theory_answers'),
     path('attempt/<int:attempt_id>/review/', exam_views.attempt_review, name='attempt_review'),
+    path('attempt/<int:attempt_id>/publish-result/', exam_views.publish_attempt_result, name='publish_attempt_result'),
+    path('attempt/<int:attempt_id>/unpublish-result/', exam_views.unpublish_attempt_result, name='unpublish_attempt_result'),
     path('attempt/<int:attempt_id>/theory-answers/<int:answer_id>/grade/', exam_views.grade_theory_answer, name='grade_theory_answer'),
     path('attempt/<int:attempt_id>/publish-theory-grades/', exam_views.publish_theory_grades_view, name='publish_theory_grades'),
 ]

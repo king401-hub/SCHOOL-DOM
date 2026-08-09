@@ -1,12 +1,13 @@
 from datetime import timedelta
 
 from django.core import mail
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from academic.models import GradeScale, Subject
+from academic.models import Class, GradeScale, ResultBatch, StudentSubjectScore, Subject
 from core.models import SchoolTenant
 from notifications.models import Notification
 from tenants.models import Tenant
@@ -973,3 +974,174 @@ class AttemptSubmissionReviewTests(TestCase):
         self.client.force_authenticate(outsider)
         response = self.client.get(f"/api/exams/attempt/{self.attempt.id}/review/")
         self.assertEqual(response.status_code, 404)
+
+
+class PublishAttemptResultTests(TestCase):
+    """Publishing does two separate things - releases the score to the student,
+    and pushes it into StudentSubjectScore so report cards and the broadsheet
+    pick it up. These pin both, and pin that it cannot happen while theory is
+    still ungraded or quietly wipe a teacher's other marks for the subject.
+    """
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Publish School", schema_name="publish_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        GradeScale.objects.create(
+            tenant=self.legacy_tenant, letter="A", min_percentage=60, max_percentage=100, remark="Excellent"
+        )
+        self.teacher = User.objects.create_user(
+            email="teacher@publish.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="pupil@publish.edu", password="StudentPass123", first_name="Ada", last_name="Pupil",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="PUB001", admission_number="ADM-PUB-001",
+            admission_date=timezone.now().date(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.subject = Subject.objects.create(name="Mathematics", code="MTH", tenant=self.legacy_tenant)
+        self.exam = Exam.objects.create(
+            title="Mid Term", teacher=self.teacher, subject=self.subject, class_group=self.school_class,
+            start_date=timezone.now() - timedelta(minutes=5),
+            end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, exam_format="mixed", is_published=True, tenant=self.legacy_tenant,
+        )
+        self.objective = Question.objects.create(
+            question_type="mcq", text="2 + 2?", points=30,
+            options=["3", "4", "5", "6"], correct_answer="4", tenant=self.legacy_tenant,
+        )
+        self.theory = Question.objects.create(
+            question_type="essay", text="Explain addition.", points=20, tenant=self.legacy_tenant,
+        )
+        self.exam.questions.set([self.objective, self.theory])
+        self.attempt = ExamAttempt.objects.create(
+            exam=self.exam, student=self.student_user, is_submitted=True,
+            score=30, total_points=50, end_time=timezone.now(), tenant=self.legacy_tenant,
+        )
+        StudentAnswer.objects.create(
+            attempt=self.attempt, question=self.objective, selected_options=1,
+            is_correct=True, score=30, tenant=self.legacy_tenant,
+        )
+        self.theory_answer = StudentAnswer.objects.create(
+            attempt=self.attempt, question=self.theory, answer_text="You add them.",
+            is_correct=None, score=None, tenant=self.legacy_tenant,
+        )
+        # Rolled-back test DBs reuse primary keys, so a cached idempotency
+        # entry from an earlier test can match this one request-for-request.
+        cache.clear()
+        self.client = APIClient()
+        self.client.force_authenticate(self.teacher)
+
+    def _grade_the_theory(self, score=20):
+        self.theory_answer.score = score
+        self.theory_answer.save(update_fields=["score"])
+
+    def test_cannot_publish_while_theory_is_still_ungraded(self):
+        response = self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+        self.assertEqual(response.status_code, 400)
+        self.attempt.refresh_from_db()
+        self.assertIsNone(self.attempt.results_published_at)
+
+    def test_publishing_releases_the_score_and_writes_the_subject_score(self):
+        self._grade_the_theory()
+        response = self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["added_to_report"])
+
+        self.attempt.refresh_from_db()
+        self.assertIsNotNone(self.attempt.results_published_at)
+        self.assertEqual(self.attempt.results_published_by, self.teacher)
+        self.assertEqual(self.attempt.score, 50)
+
+        score_obj = StudentSubjectScore.objects.get(student=self.student, subject=self.subject)
+        # Raw marks awarded, not a percentage.
+        self.assertEqual(float(score_obj.cbt_score), 50.0)
+        self.assertEqual(float(score_obj.score), 50.0)
+        # Enters the results pipeline as a draft, like a teacher-entered score.
+        self.assertEqual(score_obj.approval_status, ResultBatch.DRAFT)
+
+    def test_publishing_never_wipes_a_teachers_other_component_marks(self):
+        """The other components are the teacher's own marks for theory,
+        assessment and so on - a blanket overwrite would silently destroy
+        them."""
+        existing = StudentSubjectScore.objects.create(
+            student=self.student, subject=self.subject, class_group=self.school_class,
+            tenant=self.legacy_tenant, score=25, max_score=100,
+            theory_score=15, assessment_score=10, approval_status=ResultBatch.APPROVED,
+        )
+        self._grade_the_theory()
+        self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+
+        existing.refresh_from_db()
+        self.assertEqual(float(existing.theory_score), 15.0)
+        self.assertEqual(float(existing.assessment_score), 10.0)
+        self.assertEqual(float(existing.cbt_score), 50.0)
+        self.assertEqual(float(existing.score), 75.0)  # 15 + 10 + 50
+        # An already-approved row is not quietly knocked back to draft.
+        self.assertEqual(existing.approval_status, ResultBatch.APPROVED)
+
+    def test_student_sees_nothing_until_it_is_published(self):
+        self._grade_the_theory()
+        self.client.force_authenticate(self.student_user)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_published"])
+        self.assertNotIn("score", response.data)
+        self.assertEqual(response.data["message"], "Exam Completed")
+
+    def test_student_sees_the_score_once_published(self):
+        self._grade_the_theory()
+        self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+
+        self.client.force_authenticate(self.student_user)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_published"])
+        self.assertEqual(response.data["score"], 50)
+        self.assertEqual(response.data["total_points"], 50)
+        self.assertEqual(response.data["percentage"], 100.0)
+        self.assertEqual(response.data["grade"], "A")
+
+    def test_unpublishing_hides_it_again_without_touching_the_subject_score(self):
+        self._grade_the_theory()
+        self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+        response = self.client.post(f"/api/exams/attempt/{self.attempt.id}/unpublish-result/")
+        self.assertEqual(response.status_code, 200)
+
+        self.attempt.refresh_from_db()
+        self.assertIsNone(self.attempt.results_published_at)
+        # The score is a draft in the school's results pipeline by now and may
+        # already have been approved, so it is left where it is.
+        self.assertTrue(StudentSubjectScore.objects.filter(student=self.student, subject=self.subject).exists())
+
+        self.client.force_authenticate(self.student_user)
+        response = self.client.get(f"/api/exams/result/{self.attempt.id}/")
+        self.assertFalse(response.data["is_published"])
+
+    def test_students_cannot_publish_their_own_result(self):
+        self._grade_the_theory()
+        self.client.force_authenticate(self.student_user)
+        response = self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+        self.assertEqual(response.status_code, 403)
+        self.attempt.refresh_from_db()
+        self.assertIsNone(self.attempt.results_published_at)
+
+    def test_publishing_still_reaches_the_student_when_there_is_no_subject(self):
+        """A missing subject only blocks the report-card half. Failing the whole
+        action would leave the student unable to see a result that is ready."""
+        self.exam.subject = None
+        self.exam.save(update_fields=["subject"])
+        self._grade_the_theory()
+
+        response = self.client.post(f"/api/exams/attempt/{self.attempt.id}/publish-result/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["added_to_report"])
+        self.assertTrue(response.data["report_warning"])
+        self.attempt.refresh_from_db()
+        self.assertIsNotNone(self.attempt.results_published_at)

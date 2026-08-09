@@ -23,6 +23,16 @@ SKIP_PATHS = frozenset(
     }
 )
 
+# Same reasoning, for endpoints whose path carries a record id. These are
+# toggles: publishing a result, unpublishing it, then publishing again is three
+# distinct decisions, and the third has a byte-identical body to the first. With
+# it cached the admin gets the first response back and the result silently stays
+# unpublished.
+SKIP_SUFFIXES = (
+    "/publish-result/",
+    "/unpublish-result/",
+)
+
 
 def _fingerprint(request):
     user_id = request.user.pk if request.user and request.user.is_authenticated else "anon"
@@ -41,6 +51,8 @@ class IdempotencyMiddleware:
         if any(request.path.startswith(p) for p in SKIP_PREFIXES):
             return self.get_response(request)
         if request.path in SKIP_PATHS:
+            return self.get_response(request)
+        if request.path.endswith(SKIP_SUFFIXES):
             return self.get_response(request)
 
         key = _fingerprint(request)

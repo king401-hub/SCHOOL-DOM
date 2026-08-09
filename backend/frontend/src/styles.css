@@ -16171,6 +16171,77 @@ body[data-theme="light"] .quiz-progress span {
   overflow-wrap: anywhere;
 }
 
+.submission-publish-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid #fcd34d;
+  border-radius: 11px;
+  background: #fffbeb;
+}
+
+.submission-publish-bar.is-published {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.submission-publish-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.submission-publish-text strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.submission-publish-text small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.79rem;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.submission-confirm {
+  margin: 0 0 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 11px;
+  background: #eff6ff;
+}
+
+.submission-confirm p {
+  margin: 0 0 0.6rem;
+  font-size: 0.86rem;
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .submission-publish-bar {
+  border-color: #78350f;
+  background: #2a2210;
+}
+
+body[data-theme="dark"] .submission-publish-bar.is-published {
+  border-color: #14532d;
+  background: #0e2818;
+}
+
+body[data-theme="dark"] .submission-publish-text strong,
+body[data-theme="dark"] .submission-confirm p { color: #f1f5f9; }
+body[data-theme="dark"] .submission-publish-text small { color: #cbd5e1; }
+
+body[data-theme="dark"] .submission-confirm {
+  border-color: #1e40af;
+  background: #0b1220;
+}
+
 .submission-filter-row {
   display: flex;
   flex-wrap: wrap;

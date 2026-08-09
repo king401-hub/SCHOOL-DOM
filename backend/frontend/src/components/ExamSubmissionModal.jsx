@@ -29,11 +29,14 @@ const tidyMarks = (value) => {
   return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, "");
 };
 
-export default function ExamSubmissionModal({ session, attemptId, studentName, onClose }) {
+export default function ExamSubmissionModal({ session, attemptId, studentName, onClose, onPublishedChange }) {
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [publishing, setPublishing] = useState(false);
+  const [publishNote, setPublishNote] = useState("");
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   const load = useCallback(async () => {
     if (!session || !attemptId) return;
@@ -51,6 +54,32 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
   }, [session, attemptId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const setPublished = useCallback(async (publish) => {
+    setPublishing(true);
+    setPublishNote("");
+    setError("");
+    try {
+      const path = publish ? "publish-result" : "unpublish-result";
+      const result = await requestJson(session, "POST", `/api/exams/attempt/${attemptId}/${path}/`, {});
+      // A missing subject or class stops the report-card half only; the
+      // student still gets their score, so say which happened.
+      if (publish && result?.report_warning) {
+        setPublishNote(`Published to the student, but not added to the report card: ${result.report_warning}`);
+      } else if (publish) {
+        setPublishNote("Result published. The student can see it, and it is on their report card and broadsheet as a draft score.");
+      } else {
+        setPublishNote("Result hidden from the student again.");
+      }
+      await load();
+      onPublishedChange?.();
+    } catch (publishError) {
+      setError(publishError.message || "Could not change the published state.");
+    } finally {
+      setPublishing(false);
+      setConfirmPublish(false);
+    }
+  }, [session, attemptId, load, onPublishedChange]);
 
   useEffect(() => {
     const onKeyDown = (event) => { if (event.key === "Escape") onClose(); };
@@ -127,6 +156,56 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
               <div><small>Questions</small><strong>{review.total_questions}</strong></div>
               <div><small>Answered</small><strong>{review.answered_questions} of {review.total_questions}</strong></div>
             </div>
+
+            {/* Publishing does two things at once, so the bar says both: the
+                student can see the result, and it reaches the report card and
+                broadsheet as a draft subject score. */}
+            <div className={`submission-publish-bar${review.is_published ? " is-published" : ""}`}>
+              <div className="submission-publish-text">
+                <strong>
+                  {review.is_published ? "Result published" : "Result not published yet"}
+                </strong>
+                <small>
+                  {review.is_published
+                    ? `Published ${formatDate(review.published_at)}. The student can see this on their results page, and it feeds their report card and the broadsheet.`
+                    : review.needs_theory_grading
+                      ? "Grade every theory answer first - publishing now would show the student an objective-only subtotal as their final mark."
+                      : "The student cannot see this result yet. Publishing shows it on their page and adds it to their report card and the broadsheet as a draft score."}
+                </small>
+              </div>
+              {review.is_published ? (
+                <button type="button" className="btn-secondary" onClick={() => setPublished(false)} disabled={publishing}>
+                  {publishing ? "Working..." : "Unpublish"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmPublish(true)}
+                  disabled={publishing || review.needs_theory_grading}
+                  title={review.needs_theory_grading ? "Every theory answer must be graded first" : undefined}
+                >
+                  {publishing ? "Publishing..." : "Publish Result"}
+                </button>
+              )}
+            </div>
+            {publishNote ? <p className="form-feedback success submission-pending-note">{publishNote}</p> : null}
+
+            {confirmPublish ? (
+              <div className="submission-confirm">
+                <p>
+                  Publish <strong>{tidyMarks(review.score)} / {tidyMarks(review.total_marks)}</strong> ({review.percentage}%
+                  {review.grade ? `, grade ${review.grade}` : ""}) to {review.student_name}?
+                  They will be able to see this result, and it will be added to their report card and the broadsheet
+                  as a draft score for {review.subject || "this subject"}.
+                </p>
+                <div className="panel-form-actions">
+                  <button type="button" onClick={() => setPublished(true)} disabled={publishing}>
+                    {publishing ? "Publishing..." : "Yes, publish"}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => setConfirmPublish(false)}>Cancel</button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="submission-filter-row">
               {FILTERS.map((option) => (

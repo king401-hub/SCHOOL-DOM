@@ -1026,15 +1026,36 @@ class ExamResultView(APIView):
                 id=attempt_id,
             )
         else:
-            # Students (and any other role) never see their own CBT score or
-            # grade through this endpoint - only admins and teachers can view
-            # a completed attempt's full result.
+            # A student sees their score only once a teacher or admin has
+            # published the result. Before that it is still "Exam Completed":
+            # submitting is not the same event as being told how you did, and
+            # on a theory paper nothing has been marked yet.
             attempt = get_object_or_404(attempt_qs, id=attempt_id, student=request.user)
+            if not attempt.results_published_at:
+                return Response({
+                    'success': True,
+                    'attempt_id': attempt.id,
+                    'exam_title': attempt.exam.title,
+                    'is_published': False,
+                    'message': 'Exam Completed'
+                })
+
+            total_points = attempt.total_points or 0
+            percentage = round(attempt.percentage or 0, 2)
+            grade_letter, grade_remark = _grade_letter_for(request.user, percentage)
             return Response({
                 'success': True,
                 'attempt_id': attempt.id,
                 'exam_title': attempt.exam.title,
-                'message': 'Exam Completed'
+                'subject': attempt.exam.subject.name if attempt.exam.subject_id else '',
+                'is_published': True,
+                'published_at': attempt.results_published_at,
+                'score': attempt.score,
+                'total_points': total_points,
+                'percentage': percentage,
+                'grade': grade_letter,
+                'grade_remark': grade_remark,
+                'message': 'Result published'
             })
 
         if not attempt.is_submitted:
@@ -1980,6 +2001,9 @@ def attempt_review(request, attempt_id):
         "percentage": percentage,
         "grade": letter,
         "grade_remark": remark,
+        "is_published": bool(attempt.results_published_at),
+        "published_at": attempt.results_published_at,
+        "needs_theory_grading": _attempt_needs_theory_grading(attempt),
         "total_questions": len(questions),
         "answered_questions": len(questions) - tally[REVIEW_STATUS_UNANSWERED],
         "unanswered_questions": tally[REVIEW_STATUS_UNANSWERED],
@@ -1989,3 +2013,164 @@ def attempt_review(request, attempt_id):
         "pending_questions": tally[REVIEW_STATUS_PENDING],
         "questions": rows,
     })
+
+
+def _sync_attempt_to_subject_score(attempt, actor):
+    """Push a published CBT result into the student's subject score, so it
+    reaches report cards and the broadsheet through the ordinary results
+    pipeline instead of a parallel one.
+
+    Only cbt_score is written. The other components are a teacher's own marks
+    for theory, assessment, assignment and attendance - overwriting the row
+    wholesale would silently destroy them - so the subject total is recomputed
+    as the sum of components afterwards, exactly as submit_subject_score does.
+
+    The row lands as a draft, like any teacher-entered score, and an existing
+    row's approval status is left alone: publishing a CBT result should not
+    quietly un-approve results an admin has already signed off, nor skip the
+    review step the results workflow is built around.
+    """
+    from academic.models import GradeScale, ResultBatch, StudentSubjectScore, Term
+    from users.app_views import _grade_for_percentage, _tenant_for_model
+
+    student_profile = getattr(attempt.student, "student_profile", None)
+    subject = attempt.exam.subject
+    if not student_profile or not subject:
+        return None, "This exam has no subject, or the student has no student profile, so it cannot be added to a report card."
+
+    class_group = attempt.exam.class_group or student_profile.current_class
+    if not class_group:
+        return None, "The student has no class assigned, so this result cannot be added to a report card."
+
+    tenant_obj = _tenant_for_model(StudentSubjectScore, actor)
+    if not tenant_obj:
+        return None, "Could not resolve the school for this result."
+
+    term = Term.objects.filter(tenant=tenant_obj, is_active=True).order_by("-start_date").first()
+
+    score_obj = StudentSubjectScore.objects.filter(
+        student=student_profile, subject=subject, class_group=class_group, term=term
+    ).first()
+    if score_obj is None:
+        score_obj = StudentSubjectScore(
+            student=student_profile,
+            subject=subject,
+            class_group=class_group,
+            term=term,
+            tenant=tenant_obj,
+            max_score=100,
+            approval_status=ResultBatch.DRAFT,
+            teacher=actor,
+        )
+
+    # Raw marks awarded, not a percentage: these components are marks that add
+    # up to the subject total, so the CBT contributes what the paper was
+    # actually worth.
+    score_obj.cbt_score = round(float(attempt.score or 0), 2)
+    components = [
+        float(score_obj.theory_score or 0),
+        float(score_obj.cbt_score or 0),
+        float(score_obj.assessment_score or 0),
+        float(score_obj.assignment_score or 0),
+        float(score_obj.attendance_score or 0),
+        float(score_obj.other_score or 0),
+    ]
+    score_obj.score = round(sum(components), 2)
+
+    max_score = float(score_obj.max_score or 0) or 100
+    percentage = round((float(score_obj.score) / max_score) * 100, 2) if max_score else 0
+    grade_letter, grade_remark = _grade_for_percentage(actor, percentage)
+    score_obj.grade = grade_letter
+    score_obj.performance_remark = grade_remark
+    score_obj.save()
+
+    return score_obj, ""
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def publish_attempt_result(request, attempt_id):
+    """Release one student's result.
+
+    Two separate things happen, and both are the point: the student can finally
+    see their score, and the score is written into StudentSubjectScore so it
+    shows up when an admin generates a report card or opens the broadsheet.
+
+    Theory has to be graded first. Publishing a paper with ungraded essays
+    would show the student an objective-only subtotal as though it were their
+    final mark.
+    """
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response(
+            {"success": False, "message": "Only teachers and administrators can publish results."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    attempt = get_object_or_404(
+        _theory_gradable_attempts_qs(request.user).select_related("exam__subject", "exam__class_group", "student"),
+        id=attempt_id,
+    )
+
+    if not attempt.is_submitted:
+        return Response(
+            {"success": False, "message": "This exam has not been submitted yet."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if _attempt_needs_theory_grading(attempt):
+        return Response(
+            {"success": False, "message": "Every theory answer must be graded before this result can be published."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    _publish_theory_grades(attempt)
+
+    score_obj, sync_error = _sync_attempt_to_subject_score(attempt, request.user)
+
+    attempt.results_published_at = timezone.now()
+    attempt.results_published_by = request.user
+    attempt.save(update_fields=["results_published_at", "results_published_by", "updated_at"])
+
+    # The student can see their result either way. A missing subject or class
+    # only blocks the report-card half, and saying so is more use than failing
+    # the whole action.
+    return Response({
+        "success": True,
+        "message": "Result published." if score_obj else "Result published to the student.",
+        "published_at": attempt.results_published_at,
+        "score": attempt.score,
+        "total_points": attempt.total_points,
+        "percentage": round(attempt.percentage, 2),
+        "added_to_report": bool(score_obj),
+        "report_warning": sync_error,
+        "subject_score": {
+            "subject": attempt.exam.subject.name if attempt.exam.subject_id else "",
+            "cbt_score": float(score_obj.cbt_score),
+            "score": float(score_obj.score),
+            "max_score": float(score_obj.max_score),
+            "grade": score_obj.grade,
+            "approval_status": score_obj.approval_status,
+        } if score_obj else None,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unpublish_attempt_result(request, attempt_id):
+    """Take a result back off the student's page.
+
+    Leaves the StudentSubjectScore row alone: it is a draft in the school's
+    results pipeline by then and may already have been approved, so removing it
+    from here would reach past this screen's remit.
+    """
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response(
+            {"success": False, "message": "Only teachers and administrators can unpublish results."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    attempt = get_object_or_404(_theory_gradable_attempts_qs(request.user), id=attempt_id)
+    attempt.results_published_at = None
+    attempt.results_published_by = None
+    attempt.save(update_fields=["results_published_at", "results_published_by", "updated_at"])
+    return Response({"success": True, "message": "Result hidden from the student again."})
