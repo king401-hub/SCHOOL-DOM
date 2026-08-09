@@ -5,6 +5,11 @@
 
 {% block branding %}
 {% if request.path|slice:":15" == "/control-panel/" %}
+{% if user.is_authenticated %}
+<button type="button" class="cp-mobile-nav-toggle" id="cp-mobile-nav-toggle" aria-label="{% translate 'Open navigation' %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+</button>
+{% endif %}
 <h1 id="site-name">
   <a href="/control-panel/">
     <img src="{% static 'img/schooldom-favicon.jpeg' %}" alt="" class="cp-logo-mark">
@@ -223,6 +228,33 @@
       if (group.classList.contains("cp-nav-group-open")) {
         group.setAttribute("data-cp-nav-had-current", "1");
       }
+    });
+  });
+
+  // Mobile nav drawer: Django's own admin CSS hides #nav-sidebar entirely
+  // below 767px with no way to reopen it - this wires the hamburger button
+  // (see branding block) up to slide it in as an overlay instead.
+  document.addEventListener("DOMContentLoaded", function () {
+    var sidebar = document.getElementById("nav-sidebar");
+    var openBtn = document.getElementById("cp-mobile-nav-toggle");
+    var closeBtn = document.getElementById("cp-mobile-nav-close");
+    var backdrop = document.getElementById("cp-mobile-nav-backdrop");
+    if (!sidebar || !openBtn || !backdrop) return;
+
+    function openMobileNav() {
+      sidebar.classList.add("cp-mobile-open");
+      backdrop.classList.add("cp-mobile-open");
+    }
+    function closeMobileNav() {
+      sidebar.classList.remove("cp-mobile-open");
+      backdrop.classList.remove("cp-mobile-open");
+    }
+
+    openBtn.addEventListener("click", openMobileNav);
+    backdrop.addEventListener("click", closeMobileNav);
+    if (closeBtn) closeBtn.addEventListener("click", closeMobileNav);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeMobileNav();
     });
   });
 </script>
@@ -666,6 +698,75 @@
     font-weight: 600;
   }
   .cp-nav-empty { padding: 14px 18px; color: #64748b; font-size: 12.5px; text-align: center; }
+
+  /* ---- mobile nav: Django's own admin CSS just display:none's the whole
+     sidebar (and its toggle button) below 767px with no way to reopen it. On
+     the control panel this instead turns #nav-sidebar into a slide-out drawer,
+     opened via a hamburger button in the header. ---- */
+  .cp-mobile-nav-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255,255,255,.1) !important;
+    color: #fff !important;
+    cursor: pointer;
+    margin-right: 10px;
+    flex: 0 0 auto;
+  }
+  .cp-mobile-nav-toggle svg { width: 18px; height: 18px; }
+  .cp-mobile-nav-close {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255,255,255,.12) !important;
+    color: #fff !important;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 1;
+  }
+  .cp-mobile-nav-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,.5);
+    z-index: 1099;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  @media (max-width: 767px) {
+    #branding { display: flex; align-items: center; }
+    .cp-mobile-nav-toggle { display: inline-flex; }
+    .cp-mobile-nav-close { display: block; }
+    #toggle-nav-sidebar { display: none !important; }
+    #nav-sidebar {
+      display: block !important;
+      position: fixed !important;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      width: min(300px, 85vw);
+      z-index: 1100;
+      transform: translateX(-100%);
+      transition: transform .25s ease;
+      box-shadow: 8px 0 30px rgba(0,0,0,.3);
+      visibility: visible !important;
+      margin-left: 0 !important;
+    }
+    #nav-sidebar.cp-mobile-open { transform: translateX(0); }
+    .cp-mobile-nav-backdrop.cp-mobile-open { display: block; opacity: 1; pointer-events: auto; }
+    .main > #nav-sidebar + .content, .main.shifted > #nav-sidebar + .content { max-width: 100% !important; }
+  }
 
   /* ---- cards / modules ---- */
   #content-main .module, .dashboard .module, #content-related .module {

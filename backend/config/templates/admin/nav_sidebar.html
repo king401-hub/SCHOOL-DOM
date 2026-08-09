@@ -1,12 +1,19 @@
 {% load i18n %}
 {% if request.path|slice:":15" == "/control-panel/" %}
 <button type="button" class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<div class="cp-mobile-nav-backdrop" id="cp-mobile-nav-backdrop"></div>
 <nav class="sticky cp-nav" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
-  {# Django's own nav_sidebar.js (loaded unconditionally by admin/base.html) looks
-     up #nav-filter and attaches listeners to it unconditionally - without this
-     hidden placeholder it throws on every control panel page load. It never
-     finds any "th[scope=row] a" rows in this markup, so it stays inert. #}
+  {% comment %}
+  Django's own nav_sidebar.js (loaded unconditionally by admin/base.html) looks
+  up #nav-filter and attaches listeners to it unconditionally - without this
+  hidden placeholder it throws on every control panel page load. It never
+  finds any "th[scope=row] a" rows in this markup, so it stays inert.
+  ({# #} comments can't span multiple lines in Django - they leak into the
+  rendered page as literal text instead of being stripped, which is why this
+  uses {% comment %} instead.)
+  {% endcomment %}
   <input type="search" id="nav-filter" style="display:none" aria-hidden="true" tabindex="-1">
+  <button type="button" class="cp-mobile-nav-close" id="cp-mobile-nav-close" aria-label="{% translate 'Close navigation' %}">&times;</button>
   <div class="cp-nav-search-wrap">
     <input type="search" id="cp-nav-search" class="cp-nav-search" placeholder="Search navigation…" autocomplete="off">
   </div>
