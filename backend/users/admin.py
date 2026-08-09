@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.urls import NoReverseMatch, reverse
+from django.utils.html import format_html
 
 from academic.models import Class
 from core.models import SchoolTenant
@@ -153,13 +155,59 @@ class StudentProfileAdmin(admin.ModelAdmin):
         return obj.user.tenant
 
 
+class TeacherEmploymentTypeFilter(admin.SimpleListFilter):
+    title = "Employment"
+    parameter_name = "employment_type"
+
+    def lookups(self, request, model_admin):
+        return TeacherProfile.EMPLOYMENT_TYPES
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(employment_type=self.value())
+        return queryset
+
+
+class TeacherHireDateFilter(admin.filters.DateFieldListFilter):
+    def __init__(self, field, request, params, model, model_admin, field_path):
+        super().__init__(field, request, params, model, model_admin, field_path)
+        self.title = "Hire Date"
+
+
+class TeacherSchoolFilter(admin.SimpleListFilter):
+    title = "School"
+    parameter_name = "school"
+
+    def lookups(self, request, model_admin):
+        return list(
+            SchoolTenant.objects.filter(users__teacher_profile__isnull=False)
+            .distinct()
+            .order_by("name")
+            .values_list("id", "name")
+        )
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(user__tenant_id=self.value())
+        return queryset
+
+
 @admin.register(TeacherProfile)
 class TeacherProfileAdmin(admin.ModelAdmin):
-    list_display = ("employee_id", "teacher_name", "teacher_email", "specialization", "hire_date", "employment_type")
-    list_filter = ("employment_type", "hire_date", "user__tenant")
-    search_fields = ("employee_id", "user__email", "user__first_name", "user__last_name", "specialization")
+    list_display = ("employee_id", "teacher_name", "school", "teacher_email", "specialization", "employment_type", "hire_date")
+    list_filter = (TeacherEmploymentTypeFilter, ("hire_date", TeacherHireDateFilter), TeacherSchoolFilter)
+    search_fields = ("employee_id", "user__email", "user__first_name", "user__last_name", "specialization", "user__tenant__name")
     raw_id_fields = ("user",)
     readonly_fields = ("created_at", "updated_at")
+    list_select_related = ("user", "user__tenant")
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = {
+            **(extra_context or {}),
+            "title": "Teacher Profiles",
+            "subtitle": "Teaching staff records across every school on the platform.",
+        }
+        return super().changelist_view(request, extra_context=extra_context)
 
     @admin.display(description="Name")
     def teacher_name(self, obj):
@@ -168,6 +216,25 @@ class TeacherProfileAdmin(admin.ModelAdmin):
     @admin.display(description="Email")
     def teacher_email(self, obj):
         return obj.user.email
+
+    @admin.display(description="School", ordering="user__tenant__name")
+    def school(self, obj):
+        tenant = obj.user.tenant
+        if tenant is None:
+            return "—"
+        url = None
+        try:
+            url = reverse(f"{self.admin_site.name}:core_schooltenant_change", args=[tenant.pk])
+        except NoReverseMatch:
+            pass
+        if tenant.logo:
+            avatar = format_html('<img src="{}" class="cp-school-avatar" alt="">', tenant.logo.url)
+        else:
+            avatar = format_html('<span class="cp-school-avatar cp-school-avatar-fallback">{}</span>', (tenant.name or "?")[:1].upper())
+        inner = format_html('{}<span class="cp-school-name">{}</span>', avatar, tenant.name)
+        if url:
+            return format_html('<a class="cp-school-chip" href="{}">{}</a>', url, inner)
+        return format_html('<span class="cp-school-chip">{}</span>', inner)
 
 
 @admin.register(ParentProfile)

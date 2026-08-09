@@ -92,6 +92,81 @@
       }
     });
   })();
+
+  // Filter drawer: converts the always-on #changelist-filter sidebar into a
+  // slide-out panel (see extrastyle) so results tables never lose width to it.
+  document.addEventListener("DOMContentLoaded", function () {
+    var filterPanel = document.getElementById("changelist-filter");
+    if (!filterPanel) return;
+
+    var backdrop = document.createElement("div");
+    backdrop.className = "cp-filter-backdrop";
+    document.body.appendChild(backdrop);
+
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "cp-filter-close";
+    closeBtn.innerHTML = "&times;";
+    closeBtn.setAttribute("aria-label", "Close filters");
+    var heading = filterPanel.querySelector("h2");
+    if (heading) heading.appendChild(closeBtn);
+
+    // Long option lists (e.g. "By School" with many tenants) get their own
+    // client-side search box instead of forcing an admin to scroll a wall of links.
+    filterPanel.querySelectorAll("ul").forEach(function (ul) {
+      var items = ul.querySelectorAll("li");
+      if (items.length <= 8) return;
+      var search = document.createElement("input");
+      search.type = "search";
+      search.placeholder = "Search…";
+      search.className = "cp-filter-search";
+      ul.parentNode.insertBefore(search, ul);
+      search.addEventListener("input", function () {
+        var q = search.value.trim().toLowerCase();
+        items.forEach(function (li) {
+          var text = li.textContent.trim().toLowerCase();
+          li.style.display = !q || text.indexOf(q) !== -1 ? "" : "none";
+        });
+      });
+    });
+
+    var ignoredParams = { q: 1, o: 1, p: 1, all: 1, _changelist_filters: 1, e: 1 };
+    var activeCount = 0;
+    new URLSearchParams(window.location.search).forEach(function (_v, k) {
+      if (!ignoredParams[k]) activeCount++;
+    });
+
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "cp-filter-toggle";
+    toggle.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>' +
+      "<span>Filters</span>" +
+      (activeCount ? '<span class="cp-filter-badge">' + activeCount + "</span>" : "");
+
+    var host = document.querySelector("#toolbar form div") || document.querySelector(".changelist-form-container");
+    if (host) host.appendChild(toggle);
+
+    function openDrawer() {
+      filterPanel.classList.add("cp-filter-open");
+      backdrop.classList.add("cp-filter-open");
+    }
+    function closeDrawer() {
+      filterPanel.classList.remove("cp-filter-open");
+      backdrop.classList.remove("cp-filter-open");
+    }
+
+    toggle.addEventListener("click", openDrawer);
+    backdrop.addEventListener("click", closeDrawer);
+    closeBtn.addEventListener("click", closeDrawer);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeDrawer();
+    });
+
+    // Filters were changed (an active one exists) - open the drawer straight
+    // away so results + the filter that produced them are visible together.
+    if (activeCount) openDrawer();
+  });
 </script>
 {% endif %}
 {% endblock %}
@@ -663,11 +738,114 @@
     border-bottom: none !important;
   }
   #changelist-filter #changelist-filter-clear a:hover { background: var(--cp-error-bg) !important; color: var(--cp-error-fg) !important; }
-  #changelist table thead th { background: var(--cp-surface-alt) !important; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--cp-text-muted) !important; }
-  #changelist table tbody th, #changelist table tbody td { color: var(--cp-text) !important; }
+  #changelist table thead th { background: var(--cp-surface-alt) !important; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--cp-text-muted) !important; position: sticky; top: 0; z-index: 3; }
+  #changelist table tbody th, #changelist table tbody td { color: var(--cp-text) !important; word-break: break-word; }
   #changelist table tbody tr:nth-child(odd) { background: var(--cp-surface) !important; }
   #changelist table tbody tr:nth-child(even) { background: var(--cp-row-alt) !important; }
   #changelist table tbody tr:hover { background: var(--cp-row-hover) !important; }
+
+  /* ---- school chip (teacher/student/staff changelists): always shows which
+     school a record belongs to at a glance, without opening the record ---- */
+  .cp-school-chip { display: inline-flex; align-items: center; gap: 8px; color: var(--cp-text) !important; font-weight: 600; text-decoration: none !important; }
+  .cp-school-chip:hover .cp-school-name { color: var(--cp-accent) !important; }
+  .cp-school-avatar { width: 22px; height: 22px; border-radius: 7px; object-fit: cover; flex: 0 0 auto; }
+  .cp-school-avatar-fallback {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--cp-accent) !important; color: var(--cp-accent-fg) !important;
+    font-size: 11px; font-weight: 800;
+  }
+  .cp-school-name { white-space: nowrap; }
+
+  /* ---- filter drawer: filters live in a slide-out panel instead of a
+     permanent sidebar, so the table always keeps its full width and never
+     gets squeezed or overlapped when filters are present ---- */
+  #changelist { display: block !important; }
+  #changelist .changelist-form-container { width: 100% !important; }
+  #changelist-form .results { overflow-x: auto; }
+  #changelist-filter {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: min(320px, 90vw) !important;
+    max-width: 90vw;
+    margin: 0 !important;
+    z-index: 1000;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    box-shadow: -8px 0 30px rgba(0,0,0,.25);
+    border-radius: 0 !important;
+    border-left: 1px solid var(--cp-border);
+  }
+  #changelist-filter.cp-filter-open { transform: translateX(0); }
+  #changelist-filter h2 { position: relative; padding-right: 40px !important; }
+  .cp-filter-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,.45);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  .cp-filter-backdrop.cp-filter-open { opacity: 1; pointer-events: auto; }
+  .cp-filter-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255,255,255,.18) !important;
+    color: #fff !important;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .cp-filter-close:hover { background: rgba(255,255,255,.3) !important; }
+  .cp-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--cp-surface) !important;
+    color: var(--cp-text) !important;
+    border: 1px solid var(--cp-border) !important;
+    border-radius: 999px !important;
+    padding: 7px 16px !important;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .cp-filter-toggle:hover { background: var(--cp-surface-alt) !important; }
+  .cp-filter-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--cp-accent) !important;
+    color: var(--cp-accent-fg) !important;
+    font-size: 10.5px;
+    font-weight: 800;
+  }
+  .cp-filter-search {
+    display: block;
+    width: calc(100% - 32px);
+    margin: 0 16px 8px;
+    background: var(--cp-surface-alt) !important;
+    color: var(--cp-text) !important;
+    border: 1px solid var(--cp-border) !important;
+    border-radius: 999px !important;
+    padding: 6px 12px !important;
+    font-size: 12.5px;
+    box-sizing: border-box;
+  }
+  .cp-filter-search:focus { border-color: var(--cp-accent) !important; outline: none; }
   .paginator { border-top: 1px solid var(--cp-border); background: var(--cp-surface-alt) !important; padding: 10px 16px; color: var(--cp-text-muted) !important; }
   .paginator a, .paginator .this-page { border-radius: 6px; padding: 4px 9px; color: var(--cp-link) !important; }
 
