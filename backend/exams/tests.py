@@ -817,3 +817,159 @@ class TheoryGradingPermissionTests(TestCase):
         self.client.force_authenticate(self.student)
         response = self.client.get(reverse("exams:theory_grading_queue"))
         self.assertEqual(response.status_code, 403)
+
+
+class AttemptSubmissionReviewTests(TestCase):
+    """The submission popup's summary has to reconcile with the rows under it.
+
+    ExamAttempt.score holds the objective-only subtotal until theory grades are
+    published, so a mixed paper reviewed off that field shows a total that does
+    not match the marks printed beside each question. These tests pin the sum,
+    and pin that an ungraded theory answer is reported as pending rather than
+    quietly counted as a zero the student earned.
+    """
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Review School", schema_name="review_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        GradeScale.objects.create(
+            tenant=self.legacy_tenant, letter="A", min_percentage=60, max_percentage=100, remark="Excellent"
+        )
+        self.teacher = User.objects.create_user(
+            email="teacher@review.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = User.objects.create_user(
+            email="pupil@review.edu", password="StudentPass123", first_name="Ada", last_name="Pupil",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.exam = Exam.objects.create(
+            title="Mixed Paper", teacher=self.teacher,
+            start_date=timezone.now() - timedelta(minutes=5),
+            end_date=timezone.now() + timedelta(hours=1),
+            duration_minutes=60, exam_format="mixed", is_published=True,
+            tenant=self.legacy_tenant,
+        )
+        self.right = Question.objects.create(
+            question_type="mcq", text="2 + 2?", points=10,
+            options=["3", "4", "5", "6"], correct_answer="4", tenant=self.legacy_tenant,
+        )
+        self.wrong = Question.objects.create(
+            question_type="mcq", text="Capital of France?", points=10,
+            options=["Lagos", "Paris", "Rome", "Madrid"], correct_answer="Paris", tenant=self.legacy_tenant,
+        )
+        self.skipped = Question.objects.create(
+            question_type="mcq", text="Largest planet?", points=10,
+            options=["Mars", "Jupiter", "Venus", "Earth"], correct_answer="Jupiter", tenant=self.legacy_tenant,
+        )
+        self.theory = Question.objects.create(
+            question_type="essay", text="Discuss photosynthesis.", points=20, tenant=self.legacy_tenant,
+        )
+        self.exam.questions.set([self.right, self.wrong, self.skipped, self.theory])
+
+        self.attempt = ExamAttempt.objects.create(
+            exam=self.exam, student=self.student, is_submitted=True,
+            end_time=timezone.now(), tenant=self.legacy_tenant,
+        )
+        StudentAnswer.objects.create(
+            attempt=self.attempt, question=self.right, selected_options=1,
+            is_correct=True, score=10, tenant=self.legacy_tenant,
+        )
+        StudentAnswer.objects.create(
+            attempt=self.attempt, question=self.wrong, selected_options=0,
+            is_correct=False, score=0, tenant=self.legacy_tenant,
+        )
+        # self.skipped deliberately has no StudentAnswer row at all.
+        StudentAnswer.objects.create(
+            attempt=self.attempt, question=self.theory, answer_text="Plants use sunlight...",
+            is_correct=None, score=None, tenant=self.legacy_tenant,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.teacher)
+
+    def _review(self):
+        response = self.client.get(f"/api/exams/attempt/{self.attempt.id}/review/")
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def test_summary_total_equals_the_sum_of_the_question_rows(self):
+        data = self._review()
+        row_total = sum(row["marks_awarded"] for row in data["questions"])
+        self.assertEqual(data["score"], row_total)
+        self.assertEqual(data["score"], 10)          # only the correct MCQ has been awarded
+        self.assertEqual(data["total_marks"], 50)    # 10 + 10 + 10 + 20 across the whole paper
+        self.assertEqual(sum(row["marks_possible"] for row in data["questions"]), 50)
+
+    def test_ungraded_theory_is_pending_not_a_zero(self):
+        data = self._review()
+        theory_row = next(row for row in data["questions"] if row["question_id"] == self.theory.id)
+        self.assertEqual(theory_row["status"], "pending")
+        self.assertEqual(theory_row["marks_awarded"], 0)
+        self.assertEqual(theory_row["marks_possible"], 20)
+        self.assertEqual(data["pending_questions"], 1)
+        # Pending marks are excluded from what has actually been graded, so an
+        # admin can see the total only covers 30 of the paper's 50 marks.
+        self.assertEqual(data["graded_marks"], 30)
+        self.assertEqual(data["incorrect_questions"], 1)
+
+    def test_each_question_status_and_counts(self):
+        data = self._review()
+        by_id = {row["question_id"]: row for row in data["questions"]}
+        self.assertEqual(by_id[self.right.id]["status"], "correct")
+        self.assertEqual(by_id[self.right.id]["student_answer"], "B. 4")
+        self.assertEqual(by_id[self.right.id]["correct_answer"], "B. 4")
+        self.assertEqual(by_id[self.wrong.id]["status"], "incorrect")
+        self.assertEqual(by_id[self.wrong.id]["student_answer"], "A. Lagos")
+        self.assertEqual(by_id[self.wrong.id]["correct_answer"], "B. Paris")
+        self.assertEqual(by_id[self.skipped.id]["status"], "unanswered")
+        self.assertEqual(by_id[self.skipped.id]["student_answer"], "")
+        self.assertEqual(data["total_questions"], 4)
+        self.assertEqual(data["answered_questions"], 3)
+        self.assertEqual(data["unanswered_questions"], 1)
+        self.assertEqual(data["correct_questions"], 1)
+
+    def test_graded_theory_counts_toward_the_total_and_the_grade(self):
+        answer = StudentAnswer.objects.get(attempt=self.attempt, question=self.theory)
+        answer.score = 20
+        answer.save(update_fields=["score"])
+
+        data = self._review()
+        theory_row = next(row for row in data["questions"] if row["question_id"] == self.theory.id)
+        self.assertEqual(theory_row["status"], "correct")
+        self.assertEqual(data["score"], 30)
+        self.assertEqual(data["graded_marks"], 50)
+        self.assertEqual(data["pending_questions"], 0)
+        self.assertEqual(data["percentage"], 60.0)
+        # Resolved through the school's own GradeScale, not a private scale.
+        self.assertEqual(data["grade"], "A")
+
+    def test_partially_credited_theory_is_neither_correct_nor_incorrect(self):
+        answer = StudentAnswer.objects.get(attempt=self.attempt, question=self.theory)
+        answer.score = 12
+        answer.save(update_fields=["score"])
+
+        data = self._review()
+        theory_row = next(row for row in data["questions"] if row["question_id"] == self.theory.id)
+        self.assertEqual(theory_row["status"], "partial")
+        self.assertEqual(theory_row["marks_awarded"], 12)
+        self.assertEqual(data["score"], 22)
+        self.assertEqual(data["partial_questions"], 1)
+
+    def test_students_cannot_read_a_submission_review(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.get(f"/api/exams/attempt/{self.attempt.id}/review/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_a_teacher_from_another_school_cannot_read_it(self):
+        other_school = SchoolTenant.objects.create(
+            name="Other School", schema_name="other_review_school", is_active=True
+        )
+        outsider = User.objects.create_user(
+            email="outsider@other.edu", password="TeacherPass123", role="teacher",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(outsider)
+        response = self.client.get(f"/api/exams/attempt/{self.attempt.id}/review/")
+        self.assertEqual(response.status_code, 404)

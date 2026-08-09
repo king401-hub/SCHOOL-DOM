@@ -1790,3 +1790,202 @@ def cbt_app_version(request):
     info = getattr(settings, 'CBT_ADMIN_APP_VERSION', _CBT_ADMIN_APP_VERSION_DEFAULT)
     return Response(info)
 
+
+def _grade_letter_for(user, percentage):
+    """Grade for a percentage, through the same admin-configured GradeScale as
+    report cards, transcripts and the CBT result page.
+
+    Deliberately delegates rather than querying GradeScale here: this screen
+    inventing its own boundaries is the exact bug ExamResultGradingTests was
+    written to prevent, and a submission popup disagreeing with the report card
+    on the same percentage would be worse than showing no grade at all.
+    """
+    from users.app_views import _grade_for_percentage
+
+    return _grade_for_percentage(user, percentage)
+
+
+REVIEW_STATUS_CORRECT = "correct"
+REVIEW_STATUS_INCORRECT = "incorrect"
+REVIEW_STATUS_PARTIAL = "partial"
+REVIEW_STATUS_UNANSWERED = "unanswered"
+REVIEW_STATUS_PENDING = "pending"
+
+
+def _answer_review_state(question, answer):
+    """What actually happened on one question.
+
+    The distinction that matters is a NULL score on a theory answer: that is
+    _grade_attempt leaving the question for a human, not a zero awarded. Showing
+    it as an incorrect answer worth nothing is exactly what this endpoint exists
+    to avoid, so it reports as pending and stays out of the awarded total.
+    """
+    possible = float(question.points or 0)
+    is_theory = question.question_type in Question.THEORY_TYPES
+
+    if answer is None:
+        return {"status": REVIEW_STATUS_UNANSWERED, "awarded": 0.0, "possible": possible, "graded": True}
+
+    if is_theory:
+        answered = bool((answer.answer_text or "").strip())
+        if answer.score is None:
+            # Ungraded. A blank theory answer is still ungraded until a teacher
+            # confirms it earns nothing, so both wait rather than scoring zero.
+            return {
+                "status": REVIEW_STATUS_PENDING if answered else REVIEW_STATUS_UNANSWERED,
+                "awarded": 0.0,
+                "possible": possible,
+                "graded": False,
+            }
+        awarded = float(answer.score)
+        if possible > 0 and awarded >= possible:
+            status_value = REVIEW_STATUS_CORRECT
+        elif awarded <= 0:
+            status_value = REVIEW_STATUS_INCORRECT
+        else:
+            status_value = REVIEW_STATUS_PARTIAL
+        return {"status": status_value, "awarded": awarded, "possible": possible, "graded": True}
+
+    selected = _normalize_selected_answer(answer.selected_options)
+    if selected is None and not (answer.answer_text or "").strip():
+        return {"status": REVIEW_STATUS_UNANSWERED, "awarded": 0.0, "possible": possible, "graded": True}
+
+    return {
+        "status": REVIEW_STATUS_CORRECT if answer.is_correct else REVIEW_STATUS_INCORRECT,
+        "awarded": float(answer.score or 0),
+        "possible": possible,
+        "graded": True,
+    }
+
+
+def _student_answer_display(question, answer):
+    """What the student put down, as text an admin can read."""
+    if answer is None:
+        return ""
+    if question.question_type in Question.THEORY_TYPES:
+        return answer.answer_text or ""
+    options = question.options or []
+    selected = _normalize_selected_answer(answer.selected_options)
+    try:
+        index = int(selected)
+    except (TypeError, ValueError):
+        return answer.answer_text or ""
+    if 0 <= index < len(options):
+        return "%s. %s" % (chr(65 + index), options[index])
+    return answer.answer_text or ""
+
+
+def _correct_answer_display(question):
+    if question.question_type in Question.THEORY_TYPES:
+        return question.correct_answer or ""
+    options = question.options or []
+    if question.correct_answer in options:
+        index = options.index(question.correct_answer)
+        return "%s. %s" % (chr(65 + index), question.correct_answer)
+    return question.correct_answer or ""
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attempt_review(request, attempt_id):
+    """One student's whole submitted exam, question by question.
+
+    Every figure is summed from the individual questions rather than read off
+    ExamAttempt.score, so the summary always reconciles with the rows beneath
+    it. ExamAttempt.score is objective-only until theory grades are published,
+    which would otherwise make the two disagree on a mixed exam.
+    """
+    from users.app_views import _media_url, _question_group_payload
+
+    role = getattr(request.user, "role", "")
+    if role not in THEORY_GRADING_ROLES:
+        return Response(
+            {"success": False, "message": "Only teachers and administrators can review submissions."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    attempt = get_object_or_404(
+        _theory_gradable_attempts_qs(request.user).select_related(
+            "exam__subject", "exam__class_group", "exam__exam_type", "student"
+        ),
+        id=attempt_id,
+    )
+
+    questions = list(_question_queryset_for_exam(attempt.exam).order_by("group__id", "group_order", "id"))
+    answers = {
+        answer.question_id: answer
+        for answer in StudentAnswer.objects.filter(attempt=attempt).select_related("question")
+    }
+
+    rows = []
+    awarded_total = 0.0
+    possible_total = 0.0
+    graded_possible = 0.0
+    tally = {
+        REVIEW_STATUS_CORRECT: 0,
+        REVIEW_STATUS_INCORRECT: 0,
+        REVIEW_STATUS_PARTIAL: 0,
+        REVIEW_STATUS_UNANSWERED: 0,
+        REVIEW_STATUS_PENDING: 0,
+    }
+
+    for index, question in enumerate(questions, start=1):
+        answer = answers.get(question.id)
+        state = _answer_review_state(question, answer)
+        tally[state["status"]] = tally.get(state["status"], 0) + 1
+        awarded_total += state["awarded"]
+        possible_total += state["possible"]
+        if state["graded"]:
+            graded_possible += state["possible"]
+
+        rows.append({
+            "number": index,
+            "question_id": question.id,
+            "question_text": question.text,
+            "question_type": question.question_type,
+            "is_theory": question.question_type in Question.THEORY_TYPES,
+            "options": question.options or [],
+            "passage": _question_group_payload(question.group, request) if question.group_id else None,
+            "image": _media_url(request, question.image),
+            "student_answer": _student_answer_display(question, answer),
+            "correct_answer": _correct_answer_display(question),
+            "marks_awarded": round(state["awarded"], 2),
+            "marks_possible": round(state["possible"], 2),
+            "status": state["status"],
+            "teacher_feedback": (answer.teacher_feedback or "") if answer else "",
+        })
+
+    # Percentage is over the whole paper, so a mixed exam with theory still
+    # outstanding reads low on purpose - the popup labels those questions
+    # Pending Grading so the number is never mistaken for a final result.
+    percentage = round((awarded_total / possible_total * 100), 2) if possible_total else 0.0
+    letter, remark = _grade_letter_for(request.user, percentage)
+    student_profile = getattr(attempt.student, "student_profile", None)
+
+    return Response({
+        "success": True,
+        "attempt_id": attempt.id,
+        "student_name": attempt.student.get_full_name() or attempt.student.email,
+        "student_id": getattr(student_profile, "student_id", "") or getattr(student_profile, "admission_number", "") or "",
+        "class_name": str(attempt.exam.class_group) if attempt.exam.class_group_id else "",
+        "exam_title": attempt.exam.title,
+        "subject": attempt.exam.subject.name if attempt.exam.subject_id else "",
+        "exam_type": attempt.exam.exam_type.name if attempt.exam.exam_type_id else attempt.exam.get_exam_format_display(),
+        "submitted_at": attempt.end_time or attempt.updated_at,
+        "started_at": attempt.start_time,
+        "auto_submitted": attempt.auto_submitted,
+        "score": round(awarded_total, 2),
+        "total_marks": round(possible_total, 2),
+        "graded_marks": round(graded_possible, 2),
+        "percentage": percentage,
+        "grade": letter,
+        "grade_remark": remark,
+        "total_questions": len(questions),
+        "answered_questions": len(questions) - tally[REVIEW_STATUS_UNANSWERED],
+        "unanswered_questions": tally[REVIEW_STATUS_UNANSWERED],
+        "correct_questions": tally[REVIEW_STATUS_CORRECT],
+        "incorrect_questions": tally[REVIEW_STATUS_INCORRECT],
+        "partial_questions": tally[REVIEW_STATUS_PARTIAL],
+        "pending_questions": tally[REVIEW_STATUS_PENDING],
+        "questions": rows,
+    })

@@ -40,6 +40,7 @@ import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
 import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
 import { FinanceHistoryModal } from "./FinanceHistoryModal";
+import ExamSubmissionModal from "./components/ExamSubmissionModal";
 
 function ConfirmModal({ open, title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
   return (
@@ -3394,6 +3395,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [deleteFeedback, setDeleteFeedback] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [pendingDeleteResult, setPendingDeleteResult] = useState(null);
+  const [reviewingAttempt, setReviewingAttempt] = useState(null);
   const [examPins, setExamPins] = useState({});
   const [visiblePins, setVisiblePins] = useState({});
   const [pinBusyId, setPinBusyId] = useState("");
@@ -4131,7 +4133,20 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                   <tr key={row.id || row.attempt_id || row.reg_no || index}>
                     <td>
                       <div className="stacked">
-                        <strong>{row.student_name || "Student"}</strong>
+                        {/* The whole point of the row: open the submission it
+                            summarises. Falls back to plain text when the row
+                            carries no attempt id to open. */}
+                        {row.attempt_id || row.id ? (
+                          <button
+                            type="button"
+                            className="link-button submission-open"
+                            onClick={() => setReviewingAttempt({ id: row.attempt_id || row.id, name: row.student_name })}
+                          >
+                            {row.student_name || "Student"}
+                          </button>
+                        ) : (
+                          <strong>{row.student_name || "Student"}</strong>
+                        )}
                         <small>{row.batch_no ? `Batch ${row.batch_no}` : ""}</small>
                       </div>
                     </td>
@@ -4151,6 +4166,15 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                       >
                         {deleteBusyId === String(row.attempt_id || row.id) ? "Deleting..." : "Delete"}
                       </button>
+                      {row.attempt_id || row.id ? (
+                        <button
+                          type="button"
+                          className="table-action"
+                          onClick={() => setReviewingAttempt({ id: row.attempt_id || row.id, name: row.student_name })}
+                        >
+                          View
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -4161,6 +4185,15 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           <p className="panel-empty">{loading ? "Loading results..." : "No results match your filters."}</p>
         )}
       </article> : null}
+
+      {reviewingAttempt ? (
+        <ExamSubmissionModal
+          session={session}
+          attemptId={reviewingAttempt.id}
+          studentName={reviewingAttempt.name}
+          onClose={() => setReviewingAttempt(null)}
+        />
+      ) : null}
 
       {pendingDeleteResult ? (
         <div className="result-delete-modal" role="dialog" aria-modal="true" aria-labelledby="result-delete-title">
