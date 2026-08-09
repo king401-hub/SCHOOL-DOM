@@ -15,8 +15,9 @@ from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
-from django.urls import path, reverse
+from django.urls import NoReverseMatch, path, reverse
 from django.utils.html import format_html
+from django.utils.text import capfirst
 
 from ops.models import OpsUser, Region
 from ops.permissions import clear_member_override, has_permission, set_member_override, set_role_default
@@ -40,6 +41,195 @@ MODULE_MODEL_MAP = {
     ("users", "parentprofile"): "students_staff_data",
     ("hr", "staffprofile"): "students_staff_data",
 }
+
+# ---------------------------------------------------------------------------
+# SaaS-style grouped navigation (spec: "Redesign the entire Control Panel" -
+# Phase 1, nav restructure). Every model mirrored/auto-registered by
+# register_all() gets mapped to one of these categories + a plain-language
+# label, replacing the old flat "one row per Django app" sidebar. Anything not
+# listed here (a future model nobody has categorized yet) falls back to an
+# "Other" bucket in ControlPanelSite.build_nav_categories() instead of raising
+# or silently vanishing from the nav - see the fallback there.
+NAV_ICONS = {
+    "dashboard": '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9"/>',
+    "schools": '<path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/><path d="M22 8v6"/>',
+    "academics": '<path d="M12 6.5C10 5 6 4 3 4v14c3 0 7 1 9 2.5C14 19 18 18 21 18V4c-3 0-7 1-9 2.5Z"/><path d="M12 6.5V21"/>',
+    "people": '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "examinations": '<rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="m9 13 2 2 4-4"/>',
+    "finance": '<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v3"/><path d="M3 7v11a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-4"/><path d="M17 13h3a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-3a2 2 0 0 1 0-4Z"/>',
+    "sms": '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/>',
+    "quizzes": '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/>',
+    "administration": '<path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z"/>',
+    "platform_settings": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/>',
+    "other": '<circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="12" r="1.5"/>',
+}
+
+NAV_CATEGORY_ORDER = [
+    ("schools", "Schools"),
+    ("academics", "Academics"),
+    ("people", "People"),
+    ("examinations", "Examinations"),
+    ("finance", "Finance"),
+    ("sms", "SMS"),
+    ("quizzes", "Quizzes"),
+    ("administration", "Administration"),
+    ("platform_settings", "Platform Settings"),
+    ("other", "Other"),
+]
+
+MODEL_NAV_LABELS = {
+    # Schools - school records, per-school token/activation lifecycle
+    ("core", "schooltenant"): ("schools", "Schools"),
+    ("core", "schoolgroup"): ("schools", "School Groups"),
+    ("core", "domain"): ("schools", "School Domains"),
+    ("tenants", "tenant"): ("schools", "Legacy Tenants"),
+    ("finance", "tokenallocation"): ("schools", "School Tokens"),
+    ("finance", "activationcreditpool"): ("schools", "School Activation Balances"),
+    ("finance", "activationcredittransaction"): ("schools", "Token Transactions"),
+    ("finance", "studentactivationcredit"): ("schools", "Student Activation Credits"),
+    ("superadmin_dashboard", "schooltokenpaymentsetting"): ("schools", "Token Payment Settings"),
+
+    # Academics - curriculum, calendar, attendance
+    ("academic", "academicyear"): ("academics", "Academic Years"),
+    ("academic", "class"): ("academics", "Classes"),
+    ("academic", "subject"): ("academics", "Subjects"),
+    ("academic", "term"): ("academics", "Terms"),
+    ("academic", "gradescale"): ("academics", "Grade Scales"),
+    ("academic", "lessonplan"): ("academics", "Lesson Plans"),
+    ("academic", "timetableentry"): ("academics", "Timetables"),
+    ("academic", "studentclasspromotion"): ("academics", "Student Promotions"),
+    ("academic", "studentsubjectscore"): ("academics", "Student Subject Scores"),
+    ("academic", "schoolactivitycalendar"): ("academics", "School Calendar"),
+    ("academic", "attendancerecord"): ("academics", "Attendance"),
+    ("attendance", "attendanceqrcode"): ("academics", "Attendance QR Codes"),
+    ("attendance", "attendancereport"): ("academics", "Attendance Reports"),
+    ("attendance", "teacherattendance"): ("academics", "Teacher Attendance"),
+    ("hr", "staffattendance"): ("academics", "Staff Attendance"),
+    ("ai_secretary", "studentattendance"): ("academics", "Attendance (AI Secretary)"),
+
+    # People - directories for every role
+    ("users", "studentprofile"): ("people", "Students"),
+    ("users", "teacherprofile"): ("people", "Teachers"),
+    ("users", "parentprofile"): ("people", "Parents"),
+    ("users", "user"): ("people", "Administrators & Accounts"),
+    ("users", "studentenrollment"): ("people", "Student Enrollments"),
+    ("users", "studentactivitytitle"): ("people", "Student Activity Titles"),
+    ("users", "studenttestimonial"): ("people", "Student Testimonials"),
+    ("hr", "staffprofile"): ("people", "Non-Teaching Staff"),
+    ("hr", "leaverequest"): ("people", "Leave Requests"),
+    ("academic", "teachernote"): ("people", "Teacher Notes"),
+    ("alumni", "archivedstudentrecord"): ("people", "Alumni Records"),
+
+    # Examinations - CBT exams, question banks, results
+    ("exams", "exam"): ("examinations", "Exams"),
+    ("exams", "examtype"): ("examinations", "Exam Types"),
+    ("exams", "examattempt"): ("examinations", "Exam Attempts"),
+    ("exams", "exampin"): ("examinations", "Exam PINs"),
+    ("exams", "exampinusage"): ("examinations", "Exam PIN Usage"),
+    ("exams", "question"): ("examinations", "Exam Questions"),
+    ("exams", "questionbank"): ("examinations", "Question Banks"),
+    ("exams", "questiongroup"): ("examinations", "Question Groups"),
+    ("exams", "studentanswer"): ("examinations", "Student Answers"),
+    ("academic", "questionprompt"): ("examinations", "Question Prompts"),
+    ("academic", "questionresponse"): ("examinations", "Question Responses"),
+    ("academic", "resultbatch"): ("examinations", "Result Batches"),
+
+    # Finance - money movement: fees, bills, payments, ledgers, payroll
+    ("finance", "schoolfee"): ("finance", "School Fees"),
+    ("finance", "classfee"): ("finance", "Class Fees"),
+    ("finance", "feeallocation"): ("finance", "Fee Allocations"),
+    ("finance", "bill"): ("finance", "Bills"),
+    ("finance", "billitem"): ("finance", "Bill Items"),
+    ("finance", "transaction"): ("finance", "Transactions"),
+    ("finance", "wallet"): ("finance", "Wallets"),
+    ("finance", "adminwallet"): ("finance", "Admin Wallet"),
+    ("finance", "expenserecord"): ("finance", "Expenses"),
+    ("finance", "financeledgerlog"): ("finance", "Finance Ledger"),
+    ("finance", "parentvirtualaccount"): ("finance", "Parent Virtual Accounts"),
+    ("finance", "paymentreceiptlink"): ("finance", "Payment Receipts"),
+    ("finance", "bankpayment"): ("finance", "Bank Payments"),
+    ("finance", "banklink"): ("finance", "Bank Links"),
+    ("finance", "studentpaymentreference"): ("finance", "Student Payment References"),
+    ("finance", "documentgenerationcredittransaction"): ("finance", "Document Generation Credits"),
+    ("fee_collections", "feepayment"): ("finance", "Fee Payments"),
+    ("fee_collections", "schoolvirtualaccount"): ("finance", "School Virtual Accounts"),
+    ("fee_collections", "schoolsettlement"): ("finance", "School Settlements"),
+    ("fee_collections", "schoolcollectionprofile"): ("finance", "School Collection Profiles"),
+    ("fee_collections", "collectionconfig"): ("finance", "Collection Configuration"),
+    ("fee_collections", "collectionauditlog"): ("finance", "Collection Audit Logs"),
+    ("hr", "payrollrecord"): ("finance", "Payroll Records"),
+    ("hr", "salaryadvancerequest"): ("finance", "Salary Advances"),
+    ("users", "kidsmonitorsubscription"): ("finance", "Kids Monitor Subscriptions"),
+    ("users", "loanapplication"): ("finance", "Loan Applications"),
+
+    # SMS - messaging wallets/bundles/logs
+    ("finance", "smswallet"): ("sms", "SMS Wallets"),
+    ("finance", "smsbundle"): ("sms", "SMS Bundles"),
+    ("finance", "smswallettransaction"): ("sms", "SMS Transactions"),
+    ("finance", "smsmessagelog"): ("sms", "SMS Message Logs"),
+    ("notifications", "smsconfiguration"): ("sms", "SMS Configuration"),
+
+    # Quizzes
+    ("quizzes", "quiz"): ("quizzes", "Quizzes"),
+    ("quizzes", "question"): ("quizzes", "Quiz Questions"),
+    ("quizzes", "choice"): ("quizzes", "Choices"),
+    ("quizzes", "answer"): ("quizzes", "Answers"),
+    ("quizzes", "submission"): ("quizzes", "Quiz Submissions"),
+    ("quizzes", "personalquizfolder"): ("quizzes", "Personal Quiz Folders"),
+    ("quizzes", "personalquizfolderquestion"): ("quizzes", "Personal Quiz Folder Questions"),
+    ("quizzes", "personalquizquestion"): ("quizzes", "Personal Quiz Questions"),
+    ("quizzes", "personalquizattempt"): ("quizzes", "Personal Quiz Attempts"),
+    ("quizzes", "personalquizanswer"): ("quizzes", "Personal Quiz Answers"),
+
+    # Administration - legal/compliance, ops team, comms, system housekeeping
+    ("core", "auditlog"): ("administration", "Activity Logs"),
+    ("auth", "group"): ("administration", "Permission Groups"),
+    ("users", "serviceagreement"): ("administration", "Service Agreements"),
+    ("users", "supportticket"): ("administration", "Support Tickets"),
+    ("users", "loginhistory"): ("administration", "Login History"),
+    ("users", "databaseimportjob"): ("administration", "Database Import Jobs"),
+    ("hr", "staffactivity"): ("administration", "Staff Activity Logs"),
+    ("ops", "opsuser"): ("administration", "Team Members"),
+    ("ops", "region"): ("administration", "Regions"),
+    ("ops", "rolepermission"): ("administration", "Role Permissions"),
+    ("ops", "memberpermission"): ("administration", "Member Permissions"),
+    ("ops", "permissionauditlog"): ("administration", "Permission Audit Log"),
+    ("otp_email", "emaildevice"): ("administration", "Email OTP Devices"),
+    ("request_queue", "queuedrequest"): ("administration", "Queued Requests"),
+    ("request_queue", "queuedrequestevent"): ("administration", "Queued Request Events"),
+    ("inventory", "inventoryitem"): ("administration", "Inventory Items"),
+    ("inventory", "inventoryitemimage"): ("administration", "Inventory Item Images"),
+    ("inventory", "itemassignment"): ("administration", "Inventory Assignments"),
+    ("inventory", "stockmovement"): ("administration", "Stock Movements"),
+    ("inventory", "inventoryauditlog"): ("administration", "Inventory Audit Logs"),
+    ("notifications", "announcement"): ("administration", "Announcements"),
+    ("notifications", "announcementread"): ("administration", "Announcement Reads"),
+    ("notifications", "broadcastmessage"): ("administration", "Broadcast Messages"),
+    ("notifications", "groupmessage"): ("administration", "Group Messages"),
+    ("notifications", "inappmessage"): ("administration", "In-App Messages"),
+    ("notifications", "messagegroup"): ("administration", "Message Groups"),
+    ("notifications", "messagegroupmembership"): ("administration", "Message Group Members"),
+    ("notifications", "notification"): ("administration", "Notifications"),
+    ("notifications", "notificationdigest"): ("administration", "Notification Digests"),
+    ("notifications", "notificationpreference"): ("administration", "Notification Preferences"),
+    ("notifications", "notificationtemplate"): ("administration", "Notification Templates"),
+    ("notifications", "pushsubscription"): ("administration", "Push Subscriptions"),
+
+    # Platform Settings - global config, theming, feature flags
+    ("settings_app", "documenttheme"): ("platform_settings", "Document Themes"),
+    ("settings_app", "themeconfiguration"): ("platform_settings", "Theme Configurations"),
+    ("settings_app", "featureflag"): ("platform_settings", "Feature Flags"),
+    ("superadmin_dashboard", "platformnotification"): ("platform_settings", "Platform Notifications"),
+    ("notifications", "emailconfiguration"): ("platform_settings", "Email Configuration"),
+    ("notifications", "paymentgatewayconfiguration"): ("platform_settings", "Payment Gateway Settings"),
+}
+
+
+def _nav_bucket(model):
+    key = (model._meta.app_label, model._meta.model_name)
+    if key in MODEL_NAV_LABELS:
+        return MODEL_NAV_LABELS[key]
+    return ("other", capfirst(str(model._meta.verbose_name_plural)))
 
 
 class OpsGatedAdminMixin:
@@ -243,11 +433,12 @@ def _dashboard_metrics():
     try:
         from users.models import User
         metrics["students_total"] = User.objects.filter(role="student").count()
+        metrics["teachers_total"] = User.objects.filter(role="teacher").count()
         metrics["staff_total"] = User.objects.filter(
             role__in=["teacher", "staff", "principal", "school_admin", "accountant"]
         ).count()
     except Exception:
-        metrics["students_total"] = metrics["staff_total"] = "—"
+        metrics["students_total"] = metrics["teachers_total"] = metrics["staff_total"] = "—"
 
     try:
         from users.app_views import KIDS_MONITOR_PRICE
@@ -302,6 +493,58 @@ def _dashboard_metrics():
         metrics["sms_credits_sold"] = "—"
         metrics["sms_sparkline"] = []
 
+    try:
+        from finance.models import ActivationCreditTransaction, SmsWalletTransaction
+        recent = [
+            {
+                "tenant": tx.pool.tenant.name if tx.pool.tenant else "—",
+                "kind": "Tokens",
+                "amount": _money(tx.amount),
+                "credits": tx.credits,
+                "created_at": tx.created_at,
+            }
+            for tx in ActivationCreditTransaction.objects.filter(
+                tx_type="purchase", status="successful"
+            ).select_related("pool__tenant").order_by("-created_at")[:6]
+        ] + [
+            {
+                "tenant": tx.wallet.tenant.name if tx.wallet.tenant else "—",
+                "kind": "SMS",
+                "amount": _money(tx.amount),
+                "credits": tx.credits,
+                "created_at": tx.created_at,
+            }
+            for tx in SmsWalletTransaction.objects.filter(
+                tx_type="purchase", status="successful"
+            ).select_related("wallet__tenant").order_by("-created_at")[:6]
+        ]
+        recent.sort(key=lambda r: r["created_at"], reverse=True)
+        metrics["recent_payments"] = recent[:6]
+    except Exception:
+        metrics["recent_payments"] = []
+
+    try:
+        from finance.models import TokenAllocation
+        today = timezone.localdate()
+        metrics["tokens_expiring_soon"] = TokenAllocation.objects.filter(
+            revoked_at__isnull=True,
+            expires_at__isnull=False,
+            expires_at__gte=today,
+            expires_at__lte=today + timezone.timedelta(days=7),
+        ).count()
+        metrics["tokens_recently_expired"] = TokenAllocation.objects.filter(
+            revoked_at__isnull=False,
+            revoked_at__date__gte=today - timezone.timedelta(days=7),
+        ).count()
+    except Exception:
+        metrics["tokens_expiring_soon"] = metrics["tokens_recently_expired"] = 0
+
+    metrics["alert_count"] = (
+        (metrics["compliance_pending"] or 0)
+        + metrics["tokens_expiring_soon"]
+        + metrics["tokens_recently_expired"]
+    )
+
     return metrics
 
 
@@ -317,6 +560,60 @@ class ControlPanelSite(AdminSite):
         for app in app_list:
             app["name"] = APP_LABEL_NAMES.get(app["app_label"], app["name"])
         return sorted(app_list, key=lambda a: a["name"].lower())
+
+    def _current_app_model(self, request):
+        """(app_label, model_name) of the page being viewed, derived from the URL
+        rather than resolver internals - control panel URLs always follow
+        <root>/<app_label>/<model_name>/... so this works for every view
+        (changelist, add, change, delete, history, and our own custom ones)."""
+        try:
+            base = reverse(f"{self.name}:index")
+        except NoReverseMatch:
+            return None
+        path_info = request.path_info
+        if not path_info.startswith(base):
+            return None
+        parts = [p for p in path_info[len(base):].split("/") if p]
+        if len(parts) >= 2:
+            return (parts[0], parts[1])
+        return None
+
+    def build_nav_categories(self, request):
+        """Groups every model this request is allowed to see (respecting the
+        same has_module_permission/has_view_permission checks _build_app_dict
+        already applies for the old flat app list) into the SaaS-style nav
+        categories from MODEL_NAV_LABELS, for the grouped sidebar template."""
+        current = self._current_app_model(request)
+        buckets = {key: [] for key, _label in NAV_CATEGORY_ORDER}
+        for app in self._build_app_dict(request).values():
+            for model_dict in app["models"]:
+                model = model_dict["model"]
+                category, label = _nav_bucket(model)
+                url = model_dict["admin_url"] or model_dict["add_url"]
+                if not url:
+                    continue
+                is_current = current == (model._meta.app_label, model._meta.model_name)
+                buckets.setdefault(category, []).append({"label": label, "url": url, "is_current": is_current})
+
+        categories = []
+        for key, cat_label in NAV_CATEGORY_ORDER:
+            items = buckets.get(key) or []
+            if not items:
+                continue
+            items.sort(key=lambda i: i["label"])
+            categories.append({
+                "key": key,
+                "label": cat_label,
+                "icon": NAV_ICONS.get(key, NAV_ICONS["other"]),
+                "items": items,
+                "has_current": any(i["is_current"] for i in items),
+            })
+        return categories
+
+    def each_context(self, request):
+        context = super().each_context(request)
+        context["cp_nav_categories"] = self.build_nav_categories(request)
+        return context
 
     def index(self, request, extra_context=None):
         context = {**(extra_context or {}), **_dashboard_metrics()}

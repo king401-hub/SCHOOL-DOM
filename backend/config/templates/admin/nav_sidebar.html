@@ -1,0 +1,45 @@
+{% load i18n %}
+{% if request.path|slice:":15" == "/control-panel/" %}
+<button type="button" class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="sticky cp-nav" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  {# Django's own nav_sidebar.js (loaded unconditionally by admin/base.html) looks
+     up #nav-filter and attaches listeners to it unconditionally - without this
+     hidden placeholder it throws on every control panel page load. It never
+     finds any "th[scope=row] a" rows in this markup, so it stays inert. #}
+  <input type="search" id="nav-filter" style="display:none" aria-hidden="true" tabindex="-1">
+  <div class="cp-nav-search-wrap">
+    <input type="search" id="cp-nav-search" class="cp-nav-search" placeholder="Search navigation…" autocomplete="off">
+  </div>
+  <a href="{% url 'control_panel:index' %}" class="cp-nav-top-link{% if request.path == '/control-panel/' %} cp-nav-current{% endif %}">
+    <span class="cp-nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9"/></svg></span>
+    <span>Dashboard</span>
+  </a>
+  <div class="cp-nav-groups" id="cp-nav-groups">
+    {% for cat in cp_nav_categories %}
+    <div class="cp-nav-group{% if cat.has_current %} cp-nav-group-open{% endif %}" data-cp-nav-group>
+      <button type="button" class="cp-nav-group-head" data-cp-nav-toggle aria-expanded="{% if cat.has_current %}true{% else %}false{% endif %}">
+        <span class="cp-nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{{ cat.icon|safe }}</svg></span>
+        <span class="cp-nav-group-label">{{ cat.label }}</span>
+        <svg class="cp-nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="cp-nav-group-body">
+        <ul class="cp-nav-items">
+          {% for item in cat.items %}
+          <li data-cp-nav-item="{{ item.label|lower }}"><a href="{{ item.url }}" class="{% if item.is_current %}cp-nav-current{% endif %}">{{ item.label }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="cp-nav-empty" id="cp-nav-empty" hidden>No matching pages.</p>
+</nav>
+{% else %}
+<button type="button" class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  <input type="search" id="nav-filter"
+         placeholder="{% translate 'Start typing to filter…' %}"
+         aria-label="{% translate 'Filter navigation items' %}">
+  {% include 'admin/app_list.html' with app_list=available_apps show_changelinks=False %}
+</nav>
+{% endif %}
