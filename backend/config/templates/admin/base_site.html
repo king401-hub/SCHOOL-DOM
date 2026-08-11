@@ -428,9 +428,16 @@
 
   @keyframes cpRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   #content-main .module, .dashboard .module, #content-related .module,
-  #changelist, #changelist-filter, fieldset.module, .inline-group {
+  #changelist, fieldset.module, .inline-group {
     animation: cpRise .25s ease both;
   }
+  /* #changelist-filter is deliberately excluded from cpRise above: that
+     animation's fill-mode leaves `transform: translateY(0)` applied
+     permanently once it finishes, and CSS animations take priority over
+     plain (non-!important) transform declarations - so it was silently
+     canceling the drawer's own translateX(100%)/translateX(0) show/hide
+     transform below, making the "closed" drawer render fully on-screen
+     regardless of the cp-filter-open class. */
   a, .button, input[type=submit], input[type=button], a.button,
   #nav-sidebar th a, #nav-sidebar td a, #changelist-filter a,
   #changelist table tbody tr, .paginator a, .cp-row-btn, .cp-pill {
