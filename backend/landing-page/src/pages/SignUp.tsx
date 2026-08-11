@@ -5,6 +5,7 @@ import {
   ArrowLeft, ArrowRight, ShieldCheck, Users, CheckCircle2,
   Eye, EyeOff, Copy, Check,
 } from 'lucide-react';
+import Spinner from '../components/Spinner';
 
 const stepMotion = {
   initial: { opacity: 0, x: 28 },
@@ -12,10 +13,6 @@ const stepMotion = {
   exit: { opacity: 0, x: -28 },
   transition: { duration: 0.35, ease: 'easeOut' },
 };
-
-function Spinner() {
-  return <span className="sd-spinner" aria-hidden="true" />;
-}
 
 type Role = 'school_admin' | 'school_superadmin';
 type SchoolType = 'k12' | 'non_k12';

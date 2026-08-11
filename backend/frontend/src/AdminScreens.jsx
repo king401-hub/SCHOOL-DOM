@@ -482,7 +482,7 @@ function AdminDashboardScreen({ user, data, loading, error, onRetry, onBroadcast
                 {broadcastFeedback ? <p className="form-feedback success">{broadcastFeedback}</p> : null}
                 <div className="panel-form-actions">
                   <button type="submit" disabled={broadcastBusy || !onBroadcastMessage}>
-                    {broadcastBusy ? "Sending..." : "Send Broadcast"}
+                    {broadcastBusy ? <><Spinner /> Sending...</> : "Send Broadcast"}
                   </button>
                 </div>
               </form>
@@ -2935,10 +2935,14 @@ function AdminFinanceScreen({
                             {bill.status === "published" ? (
                               <button type="button" className="table-action" onClick={() => setSendingBill(bill)}>{bill.invoice_status === "sent" || bill.invoice_status === "viewed" ? "Resend" : "Send"}</button>
                             ) : null}
-                            <button type="button" className="table-action" onClick={() => handleBillDuplicate(bill.id)} disabled={billActionBusyId === bill.id}>Duplicate</button>
+                            <button type="button" className="table-action" onClick={() => handleBillDuplicate(bill.id)} disabled={billActionBusyId === bill.id}>
+                              {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : "Duplicate"}
+                            </button>
                             <button type="button" className="table-action" onClick={() => handlePrintBillDocument(bill)}>Print</button>
                             {bill.status !== "cancelled" ? (
-                              <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>Cancel</button>
+                              <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>
+                                {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : "Cancel"}
+                              </button>
                             ) : null}
                           </div>
                         </td>
@@ -3311,7 +3315,7 @@ function AdminGradingSystemPanel({ onLoad, onSave, onDelete }) {
           {form.id ? (
             <button type="button" className="btn-secondary" onClick={() => setForm(emptyForm)} disabled={saving}>Cancel Edit</button>
           ) : null}
-          <button type="submit" disabled={saving}>{saving ? "Saving..." : form.id ? "Update Grade" : "Add Grade"}</button>
+          <button type="submit" disabled={saving}>{saving ? <><Spinner /> Saving...</> : form.id ? "Update Grade" : "Add Grade"}</button>
         </div>
       </form>
 
@@ -3348,7 +3352,7 @@ function AdminGradingSystemPanel({ onLoad, onSave, onDelete }) {
                       onClick={() => handleDelete(scale)}
                       disabled={deleteBusyId === scale.id}
                     >
-                      {deleteBusyId === scale.id ? "Deleting..." : "Delete"}
+                      {deleteBusyId === scale.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                     </button>
                   </td>
                 </tr>
@@ -3503,7 +3507,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             onClick={() => generateExamPin(exam)}
             disabled={pinBusyId === String(examId)}
           >
-            {pinBusyId === String(examId) ? "Generating..." : hasActivePin ? "New PIN" : "Generate"}
+            {pinBusyId === String(examId) ? <><Spinner size={12} /> Generating...</> : hasActivePin ? "New PIN" : "Generate"}
           </button>
         ) : (
           <small>Publish first</small>
@@ -3955,7 +3959,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                           disabled={String(loadingExamId) === String(exam.id || exam.exam_id)}
                           onClick={() => handleEditExam(exam.id || exam.exam_id)}
                         >
-                          {String(loadingExamId) === String(exam.id || exam.exam_id) ? "Opening..." : "Open"}
+                          {String(loadingExamId) === String(exam.id || exam.exam_id) ? <><Spinner size={12} /> Opening...</> : "Open"}
                         </button>
                         <button
                           type="button"
@@ -3963,7 +3967,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                           disabled={deleteExamBusyId === String(exam.id || exam.exam_id)}
                           onClick={() => handleDeleteExam(exam)}
                         >
-                          {deleteExamBusyId === String(exam.id || exam.exam_id) ? "Deleting..." : "Delete"}
+                          {deleteExamBusyId === String(exam.id || exam.exam_id) ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                         </button>
                       </td>
                     </tr>
@@ -4164,7 +4168,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                         onClick={() => requestDeleteResult(row)}
                         disabled={deleteBusyId === String(row.attempt_id || row.id)}
                       >
-                        {deleteBusyId === String(row.attempt_id || row.id) ? "Deleting..." : "Delete"}
+                        {deleteBusyId === String(row.attempt_id || row.id) ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                       </button>
                       {row.attempt_id || row.id ? (
                         <button
@@ -4226,7 +4230,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                 onClick={confirmDeleteResult}
                 disabled={deleteBusyId === String(pendingDeleteResult.attempt_id || pendingDeleteResult.id)}
               >
-                {deleteBusyId === String(pendingDeleteResult.attempt_id || pendingDeleteResult.id) ? "Deleting..." : "Delete result"}
+                {deleteBusyId === String(pendingDeleteResult.attempt_id || pendingDeleteResult.id) ? <><Spinner size={12} /> Deleting...</> : "Delete result"}
               </button>
             </div>
           </div>
@@ -4323,6 +4327,7 @@ function AdminResultsScreen({
   const [studentId, setStudentId] = useState("");
   const [report, setReport] = useState(data?.report_card || null);
   const [busy, setBusy] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState("");
   const [feedback, setFeedback] = useState("");
   const [searchError, setSearchError] = useState("");
   const [showSmsModal, setShowSmsModal] = useState(false);
@@ -4512,6 +4517,18 @@ function AdminResultsScreen({
     }
   };
 
+  const handleReviewBatch = async (batch, status) => {
+    setReviewBusy(`${batch.id}:${status}`);
+    setSearchError("");
+    try {
+      await onReviewBatch?.(batch.id, status);
+    } catch (actionError) {
+      setSearchError(actionError.message || "Could not update this result batch.");
+    } finally {
+      setReviewBusy("");
+    }
+  };
+
   const handleDeleteBatch = async (batch) => {
     const ok = await confirm({ title: "Delete Results Batch", message: `Delete "${batch.title}" and all ${batch.score_count || 0} score record(s)?`, confirmLabel: "Delete", danger: true });
     if (!ok) {
@@ -4563,10 +4580,16 @@ function AdminResultsScreen({
                   <td>{batch.score_count}</td>
                   <td>{batch.status}</td>
                   <td>
-                    <button type="button" className="table-action" onClick={() => onReviewBatch?.(batch.id, "approved")}>Approve</button>
-                    <button type="button" className="table-action" onClick={() => onReviewBatch?.(batch.id, "published")}>Publish live</button>
-                    <button type="button" className="table-action danger" onClick={() => onReviewBatch?.(batch.id, "rejected")}>Reject</button>
-                    <button type="button" className="table-action danger" onClick={() => handleDeleteBatch(batch)} disabled={busy}>Delete</button>
+                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "approved")} disabled={Boolean(reviewBusy)}>
+                      {reviewBusy === `${batch.id}:approved` ? <><Spinner size={12} /> Approving...</> : "Approve"}
+                    </button>
+                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "published")} disabled={Boolean(reviewBusy)}>
+                      {reviewBusy === `${batch.id}:published` ? <><Spinner size={12} /> Publishing...</> : "Publish live"}
+                    </button>
+                    <button type="button" className="table-action danger" onClick={() => handleReviewBatch(batch, "rejected")} disabled={Boolean(reviewBusy)}>
+                      {reviewBusy === `${batch.id}:rejected` ? <><Spinner size={12} /> Rejecting...</> : "Reject"}
+                    </button>
+                    <button type="button" className="table-action danger" onClick={() => handleDeleteBatch(batch)} disabled={busy}>{busy ? <><Spinner size={12} /> Deleting...</> : "Delete"}</button>
                   </td>
                 </tr>
               ))}
@@ -4615,7 +4638,7 @@ function AdminResultsScreen({
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={busy}>
-              {busy ? "Searching..." : "Generate report"}
+              {busy ? <><Spinner /> Searching...</> : "Generate report"}
             </button>
           </div>
         </form>
@@ -4819,7 +4842,7 @@ function AdminResultsScreen({
                 {smsFeedback ? <p className="form-feedback success">{smsFeedback}</p> : null}
                 <div className="panel-form-actions">
                   <button type="button" className="btn-secondary" onClick={() => setShowSmsModal(false)}>Cancel</button>
-                  <button type="submit" disabled={smsBusy}>{smsBusy ? "Sending..." : "Send SMS"}</button>
+                  <button type="submit" disabled={smsBusy}>{smsBusy ? <><Spinner /> Sending...</> : "Send SMS"}</button>
                 </div>
               </form>
             </div>
@@ -4858,7 +4881,7 @@ function AdminResultsScreen({
         {bsError ? <p className="form-feedback error">{bsError}</p> : null}
         <div className="panel-form-actions">
           <button type="button" onClick={handleLoadBroadsheet} disabled={bsBusy || !bsClassId || !bsTermId}>
-            {bsBusy ? "Loading..." : "View broadsheet"}
+            {bsBusy ? <><Spinner /> Loading...</> : "View broadsheet"}
           </button>
           {broadsheet ? (
             <button type="button" className="btn-secondary" onClick={handleOpenSharePanel}>
@@ -4970,7 +4993,7 @@ function AdminResultsScreen({
                 <div className="panel-form-actions">
                   <button type="button" className="btn-secondary" onClick={() => setSharePanelOpen(false)}>Close</button>
                   <button type="button" onClick={handleSendBroadsheet} disabled={bsSending || bsSelectedIds.size === 0}>
-                    {bsSending ? "Sending..." : `Send Broadsheet to ${bsSelectedIds.size} parent(s)`}
+                    {bsSending ? <><Spinner /> Sending...</> : `Send Broadsheet to ${bsSelectedIds.size} parent(s)`}
                   </button>
                 </div>
               </div>
@@ -5242,7 +5265,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
           {formError ? <p className="form-feedback error">{formError}</p> : null}
           {formSuccess ? <p className="form-feedback success">{formSuccess}</p> : null}
           <div className="panel-form-actions">
-            <button type="submit" disabled={busy}>{busy ? "Saving..." : editingEntry ? "Update Entry" : "Add Entry"}</button>
+            <button type="submit" disabled={busy}>{busy ? <><Spinner /> Saving...</> : editingEntry ? "Update Entry" : "Add Entry"}</button>
             {editingEntry ? (
               <button type="button" className="table-action" onClick={resetForm} disabled={busy}>Cancel</button>
             ) : null}
@@ -5300,11 +5323,13 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+  const [deletingClassId, setDeletingClassId] = useState("");
   const [subjectName, setSubjectName] = useState("");
   const [subjectCode, setSubjectCode] = useState("");
   const [subjectBusy, setSubjectBusy] = useState(false);
   const [subjectStreamBusy, setSubjectStreamBusy] = useState("");
   const [subjectError, setSubjectError] = useState("");
+  const [deletingSubjectId, setDeletingSubjectId] = useState("");
   const [subjectSuccess, setSubjectSuccess] = useState("");
   const [promotionForm, setPromotionForm] = useState({
     scope: "class",
@@ -5384,11 +5409,14 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
     if (!ok) return;
     setFormError("");
     setFormSuccess("");
+    setDeletingClassId(item.id);
     try {
       await onDelete?.(item.id);
       setFormSuccess(`${groupLabels.singular} deleted.`);
     } catch (deleteError) {
       setFormError(deleteError.message || `Could not delete ${groupLabels.singular.toLowerCase()}.`);
+    } finally {
+      setDeletingClassId("");
     }
   };
 
@@ -5417,11 +5445,14 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
   const handleSubjectDelete = async (subjectId) => {
     setSubjectError("");
     setSubjectSuccess("");
+    setDeletingSubjectId(subjectId);
     try {
       await onDeleteSubject?.(subjectId);
       setSubjectSuccess("Subject removed.");
     } catch (actionError) {
       setSubjectError(actionError.message || "Could not delete subject.");
+    } finally {
+      setDeletingSubjectId("");
     }
   };
 
@@ -5587,7 +5618,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
               </button>
             ) : null}
             <button type="submit" disabled={busy}>
-              {busy ? "Saving..." : editingClass ? "Save changes" : "Create"}
+              {busy ? <><Spinner /> Saving...</> : editingClass ? "Save changes" : "Create"}
             </button>
           </div>
         </form>
@@ -5670,7 +5701,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
           {promotionError ? <p className="form-feedback error">{promotionError}</p> : null}
           {promotionSuccess ? <p className="form-feedback success">{promotionSuccess}</p> : null}
           <div className="panel-form-actions">
-            <button type="submit" disabled={promotionBusy}>{promotionBusy ? "Checking..." : "Preview promotion"}</button>
+            <button type="submit" disabled={promotionBusy}>{promotionBusy ? <><Spinner /> Checking...</> : "Preview promotion"}</button>
           </div>
         </form>
 
@@ -5721,7 +5752,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
             </label>
             <div className="panel-form-actions">
               <button type="button" disabled={promotionBusy || !promotionConfirmed || !promotionPreview.summary?.eligible_students} onClick={handlePromotionApply}>
-                {promotionBusy ? "Applying..." : "Apply promotion"}
+                {promotionBusy ? <><Spinner /> Applying...</> : "Apply promotion"}
               </button>
             </div>
           </div>
@@ -5759,8 +5790,8 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
                     <button className="table-action" type="button" onClick={() => handleEditClass(item)}>
                       Edit
                     </button>
-                    <button className="table-action danger" type="button" onClick={() => handleDeleteClass(item)}>
-                      Delete
+                    <button className="table-action danger" type="button" onClick={() => handleDeleteClass(item)} disabled={deletingClassId === item.id}>
+                      {deletingClassId === item.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                     </button>
                   </td>
                 </tr>
@@ -5790,7 +5821,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
                     onClick={() => handleSelectAllRecommendedSubjects(group)}
                     disabled={Boolean(subjectStreamBusy)}
                   >
-                    {subjectStreamBusy === group.stream ? "Adding..." : "Select all"}
+                    {subjectStreamBusy === group.stream ? <><Spinner size={12} /> Adding...</> : "Select all"}
                   </button>
                 </div>
               </div>
@@ -5825,7 +5856,7 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
           {subjectSuccess ? <p className="form-feedback success">{subjectSuccess}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={subjectBusy}>
-              {subjectBusy ? "Saving..." : "Add subject"}
+              {subjectBusy ? <><Spinner /> Saving...</> : "Add subject"}
             </button>
           </div>
         </form>
@@ -5845,8 +5876,8 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
                   <td>{subject.name}</td>
                   <td>{subject.code}</td>
                   <td>
-                    <button className="table-action danger" type="button" onClick={() => handleSubjectDelete(subject.id)}>
-                      Remove
+                    <button className="table-action danger" type="button" onClick={() => handleSubjectDelete(subject.id)} disabled={deletingSubjectId === subject.id}>
+                      {deletingSubjectId === subject.id ? <><Spinner size={12} /> Removing...</> : "Remove"}
                     </button>
                   </td>
                 </tr>
@@ -6044,7 +6075,7 @@ function AdminHRPayrollScreen({
               <label className="panel-field">Date<input type="date" value={attendanceForm.date} onChange={(e) => setAttendanceForm((p) => ({ ...p, date: e.target.value }))} /></label>
               <label className="panel-field">Notes<input value={attendanceForm.notes} onChange={(e) => setAttendanceForm((p) => ({ ...p, notes: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "attendance" || !attendanceForm.qr_token || !attendanceForm.staff_id}>Mark from shared QR</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "attendance" || !attendanceForm.qr_token || !attendanceForm.staff_id}>{busy === "attendance" ? <><Spinner /> Marking...</> : "Mark from shared QR"}</button></div>
           </form>
         </article>
 
@@ -6066,7 +6097,7 @@ function AdminHRPayrollScreen({
               </label>
               <label className="panel-field">Notes<input value={manualAttendanceForm.notes} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, notes: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "manual-attendance" || !manualAttendanceForm.staff_id}>Save attendance</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "manual-attendance" || !manualAttendanceForm.staff_id}>{busy === "manual-attendance" ? <><Spinner /> Saving...</> : "Save attendance"}</button></div>
           </form>
         </article>
 
@@ -6083,7 +6114,7 @@ function AdminHRPayrollScreen({
               <label className="panel-field">End<input type="date" value={leaveForm.end_date} onChange={(e) => setLeaveForm((p) => ({ ...p, end_date: e.target.value }))} /></label>
               <label className="panel-field full">Reason<input value={leaveForm.reason} onChange={(e) => setLeaveForm((p) => ({ ...p, reason: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave" || !leaveForm.staff_id}>Request leave</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave" || !leaveForm.staff_id}>{busy === "leave" ? <><Spinner /> Requesting...</> : "Request leave"}</button></div>
           </form>
         </article>
 
@@ -6095,7 +6126,7 @@ function AdminHRPayrollScreen({
               <label className="panel-field">Amount<input type="number" value={advanceForm.amount} onChange={(e) => setAdvanceForm((p) => ({ ...p, amount: e.target.value }))} /></label>
               <label className="panel-field full">Reason<input value={advanceForm.reason} onChange={(e) => setAdvanceForm((p) => ({ ...p, reason: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance" || !advanceForm.staff_id}>Request advance</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance" || !advanceForm.staff_id}>{busy === "advance" ? <><Spinner /> Requesting...</> : "Request advance"}</button></div>
           </form>
         </article>
       </section>
@@ -6112,8 +6143,12 @@ function AdminHRPayrollScreen({
               {item.status === "pending" ? (
                 <>
                   {" "}
-                  <button type="button" className="table-action" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "approved"), "Leave approved.")}>Approve</button>
-                  <button type="button" className="table-action danger" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "rejected"), "Leave rejected.")}>Reject</button>
+                  <button type="button" className="table-action" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "approved"), "Leave approved.")} disabled={busy === "leave-review"}>
+                    {busy === "leave-review" ? <Spinner size={12} /> : "Approve"}
+                  </button>
+                  <button type="button" className="table-action danger" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "rejected"), "Leave rejected.")} disabled={busy === "leave-review"}>
+                    {busy === "leave-review" ? <Spinner size={12} /> : "Reject"}
+                  </button>
                 </>
               ) : null}
             </span>
@@ -6128,9 +6163,15 @@ function AdminHRPayrollScreen({
               {item.status === "pending" ? (
                 <>
                   {" "}
-                  <button type="button" className="table-action" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "approved"), "Advance approved.")}>Approve</button>
-                  <button type="button" className="table-action" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "paid"), "Advance paid.")}>Pay</button>
-                  <button type="button" className="table-action danger" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "rejected"), "Advance rejected.")}>Reject</button>
+                  <button type="button" className="table-action" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "approved"), "Advance approved.")} disabled={busy === "advance-review"}>
+                    {busy === "advance-review" ? <Spinner size={12} /> : "Approve"}
+                  </button>
+                  <button type="button" className="table-action" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "paid"), "Advance paid.")} disabled={busy === "advance-review"}>
+                    {busy === "advance-review" ? <Spinner size={12} /> : "Pay"}
+                  </button>
+                  <button type="button" className="table-action danger" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "rejected"), "Advance rejected.")} disabled={busy === "advance-review"}>
+                    {busy === "advance-review" ? <Spinner size={12} /> : "Reject"}
+                  </button>
                 </>
               ) : null}
             </span>
@@ -6448,7 +6489,7 @@ function AdminNonTeachingStaffScreen({
           </div>
           <div className="panel-form-actions">
             {editingStaffId ? <button type="button" className="table-action" onClick={resetStaffForm}>Cancel</button> : null}
-            <button type="submit" disabled={busy === "staff"}>{busy === "staff" ? "Saving..." : editingStaffId ? "Save staff" : "Add staff"}</button>
+            <button type="submit" disabled={busy === "staff"}>{busy === "staff" ? <><Spinner /> Saving...</> : editingStaffId ? "Save staff" : "Add staff"}</button>
           </div>
         </form>
       </article>
@@ -6639,7 +6680,7 @@ function AdminHRActivityScreen({ data, loading, error, onRetry, onReviewLeave, o
                                 disabled={!!busy}
                                 onClick={() => runAction(`leave-${item.id}`, () => onReviewLeave(item.id, "approved"), "Leave approved.")}
                               >
-                                {busy === `leave-${item.id}` ? "…" : "Approve"}
+                                {busy === `leave-${item.id}` ? <Spinner size={12} /> : "Approve"}
                               </button>
                             </td>
                           </tr>
@@ -6681,7 +6722,7 @@ function AdminHRActivityScreen({ data, loading, error, onRetry, onReviewLeave, o
                                 disabled={!!busy}
                                 onClick={() => runAction(`advance-${item.id}`, () => onReviewAdvance(item.id, "approved"), "Salary advance approved.")}
                               >
-                                {busy === `advance-${item.id}` ? "…" : "Approve"}
+                                {busy === `advance-${item.id}` ? <Spinner size={12} /> : "Approve"}
                               </button>
                             </td>
                           </tr>
@@ -7025,7 +7066,7 @@ export function IdCardVerificationPage() {
                 {verifyError ? <p className="form-feedback error">{verifyError}</p> : null}
                 <div className="panel-form-actions">
                   <button type="submit" disabled={submitting}>
-                    {submitting ? "Verifying..." : "Verify ID"}
+                    {submitting ? <><Spinner /> Verifying...</> : "Verify ID"}
                   </button>
                 </div>
               </form>
@@ -7312,7 +7353,7 @@ function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) 
               <IdCardPreview person={selectedPerson} school={cardSchool} qrDataUrl={qrDataUrl} theme={documentTheme} />
               <div className="panel-form-actions id-card-actions">
                 <button type="button" className="table-action" onClick={handlePrint} disabled={!selectedPerson || qrLoading}>
-                  Generate / Print Card
+                  {qrLoading ? <><Spinner size={12} /> Generating...</> : "Generate / Print Card"}
                 </button>
               </div>
             </article>
@@ -7698,7 +7739,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
                     ))}
                   </div>
                   <div className="panel-form-actions">
-                    <button type="submit" disabled={isSaving || detailLoading}>{isSaving ? "Saving..." : "Save Testimonial"}</button>
+                    <button type="submit" disabled={isSaving || detailLoading}>{isSaving ? <><Spinner /> Saving...</> : "Save Testimonial"}</button>
                   </div>
                 </form>
               ) : (
@@ -7756,7 +7797,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
                     <p className="panel-empty">No transcript score rows are available to edit yet.</p>
                   )}
                   <div className="panel-form-actions">
-                    <button type="submit" disabled={isSaving || detailLoading || transcriptForm.length === 0}>{isSaving ? "Saving..." : "Save Transcript"}</button>
+                    <button type="submit" disabled={isSaving || detailLoading || transcriptForm.length === 0}>{isSaving ? <><Spinner /> Saving...</> : "Save Transcript"}</button>
                   </div>
                 </form>
               )}
@@ -7780,10 +7821,10 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
               </div>
               <div className="panel-form-actions document-actions">
                 <button type="button" onClick={handlePrintPdf} disabled={!detail || detailLoading || isGenerating}>
-                  {isGenerating ? "Generating..." : `Generate ${mode === "testimonial" ? "Testimonial" : "Transcript"} PDF / Print`}
+                  {isGenerating ? <><Spinner /> Generating...</> : `Generate ${mode === "testimonial" ? "Testimonial" : "Transcript"} PDF / Print`}
                 </button>
                 <button type="button" className="table-action" onClick={handleDownloadPng} disabled={!detail || detailLoading || isGenerating}>
-                  Generate PNG
+                  {isGenerating ? <><Spinner size={12} /> Generating...</> : "Generate PNG"}
                 </button>
               </div>
             </article>
@@ -7904,7 +7945,7 @@ export function SupportCenterPanel({ school, tickets = [], canEdit, onSubmit }) 
         {feedback ? <p className="form-feedback success">{feedback}</p> : null}
         <div className="panel-form-actions">
           <button type="submit" disabled={!canEdit || submitting}>
-            {submitting ? "Submitting..." : "Submit Ticket"}
+            {submitting ? <><Spinner /> Submitting...</> : "Submit Ticket"}
           </button>
         </div>
       </form>
@@ -8088,7 +8129,7 @@ function AdminLoanApplicationScreen({ data = {}, loading, error, onRetry, onSubm
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={submitting}>
-              {submitting ? "Submitting..." : "Submit Application"}
+              {submitting ? <><Spinner /> Submitting...</> : "Submit Application"}
             </button>
           </div>
         </form>
@@ -8433,7 +8474,7 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
             {formError ? <p className="form-feedback error">{formError}</p> : null}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}
             <div className="panel-form-actions">
-              <button type="submit" disabled={!canEdit || isSaving}>{isSaving ? "Saving..." : "Save Compliance Details"}</button>
+              <button type="submit" disabled={!canEdit || isSaving}>{isSaving ? <><Spinner /> Saving...</> : "Save Compliance Details"}</button>
             </div>
           </article>
         </form>
@@ -8770,7 +8811,7 @@ function AdminDocumentCustomizationScreen({ data, loading, error, onRetry, schoo
           {saveSuccess ? <p className="form-feedback success">{saveSuccess}</p> : null}
           <div className="panel-form-actions">
             <button type="button" className="btn-secondary" onClick={handleReset} disabled={saving}>Reset</button>
-            <button type="submit" disabled={saving}>{saving ? "Saving..." : "Save Theme"}</button>
+            <button type="submit" disabled={saving}>{saving ? <><Spinner /> Saving...</> : "Save Theme"}</button>
           </div>
         </form>
 
@@ -9093,7 +9134,7 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
 
                 {formError ? <p className="form-feedback error">{formError}</p> : null}
                 <div className="panel-form-actions">
-                  <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Agreement"}</button>
+                  <button type="submit" disabled={isSaving}>{isSaving ? <><Spinner /> Saving...</> : "Save Agreement"}</button>
                 </div>
               </form>
             </article>
@@ -9749,7 +9790,7 @@ onClick={() => handleThemeSelect("light")}
                               <input type="color" value={activityDraft.color} onChange={(event) => setActivityDraft((current) => ({ ...current, color: event.target.value }))} disabled={!canEdit || isSaving} />
                             </label>
                             <button type="button" className="table-action activity-calendar-add" onClick={addActivity} disabled={!canEdit || isSaving}>
-                              Add Activity
+                              {isSaving ? <><Spinner size={12} /> Adding...</> : "Add Activity"}
                             </button>
                           </section>
                         </div>
@@ -9804,7 +9845,7 @@ onClick={() => handleThemeSelect("light")}
                                 Cancel
                               </button>
                               <button type="button" className="table-action danger" onClick={confirmRemoveActivity} disabled={isSaving}>
-                                {isSaving ? "Removing..." : "Remove activity"}
+                                {isSaving ? <><Spinner size={12} /> Removing...</> : "Remove activity"}
                               </button>
                             </div>
                           </article>
@@ -9814,7 +9855,7 @@ onClick={() => handleThemeSelect("light")}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}
             <div className="panel-form-actions">
               <button type="submit" disabled={!canEdit || isSaving}>
-                {isSaving ? "Saving..." : "Save Settings"}
+                {isSaving ? <><Spinner /> Saving...</> : "Save Settings"}
               </button>
                   </div>
                 </form>
@@ -9835,7 +9876,7 @@ onClick={() => handleThemeSelect("light")}
             <div className="panel-form-actions">
               {accountDeletion.requested ? (
                 <button type="button" className="table-action" onClick={cancelAccountDeletion} disabled={deleteAccountBusy || !onCancelAccountDeletion}>
-                  {deleteAccountBusy ? "Cancelling..." : "Cancel delete request"}
+                  {deleteAccountBusy ? <><Spinner size={12} /> Cancelling...</> : "Cancel delete request"}
                 </button>
               ) : (
                 <button type="button" className="table-action danger" onClick={() => setDeleteAccountPromptOpen(true)} disabled={deleteAccountBusy || !onRequestAccountDeletion}>
@@ -9858,7 +9899,7 @@ onClick={() => handleThemeSelect("light")}
                     Keep account
                   </button>
                   <button type="button" className="table-action danger student-delete-confirm" onClick={requestAccountDeletion} disabled={deleteAccountBusy}>
-                    {deleteAccountBusy ? "Requesting..." : "Request deletion"}
+                    {deleteAccountBusy ? <><Spinner size={12} /> Requesting...</> : "Request deletion"}
                   </button>
                 </div>
               </article>
@@ -9878,6 +9919,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   const [selectedParentUserId, setSelectedParentUserId] = useState("");
   const [cmPaying, setCmPaying] = useState(null);
   const [cmConfirmParent, setCmConfirmParent] = useState(null);
+  const [cmDeactivating, setCmDeactivating] = useState(false);
   const [editForm, setEditForm] = useState({
     first_name: "",
     last_name: "",
@@ -9969,9 +10011,14 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
 
   const confirmChildMonitorDeactivate = async () => {
     const parent = cmConfirmParent;
-    setCmConfirmParent(null);
-    const result = await onChildMonitorDeactivate(parent.id);
-    if (!result?.success) alert(result?.message || "Failed to deactivate.");
+    setCmDeactivating(true);
+    try {
+      const result = await onChildMonitorDeactivate(parent.id);
+      if (!result?.success) alert(result?.message || "Failed to deactivate.");
+    } finally {
+      setCmDeactivating(false);
+      setCmConfirmParent(null);
+    }
   };
 
   const buildEditForm = (parent) => ({
@@ -10242,7 +10289,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                     disabled={cmPaying === parent.id || !parent.phone || !data.paystack_public_key}
                     title={!parent.phone ? "Parent has no phone number on file" : ""}
                   >
-                    {cmPaying === parent.id ? "Processing…" : `Enable — ₦${((parent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()}`}
+                    {cmPaying === parent.id ? <><Spinner size={12} /> Processing...</> : `Enable — ₦${((parent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()}`}
                   </button>
                 )}
               </div>
@@ -10257,10 +10304,10 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                   onClick={() => handleSendReminder(parent.user_id)}
                   disabled={sendingReminder === parent.user_id || !parent.phone}
                 >
-                  {sendingReminder === parent.user_id ? "Sending…" : "Remind"}
+                  {sendingReminder === parent.user_id ? <><Spinner size={12} /> Sending...</> : "Remind"}
                 </button>
                 <button type="button" className="table-action danger" onClick={() => setPendingDeleteParent(parent)} disabled={deletingParentId === parent.id}>
-                  {deletingParentId === parent.id ? "Deleting..." : "Delete"}
+                  {deletingParentId === parent.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                 </button>
               </div>
             )}
@@ -10300,7 +10347,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                 <div className="student-delete-actions">
                   <button type="button" className="table-action" onClick={() => setPendingDeleteParent(null)} disabled={deletingParentId === pendingDeleteParent.id}>Cancel</button>
                   <button type="button" className="table-action danger student-delete-confirm" onClick={confirmDeleteParent} disabled={deletingParentId === pendingDeleteParent.id}>
-                    {deletingParentId === pendingDeleteParent.id ? "Deleting..." : "Delete parent"}
+                    {deletingParentId === pendingDeleteParent.id ? <><Spinner size={12} /> Deleting...</> : "Delete parent"}
                   </button>
                 </div>
               </article>
@@ -10315,8 +10362,10 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                 <h3>Deactivate for {cmConfirmParent.name}?</h3>
                 <p>SMS attendance alerts will stop immediately. You&apos;ll need to pay ₦{((cmConfirmParent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()} to re-enable.</p>
                 <div className="student-delete-actions">
-                  <button type="button" className="table-action" onClick={() => setCmConfirmParent(null)}>Cancel</button>
-                  <button type="button" className="table-action danger student-delete-confirm" onClick={confirmChildMonitorDeactivate}>Deactivate</button>
+                  <button type="button" className="table-action" onClick={() => setCmConfirmParent(null)} disabled={cmDeactivating}>Cancel</button>
+                  <button type="button" className="table-action danger student-delete-confirm" onClick={confirmChildMonitorDeactivate} disabled={cmDeactivating}>
+                    {cmDeactivating ? <><Spinner size={12} /> Deactivating...</> : "Deactivate"}
+                  </button>
                 </div>
               </article>
             </div>
@@ -10380,7 +10429,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                   {editError ? <p className="form-feedback error">{editError}</p> : null}
                   {editSuccess ? <p className="form-feedback success">{editSuccess}</p> : null}
                   <div className="panel-form-actions">
-                    <button type="submit" disabled={isUpdating}>{isUpdating ? "Saving..." : "Update Parent"}</button>
+                    <button type="submit" disabled={isUpdating}>{isUpdating ? <><Spinner /> Saving...</> : "Update Parent"}</button>
                     <button type="button" className="table-action" onClick={() => setSelectedParentId("")} disabled={isUpdating}>Cancel</button>
                   </div>
                 </form>
@@ -10402,7 +10451,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                         onClick={handleProvisionPaystackAccount}
                         disabled={vaProvisioning || vaSaving}
                       >
-                        {vaProvisioning ? "Provisioning..." : "Provision Account"}
+                        {vaProvisioning ? <><Spinner /> Provisioning...</> : "Provision Account"}
                       </button>
                     </div>
                     {vaExisting ? (
@@ -10482,7 +10531,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                     {vaError ? <p className="form-feedback error">{vaError}</p> : null}
                     {vaSuccess ? <p className="form-feedback success">{vaSuccess}</p> : null}
                     <div className="panel-form-actions">
-                      <button type="submit" disabled={vaSaving}>{vaSaving ? "Saving..." : vaExisting ? "Update Virtual Account" : "Assign Virtual Account"}</button>
+                      <button type="submit" disabled={vaSaving}>{vaSaving ? <><Spinner /> Saving...</> : vaExisting ? "Update Virtual Account" : "Assign Virtual Account"}</button>
                       <button type="button" className="table-action" onClick={() => setVaTab("profile")} disabled={vaSaving}>Back to Profile</button>
                     </div>
                   </form>
@@ -10769,7 +10818,7 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
             disabled={bulkSending || bulkSelectedIds.size === 0 || !bulkMessage.trim()}
             onClick={handleBulkSend}
           >
-            {bulkSending ? "Sending…" : `Send ${bulkChannel.toUpperCase()} to ${bulkSelectedIds.size}`}
+            {bulkSending ? <><Spinner size={12} /> Sending...</> : `Send ${bulkChannel.toUpperCase()} to ${bulkSelectedIds.size}`}
           </button>
           {bulkSelectedIds.size > 0 && (
             <button type="button" className="table-action" onClick={() => setBulkSelectedIds(new Set())}>
@@ -10940,7 +10989,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                 </div>
                 <div className="cm-pricing-meta">
                   <button type="button" className="table-action sms-wallet-btn sms-wallet-btn--primary" disabled={paying} onClick={handleBuyCredits}>
-                    {paying ? "Processing…" : `Buy ${units.toLocaleString()} credits`}
+                    {paying ? <><Spinner size={12} /> Processing...</> : `Buy ${units.toLocaleString()} credits`}
                   </button>
                 </div>
               </>
@@ -11594,7 +11643,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
               {formSuccess ? <p className={`form-feedback ${tokenWarning ? "warning" : "success"}`}>{formSuccess}</p> : null}
           <div className="panel-form-actions">
                         <button type="submit" disabled={isSaving}>
-                  {isSaving ? "Saving..." : "Create Student"}
+                  {isSaving ? <><Spinner /> Saving...</> : "Create Student"}
 </button>
           </div>
         </form>
@@ -11630,7 +11679,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
           {activityTitleSuccess ? <p className="form-feedback success">{activityTitleSuccess}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={Boolean(activityTitleBusyId)}>
-              {activityTitleBusyId === "new" || activityTitleBusyId === editingActivityTitleId ? "Saving..." : editingActivityTitleId ? "Rename Title" : "Add Title"}
+              {activityTitleBusyId === "new" || activityTitleBusyId === editingActivityTitleId ? <><Spinner /> Saving...</> : editingActivityTitleId ? "Rename Title" : "Add Title"}
             </button>
             {editingActivityTitleId ? (
               <button type="button" className="table-action" onClick={() => {
@@ -11661,11 +11710,11 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
           <div className="panel-form-actions">
             {activityTitles.find((item) => item.id === editingActivityTitleId)?.is_active ? (
               <button type="button" className="table-action" onClick={() => handleDeactivateActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
-                Deactivate
+                {activityTitleBusyId === editingActivityTitleId ? <><Spinner size={12} /> Deactivating...</> : "Deactivate"}
               </button>
             ) : (
               <button type="button" className="table-action" onClick={() => handleToggleActivityTitle(activityTitles.find((item) => item.id === editingActivityTitleId))} disabled={activityTitleBusyId === editingActivityTitleId}>
-                Activate
+                {activityTitleBusyId === editingActivityTitleId ? <><Spinner size={12} /> Activating...</> : "Activate"}
               </button>
             )}
           </div>
@@ -11733,7 +11782,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                             onClick={() => requestDeleteStudent(item)}
                             disabled={deletingStudentId === item.id}
                           >
-                            {deletingStudentId === item.id ? "Deleting..." : "Delete"}
+                            {deletingStudentId === item.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                           </button>
                         </div>
                       </td>
@@ -11777,7 +11826,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                     onClick={confirmDeleteStudent}
                     disabled={deletingStudentId === pendingDeleteStudent.id}
                   >
-                    {deletingStudentId === pendingDeleteStudent.id ? "Deleting..." : "Delete student"}
+                    {deletingStudentId === pendingDeleteStudent.id ? <><Spinner size={12} /> Deleting...</> : "Delete student"}
                   </button>
                 </div>
               </article>
@@ -12049,7 +12098,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
 
                   <div className="panel-form-actions" style={{margin:"0.75rem 1.5rem 0",paddingTop:"1rem",borderTop:"1px solid #f1f5f9"}}>
                     <button type="submit" disabled={isUpdating}>
-                      {isUpdating ? "Saving..." : "Update Student"}
+                      {isUpdating ? <><Spinner /> Saving...</> : "Update Student"}
                     </button>
                     <button type="button" className="btn-secondary" onClick={() => setSelectedStudentId("")} disabled={isUpdating}>
                       Cancel
@@ -12563,7 +12612,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
               {formSuccess ? <p className="form-feedback success">{formSuccess}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={isSaving}>
-                  {isSaving ? "Saving..." : "Create Teacher"}
+                  {isSaving ? <><Spinner /> Saving...</> : "Create Teacher"}
 </button>
           </div>
         </form>
@@ -12638,7 +12687,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                       onClick={() => handleDelete(item.id)}
                       disabled={isDeleting === item.id}
                     >
-                      {isDeleting === item.id ? "Deleting..." : "Delete"}
+                      {isDeleting === item.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                     </button>
                   </td>
                     </tr>
@@ -12833,7 +12882,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                 {editSuccess ? <p className="form-feedback success">{editSuccess}</p> : null}
                 <div className="panel-form-actions">
                   <button type="submit" disabled={isUpdating}>
-                    {isUpdating ? "Saving..." : "Update Teacher"}
+                    {isUpdating ? <><Spinner /> Saving...</> : "Update Teacher"}
                   </button>
                   <button type="button" className="btn-secondary" onClick={() => setSelectedTeacherId("")} disabled={isUpdating}>
                     Cancel
@@ -12969,7 +13018,7 @@ function AdminEnrollmentsScreen({ data, loading, error, onRetry, onCreate }) {
               {formSuccess ? <p className="form-feedback success">{formSuccess}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={isSaving}>
-                  {isSaving ? "Saving..." : "Create Enrollment"}
+                  {isSaving ? <><Spinner /> Saving...</> : "Create Enrollment"}
 </button>
           </div>
         </form>
@@ -13241,7 +13290,7 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
             {uploadError ? <p className="form-feedback error">{uploadError}</p> : null}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}
             <div className="panel-form-actions">
-              <button type="submit" disabled={busy}>{busy ? "Validating..." : "Upload and validate"}</button>
+              <button type="submit" disabled={busy}>{busy ? <><Spinner /> Validating...</> : "Upload and validate"}</button>
             </div>
           </form>
         </article>
@@ -13263,7 +13312,7 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
           <small>Validation summaries from recent migration uploads.</small>
           {history.length > 0 && (
             <button type="button" className="table-action" onClick={clearHistory} disabled={clearing} style={{ marginLeft: "auto" }}>
-              {clearing ? "Clearing…" : "Clear history"}
+              {clearing ? <><Spinner size={12} /> Clearing...</> : "Clear history"}
             </button>
           )}
         </div>
@@ -13506,7 +13555,7 @@ function AdminKidsMonitorScreen({ data, loading, error, onRetry, onInitiate, onV
                             disabled={paying === parent.id || !parent.phone}
                             title={!parent.phone ? "Parent has no phone number on file" : ""}
                           >
-                            {paying === parent.id ? "Processing…" : `Enable — ₦${price.toLocaleString()}`}
+                            {paying === parent.id ? <><Spinner size={12} /> Processing...</> : `Enable — ₦${price.toLocaleString()}`}
                           </button>
                         )}
                       </div>

@@ -21,10 +21,12 @@
              x-transition>
             <i class="fas fa-sync fa-spin me-2"></i>
             <span x-text="offlineQueue.length"></span> items pending sync
-            <button class="btn btn-sm btn-primary ms-2" 
+            <button class="btn btn-sm btn-primary ms-2"
                     @click="syncOfflineData()"
-                    x-show="navigator.onLine">
-                Sync Now
+                    x-show="navigator.onLine"
+                    :disabled="isSyncing">
+                <span x-show="!isSyncing">Sync Now</span>
+                <span x-show="isSyncing"><span class="spinner-border spinner-border-sm"></span> Syncing...</span>
             </button>
         </div>
     </div>

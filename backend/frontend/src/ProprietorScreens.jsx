@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { MetricCard, ScreenState, requestJson, resolveSchoolBrand } from "./AppShared";
+import { MetricCard, ScreenState, Spinner, requestJson, resolveSchoolBrand } from "./AppShared";
 
 const NAV_ITEMS = [
   { key: "overview", label: "Overview" },
@@ -179,7 +179,7 @@ function AddSchoolScreen({ session, onCreated }) {
           </div>
           <div className="panel-form-actions">
             <button type="submit" disabled={busy || !form.name.trim()}>
-              {busy ? "Adding..." : "Add school"}
+              {busy ? <><Spinner size={14} /> Adding...</> : "Add school"}
             </button>
           </div>
         </form>
@@ -287,7 +287,7 @@ function AddAdminScreen({ session, schools }) {
           </div>
           <div className="panel-form-actions">
             <button type="submit" disabled={busy || !form.name.trim() || !form.email.trim()}>
-              {busy ? "Adding..." : "Add admin"}
+              {busy ? <><Spinner size={14} /> Adding...</> : "Add admin"}
             </button>
           </div>
         </form>
@@ -415,7 +415,7 @@ export function ProprietorShell({ session, onSignOut }) {
           </div>
           <div className="dashboard-actions">
             <button type="button" onClick={loadOverview} disabled={overviewLoading}>
-              {overviewLoading ? "Refreshing..." : "Refresh"}
+              {overviewLoading ? <><Spinner size={14} /> Refreshing...</> : "Refresh"}
             </button>
             <button type="button" onClick={onSignOut}>Sign out</button>
           </div>

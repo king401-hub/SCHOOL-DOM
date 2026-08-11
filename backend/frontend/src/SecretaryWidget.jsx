@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "./appConstants";
-import { refreshAccessToken } from "./AppShared";
+import { refreshAccessToken, Spinner } from "./AppShared";
 
 const WIDGET_NAME = "Schooldom Secretary";
 const HISTORY_KEY = "secretary_chat_history";
@@ -348,11 +348,16 @@ export default function SecretaryWidget({ session }) {
                     onClick={() => handleSend()}
                     disabled={!input.trim() || busy}
                     title="Send (Enter)"
+                    aria-busy={busy || undefined}
                   >
-                    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
+                    {busy ? (
+                      <Spinner size={15} />
+                    ) : (
+                      <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>

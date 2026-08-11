@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
 import RichText from "./components/RichText";
-import { formatDate, MetricCard, requestJson } from "./AppShared";
+import { formatDate, MetricCard, requestJson, Spinner } from "./AppShared";
 import { useExamAutosave, loadLocalDraft, localDraftKey } from "./examBuilderDraft";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
@@ -672,7 +672,7 @@ export function TeacherExamManager({
         {questionFeedback ? <p className="form-feedback success">{questionFeedback}</p> : null}
         <div className="panel-form-actions">
           <button type="submit" disabled={isSubmittingQuestion}>
-            {isSubmittingQuestion ? "Saving..." : "Save question"}
+            {isSubmittingQuestion ? <><Spinner size={14} /> Saving...</> : "Save question"}
           </button>
         </div>
       </form>
@@ -1312,7 +1312,7 @@ export function TeacherExamBuilder({
             </button>
             <AutosaveStatusPill status={autosave.status} />
             <button type="button" onClick={handleSaveExam} disabled={saving}>
-              {saving ? "Saving..." : canPublishExam ? "Save Exam" : "Send to Admin"}
+              {saving ? <><Spinner size={14} /> Saving...</> : canPublishExam ? "Save Exam" : "Send to Admin"}
             </button>
           </div>
         </div>
@@ -1397,7 +1397,7 @@ export function TeacherExamBuilder({
                   </div>
                   <div className="table-actions-inline">
                     <button type="button" className="table-action" onClick={loadBankQuestions} disabled={bankLoading}>
-                      {bankLoading ? "Loading..." : "Refresh bank"}
+                      {bankLoading ? <><Spinner size={12} /> Loading...</> : "Refresh bank"}
                     </button>
                     <button
                       type="button"
@@ -2007,7 +2007,7 @@ export function TheoryGradingPanel({ session }) {
                 </div>
                 <div className="panel-form-actions">
                   <button type="button" onClick={() => saveGrade(answer.answer_id)} disabled={savingAnswerId === answer.answer_id || drafts[answer.answer_id]?.score === ""}>
-                    {savingAnswerId === answer.answer_id ? "Saving..." : answer.score !== null && answer.score !== undefined ? "Update score" : "Save score"}
+                    {savingAnswerId === answer.answer_id ? <><Spinner size={12} /> Saving...</> : answer.score !== null && answer.score !== undefined ? "Update score" : "Save score"}
                   </button>
                   {answer.score !== null && answer.score !== undefined ? <span className="form-feedback success">Scored {answer.score}/{answer.points}</span> : null}
                 </div>
@@ -2019,7 +2019,7 @@ export function TheoryGradingPanel({ session }) {
         {publishMessage ? <p className="form-feedback success">{publishMessage}</p> : null}
         <div className="panel-form-actions">
           <button type="button" onClick={publishResults} disabled={!allGraded || publishing || Boolean(publishMessage)}>
-            {publishing ? "Publishing..." : "Publish results"}
+            {publishing ? <><Spinner size={14} /> Publishing...</> : "Publish results"}
           </button>
           {!allGraded && !publishMessage ? <small>Score every answer before publishing.</small> : null}
         </div>
@@ -2035,7 +2035,7 @@ export function TheoryGradingPanel({ session }) {
           <p>Attempts with at least one theory answer still awaiting a score.</p>
         </div>
         <button type="button" className="table-action" onClick={loadQueue} disabled={queueLoading}>
-          {queueLoading ? "Refreshing..." : "Refresh"}
+          {queueLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
         </button>
       </div>
       {queueError ? <p className="form-feedback error">{queueError}</p> : null}
@@ -2052,7 +2052,16 @@ export function TheoryGradingPanel({ session }) {
                 <td>{row.student_name}</td>
                 <td>{row.exam_title}</td>
                 <td>{formatDate(row.submitted_at)}</td>
-                <td><button type="button" className="table-action active" onClick={() => openAttempt(row.attempt_id)}>Grade</button></td>
+                <td>
+                  <button
+                    type="button"
+                    className="table-action active"
+                    onClick={() => openAttempt(row.attempt_id)}
+                    disabled={answersLoading && selectedAttemptId === row.attempt_id}
+                  >
+                    {answersLoading && selectedAttemptId === row.attempt_id ? <><Spinner size={12} /> Opening...</> : "Grade"}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2141,7 +2150,7 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
           <p className="student-panel-sub">View exams you have set, including past exams, and edit their setup when needed.</p>
         </div>
         <button type="button" className="table-action" onClick={loadExams} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh"}
+          {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
         </button>
       </div>
 
@@ -2216,7 +2225,7 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
                         onClick={() => generatePin(exam)}
                         disabled={pinBusy === `generate-${exam.id}`}
                       >
-                        {pinBusy === `generate-${exam.id}` ? "Generating..." : exam.pin_required ? `Active (${exam.active_pin_count || 1})` : "Generate PIN"}
+                        {pinBusy === `generate-${exam.id}` ? <><Spinner size={12} /> Generating...</> : exam.pin_required ? `Active (${exam.active_pin_count || 1})` : "Generate PIN"}
                       </button>
                     </td>
                   ) : null}
@@ -2228,7 +2237,7 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
                       onClick={() => onEditExam?.(exam.id)}
                       disabled={String(loadingExamId) === String(exam.id)}
                     >
-                      {String(loadingExamId) === String(exam.id) ? "Opening..." : "View / Edit"}
+                      {String(loadingExamId) === String(exam.id) ? <><Spinner size={12} /> Opening...</> : "View / Edit"}
                     </button>
                   </td>
                 </tr>
@@ -2338,7 +2347,7 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
         {feedback ? <p className="form-feedback success">{feedback}</p> : null}
         <div className="panel-form-actions">
           <button type="submit" disabled={isSending || !classOptions.length}>
-            {isSending ? "Sending…" : "Send to class"}
+            {isSending ? <><Spinner size={14} /> Sending…</> : "Send to class"}
           </button>
         </div>
       </form>

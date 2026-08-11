@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { requestJson } from "../AppShared";
+import { requestJson, Spinner } from "../AppShared";
 import { AttendanceLogsPanel } from "../AttendanceLogs";
 
 const ADMIN_ROLES = new Set(["school_admin", "principal", "super_admin"]);
@@ -369,7 +369,7 @@ function QrScannerPanel({
       </label>
       <div className="panel-form-actions">
         <button type="button" className="table-action" onClick={() => submitToken(manualToken)} disabled={disabled || submitting}>
-          {submitting ? "Saving..." : submitLabel}
+          {submitting ? <><Spinner size={12} /> Saving...</> : submitLabel}
         </button>
       </div>
       {feedback ? <p className="form-feedback success">{feedback}</p> : null}
@@ -610,7 +610,7 @@ export function QRCodeManagement({ session }) {
       {!loading && !qrCode ? (
         <div className="panel-form-actions">
           <button type="button" onClick={createQRCode} disabled={busy || !session?.user?.id}>
-            {busy ? "Creating..." : nonK12 ? "Create Student QR Code" : "Create Staff QR Code"}
+            {busy ? <><Spinner /> Creating...</> : nonK12 ? "Create Student QR Code" : "Create Staff QR Code"}
           </button>
         </div>
       ) : null}
@@ -634,7 +634,7 @@ export function QRCodeManagement({ session }) {
 
             <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
               <button type="button" onClick={downloadQRCode} disabled={busy || !session?.user?.id}>
-                Download PNG
+                {busy ? <><Spinner /> Downloading...</> : "Download PNG"}
               </button>
             </div>
           </div>
@@ -697,7 +697,7 @@ export function AttendanceDashboard({ session }) {
             Live refresh
           </label>
           <button type="button" onClick={loadToday} disabled={loading}>
-            Refresh
+            {loading ? <><Spinner /> Refreshing...</> : "Refresh"}
           </button>
         </div>
       </div>
@@ -837,7 +837,7 @@ export function StudentAttendanceDashboard({ session }) {
             Live refresh
           </label>
           <button type="button" onClick={loadToday} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? <><Spinner /> Refreshing...</> : "Refresh"}
           </button>
         </div>
       </div>
@@ -1098,7 +1098,7 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
           ) : (
             <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
               <button type="button" onClick={markAttendance} disabled={loading || submitting || !qrDetails}>
-                {submitting ? "Recording..." : "Clock In"}
+                {submitting ? <><Spinner /> Recording...</> : "Clock In"}
               </button>
             </div>
           )}
@@ -1106,7 +1106,7 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
           {checkedIn && !checkedOut ? (
             <div className="panel-form-actions" style={{ justifyContent: "flex-start" }}>
               <button type="button" onClick={clockOut} disabled={loading || submitting || !qrDetails}>
-                {submitting ? "Recording..." : "Clock Out"}
+                {submitting ? <><Spinner /> Recording...</> : "Clock Out"}
               </button>
             </div>
           ) : null}

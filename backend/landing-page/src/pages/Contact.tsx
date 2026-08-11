@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Mail, Phone, MapPin, Send, CheckCircle, ArrowLeft, Clock, MessageSquare } from 'lucide-react';
+import Spinner from '../components/Spinner';
 
 export default function ContactPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', school: '', message: '' });
@@ -159,8 +160,7 @@ export default function ContactPage() {
                   <button type="submit" disabled={submitting} className="w-full btn-primary justify-center py-4 text-base">
                     {submitting ? (
                       <span className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Sending...
+                        <Spinner /> Sending...
                       </span>
                     ) : (
                       <span className="flex items-center gap-2">

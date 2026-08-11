@@ -849,6 +849,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
           answeredQuestions={answeredCount}
           onConfirm={handleSubmitExam}
           onCancel={() => setShowSubmitModal(false)}
+          submitting={submitting}
         />
       )}
       {submitError ? <div className="exam-submit-error">{submitError}</div> : null}

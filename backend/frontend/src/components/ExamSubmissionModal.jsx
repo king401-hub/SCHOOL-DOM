@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { formatDate, requestJson } from "../AppShared";
+import { formatDate, requestJson, Spinner } from "../AppShared";
 import RichText from "./RichText";
 
 /* One student's whole submitted paper, question by question.
@@ -175,7 +175,7 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
               </div>
               {review.is_published ? (
                 <button type="button" className="btn-secondary" onClick={() => setPublished(false)} disabled={publishing}>
-                  {publishing ? "Working..." : "Unpublish"}
+                  {publishing ? <><Spinner size={14} /> Working...</> : "Unpublish"}
                 </button>
               ) : (
                 <button
@@ -184,7 +184,7 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
                   disabled={publishing || review.needs_theory_grading}
                   title={review.needs_theory_grading ? "Every theory answer must be graded first" : undefined}
                 >
-                  {publishing ? "Publishing..." : "Publish Result"}
+                  {publishing ? <><Spinner size={14} /> Publishing...</> : "Publish Result"}
                 </button>
               )}
             </div>
@@ -200,7 +200,7 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
                 </p>
                 <div className="panel-form-actions">
                   <button type="button" onClick={() => setPublished(true)} disabled={publishing}>
-                    {publishing ? "Publishing..." : "Yes, publish"}
+                    {publishing ? <><Spinner size={14} /> Publishing...</> : "Yes, publish"}
                   </button>
                   <button type="button" className="btn-secondary" onClick={() => setConfirmPublish(false)}>Cancel</button>
                 </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { openPrintableDocument, requestJson, Popup } from "../../AppShared";
+import { openPrintableDocument, requestJson, Popup, Spinner } from "../../AppShared";
 import { API_BASE_URL } from "../../appConstants";
 import { CONDITION_COLORS, InventoryPill, formatMoney } from "./inventoryHelpers";
 
@@ -307,7 +307,7 @@ export default function InventoryItemsPanel({ session }) {
         <form className="panel-form" onSubmit={handleSubmit}>
           <InventoryItemFields form={form} setForm={setForm} categories={categories} showQuantity imageFiles={imageFiles} setImageFiles={setImageFiles} />
           <button type="submit" className="btn-primary" disabled={saving}>
-            {saving ? "Saving..." : "Add Item"}
+            {saving ? <><Spinner size={14} /> Saving...</> : "Add Item"}
           </button>
         </form>
       </article>
@@ -371,10 +371,10 @@ export default function InventoryItemsPanel({ session }) {
                         <button type="button" className="table-action" onClick={() => startEdit(item)}>Edit</button>
                         <button type="button" className="table-action" onClick={() => handlePrintQr(item)}>QR Label</button>
                         <button type="button" className="table-action" disabled={busyId === item.id} onClick={() => handleArchive(item)}>
-                          {busyId === item.id ? "..." : "Archive"}
+                          {busyId === item.id ? <><Spinner size={12} /> Archiving...</> : "Archive"}
                         </button>
                         <button type="button" className="table-action danger" disabled={busyId === item.id} onClick={() => handleDelete(item)}>
-                          Delete
+                          {busyId === item.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                         </button>
                       </div>
                     </td>
@@ -406,7 +406,7 @@ export default function InventoryItemsPanel({ session }) {
           />
           <div className="panel-form-actions">
             <button type="submit" className="btn-primary" disabled={editSaving}>
-              {editSaving ? "Saving..." : "Save Changes"}
+              {editSaving ? <><Spinner size={14} /> Saving...</> : "Save Changes"}
             </button>
             <button type="button" className="table-action" onClick={closeEditModal} disabled={editSaving}>
               Cancel

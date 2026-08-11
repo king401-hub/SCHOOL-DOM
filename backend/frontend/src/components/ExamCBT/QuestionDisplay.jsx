@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import RichQuizText from "../RichQuizText";
+import { Spinner } from "../../AppShared";
 
 const THEORY_QUESTION_TYPES = new Set(["short_answer", "paragraph", "essay"]);
 
@@ -158,7 +159,7 @@ const QuestionDisplay = ({
           Save & Next
         </button>
         <button className="btn-submit-exam inline" onClick={() => { flushTheoryAnswer(); onSubmit(); }} disabled={submitting}>
-          {submitting ? "Submitting..." : "Submit Test"}
+          {submitting ? <><Spinner size={14} /> Submitting...</> : "Submit Test"}
         </button>
       </div>
       {showFlagForm ? (
@@ -179,7 +180,7 @@ const QuestionDisplay = ({
                 Cancel
               </button>
               <button type="submit" disabled={flagStatus?.busy || !flagReason.trim()}>
-                {flagStatus?.busy ? "Sending..." : "Send report"}
+                {flagStatus?.busy ? <><Spinner size={12} /> Sending...</> : "Send report"}
               </button>
             </div>
           </form>

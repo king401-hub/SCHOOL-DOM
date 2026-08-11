@@ -11,6 +11,7 @@ document.addEventListener('alpine:init', () => {
         previewData: [],
         isUploading: false,
         uploadProgress: 0,
+        isSyncing: false,
         offlineQueue: [],
         searchTerm: '',
         
@@ -167,47 +168,52 @@ document.addEventListener('alpine:init', () => {
         
         async syncOfflineData() {
             if (this.offlineQueue.length === 0) return;
-            
-            this.showNotification(`Syncing ${this.offlineQueue.length} items...`, 'info');
-            
-            const successful = [];
-            
-            for (const item of this.offlineQueue) {
-                try {
-                    const formData = new FormData();
-                    for (const [key, value] of Object.entries(item.data)) {
-                        if (value.content) {
-                            // Convert base64 back to file
-                            const response = await fetch(value.content);
-                            const blob = await response.blob();
-                            const file = new File([blob], value.name, { type: value.type });
-                            formData.append(key, file);
-                        } else {
-                            formData.append(key, value);
+
+            this.isSyncing = true;
+            try {
+                this.showNotification(`Syncing ${this.offlineQueue.length} items...`, 'info');
+
+                const successful = [];
+
+                for (const item of this.offlineQueue) {
+                    try {
+                        const formData = new FormData();
+                        for (const [key, value] of Object.entries(item.data)) {
+                            if (value.content) {
+                                // Convert base64 back to file
+                                const response = await fetch(value.content);
+                                const blob = await response.blob();
+                                const file = new File([blob], value.name, { type: value.type });
+                                formData.append(key, file);
+                            } else {
+                                formData.append(key, value);
+                            }
                         }
-                    }
-                    
-                    const response = await fetch('/exams/upload-results/', {
-                        method: 'POST',
-                        body: formData,
-                        headers: {
-                            'X-CSRFToken': this.getCookie('csrftoken')
+
+                        const response = await fetch('/exams/upload-results/', {
+                            method: 'POST',
+                            body: formData,
+                            headers: {
+                                'X-CSRFToken': this.getCookie('csrftoken')
+                            }
+                        });
+
+                        if (response.ok) {
+                            successful.push(item.id);
                         }
-                    });
-                    
-                    if (response.ok) {
-                        successful.push(item.id);
+                    } catch (error) {
+                        console.error('Sync failed:', error);
                     }
-                } catch (error) {
-                    console.error('Sync failed:', error);
                 }
+
+                // Remove successful items
+                this.offlineQueue = this.offlineQueue.filter(item => !successful.includes(item.id));
+                localStorage.setItem('offlineUploads', JSON.stringify(this.offlineQueue));
+
+                this.showNotification(`Synced ${successful.length} items!`, 'success');
+            } finally {
+                this.isSyncing = false;
             }
-            
-            // Remove successful items
-            this.offlineQueue = this.offlineQueue.filter(item => !successful.includes(item.id));
-            localStorage.setItem('offlineUploads', JSON.stringify(this.offlineQueue));
-            
-            this.showNotification(`Synced ${successful.length} items!`, 'success');
         },
         
         resetForm() {

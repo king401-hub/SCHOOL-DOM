@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DashboardIcon, ScreenState, formatDate, openPrintableDocument, resolveSchoolBrand, resolveDocumentTheme } from "./AppShared";
+import { DashboardIcon, ScreenState, Spinner, formatDate, openPrintableDocument, resolveSchoolBrand, resolveDocumentTheme } from "./AppShared";
 
 const PAYSLIP_STATUS_OPTIONS = [
   { value: "draft", label: "Draft" },
@@ -450,7 +450,7 @@ export default function ExpenseTracker({
               {feedback ? <p className="form-feedback success">{feedback}</p> : null}
               {payslipError ? <p className="form-feedback error">{payslipError}</p> : null}
               <div className="panel-form-actions">
-                <button type="submit" disabled={payslipSaving}>{payslipSaving ? "Generating..." : "Generate Payslip"}</button>
+                <button type="submit" disabled={payslipSaving}>{payslipSaving ? <><Spinner size={12} /> Generating...</> : "Generate Payslip"}</button>
               </div>
             </form>
           ) : (
@@ -518,7 +518,7 @@ export default function ExpenseTracker({
               {feedback ? <p className="form-feedback success">{feedback}</p> : null}
               {formError ? <p className="form-feedback error">{formError}</p> : null}
               <div className="panel-form-actions">
-                <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Record"}</button>
+                <button type="submit" disabled={isSaving}>{isSaving ? <><Spinner size={12} /> Saving...</> : "Save Record"}</button>
               </div>
             </form>
           )}
@@ -589,7 +589,7 @@ export default function ExpenseTracker({
               {sendFeedback ? <p className="form-feedback success">{sendFeedback}</p> : null}
               {sendError ? <p className="form-feedback error">{sendError}</p> : null}
               <div className="panel-form-actions">
-                <button type="submit" disabled={sendingPayslip}>{sendingPayslip ? "Sending..." : "Send Payslip"}</button>
+                <button type="submit" disabled={sendingPayslip}>{sendingPayslip ? <><Spinner size={12} /> Sending...</> : "Send Payslip"}</button>
               </div>
             </form>
           </article>
@@ -654,11 +654,11 @@ export default function ExpenseTracker({
                         onClick={() => handleSettle(item.id)}
                         disabled={settlingId === item.id}
                       >
-                        {settlingId === item.id ? "Settling..." : "Settle"}
+                        {settlingId === item.id ? <><Spinner size={12} /> Settling...</> : "Settle"}
                       </button>
                     ) : null}
                     <button type="button" className="table-action" onClick={() => handleDelete(item.id)} disabled={deletingId === item.id}>
-                      {deletingId === item.id ? "Deleting..." : "Delete"}
+                      {deletingId === item.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                     </button>
                   </td>
                 </tr>

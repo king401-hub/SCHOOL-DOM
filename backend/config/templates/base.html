@@ -452,7 +452,8 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
-    
+    <script src="{% static 'js/loading-buttons.js' %}"></script>
+
     <!-- HTMX Configuration -->
     <script>
         (function() {
@@ -474,11 +475,19 @@
                         }
                         indicator.children[0].style.width = width + '%';
                     }, 100);
-                    
+
                     evt.detail.indicator = { interval };
                 }
+
+                // Inline button/link spinner for htmx-triggered requests (shared
+                // with the plain-form submit handler in loading-buttons.js).
+                const elt = evt.detail.elt;
+                if (elt && (elt.tagName === 'BUTTON' || elt.tagName === 'A') && elt.dataset.sdNoSpinner === undefined) {
+                    window.SDLoadingButtons.injectStyle();
+                    window.SDLoadingButtons.setLoading(elt);
+                }
             });
-            
+
             htmx.on('htmx:afterRequest', function(evt) {
                 const indicator = document.getElementById('htmx-indicator');
                 if (indicator) {
@@ -487,13 +496,16 @@
                         indicator.classList.add('hidden');
                         indicator.children[0].style.width = '0%';
                     }, 300);
-                    
+
                     if (evt.detail.indicator) {
                         clearInterval(evt.detail.indicator.interval);
                     }
                 }
+
+                const elt = evt.detail.elt;
+                if (elt) window.SDLoadingButtons.restore(elt);
             });
-            
+
             // Handle HTMX errors
             htmx.on('htmx:responseError', function(evt) {
                 console.error('HTMX Error:', evt.detail);
@@ -503,6 +515,8 @@
                 errorDiv.innerHTML = 'An error occurred. Please try again.';
                 document.body.appendChild(errorDiv);
                 setTimeout(() => errorDiv.remove(), 5000);
+
+                if (evt.detail.elt) window.SDLoadingButtons.restore(evt.detail.elt);
             });
             
             // CSRF Token for HTMX

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { formatDate, requestJson } from "../../AppShared";
+import { formatDate, requestJson, Spinner } from "../../AppShared";
 import { ASSIGNMENT_STATUS_COLORS, InventoryPill } from "./inventoryHelpers";
 
 const CONDITION_OPTIONS = ["new", "good", "fair", "damaged", "under_repair"];
@@ -125,7 +125,7 @@ export default function BorrowingPanel({ session }) {
               </select>
             </label>
           </div>
-          <button type="submit" className="btn-primary" disabled={saving}>{saving ? "Issuing..." : "Issue Item"}</button>
+          <button type="submit" className="btn-primary" disabled={saving}>{saving ? <><Spinner size={14} /> Issuing...</> : "Issue Item"}</button>
         </form>
       </article>
 
@@ -172,7 +172,7 @@ export default function BorrowingPanel({ session }) {
                           {CONDITION_OPTIONS.map((c) => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
                         </select>
                         <button type="button" className="table-action" disabled={returnBusyId === a.id} onClick={() => handleReturn(a)}>
-                          {returnBusyId === a.id ? "..." : "Return"}
+                          {returnBusyId === a.id ? <><Spinner size={12} /> Returning...</> : "Return"}
                         </button>
                       </div>
                     ) : (

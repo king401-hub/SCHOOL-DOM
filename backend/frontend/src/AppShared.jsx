@@ -1041,6 +1041,36 @@ export function Spinner({ size = 14 }) {
   );
 }
 
+// Shared button for anything that fires an async request: shows an inline
+// spinner + swapped label and disables itself while `loading` is true.
+export function LoadingButton({
+  loading = false,
+  disabled = false,
+  loadingText,
+  spinnerSize = 14,
+  type = "button",
+  children,
+  ...rest
+}) {
+  return (
+    <button
+      type={type}
+      disabled={Boolean(loading) || Boolean(disabled)}
+      aria-busy={loading || undefined}
+      {...rest}
+    >
+      {loading ? (
+        <>
+          <Spinner size={spinnerSize} />
+          {loadingText ?? children}
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  );
+}
+
 export function ScreenState({ loading, error, onRetry }) {
   if (loading) {
     return (

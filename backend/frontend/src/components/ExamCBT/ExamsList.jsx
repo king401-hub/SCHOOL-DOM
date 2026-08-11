@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "./ExamsList.css";
+import { Spinner } from "../../AppShared";
 
 const CBT_EXAMS_CACHE_KEY = "schooldom.cbt_available_exams";
 
@@ -236,7 +237,7 @@ const ExamsList = ({ session, onNavigate }) => {
                         onClick={() => requestStartExam(exam)}
                         disabled={!examState.canStart || starting === exam.id}
                       >
-                        {starting === exam.id ? "Starting..." : examState.action}
+                        {starting === exam.id ? <><Spinner size={14} /> Starting...</> : examState.action}
                       </button>
                     )}
                   </div>
@@ -275,7 +276,7 @@ const ExamsList = ({ session, onNavigate }) => {
                 Cancel
               </button>
               <button type="submit" className="btn-exam-pin-primary" disabled={starting === pinExam.id}>
-                {starting === pinExam.id ? "Checking..." : "Continue"}
+                {starting === pinExam.id ? <><Spinner size={14} /> Checking...</> : "Continue"}
               </button>
             </div>
           </form>

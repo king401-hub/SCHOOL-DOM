@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { formatDate, requestJson } from "../../AppShared";
+import { formatDate, requestJson, Spinner } from "../../AppShared";
 import { MOVEMENT_TYPE_LABELS } from "./inventoryHelpers";
 
 const ACTIONS = [
@@ -108,7 +108,7 @@ export default function StockMovementsPanel({ session }) {
               <input value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />
             </label>
           </div>
-          <button type="submit" className="btn-primary" disabled={saving}>{saving ? "Saving..." : "Apply"}</button>
+          <button type="submit" className="btn-primary" disabled={saving}>{saving ? <><Spinner size={14} /> Saving...</> : "Apply"}</button>
         </form>
       </article>
 

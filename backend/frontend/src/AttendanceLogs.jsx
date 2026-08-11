@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { requestJson, resolveDocumentTheme, documentStylesForExport, resolveSchoolBrand } from "./AppShared";
+import { requestJson, resolveDocumentTheme, documentStylesForExport, resolveSchoolBrand, Spinner } from "./AppShared";
 import { API_BASE_URL } from "./appConstants";
 import { AttendanceStatusPill, formatDateTime } from "./components/Attendance";
 
@@ -99,6 +99,7 @@ export function AttendanceLogsPanel({ session }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [exportBusy, setExportBusy] = useState(false);
+  const [printBusy, setPrintBusy] = useState(false);
 
   const activePersonId = isStaffMode ? staffId : studentId;
   const selectedStudent = students.find((item) => String(item.id) === String(studentId));
@@ -248,6 +249,7 @@ export function AttendanceLogsPanel({ session }) {
   const handlePrint = async () => {
     if (!activePersonId) return;
     setError("");
+    setPrintBusy(true);
     try {
       const params = buildParams(true);
       const endpoint = isStaffMode
@@ -306,6 +308,8 @@ export function AttendanceLogsPanel({ session }) {
       printWindow.document.close();
     } catch (printError) {
       setError(printError.message || "Could not prepare the printable attendance log.");
+    } finally {
+      setPrintBusy(false);
     }
   };
 
@@ -392,11 +396,11 @@ export function AttendanceLogsPanel({ session }) {
                 </select>
               </label>
               <div className="panel-field" style={{ alignSelf: "end", display: "flex", gap: "0.5rem" }}>
-                <button type="button" className="btn-secondary" onClick={handlePrint} disabled={!rows.length}>
-                  Print
+                <button type="button" className="btn-secondary" onClick={handlePrint} disabled={printBusy || !rows.length}>
+                  {printBusy ? <><Spinner /> Preparing...</> : "Print"}
                 </button>
                 <button type="button" className="btn-secondary" onClick={handleExport} disabled={exportBusy || !rows.length}>
-                  {exportBusy ? "Exporting..." : "Export to Excel"}
+                  {exportBusy ? <><Spinner /> Exporting...</> : "Export to Excel"}
                 </button>
               </div>
             </div>

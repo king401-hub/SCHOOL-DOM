@@ -95,6 +95,7 @@ import {
   GlobalHomeButton,
   StudentOfflineExamPage,
   TimetableGridTable,
+  Spinner,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
@@ -392,7 +393,7 @@ function StudentCbtEntry({ onEntry }) {
           {error ? <p className="form-feedback error">{error}</p> : null}
           {offlineNotice ? <p className="form-feedback success">{offlineNotice}</p> : null}
           <button type="submit" disabled={!canSubmit}>
-            {submitting ? "Opening exam..." : "Open Exam"}
+            {submitting ? <><Spinner /> Opening exam...</> : "Open Exam"}
           </button>
         </form>
       </section>
@@ -1209,7 +1210,7 @@ function StudentDashboard({
               <h3>Exams</h3>
             </div>
             <button className="student-link-btn" type="button" onClick={handleResultsClick} disabled={reportLoading}>
-              {reportLoading ? "Loading..." : "Check results"}
+              {reportLoading ? <><Spinner size={12} /> Loading...</> : "Check results"}
             </button>
             <button className="student-link-btn" type="button" onClick={() => go("/exams")}>
               View all
@@ -1253,7 +1254,7 @@ function StudentDashboard({
               </div>
               <div>
                 <button className="student-link-btn" type="button" onClick={handleResultsClick} disabled={reportLoading}>
-                  {reportLoading ? "Refreshing..." : "Refresh"}
+                  {reportLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
                 </button>
                 <button className="student-link-btn" type="button" onClick={() => setReportOpen(false)}>
                   Close
@@ -2066,7 +2067,7 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
           <p className="panel-empty">Click refresh to load your results.</p>
         )}
         <button type="button" className="student-link-btn" onClick={handleLoadResults} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh Results"}
+          {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh Results"}
         </button>
       </section>
     </StudentPageShell>
@@ -2135,6 +2136,7 @@ function TeacherQuizPage({ session, onNavigate }) {
     ],
   });
   const [saving, setSaving] = useState(false);
+  const [mutatingId, setMutatingId] = useState("");
 
   const loadQuizzes = useCallback(async () => {
     setLoading(true);
@@ -2245,20 +2247,26 @@ function TeacherQuizPage({ session, onNavigate }) {
   };
 
   const handlePublishToggle = async (quiz) => {
+    setMutatingId(`publish-${quiz.id}`);
     try {
       await requestJson(session, "PATCH", `/api/quizzes/teacher/${quiz.id}/`, { is_published: !quiz.is_published });
-      loadQuizzes();
+      await loadQuizzes();
     } catch (toggleError) {
       setError(toggleError.message || "Could not update quiz.");
+    } finally {
+      setMutatingId("");
     }
   };
 
   const handleDelete = async (quizId) => {
+    setMutatingId(`delete-${quizId}`);
     try {
       await requestJson(session, "DELETE", `/api/quizzes/teacher/${quizId}/`);
-      loadQuizzes();
+      await loadQuizzes();
     } catch (deleteError) {
       setError(deleteError.message || "Could not delete quiz.");
+    } finally {
+      setMutatingId("");
     }
   };
 
@@ -2397,7 +2405,7 @@ function TeacherQuizPage({ session, onNavigate }) {
         {error ? <p className="form-feedback error">{error}</p> : null}
         <div className="quiz-submit-row">
           <button className="pill-button" type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Save assessment"}
+            {saving ? <><Spinner /> Saving...</> : "Save assessment"}
           </button>
         </div>
       </form>
@@ -2421,8 +2429,15 @@ function TeacherQuizPage({ session, onNavigate }) {
                     <h4>{quiz.title}</h4>
                     <small>{quiz.description || "No description"}</small>
                   </div>
-                  <button type="button" className="pill-button ghost" onClick={() => handlePublishToggle(quiz)}>
-                    {quiz.is_published ? "Unpublish" : "Publish"}
+                  <button
+                    type="button"
+                    className="pill-button ghost"
+                    onClick={() => handlePublishToggle(quiz)}
+                    disabled={mutatingId === `publish-${quiz.id}`}
+                  >
+                    {mutatingId === `publish-${quiz.id}` ? (
+                      <><Spinner size={12} /> {quiz.is_published ? "Unpublishing..." : "Publishing..."}</>
+                    ) : quiz.is_published ? "Unpublish" : "Publish"}
                   </button>
                 </div>
                 <div className="quiz-card-meta">
@@ -2433,8 +2448,13 @@ function TeacherQuizPage({ session, onNavigate }) {
                   <button type="button" onClick={() => onNavigate?.(`/quizzes?quiz=${quiz.id}`)}>
                     Open
                   </button>
-                  <button type="button" className="danger" onClick={() => handleDelete(quiz.id)}>
-                    Delete
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleDelete(quiz.id)}
+                    disabled={mutatingId === `delete-${quiz.id}`}
+                  >
+                    {mutatingId === `delete-${quiz.id}` ? <><Spinner size={12} /> Deleting...</> : "Delete"}
                   </button>
                 </div>
               </article>
@@ -2977,8 +2997,8 @@ function StudentQuizPage({ session, onNavigate }) {
                   <h4>{quiz.title}</h4>
                   <small>{quiz.description || "Teacher assessment"}</small>
                 </div>
-                <button type="button" className="pill-button ghost" onClick={() => startTeacherQuiz(quiz.id)}>
-                  Start
+                <button type="button" className="pill-button ghost" onClick={() => startTeacherQuiz(quiz.id)} disabled={generating}>
+                  {generating ? <><Spinner size={12} /> Starting...</> : "Start"}
                 </button>
               </div>
               <div className="quiz-card-meta">
@@ -3226,7 +3246,7 @@ function StudentQuizPage({ session, onNavigate }) {
                 onClick={() => handleSubmit(false)}
                 disabled={loading || totalQuestions === 0}
               >
-                {loading ? "Submitting..." : "Submit Assessment"}
+                {loading ? <><Spinner /> Submitting...</> : "Submit Assessment"}
               </button>
             </footer>
           </main>
@@ -3268,7 +3288,7 @@ function StudentQuizPage({ session, onNavigate }) {
                   Cancel
                 </button>
                 <button type="submit" disabled={flagStatus.busy || !flagReason.trim()}>
-                  {flagStatus.busy ? "Sending..." : "Send report"}
+                  {flagStatus.busy ? <><Spinner size={12} /> Sending...</> : "Send report"}
                 </button>
               </div>
             </form>
@@ -3438,7 +3458,7 @@ function StudentQuizPage({ session, onNavigate }) {
             </select>
           </label>
           <button type="submit" className="pill-button" disabled={generating || loading || !selectedSubject}>
-            {generating ? "Opening..." : "Start selected subject"}
+            {generating ? <><Spinner /> Opening...</> : "Start selected subject"}
           </button>
         </form>
 
@@ -3465,7 +3485,9 @@ function StudentQuizPage({ session, onNavigate }) {
                     generateQuiz(subject.id);
                   }}
                 >
-                  {subject.today_status === "completed" ? "Done today" : subject.today_status === "in_progress" ? "Resume" : subject.today_status === "unavailable" ? "No questions" : "Start"}
+                  {generating && String(selectedSubject) === String(subject.id) ? (
+                    <><Spinner size={12} /> Opening...</>
+                  ) : subject.today_status === "completed" ? "Done today" : subject.today_status === "in_progress" ? "Resume" : subject.today_status === "unavailable" ? "No questions" : "Start"}
                 </button>
               </div>
             )) : <p className="panel-empty">No registered subjects found for your class.</p>}
@@ -4218,7 +4240,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
               </button>
             ) : null}
             <button type="button" className="table-action" onClick={handleDownloadEmploymentLetter} disabled={letterBusy}>
-              {letterBusy ? "Preparing…" : "Download Employment Letter"}
+              {letterBusy ? <><Spinner size={12} /> Preparing…</> : "Download Employment Letter"}
             </button>
             <button type="button" className="table-action" onClick={() => setProfileOpen(true)}>
               Edit biodata
@@ -4251,7 +4273,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
               <label className="panel-field">End<input type="date" value={leaveForm.end_date} onChange={(event) => setLeaveForm((prev) => ({ ...prev, end_date: event.target.value }))} required /></label>
               <label className="panel-field full">Reason<textarea value={leaveForm.reason} onChange={(event) => setLeaveForm((prev) => ({ ...prev, reason: event.target.value }))} rows="3" /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave"}>{busy === "leave" ? "Sending..." : "Send leave request"}</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave"}>{busy === "leave" ? <><Spinner size={12} /> Sending...</> : "Send leave request"}</button></div>
           </form>
         </article>
 
@@ -4262,7 +4284,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
               <label className="panel-field">Amount<input type="number" min="1" step="0.01" value={advanceForm.amount} onChange={(event) => setAdvanceForm((prev) => ({ ...prev, amount: event.target.value }))} required /></label>
               <label className="panel-field full">Reason<textarea value={advanceForm.reason} onChange={(event) => setAdvanceForm((prev) => ({ ...prev, reason: event.target.value }))} rows="3" /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance"}>{busy === "advance" ? "Sending..." : "Send advance request"}</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance"}>{busy === "advance" ? <><Spinner size={12} /> Sending...</> : "Send advance request"}</button></div>
           </form>
         </article>
       </section>
@@ -4429,7 +4451,7 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
           {error ? <p className="form-feedback error">{error}</p> : null}
           <div className="panel-form-actions">
             <button type="button" className="table-action" onClick={onClose}>Close</button>
-            <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save biodata"}</button>
+            <button type="submit" disabled={saving || loading}>{saving ? <><Spinner size={12} /> Saving...</> : "Save biodata"}</button>
           </div>
         </form>
       </article>
@@ -4849,10 +4871,10 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
               <h3>{activeStudent.name}</h3>
               <p>{activeStudent.student_id} - {activeStudent.class_name}</p>
               <div className="swipe-actions">
-                <button type="button" className="danger" onClick={() => mark("absent")} disabled={Boolean(savingStatus)}>{savingStatus === "absent" ? "Saving..." : "Absent"}</button>
-                <button type="button" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? "Saving..." : "Late"}</button>
-                <button type="button" onClick={() => mark("excused")} disabled={Boolean(savingStatus)}>{savingStatus === "excused" ? "Saving..." : "Excused"}</button>
-                <button type="button" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? "Saving..." : "Present"}</button>
+                <button type="button" className="danger" onClick={() => mark("absent")} disabled={Boolean(savingStatus)}>{savingStatus === "absent" ? <><Spinner size={12} /> Saving...</> : "Absent"}</button>
+                <button type="button" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? <><Spinner size={12} /> Saving...</> : "Late"}</button>
+                <button type="button" onClick={() => mark("excused")} disabled={Boolean(savingStatus)}>{savingStatus === "excused" ? <><Spinner size={12} /> Saving...</> : "Excused"}</button>
+                <button type="button" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? <><Spinner size={12} /> Saving...</> : "Present"}</button>
               </div>
               <small>Tap a status to save and move to the next student. Already-marked students won't reappear, even after a refresh.</small>
             </>
@@ -4891,6 +4913,7 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
     remarks: "",
   });
   const [busy, setBusy] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [recent, setRecent] = useState([]);
@@ -5010,12 +5033,15 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
   const handlePushResults = async () => {
     setError("");
     setFeedback("");
+    setPushBusy(true);
     try {
       const result = await onPushResults?.({ class_id: form.class_id, title: "Teacher compiled results" });
       setFeedback(result?.message || "Results pushed to admin.");
       refresh();
     } catch (pushError) {
       setError(pushError.message || "Could not push results.");
+    } finally {
+      setPushBusy(false);
     }
   };
 
@@ -5138,10 +5164,10 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}
             <div className="panel-form-actions">
               <button type="submit" disabled={busy || subjects.length === 0}>
-                {busy ? "Saving..." : "Save draft score"}
+                {busy ? <><Spinner size={12} /> Saving...</> : "Save draft score"}
               </button>
-              <button type="button" className="table-action" onClick={handlePushResults}>
-                Push Result to Admin
+              <button type="button" className="table-action" onClick={handlePushResults} disabled={pushBusy}>
+                {pushBusy ? <><Spinner size={12} /> Pushing...</> : "Push Result to Admin"}
               </button>
             </div>
           </form>
@@ -5724,7 +5750,7 @@ function AdminNotificationsCenter({ session, data = {}, activityRecords = [], lo
               <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search user, action, module, status..." />
             </div>
             <button type="button" className="table-action notification-mark-all" disabled={unreadCount === 0 || busyId === "__all__"} onClick={markVisibleRead}>
-              {busyId === "__all__" ? "Clearing..." : "Mark all as read"}
+              {busyId === "__all__" ? <><Spinner size={12} /> Clearing...</> : "Mark all as read"}
             </button>
           </div>
 
@@ -5756,7 +5782,7 @@ function AdminNotificationsCenter({ session, data = {}, activityRecords = [], lo
                       </div>
                     </div>
                     <button type="button" className="table-action" disabled={item.isRead || busyId === item.id} onClick={() => markRead(item)}>
-                      {item.isRead ? "Read" : busyId === item.id ? "Saving..." : "Mark read"}
+                      {item.isRead ? "Read" : busyId === item.id ? <><Spinner size={12} /> Saving...</> : "Mark read"}
                     </button>
                   </article>
                 );
@@ -8571,7 +8597,7 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
           <p>{error}</p>
           <div className="student-error-actions">
             <button type="button" className="student-primary-btn" onClick={loadDashboard} disabled={isRefreshing}>
-              {isRefreshing ? "Checking..." : "Try again"}
+              {isRefreshing ? <><Spinner size={12} /> Checking...</> : "Try again"}
             </button>
           </div>
         </article>
@@ -8613,7 +8639,7 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
             </div>
             <div className="dashboard-actions">
               <button type="button" onClick={loadDashboard} disabled={isRefreshing}>
-                {isRefreshing ? "Refreshing..." : "Refresh"}
+                {isRefreshing ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
               </button>
               <button type="button" onClick={onSignOut}>
                 Sign out
@@ -8812,7 +8838,7 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
           </div>
           <div className="dashboard-actions">
             <button type="button" onClick={onRefresh} disabled={isRefreshing}>
-              {isRefreshing ? "Refreshing..." : "Refresh"}
+              {isRefreshing ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
             </button>
           </div>
         </div>

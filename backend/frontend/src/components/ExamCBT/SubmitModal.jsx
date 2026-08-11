@@ -1,12 +1,13 @@
 import React from "react";
+import { Spinner } from "../../AppShared";
 
-const SubmitModal = ({ totalQuestions, answeredQuestions, onConfirm, onCancel }) => {
+const SubmitModal = ({ totalQuestions, answeredQuestions, onConfirm, onCancel, submitting = false }) => {
   return (
     <div className="modal-overlay">
       <div className="modal-content submit-modal">
         <div className="modal-header">
           <h2>Submit Test?</h2>
-          <button className="modal-close" onClick={onCancel}>×</button>
+          <button className="modal-close" onClick={onCancel} disabled={submitting}>×</button>
         </div>
 
         <div className="modal-body">
@@ -38,11 +39,11 @@ const SubmitModal = ({ totalQuestions, answeredQuestions, onConfirm, onCancel })
         </div>
 
         <div className="modal-footer">
-          <button className="btn-cancel" onClick={onCancel}>
+          <button className="btn-cancel" onClick={onCancel} disabled={submitting}>
             No
           </button>
-          <button className="btn-confirm" onClick={onConfirm}>
-            Yes
+          <button className="btn-confirm" onClick={onConfirm} disabled={submitting} aria-busy={submitting || undefined}>
+            {submitting ? (<><Spinner size={14} /> Submitting...</>) : "Yes"}
           </button>
         </div>
       </div>
