@@ -1224,15 +1224,11 @@ def _sync_student_guardians_to_parent_directory(student_profile):
     return [item for item in (primary,) if item]
 
 
-def _is_terminal_testimonial_class(class_name):
-    normalized = re.sub(r"[^A-Z0-9]", "", str(class_name or "").upper())
-    return "JSS3" in normalized or "SSS3" in normalized
-
-
 def _student_document_payload(student_profile, request=None):
     payload = _student_payload(student_profile, request=request)
     payload["admission_number"] = student_profile.admission_number
-    payload["is_testimonial_eligible"] = _is_terminal_testimonial_class(payload.get("class_name"))
+    # Testimonials are available for every student, regardless of class.
+    payload["is_testimonial_eligible"] = True
     return payload
 
 
@@ -1257,7 +1253,7 @@ def _testimonial_defaults_for_student(student_profile, request=None):
         "date_of_leaving": date.today(),
         "class_of_leaving": current_class,
         "reason_for_leaving": "Completion of course",
-        "educational_attainment": "Basic Education Certificate" if _is_terminal_testimonial_class(current_class) and "JSS" in current_class.upper() else "SSCE",
+        "educational_attainment": "Basic Education Certificate" if "JSS" in current_class.upper() else "SSCE",
         "subjects_offered": ", ".join(subjects),
         "co_curricular_activities": "NIL",
         "prizes_and_honors": "NIL",
@@ -5580,11 +5576,6 @@ def testimonial_detail(request, student_id):
         id=student_id,
         user__tenant=user.tenant,
     )
-    if not _is_terminal_testimonial_class(_class_label(student_profile.current_class) if student_profile.current_class else ""):
-        return Response(
-            {"success": False, "message": "Testimonials are strictly available only for JSS3 and SSS3 students."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
     should_generate = request.method == "GET" and request.query_params.get("generate") == "true"
 

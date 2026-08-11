@@ -7545,7 +7545,6 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const selectedStudent = students.find((student) => student.id === selectedStudentId) || students[0] || null;
-  const eligibleStudents = students.filter((student) => student.is_testimonial_eligible);
   const documentTheme = resolveDocumentTheme(data?.school, school);
 
   useEffect(() => {
@@ -7555,27 +7554,12 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
   }, [selectedStudentId, students]);
 
   useEffect(() => {
-    if (mode === "testimonial" && selectedStudent && !selectedStudent.is_testimonial_eligible) {
-      const firstEligible = eligibleStudents[0];
-      if (firstEligible) {
-        setSelectedStudentId(firstEligible.id);
-      }
-    }
-  }, [eligibleStudents, mode, selectedStudent]);
-
-  useEffect(() => {
     let active = true;
     setDetail(null);
     setActionError("");
     setActionSuccess("");
     setTokenNotice("");
     if (!selectedStudent) {
-      return () => {
-        active = false;
-      };
-    }
-    if (mode === "testimonial" && !selectedStudent.is_testimonial_eligible) {
-      setActionError("Testimonials are strictly available only for JSS3 and SSS3 students.");
       return () => {
         active = false;
       };
@@ -7698,7 +7682,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
     <section className="screen-grid document-workspace">
       <div className="screen-hero document-hero">
         <h2>Transcripts & Testimonials</h2>
-        <p>Generate official student transcripts and terminal-class testimonials with printable school document styling.</p>
+        <p>Generate official student transcripts and testimonials with printable school document styling.</p>
       </div>
       <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
       {data ? (
@@ -7706,7 +7690,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
           <section className="metric-grid">
             <MetricCard label="Students" value={summary.total_students ?? students.length} trend="Available records" />
             <MetricCard label="Transcripts" value={summary.transcripts_ready ?? students.length} trend="Live academic history" />
-            <MetricCard label="Testimonials" value={summary.testimonial_eligible ?? eligibleStudents.length} trend="JSS3 / SSS3 only" />
+            <MetricCard label="Testimonials" value={summary.testimonial_eligible ?? students.length} trend="Available for every student" />
             <MetricCard 
               label="Available Tokens" 
               value={creditBalance ?? 0} 
@@ -7722,7 +7706,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
               <label className="panel-field">
                 Student
                 <select value={selectedStudent?.id || ""} onChange={(event) => setSelectedStudentId(event.target.value)}>
-                  {(mode === "testimonial" ? eligibleStudents : students).map((student) => (
+                  {students.map((student) => (
                     <option
                       key={student.id}
                       value={student.id}
@@ -7832,7 +7816,7 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
             <article className="app-panel document-preview-panel">
               <div className="panel-head">
                 <h3>Preview</h3>
-                <small>{detailLoading ? "Loading document..." : mode === "testimonial" ? "JSS3 / SSS3 only" : "Academic history"}</small>
+                <small>{detailLoading ? "Loading document..." : mode === "testimonial" ? "Leaving certificate" : "Academic history"}</small>
               </div>
               {tokenNotice ? <div className="token-usage-toast" role="status">{tokenNotice}</div> : null}
               {actionError ? <p className="form-feedback error">{actionError}</p> : null}

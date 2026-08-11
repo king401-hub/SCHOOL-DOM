@@ -3346,6 +3346,51 @@ class AttendanceAndPromptTests(TestCase):
         self.assertEqual(qr_response.headers.get("X-Token-Used"), "0")
         self.assertEqual(qr_response.headers.get("X-Token-Message"), "ID card generated.")
 
+    def test_testimonials_are_available_for_every_class_not_just_jss3_sss3(self):
+        """Testimonials used to 400 outside JSS3/SSS3 - that restriction has been
+        removed, so any class (this fixture's self.classroom is "Grade 8") must
+        now be able to generate one, and the eligibility flag must say so."""
+        admin_user = User.objects.create_user(
+            email="admin@non-terminal-testimonial.edu",
+            password="AdminPass123",
+            first_name="Non",
+            last_name="Terminal",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=User.objects.create_user(
+                email="non-terminal@student.edu",
+                password="StudentPass123",
+                first_name="Junior",
+                last_name="Student",
+                role="student",
+                tenant=self.school,
+                is_active=True,
+                is_verified=True,
+            ),
+            student_id="STU-ATT-4",
+            admission_number="ADM-ATT-4",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian Four",
+            guardian_phone="+15550005555",
+            guardian_relation="Parent",
+            current_class=self.classroom,
+        )
+
+        self.client.force_authenticate(user=admin_user)
+
+        documents_response = self.client.get("/api/app/documents/")
+        self.assertEqual(documents_response.status_code, 200)
+        student_payload = next(item for item in documents_response.data["students"] if item["id"] == str(student.id))
+        self.assertTrue(student_payload["is_testimonial_eligible"])
+
+        testimonial_response = self.client.get(f"/api/app/documents/testimonials/{student.id}/?generate=true")
+        self.assertEqual(testimonial_response.status_code, 200)
+        self.assertTrue(testimonial_response.data["success"])
+
     def test_student_cannot_mark_own_attendance(self):
         self.client.force_authenticate(user=self.student_user)
         response = self.client.post(
