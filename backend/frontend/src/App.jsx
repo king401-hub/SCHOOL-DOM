@@ -7563,6 +7563,11 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [loadScreen, session]
   );
 
+  const handleViewResultBatch = useCallback(
+    async (batchId) => requestJson(session, "GET", `/api/app/results/batches/${batchId}/`),
+    [session]
+  );
+
   const handleLoadTranscript = useCallback(
     async (studentId, options = {}) => requestJson(session, "GET", `/api/app/documents/transcripts/${studentId}/${options.generate ? "?generate=true" : ""}`),
     [session]
@@ -7960,6 +7965,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onSearch={handleSearchReport}
         onReviewBatch={handleReviewResultBatch}
         onDeleteBatch={handleDeleteResultBatch}
+        onViewBatch={handleViewResultBatch}
         onSendSms={handleSendReportSms}
         onStudentSearch={handleStudentSearch}
         onLoadBroadsheet={handleLoadBroadsheet}

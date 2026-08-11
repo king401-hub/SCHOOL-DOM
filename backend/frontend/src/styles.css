@@ -16416,6 +16416,98 @@ body[data-theme="dark"] .form-feedback.warning { border-color: #78350f; backgrou
   .submission-question-head { flex-wrap: wrap; }
 }
 
+/* ── Result batch review popup ────────────────────────────────────────────
+   Exactly what a teacher pushed for a class/term, grouped by student, so an
+   admin can check it before Publish Live/Reject - same wide-modal-with-
+   internal-scroll shape as .submission-modal above. */
+
+.result-batch-modal {
+  width: 100%;
+  max-width: 64rem;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.result-batch-student-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.result-batch-student {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+
+body[data-theme="dark"] .result-batch-student {
+  border-color: #1e293b;
+  background: #0f172a;
+}
+
+.result-batch-student-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.result-batch-student-head strong {
+  display: block;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .result-batch-student-head strong { color: #f1f5f9; }
+
+.result-batch-student-head small { color: #64748b; font-size: 0.75rem; }
+
+.result-batch-student-summary {
+  display: flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.result-batch-student-summary span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+body[data-theme="dark"] .result-batch-student-summary span { color: #f1f5f9; }
+
+.result-batch-student-summary small {
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.result-batch-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.9rem;
+  margin-top: 1.25rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+body[data-theme="dark"] .result-batch-modal-actions { border-top-color: #1e293b; }
+
+@media (max-width: 640px) {
+  .result-batch-student-head { flex-direction: column; align-items: flex-start; }
+}
+
 /* ── Rich text rendered from the formatted editor ─────────────────────────
    The editor stores HTML, so wherever it is displayed the paragraph and line
    breaks it created have to survive as spacing rather than collapse. */

@@ -41,6 +41,7 @@ import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
 import { FinanceHistoryModal } from "./FinanceHistoryModal";
 import ExamSubmissionModal from "./components/ExamSubmissionModal";
+import ResultBatchReviewModal from "./components/ResultBatchReviewModal";
 
 function ConfirmModal({ open, title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
   return (
@@ -4315,7 +4316,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
 }
 
 function AdminResultsScreen({
-  data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onSendSms,
+  data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onViewBatch, onSendSms,
   onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
 }) {
   const summary = data?.summary || {};
@@ -4328,6 +4329,8 @@ function AdminResultsScreen({
   const [report, setReport] = useState(data?.report_card || null);
   const [busy, setBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState("");
+  const [viewBusy, setViewBusy] = useState("");
+  const [viewingBatchDetail, setViewingBatchDetail] = useState(null);
   const [feedback, setFeedback] = useState("");
   const [searchError, setSearchError] = useState("");
   const [showSmsModal, setShowSmsModal] = useState(false);
@@ -4547,6 +4550,19 @@ function AdminResultsScreen({
     }
   };
 
+  const handleViewBatch = async (batch) => {
+    setViewBusy(batch.id);
+    setSearchError("");
+    try {
+      const result = await onViewBatch?.(batch.id);
+      setViewingBatchDetail(result?.batch || null);
+    } catch (actionError) {
+      setSearchError(actionError.message || "Could not load this result submission.");
+    } finally {
+      setViewBusy("");
+    }
+  };
+
   return (
     <section className="screen-grid">
       <div className="screen-hero">
@@ -4580,13 +4596,13 @@ function AdminResultsScreen({
                   <td>{batch.score_count}</td>
                   <td>{batch.status}</td>
                   <td>
-                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "approved")} disabled={Boolean(reviewBusy)}>
-                      {reviewBusy === `${batch.id}:approved` ? <><Spinner size={12} /> Approving...</> : "Approve"}
+                    <button type="button" className="table-action" onClick={() => handleViewBatch(batch)} disabled={Boolean(reviewBusy) || Boolean(viewBusy)}>
+                      {viewBusy === batch.id ? <><Spinner size={12} /> Loading...</> : "View"}
                     </button>
-                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "published")} disabled={Boolean(reviewBusy)}>
+                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "published")} disabled={Boolean(reviewBusy) || Boolean(viewBusy)}>
                       {reviewBusy === `${batch.id}:published` ? <><Spinner size={12} /> Publishing...</> : "Publish live"}
                     </button>
-                    <button type="button" className="table-action danger" onClick={() => handleReviewBatch(batch, "rejected")} disabled={Boolean(reviewBusy)}>
+                    <button type="button" className="table-action danger" onClick={() => handleReviewBatch(batch, "rejected")} disabled={Boolean(reviewBusy) || Boolean(viewBusy)}>
                       {reviewBusy === `${batch.id}:rejected` ? <><Spinner size={12} /> Rejecting...</> : "Reject"}
                     </button>
                     <button type="button" className="table-action danger" onClick={() => handleDeleteBatch(batch)} disabled={busy}>{busy ? <><Spinner size={12} /> Deleting...</> : "Delete"}</button>
@@ -4597,6 +4613,17 @@ function AdminResultsScreen({
           </table>
         ) : <p className="panel-empty">No pushed result batches yet.</p>}
       </article>
+
+      {viewingBatchDetail ? (
+        <ResultBatchReviewModal
+          batch={viewingBatchDetail}
+          onClose={() => setViewingBatchDetail(null)}
+          onPublish={(batchId) => onReviewBatch?.(batchId, "published")}
+          onReject={(batchId) => onReviewBatch?.(batchId, "rejected")}
+          onDelete={(batchId) => onDeleteBatch?.(batchId)}
+          confirmDelete={confirm}
+        />
+      ) : null}
 
       <div className="results-view-toggle">
         <button type="button" className={viewMode === "card" ? "is-active" : ""} onClick={() => setViewMode("card")}>

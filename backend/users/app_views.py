@@ -10599,13 +10599,110 @@ def review_result_batch(request, batch_id):
     return Response({"success": True, "message": f"Results {decision}.", "batch_id": batch.id})
 
 
-@api_view(["DELETE"])
+def _result_batch_detail_payload(batch, requesting_user):
+    """Exactly what the teacher pushed for this batch, grouped by student -
+    every field here reads straight off the stored StudentSubjectScore rows
+    (same ones review_result_batch/publish acts on), nothing recomputed
+    except the per-student total/percentage/overall grade, which are plain
+    sums of those same stored scores run through the single grading source
+    of truth (grade_scale_for_percentage) - not an alternate calculation."""
+    scores = list(
+        batch.scores.select_related("student__user", "subject")
+        .order_by("student__user__first_name", "student__user__last_name", "subject__name")
+    )
+    students_by_id = {}
+    order = []
+    for item in scores:
+        student = item.student
+        if student_id := getattr(student, "id", None):
+            if student_id not in students_by_id:
+                students_by_id[student_id] = {
+                    "student_id": student.student_id,
+                    "name": student.user.get_full_name(),
+                    "subjects": [],
+                    "_total_score": 0.0,
+                    "_total_max": 0.0,
+                }
+                order.append(student_id)
+            entry = students_by_id[student_id]
+        else:
+            continue
+        score = float(item.score or 0)
+        max_score = float(item.max_score or 0)
+        entry["_total_score"] += score
+        entry["_total_max"] += max_score
+        entry["subjects"].append(
+            {
+                "id": str(item.id),
+                "subject": item.subject.name if item.subject else "",
+                "score": score,
+                "max_score": max_score,
+                "percentage": item.percentage,
+                "grade": item.grade,
+                "remark": item.performance_remark or item.remarks,
+                "components": {
+                    "theory": float(item.theory_score or 0),
+                    "cbt": float(item.cbt_score or 0),
+                    "assessment": float(item.assessment_score or 0),
+                    "assignment": float(item.assignment_score or 0),
+                    "attendance": float(item.attendance_score or 0),
+                    "other": float(item.other_score or 0),
+                },
+                "submitted_at": item.submitted_at,
+            }
+        )
+
+    students = []
+    for student_id in order:
+        entry = students_by_id[student_id]
+        total_max = entry["_total_max"]
+        percentage = round((entry["_total_score"] / total_max) * 100, 2) if total_max else None
+        grade, remark = _grade_for_percentage(requesting_user, percentage) if percentage is not None else ("", "")
+        students.append(
+            {
+                "student_id": entry["student_id"],
+                "name": entry["name"],
+                "subjects": entry["subjects"],
+                "subject_count": len(entry["subjects"]),
+                "total_score": round(entry["_total_score"], 2),
+                "total_max": round(entry["_total_max"], 2),
+                "percentage": percentage,
+                "grade": grade,
+                "remark": remark,
+            }
+        )
+
+    return {
+        "id": batch.id,
+        "title": batch.title,
+        "class_name": _class_label(batch.class_group) if batch.class_group else "All classes",
+        "term": batch.term.name if batch.term else "",
+        "teacher": batch.teacher.get_full_name() if batch.teacher else "",
+        "teacher_email": batch.teacher.email if batch.teacher else "",
+        "status": batch.status,
+        "submitted_at": batch.submitted_at,
+        "reviewed_by": batch.reviewed_by.get_full_name() if batch.reviewed_by else "",
+        "reviewed_at": batch.reviewed_at,
+        "admin_note": batch.admin_note,
+        "students": students,
+        "student_count": len(students),
+        "score_count": len(scores),
+    }
+
+
+@api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated])
-def delete_result_batch(request, batch_id):
+def result_batch_detail(request, batch_id):
     user = request.user
     if user.role not in ADMIN_ROLES:
-        return Response({"success": False, "message": "Only admins can delete results."}, status=status.HTTP_403_FORBIDDEN)
-    batch = get_object_or_404(_scope_to_user_tenant(ResultBatch.objects.all(), user), id=batch_id)
+        message = "Only admins can review results." if request.method == "GET" else "Only admins can delete results."
+        return Response({"success": False, "message": message}, status=status.HTTP_403_FORBIDDEN)
+    batch = get_object_or_404(
+        _scope_to_user_tenant(ResultBatch.objects.select_related("class_group", "term", "teacher", "reviewed_by").all(), user),
+        id=batch_id,
+    )
+    if request.method == "GET":
+        return Response({"success": True, "batch": _result_batch_detail_payload(batch, user)})
     score_count = batch.scores.count()
     batch.scores.all().delete()
     batch.delete()

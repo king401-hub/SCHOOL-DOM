@@ -1890,6 +1890,77 @@ class TeacherDashboardAPITests(TestCase):
         self.assertFalse(ResultBatch.objects.filter(id=batch_id).exists())
         self.assertFalse(StudentSubjectScore.objects.filter(student=student, subject=self.subject).exists())
 
+    def test_admin_can_view_result_batch_detail_exactly_as_submitted(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        student_user = User.objects.create_user(
+            email="view.batch.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="View",
+            last_name="Batch",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-VIEW-1",
+            admission_number="ADM-VIEW-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Guardian",
+            guardian_phone="+15550002222",
+            guardian_relation="Parent",
+        )
+        score_response = self.client.post(
+            "/api/app/results/submit/",
+            data={
+                "student_id": student.student_id,
+                "subject_id": self.subject.id,
+                "class_id": self.classroom.id,
+                "score": 65,
+                "max_score": 100,
+            },
+            format="json",
+        )
+        self.assertEqual(score_response.status_code, 201)
+        push_response = self.client.post(
+            "/api/app/results/push/",
+            data={"class_id": self.classroom.id, "title": "View me"},
+            format="json",
+        )
+        self.assertEqual(push_response.status_code, 200)
+        batch_id = push_response.data["batch_id"]
+
+        # A teacher must not be able to peek at the admin review payload.
+        forbidden_response = self.client.get(f"/api/app/results/batches/{batch_id}/")
+        self.assertEqual(forbidden_response.status_code, 403)
+
+        self.client.force_authenticate(user=self.admin_user)
+        detail_response = self.client.get(f"/api/app/results/batches/{batch_id}/")
+        self.assertEqual(detail_response.status_code, 200)
+        batch_payload = detail_response.data["batch"]
+        self.assertEqual(batch_payload["title"], "View me")
+        self.assertEqual(batch_payload["status"], "pending")
+        self.assertEqual(batch_payload["student_count"], 1)
+        self.assertEqual(batch_payload["score_count"], 1)
+
+        student_payload = batch_payload["students"][0]
+        self.assertEqual(student_payload["student_id"], "STU-VIEW-1")
+        self.assertEqual(student_payload["total_score"], 65)
+        self.assertEqual(student_payload["total_max"], 100)
+        self.assertEqual(student_payload["percentage"], 65.0)
+
+        subject_payload = student_payload["subjects"][0]
+        self.assertEqual(subject_payload["subject"], self.subject.name)
+        self.assertEqual(subject_payload["score"], 65)
+        self.assertEqual(subject_payload["max_score"], 100)
+
+        # The batch is untouched by viewing it - still pending, not approved/reviewed.
+        batch = ResultBatch.objects.get(id=batch_id)
+        self.assertEqual(batch.status, ResultBatch.PENDING)
+        self.assertIsNone(batch.reviewed_by)
+
 
 class GradingSystemAdminAPITests(TestCase):
     """Grading scale CRUD, now admin-only, with the new grade_point field and
