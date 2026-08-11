@@ -170,7 +170,12 @@
 
     // Filters were changed (an active one exists) - open the drawer straight
     // away so results + the filter that produced them are visible together.
-    if (activeCount) openDrawer();
+    // Skip this on mobile: the drawer there is min(320px, 90vw) wide, which
+    // is effectively the whole screen, so auto-opening it on arrival just
+    // covers the page with no table visible behind it. The toggle button's
+    // badge already shows the active count, so mobile users open it on
+    // purpose via the filter icon instead.
+    if (activeCount && window.matchMedia("(min-width: 768px)").matches) openDrawer();
   });
 
   // Grouped sidebar nav: expand/collapse per category, plus a search box that
