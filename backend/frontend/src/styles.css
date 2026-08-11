@@ -26159,9 +26159,16 @@ body[data-theme="dark"] tr.bulk-row-selected td {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Page entrance */
+/* Page entrance - fill-mode intentionally omitted (not "both"): the "to"
+   keyframe (opacity 1, no transform) already matches .student-page's plain
+   resting style, so nothing is visually lost once the animation ends. A
+   persisted "both"/"forwards" transform - even inert translateY(0) - keeps
+   this element registered as a CSS containing block forever after, which
+   silently hijacked position:fixed children like .student-profile-modal
+   into centering inside .student-page's own (scrollable, often
+   taller-than-viewport) box instead of the real viewport. */
 body[data-dashboard-role="student"] .student-page {
-  animation: sd-page-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: sd-page-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Panel/card stagger */
