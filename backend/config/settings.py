@@ -402,12 +402,17 @@ CBT_ADMIN_APP_VERSION = {
         "- Fixed Yoruba/French/special characters turning into '?' in answers "
         "synced over the LAN\n"
         "- Rich-text questions/instructions no longer show raw HTML tags on "
-        "the grading and exam review screens",
+        "the grading and exam review screens\n"
+        "- Carries forward 0.2.0's fixes: runs on all Windows versions, "
+        "improved update screen layout",
     ),
     "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-12"),
+    # Same GitHub Releases convention as v0.2.0 - create a "v0.2.1" release
+    # on this repo with SchoolDom-Admin-Sync-Win7-0.2.1-Setup.exe attached
+    # as an asset and this URL resolves on its own.
     "download_url": os.environ.get(
         "CBT_ADMIN_APP_DOWNLOAD_URL",
-        "https://schooldom.academy/media/app/cbt/SchoolDom-Admin-Sync-Win7-0.2.1-Setup.exe",
+        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.1/SchoolDom-Admin-Sync-Win7-0.2.1-Setup.exe",
     ),
     "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241263),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
@@ -577,13 +582,4 @@ LOGGING = {
             "propagate": False,
         },
     },
-}
-
-CBT_ADMIN_APP_VERSION = {
-    "version": "0.2.0",
-    "release_notes": "Bug fixes: app now runs on all Windows versions, update screen layout improved.",
-    "release_date": "2026-08-08",
-    "download_url": "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.0/SchoolDom-Admin-Sync-Win7-0.2.0-Setup.exe",
-    "file_size_bytes": 3783936,
-    "is_mandatory": False,
 }
