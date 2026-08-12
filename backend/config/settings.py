@@ -386,6 +386,32 @@ ANYMAIL = {
 }
 OTP_EMAIL_TOKEN_VALIDITY = int(os.environ.get('OTP_EMAIL_TOKEN_VALIDITY', '600'))
 OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1'))
+
+# CBT Admin App auto-update (see exams.exam_views.cbt_app_version). The
+# SchoolDom Admin Sync Win7 desktop app checks GET /api/exams/cbt/version/ on
+# every launch and offers to download+install when 'version' is newer than
+# the installed one. Update the *_NUMBER/*_DOWNLOAD_URL/*_RELEASE_* env vars
+# (or just edit the defaults below) whenever a new installer is published -
+# no other server-side change is needed to announce it.
+CBT_ADMIN_APP_VERSION = {
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.1"),
+    "release_notes": os.environ.get(
+        "CBT_ADMIN_APP_RELEASE_NOTES",
+        "- Exam timer now agrees across every PC on the LAN, anchored to this "
+        "admin PC's clock instead of each student PC's own clock\n"
+        "- Fixed Yoruba/French/special characters turning into '?' in answers "
+        "synced over the LAN\n"
+        "- Rich-text questions/instructions no longer show raw HTML tags on "
+        "the grading and exam review screens",
+    ),
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-12"),
+    "download_url": os.environ.get(
+        "CBT_ADMIN_APP_DOWNLOAD_URL",
+        "https://schooldom.academy/media/app/cbt/SchoolDom-Admin-Sync-Win7-0.2.1-Setup.exe",
+    ),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241263),
+    "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
+}
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
 ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK = env_bool(
     'ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK',
