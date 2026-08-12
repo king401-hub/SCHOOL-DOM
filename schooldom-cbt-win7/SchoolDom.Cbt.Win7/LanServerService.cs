@@ -145,28 +145,19 @@ namespace SchoolDom.Cbt.Win7
                 try
                 {
                     var stream = client.GetStream();
-                    using (var reader = new StreamReader(stream, Encoding.ASCII, false, 8192))
                     {
-                        var requestLine = reader.ReadLine() ?? "";
-                        var parts = requestLine.Split(' ');
-                        var method = parts.Length > 0 ? parts[0] : "";
-                        var path = parts.Length > 1 ? parts[1].Split('?')[0] : "/";
-                        var contentLength = 0;
-                        string line;
-                        while (!string.IsNullOrEmpty(line = reader.ReadLine()))
+                        string method;
+                        string path;
+                        byte[] bodyBytes;
+                        if (!TryReadHttpRequest(stream, out method, out path, out bodyBytes))
                         {
-                            if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
-                            {
-                                int.TryParse(line.Substring("Content-Length:".Length).Trim(), out contentLength);
-                            }
+                            return;
                         }
-                        var bodyText = "";
-                        if (contentLength > 0)
-                        {
-                            var buffer = new char[contentLength];
-                            var read = reader.Read(buffer, 0, contentLength);
-                            bodyText = new string(buffer, 0, read);
-                        }
+                        // The body carries JSON (student answers, names, etc.) which can contain
+                        // Yoruba/French/other non-ASCII text. Decoding it as UTF-8 (matching what
+                        // LanClient.Post always sends) keeps those characters intact instead of
+                        // turning them into '?' the way an ASCII decode would.
+                        var bodyText = Encoding.UTF8.GetString(bodyBytes);
 
                         if (method == "OPTIONS")
                         {
@@ -238,6 +229,82 @@ namespace SchoolDom.Cbt.Win7
                     catch { }
                 }
             }
+        }
+
+        /// <summary>
+        /// Reads one HTTP request off the raw socket without ever decoding the body as text
+        /// until we know it is complete. The previous implementation wrapped the stream in a
+        /// StreamReader(Encoding.ASCII) and read Content-Length BYTES into a CHAR buffer, which
+        /// both mis-sized multi-byte UTF-8 bodies and replaced every non-ASCII byte (Yoruba,
+        /// French, curly quotes, ...) with '?'. Reading raw bytes and decoding the body as UTF-8
+        /// (matching what LanClient always sends) keeps that text intact.
+        /// </summary>
+        private static bool TryReadHttpRequest(NetworkStream stream, out string method, out string path, out byte[] bodyBytes)
+        {
+            method = "";
+            path = "/";
+            bodyBytes = new byte[0];
+
+            var raw = new MemoryStream();
+            var chunk = new byte[8192];
+            int headerEnd = -1;
+            while (headerEnd < 0)
+            {
+                var read = stream.Read(chunk, 0, chunk.Length);
+                if (read <= 0) return raw.Length > 0;
+                raw.Write(chunk, 0, read);
+                headerEnd = FindHeaderEnd(raw.GetBuffer(), (int)raw.Length);
+                if (raw.Length > 1 * 1024 * 1024) return false; // guard against a runaway/garbage header
+            }
+
+            var headerBytes = raw.GetBuffer();
+            // Request lines and header names/values are always ASCII-safe per the HTTP spec.
+            var headerText = Encoding.ASCII.GetString(headerBytes, 0, headerEnd);
+            var lines = headerText.Split(new[] { "\r\n" }, StringSplitOptions.None);
+            var requestParts = (lines.Length > 0 ? lines[0] : "").Split(' ');
+            method = requestParts.Length > 0 ? requestParts[0] : "";
+            path = requestParts.Length > 1 ? requestParts[1].Split('?')[0] : "/";
+
+            var contentLength = 0;
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                {
+                    int.TryParse(line.Substring("Content-Length:".Length).Trim(), out contentLength);
+                }
+            }
+            if (contentLength <= 0)
+            {
+                bodyBytes = new byte[0];
+                return true;
+            }
+
+            var bodyStart = headerEnd + 4; // skip the blank line's \r\n\r\n
+            var alreadyBuffered = (int)raw.Length - bodyStart;
+            var body = new MemoryStream(contentLength);
+            if (alreadyBuffered > 0)
+            {
+                body.Write(headerBytes, bodyStart, Math.Min(alreadyBuffered, contentLength));
+            }
+            while (body.Length < contentLength)
+            {
+                var toRead = Math.Min(chunk.Length, contentLength - (int)body.Length);
+                var read = stream.Read(chunk, 0, toRead);
+                if (read <= 0) break;
+                body.Write(chunk, 0, read);
+            }
+            bodyBytes = body.ToArray();
+            return true;
+        }
+
+        private static int FindHeaderEnd(byte[] buffer, int length)
+        {
+            for (var i = 0; i + 3 < length; i++)
+            {
+                if (buffer[i] == (byte)'\r' && buffer[i + 1] == (byte)'\n' && buffer[i + 2] == (byte)'\r' && buffer[i + 3] == (byte)'\n')
+                    return i;
+            }
+            return -1;
         }
 
         private Dictionary<string, object> SnapshotPayload()
@@ -318,7 +385,9 @@ namespace SchoolDom.Cbt.Win7
                 session.StudentName = student.FullName;
                 _store.Save();
             }
-            return new Dictionary<string, object> { { "success", true }, { "student", student }, { "exam", PublicExam(exam) }, { "session", session } };
+            var result = new Dictionary<string, object> { { "success", true }, { "student", student }, { "exam", PublicExam(exam) }, { "session", session } };
+            AddTimerFields(result, session);
+            return result;
         }
 
         private Dictionary<string, object> SaveAnswers(string sessionId, string bodyText)
@@ -333,7 +402,9 @@ namespace SchoolDom.Cbt.Win7
             var body = JsonUtil.DeserializeObject(bodyText);
             session.Answers = body.ContainsKey("answers") ? NormalizeAnswers(body["answers"]) : session.Answers;
             _store.Save();
-            return new Dictionary<string, object> { { "success", true }, { "session", session } };
+            var result = new Dictionary<string, object> { { "success", true }, { "session", session } };
+            AddTimerFields(result, session);
+            return result;
         }
 
         private Dictionary<string, object> SubmitSession(string sessionId, string bodyText)
@@ -348,15 +419,37 @@ namespace SchoolDom.Cbt.Win7
             var reason = IsSessionExpired(session) ? "Time expired — auto-submitted on LAN." : "Student submitted exam on LAN.";
             session.AuditLogs.Add(new ActivityLogRecord { Type = "session_submitted", Message = reason, CreatedAt = JsonUtil.IsoNow() });
             _store.Save();
-            return new Dictionary<string, object> { { "success", true }, { "session", session } };
+            var submitResult = new Dictionary<string, object> { { "success", true }, { "session", session } };
+            AddTimerFields(submitResult, session);
+            return submitResult;
         }
 
         private static bool IsSessionExpired(SessionRecord session)
         {
-            if (string.IsNullOrWhiteSpace(session.EndsAt)) return false;
+            return RemainingSeconds(session) <= 0 && !string.IsNullOrWhiteSpace(session.EndsAt);
+        }
+
+        // This LAN admin machine's clock is the single source of truth for every session's
+        // countdown - EndsAt was computed from it in the first place. Every response that
+        // carries a session also carries the remaining seconds computed right here, so student
+        // stations never need to compare EndsAt against their OWN clock (which may be minutes,
+        // hours, or a whole timezone off from the admin PC in an offline exam hall).
+        private static int RemainingSeconds(SessionRecord session)
+        {
+            if (session == null || string.IsNullOrWhiteSpace(session.EndsAt)) return 0;
             DateTime ends;
-            return DateTime.TryParse(session.EndsAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out ends)
-                && DateTime.UtcNow > ends.ToUniversalTime();
+            if (!DateTime.TryParse(session.EndsAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out ends)) return 0;
+            var remaining = (ends.ToUniversalTime() - DateTime.UtcNow).TotalSeconds;
+            return remaining > 0 ? (int)Math.Ceiling(remaining) : 0;
+        }
+
+        private static void AddTimerFields(Dictionary<string, object> response, SessionRecord session)
+        {
+            if (response == null || session == null) return;
+            var remaining = RemainingSeconds(session);
+            response["time_remaining_seconds"] = remaining;
+            response["expired"] = remaining <= 0;
+            response["server_time"] = JsonUtil.IsoNow();
         }
 
         private Dictionary<string, object> BeginExam(string sessionId)
@@ -371,7 +464,9 @@ namespace SchoolDom.Cbt.Win7
             session.EndsAt = began.AddSeconds(Math.Max(60, exam.DurationSeconds)).ToString("o");
             session.AuditLogs.Add(new ActivityLogRecord { Type = "exam_began", Message = "Student entered exam mode on LAN.", CreatedAt = JsonUtil.IsoNow() });
             _store.Save();
-            return new Dictionary<string, object> { { "success", true }, { "session", session } };
+            var beginResult = new Dictionary<string, object> { { "success", true }, { "session", session } };
+            AddTimerFields(beginResult, session);
+            return beginResult;
         }
 
         private Dictionary<string, object> LogFocusLoss(string sessionId, string bodyText)

@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace SchoolDom.Cbt.Win7
@@ -473,7 +474,7 @@ namespace SchoolDom.Cbt.Win7
                     {
                         var q = questions[i];
                         var item = new ListViewItem((i + 1).ToString());
-                        item.SubItems.Add(q.Text ?? "");
+                        item.SubItems.Add(HtmlToPlainText(q.Text ?? ""));
                         item.SubItems.Add((q.Options == null ? 0 : q.Options.Count).ToString());
                         item.SubItems.Add(q.CorrectAnswer ?? "");
                         item.Tag = q;
@@ -774,7 +775,7 @@ namespace SchoolDom.Cbt.Win7
                         : "";
                     if (string.IsNullOrWhiteSpace(answerText)) answerText = "(No answer submitted)";
 
-                    scroll.Controls.Add(TextLabel((i + 1) + ". " + q.Text + "  (max " + PackageService.FormatScoreNumber(maxPoints) + ")", 16, y, 10, true, 760, Palette.Text));
+                    scroll.Controls.Add(TextLabel((i + 1) + ". " + HtmlToPlainText(q.Text) + "  (max " + PackageService.FormatScoreNumber(maxPoints) + ")", 16, y, 10, true, 760, Palette.Text));
                     y += 28;
                     var answerBox = new TextBox
                     {
@@ -870,12 +871,19 @@ namespace SchoolDom.Cbt.Win7
             lines.AppendLine("Duration: " + Math.Max(1, exam.DurationSeconds / 60) + " minutes");
             lines.AppendLine();
             lines.AppendLine("Instructions:");
-            lines.AppendLine(exam.Instructions ?? "");
+            lines.AppendLine(HtmlToPlainText(exam.Instructions ?? ""));
             lines.AppendLine();
             for (var i = 0; i < exam.Questions.Count; i++)
             {
                 var q = exam.Questions[i];
-                lines.AppendLine((i + 1) + ". " + q.Text);
+                var group = q.Group;
+                if (group != null && !string.IsNullOrWhiteSpace(group.PassageText))
+                {
+                    lines.AppendLine("[" + (string.IsNullOrWhiteSpace(group.Title) ? "Passage" : group.Title) + "]");
+                    lines.AppendLine(HtmlToPlainText(group.PassageText));
+                    lines.AppendLine();
+                }
+                lines.AppendLine((i + 1) + ". " + HtmlToPlainText(q.Text));
                 var options = q.Options ?? new System.Collections.Generic.List<string>();
                 for (var j = 0; j < options.Count; j++)
                 {
@@ -922,7 +930,7 @@ namespace SchoolDom.Cbt.Win7
                     {
                         var q = questions[i];
                         var item = new ListViewItem((i + 1).ToString());
-                        item.SubItems.Add(q.Text ?? "");
+                        item.SubItems.Add(HtmlToPlainText(q.Text ?? ""));
                         item.SubItems.Add((q.Options == null ? 0 : q.Options.Count).ToString());
                         item.SubItems.Add(q.CorrectAnswer ?? "");
                         item.Tag = q;
@@ -1313,6 +1321,40 @@ namespace SchoolDom.Cbt.Win7
                 BackColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle
             };
+        }
+
+        /// <summary>
+        /// The admin app's grading/review/edit screens are plain WinForms Labels and TextBoxes -
+        /// they cannot render HTML. Question/passage/instruction text authored with the Web Exam
+        /// Builder's rich-text editor arrives here as raw markup (e.g. "&lt;p&gt;What is...&lt;/p&gt;"),
+        /// which must never be shown to an admin as literal tag soup. This converts it to readable
+        /// plain text (block tags/&lt;br&gt; become line breaks, entities are decoded) instead of just
+        /// stripping every tag, which would silently glue separate lines/paragraphs together.
+        /// Plain text (no rich-text editor involved, e.g. locally-imported exams) passes through
+        /// unchanged.
+        /// </summary>
+        private static string HtmlToPlainText(string value)
+        {
+            var text = value ?? "";
+            if (text.IndexOf('<') < 0) return text;
+            var looksLikeHtml = Regex.IsMatch(text, @"</[a-z]+>|<br\s*/?>|<p[\s>]|<div[\s>]|<li[\s>]", RegexOptions.IgnoreCase);
+            if (!looksLikeHtml) return text;
+
+            var result = Regex.Replace(text, @"<\s*br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            result = Regex.Replace(result, @"</\s*(p|div|li|h[1-6]|tr)\s*>", "\n", RegexOptions.IgnoreCase);
+            result = Regex.Replace(result, @"<\s*li[^>]*>", "- ", RegexOptions.IgnoreCase);
+            result = Regex.Replace(result, @"<[^>]+>", "");
+            result = result
+                .Replace("&nbsp;", " ")
+                .Replace("&lt;", "<")
+                .Replace("&gt;", ">")
+                .Replace("&quot;", "\"")
+                .Replace("&#39;", "'")
+                .Replace("&apos;", "'")
+                .Replace("&amp;", "&");
+            result = Regex.Replace(result, @"[ \t]+\n", "\n");
+            result = Regex.Replace(result, @"\n{3,}", "\n\n");
+            return result.Trim();
         }
 
         private Label TextLabel(string text, int left, int top, int size, bool bold, int width, Color color)

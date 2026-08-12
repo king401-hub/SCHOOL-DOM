@@ -40,6 +40,17 @@ namespace SchoolDom.StudentCbt.Win7
         private int _lastSaveSecond = -1;
         private WebBrowser _questionWebView;
 
+        // Server-anchored countdown: the admin LAN server's clock is the only source of truth
+        // for how much time is left (it is what produced session.EndsAt in the first place).
+        // We re-seed _serverRemainingSeconds from every response that carries one and tick it
+        // down locally with Environment.TickCount, a monotonic counter that keeps advancing at
+        // a steady rate no matter what the student's system clock/timezone is set to. This is
+        // deliberately NOT DateTime.Now/UtcNow - comparing session.EndsAt (stamped using the
+        // ADMIN PC's clock) against THIS PC's wall clock is what let two machines with different
+        // clocks disagree about how much time was left.
+        private int? _serverRemainingSeconds;
+        private int _serverSyncTickCount;
+
         public MainForm()
         {
             Text = "SchoolDom Student CBT v" + Application.ProductVersion;
@@ -140,6 +151,8 @@ namespace SchoolDom.StudentCbt.Win7
                     }
                     _exam = login.ContainsKey("exam") ? login["exam"] as Dictionary<string, object> : choices.FirstOrDefault();
                     _session = login.ContainsKey("session") ? login["session"] as Dictionary<string, object> : null;
+                    _serverRemainingSeconds = null;
+                    SyncServerTimer(login);
                     if (_exam == null)
                     {
                         MessageBox.Show("No exam was returned for this Student ID and PIN.", "No exam");
@@ -199,6 +212,7 @@ namespace SchoolDom.StudentCbt.Win7
             }
             _exam = started["exam"] as Dictionary<string, object>;
             _session = started["session"] as Dictionary<string, object>;
+            SyncServerTimer(started);
             ShowInstructions();
         }
 
@@ -288,6 +302,7 @@ namespace SchoolDom.StudentCbt.Win7
                 var began = _client.BeginExam(Value(_session, "id", "Id"));
                 if (began.ContainsKey("session") && began["session"] is Dictionary<string, object> updatedSession)
                     _session = updatedSession;
+                SyncServerTimer(began);
             }
             catch { }
 
@@ -580,6 +595,7 @@ namespace SchoolDom.StudentCbt.Win7
                 {
                     var saved = _client.SaveAnswers(Value(_session, "id", "Id"), _answers);
                     if (saved.ContainsKey("session")) _session = saved["session"] as Dictionary<string, object> ?? _session;
+                    SyncServerTimer(saved);
                     MarkLanConnected();
                 }
                 catch
@@ -588,8 +604,7 @@ namespace SchoolDom.StudentCbt.Win7
                 }
             }
             if (_timeLabel != null) _timeLabel.Text = TimeText();
-            DateTime ends;
-            if (DateTime.TryParse(Value(_session, "ends_at", "EndsAt"), out ends) && DateTime.UtcNow >= ends.ToUniversalTime())
+            if (CurrentRemainingSeconds() == 0)
             {
                 AutoSubmit("Time is up. Your exam has been submitted.", "Time up");
                 return;
@@ -808,12 +823,44 @@ namespace SchoolDom.StudentCbt.Win7
                 .Replace("−", "-");
         }
 
+        /// <summary>
+        /// Seeds the server-anchored countdown from any LAN response that included
+        /// time_remaining_seconds (start-session, begin-exam, and every per-second
+        /// save-answers poll). Call this every time a response is read, regardless of
+        /// which endpoint produced it.
+        /// </summary>
+        private void SyncServerTimer(Dictionary<string, object> response)
+        {
+            if (response == null || !response.ContainsKey("time_remaining_seconds")) return;
+            _serverRemainingSeconds = JsonUtil.Int(response["time_remaining_seconds"], 0);
+            _serverSyncTickCount = Environment.TickCount;
+        }
+
+        /// <summary>
+        /// Seconds left, ticked forward locally (via the monotonic Environment.TickCount)
+        /// since the last time the admin LAN server told us the real remaining time. Falls
+        /// back to comparing EndsAt against local UTC only if this device has never
+        /// received a server-timed response yet (e.g. an old admin build).
+        /// </summary>
+        private int CurrentRemainingSeconds()
+        {
+            if (_serverRemainingSeconds.HasValue)
+            {
+                var elapsedSeconds = unchecked(Environment.TickCount - _serverSyncTickCount) / 1000;
+                return Math.Max(0, _serverRemainingSeconds.Value - Math.Max(0, elapsedSeconds));
+            }
+            DateTime ends;
+            if (_session == null || !DateTime.TryParse(Value(_session, "ends_at", "EndsAt"), out ends)) return -1;
+            var span = ends.ToUniversalTime() - DateTime.UtcNow;
+            return span.TotalSeconds > 0 ? (int)span.TotalSeconds : 0;
+        }
+
         private string TimeText()
         {
-            DateTime ends;
-            if (_session == null || !DateTime.TryParse(Value(_session, "ends_at", "EndsAt"), out ends)) return "";
-            var span = ends.ToUniversalTime() - DateTime.UtcNow;
-            if (span.TotalSeconds < 0) span = TimeSpan.Zero;
+            if (_session == null) return "";
+            var remaining = CurrentRemainingSeconds();
+            if (remaining < 0) return "";
+            var span = TimeSpan.FromSeconds(remaining);
             return "Time: " + ((int)span.TotalHours).ToString("00") + ":" + span.Minutes.ToString("00") + ":" + span.Seconds.ToString("00");
         }
 
