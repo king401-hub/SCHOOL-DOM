@@ -578,3 +578,12 @@ LOGGING = {
         },
     },
 }
+
+CBT_ADMIN_APP_VERSION = {
+    "version": "0.2.0",
+    "release_notes": "Bug fixes: app now runs on all Windows versions, update screen layout improved.",
+    "release_date": "2026-08-08",
+    "download_url": "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.0/SchoolDom-Admin-Sync-Win7-0.2.0-Setup.exe",
+    "file_size_bytes": 3783936,
+    "is_mandatory": False,
+}
