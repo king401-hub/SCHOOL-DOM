@@ -740,6 +740,10 @@ export function documentStylesForExport(theme) {
     .report-subject-table tbody td{padding:.55rem .75rem;border-bottom:1px solid #eef2f7;color:#1e293b}
     .report-subject-table tbody tr:nth-child(even){background:#f8fafc}
     .report-subject-name{font-weight:700}
+    .report-subject-table thead th.report-component-col{background:#eef2ff;color:var(--doc-secondary,#4338ca)}
+    .report-subject-table tbody td.report-component-col{color:#64748b;font-size:.8rem;text-align:center}
+    .report-subject-table thead th.report-total-col{background:var(--doc-secondary,#4338ca)}
+    .report-subject-table tbody td.report-total-col{font-weight:800;font-size:.95rem;color:var(--doc-primary,#1d4ed8);background:#eef2ff;text-align:center}
     .report-grade-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:.15rem .5rem;border-radius:999px;font-weight:800;font-size:.78rem}
     .report-grade-badge.tone-excellent{background:#dcfce7;color:#15803d}
     .report-grade-badge.tone-good{background:#dbeafe;color:#1d4ed8}
@@ -790,6 +794,20 @@ export function OfficialDocHeader({ school, title }) {
  * _student_result_report() on the backend. `elementId` is what
  * downloadPrintablePng() rasterizes, so each caller needs a unique one if
  * more than one copy could ever be on the page at once. */
+const REPORT_COMPONENT_COLUMNS = [
+  ["theory", "Theory"],
+  ["cbt", "CBT"],
+  ["assessment", "Assessment"],
+  ["assignment", "Assignment"],
+  ["attendance", "Attendance"],
+  ["other", "Other"],
+];
+
+const tidyReportMark = (value) => {
+  const number = Number(value || 0);
+  return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, "");
+};
+
 export function ReportCardSheet({ report, gradeScales = [], elementId }) {
   const brand = resolveSchoolBrand(report?.school);
   const student = report?.student || {};
@@ -803,6 +821,15 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
     if (first === "D") return "weak";
     return "poor";
   };
+  // A school either grades with a straight score or breaks it into a
+  // theory/CBT/assessment/assignment/attendance/other mark sheet - only
+  // show the columns a subject actually has marks in, so a school that
+  // just uses "score" doesn't get a table full of misleading zero columns.
+  const activeComponents = REPORT_COMPONENT_COLUMNS.filter(([key]) =>
+    scores.some((row) => Number(row.components?.[key]) > 0)
+  );
+  // S/N, Subject, [...components], Total, Max, %, Grade, Teacher, Remark
+  const columnCount = 8 + activeComponents.length;
 
   return (
     <div className="report-sheet" id={elementId}>
@@ -857,7 +884,8 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
               <tr>
                 <th>S/N</th>
                 <th>Subject</th>
-                <th>Score</th>
+                {activeComponents.map(([key, label]) => <th key={key} className="report-component-col">{label}</th>)}
+                <th className="report-total-col">{activeComponents.length ? "Total" : "Score"}</th>
                 <th>Max</th>
                 <th>%</th>
                 <th>Grade</th>
@@ -871,8 +899,11 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
                   <tr key={row.id}>
                     <td>{index + 1}</td>
                     <td className="report-subject-name">{row.subject}</td>
-                    <td>{row.score}</td>
-                    <td>{row.max_score}</td>
+                    {activeComponents.map(([key]) => (
+                      <td key={key} className="report-component-col">{tidyReportMark(row.components?.[key])}</td>
+                    ))}
+                    <td className="report-total-col">{tidyReportMark(row.score)}</td>
+                    <td>{tidyReportMark(row.max_score)}</td>
                     <td>{row.percentage != null ? `${row.percentage}%` : "-"}</td>
                     <td>
                       <span className={`report-grade-badge tone-${gradeTone(row.grade)}`}>{row.grade || "-"}</span>
@@ -883,7 +914,7 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8">No subject scores found.</td>
+                  <td colSpan={columnCount}>No subject scores found.</td>
                 </tr>
               )}
             </tbody>

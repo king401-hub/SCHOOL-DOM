@@ -17562,6 +17562,33 @@ body[data-theme="dark"] .report-subject-table tbody tr:nth-child(even) { backgro
 
 .report-subject-name { font-weight: 700; }
 
+.report-subject-table thead th.report-component-col {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+body[data-theme="dark"] .report-subject-table thead th.report-component-col { background: #1e1b4b; color: #c7d2fe; }
+
+.report-subject-table tbody td.report-component-col {
+  color: #64748b;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+body[data-theme="dark"] .report-subject-table tbody td.report-component-col { color: #94a3b8; }
+
+.report-subject-table thead th.report-total-col { background: #4338ca; }
+
+.report-subject-table tbody td.report-total-col {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #1d4ed8;
+  background: #eef2ff;
+  text-align: center;
+}
+
+body[data-theme="dark"] .report-subject-table tbody td.report-total-col { color: #93c5fd; background: #1e1b4b; }
+
 .report-grade-badge {
   display: inline-flex;
   align-items: center;
