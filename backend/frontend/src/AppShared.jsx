@@ -991,7 +991,14 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
   const rect = element.getBoundingClientRect();
   const width = Math.max(850, Math.ceil(rect.width || element.scrollWidth || 850));
   const height = Math.max(1100, Math.ceil(element.scrollHeight || rect.height || 1100));
-  const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">${clone.outerHTML}</div>`;
+  // clone.outerHTML serializes void elements (<img>, <br>, ...) HTML5-style,
+  // with no self-closing slash - invalid XML. Since this markup gets
+  // embedded in an SVG (an XML document) below, that silently breaks the
+  // whole export for any document with an image or a <br> in it (i.e.
+  // nearly all of them - every letterhead has a logo). XMLSerializer always
+  // self-closes void elements correctly, unlike .outerHTML on a live node.
+  const serializedClone = new XMLSerializer().serializeToString(clone);
+  const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">${serializedClone}</div>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport(theme)}</style>${html}</foreignObject></svg>`;
   const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   const image = new Image();
