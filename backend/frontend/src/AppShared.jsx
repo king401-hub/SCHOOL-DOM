@@ -716,6 +716,51 @@ export function documentStylesForExport(theme) {
     .invoice-doc-signature-blank{display:block;height:40px;border-bottom:1px solid #94a3b8;width:160px;margin:0 auto 4px}
     .invoice-doc-signature span{display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
     .invoice-doc-signature strong{display:block;font-size:12px;color:#0f172a;margin-top:2px}
+    .report-sheet-inner{position:relative;border:1px solid #d6dbe4;border-radius:16px;background:#ffffff;padding:2rem 2.25rem 1.75rem;overflow:hidden}
+    .report-letterhead{display:flex;align-items:center;gap:1.1rem;padding-bottom:1.1rem;margin-bottom:1rem;border-bottom:2px double #cbd5e1}
+    .report-letterhead-logo{width:76px;height:76px;border-radius:14px;border:2px solid var(--doc-primary,#1d4ed8);overflow:hidden;display:flex;align-items:center;justify-content:center;background:#eef2ff;color:var(--doc-primary,#1d4ed8);font-weight:800;font-size:1.4rem;flex-shrink:0}
+    .report-letterhead-logo img{width:100%;height:100%;object-fit:cover}
+    .report-letterhead-text{flex:1;min-width:0;text-align:center}
+    .report-letterhead-text h1{margin:0;font-size:1.5rem;letter-spacing:.03em;text-transform:uppercase;color:#111827;font-weight:800}
+    .report-letterhead-line{margin:.15rem 0 0;font-size:.78rem;color:#475569}
+    .report-letterhead-motto{margin:.35rem 0 0;font-size:.78rem;font-style:italic;color:var(--doc-primary,#1d4ed8)}
+    .report-letterhead-seal{flex-shrink:0}
+    .report-seal-ring{width:72px;height:72px;border-radius:999px;border:2px dashed #94a3b8;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.6rem;font-weight:700;text-transform:uppercase;color:#64748b;letter-spacing:.04em}
+    .report-title-bar{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(90deg,var(--doc-primary,#1d4ed8),var(--doc-secondary,#4338ca));color:#ffffff;padding:.55rem 1rem;border-radius:8px;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1.1rem}
+    .report-student-block{display:flex;gap:1.25rem;align-items:center;padding:1rem;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;margin-bottom:1.25rem;flex-wrap:wrap}
+    .report-student-photo{width:96px;height:96px;border-radius:12px;overflow:hidden;flex-shrink:0;background:var(--doc-primary,#1d4ed8);color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.4rem}
+    .report-student-photo img{width:100%;height:100%;object-fit:cover}
+    .report-student-info{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:.6rem 1.5rem;margin:0;flex:1;min-width:260px}
+    .report-student-info>div{display:flex;flex-direction:column;gap:.1rem}
+    .report-student-info dt{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700}
+    .report-student-info dd{margin:0;font-size:.92rem;font-weight:700;color:#0f172a}
+    .report-table-scroll{overflow-x:auto;margin-bottom:1.25rem;border-radius:10px;border:1px solid #e2e8f0}
+    .report-subject-table{width:100%;border-collapse:collapse;font-size:.86rem}
+    .report-subject-table thead th{background:var(--doc-primary,#1d4ed8);color:#ffffff;text-align:left;padding:.6rem .75rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+    .report-subject-table tbody td{padding:.55rem .75rem;border-bottom:1px solid #eef2f7;color:#1e293b}
+    .report-subject-table tbody tr:nth-child(even){background:#f8fafc}
+    .report-subject-name{font-weight:700}
+    .report-grade-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:.15rem .5rem;border-radius:999px;font-weight:800;font-size:.78rem}
+    .report-grade-badge.tone-excellent{background:#dcfce7;color:#15803d}
+    .report-grade-badge.tone-good{background:#dbeafe;color:#1d4ed8}
+    .report-grade-badge.tone-average{background:#fef3c7;color:#b45309}
+    .report-grade-badge.tone-weak{background:#ffedd5;color:#c2410c}
+    .report-grade-badge.tone-poor{background:#fee2e2;color:#b91c1c}
+    .report-summary-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1.25rem}
+    .report-summary-strip>div{border:1px solid #e2e8f0;border-radius:10px;padding:.65rem .85rem;display:flex;flex-direction:column;gap:.2rem;background:#ffffff}
+    .report-summary-strip span{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700}
+    .report-summary-strip strong{font-size:1.15rem;color:var(--doc-primary,#1d4ed8)}
+    .report-key-remarks-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+    .report-grade-key{border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem}
+    .report-grade-key h4{margin:0 0 .6rem;font-size:.76rem;text-transform:uppercase;letter-spacing:.05em;color:#475569}
+    .report-grade-key table{width:100%;border-collapse:collapse;font-size:.8rem}
+    .report-grade-key td{padding:.25rem .4rem;color:#475569}
+    .report-grade-key-empty{font-size:.8rem;color:#94a3b8;margin:0}
+    .report-signature-block{border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;display:flex;flex-direction:column;justify-content:space-between;gap:1.4rem}
+    .report-signature-line{border-bottom:1px solid #94a3b8;padding-bottom:.3rem}
+    .report-signature-line span,.report-date-line span{font-size:.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+    .report-sheet-footer{text-align:center;font-size:.78rem;font-style:italic;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:.85rem}
+    @media(max-width:720px){.report-key-remarks-grid{grid-template-columns:1fr}}
     ${tableStyleCss}
     ${watermarkCss}
   `;
@@ -733,6 +778,159 @@ export function OfficialDocHeader({ school, title }) {
       <p>{school?.address || brand.code || "Official School Record"}</p>
       <h2 className="official-doc-title">{title}</h2>
     </header>
+  );
+}
+
+/** The letterhead report-card sheet - shared by the admin's "Results &
+ * Report Cards" screen and the student's own Results page, so a student
+ * sees exactly the same document an admin generates for them (same markup,
+ * same data), not a simplified stand-in. `report` is the report_card
+ * payload from either /api/app/results/report/<code>/ (admin) or
+ * /api/app/results/my/ (student) - both come from the same
+ * _student_result_report() on the backend. `elementId` is what
+ * downloadPrintablePng() rasterizes, so each caller needs a unique one if
+ * more than one copy could ever be on the page at once. */
+export function ReportCardSheet({ report, gradeScales = [], elementId }) {
+  const brand = resolveSchoolBrand(report?.school);
+  const student = report?.student || {};
+  const scores = report?.scores || [];
+  const termLabel = scores.find((row) => row.term)?.term || "";
+  const gradeTone = (letter) => {
+    const first = (letter || "").trim().charAt(0).toUpperCase();
+    if (first === "A") return "excellent";
+    if (first === "B") return "good";
+    if (first === "C") return "average";
+    if (first === "D") return "weak";
+    return "poor";
+  };
+
+  return (
+    <div className="report-sheet" id={elementId}>
+      <div className="report-sheet-inner">
+        <header className="report-letterhead">
+          <div className="report-letterhead-logo">
+            {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
+          </div>
+          <div className="report-letterhead-text">
+            <h1>{brand.name}</h1>
+            {brand.address ? <p className="report-letterhead-line">{brand.address}</p> : null}
+            {(brand.phone || brand.email) ? (
+              <p className="report-letterhead-line">
+                {[brand.phone, brand.email].filter(Boolean).join("  ·  ")}
+              </p>
+            ) : null}
+            {brand.motto ? <p className="report-letterhead-motto">&ldquo;{brand.motto}&rdquo;</p> : null}
+          </div>
+          <div className="report-letterhead-seal">
+            <div className="report-seal-ring">
+              <span>Academic<br />Report</span>
+            </div>
+          </div>
+        </header>
+
+        <div className="report-title-bar">
+          <span>Student Academic Report</span>
+          <span>{termLabel || "Current Term"}</span>
+        </div>
+
+        <section className="report-student-block">
+          <div className="report-student-photo">
+            {student.profile_picture ? (
+              <img src={student.profile_picture} alt={student.name || "Student"} />
+            ) : (
+              <span>{(student.name || "Student").slice(0, 2).toUpperCase()}</span>
+            )}
+          </div>
+          <dl className="report-student-info">
+            <div><dt>Name</dt><dd>{student.name || "-"}</dd></div>
+            <div><dt>Student ID</dt><dd>{student.student_id || "-"}</dd></div>
+            <div><dt>Class</dt><dd>{student.class_name || "-"}</dd></div>
+            <div><dt>Gender</dt><dd>{student.gender || "-"}</dd></div>
+            <div><dt>Term</dt><dd>{termLabel || "-"}</dd></div>
+            <div><dt>Position</dt><dd>{report?.class_position ? `${report.class_position} of ${report.class_size}` : "N/A"}</dd></div>
+          </dl>
+        </section>
+
+        <div className="report-table-scroll">
+          <table className="report-subject-table">
+            <thead>
+              <tr>
+                <th>S/N</th>
+                <th>Subject</th>
+                <th>Score</th>
+                <th>Max</th>
+                <th>%</th>
+                <th>Grade</th>
+                <th>Teacher</th>
+                <th>Remark</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scores.length ? (
+                scores.map((row, index) => (
+                  <tr key={row.id}>
+                    <td>{index + 1}</td>
+                    <td className="report-subject-name">{row.subject}</td>
+                    <td>{row.score}</td>
+                    <td>{row.max_score}</td>
+                    <td>{row.percentage != null ? `${row.percentage}%` : "-"}</td>
+                    <td>
+                      <span className={`report-grade-badge tone-${gradeTone(row.grade)}`}>{row.grade || "-"}</span>
+                    </td>
+                    <td>{row.teacher || "-"}</td>
+                    <td>{row.performance_remark || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="8">No subject scores found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="report-summary-strip">
+          <div><span>Grand Total</span><strong>{report?.total_score ?? 0}</strong></div>
+          <div><span>Average</span><strong>{report?.average_score ?? 0}%</strong></div>
+          <div><span>Subjects</span><strong>{scores.length}</strong></div>
+          <div><span>Class Position</span><strong>{report?.class_position ? `${report.class_position} / ${report.class_size}` : "N/A"}</strong></div>
+        </div>
+
+        <div className="report-key-remarks-grid">
+          <div className="report-grade-key">
+            <h4>Grading Key</h4>
+            {gradeScales.length ? (
+              <table>
+                <tbody>
+                  {gradeScales.map((scale) => (
+                    <tr key={scale.letter}>
+                      <td><span className={`report-grade-badge tone-${gradeTone(scale.letter)}`}>{scale.letter}</span></td>
+                      <td>{scale.min_percentage}&ndash;{scale.max_percentage}%</td>
+                      <td>{scale.remark || ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="report-grade-key-empty">No grading scale configured.</p>
+            )}
+          </div>
+          <div className="report-signature-block">
+            <div className="report-signature-line"><span>Class Teacher&apos;s Signature</span></div>
+            <div className="report-signature-line">
+              {brand.signature ? <img src={brand.signature} alt="Head Teacher's signature" className="doc-signature-img" /> : null}
+              <span>Head Teacher&apos;s Signature</span>
+            </div>
+            <div className="report-date-line"><span>Date Issued: {formatDate(new Date())}</span></div>
+          </div>
+        </div>
+
+        <footer className="report-sheet-footer">
+          {brand.motto || `${brand.name} · Excellence in Education`}
+        </footer>
+      </div>
+    </div>
   );
 }
 

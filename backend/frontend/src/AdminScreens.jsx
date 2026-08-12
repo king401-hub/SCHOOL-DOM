@@ -34,6 +34,7 @@ import {
   openPrintableDocument,
   downloadPrintablePng,
   OfficialDocHeader,
+  ReportCardSheet,
   Popup,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
@@ -4328,6 +4329,7 @@ function AdminResultsScreen({
   const [studentId, setStudentId] = useState("");
   const [report, setReport] = useState(data?.report_card || null);
   const [busy, setBusy] = useState(false);
+  const [pngBusy, setPngBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState("");
   const [viewBusy, setViewBusy] = useState("");
   const [viewingBatchDetail, setViewingBatchDetail] = useState(null);
@@ -4490,6 +4492,19 @@ function AdminResultsScreen({
     }
     styleTag.textContent = pageRule;
     window.print();
+  };
+
+  const handleDownloadReportPng = async () => {
+    if (!report) return;
+    setPngBusy(true);
+    setSearchError("");
+    try {
+      await downloadPrintablePng("report-card-image-target", documentFileName("report-card", report.student), "Report Card", documentTheme);
+    } catch (actionError) {
+      setSearchError(actionError.message || "Could not generate the report card image.");
+    } finally {
+      setPngBusy(false);
+    }
   };
 
   const handleOpenSms = () => {
@@ -4682,155 +4697,21 @@ function AdminResultsScreen({
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 Send Report Card
               </button>
+              <button type="button" className="btn-secondary report-action-btn" onClick={handleDownloadReportPng} disabled={pngBusy}>
+                {pngBusy ? <><Spinner size={14} /> Generating...</> : (
+                  <>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download PNG
+                  </>
+                )}
+              </button>
               <button type="button" className="btn-primary report-action-btn" onClick={handlePrintReport}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                 Print Report
               </button>
             </div>
           </div>
-          {(() => {
-            const brand = resolveSchoolBrand(report.school);
-            const student = report.student || {};
-            const scores = report.scores || [];
-            const termLabel = scores.find((row) => row.term)?.term || "";
-            const gradeScales = data?.grade_scales || [];
-            const gradeTone = (letter) => {
-              const first = (letter || "").trim().charAt(0).toUpperCase();
-              if (first === "A") return "excellent";
-              if (first === "B") return "good";
-              if (first === "C") return "average";
-              if (first === "D") return "weak";
-              return "poor";
-            };
-            return (
-              <div className="report-sheet">
-                <div className="report-sheet-inner">
-                  <header className="report-letterhead">
-                    <div className="report-letterhead-logo">
-                      {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
-                    </div>
-                    <div className="report-letterhead-text">
-                      <h1>{brand.name}</h1>
-                      {brand.address ? <p className="report-letterhead-line">{brand.address}</p> : null}
-                      {(brand.phone || brand.email) ? (
-                        <p className="report-letterhead-line">
-                          {[brand.phone, brand.email].filter(Boolean).join("  ·  ")}
-                        </p>
-                      ) : null}
-                      {brand.motto ? <p className="report-letterhead-motto">&ldquo;{brand.motto}&rdquo;</p> : null}
-                    </div>
-                    <div className="report-letterhead-seal">
-                      <div className="report-seal-ring">
-                        <span>Academic<br />Report</span>
-                      </div>
-                    </div>
-                  </header>
-
-                  <div className="report-title-bar">
-                    <span>Student Academic Report</span>
-                    <span>{termLabel || "Current Term"}</span>
-                  </div>
-
-                  <section className="report-student-block">
-                    <div className="report-student-photo">
-                      {student.profile_picture ? (
-                        <img src={student.profile_picture} alt={student.name || "Student"} />
-                      ) : (
-                        <span>{(student.name || "Student").slice(0, 2).toUpperCase()}</span>
-                      )}
-                    </div>
-                    <dl className="report-student-info">
-                      <div><dt>Name</dt><dd>{student.name || "-"}</dd></div>
-                      <div><dt>Student ID</dt><dd>{student.student_id || "-"}</dd></div>
-                      <div><dt>Class</dt><dd>{student.class_name || "-"}</dd></div>
-                      <div><dt>Gender</dt><dd>{student.gender || "-"}</dd></div>
-                      <div><dt>Term</dt><dd>{termLabel || "-"}</dd></div>
-                      <div><dt>Position</dt><dd>{report.class_position ? `${report.class_position} of ${report.class_size}` : "N/A"}</dd></div>
-                    </dl>
-                  </section>
-
-                  <div className="report-table-scroll">
-                    <table className="report-subject-table">
-                      <thead>
-                        <tr>
-                          <th>S/N</th>
-                          <th>Subject</th>
-                          <th>Score</th>
-                          <th>Max</th>
-                          <th>%</th>
-                          <th>Grade</th>
-                          <th>Teacher</th>
-                          <th>Remark</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scores.length ? (
-                          scores.map((row, index) => (
-                            <tr key={row.id}>
-                              <td>{index + 1}</td>
-                              <td className="report-subject-name">{row.subject}</td>
-                              <td>{row.score}</td>
-                              <td>{row.max_score}</td>
-                              <td>{row.percentage != null ? `${row.percentage}%` : "-"}</td>
-                              <td>
-                                <span className={`report-grade-badge tone-${gradeTone(row.grade)}`}>{row.grade || "-"}</span>
-                              </td>
-                              <td>{row.teacher || "-"}</td>
-                              <td>{row.performance_remark || "-"}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan="8">No subject scores found.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="report-summary-strip">
-                    <div><span>Grand Total</span><strong>{report.total_score ?? 0}</strong></div>
-                    <div><span>Average</span><strong>{report.average_score ?? 0}%</strong></div>
-                    <div><span>Subjects</span><strong>{scores.length}</strong></div>
-                    <div><span>Class Position</span><strong>{report.class_position ? `${report.class_position} / ${report.class_size}` : "N/A"}</strong></div>
-                  </div>
-
-                  <div className="report-key-remarks-grid">
-                    <div className="report-grade-key">
-                      <h4>Grading Key</h4>
-                      {gradeScales.length ? (
-                        <table>
-                          <tbody>
-                            {gradeScales.map((scale) => (
-                              <tr key={scale.letter}>
-                                <td><span className={`report-grade-badge tone-${gradeTone(scale.letter)}`}>{scale.letter}</span></td>
-                                <td>{scale.min_percentage}&ndash;{scale.max_percentage}%</td>
-                                <td>{scale.remark || ""}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p className="report-grade-key-empty">No grading scale configured.</p>
-                      )}
-                    </div>
-                    <div className="report-signature-block">
-                      <div className="report-signature-line"><span>Class Teacher&apos;s Signature</span></div>
-                      <div className="report-signature-line">
-                        {brand.signature ? <img src={brand.signature} alt="Head Teacher's signature" className="doc-signature-img" /> : null}
-                        <span>Head Teacher&apos;s Signature</span>
-                      </div>
-                      <div className="report-date-line"><span>Date Issued: {formatDate(new Date())}</span></div>
-                    </div>
-                  </div>
-
-                  <footer className="report-sheet-footer">
-                    {brand.motto || `${brand.name} · Excellence in Education`}
-                  </footer>
-                </div>
-              </div>
-            );
-          })()}
+          <ReportCardSheet report={report} gradeScales={data?.grade_scales || []} elementId="report-card-image-target" />
         </article>
       ) : null}
 

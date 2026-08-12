@@ -96,6 +96,9 @@ import {
   StudentOfflineExamPage,
   TimetableGridTable,
   Spinner,
+  ReportCardSheet,
+  resolveDocumentTheme,
+  downloadPrintablePng,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
@@ -632,6 +635,7 @@ function StudentDashboard({
   const dashboardData = data || {};
   const attendance = dashboardData.attendance || {};
   const school = resolveSchoolBrand(dashboardData.school, session?.school, session);
+  const documentTheme = resolveDocumentTheme(dashboardData.school, session?.school);
   const nonK12School = isNonK12School(session, dashboardData);
   const groupLabels = academicGroupLabels(school);
   const prompts = dashboardData.question_prompts || [];
@@ -648,6 +652,8 @@ function StudentDashboard({
   const [reportError, setReportError] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportPngBusy, setReportPngBusy] = useState(false);
+  const [reportPngError, setReportPngError] = useState("");
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [paymentFeedback, setPaymentFeedback] = useState("");
@@ -756,6 +762,24 @@ function StudentDashboard({
       setReportError(loadError.message || "Could not load your results.");
     } finally {
       setReportLoading(false);
+    }
+  };
+
+  const handleDownloadReportCardPng = async () => {
+    if (!reportCard) return;
+    setReportPngBusy(true);
+    setReportPngError("");
+    try {
+      await downloadPrintablePng(
+        "student-dashboard-report-card-image",
+        `report-card-${reportCard?.student?.student_id || student.student_id || "student"}.png`,
+        "Report Card",
+        documentTheme
+      );
+    } catch (pngError) {
+      setReportPngError(pngError.message || "Could not generate the report card image.");
+    } finally {
+      setReportPngBusy(false);
     }
   };
 
@@ -1256,6 +1280,11 @@ function StudentDashboard({
                 <button className="student-link-btn" type="button" onClick={handleResultsClick} disabled={reportLoading}>
                   {reportLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
                 </button>
+                {reportCard ? (
+                  <button className="student-link-btn" type="button" onClick={handleDownloadReportCardPng} disabled={reportPngBusy}>
+                    {reportPngBusy ? <><Spinner size={12} /> Generating...</> : "Download as Image"}
+                  </button>
+                ) : null}
                 <button className="student-link-btn" type="button" onClick={() => setReportOpen(false)}>
                   Close
                 </button>
@@ -1267,45 +1296,9 @@ function StudentDashboard({
               <p className="form-feedback error">{reportError}</p>
             ) : reportCard ? (
               <>
-                <div className="report-school-brand compact-inline">
-                  <SchoolBrand school={reportCard.school || school} subtitle="Report card" compact />
-                </div>
-                <div className="pill-stack">
-                  <span className="pill">Total: {reportCard.total_score ?? "-"}</span>
-                  <span className="pill">Average: {reportCard.average_score ?? "-"}</span>
-                  {reportCard.class_position ? (
-                    <span className="pill">
-                      Position: {reportCard.class_position} / {reportCard.class_size || "?"}
-                    </span>
-                  ) : null}
-                </div>
+                {reportPngError ? <p className="form-feedback error">{reportPngError}</p> : null}
                 {reportCard.scores && reportCard.scores.length ? (
-                  <table className="student-table">
-                    <thead>
-                      <tr>
-                        <th>Subject</th>
-                        <th>Score</th>
-                        <th>Max</th>
-                        <th>%</th>
-                        <th>Teacher</th>
-                        <th>Term</th>
-                        <th>Updated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reportCard.scores.map((row, index) => (
-                        <tr key={row.id || `score-${index}`}>
-                          <td>{row.subject || "Subject"}</td>
-                          <td>{row.score ?? "-"}</td>
-                          <td>{row.max_score ?? "-"}</td>
-                          <td>{row.percentage ? `${Math.round(row.percentage)}%` : "-"}</td>
-                          <td>{row.teacher || row.teacher_email || "-"}</td>
-                          <td>{row.term || "-"}</td>
-                          <td>{formatDate(row.recorded_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <ReportCardSheet report={reportCard} gradeScales={reportCard.grade_scales || []} elementId="student-dashboard-report-card-image" />
                 ) : (
                   <p className="panel-empty">No subjects have been scored yet.</p>
                 )}
@@ -1982,8 +1975,9 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
   const [reportCard, setReportCard] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const student = data?.student || {};
-  const school = resolveSchoolBrand(reportCard?.school, data?.school, session?.school, session);
+  const [pngBusy, setPngBusy] = useState(false);
+  const [pngError, setPngError] = useState("");
+  const documentTheme = resolveDocumentTheme(reportCard?.school, data?.school, session?.school);
 
   const handleLoadResults = async () => {
     setLoading(true);
@@ -2002,6 +1996,24 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
     handleLoadResults();
   }, []);
 
+  const handleDownloadReportPng = async () => {
+    if (!reportCard) return;
+    setPngBusy(true);
+    setPngError("");
+    try {
+      await downloadPrintablePng(
+        "student-results-report-card-image",
+        `report-card-${reportCard?.student?.student_id || "student"}.png`,
+        "Report Card",
+        documentTheme
+      );
+    } catch (err) {
+      setPngError(err.message || "Could not generate the report card image.");
+    } finally {
+      setPngBusy(false);
+    }
+  };
+
   return (
     <StudentPageShell session={session} currentPath="/results" onNavigate={onNavigate}
       themePreference={themePreference} onThemeChange={onThemeChange}
@@ -2016,49 +2028,9 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
           </>
         ) : reportCard ? (
           <>
-            <div className="report-school-brand compact-inline">
-              <SchoolBrand school={reportCard.school || school} subtitle="Report card" compact />
-            </div>
-            <div className="pill-stack">
-              <span className="pill">Total: {reportCard.total_score ?? "-"}</span>
-              <span className="pill">Average: {reportCard.average_score ?? "-"}</span>
-              {reportCard.class_position ? (
-                <span className="pill">
-                  Position: {reportCard.class_position} / {reportCard.class_size || "?"}
-                </span>
-              ) : null}
-            </div>
+            {pngError ? <p className="form-feedback error">{pngError}</p> : null}
             {reportCard.scores && reportCard.scores.length ? (
-              <table className="student-table">
-                <thead>
-                  <tr>
-                    <th>Subject</th>
-                    <th>Score</th>
-                    <th>Max</th>
-                    <th>%</th>
-                    <th>Grade</th>
-                    <th>Remark</th>
-                    <th>Teacher</th>
-                    <th>Term</th>
-                    <th>Updated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportCard.scores.map((row, index) => (
-                    <tr key={row.id || `score-${index}`}>
-                      <td>{row.subject || "Subject"}</td>
-                      <td>{row.score ?? "-"}</td>
-                      <td>{row.max_score ?? "-"}</td>
-                      <td>{row.percentage ? `${Math.round(row.percentage)}%` : "-"}</td>
-                      <td>{row.grade || "-"}</td>
-                      <td>{row.performance_remark || "-"}</td>
-                      <td>{row.teacher || row.teacher_email || "-"}</td>
-                      <td>{row.term || "-"}</td>
-                      <td>{formatDate(row.recorded_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ReportCardSheet report={reportCard} gradeScales={reportCard.grade_scales || []} elementId="student-results-report-card-image" />
             ) : (
               <p className="panel-empty">No subjects have been scored yet.</p>
             )}
@@ -2066,9 +2038,16 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
         ) : (
           <p className="panel-empty">Click refresh to load your results.</p>
         )}
-        <button type="button" className="student-link-btn" onClick={handleLoadResults} disabled={loading}>
-          {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh Results"}
-        </button>
+        <div className="panel-form-actions">
+          {reportCard && reportCard.scores && reportCard.scores.length ? (
+            <button type="button" className="student-link-btn" onClick={handleDownloadReportPng} disabled={pngBusy}>
+              {pngBusy ? <><Spinner size={12} /> Generating...</> : "Download as Image"}
+            </button>
+          ) : null}
+          <button type="button" className="student-link-btn" onClick={handleLoadResults} disabled={loading}>
+            {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh Results"}
+          </button>
+        </div>
       </section>
     </StudentPageShell>
   );

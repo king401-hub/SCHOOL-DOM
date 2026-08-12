@@ -10206,6 +10206,10 @@ def _student_result_report(student_profile, class_group=None, term=None, request
         "average_score": average_score,
         "class_position": position,
         "class_size": class_size,
+        # Lets the student-facing report card show the same grading key the
+        # admin's copy of this report does, via the same tenant-configured
+        # source of truth every other grade in this payload resolves through.
+        "grade_scales": [_grade_scale_payload(item) for item in _ensure_default_grade_scales(student_profile.user)],
     }
 
 
