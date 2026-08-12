@@ -10704,6 +10704,71 @@ def result_batch_detail(request, batch_id):
     return Response({"success": True, "message": f"Deleted result batch and {score_count} score record(s).", "batch_id": batch_id})
 
 
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def edit_result_batch_score(request, batch_id, score_id):
+    """Lets an admin correct a score within a submitted batch in place - the
+    same component breakdown (theory/CBT/assessment/assignment/attendance/
+    other) a teacher fills in via submit_subject_score, so a typo doesn't
+    force rejecting the whole batch and making the teacher redo it. Unlike
+    the teacher's own edit path, this never touches approval_status, teacher,
+    or result_batch - it's a correction to the existing record, not a new
+    draft submission, so a fix to an already-published score stays published
+    and the original submitter is preserved."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only admins can edit submitted results."}, status=status.HTTP_403_FORBIDDEN)
+    batch = get_object_or_404(_scope_to_user_tenant(ResultBatch.objects.all(), user), id=batch_id)
+    score_obj = get_object_or_404(StudentSubjectScore.objects.filter(result_batch=batch), id=score_id)
+
+    component_fields = {
+        "theory_score": "theory",
+        "cbt_score": "cbt",
+        "assessment_score": "assessment",
+        "assignment_score": "assignment",
+        "attendance_score": "attendance",
+        "other_score": "other",
+    }
+    components = {}
+    for field, alias in component_fields.items():
+        try:
+            components[field] = float(request.data.get(field, request.data.get(alias, getattr(score_obj, field))) or 0)
+        except Exception:
+            return Response({"success": False, "message": f"{field} must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+    score_value = sum(components.values())
+
+    try:
+        max_score = float(request.data.get("max_score", score_obj.max_score))
+    except Exception:
+        return Response({"success": False, "message": "max_score must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if score_value < 0:
+        return Response({"success": False, "message": "score cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+    if max_score <= 0:
+        return Response({"success": False, "message": "max_score must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+    if score_value > max_score:
+        return Response({"success": False, "message": "score cannot exceed max_score."}, status=status.HTTP_400_BAD_REQUEST)
+
+    percentage = round((score_value / max(max_score, 1)) * 100, 2)
+    grade_letter, grade_remark = _grade_for_percentage(user, percentage)
+
+    score_obj.score = score_value
+    score_obj.max_score = max_score
+    for field, value in components.items():
+        setattr(score_obj, field, value)
+    score_obj.grade = grade_letter
+    score_obj.performance_remark = grade_remark
+    if "remarks" in request.data:
+        score_obj.remarks = str(request.data.get("remarks") or "").strip()
+    score_obj.save(update_fields=[
+        "score", "max_score", "theory_score", "cbt_score", "assessment_score",
+        "assignment_score", "attendance_score", "other_score", "grade",
+        "performance_remark", "remarks", "updated_at",
+    ])
+
+    return Response({"success": True, "message": "Score updated.", "batch": _result_batch_detail_payload(batch, user)})
+
+
 def _fuzzy_student_filter(queryset, code):
     """Match a free-text student search term against ID, email, or name (either
     "First Last" or "Last First" word order). `queryset` must already be scoped

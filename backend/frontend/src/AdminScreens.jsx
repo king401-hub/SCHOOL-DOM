@@ -4317,7 +4317,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
 }
 
 function AdminResultsScreen({
-  data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onViewBatch, onSendSms,
+  data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onViewBatch, onEditBatchScore, onSendSms,
   onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
 }) {
   const summary = data?.summary || {};
@@ -4634,7 +4634,8 @@ function AdminResultsScreen({
           batch={viewingBatchDetail}
           onClose={() => setViewingBatchDetail(null)}
           onPublish={(batchId) => onReviewBatch?.(batchId, "published")}
-          onReject={(batchId) => onReviewBatch?.(batchId, "rejected")}
+          onEditScore={(scoreId, payload) => onEditBatchScore?.(viewingBatchDetail.id, scoreId, payload)}
+          onBatchUpdated={(freshBatch) => setViewingBatchDetail(freshBatch)}
           onDelete={(batchId) => onDeleteBatch?.(batchId)}
           confirmDelete={confirm}
         />

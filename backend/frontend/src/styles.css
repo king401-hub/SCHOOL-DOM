@@ -16428,6 +16428,47 @@ body[data-theme="dark"] .form-feedback.warning { border-color: #78350f; backgrou
   overflow-y: auto;
 }
 
+.result-batch-modal.is-editing {
+  max-width: min(96rem, 96vw);
+}
+
+.result-batch-edit-table { font-size: 0.82rem; }
+.result-batch-edit-table th { white-space: nowrap; }
+
+.result-batch-score-input {
+  width: 4.5rem;
+  box-sizing: border-box;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  color: #0f172a;
+  background: #ffffff;
+  font-family: inherit;
+}
+
+.result-batch-score-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.result-batch-remark-input { width: 9rem; }
+
+.result-batch-score-preview {
+  white-space: nowrap;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+body[data-theme="dark"] .result-batch-score-input {
+  background: #111827;
+  border-color: #1e293b;
+  color: #e2e8f0;
+}
+
+body[data-theme="dark"] .result-batch-score-preview { color: #93c5fd; }
+
 .result-batch-student-list {
   display: flex;
   flex-direction: column;

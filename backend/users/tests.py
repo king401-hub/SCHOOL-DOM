@@ -1961,6 +1961,110 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(batch.status, ResultBatch.PENDING)
         self.assertIsNone(batch.reviewed_by)
 
+    def test_admin_can_edit_a_submitted_score_without_disturbing_teacher_or_status(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        student_user = User.objects.create_user(
+            email="edit.batch.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Edit",
+            last_name="Batch",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-EDIT-1",
+            admission_number="ADM-EDIT-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Guardian",
+            guardian_phone="+15550003333",
+            guardian_relation="Parent",
+        )
+        score_response = self.client.post(
+            "/api/app/results/submit/",
+            data={
+                "student_id": student.student_id,
+                "subject_id": self.subject.id,
+                "class_id": self.classroom.id,
+                "theory_score": 30,
+                "cbt_score": 20,
+                "assessment_score": 10,
+                "assignment_score": 5,
+                "attendance_score": 5,
+                "other_score": 0,
+                "max_score": 100,
+                "remarks": "Teacher's original note",
+            },
+            format="json",
+        )
+        self.assertEqual(score_response.status_code, 201)
+        self.assertEqual(score_response.data["score"]["score"], 70)
+        score_id = score_response.data["score"]["id"]
+
+        push_response = self.client.post(
+            "/api/app/results/push/",
+            data={"class_id": self.classroom.id, "title": "Edit me"},
+            format="json",
+        )
+        self.assertEqual(push_response.status_code, 200)
+        batch_id = push_response.data["batch_id"]
+
+        # Publish it live first - editing an already-published score should
+        # correct it in place, not silently un-publish it.
+        self.client.force_authenticate(user=self.admin_user)
+        publish_response = self.client.post(f"/api/app/results/batches/{batch_id}/review/", data={"status": "published"}, format="json")
+        self.assertEqual(publish_response.status_code, 200)
+
+        # A teacher must not be able to use the admin edit path.
+        self.client.force_authenticate(user=self.teacher_user)
+        forbidden_response = self.client.patch(
+            f"/api/app/results/batches/{batch_id}/scores/{score_id}/",
+            data={"theory_score": 40},
+            format="json",
+        )
+        self.assertEqual(forbidden_response.status_code, 403)
+
+        self.client.force_authenticate(user=self.admin_user)
+        edit_response = self.client.patch(
+            f"/api/app/results/batches/{batch_id}/scores/{score_id}/",
+            data={
+                "theory_score": 40,
+                "cbt_score": 20,
+                "assessment_score": 10,
+                "assignment_score": 5,
+                "attendance_score": 5,
+                "other_score": 0,
+                "max_score": 100,
+                "remarks": "Corrected by admin",
+            },
+            format="json",
+        )
+        self.assertEqual(edit_response.status_code, 200)
+        edited_subject = edit_response.data["batch"]["students"][0]["subjects"][0]
+        self.assertEqual(edited_subject["score"], 80)
+
+        score = StudentSubjectScore.objects.get(id=score_id)
+        self.assertEqual(score.score, 80)
+        self.assertEqual(score.theory_score, 40)
+        # The free-text remark is saved even though the batch-detail payload's
+        # "remark" field prefers the auto grade remark (performance_remark)
+        # when one is set - same precedence _result_batch_detail_payload uses
+        # everywhere else, not something this edit path changes.
+        self.assertEqual(score.remarks, "Corrected by admin")
+        # Correcting a typo isn't a new submission: the original teacher stays
+        # the submitter, and an already-published score stays published.
+        self.assertEqual(score.teacher, self.teacher_user)
+        self.assertEqual(score.approval_status, ResultBatch.PUBLISHED)
+
+        # The corrected score is what the student now actually sees.
+        self.client.force_authenticate(user=student_user)
+        my_results = self.client.get("/api/app/results/my/")
+        self.assertEqual(my_results.status_code, 200)
+        self.assertEqual(my_results.data["report_card"]["scores"][0]["score"], 80)
+
 
 class GradingSystemAdminAPITests(TestCase):
     """Grading scale CRUD, now admin-only, with the new grade_point field and

@@ -7547,6 +7547,11 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [session]
   );
 
+  const handleEditResultBatchScore = useCallback(
+    async (batchId, scoreId, payload) => requestJson(session, "PATCH", `/api/app/results/batches/${batchId}/scores/${scoreId}/`, payload),
+    [session]
+  );
+
   const handleLoadTranscript = useCallback(
     async (studentId, options = {}) => requestJson(session, "GET", `/api/app/documents/transcripts/${studentId}/${options.generate ? "?generate=true" : ""}`),
     [session]
@@ -7945,6 +7950,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onReviewBatch={handleReviewResultBatch}
         onDeleteBatch={handleDeleteResultBatch}
         onViewBatch={handleViewResultBatch}
+        onEditBatchScore={handleEditResultBatchScore}
         onSendSms={handleSendReportSms}
         onStudentSearch={handleStudentSearch}
         onLoadBroadsheet={handleLoadBroadsheet}
