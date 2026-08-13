@@ -420,7 +420,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.3/SchoolDom-Admin-Sync-Win7-0.2.3-Setup.exe",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241649),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3745514),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
