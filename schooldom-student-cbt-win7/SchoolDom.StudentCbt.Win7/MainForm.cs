@@ -51,6 +51,19 @@ namespace SchoolDom.StudentCbt.Win7
         private int? _serverRemainingSeconds;
         private int _serverSyncTickCount;
 
+        // Fallback for when no server-timed response has ever arrived (e.g. the admin
+        // LAN server is still on an old build that doesn't send time_remaining_seconds).
+        // The OLD fallback compared session.EndsAt (a wall-clock timestamp stamped by the
+        // ADMIN PC) against this PC's own DateTime.UtcNow - if the two machines' clocks
+        // disagree by any real amount (a dead CMOS battery on an old Win7 exam station is
+        // enough on its own), that subtraction produces nonsense like "42211:39:01"
+        // instead of a real countdown. This anchors the fallback to a purely local,
+        // monotonic clock instead: how many seconds of exam duration are left, counted
+        // down from Environment.TickCount at the moment the exam actually started on
+        // THIS machine - no wall clock, no other PC's clock, involved at all.
+        private int _localExamStartTick;
+        private int _localExamDurationSeconds;
+
         public MainForm()
         {
             Text = "SchoolDom Student CBT v" + Application.ProductVersion;
@@ -306,6 +319,9 @@ namespace SchoolDom.StudentCbt.Win7
             }
             catch { }
 
+            _localExamStartTick = Environment.TickCount;
+            _localExamDurationSeconds = Math.Max(60, JsonUtil.Int(Raw(_exam, "duration_seconds", "DurationSeconds"), 3600));
+
             _examMode = true;
             _current = 0;
             var sessionId = Value(_session, "id", "Id");
@@ -402,7 +418,14 @@ namespace SchoolDom.StudentCbt.Win7
             var passageText = passageGroup != null ? Value(passageGroup, "passage_text", "PassageText") : "";
             var questionText = Value(question, "text", "Text");
 
-            const int webViewInitialHeight = 260;
+            // A short one-line question and a full comprehension passage need very
+            // different amounts of space. webViewInitialHeight is just a placeholder for
+            // the instant before the embedded browser finishes laying out real content
+            // (DocumentCompleted below) - it must NOT also be used as a floor on the real
+            // measured height, or every question reserves this much room regardless of how
+            // short it actually is (that was the cause of the large gap before questions).
+            const int webViewInitialHeight = 90;
+            const int minQuestionAreaHeight = 40;
             _questionWebView = new WebBrowser
             {
                 Left = 32,
@@ -419,11 +442,13 @@ namespace SchoolDom.StudentCbt.Win7
 
             var type = Value(question, "type", "Type").ToLowerInvariant();
             var options = JsonUtil.List(Raw(question, "options", "Options")).Select(JsonUtil.Text).Where(x => x.Length > 0).ToList();
+            var isFreeText = type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any();
+            var answerAreaHeight = isFreeText ? 230 : Math.Max(60, options.Count * 56 + 20);
 
-            var answerContainer = new Panel { Left = 0, Top = 58 + webViewInitialHeight + 16, Width = main.Width, Height = 600, BackColor = Color.White };
+            var answerContainer = new Panel { Left = 0, Top = 58 + webViewInitialHeight + 16, Width = main.Width, Height = answerAreaHeight, BackColor = Color.White };
             body.Controls.Add(answerContainer);
 
-            if (type == "essay" || type == "theory" || type == "fill_blank" || type == "fill_in_the_blank" || !options.Any())
+            if (isFreeText)
             {
                 var answer = new TextBox
                 {
@@ -473,7 +498,7 @@ namespace SchoolDom.StudentCbt.Win7
                 {
                     if (_questionWebView.Document?.Body != null)
                     {
-                        var loadedHeight = Math.Max(webViewInitialHeight, _questionWebView.Document.Body.ScrollRectangle.Height + 24);
+                        var loadedHeight = Math.Max(minQuestionAreaHeight, _questionWebView.Document.Body.ScrollRectangle.Height + 24);
                         _questionWebView.Height = loadedHeight;
                         answerContainer.Top = 58 + loadedHeight + 16;
                     }
@@ -839,8 +864,10 @@ namespace SchoolDom.StudentCbt.Win7
         /// <summary>
         /// Seconds left, ticked forward locally (via the monotonic Environment.TickCount)
         /// since the last time the admin LAN server told us the real remaining time. Falls
-        /// back to comparing EndsAt against local UTC only if this device has never
-        /// received a server-timed response yet (e.g. an old admin build).
+        /// back to a purely local countdown from the exam's configured duration (also
+        /// anchored to Environment.TickCount, never a wall clock) if this device has never
+        /// received a server-timed response yet (e.g. an old admin build) - see the field
+        /// comments on _localExamStartTick/_localExamDurationSeconds for why.
         /// </summary>
         private int CurrentRemainingSeconds()
         {
@@ -849,10 +876,12 @@ namespace SchoolDom.StudentCbt.Win7
                 var elapsedSeconds = unchecked(Environment.TickCount - _serverSyncTickCount) / 1000;
                 return Math.Max(0, _serverRemainingSeconds.Value - Math.Max(0, elapsedSeconds));
             }
-            DateTime ends;
-            if (_session == null || !DateTime.TryParse(Value(_session, "ends_at", "EndsAt"), out ends)) return -1;
-            var span = ends.ToUniversalTime() - DateTime.UtcNow;
-            return span.TotalSeconds > 0 ? (int)span.TotalSeconds : 0;
+            if (_localExamDurationSeconds > 0)
+            {
+                var elapsedSeconds = unchecked(Environment.TickCount - _localExamStartTick) / 1000;
+                return Math.Max(0, _localExamDurationSeconds - Math.Max(0, elapsedSeconds));
+            }
+            return -1;
         }
 
         private string TimeText()
