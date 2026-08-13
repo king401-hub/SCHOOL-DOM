@@ -10142,9 +10142,12 @@ def _student_result_report(student_profile, class_group=None, term=None, request
 
     scores = []
     total_score = 0.0
+    teacher_subject_counts = {}
     for item in scores_qs:
         numeric = float(item.score or 0)
         total_score += numeric
+        if item.teacher_id:
+            teacher_subject_counts[item.teacher_id] = teacher_subject_counts.get(item.teacher_id, 0) + 1
         scores.append(
             {
                 "id": str(item.id),
@@ -10174,6 +10177,18 @@ def _student_result_report(student_profile, class_group=None, term=None, request
 
     subject_count = len(scores)
     average_score = round(total_score / subject_count, 2) if subject_count else 0.0
+
+    # "Class teacher" isn't a modelled concept (a class has no designated
+    # form/homeroom teacher field) - whichever teacher submitted the most of
+    # this report's subjects is the closest real signal for who to credit
+    # with the "Class Teacher's Signature" line, and matches the common case
+    # of one teacher compiling and pushing the whole class's results.
+    class_teacher_signature = ""
+    if teacher_subject_counts:
+        top_teacher_id = max(teacher_subject_counts, key=teacher_subject_counts.get)
+        staff_profile = StaffProfile.objects.filter(user_id=top_teacher_id).first() if StaffProfile is not None else None
+        if staff_profile and staff_profile.signature:
+            class_teacher_signature = _media_url(request, staff_profile.signature)
 
     position = None
     class_size = 0
@@ -10206,6 +10221,7 @@ def _student_result_report(student_profile, class_group=None, term=None, request
         "average_score": average_score,
         "class_position": position,
         "class_size": class_size,
+        "class_teacher_signature": class_teacher_signature,
         # Lets the student-facing report card show the same grading key the
         # admin's copy of this report does, via the same tenant-configured
         # source of truth every other grade in this payload resolves through.

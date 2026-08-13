@@ -2065,6 +2065,64 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(my_results.status_code, 200)
         self.assertEqual(my_results.data["report_card"]["scores"][0]["score"], 80)
 
+    def test_teachers_own_signature_appears_on_the_class_teachers_report_card_line(self):
+        # A teacher sets their own signature the same way an admin sets the
+        # school-wide one - draw/upload via self-service, stored on their HR
+        # StaffProfile (auto-provisioned on first /api/hr/me/ access).
+        self.client.force_authenticate(user=self.teacher_user)
+        signature_response = self.client.patch(
+            "/api/hr/me/",
+            data={"signature": SimpleUploadedFile("sig.png", b"fake-signature-bytes", content_type="image/png")},
+            format="multipart",
+        )
+        self.assertEqual(signature_response.status_code, 200)
+        self.assertTrue(signature_response.data["staff"]["signature_url"])
+        staff = StaffProfile.objects.get(user=self.teacher_user)
+        self.assertTrue(staff.signature.name.endswith(".png"))
+
+        student_user = User.objects.create_user(
+            email="signature.student@teacher-dashboard.edu",
+            password="StudentPass123",
+            first_name="Signature",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        student = StudentProfile.objects.create(
+            user=student_user,
+            student_id="STU-SIG-1",
+            admission_number="ADM-SIG-1",
+            admission_date=timezone.now().date(),
+            current_class=self.classroom,
+            guardian_name="Guardian",
+            guardian_phone="+15550004444",
+            guardian_relation="Parent",
+        )
+        score_response = self.client.post(
+            "/api/app/results/submit/",
+            data={"student_id": student.student_id, "subject_id": self.subject.id, "class_id": self.classroom.id, "score": 72, "max_score": 100},
+            format="json",
+        )
+        self.assertEqual(score_response.status_code, 201)
+        push_response = self.client.post("/api/app/results/push/", data={"class_id": self.classroom.id, "title": "Signature check"}, format="json")
+        self.assertEqual(push_response.status_code, 200)
+        batch_id = push_response.data["batch_id"]
+
+        self.client.force_authenticate(user=self.admin_user)
+        publish_response = self.client.post(f"/api/app/results/batches/{batch_id}/review/", data={"status": "published"}, format="json")
+        self.assertEqual(publish_response.status_code, 200)
+
+        self.client.force_authenticate(user=student_user)
+        my_results = self.client.get("/api/app/results/my/")
+        self.assertEqual(my_results.status_code, 200)
+        self.assertTrue(my_results.data["report_card"]["class_teacher_signature"])
+        self.assertEqual(
+            my_results.data["report_card"]["class_teacher_signature"],
+            signature_response.data["staff"]["signature_url"],
+        )
+
 
 class GradingSystemAdminAPITests(TestCase):
     """Grading scale CRUD, now admin-only, with the new grade_point field and

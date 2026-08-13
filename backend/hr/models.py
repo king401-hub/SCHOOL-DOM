@@ -74,6 +74,12 @@ class StaffProfile(models.Model):
     guarantor_address = models.TextField(blank=True)
     guarantor_relationship = models.CharField(max_length=100, blank=True)
     guarantor_form = models.FileField(upload_to="staff/guarantor/", null=True, blank=True)
+    # A teacher/staff member's own signature, drawn or uploaded via their
+    # self-service profile - shown on the "Class Teacher's Signature" line of
+    # report cards (see _student_result_report), separate from
+    # User.director_signature (the proprietor's school-wide "Head Teacher"
+    # signature used everywhere else).
+    signature = models.ImageField(upload_to="staff/signatures/", null=True, blank=True)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

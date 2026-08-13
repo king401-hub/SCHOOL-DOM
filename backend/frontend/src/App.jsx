@@ -23,6 +23,7 @@ import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
 import FormattedTextarea from "./components/FormattedTextarea";
+import SignaturePad from "./components/SignaturePad";
 import NotepadEditor from "./components/NotepadEditor";
 import RichQuizText from "./components/RichQuizText";
 import {
@@ -4310,11 +4311,14 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
     cv: null,
     credentials: null,
     guarantor_form: null,
+    signature: null,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const [signatureInputMode, setSignatureInputMode] = useState("upload");
+  const [signaturePreview, setSignaturePreview] = useState("");
 
   const profile = staffSnapshot?.staff || fallbackProfile || {};
   const displayName = profile.name || profile.full_name || fallbackProfile.name || fallbackProfile.full_name || fallbackProfile.email || "Profile";
@@ -4350,7 +4354,10 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
           cv: null,
           credentials: null,
           guarantor_form: null,
+          signature: null,
         }));
+        setSignaturePreview(staff.signature_url || "");
+        setSignatureInputMode("upload");
       })
       .catch((loadError) => setError(loadError.message || "Could not load profile."))
       .finally(() => setLoading(false));
@@ -4363,7 +4370,7 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
     setSaving(true);
     setFeedback("");
     setError("");
-    const fileKeys = new Set(["cv", "profile_picture", "credentials", "guarantor_form"]);
+    const fileKeys = new Set(["cv", "profile_picture", "credentials", "guarantor_form", "signature"]);
     const formData = new FormData();
     Object.entries(profileForm).forEach(([key, value]) => {
       if (fileKeys.has(key)) {
@@ -4375,7 +4382,8 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
     try {
       const result = await requestJson(session, "PATCH", "/api/hr/me/", formData);
       setStaffSnapshot((prev) => ({ ...(prev || {}), staff: result?.staff || prev?.staff }));
-      setProfileForm((prev) => ({ ...prev, profile_picture: null, cv: null, credentials: null, guarantor_form: null }));
+      setProfileForm((prev) => ({ ...prev, profile_picture: null, cv: null, credentials: null, guarantor_form: null, signature: null }));
+      if (result?.staff?.signature_url) setSignaturePreview(result.staff.signature_url);
       setFeedback(result?.message || "Profile saved.");
       await onSaved?.();
     } catch (saveError) {
@@ -4422,6 +4430,45 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
             <label className="panel-field full">CV<input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(event) => setProfileForm((prev) => ({ ...prev, cv: event.target.files?.[0] || null }))} /></label>
             <label className="panel-field full">Credentials (certificates/qualifications)<input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(event) => setProfileForm((prev) => ({ ...prev, credentials: event.target.files?.[0] || null }))} /></label>
             <label className="panel-field full">Guarantor's form (completed/signed)<input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={(event) => setProfileForm((prev) => ({ ...prev, guarantor_form: event.target.files?.[0] || null }))} /></label>
+            <div className="settings-logo-field full">
+              <div className="settings-logo-preview settings-signature-preview">
+                {signaturePreview ? <img src={signaturePreview} alt="Your signature" /> : <span>No signature</span>}
+              </div>
+              <div className="settings-signature-controls">
+                <span className="panel-field-label">Signature</span>
+                <div className="signature-mode-tabs">
+                  <button type="button" className={signatureInputMode === "upload" ? "is-active" : ""} onClick={() => setSignatureInputMode("upload")}>
+                    Upload Image
+                  </button>
+                  <button type="button" className={signatureInputMode === "draw" ? "is-active" : ""} onClick={() => setSignatureInputMode("draw")}>
+                    Draw Signature
+                  </button>
+                </div>
+                {signatureInputMode === "draw" ? (
+                  <SignaturePad
+                    onSave={(file) => {
+                      setProfileForm((prev) => ({ ...prev, signature: file }));
+                      setSignaturePreview(URL.createObjectURL(file));
+                      setSignatureInputMode("upload");
+                    }}
+                  />
+                ) : (
+                  <label className="panel-field">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] || null;
+                        setProfileForm((prev) => ({ ...prev, signature: file }));
+                        if (file) setSignaturePreview(URL.createObjectURL(file));
+                      }}
+                    />
+                    {profileForm.signature ? <span className="field-note">Selected: {profileForm.signature.name}</span> : null}
+                  </label>
+                )}
+                <span className="field-note">Upload an image or draw your signature. It will appear on the Class Teacher's Signature line of report cards you compile.</span>
+              </div>
+            </div>
           </div>
           {profile.cv_url || profile.cv || profile.resume ? <p className="field-note">Current CV: <a href={profile.cv_url || profile.cv || profile.resume} target="_blank" rel="noreferrer">Open uploaded CV</a></p> : null}
           {profile.credentials_url ? <p className="field-note">Current credentials: <a href={profile.credentials_url} target="_blank" rel="noreferrer">Open uploaded credentials</a></p> : null}

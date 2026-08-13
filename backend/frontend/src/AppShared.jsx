@@ -948,7 +948,10 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
             )}
           </div>
           <div className="report-signature-block">
-            <div className="report-signature-line"><span>Class Teacher&apos;s Signature</span></div>
+            <div className="report-signature-line">
+              {report?.class_teacher_signature ? <img src={report.class_teacher_signature} alt="Class Teacher's signature" className="doc-signature-img" /> : null}
+              <span>Class Teacher&apos;s Signature</span>
+            </div>
             <div className="report-signature-line">
               {brand.signature ? <img src={brand.signature} alt="Head Teacher's signature" className="doc-signature-img" /> : null}
               <span>Head Teacher&apos;s Signature</span>

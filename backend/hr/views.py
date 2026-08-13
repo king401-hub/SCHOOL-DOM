@@ -231,6 +231,7 @@ def _staff_payload(staff, request=None):
     cv_url = _media_url(request, staff.cv)
     credentials_url = _media_url(request, staff.credentials)
     guarantor_form_url = _media_url(request, staff.guarantor_form)
+    signature_url = _media_url(request, staff.signature)
     profile_picture_url = _media_url(request, getattr(linked_user, "profile_picture", None)) if linked_user else ""
     teacher_profile = TeacherProfile.objects.filter(user=linked_user).first() if linked_user and getattr(linked_user, "role", "") == "teacher" else None
     if teacher_profile and not cv_url:
@@ -273,6 +274,7 @@ def _staff_payload(staff, request=None):
         "guarantor_address": staff.guarantor_address,
         "guarantor_relationship": staff.guarantor_relationship,
         "guarantor_form_url": guarantor_form_url,
+        "signature_url": signature_url,
         "notes": staff.notes,
         "attendance_rate": round((present_count / total_attendance) * 100, 1) if total_attendance else 0,
         "absent_count": absent_count,
@@ -997,6 +999,11 @@ def _update_self_biodata(request, staff):
     if guarantor_form_file:
         staff.guarantor_form = guarantor_form_file
         update_staff_fields.append("guarantor_form")
+
+    signature_file = request.FILES.get("signature")
+    if signature_file:
+        staff.signature = signature_file
+        update_staff_fields.append("signature")
 
     if "marital_status" in data:
         marital_status = str(data.get("marital_status") or "").strip().lower()
