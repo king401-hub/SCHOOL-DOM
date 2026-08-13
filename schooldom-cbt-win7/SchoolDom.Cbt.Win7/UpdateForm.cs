@@ -29,79 +29,115 @@ namespace SchoolDom.Cbt.Win7
             _info           = info;
 
             Text            = "SchoolDom Admin Sync — Update Available";
-            Width           = 1280;
-            Height          = 760;
-            MinimumSize     = new Size(980, 620);
+            // Sized to fit comfortably on a 1366x768 laptop screen (with room for the
+            // taskbar) at the default size, but the form is resizable/maximizable and
+            // every control below reflows via Dock/TableLayoutPanel/FlowLayoutPanel
+            // instead of fixed pixel coordinates, so nothing clips on smaller screens,
+            // higher DPI scaling, or if the user resizes the window.
+            Width           = 1000;
+            Height          = 680;
+            MinimumSize     = new Size(720, 480);
             StartPosition   = FormStartPosition.CenterScreen;
             BackColor       = Palette.Background;
             Font            = new Font("Segoe UI", 10);
             AutoScaleMode   = AutoScaleMode.None;
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox     = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox     = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             Build();
         }
 
         // ------------------------------------------------------------------ UI
+        //
+        // Everything below reflows instead of using fixed pixel coordinates: the
+        // hero/content split is a two-column TableLayoutPanel, every label is
+        // AutoSize (so its box always matches its actually-rendered text at
+        // whatever font/DPI is in effect - the old fixed Height = size * 4.5f
+        // guess is what was clipping "Update Available" and other headings),
+        // and the card's rows are AutoSize except the release-notes box, which
+        // is the one row that absorbs remaining space and scrolls internally
+        // (RichTextBox already has its own vertical scrollbar) rather than the
+        // window ever hiding content.
         private void Build()
         {
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            Controls.Add(root);
+
             // ---- Left hero panel ----------------------------------------
-            const int heroW = 420;
-            const int heroLabelLeft = 38;
-            const int heroLabelWidth = heroW - heroLabelLeft - 16;  // fills panel with right margin
-
-            var hero = new Panel { Dock = DockStyle.Left, Width = heroW, BackColor = Palette.Navy };
-            hero.Controls.Add(Lbl("SchoolDom",        heroLabelLeft, 46,  22, true,  heroLabelWidth, Color.White));
-            hero.Controls.Add(Lbl("Admin Sync Win7",  heroLabelLeft, 94,  11, false, heroLabelWidth, Palette.SoftText));
-            hero.Controls.Add(Lbl("⬆",           heroLabelLeft, 180, 40, false, 80,              Color.FromArgb(255, 200, 60)));
-            hero.Controls.Add(Lbl("Update Available", heroLabelLeft, 248, 16, true,  heroLabelWidth, Color.White));
-
-            // Multi-line description — use AutoSize so it grows to fit all lines
-            var desc = new Label
+            var hero = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Navy, AutoScroll = true };
+            var heroFlow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents  = false,
+                AutoSize      = true,
+                AutoSizeMode  = AutoSizeMode.GrowAndShrink,
+                Padding       = new Padding(34, 40, 20, 24),
+                Margin        = Padding.Empty,
+                MaximumSize   = new Size(260, 0),
+            };
+            heroFlow.Controls.Add(AutoLbl("SchoolDom", 22, true, Color.White, new Padding(0, 0, 0, 2)));
+            heroFlow.Controls.Add(AutoLbl("Admin Sync Win7", 11, false, Palette.SoftText, new Padding(0, 0, 0, 36)));
+            heroFlow.Controls.Add(AutoLbl("⬆", 34, false, Color.FromArgb(255, 200, 60), new Padding(0, 0, 0, 8)));
+            heroFlow.Controls.Add(AutoLbl("Update Available", 16, true, Color.White, new Padding(0, 0, 0, 14)));
+            heroFlow.Controls.Add(new Label
             {
                 Text        = "A newer version of SchoolDom Admin Sync has been released.\n\nUpdate now to receive the latest exam sync improvements and fixes.",
-                Left        = heroLabelLeft,
-                Top         = 300,
-                MaximumSize = new Size(heroLabelWidth, 0),
                 AutoSize    = true,
+                MaximumSize = new Size(210, 0),
                 ForeColor   = Palette.SoftText,
                 Font        = new Font("Segoe UI", 10),
                 BackColor   = Color.Transparent,
-            };
-            hero.Controls.Add(desc);
+                Margin      = Padding.Empty,
+            });
+            hero.Controls.Add(heroFlow);
+            root.Controls.Add(hero, 0, 0);
 
             // ---- Right content area -------------------------------------
-            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var contentOuter = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, Padding = new Padding(28), AutoScroll = true };
+            root.Controls.Add(contentOuter, 1, 0);
 
-            var card = new Panel
+            var card = new TableLayoutPanel
             {
-                Left      = 70,
-                Top       = 40,
-                Width     = 640,
-                Height    = 640,
-                BackColor = Color.White,
+                Dock        = DockStyle.Fill,
+                ColumnCount = 1,
+                BackColor   = Color.White,
+                Padding     = new Padding(32, 26, 32, 22),
             };
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             card.Paint += (s, e) =>
             {
                 using (var pen = new Pen(Palette.Border))
                     e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
             };
-            content.Controls.Add(card);
-
-            int y = 32;
+            contentOuter.Controls.Add(card);
 
             // Heading
-            card.Controls.Add(Lbl("Update Available", 32, y, 19, true, 560, Palette.Text));
-            y += 46;
+            AddCardRow(card, AutoLbl("Update Available", 19, true, Palette.Text, new Padding(0, 0, 0, 18)));
 
             // Version comparison: "Current  →  Latest"
-            var vRow = new Panel { Left = 32, Top = y, Width = 560, Height = 44, BackColor = Color.Transparent };
-            vRow.Controls.Add(VersionChip("Current", _currentVersion, Palette.Muted, 0));
-            vRow.Controls.Add(Lbl("→", 194, 14, 13, false, 26, Palette.Muted));
-            vRow.Controls.Add(VersionChip("Latest",  _info.LatestVersion, Palette.Green, 228));
-            card.Controls.Add(vRow);
-            y += 58;
+            var vRow = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents  = true,
+                AutoSize      = true,
+                AutoSizeMode  = AutoSizeMode.GrowAndShrink,
+                Margin        = new Padding(0, 0, 0, 16),
+            };
+            vRow.Controls.Add(VersionChip("Current", _currentVersion, Palette.Muted));
+            vRow.Controls.Add(new Label
+            {
+                Text      = "→",
+                AutoSize  = true,
+                Font      = new Font("Segoe UI", 13),
+                ForeColor = Palette.Muted,
+                Margin    = new Padding(14, 32, 14, 0),
+            });
+            vRow.Controls.Add(VersionChip("Latest", _info.LatestVersion, Palette.Green));
+            AddCardRow(card, vRow);
 
             // Meta line (date · size · mandatory badge)
             var meta = new StringBuilder();
@@ -119,26 +155,20 @@ namespace SchoolDom.Cbt.Win7
             }
             if (meta.Length > 0)
             {
-                card.Controls.Add(Lbl(meta.ToString(), 32, y, 9, false, 560, Palette.Muted));
-                y += 26;
+                AddCardRow(card, AutoLbl(meta.ToString(), 9, false, Palette.Muted, new Padding(0, 0, 0, 14)));
             }
 
             // Divider
-            card.Controls.Add(new Panel { Left = 32, Top = y + 6, Width = 560, Height = 1, BackColor = Palette.Border });
-            y += 22;
+            AddCardRow(card, new Panel { Height = 1, BackColor = Palette.Border, Margin = new Padding(0, 0, 0, 16) });
 
-            // Release notes
+            // Release notes - the one row that grows/shrinks with the window and
+            // scrolls internally instead of ever clipping the rows around it.
             if (!string.IsNullOrWhiteSpace(_info.ReleaseNotes))
             {
-                card.Controls.Add(Lbl("What’s New", 32, y, 11, true, 560, Palette.Text));
-                y += 26;
+                AddCardRow(card, AutoLbl("What’s New", 11, true, Palette.Text, new Padding(0, 0, 0, 8)));
 
                 var notes = new RichTextBox
                 {
-                    Left        = 32,
-                    Top         = y,
-                    Width       = 560,
-                    Height      = 180,
                     BorderStyle = BorderStyle.None,
                     BackColor   = Color.FromArgb(248, 250, 253),
                     ForeColor   = Palette.Text,
@@ -146,110 +176,75 @@ namespace SchoolDom.Cbt.Win7
                     ReadOnly    = true,
                     ScrollBars  = RichTextBoxScrollBars.Vertical,
                     Text        = _info.ReleaseNotes,
+                    Margin      = new Padding(0, 0, 0, 16),
                 };
-                card.Controls.Add(notes);
-                y += 196;
-            }
-            else
-            {
-                y += 16;
+                AddCardRow(card, notes, percent: true);
             }
 
             // Progress bar (hidden until download starts)
             _progressBar = new ProgressBar
             {
-                Left    = 32,
-                Top     = y,
-                Width   = 560,
-                Height  = 18,
                 Minimum = 0,
                 Maximum = 100,
                 Visible = false,
                 Style   = ProgressBarStyle.Continuous,
+                Height  = 18,
+                Margin  = new Padding(0, 0, 0, 8),
             };
-            card.Controls.Add(_progressBar);
-            y += 26;
+            AddCardRow(card, _progressBar);
 
             // Status label
             _statusLabel = new Label
             {
-                Left      = 32,
-                Top       = y,
-                Width     = 560,
-                Height    = 20,
                 Text      = "",
+                AutoSize  = true,
                 ForeColor = Palette.Muted,
                 Font      = new Font("Segoe UI", 9),
-                AutoSize  = false,
+                Margin    = new Padding(0, 0, 0, 16),
             };
-            card.Controls.Add(_statusLabel);
-            y += 34;
+            AddCardRow(card, _statusLabel);
 
-            // Buttons
-            _updateBtn = new Button
+            // Buttons - a wrapping flow so narrow windows stack them instead of
+            // clipping or overlapping.
+            var buttonRow = new FlowLayoutPanel
             {
-                Text      = "Update Now",
-                Left      = 32,
-                Top       = y,
-                Width     = 166,
-                Height    = 40,
-                BackColor = Palette.Blue,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Segoe UI", 10, FontStyle.Bold),
-                Cursor    = Cursors.Hand,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents  = true,
+                AutoSize      = true,
+                AutoSizeMode  = AutoSizeMode.GrowAndShrink,
             };
-            _updateBtn.FlatAppearance.BorderSize = 0;
-            _updateBtn.Click += OnUpdateNow;
-            card.Controls.Add(_updateBtn);
 
-            int bx = 210;
+            _updateBtn = MakeButton("Update Now", Palette.Blue, Color.White, bold: true, flatBorder: false);
+            _updateBtn.Click += OnUpdateNow;
+            buttonRow.Controls.Add(_updateBtn);
 
             if (!_info.IsMandatory)
             {
-                _laterBtn = new Button
-                {
-                    Text      = "Remind Me Later",
-                    Left      = bx,
-                    Top       = y,
-                    Width     = 160,
-                    Height    = 40,
-                    BackColor = Palette.LightButton,
-                    ForeColor = Palette.Text,
-                    FlatStyle = FlatStyle.Flat,
-                    Font      = new Font("Segoe UI", 10),
-                    Cursor    = Cursors.Hand,
-                };
-                _laterBtn.FlatAppearance.BorderColor = Palette.Border;
+                _laterBtn = MakeButton("Remind Me Later", Palette.LightButton, Palette.Text, bold: false, flatBorder: true);
                 _laterBtn.Click += (s, e) =>
                 {
                     UpdateService.SnoozeUpdate();
                     DialogResult = DialogResult.Cancel;
                     Close();
                 };
-                card.Controls.Add(_laterBtn);
-                bx += 172;
+                buttonRow.Controls.Add(_laterBtn);
             }
 
-            _exitBtn = new Button
-            {
-                Text      = "Exit Application",
-                Left      = bx,
-                Top       = y,
-                Width     = 154,
-                Height    = 40,
-                BackColor = Color.White,
-                ForeColor = Palette.Muted,
-                FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Segoe UI", 10),
-                Cursor    = Cursors.Hand,
-            };
-            _exitBtn.FlatAppearance.BorderColor = Palette.Border;
+            _exitBtn = MakeButton("Exit Application", Color.White, Palette.Muted, bold: false, flatBorder: true);
             _exitBtn.Click += (s, e) => { DialogResult = DialogResult.Abort; Close(); };
-            card.Controls.Add(_exitBtn);
+            buttonRow.Controls.Add(_exitBtn);
 
-            Controls.Add(content);
-            Controls.Add(hero);
+            AddCardRow(card, buttonRow);
+        }
+
+        // Adds a control as the next row of a single-column TableLayoutPanel,
+        // docked to fill its cell. percent=true marks the one row (release
+        // notes) that should absorb whatever space the AutoSize rows don't need.
+        private static void AddCardRow(TableLayoutPanel card, Control control, bool percent = false)
+        {
+            control.Dock = DockStyle.Fill;
+            card.RowStyles.Add(percent ? new RowStyle(SizeType.Percent, 100f) : new RowStyle(SizeType.AutoSize));
+            card.Controls.Add(control);
         }
 
         // ------------------------------------------------------------------ Download flow
@@ -338,24 +333,31 @@ namespace SchoolDom.Cbt.Win7
         private void SetStatus(string text) { _statusLabel.Text = text; }
 
         // ------------------------------------------------------------------ Helpers
-        private static Panel VersionChip(string caption, string version, Color versionColor, int left)
+        private static Control VersionChip(string caption, string version, Color versionColor)
         {
-            var chip = new Panel { Left = left, Top = 0, Width = 200, Height = 44, BackColor = Color.Transparent };
+            var chip = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents  = false,
+                AutoSize      = true,
+                AutoSizeMode  = AutoSizeMode.GrowAndShrink,
+                Margin        = new Padding(0, 0, 24, 0),
+            };
             chip.Controls.Add(new Label
             {
                 Text      = caption,
-                Left = 0, Top = 0, Width = 200, Height = 18,
+                AutoSize  = true,
                 ForeColor = Palette.Muted,
                 Font      = new Font("Segoe UI", 8),
-                AutoSize  = false,
+                Margin    = new Padding(0, 0, 0, 2),
             });
             chip.Controls.Add(new Label
             {
                 Text      = "v" + (version ?? "—"),
-                Left = 0, Top = 18, Width = 200, Height = 22,
+                AutoSize  = true,
                 ForeColor = versionColor,
                 Font      = new Font("Segoe UI", 13, FontStyle.Bold),
-                AutoSize  = false,
+                Margin    = Padding.Empty,
             });
             return chip;
         }
@@ -367,21 +369,42 @@ namespace SchoolDom.Cbt.Win7
             return bytes + " B";
         }
 
-        private static Label Lbl(string text, int left, int top, float size, bool bold, int width, Color color)
+        // AutoSize means the Label's box always matches whatever size the text
+        // actually renders at (font substitution, DPI scaling, ...) instead of a
+        // guessed fixed Height that could clip a heading on some machines but
+        // not others.
+        private static Label AutoLbl(string text, float size, bool bold, Color color, Padding margin)
         {
             return new Label
             {
-                Text         = text,
-                Left         = left,
-                Top          = top,
-                Width        = width,
-                Height       = (int)(size * 4.5f),   // generous — prevents clipping at any DPI
-                ForeColor    = color,
-                Font         = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular),
-                AutoSize     = false,
-                AutoEllipsis = false,
-                BackColor    = Color.Transparent,
+                Text      = text,
+                AutoSize  = true,
+                ForeColor = color,
+                Font      = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular),
+                BackColor = Color.Transparent,
+                Margin    = margin,
             };
+        }
+
+        private static Button MakeButton(string text, Color backColor, Color foreColor, bool bold, bool flatBorder)
+        {
+            var button = new Button
+            {
+                Text         = text,
+                AutoSize     = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize  = new Size(140, 40),
+                Padding      = new Padding(18, 0, 18, 0),
+                BackColor    = backColor,
+                ForeColor    = foreColor,
+                FlatStyle    = FlatStyle.Flat,
+                Font         = new Font("Segoe UI", 10, bold ? FontStyle.Bold : FontStyle.Regular),
+                Cursor       = Cursors.Hand,
+                Margin       = new Padding(0, 0, 12, 12),
+            };
+            if (flatBorder) button.FlatAppearance.BorderColor = Palette.Border;
+            else button.FlatAppearance.BorderSize = 0;
+            return button;
         }
     }
 }

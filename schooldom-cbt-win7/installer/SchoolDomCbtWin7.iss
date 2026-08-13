@@ -38,4 +38,7 @@ Name: "{group}\SchoolDom Admin Sync Win7"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\SchoolDom Admin Sync Win7"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; No skipifsilent: UpdateForm.cs launches this installer with /VERYSILENT for
+; in-app auto-updates and closes the running app first, relying on this entry
+; to bring it back - skipifsilent would suppress relaunch on exactly that path.
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall
