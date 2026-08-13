@@ -610,7 +610,7 @@ namespace SchoolDom.Cbt.Win7
             {
                 var existingOptions = existing == null || existing.Options == null ? new List<string>() : existing.Options;
                 form.Controls.Add(TextLabel("Question", 28, 24, 9, true, 220, Palette.Text));
-                var text = new TextBox { Left = 28, Top = 48, Width = 540, Height = 78, Multiline = true, ScrollBars = ScrollBars.Vertical, Text = existing == null ? "" : existing.Text ?? "", Font = MathFont(11) };
+                var text = new TextBox { Left = 28, Top = 48, Width = 540, Height = 78, Multiline = true, ScrollBars = ScrollBars.Vertical, Text = existing == null ? "" : HtmlBreaksToNewlines(existing.Text), Font = MathFont(11) };
                 form.Controls.Add(text);
                 var optionA = Field(form, "Option A", existingOptions.Count > 0 ? existingOptions[0] : "", 28, 172, false);
                 optionA.Width = 250;
@@ -663,7 +663,7 @@ namespace SchoolDom.Cbt.Win7
                     result = new QuestionRecord
                     {
                         Id = existing == null || string.IsNullOrWhiteSpace(existing.Id) ? "local_question_" + Guid.NewGuid().ToString("N") : existing.Id,
-                        Text = text.Text.Trim(),
+                        Text = NewlinesToHtmlBreaks(text.Text),
                         Type = "mcq",
                         Points = pointValue,
                         Options = options,
@@ -916,7 +916,7 @@ namespace SchoolDom.Cbt.Win7
                     Height = 72,
                     Multiline = true,
                     ScrollBars = ScrollBars.Vertical,
-                    Text = exam.Instructions ?? "",
+                    Text = HtmlBreaksToNewlines(exam.Instructions),
                     Font = MathFont(11)
                 };
                 form.Controls.Add(instructions);
@@ -967,7 +967,7 @@ namespace SchoolDom.Cbt.Win7
                     exam.Subject = subject.Text.Trim();
                     exam.ClassName = className.Text.Trim();
                     exam.DurationSeconds = minutes * 60;
-                    exam.Instructions = instructions.Text;
+                    exam.Instructions = NewlinesToHtmlBreaks(instructions.Text);
                     exam.Questions = questions;
                     _packages.SaveExam(exam);
                     form.Close();
@@ -1355,6 +1355,26 @@ namespace SchoolDom.Cbt.Win7
             result = Regex.Replace(result, @"[ \t]+\n", "\n");
             result = Regex.Replace(result, @"\n{3,}", "\n\n");
             return result.Trim();
+        }
+
+        /// <summary>
+        /// For EDITABLE textboxes (unlike HtmlToPlainText's read-only screens), we can't
+        /// just strip tags - whatever the admin doesn't delete gets saved back. Round-trips
+        /// only &lt;br&gt; (the one tag a plain WinForms TextBox can actually represent, as a
+        /// real line break) so "Which of the following...?&lt;br&gt;&lt;br&gt;" shows as a blank
+        /// line instead of literal "&lt;br&gt;&lt;br&gt;" text, and saves back the same way.
+        /// Other rich tags (&lt;strong&gt; etc.) are left alone - a plain TextBox has no way to
+        /// render them regardless, and guessing at removing them risks silently deleting
+        /// formatting the admin never asked to touch.
+        /// </summary>
+        private static string HtmlBreaksToNewlines(string value)
+        {
+            return Regex.Replace(value ?? "", @"<\s*br\s*/?>", Environment.NewLine, RegexOptions.IgnoreCase);
+        }
+
+        private static string NewlinesToHtmlBreaks(string value)
+        {
+            return Regex.Replace((value ?? "").Trim(), @"\r\n|\r|\n", "<br>");
         }
 
         private Label TextLabel(string text, int left, int top, int size, bool bold, int width, Color color)
