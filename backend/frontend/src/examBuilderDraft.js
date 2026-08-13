@@ -13,6 +13,42 @@ export function localDraftKey(kind, id) {
   return `examBuilderDraft:${kind}:${id}`;
 }
 
+// Separate from the draft *content* cache above: a small pointer recording
+// which exam a user was last actively drafting, so re-opening the builder
+// after a refresh/navigation-away can resume that same server-side row
+// instead of the builder mounting blank and auto-save creating a second
+// exam. Only ever meant to be read once, at mount, by whichever screen
+// decides what `initialExam` to pass TeacherExamBuilder - it does not
+// participate in the auto-save mechanics themselves.
+function activeDraftPointerKey(userId) {
+  return `examBuilderActiveDraft:${userId || "anon"}`;
+}
+
+export function getLastActiveExamId(userId) {
+  try {
+    const raw = window.localStorage.getItem(activeDraftPointerKey(userId));
+    return raw ? JSON.parse(raw).id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setLastActiveExamId(userId, examId) {
+  try {
+    window.localStorage.setItem(activeDraftPointerKey(userId), JSON.stringify({ id: examId, updatedAt: Date.now() }));
+  } catch {
+    // best-effort, same as the draft-content cache above
+  }
+}
+
+export function clearLastActiveExamId(userId) {
+  try {
+    window.localStorage.removeItem(activeDraftPointerKey(userId));
+  } catch {
+    // ignore
+  }
+}
+
 export function loadLocalDraft(key) {
   try {
     const raw = window.localStorage.getItem(key);

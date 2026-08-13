@@ -102,6 +102,7 @@ import {
   downloadPrintablePng,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
+import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const AdminInventoryScreen = lazy(() => import("./components/Inventory/InventoryScreen"));
 const AdminAlumniScreen = lazy(() => import("./components/Alumni/AlumniScreen"));
@@ -5331,6 +5332,7 @@ function TeacherWorkspace({
   const [editingExam, setEditingExam] = useState(null);
   const [loadingExamId, setLoadingExamId] = useState("");
   const [examEditError, setExamEditError] = useState("");
+  const hasAttemptedDraftResumeRef = useRef(false);
   const inbox = data?.inbox || [];
   const unreadInbox = Number(data?.metrics?.unread_inbox ?? inbox.filter((item) => !item.is_read).length);
   const recipientContacts = data?.recipients || data?.admin_contacts || [];
@@ -5388,6 +5390,7 @@ function TeacherWorkspace({
 
   const handleEditExam = useCallback(
     async (examId) => {
+      hasAttemptedDraftResumeRef.current = true;
       setLoadingExamId(examId);
       setExamEditError("");
       try {
@@ -5404,6 +5407,41 @@ function TeacherWorkspace({
     [session]
   );
 
+  // Resumes whatever draft the teacher was last actively working on - the
+  // fix for "refreshing the Exam Builder creates a duplicate exam": without
+  // this, a fresh page load always starts editingExam at null, so the
+  // builder (and its auto-save) has no idea a draft already exists
+  // server-side and creates a second one. Runs once per mount, and only when
+  // nothing more specific (an explicit "Continue Editing" click) got there first.
+  useEffect(() => {
+    if (activeTab !== "exam-builder" || editingExam || hasAttemptedDraftResumeRef.current) return;
+    hasAttemptedDraftResumeRef.current = true;
+    const userId = session?.user?.id;
+    const pointerId = getLastActiveExamId(userId);
+    if (!pointerId) return;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", `/api/app/exams/${pointerId}/`);
+        const exam = result?.exam;
+        // Only ever silently resume a still-in-progress draft - a since-
+        // published exam isn't "the thing I was drafting" anymore.
+        if (exam && !exam.is_published) {
+          setEditingExam(exam);
+        } else {
+          clearLastActiveExamId(userId);
+        }
+      } catch {
+        clearLastActiveExamId(userId);
+      }
+    })();
+  }, [activeTab, editingExam, session]);
+
+  const handleStartNewExam = useCallback(() => {
+    clearLastActiveExamId(session?.user?.id);
+    setEditingExam(null);
+    setExamEditError("");
+  }, [session]);
+
   const tabTitle = teacherTabs.find(([key]) => key === activeTab)?.[1] || "Home";
   const renderTeacherContent = () => {
     if (activeTab === "overview") {
@@ -5414,6 +5452,12 @@ function TeacherWorkspace({
     if (activeTab === "exam-builder") {
       return (
         <TeacherExamBuilder
+          // Forces a remount (resetting the builder's own state and its
+          // auto-save hook's internal exam id) when switching between a
+          // specific draft and a brand-new one - without this, the auto-save
+          // hook's id would stay stuck on the old exam after "+ New Exam"
+          // (its useState initializer only runs once, not on prop changes).
+          key={editingExam?.id || "new-exam"}
           session={session}
           classOptions={classOptions}
           subjectOptions={subjectOptions}
@@ -5421,6 +5465,7 @@ function TeacherWorkspace({
           initialExam={editingExam}
           onCreateExam={onCreateExam}
           onUpdateExam={onUpdateExam}
+          onStartNewExam={handleStartNewExam}
           onBackToList={() => {
             setEditingExam(null);
             setActiveTab("past-exams");

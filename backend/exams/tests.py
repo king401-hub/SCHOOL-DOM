@@ -572,7 +572,11 @@ class ExamAutosaveTests(TestCase):
         self.assertEqual(question.text, "2 + 2 = ? (tick 3)")
         self.assertEqual(question.points, 4)
 
-    def test_autosave_patch_does_not_notify_admins_but_manual_patch_does(self):
+    def test_manual_patch_only_notifies_admins_when_notify_admin_is_requested(self):
+        """Save Draft vs Send to Admin: both are manual (non-autosave) PATCHes,
+        distinguished only by the notify_admin flag - a plain content save must
+        never notify by itself (that was the old, overly-eager behavior; a
+        teacher's "Save Draft" click used to spam admins on every edit)."""
         create_response = self.client.post("/api/app/exams/autosave/", {"title": "Notify test exam"}, format="json")
         exam_id = create_response.data["exam"]["id"]
         before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
@@ -581,9 +585,15 @@ class ExamAutosaveTests(TestCase):
         after_autosave = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
         self.assertEqual(after_autosave, before)
 
+        # Manual "Save Draft" (no notify_admin) - still must not notify.
         self.client.patch(f"/api/app/exams/{exam_id}/", {"instructions": "Final instructions."}, format="json")
-        after_manual = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
-        self.assertGreater(after_manual, before)
+        after_manual_save = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        self.assertEqual(after_manual_save, before)
+
+        # Manual "Send to Admin" (notify_admin: true) - this is the one that must notify.
+        self.client.patch(f"/api/app/exams/{exam_id}/", {"notify_admin": True}, format="json")
+        after_send = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        self.assertGreater(after_send, before)
 
     def test_removing_a_question_deletes_it_unless_shared_with_a_question_bank(self):
         create_response = self.client.post(

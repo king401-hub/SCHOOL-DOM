@@ -1498,6 +1498,132 @@ class TeacherDashboardAPITests(TestCase):
         self.assertGreaterEqual(exams_response.data["summary"]["tests_count"], 1)
         self.assertIn("assessment_type", exams_response.data["exams"][0])
 
+    def _exam_create_payload(self, **overrides):
+        start = timezone.now() + timedelta(days=4)
+        end = start + timedelta(hours=2)
+        payload = {
+            "title": "Save vs Publish Exam",
+            "class_id": self.classroom.id,
+            "subject_id": self.subject.id,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "duration_minutes": 45,
+            "questions": [
+                {"text": "2 + 2?", "options": ["3", "4", "5", "6"], "correct_answer": "4", "points": 1},
+            ],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_teacher_save_draft_does_not_notify_admin_or_publish(self):
+        # Plain "Save Draft" (no notify_admin, no is_published) must never
+        # spam admins - that's the exact bug notify-on-every-save used to be.
+        self.client.force_authenticate(user=self.teacher_user)
+        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["message"], "Draft saved successfully.")
+        exam = Exam.objects.get(id=response.data["exam"]["id"])
+        self.assertFalse(exam.is_published)
+        self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before)
+
+    def test_teacher_send_to_admin_notifies_but_stays_draft(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        response = self.client.post(
+            "/api/app/exams/create/", data=self._exam_create_payload(notify_admin=True), format="json"
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["message"], "Exam sent to admin for publishing.")
+        exam = Exam.objects.get(id=response.data["exam"]["id"])
+        # A teacher can never publish directly, notify_admin or not.
+        self.assertFalse(exam.is_published)
+        self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before + 1)
+
+    def test_admin_patch_save_draft_never_touches_publish_state(self):
+        self.client.force_authenticate(user=self.admin_user)
+        create_response = self.client.post(
+            "/api/app/exams/create/", data=self._exam_create_payload(is_published=True), format="json"
+        )
+        self.assertEqual(create_response.status_code, 201)
+        exam_id = create_response.data["exam"]["id"]
+        self.assertTrue(Exam.objects.get(id=exam_id).is_published)
+
+        # A plain content save (no is_published key at all) must leave an
+        # already-published exam published - "Save Draft" never un-publishes.
+        patch_response = self.client.patch(
+            f"/api/app/exams/{exam_id}/", data={"title": "Renamed via Save Draft"}, format="json"
+        )
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertEqual(patch_response.data["message"], "Draft saved successfully.")
+        exam = Exam.objects.get(id=exam_id)
+        self.assertTrue(exam.is_published)
+        self.assertEqual(exam.title, "Renamed via Save Draft")
+
+    def test_admin_patch_publish_exam_sets_published_and_message(self):
+        self.client.force_authenticate(user=self.admin_user)
+        create_response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        exam_id = create_response.data["exam"]["id"]
+        self.assertFalse(Exam.objects.get(id=exam_id).is_published)
+
+        publish_response = self.client.patch(
+            f"/api/app/exams/{exam_id}/", data={"is_published": True}, format="json"
+        )
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(publish_response.data["message"], "Exam published successfully.")
+        self.assertTrue(Exam.objects.get(id=exam_id).is_published)
+
+    def test_teacher_patch_save_draft_does_not_notify_admin(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        create_response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        exam_id = create_response.data["exam"]["id"]
+
+        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        response = self.client.patch(f"/api/app/exams/{exam_id}/", data={"title": "Quietly renamed"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Draft saved successfully.")
+        self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before)
+
+    def test_teacher_patch_with_notify_admin_notifies_and_stays_draft(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        create_response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        exam_id = create_response.data["exam"]["id"]
+
+        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        response = self.client.patch(
+            f"/api/app/exams/{exam_id}/", data={"notify_admin": True}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Exam sent to admin for publishing.")
+        self.assertFalse(Exam.objects.get(id=exam_id).is_published)
+        self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before + 1)
+
+    def test_teacher_still_cannot_publish_directly_via_patch(self):
+        # Unchanged, pre-existing safeguard - only notify_admin changed, not this.
+        self.client.force_authenticate(user=self.teacher_user)
+        create_response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        exam_id = create_response.data["exam"]["id"]
+
+        response = self.client.patch(f"/api/app/exams/{exam_id}/", data={"is_published": True}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Exam.objects.get(id=exam_id).is_published)
+
+    def test_autosave_draft_never_notifies_regardless_of_notify_admin(self):
+        # autosave ticks are exempt from notification entirely, by design -
+        # confirms that behavior wasn't disturbed by the notify_admin change.
+        self.client.force_authenticate(user=self.teacher_user)
+        create_response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
+        exam_id = create_response.data["exam"]["id"]
+
+        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
+        response = self.client.patch(
+            f"/api/app/exams/{exam_id}/",
+            data={"autosave": True, "notify_admin": True, "title": "Autosave tick"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before)
+
     def test_only_admin_can_generate_cbt_pin_and_pin_is_numeric(self):
         exam = Exam.objects.filter(teacher=self.teacher_user).first()
 

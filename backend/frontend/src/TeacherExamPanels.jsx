@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
 import RichText from "./components/RichText";
 import { formatDate, MetricCard, requestJson, Spinner } from "./AppShared";
-import { useExamAutosave, loadLocalDraft, localDraftKey } from "./examBuilderDraft";
+import { useExamAutosave, loadLocalDraft, localDraftKey, setLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
 A. Paris
@@ -775,6 +775,7 @@ export function TeacherExamBuilder({
   onCreateExam,
   onUpdateExam,
   onBackToList,
+  onStartNewExam,
 }) {
   const [activeSection, setActiveSection] = useState("details");
   const [form, setForm] = useState({
@@ -790,7 +791,6 @@ export function TeacherExamBuilder({
     instructions: "1. Read all questions carefully before answering.\n2. All questions are compulsory.\n3. Do not refresh or close the browser during the exam.\n4. Submit the exam before the time is over.",
     randomizeQuestions: true,
     showResults: false,
-    publishNow: false,
   });
   const [sections, setSections] = useState([{ id: 1, title: "Section A", marks: "50" }]);
   const [questions, setQuestions] = useState([
@@ -809,7 +809,9 @@ export function TeacherExamBuilder({
   const [pendingRemoval, setPendingRemoval] = useState(null);
   const [publishedPin, setPublishedPin] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
-  const isEditing = Boolean(initialExam?.id);
+  const [isPublished, setIsPublished] = useState(Boolean(initialExam?.is_published));
+  const [pendingPublish, setPendingPublish] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const autosave = useExamAutosave({
     session,
@@ -820,6 +822,22 @@ export function TeacherExamBuilder({
     questions,
     buildAutosavePayload,
   });
+  // The single source of truth for "does this exam already exist server-side"
+  // - auto-save may have created the row after this component mounted with
+  // no initialExam at all, so initialExam?.id alone (frozen at mount) would
+  // go stale and cause a manual Save/Publish to POST a second exam instead
+  // of PATCHing the one auto-save already created.
+  const currentExamId = autosave.examId || initialExam?.id || null;
+  const isEditing = Boolean(currentExamId);
+  const userId = session?.user?.id || "anon";
+
+  // Keep the "resume this draft on next visit" pointer in sync with
+  // whichever exam this builder instance is actually attached to right now.
+  useEffect(() => {
+    if (currentExamId) setLastActiveExamId(userId, currentExamId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentExamId, userId]);
+
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
   const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
@@ -910,8 +928,8 @@ export function TeacherExamBuilder({
       instructions: initialExam.instructions || "",
       randomizeQuestions: Boolean(initialExam.shuffle_questions),
       showResults: Boolean(initialExam.show_results_immediately),
-      publishNow: Boolean(initialExam.is_published),
     });
+    setIsPublished(Boolean(initialExam.is_published));
     const loadedQuestions = (initialExam.questions || []).map((question, index) => {
       const options = [...(question.options || [])];
       while (options.length < 4) {
@@ -968,27 +986,35 @@ export function TeacherExamBuilder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialExam?.id]);
 
-  const handleSaveExam = async () => {
-    setError("");
-    setFeedback("");
+  // Shared by Save Draft and Publish Exam - `requireQuestions` is the only
+  // difference between them: a draft is allowed to have zero/incomplete
+  // questions (same tolerance auto-save already has), publishing is not.
+  // Returns the prepared questions array when valid, or null after already
+  // setting the error message and jumping to the offending section.
+  const validateExamForm = ({ requireQuestions }) => {
     if (!form.title.trim() || !form.startDate || !form.endDate) {
       setError("Exam title, start date, and end date are required.");
       setActiveSection("details");
-      return;
+      return null;
     }
     const startDate = new Date(form.startDate);
     const endDate = new Date(form.endDate);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
       setError("Exam end date must be after the start date.");
       setActiveSection("details");
-      return;
+      return null;
     }
     if (manualDuration <= 0) {
       setError("Exam duration must be greater than zero.");
       setActiveSection("details");
-      return;
+      return null;
     }
     const preparedQuestions = questions.map(buildPreparedQuestion);
+    if (requireQuestions && preparedQuestions.length === 0) {
+      setError("Add at least one question before publishing.");
+      setActiveSection("questions");
+      return null;
+    }
     const invalidQuestion = preparedQuestions.find((question) => {
       if (!question.text) return true;
       if (THEORY_QUESTION_TYPES.has(question.question_type)) return false;
@@ -1001,59 +1027,116 @@ export function TeacherExamBuilder({
           : "Each objective question needs text, at least two options, and a selected correct answer."
       );
       setActiveSection("questions");
-      return;
+      return null;
     }
+    return preparedQuestions;
+  };
+
+  const buildExamPayload = (preparedQuestions) => ({
+    title: form.title.trim(),
+    class_id: form.classId || "",
+    subject_id: form.subjectId || "",
+    exam_format: form.examFormat || "objective",
+    start_date: makeDateTime(form.startDate),
+    end_date: makeDateTime(form.endDate),
+    duration_minutes: manualDuration,
+    assessment_type: "exam",
+    instructions: form.instructions,
+    shuffle_questions: form.randomizeQuestions,
+    show_results_immediately: false,
+    questions: preparedQuestions,
+  });
+
+  // POSTs to create the exam the first time auto-save hasn't beaten this to
+  // it, PATCHes by currentExamId every time after - never a second POST once
+  // the draft already has a server-side id.
+  const submitExamPayload = async (payload) => {
+    const hasFiles = questions.some((question) => question.questionImageFile || question.questionAttachmentFile || question.group?.imageFile);
+    let requestPayload = payload;
+    if (hasFiles) {
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        formData.append(key, key === "questions" ? JSON.stringify(value) : value);
+      });
+      const addedPassageImages = new Set();
+      questions.forEach((question) => {
+        if (question.questionImageFile) {
+          formData.append(`question_image_${question.id}`, question.questionImageFile);
+        }
+        if (question.questionAttachmentFile) {
+          formData.append(`question_attachment_${question.id}`, question.questionAttachmentFile);
+        }
+        if (question.groupKey && question.group?.imageFile && !addedPassageImages.has(question.groupKey)) {
+          formData.append(`passage_image_${question.groupKey}`, question.group.imageFile);
+          addedPassageImages.add(question.groupKey);
+        }
+      });
+      requestPayload = formData;
+    }
+    return currentExamId ? onUpdateExam(currentExamId, requestPayload) : onCreateExam(requestPayload);
+  };
+
+  // Content-only: never touches is_published (so this never un-publishes an
+  // already-live exam, and never publishes a new one either) and never
+  // notifies admins - that is Publish Exam's job, below.
+  const handleSaveExam = async () => {
+    setError("");
+    setFeedback("");
+    const preparedQuestions = validateExamForm({ requireQuestions: false });
+    if (!preparedQuestions) return;
 
     setSaving(true);
     try {
-      const payload = {
-        title: form.title.trim(),
-        class_id: form.classId || "",
-        subject_id: form.subjectId || "",
-        exam_format: form.examFormat || "objective",
-        start_date: makeDateTime(form.startDate),
-        end_date: makeDateTime(form.endDate),
-        duration_minutes: manualDuration,
-        assessment_type: "exam",
-        instructions: form.instructions,
-        shuffle_questions: form.randomizeQuestions,
-        show_results_immediately: false,
-        is_published: canPublishExam ? form.publishNow : false,
-        questions: preparedQuestions,
-      };
-      const hasFiles = questions.some((question) => question.questionImageFile || question.questionAttachmentFile || question.group?.imageFile);
-      let requestPayload = payload;
-      if (hasFiles) {
-        const formData = new FormData();
-        Object.entries(payload).forEach(([key, value]) => {
-          formData.append(key, key === "questions" ? JSON.stringify(value) : value);
-        });
-        const addedPassageImages = new Set();
-        questions.forEach((question) => {
-          if (question.questionImageFile) {
-            formData.append(`question_image_${question.id}`, question.questionImageFile);
-          }
-          if (question.questionAttachmentFile) {
-            formData.append(`question_attachment_${question.id}`, question.questionAttachmentFile);
-          }
-          if (question.groupKey && question.group?.imageFile && !addedPassageImages.has(question.groupKey)) {
-            formData.append(`passage_image_${question.groupKey}`, question.group.imageFile);
-            addedPassageImages.add(question.groupKey);
-          }
-        });
-        requestPayload = formData;
-      }
-      const result = isEditing ? await onUpdateExam(initialExam.id, requestPayload) : await onCreateExam(requestPayload);
-      const savedExam = result?.exam || {};
+      const payload = buildExamPayload(preparedQuestions);
+      const result = await submitExamPayload(payload);
       // The server is now authoritative - nothing left for the local draft to protect.
       autosave.clearDraft();
+      setFeedback(result?.message || "Draft saved successfully.");
+    } catch (saveError) {
+      setError(saveError.message || "Could not save exam.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Validates and opens the confirmation modal; confirmPublishExam (below)
+  // does the actual publish once the admin/teacher confirms.
+  const handlePublishExam = () => {
+    setError("");
+    setFeedback("");
+    if (!validateExamForm({ requireQuestions: true })) return;
+    setPendingPublish(true);
+  };
+
+  const confirmPublishExam = async () => {
+    setPendingPublish(false);
+    const preparedQuestions = validateExamForm({ requireQuestions: true });
+    if (!preparedQuestions) return;
+
+    setPublishing(true);
+    try {
+      const payload = buildExamPayload(preparedQuestions);
+      // Mutually exclusive by role: an admin's PATCH/POST is the one thing
+      // that actually flips is_published; a teacher's is always rejected/
+      // clamped server-side, so their action is expressed as notify_admin
+      // instead - see review_result_batch-style separation in exam_detail.
+      if (canPublishExam) {
+        payload.is_published = true;
+      } else {
+        payload.notify_admin = true;
+      }
+      const result = await submitExamPayload(payload);
+      const savedExam = result?.exam || {};
+      autosave.clearDraft();
+      if (savedExam.id) clearLastActiveExamId(userId);
+      if (canPublishExam) setIsPublished(true);
       const hasExistingPin = Boolean(
         savedExam.pin_required ||
           Number(savedExam.active_pin_count || 0) > 0 ||
           initialExam?.pin_required ||
           Number(initialExam?.active_pin_count || 0) > 0
       );
-      if (canPublishExam && form.publishNow && savedExam.id && !hasExistingPin) {
+      if (canPublishExam && savedExam.id && !hasExistingPin) {
         const pinResult = await requestJson(session, "POST", "/api/app/exams/pins/", {
           exam_id: savedExam.id,
           usage_policy: "reusable",
@@ -1065,18 +1148,18 @@ export function TeacherExamBuilder({
           expiresAt: savedExam.end_date || payload.end_date,
         });
         setCopyFeedback("");
-        setFeedback("Exam published. Share the CBT PIN with eligible students.");
+        setFeedback("Exam published successfully. Share the CBT PIN with eligible students.");
       } else {
         setFeedback(
-          hasExistingPin && canPublishExam && form.publishNow
-            ? "Exam updated. Existing CBT PIN remains active."
-            : result?.message || (canPublishExam ? "Exam saved." : "Exam sent to admin for publishing.")
+          hasExistingPin && canPublishExam
+            ? "Exam published successfully. Existing CBT PIN remains active."
+            : result?.message || (canPublishExam ? "Exam published successfully." : "Exam sent to admin for publishing.")
         );
       }
-    } catch (saveError) {
-      setError(saveError.message || "Could not save exam.");
+    } catch (publishError) {
+      setError(publishError.message || "Could not publish exam.");
     } finally {
-      setSaving(false);
+      setPublishing(false);
     }
   };
 
@@ -1307,12 +1390,20 @@ export function TeacherExamBuilder({
                 Back to Past Exams
               </button>
             ) : null}
+            {isEditing && onStartNewExam ? (
+              <button type="button" className="table-action" onClick={onStartNewExam}>
+                + New Exam
+              </button>
+            ) : null}
             <button type="button" className="table-action" onClick={() => setActiveSection("review")}>
               Preview Exam
             </button>
+            <span className={`cbt-status-pill tone-${isPublished ? "success" : "info"}`}>
+              {isPublished ? "Published" : "Draft"}
+            </span>
             <AutosaveStatusPill status={autosave.status} />
             <button type="button" onClick={handleSaveExam} disabled={saving}>
-              {saving ? <><Spinner size={14} /> Saving...</> : canPublishExam ? "Save Exam" : "Send to Admin"}
+              {saving ? <><Spinner size={14} /> Saving...</> : "Save Draft"}
             </button>
           </div>
         </div>
@@ -1746,11 +1837,12 @@ export function TeacherExamBuilder({
             <div className="exam-builder-settings">
               <label className="remember-row"><input type="checkbox" checked={form.randomizeQuestions} onChange={(event) => setField("randomizeQuestions", event.target.checked)} /> Randomize questions</label>
               <label className="remember-row"><input type="checkbox" checked={form.showResults} disabled /> Send results to teacher only after submission</label>
-              {canPublishExam ? (
-                <label className="remember-row"><input type="checkbox" checked={form.publishNow} onChange={(event) => setField("publishNow", event.target.checked)} /> Publish immediately</label>
-              ) : (
-                <p className="student-panel-sub">Saving sends this exam to an administrator for publishing.</p>
-              )}
+              <p className="student-panel-sub">
+                This exam is currently <strong>{isPublished ? "Published" : "a Draft"}</strong>.{" "}
+                {canPublishExam
+                  ? "Save Draft only saves your changes. Use Publish Exam at the bottom when you're ready to make it available to students."
+                  : "Save Draft only saves your changes. Use Send to Admin at the bottom when you're ready for an administrator to review and publish it."}
+              </p>
             </div>
           ) : null}
 
@@ -1822,7 +1914,50 @@ export function TeacherExamBuilder({
             </div>
           ) : null}
         </article>
+
+        <div className="exam-builder-bottom-actions">
+          <p>
+            {isPublished
+              ? "This exam is live. Publishing again re-confirms it with your latest changes."
+              : canPublishExam
+                ? "When you're ready, publish this exam to make it available to eligible students."
+                : "When you're ready, send this exam to an administrator to review and publish."}
+          </p>
+          <button type="button" className="btn-primary exam-builder-publish-btn" onClick={handlePublishExam} disabled={saving || publishing}>
+            {publishing ? <><Spinner size={14} /> {canPublishExam ? "Publishing..." : "Sending..."}</> : canPublishExam ? "Publish Exam" : "Send to Admin"}
+          </button>
+        </div>
       </main>
+
+      {pendingPublish ? (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="publish-exam-title"
+          onClick={(event) => { if (event.target === event.currentTarget) setPendingPublish(false); }}
+        >
+          <article className="app-panel edit-modal-card" style={{ maxWidth: "28rem" }}>
+            <div className="edit-modal-head">
+              <div>
+                <h3 id="publish-exam-title">{canPublishExam ? "Publish this exam?" : "Send this exam to your admin?"}</h3>
+                <p>
+                  {canPublishExam
+                    ? "Once published, eligible students will be able to access it with a CBT PIN."
+                    : "Your admin will be notified to review and publish this exam. It stays a draft until they do."}
+                </p>
+              </div>
+              <button type="button" className="edit-modal-close" onClick={() => setPendingPublish(false)} aria-label="Close">×</button>
+            </div>
+            <div className="panel-form-actions">
+              <button type="button" onClick={confirmPublishExam} disabled={publishing}>
+                {publishing ? <><Spinner size={14} /> {canPublishExam ? "Publishing..." : "Sending..."}</> : canPublishExam ? "Publish Exam" : "Send to Admin"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setPendingPublish(false)} disabled={publishing}>Cancel</button>
+            </div>
+          </article>
+        </div>
+      ) : null}
 
       {pendingRemoval ? (
         <div
@@ -2237,7 +2372,9 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
                       onClick={() => onEditExam?.(exam.id)}
                       disabled={String(loadingExamId) === String(exam.id)}
                     >
-                      {String(loadingExamId) === String(exam.id) ? <><Spinner size={12} /> Opening...</> : "View / Edit"}
+                      {String(loadingExamId) === String(exam.id)
+                        ? <><Spinner size={12} /> Opening...</>
+                        : exam.is_published ? "View / Edit" : "Continue Editing"}
                     </button>
                   </td>
                 </tr>

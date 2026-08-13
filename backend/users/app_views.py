@@ -9749,6 +9749,12 @@ def create_exam(request):
 
     can_publish_exam = request.user.role in ADMIN_ROLES
     is_published = _to_bool(request.data.get("is_published"), default=False) if can_publish_exam else False
+    # Independent of is_published (which only ever means something for an
+    # admin) - a teacher's own "Send to Admin" action sets this instead, so
+    # "Save Draft" and "Send to Admin" both reach this same endpoint (when
+    # auto-save hasn't created the row yet) without the draft-save path ever
+    # notifying admins by accident.
+    notify_admin_requested = _to_bool(request.data.get("notify_admin"), default=False)
     shuffle_questions = _to_bool(request.data.get("shuffle_questions"), default=False)
     exam_format = str(request.data.get("exam_format", "objective")).strip().lower() or "objective"
     if exam_format not in dict(Exam.EXAM_FORMATS):
@@ -9785,14 +9791,15 @@ def create_exam(request):
         for index, item in enumerate(cleaned_questions, start=1)
     ]
     exam.questions.add(*created_questions)
-    if request.user.role == "teacher":
+    should_notify = request.user.role == "teacher" and notify_admin_requested
+    if should_notify:
         _notify_admins_exam_ready(exam, request.user)
 
     return Response(
         {
             "success": True,
             "message": "Exam created and published." if is_published else (
-                "Exam sent to admin for publishing." if request.user.role == "teacher" else "Exam saved as draft."
+                "Exam sent to admin for publishing." if should_notify else "Draft saved successfully."
             ),
             "exam": {
                 "id": exam.id,
@@ -9964,6 +9971,12 @@ def exam_detail(request, exam_id):
         exam.save(update_fields=list(dict.fromkeys(update_fields)))
 
     is_autosave = _to_bool(request.data.get("autosave"), default=False)
+    # Independent of is_published (a teacher's own request would be flatly
+    # rejected above if that carried `true` - "Only administrators can
+    # publish exams") - a teacher's own "Send to Admin" action sets this
+    # separate flag, so an ordinary "Save Draft" PATCH never notifies admins
+    # by accident, and the two explicit actions stay distinguishable here.
+    notify_admin_requested = _to_bool(request.data.get("notify_admin"), default=False)
 
     if "questions" in request.data:
         cleaned_questions, questions_error = _clean_exam_questions_payload(
@@ -9990,14 +10003,24 @@ def exam_detail(request, exam_id):
         .get(id=exam.id)
     )
     # Auto-save ticks must never spam admins with "exam ready for review" -
-    # that notification is only meaningful for an explicit Save/Send action.
-    if request.user.role == "teacher" and not is_autosave:
+    # that notification is only meaningful for an explicit Send-to-admin action.
+    should_notify = request.user.role == "teacher" and not is_autosave and notify_admin_requested
+    if should_notify:
         _notify_admins_exam_ready(exam, request.user)
+
+    if is_autosave:
+        message = "Exam updated."
+    elif should_notify:
+        message = "Exam sent to admin for publishing."
+    elif "is_published" in request.data and exam.is_published:
+        message = "Exam published successfully."
+    else:
+        message = "Draft saved successfully."
 
     return Response(
         {
             "success": True,
-            "message": "Exam sent to admin for publishing." if request.user.role == "teacher" else "Exam updated.",
+            "message": message,
             "exam": _exam_editor_payload(exam, request),
         }
     )

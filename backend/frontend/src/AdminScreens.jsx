@@ -38,6 +38,7 @@ import {
   Popup,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
+import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
 import { FinanceHistoryModal } from "./FinanceHistoryModal";
@@ -3412,12 +3413,14 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [deleteExamFeedback, setDeleteExamFeedback] = useState("");
   const fileInputRef = useRef(null);
   const [confirm, confirmDialog] = useConfirm();
+  const hasAttemptedDraftResumeRef = useRef(false);
 
   useEffect(() => {
     setUploadExamId((previous) => previous || exams[0]?.id || exams[0]?.exam_id || "");
   }, [exams]);
 
   const handleEditExam = async (examId) => {
+    hasAttemptedDraftResumeRef.current = true;
     setLoadingExamId(examId);
     setEditError("");
     try {
@@ -3430,6 +3433,36 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       setLoadingExamId("");
     }
   };
+
+  // Resumes whatever draft the admin was last actively working on - see the
+  // matching effect in App.jsx's TeacherWorkspace for the full rationale
+  // (fixes "refreshing the builder creates a duplicate exam").
+  useEffect(() => {
+    if (activeView !== "builder" || editingExam || hasAttemptedDraftResumeRef.current) return;
+    hasAttemptedDraftResumeRef.current = true;
+    const userId = session?.user?.id;
+    const pointerId = getLastActiveExamId(userId);
+    if (!pointerId) return;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", `/api/app/exams/${pointerId}/`);
+        const exam = result?.exam;
+        if (exam && !exam.is_published) {
+          setEditingExam(exam);
+        } else {
+          clearLastActiveExamId(userId);
+        }
+      } catch {
+        clearLastActiveExamId(userId);
+      }
+    })();
+  }, [activeView, editingExam, session]);
+
+  const handleStartNewExam = useCallback(() => {
+    clearLastActiveExamId(session?.user?.id);
+    setEditingExam(null);
+    setEditError("");
+  }, [session]);
 
   const generateExamPin = async (exam) => {
     const examId = exam.id || exam.exam_id;
@@ -3910,6 +3943,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
       {activeView === "builder" ? (
         <>
           <TeacherExamBuilder
+            // See the matching key comment in App.jsx's TeacherWorkspace -
+            // forces a clean remount (including the auto-save hook's own
+            // internal exam id) when switching between a specific draft and
+            // a brand-new one via "+ New Exam".
+            key={editingExam?.id || "new-exam"}
             session={session}
             classOptions={classOptions}
             subjectOptions={subjectOptions}
@@ -3917,6 +3955,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             initialExam={editingExam}
             onCreateExam={onCreateExam}
             onUpdateExam={onUpdateExam}
+            onStartNewExam={handleStartNewExam}
             onBackToList={() => {
               setEditingExam(null);
               setActiveView("results");
@@ -3924,8 +3963,13 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           />
           <article className="app-panel">
             <div className="panel-head">
-              <h3>Admin CBT exams</h3>
-              <small>Open an exam to publish it or update questions.</small>
+              <div>
+                <h3>Admin CBT exams</h3>
+                <small>Continue a draft or open a published exam to update questions.</small>
+              </div>
+              <button type="button" className="table-action" onClick={handleStartNewExam}>
+                + New Exam
+              </button>
             </div>
             {editError ? <p className="form-feedback error">{editError}</p> : null}
             {pinError ? <p className="form-feedback error">{pinError}</p> : null}
@@ -3951,7 +3995,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                       <td>{exam.title || exam.name || `Exam ${exam.id || exam.exam_id}`}</td>
                       <td>{exam.class_name || exam.class || "All classes"}</td>
                       <td>{exam.question_count ?? "-"}</td>
-                      <td>{exam.is_published ? "Published" : "Draft"}</td>
+                      <td>
+                        <span className={`student-status-pill status-${exam.is_published ? "present" : "unmarked"}`}>
+                          {exam.is_published ? "Published" : "Draft"}
+                        </span>
+                      </td>
                       <td>{renderExamPinCell(exam)}</td>
                       <td>{exam.submissions ?? 0}</td>
                       <td>
@@ -3961,7 +4009,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                           disabled={String(loadingExamId) === String(exam.id || exam.exam_id)}
                           onClick={() => handleEditExam(exam.id || exam.exam_id)}
                         >
-                          {String(loadingExamId) === String(exam.id || exam.exam_id) ? <><Spinner size={12} /> Opening...</> : "Open"}
+                          {String(loadingExamId) === String(exam.id || exam.exam_id)
+                            ? <><Spinner size={12} /> Opening...</>
+                            : exam.is_published ? "Open" : "Continue Editing"}
                         </button>
                         <button
                           type="button"
