@@ -11,6 +11,21 @@ $OutputDir = Join-Path $ProjectDir "bin\$Configuration"
 $ReleaseDir = Join-Path $Root "release"
 $ZipPath = Join-Path $ReleaseDir "SchoolDom-Admin-Sync-Win7-$Version.zip"
 
+# Sync the compiled-in assembly version with the release version being built.
+# Application.ProductVersion (the title bar text AND the auto-updater's "am I
+# already on the latest version" comparison in Program.cs) reads this from
+# AssemblyInfo.cs, NOT from -Version above (which only ever named the output
+# zip/installer file) - leaving them out of sync is what made the app keep
+# reporting an old version (and re-prompting to update forever) even after a
+# successful install.
+$asmVersion = "$Version.0"
+$asmInfoPath = Join-Path $ProjectDir "Properties\AssemblyInfo.cs"
+$asmInfoContent = Get-Content $asmInfoPath -Raw
+$asmInfoContent = $asmInfoContent -replace 'AssemblyVersion\("[\d\.]+"\)', "AssemblyVersion(`"$asmVersion`")"
+$asmInfoContent = $asmInfoContent -replace 'AssemblyFileVersion\("[\d\.]+"\)', "AssemblyFileVersion(`"$asmVersion`")"
+Set-Content -Path $asmInfoPath -Value $asmInfoContent -NoNewline -Encoding UTF8
+Write-Host "Set assembly version to $asmVersion in $asmInfoPath"
+
 $msbuildCandidates = @(
     "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",

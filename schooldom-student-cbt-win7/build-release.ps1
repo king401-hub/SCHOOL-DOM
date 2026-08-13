@@ -11,6 +11,18 @@ $OutputDir = Join-Path $ProjectDir "bin\$Configuration"
 $ReleaseDir = Join-Path $Root "release"
 $ZipPath = Join-Path $ReleaseDir "SchoolDom-Student-CBT-Win7-$Version.zip"
 
+# Sync the compiled-in assembly version with the release version being built
+# (see the matching comment in ../schooldom-cbt-win7/build-release.ps1 - same
+# issue: Application.ProductVersion/the title bar reads AssemblyInfo.cs, not
+# -Version above, so they can silently drift apart otherwise).
+$asmVersion = "$Version.0"
+$asmInfoPath = Join-Path $ProjectDir "Properties\AssemblyInfo.cs"
+$asmInfoContent = Get-Content $asmInfoPath -Raw
+$asmInfoContent = $asmInfoContent -replace 'AssemblyVersion\("[\d\.]+"\)', "AssemblyVersion(`"$asmVersion`")"
+$asmInfoContent = $asmInfoContent -replace 'AssemblyFileVersion\("[\d\.]+"\)', "AssemblyFileVersion(`"$asmVersion`")"
+Set-Content -Path $asmInfoPath -Value $asmInfoContent -NoNewline -Encoding UTF8
+Write-Host "Set assembly version to $asmVersion in $asmInfoPath"
+
 $msbuildCandidates = @(
     "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",

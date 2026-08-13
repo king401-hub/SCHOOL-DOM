@@ -394,9 +394,12 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.2"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.3"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
+        "- Fixed the app reporting itself as v0.1.0 forever (title bar and the "
+        "update checker never actually read the shipped version, so it kept "
+        "thinking an update was needed even right after installing one)\n"
         "- Fixed the Update Available screen clipping text on smaller/higher-DPI "
         "screens; window is now resizable and content reflows\n"
         "- Fixed the app closing after an in-app update instead of reopening\n"
@@ -409,14 +412,15 @@ CBT_ADMIN_APP_VERSION = {
         "- Carries forward 0.2.0's fixes: runs on all Windows versions",
     ),
     "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-13"),
-    # Same GitHub Releases convention as v0.2.0/v0.2.1 - create a "v0.2.2"
-    # release on this repo with SchoolDom-Admin-Sync-Win7-0.2.2-Setup.exe
-    # attached as an asset and this URL resolves on its own.
+    # Same GitHub Releases convention as v0.2.0/v0.2.1/v0.2.2 - create a
+    # "v0.2.3" release on this repo with
+    # SchoolDom-Admin-Sync-Win7-0.2.3-Setup.exe attached as an asset and this
+    # URL resolves on its own.
     "download_url": os.environ.get(
         "CBT_ADMIN_APP_DOWNLOAD_URL",
-        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.2/SchoolDom-Admin-Sync-Win7-0.2.2-Setup.exe",
+        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.3/SchoolDom-Admin-Sync-Win7-0.2.3-Setup.exe",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241698),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241649),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
