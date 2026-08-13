@@ -394,27 +394,29 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.1"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.2"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
+        "- Fixed the Update Available screen clipping text on smaller/higher-DPI "
+        "screens; window is now resizable and content reflows\n"
+        "- Fixed the app closing after an in-app update instead of reopening\n"
         "- Exam timer now agrees across every PC on the LAN, anchored to this "
         "admin PC's clock instead of each student PC's own clock\n"
         "- Fixed Yoruba/French/special characters turning into '?' in answers "
         "synced over the LAN\n"
         "- Rich-text questions/instructions no longer show raw HTML tags on "
         "the grading and exam review screens\n"
-        "- Carries forward 0.2.0's fixes: runs on all Windows versions, "
-        "improved update screen layout",
+        "- Carries forward 0.2.0's fixes: runs on all Windows versions",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-12"),
-    # Same GitHub Releases convention as v0.2.0 - create a "v0.2.1" release
-    # on this repo with SchoolDom-Admin-Sync-Win7-0.2.1-Setup.exe attached
-    # as an asset and this URL resolves on its own.
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-13"),
+    # Same GitHub Releases convention as v0.2.0/v0.2.1 - create a "v0.2.2"
+    # release on this repo with SchoolDom-Admin-Sync-Win7-0.2.2-Setup.exe
+    # attached as an asset and this URL resolves on its own.
     "download_url": os.environ.get(
         "CBT_ADMIN_APP_DOWNLOAD_URL",
-        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.1/SchoolDom-Admin-Sync-Win7-0.2.1-Setup.exe",
+        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.2/SchoolDom-Admin-Sync-Win7-0.2.2-Setup.exe",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241263),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 2241698),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
