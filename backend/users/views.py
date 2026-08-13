@@ -38,7 +38,7 @@ ADMIN_OTP_EXPIRY_MINUTES = 10
 PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5
 # Accounts that never require login/signup OTP, regardless of role.
-ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com"}
+ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com", "autovendor1@gmail.com"}
 logger = logging.getLogger(__name__)
 
 
