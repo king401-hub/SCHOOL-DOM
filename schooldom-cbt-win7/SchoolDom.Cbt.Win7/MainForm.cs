@@ -33,7 +33,12 @@ namespace SchoolDom.Cbt.Win7
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Palette.Background;
             Font = new Font("Segoe UI", 10);
-            AutoScaleMode = AutoScaleMode.Font;
+            // See the matching comment in the Student CBT app's MainForm - every screen
+            // here is also rebuilt at runtime with explicit pixel coordinates rather than
+            // Designer-generated InitializeComponent(), so Font-based auto-scale can scale
+            // dynamically-added controls inconsistently at non-100% DPI instead of leaving
+            // them self-consistent.
+            AutoScaleMode = AutoScaleMode.None;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
             _root = new Panel { Dock = DockStyle.Fill };

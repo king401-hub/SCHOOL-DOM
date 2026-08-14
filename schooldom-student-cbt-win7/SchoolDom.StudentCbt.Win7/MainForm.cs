@@ -73,7 +73,18 @@ namespace SchoolDom.StudentCbt.Win7
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Palette.Background;
             Font = new Font("Segoe UI", 10);
-            AutoScaleMode = AutoScaleMode.Font;
+            // Every screen in this app is rebuilt from scratch at runtime with explicit
+            // pixel Left/Top/Width/Height (there's no Designer-generated
+            // InitializeComponent(), which is what AutoScaleMode.Font is actually meant to
+            // scale). Applying Font-based auto-scale on top of that scales dynamically-added
+            // controls inconsistently at non-100% DPI - e.g. a fixed-height header docked to
+            // the top can end up taller/shorter on screen than the content layout code
+            // (which computes positions from ClientSize) assumed, so the two disagree and
+            // the header overlaps content that should be below it. None keeps every pixel
+            // value we already compute self-consistent regardless of DPI; text still renders
+            // at the correct physical size on its own since Windows scales font points, not
+            // WinForms' AutoScale layer.
+            AutoScaleMode = AutoScaleMode.None;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             KeyPreview = true;
 
@@ -369,7 +380,8 @@ namespace SchoolDom.StudentCbt.Win7
             content.Controls.Add(main);
             _root.Controls.Add(content);
 
-            side.Controls.Add(CreateLargeStudentBadge(18, 42));
+            const int studentBadgeWidth = 242;
+            side.Controls.Add(CreateLargeStudentBadge((sideWidth - studentBadgeWidth) / 2, 42));
             side.Controls.Add(Label("Questions", 18, 190, 11, true, 230, Palette.Text));
             var questionNav = new Panel { Left = 18, Top = 228, Width = 242, Height = Math.Max(230, cardHeight - 332), AutoScroll = true, BorderStyle = BorderStyle.None };
             for (var i = 0; i < _questions.Count; i++)
