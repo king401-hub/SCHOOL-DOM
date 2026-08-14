@@ -394,31 +394,38 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.5"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.6"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Student CBT: fixed the exam header overlapping the student photo/name "
-        "on displays running non-100% Windows scaling (both apps' dynamically-"
-        "built screens now use consistent, DPI-independent positioning)\n"
-        "- Student CBT: centered the student photo/name/ID card in the exam "
-        "sidebar\n"
-        "- Carries forward 0.2.4's fixes: <br> displays as a real line break "
-        "in edit screens, clock-skew-proof exam timer, no more oversized gap "
-        "before answer options\n"
-        "- Carries forward 0.2.3's fixes: correct version reporting, resizable "
-        "update screen, reopens itself after an in-app update, LAN timer "
-        "agreement, UTF-8 answer sync, no raw HTML on grading screens",
+        "- Student CBT: logging in now always shows an Available Exams screen "
+        "(student photo/name/ID/class, plus a card per exam with subject, "
+        "class, type, duration, question count and status) instead of "
+        "silently jumping straight into the only matching exam\n"
+        "- Student CBT: the Exam Instructions page now also shows the "
+        "student's profile and full exam details, with a clear warning that "
+        "the timer starts on click, and a Back button to return to the exam "
+        "list\n"
+        "- Already-submitted exams no longer reappear in the list; an exam "
+        "past its window still shows if the student has an unfinished "
+        "attempt to resume\n"
+        "- Carries forward 0.2.5's fix: exam header no longer overlaps the "
+        "student photo/name on non-100% Windows display scaling\n"
+        "- Carries forward 0.2.4/0.2.3's fixes: <br> as a real line break in "
+        "edit screens, clock-skew-proof exam timer, no oversized gap before "
+        "answer options, correct version reporting, resizable update screen, "
+        "reopens itself after an in-app update, LAN timer agreement, UTF-8 "
+        "answer sync, no raw HTML on grading screens",
     ),
     "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-14"),
-    # Same GitHub Releases convention as v0.2.0-v0.2.4 - create a "v0.2.5"
-    # release on this repo (tag exactly "v0.2.5", no stray characters) with
-    # SchoolDom-Admin-Sync-Win7-0.2.5-Setup.exe attached as an asset and this
+    # Same GitHub Releases convention as v0.2.0-v0.2.5 - create a "v0.2.6"
+    # release on this repo (tag exactly "v0.2.6", no stray characters) with
+    # SchoolDom-Admin-Sync-Win7-0.2.6-Setup.exe attached as an asset and this
     # URL resolves on its own.
     "download_url": os.environ.get(
         "CBT_ADMIN_APP_DOWNLOAD_URL",
-        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.5/SchoolDom-Admin-Sync-Win7-0.2.5-Setup.exe",
+        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.6/SchoolDom-Admin-Sync-Win7-0.2.6-Setup.exe",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3745611),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3747035),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
