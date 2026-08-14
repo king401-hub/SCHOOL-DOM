@@ -324,6 +324,12 @@ namespace SchoolDom.Cbt.Win7
             };
         }
 
+        // Login never starts a session by itself, even when exactly one exam matches the
+        // PIN - the student always sees the Available Exams screen first and explicitly
+        // picks "Start Exam" (POST /api/start-session), which is what actually creates or
+        // resumes the session. This used to auto-call StartSession here for the
+        // single-match case, silently creating exam state before the student had chosen
+        // anything.
         private Dictionary<string, object> Login(string bodyText)
         {
             var body = JsonUtil.DeserializeObject(bodyText);
@@ -333,14 +339,54 @@ namespace SchoolDom.Cbt.Win7
             var student = _store.State.Students.FirstOrDefault(item => string.Equals(item.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
             if (student == null) return new Dictionary<string, object> { { "success", false }, { "message", "Student ID was not found on the admin LAN server." } };
             if (!student.IsActive) return new Dictionary<string, object> { { "success", false }, { "message", "Your student account is inactive. Please contact your school administrator to renew your activation token." } };
-            var exams = _store.State.Exams.Where(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (!exams.Any()) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
-            if (exams.Count > 1)
+            var matchingExams = _store.State.Exams.Where(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (!matchingExams.Any()) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
+
+            var availableExams = matchingExams.Where(exam => IsExamAvailableToStudent(student, exam)).ToList();
+            if (!availableExams.Any())
             {
-                return new Dictionary<string, object> { { "success", true }, { "student", student }, { "exams", exams.Select(PublicExam).ToList() } };
+                return new Dictionary<string, object> { { "success", false }, { "message", "No available exam matches this PIN - it may have expired or already been submitted." } };
             }
-            var exam = exams.First();
-            return StartSession(student, exam);
+            return new Dictionary<string, object>
+            {
+                { "success", true },
+                { "student", student },
+                { "exams", availableExams.Select(exam => ExamChoicePayload(student, exam)).ToList() }
+            };
+        }
+
+        // Already-submitted exams are never offered again (retaking requires an admin to
+        // delete the result first, same rule StartSession already enforces). An exam whose
+        // window has closed is still offered if the student already has an in-progress
+        // session for it, so they can get back in and finish/submit; it's only hidden from
+        // students who never started it.
+        private bool IsExamAvailableToStudent(StudentRecord student, ExamRecord exam)
+        {
+            var session = FindSessionFor(student, exam);
+            if (session != null && session.Status == "submitted") return false;
+            if (session != null) return true;
+            return !IsExamExpired(exam);
+        }
+
+        private static bool IsExamExpired(ExamRecord exam)
+        {
+            if (string.IsNullOrWhiteSpace(exam.EndsAt)) return false;
+            DateTime ends;
+            return DateTime.TryParse(exam.EndsAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out ends)
+                && DateTime.UtcNow > ends.ToUniversalTime();
+        }
+
+        private SessionRecord FindSessionFor(StudentRecord student, ExamRecord exam)
+        {
+            return _store.State.Sessions.FirstOrDefault(item => item.ExamId == exam.Id && string.Equals(item.StudentId, student.StudentId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private Dictionary<string, object> ExamChoicePayload(StudentRecord student, ExamRecord exam)
+        {
+            var payload = PublicExam(exam);
+            var session = FindSessionFor(student, exam);
+            payload["status"] = session != null && session.Status != "submitted" ? "In Progress" : "Not Started";
+            return payload;
         }
 
         private Dictionary<string, object> StartSession(string bodyText)
@@ -492,6 +538,7 @@ namespace SchoolDom.Cbt.Win7
 
         private static Dictionary<string, object> PublicExam(ExamRecord exam)
         {
+            var questions = exam.Questions ?? new List<QuestionRecord>();
             return new Dictionary<string, object>
             {
                 { "id", exam.Id },
@@ -500,7 +547,21 @@ namespace SchoolDom.Cbt.Win7
                 { "class_name", exam.ClassName },
                 { "duration_seconds", exam.DurationSeconds },
                 { "instructions", exam.Instructions },
+                { "question_count", questions.Count },
+                { "exam_type", ExamTypeLabel(questions) },
             };
+        }
+
+        // Derived locally from the already-synced question list rather than a separate
+        // exam_format field from the backend, so this needed no changes to the sync
+        // payload/pipeline - it's read-only display metadata, not new data flowing through.
+        private static string ExamTypeLabel(List<QuestionRecord> questions)
+        {
+            var hasObjective = questions.Any(q => !PackageService.IsWrittenType(q.Type));
+            var hasWritten = questions.Any(q => PackageService.IsWrittenType(q.Type));
+            if (hasObjective && hasWritten) return "Mixed (Objective + Theory)";
+            if (hasWritten) return "Theory";
+            return "Objective (MCQ)";
         }
 
         private Dictionary<string, object> PackagePayload()

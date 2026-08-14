@@ -17802,6 +17802,16 @@ body[data-theme="dark"] .exam-builder-question {
   border-color: #334155;
 }
 
+/* .message-body's light lavender background (#eef2ff, set unconditionally
+   in the light-mode rule above) was never paired with a dark-mode
+   background override - only its text color was (#94a3b8, further up this
+   file), so in dark mode it rendered as light-gray text on a near-white
+   box: unreadably low contrast. Give it a proper dark surface to match. */
+body[data-theme="dark"] .message-body {
+  background: #111827;
+  border: 1px solid #334155;
+}
+
 body[data-theme="dark"] .cbt-bank-picker,
 body[data-theme="dark"] .cbt-bank-question,
 body[data-theme="dark"] .standard-question-import,

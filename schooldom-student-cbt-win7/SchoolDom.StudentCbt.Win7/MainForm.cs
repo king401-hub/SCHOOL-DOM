@@ -21,6 +21,7 @@ namespace SchoolDom.StudentCbt.Win7
         private Dictionary<string, object> _student;
         private Dictionary<string, object> _exam;
         private Dictionary<string, object> _session;
+        private List<Dictionary<string, object>> _examChoices = new List<Dictionary<string, object>>();
         private string _studentId;
         private List<Dictionary<string, object>> _questions = new List<Dictionary<string, object>>();
         private Dictionary<string, object> _answers = new Dictionary<string, object>();
@@ -147,7 +148,7 @@ namespace SchoolDom.StudentCbt.Win7
             };
             card.Controls.Add(discover);
 
-            var start = PrimaryButton("Start Exam", 180, 374, 150);
+            var start = PrimaryButton("Log In", 180, 374, 150);
             start.Click += (s, e) =>
             {
                 try
@@ -164,31 +165,24 @@ namespace SchoolDom.StudentCbt.Win7
                     }
                     _student = login["student"] as Dictionary<string, object>;
                     _studentId = studentId.Text.Trim();
+                    // The admin LAN server never auto-starts a session on login (even when
+                    // only one exam matches the PIN) - the student always sees the Available
+                    // Exams screen first and explicitly picks one.
                     var choices = JsonUtil.List(login.ContainsKey("exams") ? login["exams"] : null)
                         .Select(item => item as Dictionary<string, object>)
                         .Where(item => item != null)
                         .ToList();
-                    if (choices.Count > 1)
-                    {
-                        ShowExamSelection(choices);
-                        return;
-                    }
-                    _exam = login.ContainsKey("exam") ? login["exam"] as Dictionary<string, object> : choices.FirstOrDefault();
-                    _session = login.ContainsKey("session") ? login["session"] as Dictionary<string, object> : null;
-                    _serverRemainingSeconds = null;
-                    SyncServerTimer(login);
-                    if (_exam == null)
+                    if (!choices.Any())
                     {
                         MessageBox.Show("No exam was returned for this Student ID and PIN.", "No exam");
                         return;
                     }
-                    if (_session == null) StartSelectedExam(_exam);
-                    else ShowInstructions();
+                    ShowExamSelection(choices);
                 }
                 catch (Exception ex)
                 {
-                    SetStatus("Could not start exam.", Palette.Coral);
-                    MessageBox.Show(ex.Message, "Start failed");
+                    SetStatus("Could not log in.", Palette.Coral);
+                    MessageBox.Show(ex.Message, "Login failed");
                 }
             };
             card.Controls.Add(start);
@@ -199,29 +193,75 @@ namespace SchoolDom.StudentCbt.Win7
 
         private void ShowExamSelection(List<Dictionary<string, object>> exams)
         {
+            _examChoices = exams;
             _examMode = false;
             _timer.Stop();
             _root.Controls.Clear();
 
             var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Palette.Navy };
-            header.Controls.Add(Label("Select Exam", 28, 18, 18, true, 420, Color.White));
-            header.Controls.Add(Label(Value(_student, "full_name", "FullName") + "  " + Value(_student, "student_id", "StudentId"), 30, 50, 10, false, 560, Palette.SoftText));
+            header.Controls.Add(Label("Available Exams", 28, 18, 18, true, 420, Color.White));
+            header.Controls.Add(Label(exams.Count + " exam(s) available for you to take.", 30, 52, 10, false, 520, Palette.SoftText));
+            var signOut = SecondaryButton("Sign Out", Math.Max(700, Math.Max(960, ClientSize.Width) - 160), 22, 130);
+            signOut.Click += (s, e) => ShowConnect();
+            header.Controls.Add(signOut);
             _root.Controls.Add(header);
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, AutoScroll = true };
-            var y = 30;
+            const int columnWidth = 820;
+            var column = new Panel { Left = 0, Top = 0, Width = columnWidth, BackColor = Color.Transparent };
+            Action centerColumn = () => { column.Left = Math.Max(24, (content.ClientSize.Width - column.Width) / 2); };
+            content.Resize += (s, e) => centerColumn();
+
+            var y = 24;
+            const int profileCardWidth = 290;
+            const int profileBadgeWidth = 242;
+            var profileCard = Card(0, y, profileCardWidth, 120);
+            profileCard.Controls.Add(CreateLargeStudentBadge((profileCardWidth - profileBadgeWidth) / 2, -8));
+            column.Controls.Add(profileCard);
+            y += profileCard.Height + 28;
+
+            column.Controls.Add(Label("Select an exam to begin", 0, y, 13, true, columnWidth, Palette.Text));
+            y += 32;
+
             foreach (var exam in exams)
             {
-                var card = Card(42, y, 760, 112);
-                card.Controls.Add(Label(Value(exam, "title", "Title"), 22, 18, 14, true, 520, Palette.Text));
-                card.Controls.Add(Label(Value(exam, "subject", "Subject") + "  " + Math.Max(1, JsonUtil.Int(Raw(exam, "duration_seconds", "DurationSeconds"), 3600) / 60) + " minute(s)", 22, 54, 10, false, 520, Palette.Muted));
-                var start = PrimaryButton("Select", 620, 34, 110);
+                var status = Value(exam, "status", "Status");
+                var isInProgress = string.Equals(status, "In Progress", StringComparison.OrdinalIgnoreCase);
+
+                var card = Card(0, y, columnWidth, 148);
+                card.Controls.Add(Label(Value(exam, "title", "Title"), 24, 16, 14, true, 480, Palette.Text));
+
+                var statusPill = Label(string.IsNullOrWhiteSpace(status) ? "Not Started" : status, 0, 20, 9, true, 160,
+                    isInProgress ? Palette.Green : Palette.Muted);
+                statusPill.BackColor = isInProgress ? Palette.GreenSoft : Palette.LightButton;
+                statusPill.Padding = new Padding(10, 4, 10, 4);
+                statusPill.Left = columnWidth - 24 - statusPill.PreferredSize.Width;
+                card.Controls.Add(statusPill);
+
+                var className = Value(exam, "class_name", "ClassName");
+                var examType = Value(exam, "exam_type", "ExamType");
+                var metaLine1 = "Subject: " + (string.IsNullOrWhiteSpace(Value(exam, "subject", "Subject")) ? "-" : Value(exam, "subject", "Subject"))
+                    + (string.IsNullOrWhiteSpace(className) ? "" : "   ·   Class: " + className)
+                    + (string.IsNullOrWhiteSpace(examType) ? "" : "   ·   Type: " + examType);
+                card.Controls.Add(Label(metaLine1, 24, 54, 10, false, columnWidth - 48, Palette.Muted));
+
+                var minutes = Math.Max(1, JsonUtil.Int(Raw(exam, "duration_seconds", "DurationSeconds"), 3600) / 60);
+                var questionCount = JsonUtil.Int(Raw(exam, "question_count", "QuestionCount"), 0);
+                var metaLine2 = "Duration: " + minutes + " minute(s)   ·   Questions: " + questionCount;
+                card.Controls.Add(Label(metaLine2, 24, 78, 10, false, columnWidth - 48, Palette.Muted));
+
+                var startBtn = PrimaryButton(isInProgress ? "Resume Exam" : "Start Exam", columnWidth - 24 - 170, 96, 170);
                 var selected = exam;
-                start.Click += (s, e) => StartSelectedExam(selected);
-                card.Controls.Add(start);
-                content.Controls.Add(card);
-                y += 130;
+                startBtn.Click += (s, e) => StartSelectedExam(selected);
+                card.Controls.Add(startBtn);
+
+                column.Controls.Add(card);
+                y += card.Height + 20;
             }
+
+            column.Height = y + 24;
+            content.Controls.Add(column);
+            centerColumn();
             _root.Controls.Add(content);
         }
 
@@ -231,7 +271,7 @@ namespace SchoolDom.StudentCbt.Win7
             if (!Convert.ToBoolean(started.ContainsKey("success") ? started["success"] : false))
             {
                 MessageBox.Show(JsonUtil.Text(started.ContainsKey("message") ? started["message"] : "Could not start exam."), "Start failed");
-                ShowConnect();
+                if (_examChoices.Any()) ShowExamSelection(_examChoices); else ShowConnect();
                 return;
             }
             _exam = started["exam"] as Dictionary<string, object>;
@@ -246,39 +286,85 @@ namespace SchoolDom.StudentCbt.Win7
             _root.Controls.Clear();
             var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Palette.Navy };
             header.Controls.Add(Label(Value(_exam, "title", "Title"), 28, 18, 18, true, 620, Color.White));
-            header.Controls.Add(Label("Read the instructions before starting.", 30, 52, 10, false, 520, Palette.SoftText));
+            header.Controls.Add(Label("Review the exam details below, then start when you're ready.", 30, 52, 10, false, 620, Palette.SoftText));
+            _root.Controls.Add(header);
 
-            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
-            var card = Card(0, 0, 780, 440);
-            Action centerCard = () =>
-            {
-                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
-                card.Top = 54;
-            };
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, AutoScroll = true };
+            const int cardWidth = 820;
+            var card = Card(0, 24, cardWidth, 10);
+            Action centerCard = () => { card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2); };
             content.Resize += (s, e) => centerCard();
-            centerCard();
-            card.Controls.Add(Label("Instructions", 28, 24, 16, true, 680, Palette.Text));
+
+            var y = 24;
+            card.Controls.Add(Label("Your Details", 28, y, 11, true, 300, Palette.Muted));
+            y += 26;
+            const int profileBadgeWidth = 242;
+            card.Controls.Add(CreateLargeStudentBadge(28, y));
+            var profileBottom = y + 136;
+
+            var metaLeft = 28 + profileBadgeWidth + 48;
+            var metaTop = y + 4;
+            card.Controls.Add(Label("Exam Details", metaLeft, metaTop, 11, true, 300, Palette.Muted));
+            metaTop += 26;
+            var minutes = Math.Max(1, JsonUtil.Int(Raw(_exam, "duration_seconds", "DurationSeconds"), 3600) / 60);
+            var examType = Value(_exam, "exam_type", "ExamType");
+            var examDetailLines = new[]
+            {
+                "Subject: " + (string.IsNullOrWhiteSpace(Value(_exam, "subject", "Subject")) ? "-" : Value(_exam, "subject", "Subject")),
+                string.IsNullOrWhiteSpace(examType) ? null : "Type: " + examType,
+                "Duration: " + minutes + " minute(s)",
+                "Questions: " + _questions.Count,
+            };
+            foreach (var line in examDetailLines)
+            {
+                if (line == null) continue;
+                card.Controls.Add(Label(line, metaLeft, metaTop, 10, false, cardWidth - metaLeft - 28, Palette.Text));
+                metaTop += 24;
+            }
+
+            y = Math.Max(profileBottom, metaTop) + 20;
+            card.Controls.Add(new Panel { Left = 28, Top = y, Width = cardWidth - 56, Height = 1, BackColor = Palette.Border });
+            y += 20;
+
+            card.Controls.Add(Label("Instructions", 28, y, 14, true, 680, Palette.Text));
+            y += 30;
+            var instructionsText = Value(_exam, "instructions", "Instructions");
             var instructions = new TextBox
             {
-                Left = 30,
-                Top = 72,
-                Width = 720,
-                Height = 260,
+                Left = 28,
+                Top = y,
+                Width = cardWidth - 56,
+                Height = 170,
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                Text = string.IsNullOrWhiteSpace(Value(_exam, "instructions", "Instructions")) ? "No special instructions." : Value(_exam, "instructions", "Instructions"),
+                Text = string.IsNullOrWhiteSpace(instructionsText) ? "No special instructions." : instructionsText,
                 Font = new Font("Segoe UI", 11),
                 BorderStyle = BorderStyle.FixedSingle
             };
             card.Controls.Add(instructions);
-            card.Controls.Add(Label(_questions.Count + " question(s)  " + Math.Max(1, JsonUtil.Int(Raw(_exam, "duration_seconds", "DurationSeconds"), 3600) / 60) + " minute(s)", 30, 350, 10, true, 520, Palette.Muted));
-            var start = PrimaryButton("Start Exam", 30, 386, 150);
-            start.Click += (s, e) => EnterExamMode();
-            card.Controls.Add(start);
+            y += instructions.Height + 20;
+
+            var warningColor = Color.FromArgb(150, 84, 0);
+            var warning = new Panel { Left = 28, Top = y, Width = cardWidth - 56, Height = 48, BackColor = Color.FromArgb(255, 243, 224) };
+            warning.Controls.Add(Label(
+                "⚠ Once you click Start Exam, the timer begins immediately and cannot be paused. Make sure you are ready before continuing.",
+                14, 8, 9, true, warning.Width - 28, warningColor));
+            card.Controls.Add(warning);
+            y += warning.Height + 24;
+
+            var back = SecondaryButton("Back", 28, y, 140);
+            back.Click += (s, e) => { if (_examChoices.Any()) ShowExamSelection(_examChoices); else ShowConnect(); };
+            card.Controls.Add(back);
+            var startExamBtn = PrimaryButton("Start Exam", cardWidth - 28 - 170, y, 170);
+            startExamBtn.Click += (s, e) => EnterExamMode();
+            card.Controls.Add(startExamBtn);
+            y += 42 + 24;
+
+            card.Height = y;
             content.Controls.Add(card);
+            centerCard();
             _root.Controls.Add(content);
-            _root.Controls.Add(header);
         }
 
         private void LoadExamDetail()
