@@ -1012,6 +1012,39 @@ export function openPrintableDocument(elementId, title, theme) {
   };
 }
 
+/** Replaces every <img src> under `root` with a base64 data: URI, fetching
+ * each image first. Canvas rendering taints (and permanently blocks
+ * toBlob/toDataURL export) as soon as it draws an SVG that references an
+ * external image URL, even a same-origin one, once that SVG is loaded via
+ * a blob: URL - the browser can no longer prove the embedded image is
+ * CORS-safe. Inlining as data: URIs removes the external reference
+ * entirely, so there's nothing left to taint the canvas. Images that can't
+ * be fetched (CORS-blocked, offline, deleted) are dropped rather than left
+ * as an external URL, so the export still succeeds without them. */
+async function inlineImagesAsDataUrls(root) {
+  const images = Array.from(root.querySelectorAll("img"));
+  await Promise.all(
+    images.map(async (img) => {
+      const src = img.src;
+      if (!src || src.startsWith("data:")) return;
+      try {
+        const response = await fetch(src);
+        if (!response.ok) throw new Error("Image request failed.");
+        const blob = await response.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error || new Error("Could not read image."));
+          reader.readAsDataURL(blob);
+        });
+        img.setAttribute("src", dataUrl);
+      } catch {
+        img.removeAttribute("src");
+      }
+    })
+  );
+}
+
 /** Rasterizes the given element (via an SVG foreignObject -> canvas, no
  * external library) into a downloaded PNG, styled with the same
  * documentStylesForExport(theme) used by print/PDF output. */
@@ -1022,6 +1055,7 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
   }
   const clone = element.cloneNode(true);
   clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  await inlineImagesAsDataUrls(clone);
   const rect = element.getBoundingClientRect();
   const width = Math.max(850, Math.ceil(rect.width || element.scrollWidth || 850));
   const height = Math.max(1100, Math.ceil(element.scrollHeight || rect.height || 1100));
