@@ -9190,6 +9190,21 @@ function AdminServiceAgreementScreen({ data, loading, error, onRetry, onSave }) 
   );
 }
 
+// Calendar-correct "add N months and M days" (not a flat day count, so a
+// start date near a long month doesn't get a shorter allowance than one
+// near a short month) - mirrors _add_months_and_days in users/app_views.py.
+function addMonthsAndDays(dateStr, months, days) {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const totalMonths = month - 1 + months;
+  const targetYear = year + Math.floor(totalMonths / 12);
+  const targetMonth = (totalMonths % 12) + 1;
+  const daysInTargetMonth = new Date(targetYear, targetMonth, 0).getDate();
+  const result = new Date(targetYear, targetMonth - 1, Math.min(day, daysInTargetMonth));
+  result.setDate(result.getDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
 function AdminSettingsScreen({
   data,
   user,
@@ -9225,6 +9240,11 @@ function AdminSettingsScreen({
   const [activityCalendar, setActivityCalendar] = useState([]);
   const today = useMemo(() => new Date(), []);
   const todayDateValue = useMemo(() => today.toISOString().slice(0, 10), [today]);
+  // K-12 schools run short, fixed-length terms - mirrors the backend cap in
+  // school_settings (users/app_views.py) so the date picker itself won't
+  // offer an out-of-range end date, not just reject it after the fact.
+  const nonK12 = (school?.school_type || school?.schoolType || data?.school?.school_type || data?.school?.schoolType || "k12") === "non_k12";
+  const termMaxEndDate = useMemo(() => addMonthsAndDays(termStart || todayDateValue, 3, 15), [termStart, todayDateValue]);
   const [calendarMonth, setCalendarMonth] = useState(String(today.getMonth() + 1));
   const [calendarYear, setCalendarYear] = useState(String(today.getFullYear()));
   const [activityDraft, setActivityDraft] = useState({
@@ -9467,6 +9487,10 @@ function AdminSettingsScreen({
       setFormError("Provide the term name, start date, and end date together to save it.");
       return;
     }
+    if (termTouched && !nonK12 && termEnd > addMonthsAndDays(termStart, 3, 15)) {
+      setFormError(`A term cannot be longer than 3 months and 15 days. For this start date, the latest allowed end date is ${addMonthsAndDays(termStart, 3, 15)}.`);
+      return;
+    }
     setIsSaving(true);
     try {
       const result = await onSave(buildSettingsPayload());
@@ -9658,7 +9682,18 @@ onClick={() => handleThemeSelect("light")}
                         </label>
                         <label className="panel-field">
                           Term End
-                          <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} disabled={!canEdit || isSaving} />
+                          <input
+                            type="date"
+                            value={termEnd}
+                            max={nonK12 ? undefined : termMaxEndDate}
+                            onChange={(event) => setTermEnd(event.target.value)}
+                            disabled={!canEdit || isSaving}
+                          />
+                          {!nonK12 ? (
+                            <small className="field-note">
+                              K-12 terms run at most 3 months and 15 days - latest end date for this start is {termMaxEndDate}.
+                            </small>
+                          ) : null}
                         </label>
                       </div>
 

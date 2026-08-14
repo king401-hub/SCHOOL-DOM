@@ -8,6 +8,7 @@ import re
 import threading
 import uuid
 import zipfile
+import calendar
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qs, quote, urlparse
@@ -942,6 +943,22 @@ def _director_payload(user, request=None):
 def _is_non_k12_school(user):
     school = getattr(user, "tenant", None)
     return bool(school and (getattr(school, "school_type", "k12") or "k12") == SchoolTenant.NON_K12)
+
+
+# K-12 term-length cap (school_settings' term_start_date/term_end_date):
+# calendar-correct "3 months and 15 days", not a flat 105-day count, so a
+# term starting near a long month doesn't get a shorter allowance than one
+# starting near a short month.
+TERM_MAX_MONTHS = 3
+TERM_MAX_EXTRA_DAYS = 15
+
+
+def _add_months_and_days(base_date, months, days):
+    month_index = base_date.month - 1 + months
+    year = base_date.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(base_date.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day) + timedelta(days=days)
 
 
 def _build_id_card_verify_url(request, token):
@@ -7360,6 +7377,26 @@ def school_settings(request):
                     {"success": False, "message": "Term dates are invalid."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            # Not term_tenant.school_type: term_tenant is the legacy
+            # tenants.Tenant Term.tenant actually points to (via
+            # TenantAwareModel), which has no school_type field at all -
+            # _is_non_k12_school(user) correctly reads it off user.tenant
+            # (the real core.SchoolTenant), same as every other k12/non_k12
+            # branch in this file.
+            if not _is_non_k12_school(user):
+                max_end = _add_months_and_days(parsed_start, TERM_MAX_MONTHS, TERM_MAX_EXTRA_DAYS)
+                if parsed_end > max_end:
+                    return Response(
+                        {
+                            "success": False,
+                            "message": (
+                                f"A term cannot be longer than {TERM_MAX_MONTHS} months and "
+                                f"{TERM_MAX_EXTRA_DAYS} days. For this start date, the latest "
+                                f"allowed end date is {max_end.isoformat()}."
+                            ),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
             if not active_year:
                 active_year = _active_academic_year(user)
             try:
@@ -8990,6 +9027,17 @@ def cbt_exam_pin_detail(request, pin_id):
     return Response({"success": False, "message": "Unsupported PIN action."}, status=status.HTTP_400_BAD_REQUEST)
 
 
+GLOBAL_QUESTION_BANK_TENANT_SLUG = "schooldom-global-question-bank"
+
+
+def _global_question_bank_tenant():
+    """The dedicated (non-school) Tenant that owns platform-wide question banks like
+    JAMB/WAEC, set up via the seed_global_question_bank_tenant management command.
+    Returns None if that command hasn't been run yet, in which case callers should
+    simply show no global banks rather than error."""
+    return Tenant.objects.filter(slug=GLOBAL_QUESTION_BANK_TENANT_SLUG).first()
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def cbt_question_bank(request):
@@ -9020,19 +9068,49 @@ def cbt_question_bank(request):
     if subject_id:
         banks_qs = banks_qs.filter(subject_id=subject_id)
 
+    # JAMB/WAEC-style banks live under a dedicated non-school Tenant rather than any
+    # real school's tenant, since every school's own Subject rows are separate database
+    # rows even for the "same" subject name - no single subject_id could ever match
+    # every school at once. Matched here by subject NAME instead, so a global bank shows
+    # up for every school without changing how per-school banks/subjects work at all.
+    global_banks_qs = QuestionBank.objects.none()
+    global_tenant = _global_question_bank_tenant()
+    if global_tenant:
+        global_banks_qs = (
+            QuestionBank.objects.select_related("subject", "teacher")
+            .prefetch_related("questions")
+            .filter(tenant=global_tenant)
+        )
+        if subject_id:
+            requested_subject_name = str(
+                Subject.objects.filter(id=subject_id).values_list("name", flat=True).first() or ""
+            ).strip()
+            global_banks_qs = (
+                global_banks_qs.filter(subject__name__iexact=requested_subject_name)
+                if requested_subject_name
+                else QuestionBank.objects.none()
+            )
+
     search = str(request.query_params.get("q") or "").strip()
     if search:
         banks_qs = banks_qs.filter(Q(name__icontains=search) | Q(questions__text__icontains=search)).distinct()
+        global_banks_qs = global_banks_qs.filter(
+            Q(name__icontains=search) | Q(questions__text__icontains=search)
+        ).distinct()
 
     try:
         limit = max(1, min(int(request.query_params.get("limit", 200)), 500))
     except Exception:
         limit = 200
 
+    combined_banks = list(banks_qs.order_by("subject__name", "name")[:100]) + list(
+        global_banks_qs.order_by("name")[:20]
+    )
+
     question_rows = []
     bank_rows = []
     seen_question_ids = set()
-    for bank in banks_qs.order_by("subject__name", "name")[:100]:
+    for bank in combined_banks:
         bank_questions = list(bank.questions.filter(question_type="mcq").order_by("id")[:limit])
         bank_rows.append(
             {

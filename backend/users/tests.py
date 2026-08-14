@@ -2489,6 +2489,72 @@ class SchoolSettingsAPITests(TestCase):
         self.school.refresh_from_db()
         self.assertEqual(self.school.name, "Updated Settings School")
 
+    def test_k12_school_rejects_term_longer_than_three_months_fifteen_days(self):
+        # self.school defaults to K12 (SchoolTenant's own model default).
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={
+                "term_name": "First Term",
+                "term_start_date": "2026-09-01",
+                # One day past the 3-month-15-day cap (2026-12-16).
+                "term_end_date": "2026-12-17",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("3 months and 15 days", response.data["message"])
+        self.assertIn("2026-12-16", response.data["message"])
+        # Term.tenant is the legacy tenants.Tenant model, not self.school
+        # (core.SchoolTenant) - name is unique enough within this test's DB.
+        self.assertFalse(Term.objects.filter(name="First Term").exists())
+
+    def test_k12_school_accepts_term_exactly_at_the_cap(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={
+                "term_name": "First Term",
+                "term_start_date": "2026-09-01",
+                "term_end_date": "2026-12-16",  # exactly 3 months + 15 days
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        term = Term.objects.get(name="First Term")
+        self.assertEqual(str(term.end_date), "2026-12-16")
+
+    def test_non_k12_school_has_no_term_length_cap(self):
+        non_k12_school = SchoolTenant.objects.create(
+            name="Non-K12 Settings School",
+            schema_name="non_k12_settings_school_20260306",
+            is_active=True,
+            school_type=SchoolTenant.NON_K12,
+        )
+        non_k12_admin = User.objects.create_user(
+            email="admin@non-k12-settings.edu",
+            password="AdminPass123",
+            first_name="Admin",
+            last_name="User",
+            role="school_admin",
+            tenant=non_k12_school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=non_k12_admin)
+        response = self.client.patch(
+            "/api/app/school/settings/",
+            data={
+                "term_name": "Semester 1",
+                "term_start_date": "2026-09-01",
+                "term_end_date": "2027-02-01",  # 5 months - well past the K12 cap
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        term = Term.objects.get(name="Semester 1")
+        self.assertEqual(str(term.end_date), "2027-02-01")
+
     def test_school_rename_updates_code_domain_and_linked_ids(self):
         Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
         Domain.objects.create(tenant=self.school, domain="settings_school_20260306.school.local", is_primary=True)
