@@ -394,33 +394,31 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.3"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.4"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Fixed the app reporting itself as v0.1.0 forever (title bar and the "
-        "update checker never actually read the shipped version, so it kept "
-        "thinking an update was needed even right after installing one)\n"
-        "- Fixed the Update Available screen clipping text on smaller/higher-DPI "
-        "screens; window is now resizable and content reflows\n"
-        "- Fixed the app closing after an in-app update instead of reopening\n"
-        "- Exam timer now agrees across every PC on the LAN, anchored to this "
-        "admin PC's clock instead of each student PC's own clock\n"
-        "- Fixed Yoruba/French/special characters turning into '?' in answers "
-        "synced over the LAN\n"
-        "- Rich-text questions/instructions no longer show raw HTML tags on "
-        "the grading and exam review screens\n"
-        "- Carries forward 0.2.0's fixes: runs on all Windows versions",
+        "- Fixed <br> showing as literal text in the Edit Question/Edit Exam "
+        "screens; it now displays and saves as a real line break\n"
+        "- Student CBT: fixed the exam timer showing a nonsense value (e.g. "
+        "42211:39:01) when talking to an admin PC whose clock disagrees with "
+        "the student PC's - the fallback timer no longer depends on comparing "
+        "the two machines' clocks at all\n"
+        "- Student CBT: fixed a large empty gap between the question and "
+        "answer options on short questions\n"
+        "- Carries forward 0.2.3's fixes: correct version reporting, resizable "
+        "update screen, reopens itself after an in-app update, LAN timer "
+        "agreement, UTF-8 answer sync, no raw HTML on grading screens",
     ),
     "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-13"),
-    # Same GitHub Releases convention as v0.2.0/v0.2.1/v0.2.2 - create a
-    # "v0.2.3" release on this repo with
-    # SchoolDom-Admin-Sync-Win7-0.2.3-Setup.exe attached as an asset and this
+    # Same GitHub Releases convention as v0.2.0-v0.2.3 - create a "v0.2.4"
+    # release on this repo (tag exactly "v0.2.4", no stray characters) with
+    # SchoolDom-Admin-Sync-Win7-0.2.4-Setup.exe attached as an asset and this
     # URL resolves on its own.
     "download_url": os.environ.get(
         "CBT_ADMIN_APP_DOWNLOAD_URL",
-        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.3/SchoolDom-Admin-Sync-Win7-0.2.3-Setup.exe",
+        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.4/SchoolDom-Admin-Sync-Win7-0.2.4-Setup.exe",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3745514),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3745700),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
