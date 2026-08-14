@@ -4,7 +4,11 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace SchoolDom.StudentCbt.Win7
@@ -359,12 +363,37 @@ namespace SchoolDom.StudentCbt.Win7
             var startExamBtn = PrimaryButton("Start Exam", cardWidth - 28 - 170, y, 170);
             startExamBtn.Click += (s, e) => EnterExamMode();
             card.Controls.Add(startExamBtn);
+            var prefetchStatus = Label("Preparing exam materials...", cardWidth - 28 - 170 - 270, y + 13, 9, false, 260, Palette.Muted);
+            prefetchStatus.TextAlign = ContentAlignment.MiddleRight;
+            prefetchStatus.Visible = false;
+            card.Controls.Add(prefetchStatus);
             y += 42 + 24;
 
             card.Height = y;
             content.Controls.Add(card);
             centerCard();
             _root.Controls.Add(content);
+
+            // Question images fetch fastest the first time they're needed - get
+            // that fetch (and the local caching) out of the way now, while the
+            // student is still reading (untimed), instead of during the timed
+            // exam. Never blocks Start for more than a few seconds: an image
+            // that isn't cached yet just falls back to its live URL, same as
+            // before this fix existed.
+            var prefetchSettled = false;
+            Action finishPrefetch = () =>
+            {
+                if (prefetchSettled) return;
+                prefetchSettled = true;
+                startExamBtn.Enabled = true;
+                prefetchStatus.Visible = false;
+            };
+            var prefetchSafetyTimer = new Timer { Interval = 8000 };
+            prefetchSafetyTimer.Tick += (s, e) => { prefetchSafetyTimer.Stop(); prefetchSafetyTimer.Dispose(); finishPrefetch(); };
+            startExamBtn.Enabled = false;
+            prefetchStatus.Visible = true;
+            prefetchSafetyTimer.Start();
+            PrefetchQuestionImages(() => { prefetchSafetyTimer.Stop(); prefetchSafetyTimer.Dispose(); finishPrefetch(); });
         }
 
         private void LoadExamDetail()
@@ -378,6 +407,126 @@ namespace SchoolDom.StudentCbt.Win7
             var answers = Raw(_session, "answers", "Answers") as Dictionary<string, object>;
             _answers = answers ?? new Dictionary<string, object>();
             if (!_questions.Any()) throw new InvalidOperationException("This exam has no questions.");
+        }
+
+        private static readonly Regex ImgSrcRegex = new Regex("<img[^>]+src=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static string ImageCacheDir
+        {
+            get
+            {
+                var dir = Path.Combine(Path.GetTempPath(), "SchoolDomStudentCbt", "ImageCache");
+                Directory.CreateDirectory(dir);
+                return dir;
+            }
+        }
+
+        private static string CachePathForImageUrl(string url)
+        {
+            using (var md5 = MD5.Create())
+            {
+                var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(url));
+                var hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                string ext;
+                try { ext = Path.GetExtension(new Uri(url).AbsolutePath); }
+                catch { ext = ""; }
+                if (string.IsNullOrEmpty(ext) || ext.Length > 5) ext = ".img";
+                return Path.Combine(ImageCacheDir, hex + ext);
+            }
+        }
+
+        private static void CollectImageUrls(string html, HashSet<string> urls)
+        {
+            if (string.IsNullOrWhiteSpace(html)) return;
+            foreach (Match m in ImgSrcRegex.Matches(html))
+                urls.Add(m.Groups[1].Value);
+        }
+
+        // Only rewrites a src if it's actually cached on disk - an image whose
+        // download failed or hasn't finished yet is left pointing at its
+        // original (slower, but still working) live URL rather than a
+        // file:// path that doesn't exist.
+        private static string RewriteImageUrlsToLocalCache(string html)
+        {
+            if (string.IsNullOrWhiteSpace(html)) return html;
+            return ImgSrcRegex.Replace(html, m =>
+            {
+                var url = m.Groups[1].Value;
+                var cachedPath = CachePathForImageUrl(url);
+                if (!File.Exists(cachedPath)) return m.Value;
+                return m.Value.Replace(url, new Uri(cachedPath).AbsoluteUri);
+            });
+        }
+
+        private static void SetValue(Dictionary<string, object> item, string value, params string[] keys)
+        {
+            if (item == null) return;
+            foreach (var key in keys)
+            {
+                if (item.ContainsKey(key)) { item[key] = value; return; }
+            }
+        }
+
+        /// <summary>
+        /// Downloads every question/passage image up front, while the student is
+        /// still on the untimed Instructions screen, and rewrites each &lt;img&gt;
+        /// src to the local cached copy. Without this, an image was fetched live
+        /// by the embedded browser control the instant a question was first shown
+        /// - and again on every revisit, since RenderQuestion tears down and
+        /// rebuilds the WebBrowser control on every Next/Previous/jump click - so
+        /// the picture visibly "popped in" late every single time.
+        ///
+        /// Runs on a background thread and never blocks exam start for long: an
+        /// image not yet cached when the student clicks Start just falls back to
+        /// its original live URL for that one view (no worse than before), while
+        /// everything else benefits from what's already cached by then.
+        /// </summary>
+        private void PrefetchQuestionImages(Action onDone)
+        {
+            var urls = new HashSet<string>();
+            foreach (var question in _questions)
+            {
+                CollectImageUrls(Value(question, "text", "Text"), urls);
+                var group = Raw(question, "group", "Group") as Dictionary<string, object>;
+                if (group != null) CollectImageUrls(Value(group, "passage_text", "PassageText"), urls);
+            }
+            if (!urls.Any())
+            {
+                onDone?.Invoke();
+                return;
+            }
+
+            Task.Factory.StartNew(() =>
+            {
+                foreach (var url in urls)
+                {
+                    try
+                    {
+                        var path = CachePathForImageUrl(url);
+                        if (File.Exists(path)) continue;
+                        using (var client = new WebClient())
+                        {
+                            client.Headers.Add(HttpRequestHeader.UserAgent, "SchoolDomStudentCbt");
+                            client.DownloadFile(url, path);
+                        }
+                    }
+                    catch
+                    {
+                        // Leave this one uncached - RenderQuestion's HTML will still
+                        // point at the live URL and load it the slow way, same as before.
+                    }
+                }
+            }).ContinueWith(_ =>
+            {
+                foreach (var question in _questions)
+                {
+                    SetValue(question, RewriteImageUrlsToLocalCache(Value(question, "text", "Text")), "text", "Text");
+                    var group = Raw(question, "group", "Group") as Dictionary<string, object>;
+                    if (group != null)
+                        SetValue(group, RewriteImageUrlsToLocalCache(Value(group, "passage_text", "PassageText")), "passage_text", "PassageText");
+                }
+                onDone?.Invoke();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         private void SaveAnswersLocally()
@@ -623,6 +772,7 @@ namespace SchoolDom.StudentCbt.Win7
             sb.Append("table{border-collapse:collapse;width:100%;margin:0 0 8px 0;}td,th{border:1px solid #ccd;padding:4px 8px;}");
             sb.Append(".passage{background:#f0f4fb;border-left:3px solid #1860b4;padding:10px 14px;margin:0 0 14px 0;}");
             sb.Append(".ptitle{font-weight:bold;color:#1860b4;margin:0 0 6px 0;font-size:12px;}");
+            sb.Append("img{max-width:100%;height:auto;}");
             sb.Append("</style></head><body>");
             if (!string.IsNullOrWhiteSpace(passageText))
             {
