@@ -671,7 +671,9 @@ namespace SchoolDom.StudentCbt.Win7
             var passageGroup = Raw(question, "group", "Group") as Dictionary<string, object>;
             var passageTitle = passageGroup != null ? Value(passageGroup, "title", "Title") : "";
             var passageText = passageGroup != null ? Value(passageGroup, "passage_text", "PassageText") : "";
+            var passageImage = passageGroup != null ? Value(passageGroup, "image", "Image") : "";
             var questionText = Value(question, "text", "Text");
+            var questionImage = Value(question, "image", "Image");
 
             // A short one-line question and a full comprehension passage need very
             // different amounts of space. webViewInitialHeight is just a placeholder for
@@ -760,7 +762,7 @@ namespace SchoolDom.StudentCbt.Win7
                 }
                 catch { }
             };
-            _questionWebView.DocumentText = BuildQuestionHtml(passageTitle, passageText, questionText);
+            _questionWebView.DocumentText = BuildQuestionHtml(passageTitle, passageText, passageImage, questionText, questionImage);
 
             var prev = SecondaryButton("Previous", 32, 18, 120);
             prev.Enabled = _current > 0;
@@ -771,7 +773,7 @@ namespace SchoolDom.StudentCbt.Win7
             footer.Controls.Add(next);
         }
 
-        private static string BuildQuestionHtml(string passageTitle, string passageText, string questionText)
+        private static string BuildQuestionHtml(string passageTitle, string passageText, string passageImage, string questionText, string questionImage)
         {
             var sb = new StringBuilder();
             sb.Append("<!DOCTYPE html><html><head><meta charset='utf-8'><style>");
@@ -782,18 +784,27 @@ namespace SchoolDom.StudentCbt.Win7
             sb.Append(".ptitle{font-weight:bold;color:#1860b4;margin:0 0 6px 0;font-size:12px;}");
             sb.Append("img{max-width:100%;height:auto;}");
             sb.Append("</style></head><body>");
-            if (!string.IsNullOrWhiteSpace(passageText))
+            if (!string.IsNullOrWhiteSpace(passageText) || !string.IsNullOrWhiteSpace(passageImage))
             {
                 sb.Append("<div class='passage'>");
                 if (!string.IsNullOrWhiteSpace(passageTitle))
                     sb.Append("<p class='ptitle'>").Append(HtmlSafeText(passageTitle)).Append("</p>");
-                sb.Append(LooksLikeHtml(passageText) ? passageText : "<p>" + HtmlSafeText(passageText).Replace("\n", "<br>") + "</p>");
+                if (!string.IsNullOrWhiteSpace(passageText))
+                    sb.Append(LooksLikeHtml(passageText) ? passageText : "<p>" + HtmlSafeText(passageText).Replace("\n", "<br>") + "</p>");
+                AppendImageTag(sb, passageImage);
                 sb.Append("</div>");
             }
             if (!string.IsNullOrWhiteSpace(questionText))
                 sb.Append(LooksLikeHtml(questionText) ? questionText : "<p>" + HtmlSafeText(questionText).Replace("\n", "<br>") + "</p>");
+            AppendImageTag(sb, questionImage);
             sb.Append("</body></html>");
             return sb.ToString();
+        }
+
+        private static void AppendImageTag(StringBuilder sb, string imageSrc)
+        {
+            if (string.IsNullOrWhiteSpace(imageSrc)) return;
+            sb.Append("<p><img src=\"").Append(HtmlSafeText(imageSrc).Replace("\"", "&quot;")).Append("\"></p>");
         }
 
         private static bool LooksLikeHtml(string text)

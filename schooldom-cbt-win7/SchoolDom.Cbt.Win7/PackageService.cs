@@ -371,7 +371,11 @@ namespace SchoolDom.Cbt.Win7
                 Text = FirstText(q, "text"),
                 Type = FirstText(q, "type", "question_type"),
                 Points = JsonUtil.Double(q.ContainsKey("points") ? q["points"] : null, JsonUtil.Double(q.ContainsKey("marks") ? q["marks"] : null, 1)),
-                CorrectAnswer = FirstText(q, "correct_answer")
+                CorrectAnswer = FirstText(q, "correct_answer"),
+                // Embedded as a data: URL for the same reason student ProfilePictureData is -
+                // student exam PCs only ever reach the admin app over the LAN, with no route
+                // to the cloud host a live image URL would point at.
+                Image = DownloadImageDataUrl(FirstText(q, "image"))
             };
             foreach (var item in ToList(q.ContainsKey("options") ? q["options"] : null))
             {
@@ -396,7 +400,8 @@ namespace SchoolDom.Cbt.Win7
                 question.Group = new QuestionGroupRecord
                 {
                     Title = FirstText(group, "title"),
-                    PassageText = FirstText(group, "passage_text")
+                    PassageText = FirstText(group, "passage_text"),
+                    Image = DownloadImageDataUrl(FirstText(group, "image"))
                 };
             }
             return question;

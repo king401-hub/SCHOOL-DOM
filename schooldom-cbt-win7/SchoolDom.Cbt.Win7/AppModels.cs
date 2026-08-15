@@ -71,6 +71,7 @@ namespace SchoolDom.Cbt.Win7
         public string Type { get; set; }
         public double Points { get; set; }
         public string CorrectAnswer { get; set; }
+        public string Image { get; set; }
         public List<string> Options { get; set; }
         public QuestionGroupRecord Group { get; set; }
 
@@ -84,6 +85,7 @@ namespace SchoolDom.Cbt.Win7
     {
         public string Title { get; set; }
         public string PassageText { get; set; }
+        public string Image { get; set; }
     }
 
     public class SessionRecord
