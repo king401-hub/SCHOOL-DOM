@@ -215,6 +215,161 @@ const extractDocxText = async (arrayBuffer) => {
   return docxXmlToText(decodeTextBytes(documentBytes));
 };
 
+// Lists every zip entry whose name matches `predicate`, independent of readZipEntryBytes
+// (which only ever reads one named entry) so DOCX image extraction can't affect the
+// existing, already-working text-import path.
+const listZipEntries = async (arrayBuffer, predicate) => {
+  const view = new DataView(arrayBuffer);
+  const bytes = new Uint8Array(arrayBuffer);
+  let eocdOffset = -1;
+  for (let offset = bytes.length - 22; offset >= 0; offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      eocdOffset = offset;
+      break;
+    }
+  }
+  if (eocdOffset < 0) return [];
+
+  const entryCount = view.getUint16(eocdOffset + 10, true);
+  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
+  let offset = centralDirectoryOffset;
+  const matches = [];
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) break;
+    const compressionMethod = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const fileName = decodeTextBytes(bytes.slice(offset + 46, offset + 46 + fileNameLength));
+
+    if (predicate(fileName)) {
+      try {
+        if (view.getUint32(localHeaderOffset, true) === 0x04034b50) {
+          const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+          const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+          const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+          const compressedBytes = bytes.slice(dataStart, dataStart + compressedSize);
+          let entryBytes = null;
+          if (compressionMethod === 0) {
+            entryBytes = compressedBytes;
+          } else if (compressionMethod === 8 && typeof DecompressionStream !== "undefined") {
+            const stream = new Blob([compressedBytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+            entryBytes = new Uint8Array(await new Response(stream).arrayBuffer());
+          }
+          if (entryBytes) matches.push({ name: fileName, bytes: entryBytes });
+        }
+      } catch {
+        // Skip an entry this browser can't decompress rather than failing the whole import.
+      }
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return matches;
+};
+
+const IMAGE_EXTENSION_MIME = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  bmp: "image/bmp",
+  webp: "image/webp",
+};
+
+const extractDocxImages = async (arrayBuffer, baseName) => {
+  const entries = await listZipEntries(arrayBuffer, (name) => /^word\/media\//i.test(name));
+  const images = [];
+  entries.forEach((entry, index) => {
+    const ext = getFileExtension(entry.name);
+    const mime = IMAGE_EXTENSION_MIME[ext];
+    if (!mime) return; // Skip formats browsers can't render inline (e.g. EMF/WMF).
+    images.push(new File([entry.bytes], `${baseName}-image-${index + 1}.${ext}`, { type: mime }));
+  });
+  return images;
+};
+
+const pdfImageDataToFile = async (imageData, name) => {
+  const { width, height, kind, data } = imageData || {};
+  if (!width || !height || !data) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const output = ctx.createImageData(width, height);
+  const pixels = output.data;
+  if (kind === 3) {
+    // RGBA_32BPP
+    pixels.set(data.subarray ? data.subarray(0, pixels.length) : data);
+  } else if (kind === 2) {
+    // RGB_24BPP
+    for (let i = 0, j = 0; j < pixels.length; i += 3, j += 4) {
+      pixels[j] = data[i];
+      pixels[j + 1] = data[i + 1];
+      pixels[j + 2] = data[i + 2];
+      pixels[j + 3] = 255;
+    }
+  } else if (kind === 1) {
+    // GRAYSCALE_1BPP, packed 8 pixels per byte
+    const bytesPerRow = Math.ceil(width / 8);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const byte = data[y * bytesPerRow + (x >> 3)] || 0;
+        const value = ((byte >> (7 - (x % 8))) & 1) ? 255 : 0;
+        const j = (y * width + x) * 4;
+        pixels[j] = value;
+        pixels[j + 1] = value;
+        pixels[j + 2] = value;
+        pixels[j + 3] = 255;
+      }
+    }
+  } else {
+    return null; // Unsupported colorspace (e.g. JPX/CMYK) - skip rather than render garbage.
+  }
+  ctx.putImageData(output, 0, 0);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  return blob ? new File([blob], name, { type: "image/png" }) : null;
+};
+
+const extractPdfImages = async (pdfjsLib, pdf, baseName) => {
+  const images = [];
+  const seen = new Set();
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    let page;
+    let opList;
+    try {
+      page = await pdf.getPage(pageNumber);
+      opList = await page.getOperatorList();
+    } catch {
+      continue;
+    }
+    for (let i = 0; i < opList.fnArray.length; i += 1) {
+      if (opList.fnArray[i] !== pdfjsLib.OPS.paintImageXObject) continue;
+      const objId = opList.argsArray[i]?.[0];
+      if (!objId || seen.has(objId)) continue;
+      seen.add(objId);
+      try {
+        const imageData = await new Promise((resolve, reject) => {
+          try {
+            page.objs.get(objId, resolve);
+          } catch (getError) {
+            reject(getError);
+          }
+        });
+        const file = await pdfImageDataToFile(imageData, `${baseName}-p${pageNumber}-image-${images.length + 1}.png`);
+        if (file) images.push(file);
+      } catch {
+        // Skip images pdf.js couldn't decode (unsupported filter/colorspace) rather than failing the import.
+      }
+    }
+  }
+  return images;
+};
+
 const readImportFileText = async (file) => {
   const extension = getFileExtension(file.name);
   const arrayBuffer = await file.arrayBuffer();
@@ -858,6 +1013,7 @@ export function TeacherExamBuilder({
   const [importText, setImportText] = useState("");
   const [importFeedback, setImportFeedback] = useState("");
   const [importError, setImportError] = useState("");
+  const [extractedImages, setExtractedImages] = useState([]);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1313,7 +1469,55 @@ export function TeacherExamBuilder({
       setImportFeedback("");
       setImportError(fileError.message || "Could not read the selected file.");
     }
+
+    // Best-effort image extraction: never blocks or overrides the text-import result above.
+    try {
+      const extension = getFileExtension(file.name);
+      const baseName = file.name.replace(/\.[^.]+$/, "") || "import";
+      let images = [];
+      if (extension === "docx") {
+        images = await extractDocxImages(await file.arrayBuffer(), baseName);
+      } else if (extension === "pdf") {
+        const pdfjsLib = await loadPdfJs();
+        const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        images = await extractPdfImages(pdfjsLib, pdf, baseName);
+      }
+      if (images.length) {
+        setExtractedImages((previous) => [
+          ...previous,
+          ...images.map((imageFile, index) => ({
+            id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+            file: imageFile,
+            url: filePreviewUrl(imageFile),
+            attachedTo: "",
+          })),
+        ]);
+      }
+    } catch {
+      // Images are a bonus on top of the text import; a failure here shouldn't surface as an error.
+    }
+
     event.target.value = "";
+  };
+
+  const attachExtractedImage = (imageId, targetValue) => {
+    const image = extractedImages.find((item) => item.id === imageId);
+    if (!image || !targetValue) return;
+    if (targetValue.startsWith("group:")) {
+      const groupKey = targetValue.slice("group:".length);
+      const targetQuestion = questions.find((item) => item.groupKey === groupKey);
+      if (!targetQuestion) return;
+      updateQuestionGroup(targetQuestion.id, { imageFile: image.file, imagePreview: image.url });
+    } else {
+      updateQuestion(targetValue, { questionImageFile: image.file, questionImagePreview: image.url });
+    }
+    setExtractedImages((previous) =>
+      previous.map((item) => (item.id === imageId ? { ...item, attachedTo: targetValue } : item))
+    );
+  };
+
+  const removeExtractedImage = (imageId) => {
+    setExtractedImages((previous) => previous.filter((item) => item.id !== imageId));
   };
 
   const updateQuestion = (questionId, patch) => {
@@ -1382,6 +1586,14 @@ export function TeacherExamBuilder({
       }
       return options;
     }, []);
+
+  const imageAssignTargets = [
+    ...questions.map((item, index) => ({
+      value: item.id,
+      label: `Q${index + 1}${item.text ? `: ${String(item.text).slice(0, 40)}` : ""}`,
+    })),
+    ...groupOptions.map((group) => ({ value: `group:${group.key}`, label: `Passage: ${group.label}` })),
+  ];
 
   return (
     <section className={`exam-builder-shell ${isEditing ? "exam-builder-editing" : ""}`}>
@@ -1615,6 +1827,39 @@ export function TeacherExamBuilder({
                   />
                   {importError ? <p className="form-feedback error">{importError}</p> : null}
                   {importFeedback ? <p className="form-feedback success">{importFeedback}</p> : null}
+                  {extractedImages.length ? (
+                    <div className="extracted-images-panel">
+                      <div className="cbt-bank-picker-head">
+                        <div>
+                          <h4>Images found in the file</h4>
+                          <p>Pick which question (or passage) each image belongs to. Nothing is attached automatically.</p>
+                        </div>
+                        <button type="button" className="table-action" onClick={() => setExtractedImages([])}>
+                          Clear all
+                        </button>
+                      </div>
+                      <div className="extracted-images-grid">
+                        {extractedImages.map((image) => (
+                          <div key={image.id} className="extracted-image-card">
+                            <img src={image.url} alt="Extracted from imported file" />
+                            <select
+                              value={image.attachedTo || ""}
+                              onChange={(event) => attachExtractedImage(image.id, event.target.value)}
+                            >
+                              <option value="">Attach to...</option>
+                              {imageAssignTargets.map((target) => (
+                                <option key={target.value} value={target.value}>{target.label}</option>
+                              ))}
+                            </select>
+                            {image.attachedTo ? <small className="field-note">Attached &#10003;</small> : null}
+                            <button type="button" className="table-action" onClick={() => removeExtractedImage(image.id)}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {questions.map((question, index) => {
