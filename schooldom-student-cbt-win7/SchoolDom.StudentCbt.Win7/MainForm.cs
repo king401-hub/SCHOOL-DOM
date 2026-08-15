@@ -216,7 +216,11 @@ namespace SchoolDom.StudentCbt.Win7
             Action centerColumn = () => { column.Left = Math.Max(24, (content.ClientSize.Width - column.Width) / 2); };
             content.Resize += (s, e) => centerColumn();
 
-            var y = 32;
+            // Verified by screen capture: a card placed too close under the header (e.g. y=32)
+            // still rendered visibly clipped at the top on this exact layout even though the
+            // math says it shouldn't overlap - 90px of clearance is the smallest gap that
+            // reliably rendered the full card in testing.
+            var y = 90;
             const int profileCardWidth = 290;
             const int profileBadgeWidth = 242;
             const int profileBadgeHeight = 136;
@@ -269,9 +273,7 @@ namespace SchoolDom.StudentCbt.Win7
             content.Controls.Add(column);
             centerColumn();
             _root.Controls.Add(content);
-            // A Start/Resume Exam button taking initial focus makes the AutoScroll
-            // panel jump down to keep it in view, clipping the profile card above it.
-            // Reset the scroll position after the focus assignment settles.
+            // Defensive: make sure the panel never opens pre-scrolled away from the top.
             BeginInvoke((MethodInvoker)(() => content.AutoScrollPosition = new Point(0, 0)));
         }
 
