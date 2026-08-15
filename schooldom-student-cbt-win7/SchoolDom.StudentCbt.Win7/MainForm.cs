@@ -353,7 +353,7 @@ namespace SchoolDom.StudentCbt.Win7
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                Text = string.IsNullOrWhiteSpace(instructionsText) ? "No special instructions." : instructionsText,
+                Text = string.IsNullOrWhiteSpace(instructionsText) ? "No special instructions." : HtmlToPlainText(instructionsText),
                 Font = new Font("Segoe UI", 11),
                 BorderStyle = BorderStyle.FixedSingle
             };
@@ -829,6 +829,33 @@ namespace SchoolDom.StudentCbt.Win7
         private static string HtmlSafeText(string text)
         {
             return (text ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
+        // The Instructions screen shows this in a plain TextBox, not the WebBrowser used for
+        // question text - a TextBox has no HTML renderer at all, so tags like <br> from the
+        // exam builder's rich-text editor would otherwise show up as literal text.
+        private static string HtmlToPlainText(string value)
+        {
+            var text = value ?? "";
+            if (text.IndexOf('<') < 0) return text;
+            var looksLikeHtml = Regex.IsMatch(text, @"</[a-z]+>|<br\s*/?>|<p[\s>]|<div[\s>]|<li[\s>]", RegexOptions.IgnoreCase);
+            if (!looksLikeHtml) return text;
+
+            var result = Regex.Replace(text, @"<\s*br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            result = Regex.Replace(result, @"</\s*(p|div|li|h[1-6]|tr)\s*>", "\n", RegexOptions.IgnoreCase);
+            result = Regex.Replace(result, @"<\s*li[^>]*>", "- ", RegexOptions.IgnoreCase);
+            result = Regex.Replace(result, @"<[^>]+>", "");
+            result = result
+                .Replace("&nbsp;", " ")
+                .Replace("&lt;", "<")
+                .Replace("&gt;", ">")
+                .Replace("&quot;", "\"")
+                .Replace("&#39;", "'")
+                .Replace("&apos;", "'")
+                .Replace("&amp;", "&");
+            result = Regex.Replace(result, @"[ \t]+\n", "\n");
+            result = Regex.Replace(result, @"\n{3,}", "\n\n");
+            return result.Trim();
         }
 
         private void SaveCurrentAnswer(Control container)
