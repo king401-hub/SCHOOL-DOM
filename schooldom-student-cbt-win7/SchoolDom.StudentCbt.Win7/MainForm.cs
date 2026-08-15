@@ -616,10 +616,14 @@ namespace SchoolDom.StudentCbt.Win7
             var sideWidth = 286;
             var gap = 24;
             var mainWidth = Math.Min(820, availableWidth - sideWidth - gap - 96);
-            var cardHeight = Math.Max(520, availableHeight - 64);
+            // Same header + card-near-top structure as ShowExamSelection/ShowInstructions,
+            // which needed 90px of clearance under the header to render without clipping -
+            // reserve the same here and take the extra height back out of the card so it
+            // doesn't overflow past the bottom of the window.
+            var top = 90;
+            var cardHeight = Math.Max(520, availableHeight - top - 40);
             var totalWidth = sideWidth + gap + mainWidth;
             var left = Math.Max(24, (availableWidth - totalWidth) / 2);
-            var top = 24;
             var side = Card(left, top, sideWidth, cardHeight);
             var main = Card(left + sideWidth + gap, top, mainWidth, cardHeight);
             content.Controls.Add(side);
