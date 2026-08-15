@@ -303,7 +303,10 @@ namespace SchoolDom.StudentCbt.Win7
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, AutoScroll = true };
             const int cardWidth = 820;
-            var card = Card(0, 24, cardWidth, 10);
+            // Same header+AutoScroll-content+card-near-top structure as ShowExamSelection,
+            // which was verified by screen capture to render clipped at 24px clearance under
+            // the header despite the layout math looking correct - matching its 90px minimum.
+            var card = Card(0, 90, cardWidth, 10);
             Action centerCard = () => { card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2); };
             content.Resize += (s, e) => centerCard();
 
