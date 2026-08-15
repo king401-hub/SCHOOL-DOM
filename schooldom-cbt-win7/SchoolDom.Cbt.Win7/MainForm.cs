@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -611,7 +612,7 @@ namespace SchoolDom.Cbt.Win7
 
         private QuestionRecord PromptQuestion(QuestionRecord existing)
         {
-            using (var form = ListForm(existing == null ? "Add Question" : "Edit Question", 620, 520))
+            using (var form = ListForm(existing == null ? "Add Question" : "Edit Question", 620, 580))
             {
                 var existingOptions = existing == null || existing.Options == null ? new List<string>() : existing.Options;
                 form.Controls.Add(TextLabel("Question", 28, 24, 9, true, 220, Palette.Text));
@@ -642,8 +643,65 @@ namespace SchoolDom.Cbt.Win7
                 var marks = Field(form, "Marks", existing == null ? "1" : Math.Max(1, existing.Points).ToString(), 318, 334, false);
                 marks.Width = 90;
 
+                form.Controls.Add(TextLabel("Image (optional)", 28, 376, 9, true, 220, Palette.Text));
+                var pickedImage = existing == null ? "" : (existing.Image ?? "");
+                var imagePreview = new PictureBox
+                {
+                    Left = 28,
+                    Top = 400,
+                    Width = 64,
+                    Height = 64,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    BackColor = Color.White
+                };
+                if (pickedImage.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { imagePreview.Image = ImageFromDataUrl(pickedImage); } catch { pickedImage = ""; }
+                }
+                form.Controls.Add(imagePreview);
+                var chooseImage = SecondaryButton("Choose Image...", 104, 416, 130);
+                chooseImage.Click += (s, e) =>
+                {
+                    using (var dialog = new OpenFileDialog { Filter = "Images (*.png;*.jpg;*.jpeg;*.gif;*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp" })
+                    {
+                        if (dialog.ShowDialog(form) != DialogResult.OK) return;
+                        try
+                        {
+                            Bitmap clone;
+                            string mime;
+                            byte[] bytes;
+                            using (var fileStream = new FileStream(dialog.FileName, FileMode.Open, FileAccess.Read))
+                            using (var raw = Image.FromStream(fileStream))
+                            {
+                                var saveFormat = ImageFormat.Png;
+                                mime = "image/png";
+                                if (ImageFormat.Jpeg.Equals(raw.RawFormat)) { saveFormat = ImageFormat.Jpeg; mime = "image/jpeg"; }
+                                else if (ImageFormat.Gif.Equals(raw.RawFormat)) { saveFormat = ImageFormat.Gif; mime = "image/gif"; }
+                                using (var ms = new MemoryStream())
+                                {
+                                    raw.Save(ms, saveFormat);
+                                    bytes = ms.ToArray();
+                                }
+                                clone = new Bitmap(raw);
+                            }
+                            pickedImage = "data:" + mime + ";base64," + Convert.ToBase64String(bytes);
+                            imagePreview.Image?.Dispose();
+                            imagePreview.Image = clone;
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Could not read that image file. Use a PNG, JPEG, GIF, or BMP file.\n\n" + ex.Message, "Image");
+                        }
+                    }
+                };
+                form.Controls.Add(chooseImage);
+                var removeImage = SecondaryButton("Remove", 244, 416, 80);
+                removeImage.Click += (s, e) => { pickedImage = ""; imagePreview.Image?.Dispose(); imagePreview.Image = null; };
+                form.Controls.Add(removeImage);
+
                 QuestionRecord result = null;
-                var save = PrimaryButton("Save Question", 28, 420, 140);
+                var save = PrimaryButton("Save Question", 28, 490, 140);
                 save.Click += (s, e) =>
                 {
                     var options = new List<string>();
@@ -672,7 +730,8 @@ namespace SchoolDom.Cbt.Win7
                         Type = "mcq",
                         Points = pointValue,
                         Options = options,
-                        CorrectAnswer = options[selected]
+                        CorrectAnswer = options[selected],
+                        Image = pickedImage
                     };
                     form.Close();
                 };
@@ -1454,6 +1513,17 @@ namespace SchoolDom.Cbt.Win7
         private string Display(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? "Not available" : value;
+        }
+
+        private Image ImageFromDataUrl(string dataUrl)
+        {
+            var comma = (dataUrl ?? "").IndexOf(',');
+            if (comma < 0) throw new InvalidOperationException("Invalid image data.");
+            var bytes = Convert.FromBase64String(dataUrl.Substring(comma + 1));
+            using (var stream = new MemoryStream(bytes))
+            {
+                return Image.FromStream(stream);
+            }
         }
 
         private string DisplayStudentName(SessionRecord session, StudentRecord student)
