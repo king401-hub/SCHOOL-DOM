@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -163,12 +164,50 @@ def _file_url(request, field):
     return request.build_absolute_uri(url) if request else url
 
 
+def _webp_safe_image_url(request, field):
+    """Same as _file_url, but converts a WebP file to a cached PNG copy first.
+
+    Question/passage images render through the Win7 desktop CBT app's
+    embedded IE control, which has no WebP decoder at all - and browsers
+    increasingly save/export images as WebP by default, so an uploaded
+    file being WebP is common, not exotic. Detected by magic bytes rather
+    than extension, since an uploaded file's name doesn't guarantee its
+    real format. Every other format passes through untouched.
+    """
+    if not field:
+        return ""
+    try:
+        path = Path(field.path)
+    except Exception:
+        return _file_url(request, field)
+    try:
+        with open(path, "rb") as fh:
+            header = fh.read(12)
+    except Exception:
+        return _file_url(request, field)
+    if header[:4] != b"RIFF" or header[8:12] != b"WEBP":
+        return _file_url(request, field)
+
+    converted_path = path.with_suffix(".png")
+    if not converted_path.exists():
+        try:
+            from PIL import Image
+
+            with Image.open(path) as img:
+                img.convert("RGBA").save(converted_path, "PNG")
+        except Exception:
+            return _file_url(request, field)
+
+    converted_url = field.url.rsplit("/", 1)[0] + "/" + converted_path.name
+    return request.build_absolute_uri(converted_url) if request else converted_url
+
+
 def _question_payload(question, request=None):
     group = question.group
     return {
         "id": question.id,
         "text": question.text,
-        "image": _file_url(request, question.image),
+        "image": _webp_safe_image_url(request, question.image),
         "attachment": _file_url(request, question.attachment),
         "options": question.options or [],
         "question_type": question.question_type,
@@ -179,7 +218,7 @@ def _question_payload(question, request=None):
             "title": group.title,
             "group_type": group.group_type,
             "passage_text": group.passage_text,
-            "image": _file_url(request, group.image),
+            "image": _webp_safe_image_url(request, group.image),
         } if group else None,
     }
 
