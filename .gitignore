@@ -71,7 +71,6 @@ obj/
 *.user
 *.suo
 *.zip
-schooldom-cbt-win7/release/
 
 # Uploaded media
 media/
