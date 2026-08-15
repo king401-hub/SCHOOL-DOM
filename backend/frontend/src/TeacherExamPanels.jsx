@@ -19,6 +19,55 @@ const bytesStartWithZipHeader = (bytes) => bytes?.[0] === 0x50 && bytes?.[1] ===
 const bytesStartWithPdfHeader = (bytes) =>
   bytes?.[0] === 0x25 && bytes?.[1] === 0x50 && bytes?.[2] === 0x44 && bytes?.[3] === 0x46;
 
+let pdfjsLibPromise = null;
+const loadPdfJs = () => {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = Promise.all([
+      import("pdfjs-dist"),
+      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+    ]).then(([pdfjsLib, workerModule]) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
+      return pdfjsLib;
+    });
+  }
+  return pdfjsLibPromise;
+};
+
+const extractPdfText = async (arrayBuffer) => {
+  let pdfjsLib;
+  try {
+    pdfjsLib = await loadPdfJs();
+  } catch {
+    throw new Error("Could not load the PDF reader. Check your connection and try again.");
+  }
+
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  } catch {
+    throw new Error("This PDF could not be read. It may be corrupted or password-protected.");
+  }
+
+  const pageTexts = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    let pageText = "";
+    content.items.forEach((item) => {
+      if (typeof item.str !== "string") return;
+      pageText += item.str;
+      pageText += item.hasEOL ? "\n" : " ";
+    });
+    pageTexts.push(pageText.replace(/[ \t]+\n/g, "\n").trim());
+  }
+
+  const text = pageTexts.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) {
+    throw new Error("This PDF has no extractable text (it may be a scanned image). Convert it to DOCX, TXT, or CSV and try again.");
+  }
+  return text;
+};
+
 const decodeTextBytes = (bytes) => new TextDecoder("utf-8").decode(bytes);
 
 const looksReadableText = (text) => {
@@ -171,7 +220,7 @@ const readImportFileText = async (file) => {
   const arrayBuffer = await file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
   if (extension === "pdf" || bytesStartWithPdfHeader(bytes)) {
-    throw new Error("PDF files can't be imported directly. Convert it to DOCX, TXT, or CSV and try again.");
+    return extractPdfText(arrayBuffer);
   }
   if (WORD_IMPORT_EXTENSIONS.has(extension) || bytesStartWithZipHeader(bytes)) {
     return extractDocxText(arrayBuffer);
@@ -1546,7 +1595,7 @@ export function TeacherExamBuilder({
                     <div className="table-actions-inline">
                       <label className="table-action file-action">
                         Choose file
-                        <input type="file" accept=".csv,.tsv,.txt,.tdx,.json,.qti,.xml,.docx" onChange={handleImportFile} />
+                        <input type="file" accept=".csv,.tsv,.txt,.tdx,.json,.qti,.xml,.docx,.pdf" onChange={handleImportFile} />
                       </label>
                       <button type="button" className="table-action active" onClick={importStandardQuestions}>
                         Import questions
