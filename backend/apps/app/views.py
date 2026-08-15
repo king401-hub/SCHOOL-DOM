@@ -59,17 +59,18 @@ def offline_cbt_installer_path():
 def win7_cbt_installer_candidates():
     release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-win7" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
-    candidates = [
-        media_dir / STUDENT_CBT_WIN7_FILENAME,
-        media_dir / "SchoolDomCBT-Win7.exe",
-        media_dir / "SchoolDom-Admin-Sync-Win7-Setup.exe",
-        media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
-    ]
+    candidates = []
     if release_dir.exists():
         candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
         candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip"), reverse=True))
         candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
         candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
+    candidates.extend([
+        media_dir / STUDENT_CBT_WIN7_FILENAME,
+        media_dir / "SchoolDomCBT-Win7.exe",
+        media_dir / "SchoolDom-Admin-Sync-Win7-Setup.exe",
+        media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
+    ])
     return candidates
 
 
@@ -83,13 +84,14 @@ def win7_cbt_installer_path():
 def win7_student_cbt_installer_candidates():
     release_dir = Path(settings.BASE_DIR) / "schooldom-student-cbt-win7" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
-    candidates = [
-        media_dir / STUDENT_CBT_WIN7_CLIENT_FILENAME,
-        media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
-    ]
+    candidates = []
     if release_dir.exists():
         candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
         candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
+    candidates.extend([
+        media_dir / STUDENT_CBT_WIN7_CLIENT_FILENAME,
+        media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
+    ])
     return candidates
 
 
