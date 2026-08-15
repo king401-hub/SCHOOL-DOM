@@ -216,11 +216,13 @@ namespace SchoolDom.StudentCbt.Win7
             Action centerColumn = () => { column.Left = Math.Max(24, (content.ClientSize.Width - column.Width) / 2); };
             content.Resize += (s, e) => centerColumn();
 
-            var y = 24;
+            var y = 32;
             const int profileCardWidth = 290;
             const int profileBadgeWidth = 242;
-            var profileCard = Card(0, y, profileCardWidth, 120);
-            profileCard.Controls.Add(CreateLargeStudentBadge((profileCardWidth - profileBadgeWidth) / 2, -8));
+            const int profileBadgeHeight = 136;
+            const int profileCardHeight = profileBadgeHeight + 16;
+            var profileCard = Card(0, y, profileCardWidth, profileCardHeight);
+            profileCard.Controls.Add(CreateLargeStudentBadge((profileCardWidth - profileBadgeWidth) / 2, (profileCardHeight - profileBadgeHeight) / 2));
             column.Controls.Add(profileCard);
             y += profileCard.Height + 28;
 
