@@ -16,6 +16,9 @@ const WORD_IMPORT_EXTENSIONS = new Set(["docx"]);
 
 const bytesStartWithZipHeader = (bytes) => bytes?.[0] === 0x50 && bytes?.[1] === 0x4b;
 
+const bytesStartWithPdfHeader = (bytes) =>
+  bytes?.[0] === 0x25 && bytes?.[1] === 0x50 && bytes?.[2] === 0x44 && bytes?.[3] === 0x46;
+
 const decodeTextBytes = (bytes) => new TextDecoder("utf-8").decode(bytes);
 
 const looksReadableText = (text) => {
@@ -167,6 +170,9 @@ const readImportFileText = async (file) => {
   const extension = getFileExtension(file.name);
   const arrayBuffer = await file.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
+  if (extension === "pdf" || bytesStartWithPdfHeader(bytes)) {
+    throw new Error("PDF files can't be imported directly. Convert it to DOCX, TXT, or CSV and try again.");
+  }
   if (WORD_IMPORT_EXTENSIONS.has(extension) || bytesStartWithZipHeader(bytes)) {
     return extractDocxText(arrayBuffer);
   }
@@ -1540,7 +1546,7 @@ export function TeacherExamBuilder({
                     <div className="table-actions-inline">
                       <label className="table-action file-action">
                         Choose file
-                        <input type="file" onChange={handleImportFile} />
+                        <input type="file" accept=".csv,.tsv,.txt,.tdx,.json,.qti,.xml,.docx" onChange={handleImportFile} />
                       </label>
                       <button type="button" className="table-action active" onClick={importStandardQuestions}>
                         Import questions
