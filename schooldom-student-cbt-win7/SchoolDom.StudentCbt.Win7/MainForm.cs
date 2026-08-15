@@ -269,6 +269,10 @@ namespace SchoolDom.StudentCbt.Win7
             content.Controls.Add(column);
             centerColumn();
             _root.Controls.Add(content);
+            // A Start/Resume Exam button taking initial focus makes the AutoScroll
+            // panel jump down to keep it in view, clipping the profile card above it.
+            // Reset the scroll position after the focus assignment settles.
+            BeginInvoke((MethodInvoker)(() => content.AutoScrollPosition = new Point(0, 0)));
         }
 
         private void StartSelectedExam(Dictionary<string, object> exam)
