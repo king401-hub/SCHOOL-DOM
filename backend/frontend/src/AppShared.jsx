@@ -1045,6 +1045,24 @@ async function inlineImagesAsDataUrls(root) {
   );
 }
 
+// Fonts loaded via the remote Google Fonts @import in styles.css. Selectable
+// in document theme settings (currently just Manrope) alongside plain system
+// fonts (Segoe UI/Georgia/Arial/Times New Roman). Safe to use for print/PDF
+// (openPrintableDocument opens a real browser print window - unaffected) but
+// NOT for the PNG export below: the SVG foreignObject -> canvas render taints
+// as soon as its embedded text needs a cross-origin font file, even one
+// already cached from the page's own stylesheet, so canvas.toBlob() throws
+// "Tainted canvases may not be exported" for every document using one of
+// these, regardless of images. Substitute a visually-close system font for
+// the canvas render only; the live preview and print/PDF output keep the
+// school's actual chosen font untouched.
+const CANVAS_UNSAFE_FONT_FALLBACK = {
+  Manrope: "Segoe UI",
+  Inter: "Segoe UI",
+  Outfit: "Segoe UI",
+  "JetBrains Mono": "Consolas",
+};
+
 /** Rasterizes the given element (via an SVG foreignObject -> canvas, no
  * external library) into a downloaded PNG, styled with the same
  * documentStylesForExport(theme) used by print/PDF output. */
@@ -1053,6 +1071,10 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
   if (!element) {
     throw new Error("The document preview is not ready yet.");
   }
+  const canvasSafeTheme = {
+    ...(theme || {}),
+    font_family: CANVAS_UNSAFE_FONT_FALLBACK[theme?.font_family] || theme?.font_family || DEFAULT_DOCUMENT_THEME.font_family,
+  };
   const clone = element.cloneNode(true);
   clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
   await inlineImagesAsDataUrls(clone);
@@ -1067,7 +1089,7 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
   // self-closes void elements correctly, unlike .outerHTML on a live node.
   const serializedClone = new XMLSerializer().serializeToString(clone);
   const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">${serializedClone}</div>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport(theme)}</style>${html}</foreignObject></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport(canvasSafeTheme)}</style>${html}</foreignObject></svg>`;
   const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   const image = new Image();
   const pngUrl = await new Promise((resolve, reject) => {
