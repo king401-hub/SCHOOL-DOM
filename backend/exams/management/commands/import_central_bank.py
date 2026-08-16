@@ -3,6 +3,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 
 from academic.models import Subject
 from exams.models import Question, QuestionBank, Topic
@@ -155,12 +156,18 @@ class Command(BaseCommand):
                     Question.objects.filter(tenant=tenant, topic=topic).update(topic=None)
 
                 for record in records:
+                    # Scoped to this topic (or unclaimed) so that identical question
+                    # text/options belonging to a *different* board/topic - e.g. JAMB and
+                    # WAEC legitimately sharing source content - isn't stolen away from the
+                    # topic it already belongs to. Only a question with no topic yet, or
+                    # already in this exact topic, is safe to reuse; otherwise a fresh row
+                    # is created for this topic.
                     question = Question.objects.filter(
                         tenant=tenant,
                         text=record["text"],
                         options=record["options"],
                         correct_answer=record["correct_answer"],
-                    ).first()
+                    ).filter(Q(topic=topic) | Q(topic__isnull=True)).first()
                     if question:
                         question.explanation = record["explanation"]
                         question.points = record["points"]
