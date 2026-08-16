@@ -17759,12 +17759,27 @@ body[data-theme="dark"] .report-sheet-footer { color: #94a3b8; border-top-color:
 /* ── Print styles ────────────────────────────────────────────────────────── */
 
 @media print {
-  /* Hide everything except the report card */
-  body > * { display: none !important; }
-  #report-card-printable { display: block !important; }
+  /* Hide everything except the report card. This is a React SPA, so
+     #report-card-printable is nested deep inside #root, not a direct child
+     of <body> - "body > * { display:none }" hides #root itself, and
+     display:none on an ancestor can never be undone by a descendant's own
+     display rule (unlike visibility, it isn't independently re-toggleable
+     per element), so the report card stayed invisible and print showed a
+     blank page. visibility can be re-enabled per element, so hide
+     everything that way instead, then reposition the target to the top of
+     the page since visibility:hidden elements still reserve their layout
+     space (an absolutely positioned element also escapes needing every
+     ancestor's own layout/overflow to cooperate). */
+  body * { visibility: hidden !important; }
+  #report-card-printable,
+  #report-card-printable * { visibility: visible !important; }
 
   #report-card-printable {
-    position: static !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    display: block !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;

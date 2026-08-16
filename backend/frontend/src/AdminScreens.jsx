@@ -4379,7 +4379,6 @@ function AdminResultsScreen({
   const [studentId, setStudentId] = useState("");
   const [report, setReport] = useState(data?.report_card || null);
   const [busy, setBusy] = useState(false);
-  const [pngBusy, setPngBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState("");
   const [viewBusy, setViewBusy] = useState("");
   const [deleteBusyId, setDeleteBusyId] = useState("");
@@ -4543,19 +4542,6 @@ function AdminResultsScreen({
     }
     styleTag.textContent = pageRule;
     window.print();
-  };
-
-  const handleDownloadReportPng = async () => {
-    if (!report) return;
-    setPngBusy(true);
-    setSearchError("");
-    try {
-      await downloadPrintablePng("report-card-image-target", documentFileName("report-card", report.student), "Report Card", documentTheme);
-    } catch (actionError) {
-      setSearchError(actionError.message || "Could not generate the report card image.");
-    } finally {
-      setPngBusy(false);
-    }
   };
 
   const handleOpenSms = () => {
@@ -4750,14 +4736,6 @@ function AdminResultsScreen({
               <button type="button" className="btn-secondary report-action-btn" onClick={handleOpenSms}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 Send Report Card
-              </button>
-              <button type="button" className="btn-secondary report-action-btn" onClick={handleDownloadReportPng} disabled={pngBusy}>
-                {pngBusy ? <><Spinner size={14} /> Generating...</> : (
-                  <>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Download PNG
-                  </>
-                )}
               </button>
               <button type="button" className="btn-primary report-action-btn" onClick={handlePrintReport}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>

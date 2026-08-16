@@ -654,8 +654,6 @@ function StudentDashboard({
   const [reportError, setReportError] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
-  const [reportPngBusy, setReportPngBusy] = useState(false);
-  const [reportPngError, setReportPngError] = useState("");
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [paymentFeedback, setPaymentFeedback] = useState("");
@@ -764,24 +762,6 @@ function StudentDashboard({
       setReportError(loadError.message || "Could not load your results.");
     } finally {
       setReportLoading(false);
-    }
-  };
-
-  const handleDownloadReportCardPng = async () => {
-    if (!reportCard) return;
-    setReportPngBusy(true);
-    setReportPngError("");
-    try {
-      await downloadPrintablePng(
-        "student-dashboard-report-card-image",
-        `report-card-${reportCard?.student?.student_id || student.student_id || "student"}.png`,
-        "Report Card",
-        documentTheme
-      );
-    } catch (pngError) {
-      setReportPngError(pngError.message || "Could not generate the report card image.");
-    } finally {
-      setReportPngBusy(false);
     }
   };
 
@@ -1282,11 +1262,6 @@ function StudentDashboard({
                 <button className="student-link-btn" type="button" onClick={handleResultsClick} disabled={reportLoading}>
                   {reportLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
                 </button>
-                {reportCard ? (
-                  <button className="student-link-btn" type="button" onClick={handleDownloadReportCardPng} disabled={reportPngBusy}>
-                    {reportPngBusy ? <><Spinner size={12} /> Generating...</> : "Download as Image"}
-                  </button>
-                ) : null}
                 <button className="student-link-btn" type="button" onClick={() => setReportOpen(false)}>
                   Close
                 </button>
@@ -1298,7 +1273,6 @@ function StudentDashboard({
               <p className="form-feedback error">{reportError}</p>
             ) : reportCard ? (
               <>
-                {reportPngError ? <p className="form-feedback error">{reportPngError}</p> : null}
                 {reportCard.scores && reportCard.scores.length ? (
                   <ReportCardSheet report={reportCard} gradeScales={reportCard.grade_scales || []} elementId="student-dashboard-report-card-image" />
                 ) : (
