@@ -446,6 +446,35 @@ namespace SchoolDom.StudentCbt.Win7
             }
         }
 
+        // question.image / group.image arrive as inline data: URLs (they're synced/embedded
+        // this way specifically so they don't need a live network fetch on the student PC -
+        // see PrefetchQuestionImages). But the WebBrowser control's embedded Trident engine
+        // defaults to an old IE compatibility mode that caps how long a data: URI in an <img
+        // src> can be (roughly 32KB) - past that it just renders as a broken image icon with
+        // no error. Writing it to the same on-disk cache used for prefetched images and
+        // pointing at that with a file:// URL sidesteps the cap entirely, same as those.
+        private static string LocalizeDataImage(string dataUrl)
+        {
+            if (string.IsNullOrWhiteSpace(dataUrl) || !dataUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                return dataUrl;
+            try
+            {
+                var comma = dataUrl.IndexOf(',');
+                if (comma < 0) return dataUrl;
+                var path = CachePathForImageUrl(dataUrl);
+                if (!File.Exists(path))
+                {
+                    var bytes = Convert.FromBase64String(dataUrl.Substring(comma + 1));
+                    File.WriteAllBytes(path, bytes);
+                }
+                return new Uri(path).AbsoluteUri;
+            }
+            catch
+            {
+                return dataUrl;
+            }
+        }
+
         private static void CollectImageUrls(string html, HashSet<string> urls)
         {
             if (string.IsNullOrWhiteSpace(html)) return;
@@ -678,9 +707,9 @@ namespace SchoolDom.StudentCbt.Win7
             var passageGroup = Raw(question, "group", "Group") as Dictionary<string, object>;
             var passageTitle = passageGroup != null ? Value(passageGroup, "title", "Title") : "";
             var passageText = passageGroup != null ? Value(passageGroup, "passage_text", "PassageText") : "";
-            var passageImage = passageGroup != null ? Value(passageGroup, "image", "Image") : "";
+            var passageImage = LocalizeDataImage(passageGroup != null ? Value(passageGroup, "image", "Image") : "");
             var questionText = Value(question, "text", "Text");
-            var questionImage = Value(question, "image", "Image");
+            var questionImage = LocalizeDataImage(Value(question, "image", "Image"));
 
             // A short one-line question and a full comprehension passage need very
             // different amounts of space. webViewInitialHeight is just a placeholder for
