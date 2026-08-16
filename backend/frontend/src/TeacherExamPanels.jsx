@@ -1006,10 +1006,6 @@ export function TeacherExamBuilder({
   const [questions, setQuestions] = useState([
     { ...newBuilderQuestion(), id: 1 },
   ]);
-  const [bankQuestions, setBankQuestions] = useState([]);
-  const [bankLoading, setBankLoading] = useState(false);
-  const [bankError, setBankError] = useState("");
-  const [selectedBankQuestionIds, setSelectedBankQuestionIds] = useState([]);
   const [centralBoards, setCentralBoards] = useState([]);
   const [centralBoard, setCentralBoard] = useState("");
   const [centralSubjects, setCentralSubjects] = useState([]);
@@ -1061,9 +1057,6 @@ export function TeacherExamBuilder({
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
   const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
-  // Backend never required this (cbt_question_bank has no teacher restriction), it was
-  // only ever a frontend gate - teachers can use both bank pickers now.
-  const canUseCbtQuestionBank = true;
   const builderSections = [
     ["details", "Exam Details"],
     ["sections", "Sections"],
@@ -1106,33 +1099,6 @@ export function TeacherExamBuilder({
         questionImagePreview: item.image || "",
       };
   };
-  const loadBankQuestions = useCallback(async () => {
-    if (!session || !canUseCbtQuestionBank) {
-      setBankQuestions([]);
-      setSelectedBankQuestionIds([]);
-      return;
-    }
-    setBankLoading(true);
-    setBankError("");
-    try {
-      const params = new URLSearchParams();
-      if (form.subjectId) {
-        params.set("subject_id", form.subjectId);
-      }
-      params.set("limit", "200");
-      const result = await requestJson(session, "GET", `/api/app/exams/question-bank/?${params.toString()}`);
-      setBankQuestions(result.questions || []);
-    } catch (loadError) {
-      setBankError(loadError.message || "Could not load CBT question bank.");
-    } finally {
-      setBankLoading(false);
-    }
-  }, [canUseCbtQuestionBank, form.subjectId, session]);
-
-  useEffect(() => {
-    loadBankQuestions();
-  }, [loadBankQuestions]);
-
   useEffect(() => {
     if (!session) return;
     (async () => {
@@ -1505,28 +1471,6 @@ export function TeacherExamBuilder({
     });
   };
 
-  const toggleBankQuestion = (questionId) => {
-    setSelectedBankQuestionIds((previous) =>
-      previous.includes(questionId) ? previous.filter((id) => id !== questionId) : [...previous, questionId]
-    );
-  };
-
-  const addSelectedBankQuestions = () => {
-    const existingBankIds = new Set(questions.map((item) => item.cbtBankQuestionId).filter(Boolean));
-    const selectedQuestions = bankQuestions.filter(
-      (item) => selectedBankQuestionIds.includes(item.id) && !existingBankIds.has(item.id)
-    );
-    if (!selectedQuestions.length) {
-      setError("Select at least one new CBT bank question to add.");
-      setActiveSection("questions");
-      return;
-    }
-    setQuestions((previous) => [...previous, ...selectedQuestions.map(normalizeBankQuestion)]);
-    setSelectedBankQuestionIds([]);
-    setError("");
-    setFeedback(`${selectedQuestions.length} CBT bank question${selectedQuestions.length === 1 ? "" : "s"} added.`);
-  };
-
   const importStandardQuestions = () => {
     setImportError("");
     setImportFeedback("");
@@ -1833,56 +1777,6 @@ export function TeacherExamBuilder({
 
           {activeSection === "questions" ? (
             <div className="exam-builder-list">
-              {canUseCbtQuestionBank && form.examFormat !== "theory" ? <div className="cbt-bank-picker">
-                <div className="cbt-bank-picker-head">
-                  <div>
-                    <h3>CBT question bank</h3>
-                    <p>Import preloaded CBT questions for this exam. Quiz questions are kept separate.</p>
-                  </div>
-                  <div className="table-actions-inline">
-                    <button type="button" className="table-action" onClick={loadBankQuestions} disabled={bankLoading}>
-                      {bankLoading ? <><Spinner size={12} /> Loading...</> : "Refresh bank"}
-                    </button>
-                    <button
-                      type="button"
-                      className="table-action active"
-                      onClick={addSelectedBankQuestions}
-                      disabled={!selectedBankQuestionIds.length}
-                    >
-                      Add selected
-                    </button>
-                  </div>
-                </div>
-                {bankError ? <p className="form-feedback error">{bankError}</p> : null}
-                {bankQuestions.length === 0 ? (
-                  <p className="panel-empty">
-                    {bankLoading ? "Loading CBT bank questions..." : "No CBT bank questions found for this subject."}
-                  </p>
-                ) : (
-                  <div className="cbt-bank-question-list">
-                    {bankQuestions.slice(0, 12).map((item) => {
-                      const alreadyAdded = questions.some((question) => question.cbtBankQuestionId === item.id);
-                      return (
-                        <label key={item.id} className={`cbt-bank-question ${alreadyAdded ? "disabled" : ""}`}>
-                          <input
-                            type="checkbox"
-                            checked={selectedBankQuestionIds.includes(item.id)}
-                            disabled={alreadyAdded}
-                            onChange={() => toggleBankQuestion(item.id)}
-                          />
-                          <span>
-                            <strong>{item.text}</strong>
-                            <small>
-                              {item.bank_name || "CBT bank"} · {item.subject_name || "General"} · {item.points || 1} mark
-                              {alreadyAdded ? " · already added" : ""}
-                            </small>
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div> : null}
               {form.examFormat !== "theory" && centralBoards.length ? (
                 <div className="cbt-bank-picker">
                   <div className="cbt-bank-picker-head">
