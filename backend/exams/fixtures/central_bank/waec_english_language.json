@@ -1,0 +1,4410 @@
+{
+  "board": "WAEC",
+  "subject": "English Language",
+  "topics": {
+    "Synonyms": [
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DESPISE",
+        "options": [
+          "loathe",
+          "unstable",
+          "enlarge",
+          "hurried"
+        ],
+        "correct_answer": "loathe",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: JUBILANT",
+        "options": [
+          "persistent",
+          "archaic",
+          "joyful",
+          "hide"
+        ],
+        "correct_answer": "joyful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: APATHY",
+        "options": [
+          "indifference",
+          "intricate",
+          "haughty",
+          "unwilling"
+        ],
+        "correct_answer": "indifference",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: GENUINE",
+        "options": [
+          "reserved",
+          "wealthy",
+          "touchy",
+          "authentic"
+        ],
+        "correct_answer": "authentic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INGENIOUS",
+        "options": [
+          "wear away",
+          "synthetic",
+          "inventive",
+          "shy"
+        ],
+        "correct_answer": "inventive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VIVID",
+        "options": [
+          "graphic",
+          "modest",
+          "concise",
+          "complex"
+        ],
+        "correct_answer": "graphic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ADVOCATE",
+        "options": [
+          "champion",
+          "scanty",
+          "comply",
+          "expressive"
+        ],
+        "correct_answer": "champion",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: OPTIMISTIC",
+        "options": [
+          "hopeful",
+          "motionless",
+          "notorious",
+          "useless"
+        ],
+        "correct_answer": "hopeful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONGENIAL",
+        "options": [
+          "pleasant",
+          "unstable",
+          "crowded",
+          "decrease"
+        ],
+        "correct_answer": "pleasant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DEPRIVE",
+        "options": [
+          "deny",
+          "abundant",
+          "immense",
+          "delicate"
+        ],
+        "correct_answer": "deny",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: NOTORIOUS",
+        "options": [
+          "friendly",
+          "unstable",
+          "unavoidable",
+          "infamous"
+        ],
+        "correct_answer": "infamous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VENERABLE",
+        "options": [
+          "respected",
+          "enthusiastic",
+          "dismiss",
+          "complex"
+        ],
+        "correct_answer": "respected",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONCEAL",
+        "options": [
+          "mourn",
+          "hide",
+          "obstinate",
+          "disagreement"
+        ],
+        "correct_answer": "hide",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FERVENT",
+        "options": [
+          "scanty",
+          "enlarge",
+          "passionate",
+          "renowned"
+        ],
+        "correct_answer": "passionate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: LAVISH",
+        "options": [
+          "odd",
+          "thrive",
+          "extravagant",
+          "obstinate"
+        ],
+        "correct_answer": "extravagant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PONDER",
+        "options": [
+          "careful",
+          "improve",
+          "synthetic",
+          "contemplate"
+        ],
+        "correct_answer": "contemplate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CELEBRATED",
+        "options": [
+          "renowned",
+          "suppress",
+          "examine",
+          "huge"
+        ],
+        "correct_answer": "renowned",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: MUNDANE",
+        "options": [
+          "improve",
+          "ordinary",
+          "insufficient",
+          "foster"
+        ],
+        "correct_answer": "ordinary",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VAGUE",
+        "options": [
+          "adaptable",
+          "noisy",
+          "pleasant",
+          "unclear"
+        ],
+        "correct_answer": "unclear",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ACQUIRE",
+        "options": [
+          "loathe",
+          "escort",
+          "obtain",
+          "persistent"
+        ],
+        "correct_answer": "obtain",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: RESILIENT",
+        "options": [
+          "expressive",
+          "weaken",
+          "tough",
+          "comply"
+        ],
+        "correct_answer": "tough",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SUPPRESS",
+        "options": [
+          "subdue",
+          "bias",
+          "impulsive",
+          "supreme"
+        ],
+        "correct_answer": "subdue",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ERRATIC",
+        "options": [
+          "believable",
+          "undecided",
+          "unpredictable",
+          "unstable"
+        ],
+        "correct_answer": "unpredictable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: MITIGATE",
+        "options": [
+          "alleviate",
+          "respected",
+          "unpredictable",
+          "extravagant"
+        ],
+        "correct_answer": "alleviate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: RAMPANT",
+        "options": [
+          "unstable",
+          "widespread",
+          "shrivel",
+          "showy"
+        ],
+        "correct_answer": "widespread",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: BELLIGERENT",
+        "options": [
+          "seize",
+          "outstanding",
+          "hostile",
+          "touchy"
+        ],
+        "correct_answer": "hostile",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: GENEROUS",
+        "options": [
+          "huge",
+          "delicate",
+          "brief",
+          "magnanimous"
+        ],
+        "correct_answer": "magnanimous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: COMMEND",
+        "options": [
+          "boring",
+          "praise",
+          "vast",
+          "distinguished"
+        ],
+        "correct_answer": "praise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ZEALOUS",
+        "options": [
+          "enthusiastic",
+          "strange",
+          "notorious",
+          "harmless"
+        ],
+        "correct_answer": "enthusiastic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: MANDATORY",
+        "options": [
+          "kind",
+          "compulsory",
+          "harmless",
+          "gloomy"
+        ],
+        "correct_answer": "compulsory",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SCRUTINIZE",
+        "options": [
+          "logical",
+          "examine",
+          "shrewd",
+          "watchful"
+        ],
+        "correct_answer": "examine",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ENDEAVOR",
+        "options": [
+          "possible",
+          "attempt",
+          "dangerous",
+          "respected"
+        ],
+        "correct_answer": "attempt",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: EXPLICIT",
+        "options": [
+          "doubtful",
+          "clear",
+          "infamous",
+          "avoid"
+        ],
+        "correct_answer": "clear",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CREDIBLE",
+        "options": [
+          "unbiased",
+          "believable",
+          "huge",
+          "strict"
+        ],
+        "correct_answer": "believable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AUDACIOUS",
+        "options": [
+          "resolute",
+          "daring",
+          "scanty",
+          "anxious"
+        ],
+        "correct_answer": "daring",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DEGRADE",
+        "options": [
+          "rash",
+          "abundant",
+          "careless",
+          "demean"
+        ],
+        "correct_answer": "demean",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IMPETUOUS",
+        "options": [
+          "hostile",
+          "compulsory",
+          "rash",
+          "disdain"
+        ],
+        "correct_answer": "rash",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: COMPETENT",
+        "options": [
+          "capable",
+          "magnanimous",
+          "vast",
+          "disagreement"
+        ],
+        "correct_answer": "capable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: WITHER",
+        "options": [
+          "shrivel",
+          "impending",
+          "wordy",
+          "logical"
+        ],
+        "correct_answer": "shrivel",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INTEGRITY",
+        "options": [
+          "friendly",
+          "careful",
+          "wary",
+          "honesty"
+        ],
+        "correct_answer": "honesty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PERTINENT",
+        "options": [
+          "congruous",
+          "slow",
+          "odd",
+          "relevant"
+        ],
+        "correct_answer": "relevant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ARROGANT",
+        "options": [
+          "huge",
+          "archaic",
+          "haughty",
+          "wordy"
+        ],
+        "correct_answer": "haughty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ARTICULATE",
+        "options": [
+          "attempt",
+          "careful",
+          "crowded",
+          "expressive"
+        ],
+        "correct_answer": "expressive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONFIDENT",
+        "options": [
+          "scanty",
+          "unpredictable",
+          "self-assured",
+          "concise"
+        ],
+        "correct_answer": "self-assured",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DENY",
+        "options": [
+          "cautious",
+          "fragile",
+          "refute",
+          "nimble"
+        ],
+        "correct_answer": "refute",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AMIABLE",
+        "options": [
+          "thrive",
+          "friendly",
+          "skillful",
+          "wise"
+        ],
+        "correct_answer": "friendly",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INEVITABLE",
+        "options": [
+          "superfluous",
+          "boring",
+          "unavoidable",
+          "seize"
+        ],
+        "correct_answer": "unavoidable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: HARMONIOUS",
+        "options": [
+          "expressive",
+          "regret",
+          "subdue",
+          "congruous"
+        ],
+        "correct_answer": "congruous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ADEQUATE",
+        "options": [
+          "complex",
+          "congruous",
+          "sufficient",
+          "tenacious"
+        ],
+        "correct_answer": "sufficient",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: TIMID",
+        "options": [
+          "expressive",
+          "unyielding",
+          "shy",
+          "curious"
+        ],
+        "correct_answer": "shy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: MEAGER",
+        "options": [
+          "antagonistic",
+          "scanty",
+          "inactive",
+          "overlook"
+        ],
+        "correct_answer": "scanty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DISMAL",
+        "options": [
+          "gloomy",
+          "touchy",
+          "agreed",
+          "loathe"
+        ],
+        "correct_answer": "gloomy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ADMIRE",
+        "options": [
+          "selfless",
+          "esteem",
+          "scanty",
+          "touchy"
+        ],
+        "correct_answer": "esteem",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: OPULENT",
+        "options": [
+          "lucidity",
+          "undecided",
+          "wealthy",
+          "deplete"
+        ],
+        "correct_answer": "wealthy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: EMPATHY",
+        "options": [
+          "disclose",
+          "compassion",
+          "productive",
+          "strict"
+        ],
+        "correct_answer": "compassion",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ADAMANT",
+        "options": [
+          "expressive",
+          "unyielding",
+          "magnanimous",
+          "foster"
+        ],
+        "correct_answer": "unyielding",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: BENEVOLENT",
+        "options": [
+          "kind",
+          "vital",
+          "dangerous",
+          "escort"
+        ],
+        "correct_answer": "kind",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: EXPAND",
+        "options": [
+          "showy",
+          "precise",
+          "enlarge",
+          "bias"
+        ],
+        "correct_answer": "enlarge",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: METICULOUS",
+        "options": [
+          "careful",
+          "infamous",
+          "notorious",
+          "insignificant"
+        ],
+        "correct_answer": "careful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: REVEAL",
+        "options": [
+          "doubtful",
+          "clear",
+          "disclose",
+          "careless"
+        ],
+        "correct_answer": "disclose",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PROLIFIC",
+        "options": [
+          "productive",
+          "doubtful",
+          "unavoidable",
+          "invent"
+        ],
+        "correct_answer": "productive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VAST",
+        "options": [
+          "immense",
+          "supreme",
+          "careful",
+          "unstable"
+        ],
+        "correct_answer": "immense",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IMPARTIAL",
+        "options": [
+          "unbiased",
+          "clear",
+          "hurried",
+          "concise"
+        ],
+        "correct_answer": "unbiased",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ABOLISH",
+        "options": [
+          "self-assured",
+          "eliminate",
+          "disloyal",
+          "distinguished"
+        ],
+        "correct_answer": "eliminate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ACCURATE",
+        "options": [
+          "watchful",
+          "relevant",
+          "precise",
+          "brave"
+        ],
+        "correct_answer": "precise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: REDUNDANT",
+        "options": [
+          "unclear",
+          "outstanding",
+          "superfluous",
+          "ordinary"
+        ],
+        "correct_answer": "superfluous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CHRONIC",
+        "options": [
+          "articulate",
+          "persistent",
+          "antagonistic",
+          "invent"
+        ],
+        "correct_answer": "persistent",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FRAGILE",
+        "options": [
+          "clear",
+          "crowded",
+          "delicate",
+          "tenacious"
+        ],
+        "correct_answer": "delicate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IMMENSE",
+        "options": [
+          "vast",
+          "hesitant",
+          "lavish",
+          "exact"
+        ],
+        "correct_answer": "vast",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: QUELL",
+        "options": [
+          "suppress",
+          "unyielding",
+          "force",
+          "honesty"
+        ],
+        "correct_answer": "suppress",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PROFOUND",
+        "options": [
+          "hold",
+          "bleak",
+          "touchy",
+          "deep"
+        ],
+        "correct_answer": "deep",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DETAIN",
+        "options": [
+          "relieve",
+          "hold",
+          "hide",
+          "strange"
+        ],
+        "correct_answer": "hold",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IRRITABLE",
+        "options": [
+          "suppress",
+          "examine",
+          "subdue",
+          "touchy"
+        ],
+        "correct_answer": "touchy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SHREWD",
+        "options": [
+          "neighboring",
+          "pure",
+          "possible",
+          "clever"
+        ],
+        "correct_answer": "clever",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FEASIBLE",
+        "options": [
+          "possible",
+          "curious",
+          "watchful",
+          "bias"
+        ],
+        "correct_answer": "possible",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DECEIVE",
+        "options": [
+          "mislead",
+          "sluggish",
+          "mourn",
+          "believable"
+        ],
+        "correct_answer": "mislead",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AUTHENTIC",
+        "options": [
+          "thrive",
+          "strong",
+          "productive",
+          "genuine"
+        ],
+        "correct_answer": "genuine",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FLOURISH",
+        "options": [
+          "dismiss",
+          "thrive",
+          "rare",
+          "watchful"
+        ],
+        "correct_answer": "thrive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: COHERENT",
+        "options": [
+          "lacking",
+          "attempt",
+          "deny",
+          "logical"
+        ],
+        "correct_answer": "logical",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ENORMOUS",
+        "options": [
+          "clear",
+          "huge",
+          "harmless",
+          "persistent"
+        ],
+        "correct_answer": "huge",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONSPICUOUS",
+        "options": [
+          "noticeable",
+          "compassion",
+          "flourish",
+          "lavish"
+        ],
+        "correct_answer": "noticeable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ABANDON",
+        "options": [
+          "seize",
+          "forsake",
+          "compassion",
+          "subdue"
+        ],
+        "correct_answer": "forsake",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AMPLE",
+        "options": [
+          "contemplate",
+          "plentiful",
+          "self-assured",
+          "honesty"
+        ],
+        "correct_answer": "plentiful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: WARY",
+        "options": [
+          "selfless",
+          "elation",
+          "cautious",
+          "believable"
+        ],
+        "correct_answer": "cautious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VIGILANT",
+        "options": [
+          "passionate",
+          "watchful",
+          "refute",
+          "eliminate"
+        ],
+        "correct_answer": "watchful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CURTAIL",
+        "options": [
+          "reduce",
+          "boring",
+          "scanty",
+          "passionate"
+        ],
+        "correct_answer": "reduce",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SCARCE",
+        "options": [
+          "unwilling",
+          "wary",
+          "touchy",
+          "rare"
+        ],
+        "correct_answer": "rare",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: UBIQUITOUS",
+        "options": [
+          "tough",
+          "huge",
+          "unclear",
+          "widespread"
+        ],
+        "correct_answer": "widespread",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FRUGAL",
+        "options": [
+          "watchful",
+          "thrifty",
+          "relieve",
+          "obstinate"
+        ],
+        "correct_answer": "thrifty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONTEMPT",
+        "options": [
+          "disdain",
+          "watchful",
+          "wordy",
+          "loathe"
+        ],
+        "correct_answer": "disdain",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AGILE",
+        "options": [
+          "nimble",
+          "weaken",
+          "deplete",
+          "poor"
+        ],
+        "correct_answer": "nimble",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ROBUST",
+        "options": [
+          "strong",
+          "scanty",
+          "rough",
+          "congruous"
+        ],
+        "correct_answer": "strong",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INTREPID",
+        "options": [
+          "fearless",
+          "force",
+          "shrewd",
+          "strict"
+        ],
+        "correct_answer": "fearless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SUPERFICIAL",
+        "options": [
+          "persistent",
+          "shallow",
+          "infamous",
+          "clear"
+        ],
+        "correct_answer": "shallow",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INNOCUOUS",
+        "options": [
+          "daunting",
+          "harmless",
+          "clear",
+          "lucidity"
+        ],
+        "correct_answer": "harmless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ACCELERATE",
+        "options": [
+          "hostile",
+          "graphic",
+          "unavoidable",
+          "hasten"
+        ],
+        "correct_answer": "hasten",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DEBILITATE",
+        "options": [
+          "weaken",
+          "inventive",
+          "industrious",
+          "genuine"
+        ],
+        "correct_answer": "weaken",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONGESTED",
+        "options": [
+          "mourn",
+          "rare",
+          "adaptable",
+          "crowded"
+        ],
+        "correct_answer": "crowded",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PACIFY",
+        "options": [
+          "calm",
+          "demean",
+          "unstable",
+          "noticeable"
+        ],
+        "correct_answer": "calm",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ALTRUISTIC",
+        "options": [
+          "rare",
+          "selfless",
+          "archaic",
+          "comply"
+        ],
+        "correct_answer": "selfless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INFAMOUS",
+        "options": [
+          "thrive",
+          "exact",
+          "notorious",
+          "unyielding"
+        ],
+        "correct_answer": "notorious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DILIGENT",
+        "options": [
+          "anxious",
+          "mysterious",
+          "industrious",
+          "hide"
+        ],
+        "correct_answer": "industrious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONCISE",
+        "options": [
+          "brief",
+          "foster",
+          "clear",
+          "demean"
+        ],
+        "correct_answer": "brief",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SUBTLE",
+        "options": [
+          "plentiful",
+          "curious",
+          "delicate",
+          "gullible"
+        ],
+        "correct_answer": "delicate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FACILITATE",
+        "options": [
+          "unbiased",
+          "ease",
+          "reduce",
+          "exact"
+        ],
+        "correct_answer": "ease",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: NAIVE",
+        "options": [
+          "gullible",
+          "concise",
+          "hostile",
+          "outstanding"
+        ],
+        "correct_answer": "gullible",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: WANE",
+        "options": [
+          "decline",
+          "relieve",
+          "enlarge",
+          "forsake"
+        ],
+        "correct_answer": "decline",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: OSTENTATIOUS",
+        "options": [
+          "showy",
+          "mislead",
+          "hostile",
+          "mourn"
+        ],
+        "correct_answer": "showy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SLUGGISH",
+        "options": [
+          "slow",
+          "watchful",
+          "unstable",
+          "believable"
+        ],
+        "correct_answer": "slow",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: RELUCTANT",
+        "options": [
+          "unwilling",
+          "hesitant",
+          "industrious",
+          "noisy"
+        ],
+        "correct_answer": "unwilling",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CAPTURE",
+        "options": [
+          "shrewd",
+          "compassion",
+          "seize",
+          "decline"
+        ],
+        "correct_answer": "seize",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PRISTINE",
+        "options": [
+          "careful",
+          "pure",
+          "brave",
+          "flourish"
+        ],
+        "correct_answer": "pure",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INTRICATE",
+        "options": [
+          "crowded",
+          "foster",
+          "complex",
+          "indifference"
+        ],
+        "correct_answer": "complex",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: APPREHENSIVE",
+        "options": [
+          "sympathy",
+          "calm",
+          "anxious",
+          "mysterious"
+        ],
+        "correct_answer": "anxious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: THRIVE",
+        "options": [
+          "noisy",
+          "slow",
+          "flourish",
+          "notorious"
+        ],
+        "correct_answer": "flourish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: STAGNANT",
+        "options": [
+          "shrivel",
+          "motionless",
+          "vital",
+          "huge"
+        ],
+        "correct_answer": "motionless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: OBSCURE",
+        "options": [
+          "unclear",
+          "authentic",
+          "increase",
+          "delicate"
+        ],
+        "correct_answer": "unclear",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ERODE",
+        "options": [
+          "believable",
+          "honesty",
+          "indifference",
+          "wear away"
+        ],
+        "correct_answer": "wear away",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: STERN",
+        "options": [
+          "articulate",
+          "immense",
+          "strict",
+          "rough"
+        ],
+        "correct_answer": "strict",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DEFT",
+        "options": [
+          "joyful",
+          "boring",
+          "skillful",
+          "refute"
+        ],
+        "correct_answer": "skillful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DESTITUTE",
+        "options": [
+          "poor",
+          "expel",
+          "magnanimous",
+          "hasten"
+        ],
+        "correct_answer": "poor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DISCREET",
+        "options": [
+          "fearless",
+          "tactful",
+          "reduce",
+          "mysterious"
+        ],
+        "correct_answer": "tactful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: NEGLIGENT",
+        "options": [
+          "exhaust",
+          "careless",
+          "deny",
+          "wary"
+        ],
+        "correct_answer": "careless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ADHERE",
+        "options": [
+          "mysterious",
+          "widespread",
+          "stick",
+          "foster"
+        ],
+        "correct_answer": "stick",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PARAMOUNT",
+        "options": [
+          "calm",
+          "supreme",
+          "clear",
+          "wear away"
+        ],
+        "correct_answer": "supreme",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SOLEMN",
+        "options": [
+          "pleasant",
+          "serious",
+          "compulsory",
+          "obtain"
+        ],
+        "correct_answer": "serious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IGNORANT",
+        "options": [
+          "uninformed",
+          "frank",
+          "naive",
+          "mourn"
+        ],
+        "correct_answer": "uninformed",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: OBSTINATE",
+        "options": [
+          "sluggish",
+          "boring",
+          "stubborn",
+          "huge"
+        ],
+        "correct_answer": "stubborn",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ENIGMATIC",
+        "options": [
+          "mysterious",
+          "gullible",
+          "capable",
+          "confident"
+        ],
+        "correct_answer": "mysterious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: COPIOUS",
+        "options": [
+          "hesitant",
+          "wise",
+          "abundant",
+          "invent"
+        ],
+        "correct_answer": "abundant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: TUMULTUOUS",
+        "options": [
+          "pure",
+          "outstanding",
+          "precise",
+          "chaotic"
+        ],
+        "correct_answer": "chaotic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CUNNING",
+        "options": [
+          "crafty",
+          "lavish",
+          "abundant",
+          "friendly"
+        ],
+        "correct_answer": "crafty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: TREACHEROUS",
+        "options": [
+          "doubtful",
+          "disloyal",
+          "industrious",
+          "examine"
+        ],
+        "correct_answer": "disloyal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IMPLICIT",
+        "options": [
+          "abundant",
+          "begin",
+          "rare",
+          "implied"
+        ],
+        "correct_answer": "implied",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: NURTURE",
+        "options": [
+          "widespread",
+          "modest",
+          "foster",
+          "hostility"
+        ],
+        "correct_answer": "foster",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AMBIVALENT",
+        "options": [
+          "harmless",
+          "brave",
+          "undecided",
+          "useless"
+        ],
+        "correct_answer": "undecided",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ALLEVIATE",
+        "options": [
+          "relieve",
+          "shrivel",
+          "persistent",
+          "relevant"
+        ],
+        "correct_answer": "relieve",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DISPERSE",
+        "options": [
+          "scatter",
+          "refute",
+          "undecided",
+          "unpredictable"
+        ],
+        "correct_answer": "scatter",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: BIZARRE",
+        "options": [
+          "obtain",
+          "self-assured",
+          "scanty",
+          "strange"
+        ],
+        "correct_answer": "strange",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: RETICENT",
+        "options": [
+          "reserved",
+          "increase",
+          "delicate",
+          "chaotic"
+        ],
+        "correct_answer": "reserved",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: INADEQUATE",
+        "options": [
+          "eliminate",
+          "implied",
+          "rough",
+          "insufficient"
+        ],
+        "correct_answer": "insufficient",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FORMIDABLE",
+        "options": [
+          "daunting",
+          "clear",
+          "obstinate",
+          "uninformed"
+        ],
+        "correct_answer": "daunting",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: BOISTEROUS",
+        "options": [
+          "nimble",
+          "uninformed",
+          "inactive",
+          "noisy"
+        ],
+        "correct_answer": "noisy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SPONTANEOUS",
+        "options": [
+          "scanty",
+          "impulsive",
+          "stiff",
+          "unclear"
+        ],
+        "correct_answer": "impulsive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: BANISH",
+        "options": [
+          "expel",
+          "doubtful",
+          "concise",
+          "inactive"
+        ],
+        "correct_answer": "expel",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FUTILE",
+        "options": [
+          "hide",
+          "inventive",
+          "useless",
+          "slow"
+        ],
+        "correct_answer": "useless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ADJACENT",
+        "options": [
+          "possible",
+          "infamous",
+          "hide",
+          "neighboring"
+        ],
+        "correct_answer": "neighboring",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PRECISE",
+        "options": [
+          "unbiased",
+          "exact",
+          "sluggish",
+          "lazy"
+        ],
+        "correct_answer": "exact",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: EVADE",
+        "options": [
+          "serious",
+          "curious",
+          "huge",
+          "avoid"
+        ],
+        "correct_answer": "avoid",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SERENE",
+        "options": [
+          "persistent",
+          "deplete",
+          "calm",
+          "hostility"
+        ],
+        "correct_answer": "calm",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: MALICIOUS",
+        "options": [
+          "confident",
+          "joyful",
+          "spiteful",
+          "compassion"
+        ],
+        "correct_answer": "spiteful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: TEDIOUS",
+        "options": [
+          "clever",
+          "believable",
+          "boring",
+          "pleasant"
+        ],
+        "correct_answer": "boring",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CRYPTIC",
+        "options": [
+          "deplete",
+          "industrious",
+          "mysterious",
+          "comply"
+        ],
+        "correct_answer": "mysterious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PERILOUS",
+        "options": [
+          "clever",
+          "doubtful",
+          "regret",
+          "dangerous"
+        ],
+        "correct_answer": "dangerous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DEPLETE",
+        "options": [
+          "enthusiastic",
+          "crowded",
+          "exhaust",
+          "mysterious"
+        ],
+        "correct_answer": "exhaust",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CANDID",
+        "options": [
+          "doubtful",
+          "frank",
+          "champion",
+          "careless"
+        ],
+        "correct_answer": "frank",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: EUPHORIA",
+        "options": [
+          "pleasant",
+          "unwilling",
+          "enthusiastic",
+          "elation"
+        ],
+        "correct_answer": "elation",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DISPEL",
+        "options": [
+          "wear away",
+          "believable",
+          "dismiss",
+          "noticeable"
+        ],
+        "correct_answer": "dismiss",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: HASTY",
+        "options": [
+          "hurried",
+          "antagonistic",
+          "unyielding",
+          "noticeable"
+        ],
+        "correct_answer": "hurried",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IDLE",
+        "options": [
+          "deny",
+          "sufficient",
+          "vital",
+          "lazy"
+        ],
+        "correct_answer": "lazy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DELICATE",
+        "options": [
+          "brave",
+          "hide",
+          "supreme",
+          "fragile"
+        ],
+        "correct_answer": "fragile",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: HUMBLE",
+        "options": [
+          "antagonistic",
+          "hopeful",
+          "cautious",
+          "modest"
+        ],
+        "correct_answer": "modest",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: LETHARGIC",
+        "options": [
+          "widespread",
+          "sluggish",
+          "stiff",
+          "synthetic"
+        ],
+        "correct_answer": "sluggish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VOLATILE",
+        "options": [
+          "alleviate",
+          "unstable",
+          "kind",
+          "expressive"
+        ],
+        "correct_answer": "unstable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VALIANT",
+        "options": [
+          "infamous",
+          "clear",
+          "brave",
+          "mysterious"
+        ],
+        "correct_answer": "brave",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: COMPASSION",
+        "options": [
+          "reserved",
+          "useless",
+          "mislead",
+          "sympathy"
+        ],
+        "correct_answer": "sympathy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ASSERTIVE",
+        "options": [
+          "confident",
+          "widespread",
+          "strong",
+          "examine"
+        ],
+        "correct_answer": "confident",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: TERSE",
+        "options": [
+          "clear",
+          "stubborn",
+          "concise",
+          "tough"
+        ],
+        "correct_answer": "concise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: EXTRAVAGANT",
+        "options": [
+          "lavish",
+          "serious",
+          "slow",
+          "confident"
+        ],
+        "correct_answer": "lavish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ELOQUENT",
+        "options": [
+          "articulate",
+          "harmless",
+          "praise",
+          "distinguished"
+        ],
+        "correct_answer": "articulate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SPARSE",
+        "options": [
+          "scanty",
+          "begin",
+          "harmless",
+          "agreed"
+        ],
+        "correct_answer": "scanty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: TRIVIAL",
+        "options": [
+          "insignificant",
+          "uninformed",
+          "wear away",
+          "impulsive"
+        ],
+        "correct_answer": "insignificant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: BRIEF",
+        "options": [
+          "begin",
+          "frank",
+          "friendly",
+          "concise"
+        ],
+        "correct_answer": "concise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DIMINISH",
+        "options": [
+          "begin",
+          "unclear",
+          "decrease",
+          "brave"
+        ],
+        "correct_answer": "decrease",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PRUDENT",
+        "options": [
+          "magnanimous",
+          "bias",
+          "careless",
+          "wise"
+        ],
+        "correct_answer": "wise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: HOSTILE",
+        "options": [
+          "honesty",
+          "antagonistic",
+          "motionless",
+          "respected"
+        ],
+        "correct_answer": "antagonistic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: RIGID",
+        "options": [
+          "clear",
+          "thrive",
+          "stiff",
+          "unwilling"
+        ],
+        "correct_answer": "stiff",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: SAGACIOUS",
+        "options": [
+          "impulsive",
+          "ordinary",
+          "wise",
+          "refuse"
+        ],
+        "correct_answer": "wise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: FABRICATE",
+        "options": [
+          "bias",
+          "uninformed",
+          "random",
+          "invent"
+        ],
+        "correct_answer": "invent",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PRECARIOUS",
+        "options": [
+          "expressive",
+          "neighboring",
+          "honesty",
+          "unstable"
+        ],
+        "correct_answer": "unstable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CAUTIOUS",
+        "options": [
+          "wary",
+          "outstanding",
+          "archaic",
+          "hold"
+        ],
+        "correct_answer": "wary",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ILLUMINATE",
+        "options": [
+          "brighten",
+          "noisy",
+          "poor",
+          "plentiful"
+        ],
+        "correct_answer": "brighten",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONFORM",
+        "options": [
+          "concise",
+          "reduce",
+          "unclear",
+          "comply"
+        ],
+        "correct_answer": "comply",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: PERSISTENT",
+        "options": [
+          "sluggish",
+          "brighten",
+          "tenacious",
+          "curious"
+        ],
+        "correct_answer": "tenacious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: LUCID",
+        "options": [
+          "daunting",
+          "widespread",
+          "magnanimous",
+          "clear"
+        ],
+        "correct_answer": "clear",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ARTIFICIAL",
+        "options": [
+          "fragile",
+          "strong",
+          "wordy",
+          "synthetic"
+        ],
+        "correct_answer": "synthetic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ESSENTIAL",
+        "options": [
+          "vital",
+          "mourn",
+          "outstanding",
+          "impulsive"
+        ],
+        "correct_answer": "vital",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ARBITRARY",
+        "options": [
+          "disagreement",
+          "avoid",
+          "harmless",
+          "random"
+        ],
+        "correct_answer": "random",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: GULLIBLE",
+        "options": [
+          "naive",
+          "intricate",
+          "enlarge",
+          "delicate"
+        ],
+        "correct_answer": "naive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: HAZARDOUS",
+        "options": [
+          "synthetic",
+          "doubtful",
+          "insufficient",
+          "dangerous"
+        ],
+        "correct_answer": "dangerous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: COMMENCE",
+        "options": [
+          "begin",
+          "disagreement",
+          "graphic",
+          "passionate"
+        ],
+        "correct_answer": "begin",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: IMMINENT",
+        "options": [
+          "impending",
+          "useless",
+          "self-assured",
+          "plentiful"
+        ],
+        "correct_answer": "impending",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: AUGMENT",
+        "options": [
+          "increase",
+          "impending",
+          "noticeable",
+          "deny"
+        ],
+        "correct_answer": "increase",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: CONDONE",
+        "options": [
+          "implied",
+          "shrewd",
+          "frank",
+          "overlook"
+        ],
+        "correct_answer": "overlook",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: GIGANTIC",
+        "options": [
+          "huge",
+          "compulsory",
+          "seize",
+          "skillful"
+        ],
+        "correct_answer": "huge",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: VERSATILE",
+        "options": [
+          "unavoidable",
+          "adaptable",
+          "productive",
+          "flourish"
+        ],
+        "correct_answer": "adaptable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ASTUTE",
+        "options": [
+          "shrewd",
+          "useless",
+          "esteem",
+          "unavoidable"
+        ],
+        "correct_answer": "shrewd",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: DECLINE",
+        "options": [
+          "resolute",
+          "undecided",
+          "refuse",
+          "boring"
+        ],
+        "correct_answer": "refuse",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: ACCOMPANY",
+        "options": [
+          "escort",
+          "random",
+          "capable",
+          "improve"
+        ],
+        "correct_answer": "escort",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is nearest in meaning to the underlined word: GRIM",
+        "options": [
+          "bleak",
+          "supreme",
+          "insufficient",
+          "wary"
+        ],
+        "correct_answer": "bleak",
+        "explanation": ""
+      }
+    ],
+    "Antonyms": [
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: COMPLICATED",
+        "options": [
+          "flourish",
+          "minute",
+          "simple",
+          "normal"
+        ],
+        "correct_answer": "simple",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RETICENT",
+        "options": [
+          "increase",
+          "talkative",
+          "insignificant",
+          "compliant"
+        ],
+        "correct_answer": "talkative",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DELICATE",
+        "options": [
+          "abandon",
+          "extend",
+          "sturdy",
+          "dissuade"
+        ],
+        "correct_answer": "sturdy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DESPISE",
+        "options": [
+          "accept",
+          "fragile",
+          "limited",
+          "admire"
+        ],
+        "correct_answer": "admire",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: COLOSSAL",
+        "options": [
+          "tiny",
+          "abundant",
+          "careless",
+          "unproductive"
+        ],
+        "correct_answer": "tiny",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IDLE",
+        "options": [
+          "abundant",
+          "industrious",
+          "unimpressive",
+          "peaceful"
+        ],
+        "correct_answer": "industrious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VIGILANT",
+        "options": [
+          "ignore",
+          "careless",
+          "abundant",
+          "sorrowful"
+        ],
+        "correct_answer": "careless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SPONTANEOUS",
+        "options": [
+          "planned",
+          "deceptive",
+          "leisurely",
+          "modern"
+        ],
+        "correct_answer": "planned",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VAST",
+        "options": [
+          "enthusiasm",
+          "knowledgeable",
+          "tiny",
+          "welcome"
+        ],
+        "correct_answer": "tiny",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: OBSOLETE",
+        "options": [
+          "satisfaction",
+          "modern",
+          "weak",
+          "poor"
+        ],
+        "correct_answer": "modern",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ADEQUATE",
+        "options": [
+          "insufficient",
+          "dubious",
+          "distant",
+          "energetic"
+        ],
+        "correct_answer": "insufficient",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: COPIOUS",
+        "options": [
+          "enlighten",
+          "clear",
+          "scanty",
+          "malevolent"
+        ],
+        "correct_answer": "scanty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: BELLIGERENT",
+        "options": [
+          "modern",
+          "obscure",
+          "peaceful",
+          "bold"
+        ],
+        "correct_answer": "peaceful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PRECARIOUS",
+        "options": [
+          "secure",
+          "calm",
+          "provoke",
+          "bold"
+        ],
+        "correct_answer": "secure",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: INTREPID",
+        "options": [
+          "frugal",
+          "timid",
+          "clumsy",
+          "explicit"
+        ],
+        "correct_answer": "timid",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: REMORSE",
+        "options": [
+          "trusting",
+          "establish",
+          "satisfaction",
+          "ignore"
+        ],
+        "correct_answer": "satisfaction",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: GRIM",
+        "options": [
+          "cheerful",
+          "contaminated",
+          "conclude",
+          "incite"
+        ],
+        "correct_answer": "cheerful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DEFIANT",
+        "options": [
+          "obtuse",
+          "compliant",
+          "dense",
+          "rare"
+        ],
+        "correct_answer": "compliant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TREACHEROUS",
+        "options": [
+          "loyal",
+          "naive",
+          "rare",
+          "dense"
+        ],
+        "correct_answer": "loyal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VAGUE",
+        "options": [
+          "wither",
+          "essential",
+          "inconspicuous",
+          "precise"
+        ],
+        "correct_answer": "precise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SUBTLE",
+        "options": [
+          "fake",
+          "obvious",
+          "decelerate",
+          "naive"
+        ],
+        "correct_answer": "obvious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ADHERE",
+        "options": [
+          "flavorful",
+          "naive",
+          "detach",
+          "flowing"
+        ],
+        "correct_answer": "detach",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ANCIENT",
+        "options": [
+          "agreement",
+          "modern",
+          "unimpressive",
+          "release"
+        ],
+        "correct_answer": "modern",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PROFOUND",
+        "options": [
+          "cowardly",
+          "accept",
+          "normal",
+          "superficial"
+        ],
+        "correct_answer": "superficial",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CELEBRATED",
+        "options": [
+          "ignore",
+          "poor",
+          "grow",
+          "obscure"
+        ],
+        "correct_answer": "obscure",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DISCLOSE",
+        "options": [
+          "conceal",
+          "foolish",
+          "stable",
+          "incoherent"
+        ],
+        "correct_answer": "conceal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ILLUMINATE",
+        "options": [
+          "darken",
+          "wealthy",
+          "sturdy",
+          "accept"
+        ],
+        "correct_answer": "darken",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VERBOSE",
+        "options": [
+          "concise",
+          "unimaginative",
+          "arrogant",
+          "natural"
+        ],
+        "correct_answer": "concise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: STAGNANT",
+        "options": [
+          "disrespected",
+          "tiny",
+          "flowing",
+          "flourish"
+        ],
+        "correct_answer": "flowing",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONCEAL",
+        "options": [
+          "distant",
+          "unimpressive",
+          "reveal",
+          "flourish"
+        ],
+        "correct_answer": "reveal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: WITHER",
+        "options": [
+          "flourish",
+          "unproductive",
+          "compliant",
+          "calm"
+        ],
+        "correct_answer": "flourish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EMINENT",
+        "options": [
+          "dishonesty",
+          "irresolute",
+          "obscure",
+          "compliant"
+        ],
+        "correct_answer": "obscure",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ERODE",
+        "options": [
+          "tiny",
+          "build",
+          "deceit",
+          "fake"
+        ],
+        "correct_answer": "build",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TENTATIVE",
+        "options": [
+          "deliberate",
+          "pessimistic",
+          "opaque",
+          "definite"
+        ],
+        "correct_answer": "definite",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: OPULENT",
+        "options": [
+          "careless",
+          "poor",
+          "sturdy",
+          "confront"
+        ],
+        "correct_answer": "poor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PREJUDICE",
+        "options": [
+          "fairness",
+          "timid",
+          "smooth",
+          "certain"
+        ],
+        "correct_answer": "fairness",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CREDIBLE",
+        "options": [
+          "harmful",
+          "clear",
+          "elevate",
+          "dubious"
+        ],
+        "correct_answer": "dubious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DISCREET",
+        "options": [
+          "abandon",
+          "reckless",
+          "indiscreet",
+          "biased"
+        ],
+        "correct_answer": "indiscreet",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TIMID",
+        "options": [
+          "sturdy",
+          "cruelty",
+          "bold",
+          "elevate"
+        ],
+        "correct_answer": "bold",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ACCOMPANY",
+        "options": [
+          "enthusiasm",
+          "abandon",
+          "frugal",
+          "indecisive"
+        ],
+        "correct_answer": "abandon",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: NEGLIGENT",
+        "options": [
+          "limited",
+          "careful",
+          "wither",
+          "abundant"
+        ],
+        "correct_answer": "careful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ALLEVIATE",
+        "options": [
+          "dubious",
+          "insufficient",
+          "aggravate",
+          "reckless"
+        ],
+        "correct_answer": "aggravate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SCRUTINIZE",
+        "options": [
+          "divided",
+          "secure",
+          "ignore",
+          "talkative"
+        ],
+        "correct_answer": "ignore",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: HAZARDOUS",
+        "options": [
+          "impossible",
+          "indifference",
+          "rebel",
+          "safe"
+        ],
+        "correct_answer": "safe",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CLARITY",
+        "options": [
+          "chaotic",
+          "decelerate",
+          "confusion",
+          "foolish"
+        ],
+        "correct_answer": "confusion",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: COHERENT",
+        "options": [
+          "hostile",
+          "neglect",
+          "scanty",
+          "incoherent"
+        ],
+        "correct_answer": "incoherent",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SEDENTARY",
+        "options": [
+          "naive",
+          "loyal",
+          "active",
+          "frugal"
+        ],
+        "correct_answer": "active",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: HARMONIOUS",
+        "options": [
+          "indifferent",
+          "discordant",
+          "reckless",
+          "abandon"
+        ],
+        "correct_answer": "discordant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RESILIENT",
+        "options": [
+          "lengthy",
+          "friendly",
+          "provoke",
+          "fragile"
+        ],
+        "correct_answer": "fragile",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AGILE",
+        "options": [
+          "biased",
+          "clumsy",
+          "natural",
+          "ignore"
+        ],
+        "correct_answer": "clumsy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: MEAGER",
+        "options": [
+          "safe",
+          "lengthy",
+          "abundant",
+          "establish"
+        ],
+        "correct_answer": "abundant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: NOTORIOUS",
+        "options": [
+          "grow",
+          "precise",
+          "reputable",
+          "irrational"
+        ],
+        "correct_answer": "reputable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EXTRAVAGANT",
+        "options": [
+          "frugal",
+          "cheerful",
+          "secure",
+          "safe"
+        ],
+        "correct_answer": "frugal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CURTAIL",
+        "options": [
+          "ignore",
+          "extraordinary",
+          "extend",
+          "definite"
+        ],
+        "correct_answer": "extend",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: UNPRECEDENTED",
+        "options": [
+          "grow",
+          "confusing",
+          "opaque",
+          "common"
+        ],
+        "correct_answer": "common",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DISPEL",
+        "options": [
+          "indiscreet",
+          "decelerate",
+          "natural",
+          "gather"
+        ],
+        "correct_answer": "gather",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: NURTURE",
+        "options": [
+          "explicit",
+          "neglect",
+          "pessimistic",
+          "oppose"
+        ],
+        "correct_answer": "neglect",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: GULLIBLE",
+        "options": [
+          "lazy",
+          "shrewd",
+          "concise",
+          "brisk"
+        ],
+        "correct_answer": "shrewd",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PRISTINE",
+        "options": [
+          "stingy",
+          "peaceful",
+          "contaminated",
+          "cheerful"
+        ],
+        "correct_answer": "contaminated",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ECCENTRIC",
+        "options": [
+          "normal",
+          "criticize",
+          "calm",
+          "avoidable"
+        ],
+        "correct_answer": "normal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SUPERFICIAL",
+        "options": [
+          "profound",
+          "neglect",
+          "release",
+          "irresolute"
+        ],
+        "correct_answer": "profound",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VERSATILE",
+        "options": [
+          "obscure",
+          "forfeit",
+          "limited",
+          "calm"
+        ],
+        "correct_answer": "limited",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DECISIVE",
+        "options": [
+          "wealthy",
+          "indecisive",
+          "satisfaction",
+          "clumsy"
+        ],
+        "correct_answer": "indecisive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: REVEAL",
+        "options": [
+          "conceal",
+          "flowing",
+          "reckless",
+          "stingy"
+        ],
+        "correct_answer": "conceal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: HOSTILE",
+        "options": [
+          "friendly",
+          "simple",
+          "loyal",
+          "fragile"
+        ],
+        "correct_answer": "friendly",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IMPETUOUS",
+        "options": [
+          "cautious",
+          "discordant",
+          "humble",
+          "frugal"
+        ],
+        "correct_answer": "cautious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ARBITRARY",
+        "options": [
+          "active",
+          "mediocre",
+          "apathetic",
+          "deliberate"
+        ],
+        "correct_answer": "deliberate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: STUBBORN",
+        "options": [
+          "detach",
+          "pessimistic",
+          "compliant",
+          "arrogant"
+        ],
+        "correct_answer": "compliant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: INTEGRITY",
+        "options": [
+          "inarticulate",
+          "talkative",
+          "dishonesty",
+          "obvious"
+        ],
+        "correct_answer": "dishonesty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FRUGAL",
+        "options": [
+          "wasteful",
+          "careless",
+          "lengthy",
+          "indifference"
+        ],
+        "correct_answer": "wasteful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: REDUNDANT",
+        "options": [
+          "essential",
+          "fragile",
+          "friendliness",
+          "superficial"
+        ],
+        "correct_answer": "essential",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TERSE",
+        "options": [
+          "industrious",
+          "sorrowful",
+          "knowledgeable",
+          "verbose"
+        ],
+        "correct_answer": "verbose",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TENACIOUS",
+        "options": [
+          "irresolute",
+          "insignificant",
+          "explicit",
+          "arrogant"
+        ],
+        "correct_answer": "irresolute",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ADMIRE",
+        "options": [
+          "despise",
+          "timid",
+          "modern",
+          "tiny"
+        ],
+        "correct_answer": "despise",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ABOLISH",
+        "options": [
+          "establish",
+          "timid",
+          "obvious",
+          "fairness"
+        ],
+        "correct_answer": "establish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TRANSPARENT",
+        "options": [
+          "gather",
+          "talkative",
+          "opaque",
+          "vague"
+        ],
+        "correct_answer": "opaque",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ARTIFICIAL",
+        "options": [
+          "timid",
+          "cowardly",
+          "natural",
+          "release"
+        ],
+        "correct_answer": "natural",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AMBIGUOUS",
+        "options": [
+          "clear",
+          "smooth",
+          "incite",
+          "oppose"
+        ],
+        "correct_answer": "clear",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONGESTED",
+        "options": [
+          "secure",
+          "empty",
+          "bold",
+          "ordinary"
+        ],
+        "correct_answer": "empty",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CRYPTIC",
+        "options": [
+          "opaque",
+          "obvious",
+          "wither",
+          "loyal"
+        ],
+        "correct_answer": "obvious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AUGMENT",
+        "options": [
+          "indiscreet",
+          "apathetic",
+          "reduce",
+          "rebel"
+        ],
+        "correct_answer": "reduce",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: HUMBLE",
+        "options": [
+          "vague",
+          "arrogant",
+          "clear",
+          "friendly"
+        ],
+        "correct_answer": "arrogant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FRAGILE",
+        "options": [
+          "confusion",
+          "criticize",
+          "flexible",
+          "sturdy"
+        ],
+        "correct_answer": "sturdy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: TEDIOUS",
+        "options": [
+          "important",
+          "exciting",
+          "loyal",
+          "aggravate"
+        ],
+        "correct_answer": "exciting",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DEPLETE",
+        "options": [
+          "trusting",
+          "effective",
+          "empty",
+          "replenish"
+        ],
+        "correct_answer": "replenish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: COMPEL",
+        "options": [
+          "discordant",
+          "dissuade",
+          "modest",
+          "profound"
+        ],
+        "correct_answer": "dissuade",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FEASIBLE",
+        "options": [
+          "dull",
+          "inconspicuous",
+          "timid",
+          "impossible"
+        ],
+        "correct_answer": "impossible",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DEFT",
+        "options": [
+          "impossible",
+          "clumsy",
+          "sturdy",
+          "admit"
+        ],
+        "correct_answer": "clumsy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONTEMPT",
+        "options": [
+          "condemn",
+          "discordant",
+          "respect",
+          "modest"
+        ],
+        "correct_answer": "respect",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VIVID",
+        "options": [
+          "secure",
+          "conceal",
+          "dull",
+          "ignore"
+        ],
+        "correct_answer": "dull",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IMMENSE",
+        "options": [
+          "smooth",
+          "tiny",
+          "irrelevant",
+          "weak"
+        ],
+        "correct_answer": "tiny",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IGNORANT",
+        "options": [
+          "replenish",
+          "knowledgeable",
+          "foolish",
+          "dense"
+        ],
+        "correct_answer": "knowledgeable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RELUCTANT",
+        "options": [
+          "peaceful",
+          "selfish",
+          "modern",
+          "eager"
+        ],
+        "correct_answer": "eager",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: WANE",
+        "options": [
+          "trusting",
+          "grow",
+          "gather",
+          "careless"
+        ],
+        "correct_answer": "grow",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SERENE",
+        "options": [
+          "chaotic",
+          "neglect",
+          "foolish",
+          "criticize"
+        ],
+        "correct_answer": "chaotic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ASSERTIVE",
+        "options": [
+          "timid",
+          "tiny",
+          "reputable",
+          "oppose"
+        ],
+        "correct_answer": "timid",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: GENEROUS",
+        "options": [
+          "stingy",
+          "exciting",
+          "malevolent",
+          "deceptive"
+        ],
+        "correct_answer": "stingy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ALTRUISTIC",
+        "options": [
+          "extraordinary",
+          "selfish",
+          "cheerful",
+          "kind"
+        ],
+        "correct_answer": "selfish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EXEMPLARY",
+        "options": [
+          "mediocre",
+          "sturdy",
+          "loyal",
+          "reduce"
+        ],
+        "correct_answer": "mediocre",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: GENUINE",
+        "options": [
+          "reputable",
+          "fake",
+          "careless",
+          "respect"
+        ],
+        "correct_answer": "fake",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ABUNDANT",
+        "options": [
+          "abundant",
+          "worsen",
+          "wasteful",
+          "scarce"
+        ],
+        "correct_answer": "scarce",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PACIFY",
+        "options": [
+          "conclude",
+          "naive",
+          "obvious",
+          "provoke"
+        ],
+        "correct_answer": "provoke",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FUTILE",
+        "options": [
+          "flexible",
+          "flavorful",
+          "effective",
+          "peaceful"
+        ],
+        "correct_answer": "effective",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FERVENT",
+        "options": [
+          "calm",
+          "sturdy",
+          "indifferent",
+          "rare"
+        ],
+        "correct_answer": "indifferent",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DECEIVE",
+        "options": [
+          "clear",
+          "enlighten",
+          "pessimistic",
+          "abundant"
+        ],
+        "correct_answer": "enlighten",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CANDOR",
+        "options": [
+          "smooth",
+          "cautious",
+          "deceit",
+          "modern"
+        ],
+        "correct_answer": "deceit",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EVADE",
+        "options": [
+          "timid",
+          "safe",
+          "irrational",
+          "confront"
+        ],
+        "correct_answer": "confront",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: INNOCUOUS",
+        "options": [
+          "incoherent",
+          "harmful",
+          "eager",
+          "confident"
+        ],
+        "correct_answer": "harmful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DUBIOUS",
+        "options": [
+          "certain",
+          "inept",
+          "timid",
+          "inarticulate"
+        ],
+        "correct_answer": "certain",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ARTICULATE",
+        "options": [
+          "reputable",
+          "industrious",
+          "careless",
+          "inarticulate"
+        ],
+        "correct_answer": "inarticulate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CUNNING",
+        "options": [
+          "naive",
+          "unproductive",
+          "conceal",
+          "contaminated"
+        ],
+        "correct_answer": "naive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RATIONAL",
+        "options": [
+          "irrational",
+          "deceptive",
+          "tiny",
+          "modern"
+        ],
+        "correct_answer": "irrational",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONFORM",
+        "options": [
+          "selfish",
+          "foolish",
+          "profound",
+          "rebel"
+        ],
+        "correct_answer": "rebel",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: LAVISH",
+        "options": [
+          "frugal",
+          "explicit",
+          "abandon",
+          "darken"
+        ],
+        "correct_answer": "frugal",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ANIMOSITY",
+        "options": [
+          "concise",
+          "friendliness",
+          "extend",
+          "indiscreet"
+        ],
+        "correct_answer": "friendliness",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IRRITABLE",
+        "options": [
+          "calm",
+          "cowardly",
+          "natural",
+          "enthusiasm"
+        ],
+        "correct_answer": "calm",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DEPRIVE",
+        "options": [
+          "provide",
+          "talkative",
+          "verbose",
+          "enlighten"
+        ],
+        "correct_answer": "provide",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: BIZARRE",
+        "options": [
+          "ordinary",
+          "admit",
+          "flexible",
+          "explicit"
+        ],
+        "correct_answer": "ordinary",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: OPTIMISTIC",
+        "options": [
+          "pessimistic",
+          "modern",
+          "certain",
+          "compliant"
+        ],
+        "correct_answer": "pessimistic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ENORMOUS",
+        "options": [
+          "insufficient",
+          "tiny",
+          "extraordinary",
+          "aggravate"
+        ],
+        "correct_answer": "tiny",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ADVOCATE",
+        "options": [
+          "indifferent",
+          "harmful",
+          "rare",
+          "oppose"
+        ],
+        "correct_answer": "oppose",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EUPHORIA",
+        "options": [
+          "flourish",
+          "despair",
+          "cheerful",
+          "unnecessary"
+        ],
+        "correct_answer": "despair",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: APATHY",
+        "options": [
+          "irrational",
+          "extraordinary",
+          "enthusiasm",
+          "provide"
+        ],
+        "correct_answer": "enthusiasm",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ROBUST",
+        "options": [
+          "friendliness",
+          "unproductive",
+          "verbose",
+          "weak"
+        ],
+        "correct_answer": "weak",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EXPAND",
+        "options": [
+          "sturdy",
+          "contract",
+          "flavorful",
+          "sorrowful"
+        ],
+        "correct_answer": "contract",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FLOURISH",
+        "options": [
+          "harmful",
+          "wither",
+          "modern",
+          "careless"
+        ],
+        "correct_answer": "wither",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ELOQUENT",
+        "options": [
+          "inarticulate",
+          "modest",
+          "cowardly",
+          "wither"
+        ],
+        "correct_answer": "inarticulate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ACCURATE",
+        "options": [
+          "extraordinary",
+          "incorrect",
+          "planned",
+          "insignificant"
+        ],
+        "correct_answer": "incorrect",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CANDID",
+        "options": [
+          "deceptive",
+          "kind",
+          "irresolute",
+          "obvious"
+        ],
+        "correct_answer": "deceptive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PERILOUS",
+        "options": [
+          "safe",
+          "profound",
+          "deceit",
+          "grow"
+        ],
+        "correct_answer": "safe",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: LUCID",
+        "options": [
+          "replenish",
+          "increase",
+          "confusing",
+          "obvious"
+        ],
+        "correct_answer": "confusing",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FACILITATE",
+        "options": [
+          "hinder",
+          "wither",
+          "vague",
+          "stable"
+        ],
+        "correct_answer": "hinder",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONSPICUOUS",
+        "options": [
+          "leisurely",
+          "inconspicuous",
+          "wasteful",
+          "extraordinary"
+        ],
+        "correct_answer": "inconspicuous",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IMPLICIT",
+        "options": [
+          "explicit",
+          "obvious",
+          "reckless",
+          "ignore"
+        ],
+        "correct_answer": "explicit",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SUPPRESS",
+        "options": [
+          "extend",
+          "grow",
+          "incite",
+          "detach"
+        ],
+        "correct_answer": "incite",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ENDEAVOR",
+        "options": [
+          "abandon",
+          "opaque",
+          "reckless",
+          "discordant"
+        ],
+        "correct_answer": "abandon",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PLAUSIBLE",
+        "options": [
+          "implausible",
+          "gather",
+          "aggravate",
+          "tiny"
+        ],
+        "correct_answer": "implausible",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DISMAL",
+        "options": [
+          "mediocre",
+          "wither",
+          "cheerful",
+          "superficial"
+        ],
+        "correct_answer": "cheerful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ERRATIC",
+        "options": [
+          "lenient",
+          "consistent",
+          "timid",
+          "worsen"
+        ],
+        "correct_answer": "consistent",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SCARCE",
+        "options": [
+          "abundant",
+          "fake",
+          "unimaginative",
+          "cruelty"
+        ],
+        "correct_answer": "abundant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: OSTENTATIOUS",
+        "options": [
+          "stable",
+          "profound",
+          "modest",
+          "cruelty"
+        ],
+        "correct_answer": "modest",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: INQUISITIVE",
+        "options": [
+          "dense",
+          "indifferent",
+          "unimaginative",
+          "tiny"
+        ],
+        "correct_answer": "indifferent",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RECKLESS",
+        "options": [
+          "limited",
+          "cautious",
+          "wasteful",
+          "vague"
+        ],
+        "correct_answer": "cautious",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ARROGANT",
+        "options": [
+          "smooth",
+          "humble",
+          "dull",
+          "dubious"
+        ],
+        "correct_answer": "humble",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VOLATILE",
+        "options": [
+          "obvious",
+          "indecisive",
+          "stable",
+          "provide"
+        ],
+        "correct_answer": "stable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONFIDENT",
+        "options": [
+          "avoidable",
+          "deliberate",
+          "timid",
+          "decelerate"
+        ],
+        "correct_answer": "timid",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AMBIVALENT",
+        "options": [
+          "incoherent",
+          "certain",
+          "incorrect",
+          "enthusiasm"
+        ],
+        "correct_answer": "certain",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: UNANIMOUS",
+        "options": [
+          "divided",
+          "clumsy",
+          "fake",
+          "contract"
+        ],
+        "correct_answer": "divided",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RIGID",
+        "options": [
+          "cowardly",
+          "flexible",
+          "verbose",
+          "timid"
+        ],
+        "correct_answer": "flexible",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: BRIEF",
+        "options": [
+          "lengthy",
+          "fake",
+          "reveal",
+          "distant"
+        ],
+        "correct_answer": "lengthy",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DETAIN",
+        "options": [
+          "unnecessary",
+          "important",
+          "release",
+          "brisk"
+        ],
+        "correct_answer": "release",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CAUTIOUS",
+        "options": [
+          "hinder",
+          "unproductive",
+          "reckless",
+          "decelerate"
+        ],
+        "correct_answer": "reckless",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: OBSTINATE",
+        "options": [
+          "pessimistic",
+          "certain",
+          "compliant",
+          "dishonesty"
+        ],
+        "correct_answer": "compliant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SAGACIOUS",
+        "options": [
+          "foolish",
+          "conclude",
+          "release",
+          "lenient"
+        ],
+        "correct_answer": "foolish",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DEFICIENT",
+        "options": [
+          "scarce",
+          "tiny",
+          "sufficient",
+          "unnecessary"
+        ],
+        "correct_answer": "sufficient",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PARAMOUNT",
+        "options": [
+          "disrespected",
+          "insignificant",
+          "stingy",
+          "despair"
+        ],
+        "correct_answer": "insignificant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: OBSCURE",
+        "options": [
+          "arrogant",
+          "dense",
+          "clear",
+          "unnecessary"
+        ],
+        "correct_answer": "clear",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: MITIGATE",
+        "options": [
+          "aggravate",
+          "optional",
+          "indifferent",
+          "sufficient"
+        ],
+        "correct_answer": "aggravate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: RAMPANT",
+        "options": [
+          "chaotic",
+          "rare",
+          "exciting",
+          "timid"
+        ],
+        "correct_answer": "rare",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VENERABLE",
+        "options": [
+          "disrespected",
+          "respect",
+          "aggravate",
+          "certain"
+        ],
+        "correct_answer": "disrespected",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: APPREHENSIVE",
+        "options": [
+          "harmful",
+          "confident",
+          "definite",
+          "ignore"
+        ],
+        "correct_answer": "confident",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FORMIDABLE",
+        "options": [
+          "profound",
+          "careless",
+          "obvious",
+          "unimpressive"
+        ],
+        "correct_answer": "unimpressive",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: THRIVE",
+        "options": [
+          "safe",
+          "arrogant",
+          "bold",
+          "wither"
+        ],
+        "correct_answer": "wither",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: VALIANT",
+        "options": [
+          "secure",
+          "cowardly",
+          "hostile",
+          "malevolent"
+        ],
+        "correct_answer": "cowardly",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: QUELL",
+        "options": [
+          "admit",
+          "effective",
+          "incite",
+          "obtuse"
+        ],
+        "correct_answer": "incite",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: BANISH",
+        "options": [
+          "reputable",
+          "loyal",
+          "irrational",
+          "welcome"
+        ],
+        "correct_answer": "welcome",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DISPUTE",
+        "options": [
+          "agreement",
+          "confusing",
+          "welcome",
+          "distant"
+        ],
+        "correct_answer": "agreement",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: FABRICATE",
+        "options": [
+          "authenticate",
+          "confusing",
+          "superficial",
+          "welcome"
+        ],
+        "correct_answer": "authenticate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONGENIAL",
+        "options": [
+          "important",
+          "explicit",
+          "disagreeable",
+          "despise"
+        ],
+        "correct_answer": "disagreeable",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DECLINE",
+        "options": [
+          "deceptive",
+          "accept",
+          "rare",
+          "natural"
+        ],
+        "correct_answer": "accept",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DEGRADE",
+        "options": [
+          "malevolent",
+          "criticize",
+          "irrelevant",
+          "elevate"
+        ],
+        "correct_answer": "elevate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SPARSE",
+        "options": [
+          "dense",
+          "wealthy",
+          "reputable",
+          "vague"
+        ],
+        "correct_answer": "dense",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PRECISE",
+        "options": [
+          "vague",
+          "condemn",
+          "darken",
+          "tiny"
+        ],
+        "correct_answer": "vague",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ZEALOUS",
+        "options": [
+          "apathetic",
+          "dense",
+          "obvious",
+          "reckless"
+        ],
+        "correct_answer": "apathetic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EXPLICIT",
+        "options": [
+          "timid",
+          "vague",
+          "admire",
+          "irrelevant"
+        ],
+        "correct_answer": "vague",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: LETHARGIC",
+        "options": [
+          "normal",
+          "rare",
+          "hostile",
+          "energetic"
+        ],
+        "correct_answer": "energetic",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ESSENTIAL",
+        "options": [
+          "unnecessary",
+          "optional",
+          "compliant",
+          "important"
+        ],
+        "correct_answer": "unnecessary",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IMPARTIAL",
+        "options": [
+          "inarticulate",
+          "biased",
+          "aggravate",
+          "obvious"
+        ],
+        "correct_answer": "biased",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ABANDON",
+        "options": [
+          "increase",
+          "replenish",
+          "occasional",
+          "retain"
+        ],
+        "correct_answer": "retain",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: IMMINENT",
+        "options": [
+          "flexible",
+          "dull",
+          "criticize",
+          "distant"
+        ],
+        "correct_answer": "distant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: UBIQUITOUS",
+        "options": [
+          "cruelty",
+          "eager",
+          "lengthy",
+          "rare"
+        ],
+        "correct_answer": "rare",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AMIABLE",
+        "options": [
+          "common",
+          "hostile",
+          "worsen",
+          "natural"
+        ],
+        "correct_answer": "hostile",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: INADEQUATE",
+        "options": [
+          "agreement",
+          "implausible",
+          "concise",
+          "adequate"
+        ],
+        "correct_answer": "adequate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DISPERSE",
+        "options": [
+          "gather",
+          "abandon",
+          "indecisive",
+          "clumsy"
+        ],
+        "correct_answer": "gather",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: MUNDANE",
+        "options": [
+          "occasional",
+          "extraordinary",
+          "impossible",
+          "indifference"
+        ],
+        "correct_answer": "extraordinary",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: NAIVE",
+        "options": [
+          "harmful",
+          "mediocre",
+          "hinder",
+          "shrewd"
+        ],
+        "correct_answer": "shrewd",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CONDONE",
+        "options": [
+          "compliant",
+          "foolish",
+          "condemn",
+          "dishonesty"
+        ],
+        "correct_answer": "condemn",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: DENY",
+        "options": [
+          "admit",
+          "naive",
+          "tiny",
+          "lenient"
+        ],
+        "correct_answer": "admit",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: EMPATHY",
+        "options": [
+          "enlighten",
+          "unimaginative",
+          "indifference",
+          "impossible"
+        ],
+        "correct_answer": "indifference",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: COARSE",
+        "options": [
+          "worsen",
+          "smooth",
+          "inarticulate",
+          "inarticulate"
+        ],
+        "correct_answer": "smooth",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ADAMANT",
+        "options": [
+          "indecisive",
+          "distant",
+          "optional",
+          "flexible"
+        ],
+        "correct_answer": "flexible",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PERTINENT",
+        "options": [
+          "fairness",
+          "irrelevant",
+          "insignificant",
+          "harmful"
+        ],
+        "correct_answer": "irrelevant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: SKEPTICAL",
+        "options": [
+          "stingy",
+          "cheerful",
+          "build",
+          "trusting"
+        ],
+        "correct_answer": "trusting",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AUDACIOUS",
+        "options": [
+          "ignore",
+          "divided",
+          "timid",
+          "conclude"
+        ],
+        "correct_answer": "timid",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: AMPLE",
+        "options": [
+          "distant",
+          "compliant",
+          "fragile",
+          "scarce"
+        ],
+        "correct_answer": "scarce",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: PONDER",
+        "options": [
+          "careless",
+          "ignore",
+          "cautious",
+          "detach"
+        ],
+        "correct_answer": "ignore",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: JUBILANT",
+        "options": [
+          "quiet",
+          "fake",
+          "sorrowful",
+          "dubious"
+        ],
+        "correct_answer": "sorrowful",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: CAPTURE",
+        "options": [
+          "conceal",
+          "cowardly",
+          "release",
+          "rebel"
+        ],
+        "correct_answer": "release",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: ADJACENT",
+        "options": [
+          "distant",
+          "abandon",
+          "adequate",
+          "indecisive"
+        ],
+        "correct_answer": "distant",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word or phrase that is most nearly OPPOSITE in meaning to the underlined word: MALICIOUS",
+        "options": [
+          "kind",
+          "brisk",
+          "abundant",
+          "irresolute"
+        ],
+        "correct_answer": "kind",
+        "explanation": ""
+      }
+    ]
+  }
+}
