@@ -394,38 +394,31 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.6"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.7"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Student CBT: logging in now always shows an Available Exams screen "
-        "(student photo/name/ID/class, plus a card per exam with subject, "
-        "class, type, duration, question count and status) instead of "
-        "silently jumping straight into the only matching exam\n"
-        "- Student CBT: the Exam Instructions page now also shows the "
-        "student's profile and full exam details, with a clear warning that "
-        "the timer starts on click, and a Back button to return to the exam "
-        "list\n"
-        "- Already-submitted exams no longer reappear in the list; an exam "
-        "past its window still shows if the student has an unfinished "
-        "attempt to resume\n"
-        "- Carries forward 0.2.5's fix: exam header no longer overlaps the "
-        "student photo/name on non-100% Windows display scaling\n"
-        "- Carries forward 0.2.4/0.2.3's fixes: <br> as a real line break in "
-        "edit screens, clock-skew-proof exam timer, no oversized gap before "
-        "answer options, correct version reporting, resizable update screen, "
-        "reopens itself after an in-app update, LAN timer agreement, UTF-8 "
-        "answer sync, no raw HTML on grading screens",
+        "- Question/passage images attached via the web exam editor now sync "
+        "down and reach students over the LAN (previously dropped entirely - "
+        "only inline rich-text images ever made it through)\n"
+        "- Add/Edit Question now supports attaching an image directly from "
+        "this app, for exams created and run purely offline\n"
+        "- LAN server now starts automatically when the dashboard loads "
+        "instead of requiring a manual Start click, and its address is shown "
+        "prominently with a Copy button so it's easy to hand to students "
+        "whose auto-discovery can't find it on an ad-hoc/no-router LAN\n"
+        "- Carries forward 0.2.6's fixes.",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-14"),
-    # Same GitHub Releases convention as v0.2.0-v0.2.5 - create a "v0.2.6"
-    # release on this repo (tag exactly "v0.2.6", no stray characters) with
-    # SchoolDom-Admin-Sync-Win7-0.2.6-Setup.exe attached as an asset and this
-    # URL resolves on its own.
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-16"),
+    # Served straight from this server's own git-tracked installer folder
+    # (schooldom-cbt-win7/release/) rather than a GitHub Release asset -
+    # admin_app_installer_path() always resolves to the highest version
+    # present there, so this URL stays correct across releases with no
+    # per-version edits needed here.
     "download_url": os.environ.get(
         "CBT_ADMIN_APP_DOWNLOAD_URL",
-        "https://github.com/king401-hub/SCHOOL-DOM/releases/download/v0.2.6/SchoolDom-Admin-Sync-Win7-0.2.6-Setup.exe",
+        "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3747035),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3753905),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
