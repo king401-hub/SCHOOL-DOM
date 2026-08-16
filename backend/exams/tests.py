@@ -12,7 +12,7 @@ from core.models import SchoolTenant
 from notifications.models import Notification
 from tenants.models import Tenant
 from users.models import StudentProfile, User
-from .models import Exam, ExamAttempt, ExamPin, Question, QuestionBank, StudentAnswer
+from .models import Exam, ExamAttempt, ExamPin, Question, QuestionBank, StudentAnswer, Topic
 
 
 class FlagExamQuestionTests(TestCase):
@@ -1155,3 +1155,118 @@ class PublishAttemptResultTests(TestCase):
         self.assertTrue(response.data["report_warning"])
         self.attempt.refresh_from_db()
         self.assertIsNotNone(self.attempt.results_published_at)
+
+
+class CentralQuestionBankImportTests(TestCase):
+    """Covers the JAMB/WAEC/NECO central-bank random-import endpoint: hides the real
+    count, rejects requests bigger than what's available, and never repeats a question
+    the caller already has."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.teacher = User.objects.create_user(
+            email="teacher-central@example.com",
+            password="password",
+            first_name="Central",
+            last_name="Teacher",
+            role="teacher",
+        )
+        self.client.force_authenticate(self.teacher)
+
+        self.global_tenant, _ = Tenant.objects.get_or_create(
+            slug="schooldom-global-question-bank",
+            defaults={"name": "SchoolDom Global Question Bank"},
+        )
+        self.subject = Subject.objects.create(name="Mathematics", code="MTH", tenant=self.global_tenant)
+        self.bank = QuestionBank.objects.create(
+            name="JAMB Mathematics Question Bank",
+            board="JAMB",
+            subject=self.subject,
+            teacher=self.teacher,
+            tenant=self.global_tenant,
+            is_shared=True,
+        )
+        self.topic = Topic.objects.create(name="Algebra", bank=self.bank, tenant=self.global_tenant)
+        self.questions = [
+            Question.objects.create(
+                question_type="mcq",
+                text=f"Algebra question {index}",
+                options=["A", "B", "C", "D"],
+                correct_answer="A",
+                points=1,
+                topic=self.topic,
+                tenant=self.global_tenant,
+            )
+            for index in range(3)
+        ]
+
+    def test_sections_lists_boards_with_content(self):
+        response = self.client.get("/api/app/exams/question-bank/sections/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["boards"], ["JAMB"])
+
+    def test_section_subjects_and_topics(self):
+        response = self.client.get("/api/app/exams/question-bank/sections/subjects/?board=JAMB")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["subjects"], ["Mathematics"])
+
+        response = self.client.get(
+            "/api/app/exams/question-bank/sections/topics/?board=JAMB&subject=Mathematics"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["topics"], [{"id": self.topic.id, "name": "Algebra"}])
+        # The count of questions in the topic must never leak through this endpoint.
+        self.assertNotIn("question_count", response.data["topics"][0])
+        self.assertNotIn("count", str(response.data))
+
+    def test_import_rejects_more_than_available_without_revealing_the_count(self):
+        response = self.client.post(
+            "/api/app/exams/question-bank/import/",
+            {"board": "JAMB", "subject": "Mathematics", "topic_id": self.topic.id, "count": 10},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertNotIn("3", response.data["message"])
+
+    def test_import_returns_requested_count(self):
+        response = self.client.post(
+            "/api/app/exams/question-bank/import/",
+            {"board": "JAMB", "subject": "Mathematics", "topic_id": self.topic.id, "count": 2},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["questions"]), 2)
+        returned_ids = {row["id"] for row in response.data["questions"]}
+        self.assertTrue(returned_ids.issubset({q.id for q in self.questions}))
+
+    def test_import_excludes_already_held_questions(self):
+        already_have = [self.questions[0].id, self.questions[1].id]
+        response = self.client.post(
+            "/api/app/exams/question-bank/import/",
+            {
+                "board": "JAMB",
+                "subject": "Mathematics",
+                "topic_id": self.topic.id,
+                "count": 1,
+                "exclude_ids": already_have,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["questions"][0]["id"], self.questions[2].id)
+
+        # Now every question is excluded - even count=1 must be rejected, not silently
+        # returned with a duplicate.
+        response = self.client.post(
+            "/api/app/exams/question-bank/import/",
+            {
+                "board": "JAMB",
+                "subject": "Mathematics",
+                "topic_id": self.topic.id,
+                "count": 1,
+                "exclude_ids": [q.id for q in self.questions],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)

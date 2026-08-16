@@ -1,6 +1,30 @@
 from django.contrib import admin
 
-from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
+from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer, Topic
+
+
+class PlatformAdminOnlyMixin:
+    """Restricts a ModelAdmin to Django superusers specifically - independent of any other
+    is_staff/is_super_admin() staff accounts (e.g. via the separate superadmin_dashboard
+    group-based system). Used for the central JAMB/WAEC/NECO question bank content, which
+    must be managed only by the actual SchoolDom platform administrator, never by school
+    admins/teachers (who never reach /control-panel/ at all) nor by any other platform staff
+    account that might exist."""
+
+    def has_view_permission(self, request, obj=None):
+        return bool(request.user and request.user.is_superuser)
+
+    def has_add_permission(self, request):
+        return bool(request.user and request.user.is_superuser)
+
+    def has_change_permission(self, request, obj=None):
+        return bool(request.user and request.user.is_superuser)
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(request.user and request.user.is_superuser)
+
+    def has_module_permission(self, request):
+        return bool(request.user and request.user.is_superuser)
 
 
 @admin.register(ExamType)
@@ -10,11 +34,18 @@ class ExamTypeAdmin(admin.ModelAdmin):
     search_fields = ("name", "tenant__name", "tenant__slug")
 
 
+class TopicInline(admin.TabularInline):
+    model = Topic
+    extra = 0
+    fields = ("name", "order")
+
+
 @admin.register(Question)
-class QuestionAdmin(admin.ModelAdmin):
-    list_display = ("id", "question_type", "group", "group_order", "points", "tenant", "created_at")
-    list_filter = ("tenant", "question_type", "group__group_type")
-    search_fields = ("text", "group__title", "group__passage_text")
+class QuestionAdmin(PlatformAdminOnlyMixin, admin.ModelAdmin):
+    list_display = ("id", "question_type", "topic", "group", "group_order", "points", "tenant", "created_at")
+    list_filter = ("tenant", "question_type", "topic__bank__board", "group__group_type")
+    search_fields = ("text", "topic__name", "group__title", "group__passage_text")
+    autocomplete_fields = ("topic", "group")
 
 
 @admin.register(QuestionGroup)
@@ -25,11 +56,29 @@ class QuestionGroupAdmin(admin.ModelAdmin):
 
 
 @admin.register(QuestionBank)
-class QuestionBankAdmin(admin.ModelAdmin):
-    list_display = ("name", "subject", "teacher", "is_shared", "tenant", "created_at")
-    list_filter = ("tenant", "is_shared", "subject")
+class QuestionBankAdmin(PlatformAdminOnlyMixin, admin.ModelAdmin):
+    list_display = ("name", "board", "subject", "teacher", "is_shared", "tenant", "created_at")
+    list_filter = ("tenant", "board", "is_shared", "subject")
     search_fields = ("name", "subject__name", "teacher__email")
+    autocomplete_fields = ("subject", "teacher")
     filter_horizontal = ("questions",)
+    inlines = [TopicInline]
+
+
+class TopicQuestionInline(admin.TabularInline):
+    model = Question
+    fk_name = "topic"
+    extra = 1
+    fields = ("text", "options", "correct_answer", "points", "explanation")
+
+
+@admin.register(Topic)
+class TopicAdmin(PlatformAdminOnlyMixin, admin.ModelAdmin):
+    list_display = ("name", "bank", "order", "tenant")
+    list_filter = ("bank__board", "tenant")
+    search_fields = ("name", "bank__name")
+    autocomplete_fields = ("bank",)
+    inlines = [TopicQuestionInline]
 
 
 @admin.register(Exam)

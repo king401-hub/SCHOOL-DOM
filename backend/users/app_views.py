@@ -59,7 +59,7 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from settings_app.models import DocumentTheme
 from django_countries import countries as django_countries_list
-from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer
+from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer, Topic
 from tenants.models import Tenant
 from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplication, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
@@ -3989,6 +3989,7 @@ def student_dashboard(request):
 
     inbox_qs = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
     unread_inbox = inbox_qs.filter(is_read=False).count() if InAppMessage else 0
+    unread_notifications = _tenant_notifications_for_user(user).filter(is_read=False).count() if Notification else 0
 
     announcements = _visible_announcements_for_user(user, now=now)
     admin_contacts_qs = User.objects.filter(
@@ -4280,6 +4281,7 @@ def student_dashboard(request):
                 "completed_exams": attempts_qs.filter(is_completed=True).count(),
                 "pending_submissions": attempts_qs.filter(is_submitted=False).count(),
                 "unread_inbox": unread_inbox,
+                "unread_notifications": unread_notifications,
                 "available_results": results_qs.count(),
                 "attendance_marked_today": bool(attendance_today),
                 "subjects_offered": len(subjects),
@@ -4958,6 +4960,7 @@ def teacher_dashboard(request):
                 return gs.letter
         return ""
     inbox_qs = _tenant_inbox_for_user(user).order_by("-created_at") if InAppMessage else []
+    unread_notifications = _tenant_notifications_for_user(user).filter(is_read=False).count() if Notification else 0
     if teacher_profile:
         classes_qs = _teacher_assigned_classes(user).order_by("name", "section")
         subjects_qs = _scope_to_user_tenant(teacher_profile.subjects.all(), user).order_by("name")
@@ -5017,6 +5020,7 @@ def teacher_dashboard(request):
                 "upcoming_assessments": upcoming_assessments.count(),
                 "pending_submissions": attempts_qs.filter(is_submitted=False).count(),
                 "unread_inbox": inbox_qs.filter(is_read=False).count() if InAppMessage else 0,
+                "unread_notifications": unread_notifications,
                 "tests_created": exams_qs.filter(exam_type__name__iexact="Test").count(),
                 "exams_created": exams_qs.exclude(exam_type__name__iexact="Test").count(),
                 "submitted_results": submitted_attempts_qs.count(),
@@ -8404,6 +8408,32 @@ def exams_snapshot(request):
     ).order_by("-start_date")
     if user.role == "teacher":
         exams = exams.filter(teacher=user)
+    elif user.role == "student":
+        # Students may only ever see exams that are actually published and
+        # actually assigned to them (their class, or an explicit enrollment) -
+        # mirrors the scoping used by student_dashboard's upcoming_exams_qs so
+        # the mobile Exams tab matches what the web dashboard considers "theirs".
+        exams = exams.filter(is_published=True)
+        school = _resolve_school_tenant_for_user(user)
+        student_profile = StudentProfile.objects.filter(user=user).first()
+        enrolled_exam_ids = []
+        if student_profile and school:
+            enrolled_exam_ids = list(
+                StudentEnrollment.objects.filter(school=school, student=student_profile)
+                .values_list("exams__id", flat=True)
+            )
+            enrolled_exam_ids = [exam_id for exam_id in enrolled_exam_ids if exam_id]
+        if student_profile and student_profile.current_class_id:
+            exams = exams.filter(
+                Q(class_group_id=student_profile.current_class_id)
+                | Q(class_group__isnull=True)
+                | Q(id__in=enrolled_exam_ids)
+            )
+        elif enrolled_exam_ids:
+            exams = exams.filter(Q(class_group__isnull=True) | Q(id__in=enrolled_exam_ids))
+        else:
+            exams = exams.filter(class_group__isnull=True)
+        exams = exams.distinct()
 
     attempts = _scope_to_user_tenant(
         ExamAttempt.objects.select_related("exam", "exam__subject", "exam__class_group", "student"),
@@ -9141,6 +9171,136 @@ def cbt_question_bank(request):
             "questions": question_rows,
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def cbt_question_bank_sections(request):
+    """Boards (JAMB/WAEC/NECO) that currently have at least one topic with at least one
+    question - never a count, just which boards are worth showing at all."""
+    global_tenant = _global_question_bank_tenant()
+    if not global_tenant:
+        return Response({"success": True, "boards": []})
+
+    boards = (
+        QuestionBank.objects.filter(tenant=global_tenant)
+        .exclude(board="")
+        .filter(topics__topic_questions__isnull=False)
+        .order_by("board")
+        .values_list("board", flat=True)
+        .distinct()
+    )
+    # Keep BOARD_CHOICES order (JAMB, WAEC, NECO) rather than whatever order the DB returns.
+    board_order = [choice for choice, _label in QuestionBank.BOARD_CHOICES]
+    present = set(boards)
+    ordered_boards = [board for board in board_order if board in present]
+    return Response({"success": True, "boards": ordered_boards})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def cbt_question_bank_section_subjects(request):
+    """Subject names (not ids - global Subject rows are separate DB rows from every
+    school's own, matched by name elsewhere in this file too) that have content for the
+    given board."""
+    board = str(request.query_params.get("board") or "").strip().upper()
+    if not board:
+        return Response({"success": False, "message": "A board is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    global_tenant = _global_question_bank_tenant()
+    if not global_tenant:
+        return Response({"success": True, "subjects": []})
+
+    subjects = (
+        QuestionBank.objects.filter(tenant=global_tenant, board=board)
+        .filter(topics__topic_questions__isnull=False)
+        .select_related("subject")
+        .order_by("subject__name")
+        .values_list("subject__name", flat=True)
+        .distinct()
+    )
+    return Response({"success": True, "subjects": [name for name in subjects if name]})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def cbt_question_bank_section_topics(request):
+    """Topic id + name for the given board/subject - deliberately never includes how many
+    questions each topic has, per the "don't reveal availability" requirement."""
+    board = str(request.query_params.get("board") or "").strip().upper()
+    subject_name = str(request.query_params.get("subject") or "").strip()
+    if not board or not subject_name:
+        return Response({"success": False, "message": "A board and subject are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    global_tenant = _global_question_bank_tenant()
+    if not global_tenant:
+        return Response({"success": True, "topics": []})
+
+    topics = (
+        Topic.objects.filter(
+            bank__tenant=global_tenant,
+            bank__board=board,
+            bank__subject__name__iexact=subject_name,
+            topic_questions__isnull=False,
+        )
+        .order_by("order", "name")
+        .distinct()
+    )
+    return Response({"success": True, "topics": [{"id": topic.id, "name": topic.name} for topic in topics]})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cbt_question_bank_import(request):
+    """Randomly samples `count` questions from a central-bank Topic, excluding any ids the
+    caller already has (so re-importing into the same exam draft can't duplicate a question),
+    and never reveals how many questions were actually available - just accepts or rejects
+    the requested count."""
+    board = str(request.data.get("board") or "").strip().upper()
+    subject_name = str(request.data.get("subject") or "").strip()
+    topic_id = request.data.get("topic_id")
+    exclude_ids = request.data.get("exclude_ids") or []
+
+    try:
+        count = int(request.data.get("count"))
+    except (TypeError, ValueError):
+        count = 0
+    if count < 1:
+        return Response({"success": False, "message": "Enter how many questions you want."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not board or not subject_name or not topic_id:
+        return Response({"success": False, "message": "A board, subject, and topic are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    global_tenant = _global_question_bank_tenant()
+    topic = (
+        Topic.objects.filter(
+            id=topic_id,
+            bank__tenant=global_tenant,
+            bank__board=board,
+            bank__subject__name__iexact=subject_name,
+        )
+        .select_related("bank")
+        .first()
+        if global_tenant
+        else None
+    )
+    if not topic:
+        return Response({"success": False, "message": "That topic is no longer available."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        clean_exclude_ids = [int(value) for value in exclude_ids if value is not None]
+    except (TypeError, ValueError):
+        clean_exclude_ids = []
+
+    available = Question.objects.filter(topic=topic).exclude(id__in=clean_exclude_ids)
+    if available.count() < count:
+        return Response(
+            {"success": False, "message": "Only a limited number of questions are available for this topic. Try a smaller number."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    selected = list(available.order_by("?")[:count])
+    return Response({"success": True, "questions": [_cbt_bank_question_payload(question, topic.bank) for question in selected]})
 
 
 @api_view(["GET"])

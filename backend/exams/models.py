@@ -17,11 +17,36 @@ class ExamType(TenantAwareModel, TimeStampedModel):
         return self.name
 
 class QuestionBank(TenantAwareModel, TimeStampedModel):
+    # Blank for every ordinary teacher-owned bank; set only on the platform-admin-curated
+    # central banks (see Topic below) that group JAMB/WAEC/NECO content by board.
+    BOARD_CHOICES = [
+        ("JAMB", "JAMB"),
+        ("WAEC", "WAEC"),
+        ("NECO", "NECO"),
+    ]
+
     name = models.CharField(max_length=200)
     subject = models.ForeignKey('academic.Subject', on_delete=models.CASCADE)
     teacher = models.ForeignKey('users.User', on_delete=models.CASCADE)
     questions = models.ManyToManyField('Question', related_name='question_banks')
     is_shared = models.BooleanField(default=False)
+    board = models.CharField(max_length=10, choices=BOARD_CHOICES, blank=True, default="")
+
+
+class Topic(TenantAwareModel, TimeStampedModel):
+    """A subject subdivision within a central (board-scoped) QuestionBank, e.g.
+    "JAMB Mathematics" -> "Algebra". Only meaningful for central banks (board set);
+    ordinary teacher banks have no topics."""
+
+    name = models.CharField(max_length=200)
+    bank = models.ForeignKey(QuestionBank, on_delete=models.CASCADE, related_name="topics")
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "name"]
+
+    def __str__(self):
+        return self.name
 
 
 class QuestionGroup(TenantAwareModel, TimeStampedModel):
@@ -69,6 +94,9 @@ class Question(TenantAwareModel, TimeStampedModel):
     explanation = models.TextField(null=True, blank=True)
     group = models.ForeignKey(QuestionGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="questions")
     group_order = models.PositiveIntegerField(default=0)
+    # Only set for questions living in a central (board-scoped) QuestionBank's Topic -
+    # this is what the random-import-by-topic endpoint filters/samples on.
+    topic = models.ForeignKey(Topic, on_delete=models.SET_NULL, null=True, blank=True, related_name="topic_questions")
 
 class Exam(TenantAwareModel, TimeStampedModel):
     EXAM_FORMATS = [

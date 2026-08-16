@@ -1010,6 +1010,15 @@ export function TeacherExamBuilder({
   const [bankLoading, setBankLoading] = useState(false);
   const [bankError, setBankError] = useState("");
   const [selectedBankQuestionIds, setSelectedBankQuestionIds] = useState([]);
+  const [centralBoards, setCentralBoards] = useState([]);
+  const [centralBoard, setCentralBoard] = useState("");
+  const [centralSubjects, setCentralSubjects] = useState([]);
+  const [centralSubject, setCentralSubject] = useState("");
+  const [centralTopics, setCentralTopics] = useState([]);
+  const [centralTopicId, setCentralTopicId] = useState("");
+  const [centralCount, setCentralCount] = useState("10");
+  const [centralImporting, setCentralImporting] = useState(false);
+  const [centralError, setCentralError] = useState("");
   const [importText, setImportText] = useState("");
   const [importFeedback, setImportFeedback] = useState("");
   const [importError, setImportError] = useState("");
@@ -1052,7 +1061,9 @@ export function TeacherExamBuilder({
   const selectedClass = classOptions.find((item) => String(item.id) === String(form.classId));
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
   const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
-  const canUseCbtQuestionBank = session?.user?.role !== "teacher";
+  // Backend never required this (cbt_question_bank has no teacher restriction), it was
+  // only ever a frontend gate - teachers can use both bank pickers now.
+  const canUseCbtQuestionBank = true;
   const builderSections = [
     ["details", "Exam Details"],
     ["sections", "Sections"],
@@ -1121,6 +1132,81 @@ export function TeacherExamBuilder({
   useEffect(() => {
     loadBankQuestions();
   }, [loadBankQuestions]);
+
+  useEffect(() => {
+    if (!session) return;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", "/api/app/exams/question-bank/sections/");
+        setCentralBoards(result.boards || []);
+      } catch {
+        setCentralBoards([]);
+      }
+    })();
+  }, [session]);
+
+  useEffect(() => {
+    setCentralSubject("");
+    setCentralSubjects([]);
+    setCentralTopicId("");
+    setCentralTopics([]);
+    if (!session || !centralBoard) return;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", `/api/app/exams/question-bank/sections/subjects/?board=${encodeURIComponent(centralBoard)}`);
+        setCentralSubjects(result.subjects || []);
+      } catch (loadError) {
+        setCentralError(loadError.message || "Could not load subjects for that board.");
+      }
+    })();
+  }, [session, centralBoard]);
+
+  useEffect(() => {
+    setCentralTopicId("");
+    setCentralTopics([]);
+    if (!session || !centralBoard || !centralSubject) return;
+    (async () => {
+      try {
+        const params = new URLSearchParams({ board: centralBoard, subject: centralSubject });
+        const result = await requestJson(session, "GET", `/api/app/exams/question-bank/sections/topics/?${params.toString()}`);
+        setCentralTopics(result.topics || []);
+      } catch (loadError) {
+        setCentralError(loadError.message || "Could not load topics for that subject.");
+      }
+    })();
+  }, [session, centralBoard, centralSubject]);
+
+  const handleCentralImport = async () => {
+    const count = Number(centralCount);
+    if (!centralBoard || !centralSubject || !centralTopicId) {
+      setCentralError("Select a board, subject, and topic first.");
+      return;
+    }
+    if (!Number.isInteger(count) || count < 1) {
+      setCentralError("Enter how many questions you want.");
+      return;
+    }
+    setCentralError("");
+    setCentralImporting(true);
+    try {
+      const excludeIds = questions.map((item) => item.cbtBankQuestionId).filter(Boolean);
+      const result = await requestJson(session, "POST", "/api/app/exams/question-bank/import/", {
+        board: centralBoard,
+        subject: centralSubject,
+        topic_id: centralTopicId,
+        count,
+        exclude_ids: excludeIds,
+      });
+      const imported = (result.questions || []).map(normalizeBankQuestion);
+      setQuestions((previous) => [...previous, ...imported]);
+      setFeedback(`${imported.length} question${imported.length === 1 ? "" : "s"} imported from the central bank.`);
+      setError("");
+    } catch (importError) {
+      setCentralError(importError.message || "Could not import questions from the central bank.");
+    } finally {
+      setCentralImporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!initialExam) {
@@ -1797,6 +1883,66 @@ export function TeacherExamBuilder({
                   </div>
                 )}
               </div> : null}
+              {form.examFormat !== "theory" && centralBoards.length ? (
+                <div className="cbt-bank-picker">
+                  <div className="cbt-bank-picker-head">
+                    <div>
+                      <h3>Central question bank</h3>
+                      <p>Randomly import a set number of questions from a JAMB/WAEC/NECO topic.</p>
+                    </div>
+                  </div>
+                  {centralError ? <p className="form-feedback error">{centralError}</p> : null}
+                  <div className="exam-builder-row">
+                    <label className="panel-field">
+                      Board
+                      <select value={centralBoard} onChange={(event) => setCentralBoard(event.target.value)}>
+                        <option value="">Select board</option>
+                        {centralBoards.map((board) => (
+                          <option key={board} value={board}>{board}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="panel-field">
+                      Subject
+                      <select value={centralSubject} onChange={(event) => setCentralSubject(event.target.value)} disabled={!centralBoard}>
+                        <option value="">Select subject</option>
+                        {centralSubjects.map((subject) => (
+                          <option key={subject} value={subject}>{subject}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="panel-field">
+                      Topic
+                      <select value={centralTopicId} onChange={(event) => setCentralTopicId(event.target.value)} disabled={!centralSubject}>
+                        <option value="">Select topic</option>
+                        {centralTopics.map((topic) => (
+                          <option key={topic.id} value={topic.id}>{topic.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="panel-field">
+                      Number of questions
+                      <input
+                        type="number"
+                        min="1"
+                        value={centralCount}
+                        onChange={(event) => setCentralCount(event.target.value)}
+                        disabled={!centralTopicId}
+                      />
+                    </label>
+                  </div>
+                  <div className="table-actions-inline">
+                    <button
+                      type="button"
+                      className="table-action active"
+                      onClick={handleCentralImport}
+                      disabled={!centralTopicId || centralImporting}
+                    >
+                      {centralImporting ? <><Spinner size={12} /> Importing...</> : "Import questions"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {form.examFormat === "objective" ? (
                 <div className="standard-question-import">
                   <div className="cbt-bank-picker-head">
