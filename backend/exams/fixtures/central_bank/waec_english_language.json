@@ -8263,6 +8263,1662 @@
         "correct_answer": "will he",
         "explanation": ""
       }
+    ],
+    "Reported Speech": [
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She asked, \"Why are you crying?\"",
+        "options": [
+          "She asked why are you crying.",
+          "She asked why you were crying.",
+          "She asked why I am crying.",
+          "She asked why I was crying."
+        ],
+        "correct_answer": "She asked why I was crying.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I must finish this today.\"",
+        "options": [
+          "He said that he must finished it that day.",
+          "He said that he had to finish that that day.",
+          "He said I had to finish this today.",
+          "He said that he must finish this today."
+        ],
+        "correct_answer": "He said that he had to finish that that day.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I was reading a novel.\"",
+        "options": [
+          "She said that she has been reading a novel.",
+          "She said that she had been reading a novel.",
+          "She said I had been reading a novel.",
+          "She said that she was reading a novel."
+        ],
+        "correct_answer": "She said that she had been reading a novel.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"Can you help me with this?\" she asked.",
+        "options": [
+          "She asked if I could help her with that.",
+          "She asked can you help me with this.",
+          "She asked whether you can help me with this.",
+          "She asked if I can help her with that."
+        ],
+        "correct_answer": "She asked if I could help her with that.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I cannot attend the wedding.\"",
+        "options": [
+          "She said that she could not attend the wedding.",
+          "She said that she cannot attend the wedding.",
+          "She said I could not attend the wedding.",
+          "She said that she can not attended the wedding."
+        ],
+        "correct_answer": "She said that she could not attend the wedding.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I am tired.\"",
+        "options": [
+          "He says that he was tired.",
+          "He said that he is tired.",
+          "He said that he was tired.",
+          "He said that I am tired."
+        ],
+        "correct_answer": "He said that he was tired.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"Please close the door.\"",
+        "options": [
+          "He asked me to close the door.",
+          "He said to close the door please.",
+          "He told close the door.",
+          "He asked that I close the door please."
+        ],
+        "correct_answer": "He asked me to close the door.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I have never visited Paris,\" he said.",
+        "options": [
+          "He said that he had never visited Paris.",
+          "He said that he has never visited Paris.",
+          "He said I had never visited Paris.",
+          "He said that he never visited Paris."
+        ],
+        "correct_answer": "He said that he had never visited Paris.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He asked, \"Where do you live?\"",
+        "options": [
+          "He asked where do I live.",
+          "He asked where I live.",
+          "He asked where you live.",
+          "He asked where I lived."
+        ],
+        "correct_answer": "He asked where I lived.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I might come to the party,\" she said.",
+        "options": [
+          "She said I might come to the party.",
+          "She said that she may come to the party.",
+          "She said that she might come to the party.",
+          "She said that she would might come to the party."
+        ],
+        "correct_answer": "She said that she might come to the party.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"We have completed the project,\" they announced.",
+        "options": [
+          "They announced we had completed the project.",
+          "They announced that they completed the project.",
+          "They announced that they have completed the project.",
+          "They announced that they had completed the project."
+        ],
+        "correct_answer": "They announced that they had completed the project.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He asked, \"How long have you been waiting?\"",
+        "options": [
+          "He asked how long did I wait.",
+          "He asked how long have you been waiting.",
+          "He asked how long you had been waiting.",
+          "He asked how long I had been waiting."
+        ],
+        "correct_answer": "He asked how long I had been waiting.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I will call you tomorrow.\"",
+        "options": [
+          "She said she calls me tomorrow.",
+          "She said that she would call you tomorrow.",
+          "She said that she will call you tomorrow.",
+          "She said that she would call me the next day."
+        ],
+        "correct_answer": "She said that she would call me the next day.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: The teacher said, \"Submit your assignments now.\"",
+        "options": [
+          "The teacher told us to submit our assignments then.",
+          "The teacher told us submitting our assignments now.",
+          "The teacher said that submit our assignments.",
+          "The teacher said submit your assignments now."
+        ],
+        "correct_answer": "The teacher told us to submit our assignments then.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I enjoy reading novels.\"",
+        "options": [
+          "She said that she enjoyed reading novels.",
+          "She said that she enjoys reading novels.",
+          "She said that she enjoyed to read novels.",
+          "She said I enjoyed reading novels."
+        ],
+        "correct_answer": "She said that she enjoyed reading novels.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I will not attend the meeting,\" she said.",
+        "options": [
+          "She said that she would not attend the meeting.",
+          "She said I would not attend the meeting.",
+          "She said that she will not attend the meeting.",
+          "She said that she would not attended the meeting."
+        ],
+        "correct_answer": "She said that she would not attend the meeting.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I have finished my work.\"",
+        "options": [
+          "He said that I had finished my work.",
+          "He said that he had finished his work.",
+          "He said he finished his work.",
+          "He said that he has finished his work."
+        ],
+        "correct_answer": "He said that he had finished his work.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I have to leave early tomorrow,\" she said.",
+        "options": [
+          "She said that she has to leave early tomorrow.",
+          "She said I had to leave early tomorrow.",
+          "She said that she had to leave early the next day.",
+          "She said that she had to leave early tomorrow."
+        ],
+        "correct_answer": "She said that she had to leave early the next day.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I need more time to decide.\"",
+        "options": [
+          "He said that he needed more time to decide.",
+          "He said I needed more time to decide.",
+          "He said that he needs more time to decide.",
+          "He said that he will need more time to decide."
+        ],
+        "correct_answer": "He said that he needed more time to decide.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I am going to the market,\" she said.",
+        "options": [
+          "She said she is going to the market.",
+          "She said that she was going to the market.",
+          "She said that she went to the market.",
+          "She said that I am going to the market."
+        ],
+        "correct_answer": "She said that she was going to the market.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I can swim very well.\"",
+        "options": [
+          "She said that she can swam very well.",
+          "She said I could swim very well.",
+          "She said that she could swim very well.",
+          "She said that she can swim very well."
+        ],
+        "correct_answer": "She said that she could swim very well.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"What is your name?\" she asked me.",
+        "options": [
+          "She asked me what was my name.",
+          "She asked me what is your name.",
+          "She asked what my name is.",
+          "She asked me what my name was."
+        ],
+        "correct_answer": "She asked me what my name was.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: The manager said, \"The report is due tomorrow.\"",
+        "options": [
+          "The manager said that the report is due tomorrow.",
+          "The manager said the report was due tomorrow.",
+          "The manager said that the report was due the following day.",
+          "The manager said that the report will be due tomorrow."
+        ],
+        "correct_answer": "The manager said that the report was due the following day.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I would rather stay at home.\"",
+        "options": [
+          "She said that she would rather stay at home.",
+          "She said that she rather stayed at home.",
+          "She said I would rather stay at home.",
+          "She said that she will rather stay at home."
+        ],
+        "correct_answer": "She said that she would rather stay at home.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"Please wait here,\" the receptionist said.",
+        "options": [
+          "The receptionist asked us to wait there.",
+          "The receptionist said please wait here.",
+          "The receptionist asked to wait here.",
+          "The receptionist told wait there."
+        ],
+        "correct_answer": "The receptionist asked us to wait there.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I saw her yesterday.\"",
+        "options": [
+          "He said that he had seen her the day before.",
+          "He said I had seen her yesterday.",
+          "He said that he has seen her yesterday.",
+          "He said that he saw her yesterday."
+        ],
+        "correct_answer": "He said that he had seen her the day before.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I am learning to drive,\" he said.",
+        "options": [
+          "He said that he was learning to drive.",
+          "He said I was learning to drive.",
+          "He said that he is learning to drive.",
+          "He said that he has learnt to drive."
+        ],
+        "correct_answer": "He said that he was learning to drive.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"Turn off the lights before you leave,\" she said.",
+        "options": [
+          "She told turn off the lights before leaving.",
+          "She asked turn off the lights before you leave.",
+          "She told me to turn off the lights before I left.",
+          "She said turn off the lights before you leave."
+        ],
+        "correct_answer": "She told me to turn off the lights before I left.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I bought a new car last week,\" he said.",
+        "options": [
+          "He said that he has bought a new car last week.",
+          "He said that he bought a new car last week.",
+          "He said I had bought a new car last week.",
+          "He said that he had bought a new car the week before."
+        ],
+        "correct_answer": "He said that he had bought a new car the week before.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She asked, \"When will the train arrive?\"",
+        "options": [
+          "She asked when the train would arrive.",
+          "She asked when did the train arrive.",
+          "She asked when the train will arrive.",
+          "She asked when will the train arrive."
+        ],
+        "correct_answer": "She asked when the train would arrive.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I feel very happy today.\"",
+        "options": [
+          "She said that she felt very happy that day.",
+          "She said that she feels very happy today.",
+          "She said I felt very happy today.",
+          "She said that she felt very happy today."
+        ],
+        "correct_answer": "She said that she felt very happy that day.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"My father is a doctor.\"",
+        "options": [
+          "He said his father is a doctor.",
+          "He said that my father is a doctor.",
+          "He said that his father is a doctor.",
+          "He said that his father was a doctor."
+        ],
+        "correct_answer": "He said that his father was a doctor.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"We are leaving now,\" they said.",
+        "options": [
+          "They said that they were leaving now.",
+          "They said that they are leaving now.",
+          "They said that they were leaving then.",
+          "They said we were leaving now."
+        ],
+        "correct_answer": "They said that they were leaving then.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I am proud of my achievements.\"",
+        "options": [
+          "He said I was proud of my achievements.",
+          "He said that he is proud of his achievements.",
+          "He said that he was proud of my achievements.",
+          "He said that he was proud of his achievements."
+        ],
+        "correct_answer": "He said that he was proud of his achievements.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"You should see a doctor,\" she advised.",
+        "options": [
+          "She advised you should see a doctor.",
+          "She advised me to see a doctor.",
+          "She advised that I see a doctor please.",
+          "She advised me should see a doctor."
+        ],
+        "correct_answer": "She advised me to see a doctor.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I have already eaten.\"",
+        "options": [
+          "He said I had already eaten.",
+          "He said that he has already eaten.",
+          "He said that he already ate.",
+          "He said that he had already eaten."
+        ],
+        "correct_answer": "He said that he had already eaten.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"Do not touch that wire,\" the man warned.",
+        "options": [
+          "The man warned me to not touching that wire.",
+          "The man warned do not touch that wire.",
+          "The man warned that not touch that wire.",
+          "The man warned me not to touch that wire."
+        ],
+        "correct_answer": "The man warned me not to touch that wire.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He asked, \"What time does the shop close?\"",
+        "options": [
+          "He asked what time the shop closes.",
+          "He asked what time did the shop close.",
+          "He asked what time does the shop close.",
+          "He asked what time the shop closed."
+        ],
+        "correct_answer": "He asked what time the shop closed.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He asked, \"Did you finish the assignment?\"",
+        "options": [
+          "He asked if I had finished the assignment.",
+          "He asked whether you finished the assignment.",
+          "He asked did you finish the assignment.",
+          "He asked if I finished the assignment."
+        ],
+        "correct_answer": "He asked if I had finished the assignment.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He asked, \"Are you coming with us?\"",
+        "options": [
+          "He asked if I was coming with them.",
+          "He asked if I am coming with them.",
+          "He asked are you coming with us.",
+          "He asked whether you are coming with us."
+        ],
+        "correct_answer": "He asked if I was coming with them.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"I do not like coffee,\" she said.",
+        "options": [
+          "She said that she not liked coffee.",
+          "She said that she did not like coffee.",
+          "She said that she does not like coffee.",
+          "She said I did not like coffee."
+        ],
+        "correct_answer": "She said that she did not like coffee.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"This medicine works well.\"",
+        "options": [
+          "He said that the medicine work well.",
+          "He said that this medicine works well.",
+          "He said this medicine worked well.",
+          "He said that that medicine worked well."
+        ],
+        "correct_answer": "He said that that medicine worked well.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I shall return next week.\"",
+        "options": [
+          "He said that he will return next week.",
+          "He said that he shall return next week.",
+          "He said that he would return the following week.",
+          "He said I would return next week."
+        ],
+        "correct_answer": "He said that he would return the following week.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I will be there by noon.\"",
+        "options": [
+          "She said that she would be here by noon.",
+          "She said that she would be there by noon.",
+          "She said I would be there by noon.",
+          "She said that she will be there by noon."
+        ],
+        "correct_answer": "She said that she would be there by noon.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I used to play football.\"",
+        "options": [
+          "He said that he uses to play football.",
+          "He said that he used to play football.",
+          "He said that he was used to play football.",
+          "He said I used to play football."
+        ],
+        "correct_answer": "He said that he used to play football.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: She said, \"I am not feeling well today.\"",
+        "options": [
+          "She said that she was not feeling well today.",
+          "She said that she was not feeling well that day.",
+          "She said that she is not feeling well today.",
+          "She said I was not feeling well today."
+        ],
+        "correct_answer": "She said that she was not feeling well that day.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"We will help you,\" they promised.",
+        "options": [
+          "They promised that they helped me.",
+          "They promised that they would help me.",
+          "They promised we would help you.",
+          "They promised that they will help me."
+        ],
+        "correct_answer": "They promised that they would help me.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"I will not give up.\"",
+        "options": [
+          "He said that he would not gave up.",
+          "He said that he would not give up.",
+          "He said that he will not give up.",
+          "He said I would not give up."
+        ],
+        "correct_answer": "He said that he would not give up.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: \"Where were you last night?\" he asked her.",
+        "options": [
+          "He asked her where she had been the night before.",
+          "He asked her where she has been last night.",
+          "He asked her where were you last night.",
+          "He asked her where she was last night."
+        ],
+        "correct_answer": "He asked her where she had been the night before.",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the option that correctly reports the sentence below in indirect (reported) speech: He said, \"This is my book.\"",
+        "options": [
+          "He said that this is my book.",
+          "He said this was my book.",
+          "He said that this was his book.",
+          "He said that that was his book."
+        ],
+        "correct_answer": "He said that that was his book.",
+        "explanation": ""
+      }
+    ],
+    "Punctuation": [
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The results, unfortunately were not encouraging.",
+          "The results unfortunately, were not encouraging.",
+          "The results, unfortunately, were not encouraging.",
+          "The results, unfortunately; were not encouraging."
+        ],
+        "correct_answer": "The results, unfortunately, were not encouraging.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "First, wash the vegetables; then, chop them finely.",
+          "First, wash the vegetables then, chop them finely.",
+          "First wash the vegetables; then, chop them finely.",
+          "First, wash the vegetables; then chop, them finely."
+        ],
+        "correct_answer": "First, wash the vegetables; then, chop them finely.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Do you know, where he lives?",
+          "Do you know where he lives.",
+          "Do you know where he lives!",
+          "Do you know where he lives?"
+        ],
+        "correct_answer": "Do you know where he lives?",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "I bought a dozen eggs, two loaves of bread, and a bag of rice.",
+          "I bought a dozen eggs two loaves of bread, and a bag of rice.",
+          "I bought a dozen eggs, two loaves of bread and, a bag of rice.",
+          "I bought a dozen eggs, two loaves of bread, and a bag of rice,."
+        ],
+        "correct_answer": "I bought a dozen eggs, two loaves of bread, and a bag of rice.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "We visited Lagos, Ibadan, and Kano during the holidays.",
+          "We visited Lagos, Ibadan, and Kano, during the holidays.",
+          "We visited Lagos Ibadan, and Kano during the holidays.",
+          "We visited Lagos, Ibadan and, Kano during the holidays."
+        ],
+        "correct_answer": "We visited Lagos, Ibadan, and Kano during the holidays.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Yes; I will attend the meeting tomorrow.",
+          "Yes, I will attend the meeting, tomorrow.",
+          "Yes I will attend the meeting tomorrow.",
+          "Yes, I will attend the meeting tomorrow."
+        ],
+        "correct_answer": "Yes, I will attend the meeting tomorrow.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The boy, who won the prize is my nephew.",
+          "The boy who won the prize is my nephew.",
+          "The boy who won the prize, is my nephew.",
+          "The boy who won the prize is, my nephew."
+        ],
+        "correct_answer": "The boy who won the prize is my nephew.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "He has three goals in life: wealth, health, and happiness.",
+          "He has three goals in life: wealth health, and happiness.",
+          "He has three goals in life; wealth, health, and happiness.",
+          "He has three goals in life, wealth, health, and happiness."
+        ],
+        "correct_answer": "He has three goals in life: wealth, health, and happiness.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The manager, who arrived late apologised to the staff.",
+          "The manager, who arrived late, apologised to the staff.",
+          "The manager who, arrived late, apologised to the staff.",
+          "The manager who arrived late, apologised to the staff."
+        ],
+        "correct_answer": "The manager, who arrived late, apologised to the staff.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Although it was raining they continued the match.",
+          "Although, it was raining, they continued the match.",
+          "Although it was raining; they continued the match.",
+          "Although it was raining, they continued the match."
+        ],
+        "correct_answer": "Although it was raining, they continued the match.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "He said that he was ill, therefore he could not attend.",
+          "He said that he was ill therefore, he could not attend.",
+          "He said that he was ill; therefore, he could not attend.",
+          "He said that he was ill; therefore he could not, attend."
+        ],
+        "correct_answer": "He said that he was ill; therefore, he could not attend.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "\"Where are you going,\" she asked.",
+          "\"Where are you going?\" she asked.",
+          "\"Where are you going\" she asked?",
+          "Where are you going? she asked."
+        ],
+        "correct_answer": "\"Where are you going?\" she asked.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The womens' association held its meeting on Monday.",
+          "The women's association held its meeting on Monday.",
+          "The womens association held its meeting on Monday.",
+          "The women's' association held its meeting on Monday."
+        ],
+        "correct_answer": "The women's association held its meeting on Monday.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The children played happily, their parents watched from the veranda.",
+          "The children played happily their parents watched from the veranda.",
+          "The children played happily: their parents, watched from the veranda.",
+          "The children played happily; their parents watched from the veranda."
+        ],
+        "correct_answer": "The children played happily; their parents watched from the veranda.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Chidi my best friend, is travelling to Abuja tomorrow.",
+          "Chidi my best friend is travelling, to Abuja tomorrow.",
+          "Chidi, my best friend is travelling to Abuja tomorrow.",
+          "Chidi, my best friend, is travelling to Abuja tomorrow."
+        ],
+        "correct_answer": "Chidi, my best friend, is travelling to Abuja tomorrow.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "We need the following items bread, milk, and eggs.",
+          "We need the following items, bread, milk, and eggs.",
+          "We need the following items; bread, milk, and eggs.",
+          "We need the following items: bread, milk, and eggs."
+        ],
+        "correct_answer": "We need the following items: bread, milk, and eggs.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "She bought apples oranges, and bananas from the market.",
+          "She bought apples, oranges, and bananas, from the market.",
+          "She bought apples, oranges and, bananas from the market.",
+          "She bought apples, oranges, and bananas from the market."
+        ],
+        "correct_answer": "She bought apples, oranges, and bananas from the market.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "\"I will be there\" she said, \"before noon.\"",
+          "\"I will be there,\" she said, \"before noon.\"",
+          "\"I will be there,\" she said \"before noon.\"",
+          "I will be there, she said, before noon."
+        ],
+        "correct_answer": "\"I will be there,\" she said, \"before noon.\"",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "\"Hurry up! he cried, we're going to miss the bus.\"",
+          "\"Hurry up,\" he cried \"we're going to miss the bus.\"",
+          "Hurry up! he cried, \"we're going to miss the bus.\"",
+          "\"Hurry up!\" he cried, \"we're going to miss the bus.\""
+        ],
+        "correct_answer": "\"Hurry up!\" he cried, \"we're going to miss the bus.\"",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The teacher's comments were very encouraging.",
+          "The teacher's' comments were very encouraging.",
+          "The teachers comments were very encouraging.",
+          "The teachers' comments were very encouraging."
+        ],
+        "correct_answer": "The teacher's comments were very encouraging.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "He asked \"What time is it?\"",
+          "He asked \"What time is it\"?",
+          "He asked, \"What time is it\".",
+          "He asked, \"What time is it?\""
+        ],
+        "correct_answer": "He asked, \"What time is it?\"",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "He whispered, \"Don't tell anyone about this.\"",
+          "He whispered, \"Don't tell anyone about this\"",
+          "He whispered \"Don't tell anyone about this\".",
+          "He whispered, \"Dont tell anyone about this.\""
+        ],
+        "correct_answer": "He whispered, \"Don't tell anyone about this.\"",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Although, he was tired, he finished the race.",
+          "Although he was tired; he finished the race.",
+          "Although he was tired, he finished the race.",
+          "Although he was tired he finished the race."
+        ],
+        "correct_answer": "Although he was tired, he finished the race.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Our neighbours's house was painted last week.",
+          "Our neighbours house was painted last week.",
+          "Our neighbours' house was painted last week.",
+          "Our neighbour's house was painted last week."
+        ],
+        "correct_answer": "Our neighbours' house was painted last week.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "\"Stop\"! shouted the officer.",
+          "\"Stop!\" shouted the officer.",
+          "Stop! shouted the officer.",
+          "\"Stop,\" shouted the officer!"
+        ],
+        "correct_answer": "\"Stop!\" shouted the officer.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Although she apologised; he refused to forgive her.",
+          "Although she apologised, he refused to forgive her.",
+          "Although, she apologised, he refused to forgive her.",
+          "Although she apologised he refused to forgive her."
+        ],
+        "correct_answer": "Although she apologised, he refused to forgive her.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The childrens toys were scattered all over the floor.",
+          "The childrens' toys were scattered all over the floor.",
+          "The children's toys were scattered all over the floor.",
+          "The children's' toys were scattered all over the floor."
+        ],
+        "correct_answer": "The children's toys were scattered all over the floor.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The boys' football was left on the field.",
+          "The boys's football was left on the field.",
+          "The boy's football was left on the field.",
+          "The boys football was left on the field."
+        ],
+        "correct_answer": "The boys' football was left on the field.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "She lives at 24 Aba Road, Port Harcourt, Nigeria.",
+          "She lives at, 24 Aba Road, Port Harcourt, Nigeria.",
+          "She lives at 24 Aba Road, Port Harcourt Nigeria.",
+          "She lives at 24 Aba Road Port Harcourt, Nigeria."
+        ],
+        "correct_answer": "She lives at 24 Aba Road, Port Harcourt, Nigeria.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Please bring your books, pens and, notebooks tomorrow.",
+          "Please bring your books pens, and notebooks tomorrow.",
+          "Please bring your books, pens, and notebooks, tomorrow.",
+          "Please bring your books, pens, and notebooks tomorrow."
+        ],
+        "correct_answer": "Please bring your books, pens, and notebooks tomorrow.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "My favourite subjects are Mathematics, English, and Biology,.",
+          "My favourite subjects are Mathematics, English, and Biology.",
+          "My favourite subjects are Mathematics, English and, Biology.",
+          "My favourite subjects are Mathematics English, and Biology."
+        ],
+        "correct_answer": "My favourite subjects are Mathematics, English, and Biology.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Frankly, I don't think the plan will work.",
+          "Frankly I don't think the plan will work.",
+          "Frankly, I dont think the plan will work.",
+          "Frankly; I don't think the plan will work."
+        ],
+        "correct_answer": "Frankly, I don't think the plan will work.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The professors lecture was both informative and engaging.",
+          "The professors' lecture was both informative and engaging.",
+          "The professor's' lecture was both informative and engaging.",
+          "The professor's lecture was both informative and engaging."
+        ],
+        "correct_answer": "The professor's lecture was both informative and engaging.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Have you seen my keys, anywhere?",
+          "Have you seen my keys anywhere.",
+          "Have you seen, my keys anywhere?",
+          "Have you seen my keys anywhere?"
+        ],
+        "correct_answer": "Have you seen my keys anywhere?",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "My sister's' husband works at the bank.",
+          "My sisters husband works at the bank.",
+          "My sister's husband works at the bank.",
+          "My sisters' husband works at the bank."
+        ],
+        "correct_answer": "My sister's husband works at the bank.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The companys profits increased last quarter.",
+          "The company's profits increased last quarter.",
+          "The company profits' increased last quarter.",
+          "The companies profits increased last quarter."
+        ],
+        "correct_answer": "The company's profits increased last quarter.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The dog's' bone was buried in the garden.",
+          "The dogs' bone was buried in the garden.",
+          "The dogs bone was buried in the garden.",
+          "The dog's bone was buried in the garden."
+        ],
+        "correct_answer": "The dog's bone was buried in the garden.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The men's' changing room is on the left.",
+          "The mens changing room is on the left.",
+          "The men's changing room is on the left.",
+          "The mens' changing room is on the left."
+        ],
+        "correct_answer": "The men's changing room is on the left.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "He is without doubt, the best player on the team.",
+          "He is, without doubt, the best player on the team.",
+          "He is, without doubt the best player on the team.",
+          "He is, without doubt; the best player on the team."
+        ],
+        "correct_answer": "He is, without doubt, the best player on the team.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Mr. Johnson, the principal, addressed the students.",
+          "Mr. Johnson, the principal addressed the students.",
+          "Mr Johnson the principal, addressed the students.",
+          "Mr. Johnson the principal addressed, the students."
+        ],
+        "correct_answer": "Mr. Johnson, the principal, addressed the students.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The report which was due yesterday, has not been submitted.",
+          "The report, which was due yesterday, has not been submitted.",
+          "The report, which was due yesterday has not been submitted.",
+          "The report, which was due, yesterday has not been submitted."
+        ],
+        "correct_answer": "The report, which was due yesterday, has not been submitted.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "James Watt, the inventor improved the steam engine.",
+          "James Watt the inventor improved, the steam engine.",
+          "James Watt, the inventor, improved the steam engine.",
+          "James Watt the inventor, improved the steam engine."
+        ],
+        "correct_answer": "James Watt, the inventor, improved the steam engine.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Despite the odds they won the championship.",
+          "Despite, the odds they won the championship.",
+          "Despite the odds, they won the championship.",
+          "Despite the odds, they won, the championship."
+        ],
+        "correct_answer": "Despite the odds, they won the championship.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "He bought a new car; it was very expensive.",
+          "He bought a new car, it was very expensive.",
+          "He bought a new car: it was very expensive, however.",
+          "He bought a new car it was very expensive."
+        ],
+        "correct_answer": "He bought a new car; it was very expensive.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "What a wonderful performance that was.",
+          "What a wonderful performance, that was!",
+          "What a wonderful performance that was!",
+          "What a wonderful performance that was?"
+        ],
+        "correct_answer": "What a wonderful performance that was!",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "\"Congratulations on your success!\" he exclaimed.",
+          "Congratulations on your success! he exclaimed.",
+          "\"Congratulations on your success!\", he exclaimed.",
+          "\"Congratulations on your success\" he exclaimed!"
+        ],
+        "correct_answer": "\"Congratulations on your success!\" he exclaimed.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Its' a beautiful morning, isn't it?",
+          "It's a beautiful morning, isnt it?",
+          "Its a beautiful morning, isn't it?",
+          "It's a beautiful morning, isn't it?"
+        ],
+        "correct_answer": "It's a beautiful morning, isn't it?",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Is this your umbrella!",
+          "Is this, your umbrella?",
+          "Is this your umbrella?",
+          "Is this your umbrella."
+        ],
+        "correct_answer": "Is this your umbrella?",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "Well I suppose, we should leave now.",
+          "Well, I suppose we should leave now.",
+          "Well, I suppose we should leave, now.",
+          "Well I suppose we should leave now"
+        ],
+        "correct_answer": "Well, I suppose we should leave now.",
+        "explanation": ""
+      },
+      {
+        "text": "Which of the following sentences is correctly punctuated?",
+        "options": [
+          "The cat chased its tail around the room.",
+          "The cat chased it's tail around the room.",
+          "The cat chased it's' tail around the room.",
+          "The cat chased its' tail around the room."
+        ],
+        "correct_answer": "The cat chased its tail around the room.",
+        "explanation": ""
+      }
+    ],
+    "Language Registers": [
+      {
+        "text": "Choose the word that correctly completes the sentence: In the military, a group of soldiers is commanded by a ___.",
+        "options": [
+          "registrar",
+          "principal",
+          "commander",
+          "chairman"
+        ],
+        "correct_answer": "commander",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In cricket, the player facing the bowler is called the ___.",
+        "options": [
+          "striker",
+          "batsman",
+          "goalkeeper",
+          "referee"
+        ],
+        "correct_answer": "batsman",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In accounting, the professional who audits company records is an ___.",
+        "options": [
+          "accountant",
+          "registrar",
+          "auditor",
+          "broker"
+        ],
+        "correct_answer": "auditor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In law, the final decision of a court is called the ___.",
+        "options": [
+          "verdict",
+          "prescription",
+          "statement",
+          "diagnosis"
+        ],
+        "correct_answer": "verdict",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a church service, the group of worshippers is called the ___.",
+        "options": [
+          "assembly",
+          "audience",
+          "jury",
+          "congregation"
+        ],
+        "correct_answer": "congregation",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In prison administration, the official in charge of a prison is the ___.",
+        "options": [
+          "commissioner",
+          "inspector",
+          "constable",
+          "warden"
+        ],
+        "correct_answer": "warden",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a bank, the official who approves loans is called a ___.",
+        "options": [
+          "loan officer",
+          "umpire",
+          "registrar",
+          "surgeon"
+        ],
+        "correct_answer": "loan officer",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: During examinations, the official who supervises candidates is the ___.",
+        "options": [
+          "invigilator",
+          "alumnus",
+          "examiner",
+          "registrar"
+        ],
+        "correct_answer": "invigilator",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a law court, the group that decides if a person is guilty is the ___.",
+        "options": [
+          "cabinet",
+          "panel",
+          "jury",
+          "congregation"
+        ],
+        "correct_answer": "jury",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a university, the person in charge of student records is the ___.",
+        "options": [
+          "surgeon",
+          "reporter",
+          "umpire",
+          "registrar"
+        ],
+        "correct_answer": "registrar",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In parliament, elected representatives are called ___.",
+        "options": [
+          "jurors",
+          "legislators",
+          "clerks",
+          "registrars"
+        ],
+        "correct_answer": "legislators",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a hospital, the doctor who performs operations is called a ___.",
+        "options": [
+          "registrar",
+          "surgeon",
+          "reporter",
+          "clerk"
+        ],
+        "correct_answer": "surgeon",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In real estate, a professional who values property is a ___.",
+        "options": [
+          "surveyor",
+          "broker",
+          "registrar",
+          "auditor"
+        ],
+        "correct_answer": "surveyor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a hospital ward, the senior nurse in charge is called the ___.",
+        "options": [
+          "technician",
+          "matron",
+          "registrar",
+          "surgeon"
+        ],
+        "correct_answer": "matron",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In broadcasting, the person who presents the news is called the ___.",
+        "options": [
+          "editor",
+          "reporter",
+          "publisher",
+          "newscaster"
+        ],
+        "correct_answer": "newscaster",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In an aircraft, the person who flies the plane is called the ___.",
+        "options": [
+          "navigator",
+          "pilot",
+          "conductor",
+          "captain"
+        ],
+        "correct_answer": "pilot",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In an orchestra, the person who directs the musicians is the ___.",
+        "options": [
+          "captain",
+          "conductor",
+          "pilot",
+          "navigator"
+        ],
+        "correct_answer": "conductor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In medicine, the doctor's assessment of an illness is called a ___.",
+        "options": [
+          "prescription",
+          "statement",
+          "verdict",
+          "diagnosis"
+        ],
+        "correct_answer": "diagnosis",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a laboratory, a person who conducts scientific experiments is a ___.",
+        "options": [
+          "registrar",
+          "surgeon",
+          "technician",
+          "scientist"
+        ],
+        "correct_answer": "scientist",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: On a ship, the person in overall command is called the ___.",
+        "options": [
+          "conductor",
+          "pilot",
+          "navigator",
+          "captain"
+        ],
+        "correct_answer": "captain",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In the army, a senior officer who commands troops is a ___.",
+        "options": [
+          "registrar",
+          "private",
+          "clerk",
+          "general"
+        ],
+        "correct_answer": "general",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In the police force, the officer of the highest rank in a state is the ___.",
+        "options": [
+          "constable",
+          "commissioner",
+          "sergeant",
+          "inspector"
+        ],
+        "correct_answer": "commissioner",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In customs and immigration, the officer who checks travel documents is called an ___.",
+        "options": [
+          "immigration officer",
+          "consul",
+          "attache",
+          "ambassador"
+        ],
+        "correct_answer": "immigration officer",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In the stock market, a person who buys and sells shares for clients is a ___.",
+        "options": [
+          "registrar",
+          "stockbroker",
+          "auditor",
+          "surveyor"
+        ],
+        "correct_answer": "stockbroker",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In diplomacy, a country's official representative abroad is called an ___.",
+        "options": [
+          "envoy",
+          "attache",
+          "ambassador",
+          "consul"
+        ],
+        "correct_answer": "ambassador",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In education, a person who studies for a first degree is called an ___.",
+        "options": [
+          "postgraduate",
+          "alumnus",
+          "undergraduate",
+          "registrar"
+        ],
+        "correct_answer": "undergraduate",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a mosque, the person who leads the prayers is called the ___.",
+        "options": [
+          "pastor",
+          "priest",
+          "bishop",
+          "imam"
+        ],
+        "correct_answer": "imam",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In veterinary practice, a doctor who treats animals is called a ___.",
+        "options": [
+          "technician",
+          "veterinarian",
+          "surgeon",
+          "physician"
+        ],
+        "correct_answer": "veterinarian",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In education, a former student of a school is called an ___.",
+        "options": [
+          "undergraduate",
+          "alumnus",
+          "invigilator",
+          "registrar"
+        ],
+        "correct_answer": "alumnus",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In medicine, the drug prescribed by a doctor is called a ___.",
+        "options": [
+          "verdict",
+          "sentence",
+          "prescription",
+          "diagnosis"
+        ],
+        "correct_answer": "prescription",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In boxing, the official inside the ring is called the ___.",
+        "options": [
+          "referee",
+          "umpire",
+          "registrar",
+          "reporter"
+        ],
+        "correct_answer": "referee",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In an examination hall, a person who marks scripts is called an ___.",
+        "options": [
+          "invigilator",
+          "registrar",
+          "alumnus",
+          "examiner"
+        ],
+        "correct_answer": "examiner",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a legal document, a person who witnesses a signature is called a ___.",
+        "options": [
+          "defendant",
+          "witness",
+          "plaintiff",
+          "jury"
+        ],
+        "correct_answer": "witness",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a hospital, the doctor examines the ___ before prescribing drugs.",
+        "options": [
+          "client",
+          "witness",
+          "defendant",
+          "patient"
+        ],
+        "correct_answer": "patient",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In publishing, a person who corrects grammatical errors in a manuscript is an ___.",
+        "options": [
+          "printer",
+          "publisher",
+          "author",
+          "editor"
+        ],
+        "correct_answer": "editor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In agriculture, an expert who advises farmers is called an ___.",
+        "options": [
+          "agricultural extension officer",
+          "surveyor",
+          "registrar",
+          "agronomist"
+        ],
+        "correct_answer": "agricultural extension officer",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In the army, a person of the lowest rank is called a ___.",
+        "options": [
+          "private",
+          "sergeant",
+          "general",
+          "captain"
+        ],
+        "correct_answer": "private",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a newspaper office, the person who writes news articles is a ___.",
+        "options": [
+          "surgeon",
+          "reporter",
+          "registrar",
+          "defendant"
+        ],
+        "correct_answer": "reporter",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In insurance, the professional who assesses risk and claims is an ___.",
+        "options": [
+          "auditor",
+          "assessor",
+          "broker",
+          "surveyor"
+        ],
+        "correct_answer": "assessor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a factory, the machine operator reports faults to the ___.",
+        "options": [
+          "witness",
+          "registrar",
+          "judge",
+          "supervisor"
+        ],
+        "correct_answer": "supervisor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In journalism, the person who takes photographs for a newspaper is a ___.",
+        "options": [
+          "publisher",
+          "printer",
+          "editor",
+          "photojournalist"
+        ],
+        "correct_answer": "photojournalist",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a legal dispute, a professional who represents a client in court is a ___.",
+        "options": [
+          "registrar",
+          "lawyer",
+          "judge",
+          "witness"
+        ],
+        "correct_answer": "lawyer",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a debate, a person appointed to decide the winner is the ___.",
+        "options": [
+          "witness",
+          "plaintiff",
+          "adjudicator",
+          "defendant"
+        ],
+        "correct_answer": "adjudicator",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In tennis, the official who monitors the score is called the ___.",
+        "options": [
+          "registrar",
+          "umpire",
+          "referee",
+          "captain"
+        ],
+        "correct_answer": "umpire",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In football, the official who controls the match is the ___.",
+        "options": [
+          "referee",
+          "captain",
+          "umpire",
+          "judge"
+        ],
+        "correct_answer": "referee",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a Christian church, the leader of the congregation is called the ___.",
+        "options": [
+          "imam",
+          "chief",
+          "pastor",
+          "registrar"
+        ],
+        "correct_answer": "pastor",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a courtroom, the person presiding over the case is the ___.",
+        "options": [
+          "umpire",
+          "referee",
+          "judge",
+          "registrar"
+        ],
+        "correct_answer": "judge",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In the theatre, the person who directs a play is called the ___.",
+        "options": [
+          "actor",
+          "director",
+          "producer",
+          "conductor"
+        ],
+        "correct_answer": "director",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a civil case, the person who brings the case to court is the ___.",
+        "options": [
+          "jury",
+          "plaintiff",
+          "defendant",
+          "witness"
+        ],
+        "correct_answer": "plaintiff",
+        "explanation": ""
+      },
+      {
+        "text": "Choose the word that correctly completes the sentence: In a wedding ceremony, the person who conducts the marriage is called the ___.",
+        "options": [
+          "bride",
+          "groom",
+          "witness",
+          "officiant"
+        ],
+        "correct_answer": "officiant",
+        "explanation": ""
+      }
     ]
   }
 }
