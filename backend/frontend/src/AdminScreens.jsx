@@ -4382,6 +4382,7 @@ function AdminResultsScreen({
   const [pngBusy, setPngBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState("");
   const [viewBusy, setViewBusy] = useState("");
+  const [deleteBusyId, setDeleteBusyId] = useState("");
   const [viewingBatchDetail, setViewingBatchDetail] = useState(null);
   const [feedback, setFeedback] = useState("");
   const [searchError, setSearchError] = useState("");
@@ -4602,7 +4603,7 @@ function AdminResultsScreen({
     if (!ok) {
       return;
     }
-    setBusy(true);
+    setDeleteBusyId(batch.id);
     setSearchError("");
     setFeedback("");
     try {
@@ -4611,7 +4612,7 @@ function AdminResultsScreen({
     } catch (actionError) {
       setSearchError(actionError.message || "Could not delete result batch.");
     } finally {
-      setBusy(false);
+      setDeleteBusyId("");
     }
   };
 
@@ -4661,16 +4662,18 @@ function AdminResultsScreen({
                   <td>{batch.score_count}</td>
                   <td>{batch.status}</td>
                   <td>
-                    <button type="button" className="table-action" onClick={() => handleViewBatch(batch)} disabled={Boolean(reviewBusy) || Boolean(viewBusy)}>
+                    <button type="button" className="table-action" onClick={() => handleViewBatch(batch)} disabled={Boolean(reviewBusy) || Boolean(viewBusy) || Boolean(deleteBusyId)}>
                       {viewBusy === batch.id ? <><Spinner size={12} /> Loading...</> : "View"}
                     </button>
-                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "published")} disabled={Boolean(reviewBusy) || Boolean(viewBusy)}>
+                    <button type="button" className="table-action" onClick={() => handleReviewBatch(batch, "published")} disabled={Boolean(reviewBusy) || Boolean(viewBusy) || Boolean(deleteBusyId)}>
                       {reviewBusy === `${batch.id}:published` ? <><Spinner size={12} /> Publishing...</> : "Publish live"}
                     </button>
-                    <button type="button" className="table-action danger" onClick={() => handleReviewBatch(batch, "rejected")} disabled={Boolean(reviewBusy) || Boolean(viewBusy)}>
+                    <button type="button" className="table-action danger" onClick={() => handleReviewBatch(batch, "rejected")} disabled={Boolean(reviewBusy) || Boolean(viewBusy) || Boolean(deleteBusyId)}>
                       {reviewBusy === `${batch.id}:rejected` ? <><Spinner size={12} /> Rejecting...</> : "Reject"}
                     </button>
-                    <button type="button" className="table-action danger" onClick={() => handleDeleteBatch(batch)} disabled={busy}>{busy ? <><Spinner size={12} /> Deleting...</> : "Delete"}</button>
+                    <button type="button" className="table-action danger" onClick={() => handleDeleteBatch(batch)} disabled={Boolean(reviewBusy) || Boolean(viewBusy) || Boolean(deleteBusyId)}>
+                      {deleteBusyId === batch.id ? <><Spinner size={12} /> Deleting...</> : "Delete"}
+                    </button>
                   </td>
                 </tr>
               ))}
