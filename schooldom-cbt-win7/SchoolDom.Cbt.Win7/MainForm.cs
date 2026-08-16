@@ -132,6 +132,16 @@ namespace SchoolDom.Cbt.Win7
         {
             _root.Controls.Clear();
 
+            // The whole point of this app is serving students over the LAN, so there's no
+            // real reason to make the admin remember to click Start every launch - and
+            // schools running it were never seeing their own LAN address at all if they
+            // hadn't. Start() already no-ops if it's running, so this is safe to call on
+            // every dashboard render.
+            if (!_lan.IsRunning)
+            {
+                try { _lan.Start(); } catch { /* e.g. port already in use - Start button below still works as a manual retry */ }
+            }
+
             var sidebar = new Panel { Dock = DockStyle.Left, Width = 250, BackColor = Palette.Navy };
             sidebar.Controls.Add(TextLabel("SchoolDom", 24, 28, 20, true, 200, Color.White));
             sidebar.Controls.Add(TextLabel("Admin Sync", 26, 64, 10, false, 180, Palette.SoftText));
@@ -226,10 +236,26 @@ namespace SchoolDom.Cbt.Win7
             content.Controls.Add(Metric("Package", string.IsNullOrWhiteSpace(_store.State.ActivePackageId) ? "None" : "Ready", 546, 202, Palette.Blue));
 
             var lan = Card(34, 306, 760, 104);
-            lan.Controls.Add(TextLabel("Admin LAN Starter", 22, 14, 13, true, 260, Palette.Text));
-            var lanText = _lan.IsRunning ? _lan.SnapshotMessage() : "LAN server is stopped. Start it to share cached school data on this network.";
-            lan.Controls.Add(TextLabel(lanText, 22, 44, 9, false, 560, _lan.IsRunning ? Palette.Green : Palette.Muted));
-            var lanStartInline = MiniButton(_lan.IsRunning ? "Restart" : "Start", 600, 32, 76);
+            lan.Controls.Add(TextLabel("Admin LAN Starter", 22, 12, 13, true, 400, Palette.Text));
+            var lanUrls = _lan.IsRunning ? _lan.LocalUrls() : new List<string>();
+            if (_lan.IsRunning && lanUrls.Any())
+            {
+                lan.Controls.Add(TextLabel("Give students this address if they can't auto-connect:", 22, 38, 8, false, 500, Palette.Muted));
+                var primaryLanUrl = lanUrls[0];
+                lan.Controls.Add(TextLabel(primaryLanUrl, 22, 52, 13, true, 340, Palette.Blue));
+                var copyLanUrl = MiniButton("Copy", 370, 50, 70);
+                copyLanUrl.Click += (s, e) => { try { Clipboard.SetText(primaryLanUrl); } catch { } };
+                lan.Controls.Add(copyLanUrl);
+                if (lanUrls.Count > 1)
+                {
+                    lan.Controls.Add(TextLabel("Also reachable at: " + string.Join(", ", lanUrls.Skip(1).ToArray()), 22, 80, 8, false, 560, Palette.Muted));
+                }
+            }
+            else
+            {
+                lan.Controls.Add(TextLabel("LAN server is stopped. Start it to share cached school data on this network.", 22, 44, 9, false, 560, Palette.Muted));
+            }
+            var lanStartInline = MiniButton(_lan.IsRunning ? "Restart" : "Start", 600, 12, 76);
             lanStartInline.Click += (s, e) =>
             {
                 try
@@ -244,7 +270,7 @@ namespace SchoolDom.Cbt.Win7
                 }
             };
             lan.Controls.Add(lanStartInline);
-            var lanStopInline = MiniButton("Stop", 684, 32, 62);
+            var lanStopInline = MiniButton("Stop", 684, 12, 62);
             lanStopInline.Enabled = _lan.IsRunning;
             lanStopInline.Click += (s, e) =>
             {
