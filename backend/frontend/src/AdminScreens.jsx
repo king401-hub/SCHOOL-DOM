@@ -1537,6 +1537,7 @@ function AdminFinanceScreen({
     auto_deduct: true,
   });
   const [editingStudentFeeId, setEditingStudentFeeId] = useState("");
+  const [feeEditorSearch, setFeeEditorSearch] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
   const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "" });
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
@@ -1704,6 +1705,17 @@ function AdminFinanceScreen({
       .toLowerCase();
     return searchable.includes(normalizedCreditStudentSearch);
   });
+  // Client-side search over the already-loaded student_fee_rows (never
+  // truncated server-side, unlike most finance lists) - fast, and every fee
+  // is a candidate to override regardless of which class fee generated it.
+  const normalizedFeeEditorSearch = feeEditorSearch.trim().toLowerCase();
+  const feeEditorMatches = normalizedFeeEditorSearch.length < 2 ? [] : studentFeeRows.filter((fee) => {
+    const searchable = [fee.student_name, fee.student_identifier, fee.class_label, fee.title]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchable.includes(normalizedFeeEditorSearch);
+  }).slice(0, 8);
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCreditPurchaseHistory = creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -2084,6 +2096,7 @@ function AdminFinanceScreen({
   const resetStudentFeeForm = () => {
     setEditingStudentFeeId("");
     setStudentFeeForm({ title: "", amount: "", due_date: "", status: "pending", auto_deduct: true });
+    setFeeEditorSearch("");
   };
 
   const handleStudentFeeSubmit = async (event) => {
@@ -2593,6 +2606,44 @@ function AdminFinanceScreen({
               <div className="panel-form-actions">
                 <button type="button" onClick={handleOpenNewBill} disabled={!onBillSave}>Open bill designer</button>
                 <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("bills")}>View generated bills</button>
+              </div>
+            </FinanceActionCard>
+
+            <FinanceActionCard
+              id="edit-student-fee"
+              title="Edit Student Fee"
+              description="Override one student's fee after the class fee is already set - for a scholarship, discount, or a different payment plan. Future class-fee or bill changes won't touch it again."
+              icon="money"
+              open={openActionCard === "edit-student-fee"}
+              onToggle={setOpenActionCard}
+            >
+              <p className="finance-action-note">Search for the student, then pick which fee to adjust.</p>
+              <label className="panel-field" style={{ position: "relative" }}>
+                Student name or ID
+                <input
+                  value={feeEditorSearch}
+                  onChange={(event) => setFeeEditorSearch(event.target.value)}
+                  placeholder="e.g. Jane Doe or STU0012"
+                  autoComplete="off"
+                />
+                {feeEditorMatches.length ? (
+                  <ul className="search-typeahead">
+                    {feeEditorMatches.map((fee) => (
+                      <li key={fee.id}>
+                        <button type="button" onClick={() => startEditStudentFee(fee)}>
+                          <strong>{fee.student_name || "Unnamed student"}{fee.is_customized ? " · Customized" : ""}</strong>
+                          <small>{[fee.student_identifier, fee.class_label, fee.title, formatFinanceAmount(fee.amount)].filter(Boolean).join(" · ")}</small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </label>
+              {normalizedFeeEditorSearch.length >= 2 && !feeEditorMatches.length ? (
+                <p className="form-hint">No student fee matches that search.</p>
+              ) : null}
+              <div className="panel-form-actions">
+                <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("student-fees")}>View all student fees</button>
               </div>
             </FinanceActionCard>
 
