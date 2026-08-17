@@ -17809,6 +17809,20 @@ body[data-theme="dark"] .report-sheet-footer { color: #94a3b8; border-top-color:
   .report-subject-table tr { page-break-inside: avoid; }
   .report-subject-table th,
   .report-subject-table td { border: 1px solid #999 !important; }
+
+  /* The screen view scrolls a wide subject table sideways inside a bordered
+     box; on paper there is no scrollbar to scroll with, so the same
+     overflow-x:auto silently clipped everything past the page edge instead.
+     Printing must always show the full table, so drop the scroll behavior
+     and its box chrome here - handlePrintReport() (AdminResultsScreen) picks
+     portrait/landscape and, if needed, a print-only scale-down transform on
+     this same element based on the table's real width before calling
+     window.print(); this rule is the fallback if that ever doesn't run. */
+  .report-table-scroll {
+    overflow: visible !important;
+    border: none !important;
+    margin-bottom: 0.5rem !important;
+  }
 }
 
 body[data-theme="dark"] .exam-builder-shell,

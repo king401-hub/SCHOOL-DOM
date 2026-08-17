@@ -4366,6 +4366,36 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   );
 }
 
+// Portrait dimensions (mm) for every page_size the Document Theme settings
+// screen offers - keep in sync with the <select> in AdminDocumentCustomizationScreen.
+const REPORT_PAGE_SIZES_MM = { A4: [210, 297], letter: [215.9, 279.4] };
+
+/** Decides how the report card's subject table should be printed: which page
+ * orientation actually fits its natural (unscrolled) width, and - if even
+ * landscape isn't wide enough for a subject with every score component plus
+ * a long remark - how much to scale the table down so it still lands fully
+ * on the page instead of being cut off at the scroll container's edge. */
+function computeReportPrintLayout(table, theme) {
+  const [widthMm, heightMm] = REPORT_PAGE_SIZES_MM[theme.page_size] || REPORT_PAGE_SIZES_MM.A4;
+  const marginMm = Number(theme.margin_mm) || 15;
+  const mmToPx = (mm) => (mm / 25.4) * 96;
+  // The print stylesheet pins the report to 11pt regardless of whatever
+  // on-screen font size we're measuring the table at, so leave headroom
+  // between the two rather than cutting the fit check exactly at the edge.
+  const SAFETY = 0.92;
+  const portraitContentPx = mmToPx(widthMm - marginMm * 2) * SAFETY;
+  const landscapeContentPx = mmToPx(heightMm - marginMm * 2) * SAFETY;
+  const naturalWidth = table?.scrollWidth || 0;
+
+  if (!naturalWidth || naturalWidth <= portraitContentPx) {
+    return { orientation: "portrait", scale: 1 };
+  }
+  if (naturalWidth <= landscapeContentPx) {
+    return { orientation: "landscape", scale: 1 };
+  }
+  return { orientation: "landscape", scale: Math.max(0.55, landscapeContentPx / naturalWidth) };
+}
+
 function AdminResultsScreen({
   data = {}, loading, error, onRetry, onSearch, onReviewBatch, onDeleteBatch, onViewBatch, onEditBatchScore, onSendSms,
   onStudentSearch, onLoadBroadsheet, onLoadBroadsheetParents, onSendBroadsheet, session,
@@ -4533,14 +4563,22 @@ function AdminResultsScreen({
   };
 
   const handlePrintReport = () => {
-    const pageRule = `@page{size:${documentTheme.page_size} ${documentTheme.orientation};margin:${documentTheme.margin_mm}mm}`;
+    const table = document.querySelector("#report-card-printable .report-subject-table");
+    const { orientation, scale } = computeReportPrintLayout(table, documentTheme);
+    const marginMm = Number(documentTheme.margin_mm) || 15;
+    const scaleRule = scale < 1
+      ? `#report-card-printable .report-table-scroll{transform:scale(${scale.toFixed(3)});transform-origin:top left;width:${(100 / scale).toFixed(2)}%}`
+      : "";
+    const pageRule = `@page{size:${documentTheme.page_size} ${orientation};margin:${marginMm}mm}`;
     let styleTag = document.getElementById("report-card-page-style");
     if (!styleTag) {
       styleTag = document.createElement("style");
       styleTag.id = "report-card-page-style";
       document.head.appendChild(styleTag);
     }
-    styleTag.textContent = pageRule;
+    // Scoped to @media print so it only ever affects the printed page, never
+    // the live on-screen report card.
+    styleTag.textContent = `${pageRule}@media print{#report-card-printable .report-table-scroll{overflow:visible !important}${scaleRule}}`;
     window.print();
   };
 
