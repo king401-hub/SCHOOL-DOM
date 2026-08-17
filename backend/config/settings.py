@@ -406,9 +406,13 @@ CBT_ADMIN_APP_VERSION = {
         "instead of requiring a manual Start click, and its address is shown "
         "prominently with a Copy button so it's easy to hand to students "
         "whose auto-discovery can't find it on an ad-hoc/no-router LAN\n"
+        "- Signing in no longer gets stuck on the login screen if syncing "
+        "fails for any reason (including a school with nothing published "
+        "yet) - valid credentials now always reach the dashboard, with a "
+        "retryable warning instead of a hard block\n"
         "- Carries forward 0.2.6's fixes.",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-16"),
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-17"),
     # Served straight from this server's own git-tracked installer folder
     # (schooldom-cbt-win7/release/) rather than a GitHub Release asset -
     # admin_app_installer_path() always resolves to the highest version
@@ -418,7 +422,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3753905),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3753995),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)

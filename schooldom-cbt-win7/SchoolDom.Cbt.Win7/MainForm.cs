@@ -103,11 +103,7 @@ namespace SchoolDom.Cbt.Win7
             var login = PrimaryButton("Login and Sync", 36, 382, 180);
             login.Click += (s, e) =>
             {
-                RunWithStatus("Signing in and pulling school data...", () =>
-                {
-                    _cloud.Login(url.Text, email.Text, password.Text, schoolCode.Text);
-                    return _cloud.PullPackage("");
-                }, ShowDashboard);
+                SignInThenSync("Signing in...", () => _cloud.Login(url.Text, email.Text, password.Text, schoolCode.Text));
             };
             card.Controls.Add(login);
 
@@ -116,11 +112,7 @@ namespace SchoolDom.Cbt.Win7
             {
                 var accessToken = PromptDialog.Show("JWT Access Token", "Paste admin JWT access token.", true);
                 if (string.IsNullOrWhiteSpace(accessToken)) return;
-                RunWithStatus("Saving token and pulling school data...", () =>
-                {
-                    _cloud.SaveToken(url.Text, accessToken);
-                    return _cloud.PullPackage("");
-                }, ShowDashboard);
+                SignInThenSync("Saving token...", () => _cloud.SaveToken(url.Text, accessToken));
             };
             card.Controls.Add(token);
 
@@ -1137,6 +1129,49 @@ namespace SchoolDom.Cbt.Win7
                 Cursor = Cursors.Default;
                 MessageBox.Show(ex.Message, "Delete Result Failed");
             }
+        }
+
+        // Signing in and syncing used to be one atomic step (RunWithStatus running both and
+        // only reaching ShowDashboard if neither threw) - so a school with nothing published
+        // yet, or any transient sync hiccup, left an admin with perfectly valid credentials
+        // stuck on the login screen. A failed sign-in still blocks (real bad credentials/URL),
+        // but once that succeeds the admin always reaches the dashboard - a sync failure just
+        // becomes a retryable warning instead of a wall, and Sync Now is right there for it.
+        private void SignInThenSync(string signInStatus, Action signIn)
+        {
+            try
+            {
+                SetStatus(signInStatus, Palette.Muted);
+                Cursor = Cursors.WaitCursor;
+                signIn();
+            }
+            catch (Exception ex)
+            {
+                Cursor = Cursors.Default;
+                SetStatus(ex.Message, Palette.Coral);
+                MessageBox.Show(ex.Message, "Sign In Failed");
+                return;
+            }
+
+            string message;
+            try
+            {
+                message = _cloud.PullPackage("");
+            }
+            catch (CloudAuthExpiredException ex)
+            {
+                Cursor = Cursors.Default;
+                HandleCloudAuthExpired(ex);
+                return;
+            }
+            catch (Exception ex)
+            {
+                message = "Signed in, but could not sync school data yet: " + ex.Message + " Use Sync Now on the dashboard to try again.";
+            }
+            Cursor = Cursors.Default;
+            SetStatus(message, Palette.Green);
+            MessageBox.Show(message, "SchoolDom Sync");
+            ShowDashboard();
         }
 
         private void RunWithStatus(string status, Func<string> action, Action onSuccess)
