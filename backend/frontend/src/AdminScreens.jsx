@@ -1538,6 +1538,7 @@ function AdminFinanceScreen({
   });
   const [editingStudentFeeId, setEditingStudentFeeId] = useState("");
   const [feeEditorSearch, setFeeEditorSearch] = useState("");
+  const [feeEditorClass, setFeeEditorClass] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
   const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "" });
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
@@ -1708,14 +1709,19 @@ function AdminFinanceScreen({
   // Client-side search over the already-loaded student_fee_rows (never
   // truncated server-side, unlike most finance lists) - fast, and every fee
   // is a candidate to override regardless of which class fee generated it.
+  // Built from the class_label values actually present, same as the
+  // FinanceHistoryModal class filter, so it never offers an empty class.
+  const feeEditorClassOptions = Array.from(new Set(studentFeeRows.map((fee) => fee.class_label).filter(Boolean))).sort();
   const normalizedFeeEditorSearch = feeEditorSearch.trim().toLowerCase();
-  const feeEditorMatches = normalizedFeeEditorSearch.length < 2 ? [] : studentFeeRows.filter((fee) => {
+  const feeEditorMatches = (normalizedFeeEditorSearch.length < 2 && !feeEditorClass) ? [] : studentFeeRows.filter((fee) => {
+    if (feeEditorClass && fee.class_label !== feeEditorClass) return false;
+    if (!normalizedFeeEditorSearch) return true;
     const searchable = [fee.student_name, fee.student_identifier, fee.class_label, fee.title]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
     return searchable.includes(normalizedFeeEditorSearch);
-  }).slice(0, 8);
+  }).slice(0, 30);
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCreditPurchaseHistory = creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -1742,6 +1748,7 @@ function AdminFinanceScreen({
       renderRow: renderStudentPaymentRow,
       searchText: (row) => [row.name, row.student_id, row.class_name],
       statusOf: (row) => row.payment_status,
+      classOf: (row) => row.class_name,
     },
     studentFees: {
       title: "Student Fees",
@@ -1752,6 +1759,7 @@ function AdminFinanceScreen({
       searchText: (row) => [row.student_name, row.student_identifier, row.class_label, row.title],
       dateOf: (row) => row.due_date,
       statusOf: (row) => row.payment_status || row.status,
+      classOf: (row) => row.class_label,
     },
     classFees: {
       title: `${groupLabels.fee} Schedule`,
@@ -2097,6 +2105,7 @@ function AdminFinanceScreen({
     setEditingStudentFeeId("");
     setStudentFeeForm({ title: "", amount: "", due_date: "", status: "pending", auto_deduct: true });
     setFeeEditorSearch("");
+    setFeeEditorClass("");
   };
 
   const handleStudentFeeSubmit = async (event) => {
@@ -2617,29 +2626,40 @@ function AdminFinanceScreen({
               open={openActionCard === "edit-student-fee"}
               onToggle={setOpenActionCard}
             >
-              <p className="finance-action-note">Search for the student, then pick which fee to adjust.</p>
-              <label className="panel-field" style={{ position: "relative" }}>
-                Student name or ID
-                <input
-                  value={feeEditorSearch}
-                  onChange={(event) => setFeeEditorSearch(event.target.value)}
-                  placeholder="e.g. Jane Doe or STU0012"
-                  autoComplete="off"
-                />
-                {feeEditorMatches.length ? (
-                  <ul className="search-typeahead">
-                    {feeEditorMatches.map((fee) => (
-                      <li key={fee.id}>
-                        <button type="button" onClick={() => startEditStudentFee(fee)}>
-                          <strong>{fee.student_name || "Unnamed student"}{fee.is_customized ? " · Customized" : ""}</strong>
-                          <small>{[fee.student_identifier, fee.class_label, fee.title, formatFinanceAmount(fee.amount)].filter(Boolean).join(" · ")}</small>
-                        </button>
-                      </li>
+              <p className="finance-action-note">Search for the student, or pick a class to browse everyone in it, then pick which fee to adjust.</p>
+              <div className="panel-form-grid">
+                <label className="panel-field" style={{ position: "relative" }}>
+                  Student name or ID
+                  <input
+                    value={feeEditorSearch}
+                    onChange={(event) => setFeeEditorSearch(event.target.value)}
+                    placeholder="e.g. Jane Doe or STU0012"
+                    autoComplete="off"
+                  />
+                  {feeEditorMatches.length ? (
+                    <ul className="search-typeahead">
+                      {feeEditorMatches.map((fee) => (
+                        <li key={fee.id}>
+                          <button type="button" onClick={() => startEditStudentFee(fee)}>
+                            <strong>{fee.student_name || "Unnamed student"}{fee.is_customized ? " · Customized" : ""}</strong>
+                            <small>{[fee.student_identifier, fee.class_label, fee.title, formatFinanceAmount(fee.amount)].filter(Boolean).join(" · ")}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </label>
+                <label className="panel-field">
+                  Class
+                  <select value={feeEditorClass} onChange={(event) => setFeeEditorClass(event.target.value)}>
+                    <option value="">All classes</option>
+                    {feeEditorClassOptions.map((label) => (
+                      <option key={label} value={label}>{label}</option>
                     ))}
-                  </ul>
-                ) : null}
-              </label>
-              {normalizedFeeEditorSearch.length >= 2 && !feeEditorMatches.length ? (
+                  </select>
+                </label>
+              </div>
+              {(normalizedFeeEditorSearch.length >= 2 || feeEditorClass) && !feeEditorMatches.length ? (
                 <p className="form-hint">No student fee matches that search.</p>
               ) : null}
               <div className="panel-form-actions">
@@ -3220,6 +3240,7 @@ function AdminFinanceScreen({
           searchText={activeHistoryTable.searchText}
           dateOf={activeHistoryTable.dateOf}
           statusOf={activeHistoryTable.statusOf}
+          classOf={activeHistoryTable.classOf}
           onClose={() => setHistoryTable("")}
         />
       ) : null}

@@ -26,17 +26,19 @@ export function FinanceHistoryModal({
   searchText,
   dateOf,
   statusOf,
+  classOf,
   onClose,
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, startDate, endDate]);
+  }, [search, statusFilter, classFilter, startDate, endDate]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -59,6 +61,19 @@ export function FinanceHistoryModal({
     return Array.from(seen).sort();
   }, [rows, statusOf]);
 
+  // Same "built from the values present" approach as statusOptions, so a
+  // school with only three classes never sees the other four hundred that
+  // exist elsewhere on the platform.
+  const classOptions = useMemo(() => {
+    if (!classOf) return [];
+    const seen = new Set();
+    rows.forEach((row) => {
+      const value = classOf(row);
+      if (value) seen.add(String(value));
+    });
+    return Array.from(seen).sort();
+  }, [rows, classOf]);
+
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const from = startDate ? toTime(`${startDate}T00:00:00`) : null;
@@ -73,6 +88,7 @@ export function FinanceHistoryModal({
         if (!haystack.includes(needle)) return false;
       }
       if (statusFilter && statusOf && String(statusOf(row) || "") !== statusFilter) return false;
+      if (classFilter && classOf && String(classOf(row) || "") !== classFilter) return false;
       if ((from || to) && dateOf) {
         const stamp = toTime(dateOf(row));
         if (stamp === null) return false;
@@ -81,12 +97,12 @@ export function FinanceHistoryModal({
       }
       return true;
     });
-  }, [rows, search, statusFilter, startDate, endDate, searchText, statusOf, dateOf]);
+  }, [rows, search, statusFilter, classFilter, startDate, endDate, searchText, statusOf, classOf, dateOf]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-  const hasFilters = Boolean(searchText || dateOf || statusOptions.length);
+  const hasFilters = Boolean(searchText || dateOf || statusOptions.length || classOptions.length);
 
   return (
     <div
@@ -123,6 +139,17 @@ export function FinanceHistoryModal({
                 <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                   <option value="">All statuses</option>
                   {statusOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {classOptions.length ? (
+              <label className="panel-field">
+                Class
+                <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+                  <option value="">All classes</option>
+                  {classOptions.map((option) => (
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
