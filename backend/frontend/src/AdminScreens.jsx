@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download } from "lucide-react";
 import {
@@ -5366,6 +5366,41 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
   const terms = data?.terms || [];
   const promotionHistory = data?.promotion_history || [];
   const groupLabels = academicGroupLabels(data?.school, school);
+  const [expandedPromotionGroups, setExpandedPromotionGroups] = useState(() => new Set());
+  const togglePromotionGroup = (key) => {
+    setExpandedPromotionGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  // One bulk-promotion action (a "batch") can span more than one from-class
+  // (e.g. promoting a whole academic level at once, across streams) but
+  // always moves everyone in it to the same to-class, so from_class_id is
+  // the right sub-key within a batch to collapse the table by class.
+  const promotionGroups = useMemo(() => {
+    const order = [];
+    const byKey = new Map();
+    promotionHistory.forEach((item) => {
+      const key = `${item.batch_reference}::${item.from_class_id ?? "none"}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          key,
+          batch_reference: item.batch_reference,
+          from_class_name: item.from_class_name,
+          to_class_name: item.to_class_name,
+          to_term_name: item.to_term_name,
+          to_academic_year_name: item.to_academic_year_name,
+          created_at: item.created_at,
+          students: [],
+        });
+        order.push(key);
+      }
+      byKey.get(key).students.push(item);
+    });
+    return order.map((key) => byKey.get(key));
+  }, [promotionHistory]);
   const [name, setName] = useState("");
   const [section, setSection] = useState("");
   const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
@@ -5942,14 +5977,14 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
       <article className="app-panel">
         <div className="panel-head">
           <h3>Promotion history</h3>
-          <small>{promotionHistory.length} latest movement(s)</small>
+          <small>{promotionGroups.length} class movement(s) &bull; {promotionHistory.length} student(s)</small>
         </div>
-        {promotionHistory.length ? (
+        {promotionGroups.length ? (
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Student</th>
+                  <th>Class</th>
                   <th>From</th>
                   <th>To</th>
                   <th>Session</th>
@@ -5957,15 +5992,31 @@ function AdminClassesScreen({ data, school, loading, error, onRetry, onCreate, o
                 </tr>
               </thead>
               <tbody>
-                {promotionHistory.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.student_name}<small>{item.student_code}</small></td>
-                    <td>{item.from_class_name}</td>
-                    <td>{item.to_class_name}</td>
-                    <td>{item.to_term_name || item.to_academic_year_name || "-"}</td>
-                    <td>{item.batch_reference}<small>{formatDate(item.created_at)}</small></td>
-                  </tr>
-                ))}
+                {promotionGroups.map((group) => {
+                  const isOpen = expandedPromotionGroups.has(group.key);
+                  return (
+                    <Fragment key={group.key}>
+                      <tr
+                        className={`promo-group-row${isOpen ? " is-open" : ""}`}
+                        onClick={() => togglePromotionGroup(group.key)}
+                      >
+                        <td>
+                          <ChevronDown size={14} className="promo-group-chevron" aria-hidden="true" />
+                          {group.students.length} student{group.students.length === 1 ? "" : "s"}
+                        </td>
+                        <td>{group.from_class_name}</td>
+                        <td>{group.to_class_name}</td>
+                        <td>{group.to_term_name || group.to_academic_year_name || "-"}</td>
+                        <td>{group.batch_reference}<small>{formatDate(group.created_at)}</small></td>
+                      </tr>
+                      {isOpen ? group.students.map((item) => (
+                        <tr key={item.id} className="promo-student-row">
+                          <td colSpan={5}>{item.student_name}<small>{item.student_code}</small></td>
+                        </tr>
+                      )) : null}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

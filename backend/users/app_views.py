@@ -22,7 +22,7 @@ from django.core import signing
 from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import transaction as db_transaction
-from django.db.models import Avg, Count, Exists, OuterRef, Q, Sum, Prefetch
+from django.db.models import Avg, Count, Exists, Max, OuterRef, Q, Sum, Prefetch
 from django.http import FileResponse, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -8110,23 +8110,43 @@ def classes_snapshot(request):
             ],
             "terms": [_term_payload(term) for term in terms[:100]],
             "academic_years": [_academic_year_payload(year) for year in academic_years[:50]],
-            "promotion_history": [
-                _promotion_payload(item)
-                for item in StudentClassPromotion.objects.select_related(
-                    "student__user",
-                    "from_class",
-                    "to_class",
-                    "from_term",
-                    "to_term",
-                    "from_academic_year",
-                    "to_academic_year",
-                    "promoted_by",
-                )
-                .filter(tenant=_tenant_for_model(StudentClassPromotion, user))
-                .order_by("-created_at")[:20]
-            ],
+            "promotion_history": _recent_promotion_history(user),
         }
     )
+
+
+def _recent_promotion_history(user, batch_limit=10):
+    """The frontend collapses this list into one row per class moved, so a
+    batch (one bulk-promotion action, all sharing a batch_reference) must
+    never be cut off mid-way through - otherwise a collapsed group would
+    understate its own student count. Find the most recently touched
+    batches first, then return every row belonging to them in full, rather
+    than the most recent N rows regardless of which batch they fall in."""
+    tenant_obj = _tenant_for_model(StudentClassPromotion, user)
+    recent_batches = (
+        StudentClassPromotion.objects.filter(tenant=tenant_obj)
+        .values("batch_reference")
+        .annotate(latest=Max("created_at"))
+        .order_by("-latest")[:batch_limit]
+    )
+    batch_refs = [row["batch_reference"] for row in recent_batches]
+    if not batch_refs:
+        return []
+    promotions = (
+        StudentClassPromotion.objects.select_related(
+            "student__user",
+            "from_class",
+            "to_class",
+            "from_term",
+            "to_term",
+            "from_academic_year",
+            "to_academic_year",
+            "promoted_by",
+        )
+        .filter(tenant=tenant_obj, batch_reference__in=batch_refs)
+        .order_by("-created_at")
+    )
+    return [_promotion_payload(item) for item in promotions]
 
 
 @api_view(["POST"])

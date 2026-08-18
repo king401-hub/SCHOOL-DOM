@@ -4467,6 +4467,19 @@ body[data-theme="dark"] .data-table tbody tr:hover { background: #0f2040 !import
 
 .data-table tbody tr:last-child td { border-bottom: none; }
 
+/* ── Promotion history (collapsed by class) ─────────────────────────────── */
+
+.promo-group-row { cursor: pointer; font-weight: 700; }
+
+.promo-group-row td:first-child { display: flex; align-items: center; gap: 0.4rem; }
+
+.promo-group-chevron { flex: 0 0 auto; color: #94a3b8; transition: transform 160ms ease; }
+
+.promo-group-row.is-open .promo-group-chevron { transform: rotate(180deg); }
+
+.promo-student-row td { padding-left: 2.1rem; color: #64748b; background: #f8fafc; font-weight: 400; }
+body[data-theme="dark"] .promo-student-row td { background: #0f1623; color: #94a3b8; }
+
 /* ── Timetable grid ──────────────────────────────────────────────────────── */
 
 .timetable-grid-wrap {
