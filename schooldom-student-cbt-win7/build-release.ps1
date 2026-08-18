@@ -23,6 +23,14 @@ $asmInfoContent = $asmInfoContent -replace 'AssemblyFileVersion\("[\d\.]+"\)', "
 Set-Content -Path $asmInfoPath -Value $asmInfoContent -NoNewline -Encoding UTF8
 Write-Host "Set assembly version to $asmVersion in $asmInfoPath"
 
+# The bare v4.0.30319 MSBuild.exe (the last, always-present fallback below)
+# ships a csc.exe that predates LangVersion 7 (see this project's LangVersion
+# comment) and fails with CS1617 on it. Real MSBuild from Visual Studio
+# Build Tools 2019/2022 (the earlier candidates) doesn't have that problem -
+# only fall back to a direct Roslyn compile (Invoke-RoslynFallbackBuild
+# below) when nothing but the bare one was found.
+$net40Runtime = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319"
+$bareMsbuild = Join-Path $net40Runtime "MSBuild.exe"
 $msbuildCandidates = @(
     "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
@@ -30,19 +38,27 @@ $msbuildCandidates = @(
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
     "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
     "${env:ProgramFiles}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
-    "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\MSBuild.exe"
+    $bareMsbuild
 )
 $msbuild = $msbuildCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (!$msbuild) {
     throw "MSBuild was not found. Install Visual Studio Build Tools or .NET Framework developer tools."
 }
-Write-Host "Using MSBuild: $msbuild"
-$net40Runtime = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319"
 
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-& $msbuild $Solution /p:Configuration=$Configuration "/p:FrameworkPathOverride=$net40Runtime\"
-if ($LASTEXITCODE -ne 0) {
-    throw "Build failed."
+
+if ($msbuild -ne $bareMsbuild) {
+    Write-Host "Using MSBuild: $msbuild"
+    & $msbuild $Solution /p:Configuration=$Configuration "/p:FrameworkPathOverride=$net40Runtime\"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build failed."
+    }
+} else {
+    . (Join-Path (Split-Path -Parent $Root) "RoslynFallbackBuild.ps1")
+    Invoke-RoslynFallbackBuild `
+        -ProjectFile (Join-Path $ProjectDir "SchoolDom.StudentCbt.Win7.csproj") `
+        -OutputExePath (Join-Path $OutputDir "SchoolDom.StudentCbt.Win7.exe") `
+        -Net40RuntimeDir $net40Runtime
 }
 
 $exe = Join-Path $OutputDir "SchoolDom.StudentCbt.Win7.exe"

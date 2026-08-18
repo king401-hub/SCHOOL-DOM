@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("SchoolDom Student CBT")]
@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("SchoolDom")]
 [assembly: AssemblyProduct("SchoolDom Student CBT")]
-[assembly: AssemblyCopyright("Copyright © SchoolDom")]
+[assembly: AssemblyCopyright("Copyright Â© SchoolDom")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
