@@ -394,25 +394,18 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.7"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.8"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Question/passage images attached via the web exam editor now sync "
-        "down and reach students over the LAN (previously dropped entirely - "
-        "only inline rich-text images ever made it through)\n"
-        "- Add/Edit Question now supports attaching an image directly from "
-        "this app, for exams created and run purely offline\n"
-        "- LAN server now starts automatically when the dashboard loads "
-        "instead of requiring a manual Start click, and its address is shown "
-        "prominently with a Copy button so it's easy to hand to students "
-        "whose auto-discovery can't find it on an ad-hoc/no-router LAN\n"
-        "- Signing in no longer gets stuck on the login screen if syncing "
-        "fails for any reason (including a school with nothing published "
-        "yet) - valid credentials now always reach the dashboard, with a "
-        "retryable warning instead of a hard block\n"
-        "- Carries forward 0.2.6's fixes.",
+        "- Version bump only, to verify the in-app updater itself now that "
+        "CBT_ADMIN_APP_VERSION/download_url point at this server correctly\n"
+        "- Carries forward 0.2.7's fixes: question/passage images synced down "
+        "and reaching students over the LAN, Add/Edit Question image "
+        "attachments, LAN server auto-start with a copyable address, and "
+        "sign-in no longer getting stuck on the login screen when syncing "
+        "fails.",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-17"),
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-18"),
     # Served straight from this server's own git-tracked installer folder
     # (schooldom-cbt-win7/release/) rather than a GitHub Release asset -
     # admin_app_installer_path() always resolves to the highest version
@@ -422,7 +415,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3753995),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3754066),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
