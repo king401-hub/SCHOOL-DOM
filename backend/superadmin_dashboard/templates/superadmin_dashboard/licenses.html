@@ -1,0 +1,88 @@
+{% extends "superadmin_dashboard/base.html" %}
+{% block heading %}CBT License Management{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+  <form method="post" action="{% url 'superadmin_dashboard:license_generate' %}" class="stacked-form">
+    {% csrf_token %}
+    <label>
+      <span>School</span>
+      <select name="school_id">
+        <option value="">Unassigned (redeemable by any school - promo pool)</option>
+        {% for school in schools %}
+          <option value="{{ school.pk }}">{{ school.name }} ({{ school.schema_name }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Source</span>
+      <select name="source">
+        <option value="manual">Manual</option>
+        <option value="promo">Special deal / promo</option>
+      </select>
+    </label>
+    <label>
+      <span>Notes (optional)</span>
+      <input type="text" name="notes" maxlength="255" placeholder="e.g. Q1 2027 promo batch">
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="activate" value="1">
+      <span>Activate immediately (requires a school selected above)</span>
+    </label>
+    <div class="form-actions">
+      <button type="submit">Generate License Key</button>
+    </div>
+  </form>
+</section>
+
+<form class="filters" method="get">
+  <input name="q" value="{{ query }}" placeholder="Search by key or school">
+  <select name="status">
+    <option value="">All statuses</option>
+    <option value="pending" {% if status == "pending" %}selected{% endif %}>Pending</option>
+    <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+    <option value="expired" {% if status == "expired" %}selected{% endif %}>Expired</option>
+    <option value="revoked" {% if status == "revoked" %}selected{% endif %}>Revoked</option>
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Key</th><th>School</th><th>Source</th><th>Status</th>
+          <th>Activated</th><th>Expires</th><th>Days left</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for license in objects %}
+          <tr>
+            <td><code>{{ license.key }}</code></td>
+            <td>{{ license.school|default:"(unassigned)" }}</td>
+            <td>{{ license.get_source_display }}</td>
+            <td><span class="badge">{{ license.get_status_display }}</span></td>
+            <td>{{ license.activated_at|default:"—" }}</td>
+            <td>{{ license.expires_at|default:"—" }}</td>
+            <td>{% if license.days_remaining is None %}&mdash;{% else %}{{ license.days_remaining }}{% endif %}</td>
+            <td class="actions">
+              {% if license.status == "pending" %}
+                <form method="post" action="{% url 'superadmin_dashboard:license_action' license.pk 'activate' %}">{% csrf_token %}<button>Activate</button></form>
+              {% endif %}
+              {% if license.status == "active" %}
+                <form method="post" action="{% url 'superadmin_dashboard:license_action' license.pk 'revoke' %}">{% csrf_token %}<button class="danger">Revoke</button></form>
+              {% endif %}
+              {% if license.status == "expired" or license.status == "revoked" %}
+                <form method="post" action="{% url 'superadmin_dashboard:license_action' license.pk 'reactivate' %}">{% csrf_token %}<button>Reactivate</button></form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">No license keys match your filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "superadmin_dashboard/pagination.html" with page_obj=objects %}
+</section>
+{% endblock %}

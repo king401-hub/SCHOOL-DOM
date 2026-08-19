@@ -24,6 +24,18 @@ namespace SchoolDom.Cbt.Win7
         // Shared token for UDP LAN discovery — student app must include this to get a response
         public string DiscoveryToken { get; set; }
 
+        // CBT license state, as last reported by the cloud (offline-sync pull or the
+        // license-activate endpoint) - never computed locally. LicenseLastVerifiedTickCount
+        // is Environment.TickCount captured at the moment that report arrived, which is what
+        // LanServerService.HasValidLicenseGrace() anchors its 7-day offline grace window to -
+        // a monotonic counter unaffected by the system clock, unlike LicenseLastVerifiedAtUtc
+        // (kept only for display).
+        public string LicenseStatus { get; set; }
+        public string LicenseExpiresAt { get; set; }
+        public bool LicenseIsActive { get; set; }
+        public string LicenseLastVerifiedAtUtc { get; set; }
+        public int LicenseLastVerifiedTickCount { get; set; }
+
         public AppState()
         {
             DeviceId = "device_" + Guid.NewGuid().ToString("N");

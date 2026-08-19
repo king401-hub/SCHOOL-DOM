@@ -21,6 +21,7 @@ import random
 
 from notifications.models import Notification
 from notifications.push import push_for_notifications
+from licensing.services import current_license_for, has_active_cbt_license
 from users.models import StudentEnrollment, User, resolve_legacy_tenant_for_school
 from users.app_views import _profile_picture_url
 from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, Question, StudentAnswer
@@ -651,6 +652,12 @@ class StudentCbtEntryView(APIView):
         if not student or not exam:
             return Response({"success": False, "message": "No open exam matches this Student ID and PIN."}, status=status.HTTP_404_NOT_FOUND)
 
+        if not has_active_cbt_license(exam.tenant):
+            return Response(
+                {"success": False, "message": "This school's CBT license is not active. Ask your admin to activate a license."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         submitted_count = ExamAttempt.objects.filter(exam=exam, student=student, is_submitted=True).count()
         if submitted_count >= exam.max_attempts:
             return Response(
@@ -727,7 +734,13 @@ class StartExamView(APIView):
 
     def post(self, request, exam_id):
         exam = get_object_or_404(_published_exam_queryset_for_user(request.user), id=exam_id)
-        
+
+        if not has_active_cbt_license(exam.tenant):
+            return Response(
+                {'error': "This school's CBT license is not active. Ask your admin to activate a license."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         # Check if exam is available
         now = timezone.now()
         if exam.start_date > now or exam.end_date < now:
@@ -1445,12 +1458,45 @@ def sync_offline_exam_attempt(request):
     )
 
 
+def _offline_license_payload(license):
+    """Display-only info for the Win7 admin app's dashboard and its
+    TickCount-anchored offline grace window - the app must never recompute
+    expires_at itself, only ever display what the server last reported here."""
+    if license is None:
+        return {"status": "none", "expires_at": None, "days_remaining": None}
+    return {
+        "status": license.status,
+        "expires_at": license.expires_at,
+        "days_remaining": license.days_remaining,
+        "is_active": license.is_currently_active,
+    }
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def cbt_offline_sync_package(request):
     """Return the published CBT package used by the offline SchoolDom desktop client."""
     if request.user.role not in {"school_admin", "principal", "super_admin", "teacher", "accountant"}:
         return Response({"success": False, "message": "Admin or teacher access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    tenant = getattr(request.user, "tenant", None)
+    license = current_license_for(tenant)
+    # Hard gate, not just an advisory field - this is the endpoint the offline
+    # Win7 admin app polls to get exam data to serve students, so refusing the
+    # pull here is what actually blocks offline CBT for an unlicensed school
+    # (the Win7 client separately caches the last successful check for a
+    # bounded offline-grace window - see its own LicenseLastVerifiedTickCount
+    # handling - but this server check is the one that can't be bypassed by
+    # changing the requesting machine's clock).
+    if not has_active_cbt_license(tenant):
+        return Response(
+            {
+                "success": False,
+                "message": "This school's CBT license is not active. Enter a license key or activate one to sync exam data.",
+                "license": _offline_license_payload(license),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     exams = _published_exam_queryset_for_user(request.user).prefetch_related("questions", "pins").select_related("subject", "class_group")
     student_queryset = User.objects.filter(role="student", is_active=True).select_related("tenant", "student_profile", "student_profile__current_class")
@@ -1512,6 +1558,7 @@ def cbt_offline_sync_package(request):
                 "push_endpoint": "/api/exams/cbt/offline-results/",
                 "portable_import_endpoint": "/api/exams/cbt/package/results/import/",
             },
+            "license": _offline_license_payload(license),
             "exams": exam_rows,
             "students": student_rows,
         }

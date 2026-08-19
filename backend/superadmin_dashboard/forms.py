@@ -16,6 +16,7 @@ SUPER_ADMIN_FUNCTIONS = {
     "settings": "System settings",
     "reports": "Reports and exports",
     "tokens": "School token pricing and payment controls",
+    "licenses": "CBT license key management",
 }
 
 

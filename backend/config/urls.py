@@ -43,6 +43,7 @@ urlpatterns = [
     path('api/inventory/', include('inventory.urls')),
     path('api/alumni/', include('alumni.urls')),
     path('api/attendance/', include('attendance.urls')),
+    path('api/app/license/', include('licensing.urls')),
     path('api/app/', include('users.app_urls')),
     path('api/quizzes/', include('quizzes.urls')),
     path('api/exams/', include('exams.urls')),

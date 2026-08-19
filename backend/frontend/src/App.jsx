@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive, Palette,
+  Package, Archive, Palette, KeyRound,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -128,6 +128,8 @@ const AdminIdCardsScreen = lazyAdminScreen("AdminIdCardsScreen");
 const AdminDocumentsScreen = lazyAdminScreen("AdminDocumentsScreen");
 const AdminDocumentCustomizationScreen = lazyAdminScreen("AdminDocumentCustomizationScreen");
 const AdminSettingsScreen = lazyAdminScreen("AdminSettingsScreen");
+const AdminLicenseScreen = lazyAdminScreen("AdminLicenseScreen");
+const CbtLicenseLockScreen = lazyAdminScreen("CbtLicenseLockScreen");
 const AdminStudentsScreen = lazyAdminScreen("AdminStudentsScreen");
 const AdminParentsScreen = lazyAdminScreen("AdminParentsScreen");
 const AdminTeachersScreen = lazyAdminScreen("AdminTeachersScreen");
@@ -5931,6 +5933,7 @@ const ADMIN_ROUTE_ICONS = {
   "/messages": MessageSquare,
   "/loan-application": Banknote,
   "/settings": Settings,
+  "/license": KeyRound,
   "/finance-group": DollarSign,
   "/admin-group": CreditCard,
   "/compliance": ShieldCheck,
@@ -6755,6 +6758,56 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
         tone: "success",
       });
       await loadScreen("/finance", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleLicenseActivate = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/license/activate/", payload);
+      addAdminNotification({
+        category: "CBT License",
+        module: "License",
+        action: "Activated a CBT license key.",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/exams", true), loadScreen("/license", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
+  const handleLicensePurchase = useCallback(
+    async () => {
+      const result = await requestJson(session, "POST", "/api/app/license/purchase/");
+      addAdminNotification({
+        category: "CBT License",
+        module: "License",
+        action: "Started a ₦20,000 CBT license purchase.",
+        status: "Pending",
+        priority: "High",
+        tone: "warning",
+      });
+      return result;
+    },
+    [addAdminNotification, session]
+  );
+
+  const handleLicenseVerifyPurchase = useCallback(
+    async (reference) => {
+      const result = await requestJson(session, "POST", `/api/app/license/purchase/verify/${encodeURIComponent(reference)}/`);
+      addAdminNotification({
+        category: "CBT License",
+        module: "License",
+        action: "Verified CBT license payment.",
+        status: "Success",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/exams", true), loadScreen("/license", true)]);
       return result;
     },
     [addAdminNotification, loadScreen, session]
@@ -8038,7 +8091,16 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
       />
     );
   } else if (activePath === "/exams") {
-    content = (
+    const examLicense = data?.license;
+    const cbtLicenseLocked = Boolean(data) && Boolean(examLicense) && !examLicense.is_active;
+    content = cbtLicenseLocked ? (
+      <CbtLicenseLockScreen
+        license={examLicense}
+        onActivate={handleLicenseActivate}
+        onPurchase={handleLicensePurchase}
+        onVerifyPurchase={handleLicenseVerifyPurchase}
+      />
+    ) : (
       <AdminExamResultsScreen
         data={data}
         loading={loading}
@@ -8117,6 +8179,18 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         error={error}
         onRetry={handleRetry}
         onSave={handleSaveSettings}
+      />
+    );
+  } else if (activePath === "/license") {
+    content = (
+      <AdminLicenseScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        onActivate={handleLicenseActivate}
+        onPurchase={handleLicensePurchase}
+        onVerifyPurchase={handleLicenseVerifyPurchase}
       />
     );
   } else if (activePath === "/service-agreement") {

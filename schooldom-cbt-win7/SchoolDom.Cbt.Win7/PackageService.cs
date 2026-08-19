@@ -66,6 +66,8 @@ namespace SchoolDom.Cbt.Win7
                 _store.State.SchoolName = FirstText(school, "name", "school_name");
                 _store.State.SchoolCode = FirstText(school, "school_code", "code");
             }
+            var license = root.ContainsKey("license") ? root["license"] as Dictionary<string, object> : null;
+            if (license != null) _store.ApplyLicense(license);
 
             foreach (var studentObj in students)
             {

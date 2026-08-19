@@ -74,6 +74,7 @@ def platform_models():
         # Cross-cutting money-movement ledger - every finance action across the
         # whole platform (purchases, refunds, salary advances, withdrawals...).
         "finance_ledger": get_model("finance", "FinanceLedgerLog"),
+        "license": get_model("licensing", "CBTLicense"),
     }
 
 

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -13475,6 +13475,270 @@ function AdminDatabaseImportScreen({ data = {}, loading, error, onRetry, onUploa
   );
 }
 
+// ─── CBT Licensing ────────────────────────────────────────────────────────
+
+function formatLicenseCountdown(expiresAt) {
+  if (!expiresAt) return null;
+  const expiry = new Date(expiresAt);
+  if (Number.isNaN(expiry.getTime())) return null;
+  const now = new Date();
+  const diffMs = expiry.getTime() - now.getTime();
+  if (diffMs <= 0) return "Expired";
+
+  let months = (expiry.getFullYear() - now.getFullYear()) * 12 + (expiry.getMonth() - now.getMonth());
+  let days = expiry.getDate() - now.getDate();
+  if (days < 0) {
+    months -= 1;
+    const daysInPrevMonth = new Date(expiry.getFullYear(), expiry.getMonth(), 0).getDate();
+    days += daysInPrevMonth;
+  }
+  if (months < 0) months = 0;
+
+  const parts = [];
+  if (months > 0) parts.push(`${months} month${months === 1 ? "" : "s"}`);
+  parts.push(`${days} day${days === 1 ? "" : "s"}`);
+  return `${parts.join(", ")} remaining`;
+}
+
+function licenseStatusLabel(license) {
+  if (!license) return "Not Activated";
+  if (license.is_active) return "Active";
+  if (license.status === "expired") return "Expired";
+  if (license.status === "revoked") return "Revoked";
+  if (license.status === "active") return "Expired";
+  return "Not Activated";
+}
+
+function licenseStatusTone(license) {
+  if (!license) return "none";
+  if (license.is_active) return "active";
+  if (license.status === "revoked") return "revoked";
+  if (license.status === "pending") return "pending";
+  return "expired";
+}
+
+function LicenseActivationForm({ onActivate, onPurchase, onVerifyPurchase, compact = false }) {
+  const [keyInput, setKeyInput] = useState("");
+  const [activating, setActivating] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
+  const [reference, setReference] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [formError, setFormError] = useState("");
+
+  const handleActivateSubmit = async (event) => {
+    event.preventDefault();
+    const key = keyInput.trim();
+    if (!key) return;
+    setFeedback("");
+    setFormError("");
+    setActivating(true);
+    try {
+      const result = await onActivate({ key });
+      setFeedback(result?.message || "License activated. CBT is now unlocked.");
+      setKeyInput("");
+    } catch (err) {
+      setFormError(err.message || "Unable to activate this license key.");
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const handlePurchaseClick = async () => {
+    setFeedback("");
+    setFormError("");
+    setPurchasing(true);
+    try {
+      const result = await onPurchase();
+      const url = result?.authorization_url || result?.link || "";
+      setReference(result?.reference || "");
+      setFeedback(
+        url
+          ? "Checkout opened in a new tab. Complete payment there to activate your license."
+          : "Payment initialized. Complete payment to activate your license."
+      );
+      if (url) window.open(url, "_blank", "noopener");
+    } catch (err) {
+      setFormError(err.message || "Unable to start license payment.");
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!reference) return undefined;
+    let cancelled = false;
+    const confirmPurchase = async () => {
+      try {
+        await onVerifyPurchase(reference);
+        if (cancelled) return;
+        setFeedback("Payment confirmed. Your CBT license is now active.");
+        setFormError("");
+        setReference("");
+      } catch {
+        if (!cancelled) setFormError("");
+      }
+    };
+    const intervalId = window.setInterval(confirmPurchase, 5000);
+    confirmPurchase();
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [reference, onVerifyPurchase]);
+
+  return (
+    <div className={`license-activation${compact ? " compact" : ""}`}>
+      <form className="license-key-form" onSubmit={handleActivateSubmit}>
+        <label className="panel-field">
+          Enter License Key
+          <input
+            value={keyInput}
+            onChange={(event) => setKeyInput(event.target.value.toUpperCase())}
+            placeholder="SCHOOLDOM-XXXX-XXXX-XXXX"
+            disabled={activating}
+            autoComplete="off"
+          />
+        </label>
+        <button type="submit" className="btn-primary" disabled={activating || !keyInput.trim()}>
+          {activating ? <><Spinner size={12} /> Activating…</> : "Activate Key"}
+        </button>
+      </form>
+      <p className="license-activation-hint">
+        Some schools receive keys through special deals, promotions, or manual activation from the Super Admin — enter yours above.
+        No key yet? Pay to purchase one instead.
+      </p>
+      <button
+        type="button"
+        className="btn-secondary"
+        onClick={handlePurchaseClick}
+        disabled={purchasing || Boolean(reference)}
+      >
+        {purchasing ? <><Spinner size={12} /> Starting payment…</> : reference ? "Waiting for payment confirmation…" : `Pay ${NAIRA_SYMBOL}20,000`}
+      </button>
+      {feedback ? <p className="field-note license-feedback-success">{feedback}</p> : null}
+      {formError ? <p className="field-note license-feedback-error">{formError}</p> : null}
+    </div>
+  );
+}
+
+function CbtLicenseLockScreen({ license, onActivate, onPurchase, onVerifyPurchase }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const statusLabel = licenseStatusLabel(license);
+  const message =
+    license?.status === "expired" || (license?.status === "active" && !license?.is_active)
+      ? "Your school's CBT license has expired. Activate a new key or pay to renew and continue using the CBT/Exam system."
+      : license?.status === "revoked"
+        ? "Your school's CBT license was revoked. Enter a new license key or pay to unlock CBT/Exam access."
+        : "Your school does not have an active CBT license yet. Enter a license key or pay to unlock CBT/Exam access.";
+
+  return (
+    <section className="screen-grid">
+      <div className="panel license-lock-panel">
+        <div className="license-lock-icon"><Lock size={32} /></div>
+        <h2>CBT Access Locked</h2>
+        <p>{message}</p>
+        <span className={`license-status-badge tone-${licenseStatusTone(license)}`}>{statusLabel}</span>
+        <button type="button" className="btn-primary" onClick={() => setModalOpen(true)}>
+          Activate CBT License
+        </button>
+      </div>
+      <Popup open={modalOpen} onClose={() => setModalOpen(false)} labelledBy="license-activate-title">
+        <div className="edit-modal-head">
+          <div>
+            <h3 id="license-activate-title">Activate CBT License</h3>
+            <p className="panel-sub">Enter a license key you already have, or pay to purchase one.</p>
+          </div>
+          <button type="button" className="edit-modal-close" onClick={() => setModalOpen(false)} aria-label="Close"><X size={16} /></button>
+        </div>
+        <LicenseActivationForm onActivate={onActivate} onPurchase={onPurchase} onVerifyPurchase={onVerifyPurchase} />
+      </Popup>
+    </section>
+  );
+}
+
+function AdminLicenseScreen({ data, loading, error, onRetry, onActivate, onPurchase, onVerifyPurchase }) {
+  const license = data?.license || null;
+  const [copied, setCopied] = useState(false);
+  const [countdown, setCountdown] = useState(() => formatLicenseCountdown(license?.expires_at));
+
+  useEffect(() => {
+    setCountdown(formatLicenseCountdown(license?.expires_at));
+    if (!license?.is_active || !license?.expires_at) return undefined;
+    const intervalId = window.setInterval(() => {
+      setCountdown(formatLicenseCountdown(license.expires_at));
+    }, 60000);
+    return () => window.clearInterval(intervalId);
+  }, [license?.expires_at, license?.is_active]);
+
+  const handleCopy = async () => {
+    if (!license?.key) return;
+    try {
+      await navigator.clipboard.writeText(license.key);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable (insecure context, old browser) - nothing further to do.
+    }
+  };
+
+  const isActive = Boolean(license?.is_active);
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <div className="screen-hero-title-row">
+          <h2>CBT License</h2>
+          <span className={`license-status-badge tone-${licenseStatusTone(license)}`}>{licenseStatusLabel(license)}</span>
+        </div>
+        <p>Your school's CBT/Exam access is controlled by this license. Renew before it expires to avoid CBT downtime.</p>
+      </div>
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+      {data ? (
+        <article className="app-panel license-detail-panel">
+          {license ? (
+            <div className="license-detail-grid">
+              <div className="license-key-display">
+                <span className="license-meta-label">License Key</span>
+                <div className="license-key-value-row">
+                  <code className="license-key-value">{license.key}</code>
+                  <button type="button" className="license-copy-btn" onClick={handleCopy}>
+                    <Copy size={13} /> {copied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              </div>
+              <div className="license-meta-row">
+                <div className="license-meta-item">
+                  <span className="license-meta-label">Activated</span>
+                  <span>{license.activated_at ? formatDate(license.activated_at) : "—"}</span>
+                </div>
+                <div className="license-meta-item">
+                  <span className="license-meta-label">Expires</span>
+                  <span>{license.expires_at ? formatDate(license.expires_at) : "—"}</span>
+                </div>
+                <div className="license-meta-item">
+                  <span className="license-meta-label">Source</span>
+                  <span>{license.source ? license.source.charAt(0).toUpperCase() + license.source.slice(1) : "—"}</span>
+                </div>
+              </div>
+              {isActive && countdown ? (
+                <div className="license-countdown-badge">
+                  <Clock size={14} /> {countdown}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="panel-empty">No CBT license on file for your school yet.</p>
+          )}
+          <div className="license-activation-section">
+            <h3>{isActive ? "Renew or Replace License" : "Activate Your CBT License"}</h3>
+            <LicenseActivationForm onActivate={onActivate} onPurchase={onPurchase} onVerifyPurchase={onVerifyPurchase} compact />
+          </div>
+        </article>
+      ) : null}
+    </section>
+  );
+}
+
 export {
   AdminDashboardScreen,
   AdminPerformanceHeatmapScreen,
@@ -13501,6 +13765,8 @@ export {
   AdminComplianceScreen,
   AdminServiceAgreementScreen,
   AdminSmsWalletScreen,
+  AdminLicenseScreen,
+  CbtLicenseLockScreen,
 };
 
 // ─── Child Monitor (standalone, kept for reference) ──────────────────────────

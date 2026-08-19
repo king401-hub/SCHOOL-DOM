@@ -35,6 +35,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from finance.models import Wallet, SchoolFee, Transaction, AdminWallet, StudentPaymentReference, ActivationCreditPool, FeeAllocation
 from finance.services import process_due_fees, ensure_student_wallet, get_or_create_student_payment_reference, fee_paid_amount, sync_student_class_fees
+from licensing.services import current_license_for
 from attendance.utils import get_frontend_base_url
 from attendance.models import AttendanceQRCode
 from apps.app.views import admin_app_installer_path, offline_cbt_installer_path
@@ -8526,10 +8527,28 @@ def exams_snapshot(request):
         exam_row.update(_exam_pin_summary_for_user(exam, user))
         exam_rows.append(exam_row)
 
+    # Soft check only - the page still gets its data either way, and the
+    # frontend renders a lock screen + activation modal instead of the exam
+    # list when license.is_active is false. The endpoints that actually let
+    # a student START an exam (StudentCbtEntryView/StartExamView in
+    # exams/exam_views.py) hard-403 on this same check, so a bypassed
+    # frontend lock can't be used to route around it.
+    school_license = current_license_for(getattr(user, "tenant", None))
+    license_payload = (
+        {
+            "status": school_license.status,
+            "expires_at": school_license.expires_at,
+            "days_remaining": school_license.days_remaining,
+            "is_active": school_license.is_currently_active,
+        }
+        if school_license else {"status": "none", "expires_at": None, "days_remaining": None, "is_active": False}
+    )
+
     return Response(
         {
             "success": True,
             "school": _school_payload(getattr(user, "tenant", None), request),
+            "license": license_payload,
             "summary": {
                 "total_exams": exams.count(),
                 "published_exams": exams.filter(is_published=True).count(),

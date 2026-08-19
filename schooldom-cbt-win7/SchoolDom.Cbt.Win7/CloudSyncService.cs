@@ -68,6 +68,29 @@ namespace SchoolDom.Cbt.Win7
             return "Signed in to SchoolDom cloud.";
         }
 
+        /// <summary>
+        /// Activates a CBT license key for this school - the same key entry point the
+        /// React admin console offers ("Enter License Key"), reused here so the offline
+        /// Win7 app can unlock CBT without needing the website at all once activated.
+        /// A valid key immediately unlocks CBT; the server is the sole authority on
+        /// whether a key is valid, unexpired, and belongs to this school.
+        /// </summary>
+        public string ActivateLicense(string key)
+        {
+            RequireToken();
+            var body = new Dictionary<string, object> { { "key", (key ?? "").Trim() } };
+            var response = Request("POST", NormalizeCloudUrl(_store.State.CloudUrl) + "/api/app/license/activate/", JsonUtil.Serialize(body), _store.State.AccessToken);
+            var data = JsonUtil.DeserializeObject(response);
+            if (!data.ContainsKey("success") || !Convert.ToBoolean(data["success"]))
+            {
+                throw new InvalidOperationException(data.ContainsKey("message") ? Convert.ToString(data["message"]) : "Could not activate this license key.");
+            }
+            var license = data.ContainsKey("license") ? data["license"] as Dictionary<string, object> : null;
+            _store.ApplyLicense(license);
+            _store.Save();
+            return data.ContainsKey("message") ? Convert.ToString(data["message"]) : "License activated. CBT is now unlocked.";
+        }
+
         public string PullPackage(string fallbackPin)
         {
             RequireToken();
@@ -280,7 +303,7 @@ namespace SchoolDom.Cbt.Win7
                             }
                             else
                             {
-                                message = details;
+                                message = ExtractJsonMessage(details, details);
                             }
                         }
                     }
@@ -291,6 +314,27 @@ namespace SchoolDom.Cbt.Win7
                 }
                 throw new InvalidOperationException("Cloud request failed: " + message);
             }
+        }
+
+        /// <summary>
+        /// The backend's error responses are JSON with a "message" field (e.g. the CBT
+        /// license 403: {"success": false, "message": "...", "license": {...}}). Surfacing
+        /// that field instead of the raw JSON blob is what lets MessageBox.Show(ex.Message)
+        /// callers (Sync Now, LAN Server start, ...) show admins a clear sentence.
+        /// </summary>
+        private static string ExtractJsonMessage(string details, string fallback)
+        {
+            try
+            {
+                var data = JsonUtil.DeserializeObject(details);
+                if (data.ContainsKey("message"))
+                {
+                    var message = Convert.ToString(data["message"]);
+                    if (!string.IsNullOrWhiteSpace(message)) return message;
+                }
+            }
+            catch { }
+            return fallback;
         }
 
         private static bool IsExpiredTokenMessage(string message)

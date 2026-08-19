@@ -69,6 +69,7 @@ export const ADMIN_ROUTES = [
       { path: "/database-import", label: "Database Import" },
       { path: "/messages", label: "Messages" },
       { path: "/settings", label: "Settings" },
+      { path: "/license", label: "License" },
     ]
   },
   {
@@ -124,6 +125,7 @@ export const ADMIN_ENDPOINTS = {
   "/inventory": "/api/inventory/dashboard/",
   "/alumni": "/api/alumni/overview/",
   "/settings": "/api/app/school/settings/",
+  "/license": "/api/app/license/status/",
   "/document-customization": "/api/app/document-theme/",
   "/compliance": "/api/app/school/settings/",
   "/service-agreement": "/api/app/legal/service-agreement/",

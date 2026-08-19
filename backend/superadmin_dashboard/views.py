@@ -348,6 +348,81 @@ def school_token_settings(request, pk):
     })
 
 
+@super_admin_required(function="licenses")
+def licenses(request):
+    from licensing.models import CBTLicense
+
+    School = platform_models()["school"]
+    queryset, query, status = search_queryset(
+        CBTLicense, request, ["key", "school__name", "school__schema_name"],
+    )
+    return render(request, "superadmin_dashboard/licenses.html", {
+        "objects": paginate(request, queryset.select_related("school")),
+        "query": query,
+        "status": status,
+        "schools": School.objects.order_by("name") if School else [],
+    })
+
+
+@require_POST
+@super_admin_required(function="licenses")
+def license_generate(request):
+    from licensing.services import LicenseError, create_license
+
+    School = platform_models()["school"]
+    school_id = request.POST.get("school_id") or ""
+    school = get_object_or_404(School, pk=school_id) if school_id else None
+    source = request.POST.get("source") or "manual"
+    notes = request.POST.get("notes") or ""
+    activate = bool(request.POST.get("activate"))
+
+    try:
+        license = create_license(school=school, source=source, notes=notes, created_by=request.user, activate=activate)
+    except LicenseError as exc:
+        messages.error(request, str(exc))
+        return redirect("superadmin_dashboard:licenses")
+
+    if school:
+        messages.success(request, f"Generated license {license.key} for {school}.")
+    else:
+        messages.success(request, f"Generated unassigned license {license.key} (redeemable by any school).")
+    return redirect("superadmin_dashboard:licenses")
+
+
+@require_POST
+@super_admin_required(function="licenses")
+def license_action(request, pk, action):
+    from licensing.models import CBTLicense
+    from licensing.services import activate_license, deactivate_license, reactivate_license
+
+    license = get_object_or_404(CBTLicense, pk=pk)
+
+    if action == "revoke":
+        deactivate_license(license, actor=request.user, reason=request.POST.get("reason", ""))
+        messages.success(request, f"Revoked license {license.key}.")
+    elif action == "reactivate":
+        if not license.school_id:
+            messages.error(request, "Assign this license to a school before reactivating it.")
+        else:
+            reactivate_license(license, actor=request.user)
+            messages.success(request, f"Reactivated license {license.key} for 3 months 15 days from now.")
+    elif action == "activate":
+        # Manual activation for a pending, already-school-assigned key (the
+        # generate form's "activate immediately" checkbox covers the common
+        # case - this covers activating one generated earlier without it).
+        if not license.school_id:
+            messages.error(request, "Assign this license to a school before activating it.")
+        else:
+            try:
+                activate_license(license.key, license.school)
+                messages.success(request, f"Activated license {license.key}.")
+            except Exception as exc:
+                messages.error(request, str(exc))
+    else:
+        messages.error(request, "Unknown license action.")
+    return redirect("superadmin_dashboard:licenses")
+
+
 @super_admin_required(function="billing")
 def subscriptions(request):
     model = platform_models()["subscription"]

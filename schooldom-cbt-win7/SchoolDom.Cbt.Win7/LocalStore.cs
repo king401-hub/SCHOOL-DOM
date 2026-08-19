@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -71,6 +72,32 @@ namespace SchoolDom.Cbt.Win7
             if (State.Students == null) State.Students = new System.Collections.Generic.List<StudentRecord>();
             if (State.Exams == null) State.Exams = new System.Collections.Generic.List<ExamRecord>();
             if (State.Sessions == null) State.Sessions = new System.Collections.Generic.List<SessionRecord>();
+        }
+
+        /// <summary>
+        /// Applies a "license" block from a cloud response (offline-sync pull or the
+        /// license-activate endpoint - both use the same shape) and re-anchors the
+        /// TickCount grace window to right now. The caller is responsible for Save().
+        /// Never called with locally-derived data - the server is the only source of
+        /// truth for license status, exactly like it is for exam session time_remaining.
+        /// </summary>
+        public void ApplyLicense(Dictionary<string, object> license)
+        {
+            if (license == null) return;
+            if (license.ContainsKey("status")) State.LicenseStatus = JsonUtil.Text(license["status"]);
+            State.LicenseExpiresAt = license.ContainsKey("expires_at") && license["expires_at"] != null
+                ? Convert.ToString(license["expires_at"])
+                : null;
+            var isActive = false;
+            if (license.ContainsKey("is_active"))
+            {
+                var value = license["is_active"];
+                if (value is bool) isActive = (bool)value;
+                else if (value != null) bool.TryParse(Convert.ToString(value), out isActive);
+            }
+            State.LicenseIsActive = isActive;
+            State.LicenseLastVerifiedAtUtc = JsonUtil.IsoNow();
+            State.LicenseLastVerifiedTickCount = Environment.TickCount;
         }
 
         public StudentRecord FindStudent(string studentId)

@@ -147,6 +147,7 @@ TENANT_APPS = [
     'academic',
     'notifications',
     'finance',
+    'licensing',
     'fee_collections',
     'hr',
     'request_queue',
@@ -186,6 +187,7 @@ _FLAT_APPS = [
     'exams',
     'notifications',
     'finance',
+    'licensing',
     'fee_collections',
     'hr',
     'request_queue',
@@ -554,6 +556,10 @@ CELERY_TASK_TIME_LIMIT = env_int('CELERY_TASK_TIME_LIMIT', 30 * 60)
 CELERY_BEAT_SCHEDULE = {
     'schooldom-daily-fee-settlement': {
         'task': 'fee_collections.tasks.run_collection_settlement_cycle',
+        'schedule': 60 * 60 * 24,
+    },
+    'schooldom-daily-license-expiry-sweep': {
+        'task': 'licensing.tasks.sweep_expired_licenses',
         'schedule': 60 * 60 * 24,
     },
 }

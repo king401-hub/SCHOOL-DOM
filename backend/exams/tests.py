@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from academic.models import Class, GradeScale, ResultBatch, StudentSubjectScore, Subject
 from core.models import SchoolTenant
+from licensing.services import create_license
 from notifications.models import Notification
 from tenants.models import Tenant
 from users.models import StudentProfile, User
@@ -353,6 +354,8 @@ class StudentCbtEntryCollisionTests(TestCase):
         self.school_b = SchoolTenant.objects.create(name="Beta CBT School", schema_name="beta_cbt", is_active=True)
         self.legacy_a = Tenant.objects.create(name="Alpha CBT School", slug="alpha_cbt")
         self.legacy_b = Tenant.objects.create(name="Beta CBT School", slug="beta_cbt")
+        create_license(school=self.school_a, activate=True)
+        create_license(school=self.school_b, activate=True)
 
         self.student_user_a = User.objects.create_user(
             email="student.a@cbt.test", password="password", role="student", tenant=self.school_a,

@@ -227,7 +227,25 @@ namespace SchoolDom.Cbt.Win7
             content.Controls.Add(Metric("LAN Server", _lan.IsRunning ? "On" : "Off", 290, 202, _lan.IsRunning ? Palette.Green : Palette.Coral));
             content.Controls.Add(Metric("Package", string.IsNullOrWhiteSpace(_store.State.ActivePackageId) ? "None" : "Ready", 546, 202, Palette.Blue));
 
-            var lan = Card(34, 306, 760, 104);
+            var license = Card(34, 306, 760, 104);
+            var licenseActive = _lan.HasValidLicenseGrace();
+            license.Controls.Add(TextLabel("CBT License", 22, 12, 13, true, 400, Palette.Text));
+            var licenseBadgeText = licenseActive
+                ? "ACTIVE"
+                : string.IsNullOrWhiteSpace(_store.State.LicenseStatus) || _store.State.LicenseStatus == "none"
+                    ? "NOT ACTIVATED"
+                    : _store.State.LicenseStatus.ToUpperInvariant();
+            license.Controls.Add(TextLabel(licenseBadgeText, 22, 38, 12, true, 300, licenseActive ? Palette.Green : Palette.Coral));
+            var licenseDetail = licenseActive
+                ? "Expires: " + DisplayLicenseDate(_store.State.LicenseExpiresAt)
+                : "CBT/Exam access is locked for students on this LAN. Enter a license key to unlock it.";
+            license.Controls.Add(TextLabel(licenseDetail, 22, 62, 9, false, 560, Palette.Muted));
+            var enterLicenseKey = MiniButton("Enter License Key", 580, 12, 160);
+            enterLicenseKey.Click += EnterLicenseKey;
+            license.Controls.Add(enterLicenseKey);
+            content.Controls.Add(license);
+
+            var lan = Card(34, 426, 760, 104);
             lan.Controls.Add(TextLabel("Admin LAN Starter", 22, 12, 13, true, 400, Palette.Text));
             var lanUrls = _lan.IsRunning ? _lan.LocalUrls() : new List<string>();
             if (_lan.IsRunning && lanUrls.Any())
@@ -245,7 +263,10 @@ namespace SchoolDom.Cbt.Win7
             }
             else
             {
-                lan.Controls.Add(TextLabel("LAN server is stopped. Start it to share cached school data on this network.", 22, 44, 9, false, 560, Palette.Muted));
+                var lanStoppedReason = !licenseActive
+                    ? "LAN server is locked. Your school's CBT license is inactive - enter a license key above to unlock it."
+                    : "LAN server is stopped. Start it to share cached school data on this network.";
+                lan.Controls.Add(TextLabel(lanStoppedReason, 22, 44, 9, false, 560, Palette.Muted));
             }
             var lanStartInline = MiniButton(_lan.IsRunning ? "Restart" : "Start", 600, 12, 76);
             lanStartInline.Click += (s, e) =>
@@ -272,12 +293,12 @@ namespace SchoolDom.Cbt.Win7
             lan.Controls.Add(lanStopInline);
             content.Controls.Add(lan);
 
-            var submittedResults = Card(34, 432, 1024, 230);
+            var submittedResults = Card(34, 552, 1024, 230);
             submittedResults.Controls.Add(TextLabel("Submitted Results", 22, 14, 16, true, 300, Palette.Text));
             FillSubmittedResults(submittedResults);
             content.Controls.Add(submittedResults);
 
-            var exams = Card(34, 686, 500, 410);
+            var exams = Card(34, 806, 500, 410);
             exams.Controls.Add(TextLabel("Exams", 22, 18, 16, true, 240, Palette.Text));
             var moreExams = MiniButton("More", 408, 18, 74);
             moreExams.Click += (s, e) => ShowExamList();
@@ -285,7 +306,7 @@ namespace SchoolDom.Cbt.Win7
             FillExamList(exams);
             content.Controls.Add(exams);
 
-            var students = Card(558, 686, 500, 410);
+            var students = Card(558, 806, 500, 410);
             students.Controls.Add(TextLabel("Students", 22, 18, 16, true, 240, Palette.Text));
             var moreStudents = MiniButton("More", 408, 18, 74);
             moreStudents.Click += (s, e) => ShowStudentList();
@@ -293,7 +314,7 @@ namespace SchoolDom.Cbt.Win7
             FillStudentList(students);
             content.Controls.Add(students);
 
-            var note = Card(34, 1120, 1024, 96);
+            var note = Card(34, 1240, 1024, 96);
             note.Controls.Add(TextLabel("Admin Sync Tools", 22, 16, 14, true, 940, Palette.Text));
             note.Controls.Add(TextLabel("Use this console to sync school CBT data, review/edit imported exams, export broadsheets, and upload or export local result packages.", 22, 48, 10, false, 960, Palette.Muted));
             content.Controls.Add(note);
@@ -1273,6 +1294,29 @@ namespace SchoolDom.Cbt.Win7
             _statusLabel.Refresh();
         }
 
+        // Some schools receive keys through special deals, promotions, manual activation,
+        // or the Super Admin - a valid key unlocks CBT immediately, no payment involved.
+        // Buying a license (₦20,000) is still handled on the website, since it needs a
+        // payment provider checkout page this WinForms app has no way to embed.
+        private void EnterLicenseKey(object sender, EventArgs e)
+        {
+            var key = PromptDialog.Show(
+                "Enter License Key",
+                "Enter your SchoolDom CBT license key (e.g. SCHOOLDOM-XXXX-XXXX-XXXX). To pay for a license instead, sign in to the SchoolDom website.",
+                false);
+            if (string.IsNullOrWhiteSpace(key)) return;
+            RunWithStatus(
+                "Activating license...",
+                () =>
+                {
+                    var message = _cloud.ActivateLicense(key);
+                    try { _cloud.PullPackage(""); }
+                    catch { /* license state is already applied by ActivateLicense - a sync hiccup here is not fatal */ }
+                    return message;
+                },
+                ShowDashboard);
+        }
+
         private void ImportPackage(object sender, EventArgs e)
         {
             using (var dialog = new OpenFileDialog())
@@ -1631,6 +1675,17 @@ namespace SchoolDom.Cbt.Win7
         private string Display(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? "Not available" : value;
+        }
+
+        private string DisplayLicenseDate(string isoValue)
+        {
+            if (string.IsNullOrWhiteSpace(isoValue)) return "Not available";
+            DateTime parsed;
+            if (DateTime.TryParse(isoValue, null, System.Globalization.DateTimeStyles.RoundtripKind, out parsed))
+            {
+                return parsed.ToLocalTime().ToString("MMM d, yyyy");
+            }
+            return isoValue;
         }
 
         private Image ImageFromDataUrl(string dataUrl)

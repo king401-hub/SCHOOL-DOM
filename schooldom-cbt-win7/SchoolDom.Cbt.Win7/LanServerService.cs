@@ -16,6 +16,12 @@ namespace SchoolDom.Cbt.Win7
         public const int DiscoveryPort = 4786;
         private const string DiscoveryQuery = "SCHOOLDOM_CBT_DISCOVER";
 
+        // Matches TokenAllocation.EXPIRING_SOON_WINDOW_DAYS on the backend - long enough
+        // that a school with genuinely poor connectivity (the whole reason this offline
+        // app exists) isn't disrupted mid-exam-cycle, short enough it can't run indefinitely
+        // on a stale check.
+        private const int LicenseGraceMs = 7 * 24 * 60 * 60 * 1000;
+
         private readonly LocalStore _store;
         private TcpListener _listener;
         private UdpClient _discovery;
@@ -33,9 +39,35 @@ namespace SchoolDom.Cbt.Win7
             get { return _running; }
         }
 
+        /// <summary>
+        /// True when the last cloud check (an offline-sync pull or a license-key
+        /// activation) reported an active CBT license, AND that check happened within
+        /// the last 7 days as measured by Environment.TickCount - a monotonic counter
+        /// that keeps advancing at a steady rate no matter what this PC's system
+        /// clock/timezone is set to. This is deliberately NOT DateTime.Now/UtcNow: comparing
+        /// a stored wall-clock timestamp against the current wall clock is exactly what
+        /// would let someone wind the clock back to keep an expired/revoked license "valid"
+        /// forever. unchecked subtraction correctly handles Int32 rollover (~24.9 days) as
+        /// long as the actual gap is well under that, which our 7-day window always is -
+        /// same reasoning as the Student CBT exam countdown's TickCount-based elapsed-time
+        /// tracking (see that app's MainForm.cs).
+        /// </summary>
+        public bool HasValidLicenseGrace()
+        {
+            var state = _store.State;
+            if (!state.LicenseIsActive) return false;
+            if (!string.Equals(state.LicenseStatus, "active", StringComparison.OrdinalIgnoreCase)) return false;
+            var elapsedMs = unchecked(Environment.TickCount - state.LicenseLastVerifiedTickCount);
+            return elapsedMs >= 0 && elapsedMs < LicenseGraceMs;
+        }
+
         public string Start()
         {
             if (_running) return SnapshotMessage();
+            if (!HasValidLicenseGrace())
+            {
+                throw new InvalidOperationException("Your school's CBT license is inactive. Enter a license key or contact your admin.");
+            }
             _running = true;
             _listener = new TcpListener(IPAddress.Any, Port);
             _listener.Start();
