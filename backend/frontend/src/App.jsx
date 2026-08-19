@@ -23,6 +23,7 @@ import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
 import FormattedTextarea from "./components/FormattedTextarea";
+import SidebarSearch from "./components/SidebarSearch";
 import SignaturePad from "./components/SignaturePad";
 import NotepadEditor from "./components/NotepadEditor";
 import RichQuizText from "./components/RichQuizText";
@@ -616,6 +617,25 @@ function StudentAvatar({ src, name, initials, className = "student-avatar" }) {
   );
 }
 
+// Shared by both StudentDashboard's sidebar and StudentPageShell's sidebar so
+// the two independently-rendered student nav lists (and page search) can't
+// drift out of sync with each other.
+function buildStudentSearchItems(nonK12School) {
+  const items = [{ id: "/dashboard", label: "Dashboard", icon: LayoutDashboard }];
+  if (nonK12School) items.push({ id: "/attendance", label: "Attendance", icon: CalendarCheck });
+  items.push(
+    { id: "/fees", label: "School Fees", icon: DollarSign },
+    { id: "/id-card", label: "ID Card", icon: CreditCard },
+    { id: "/quizzes", label: "Assessment", icon: FileCheck },
+    { id: "/exams", label: "Exams", icon: FileText },
+    { id: "/academic-planning", label: "Scheme", icon: BookOpen },
+    { id: "/timetable", label: "Timetable", icon: CalendarClock },
+    { id: "/messages", label: "Messages", icon: MessageSquare },
+    { id: "/results", label: "Results", icon: BarChart2 }
+  );
+  return items.map((item) => ({ ...item, section: "Student Workspace" }));
+}
+
 function StudentDashboard({
   data = {},
   student = {},
@@ -829,6 +849,11 @@ function StudentDashboard({
       onNavigate(path);
     }
   };
+  const studentSearchItems = useMemo(() => buildStudentSearchItems(nonK12School), [nonK12School]);
+  const handleStudentSearchSelect = (item) => {
+    go(item.id);
+    setNavOpen(false);
+  };
   const copyPaymentText = async (value) => {
     if (!value) return;
     const copied = await copyToClipboard(value);
@@ -856,6 +881,7 @@ function StudentDashboard({
           <strong>{studentName}</strong>
           <small>{student.class_name || groupLabels.unassigned} - {activityRoleLabel || school?.name || "SchoolDom"}</small>
         </div>
+        <SidebarSearch items={studentSearchItems} onSelect={handleStudentSearchSelect} placeholder="Search pages..." />
         <nav className="student-nav">
           <button
             className="student-nav-item active"
@@ -1338,6 +1364,7 @@ function StudentPageShell({ session, student, currentPath, onNavigate, pageKicke
   const nonK12Shell = session?.school?.school_type === "non_k12" || session?.school?.schoolType === "non_k12";
   const initials = userInitials({ full_name: studentName });
   const go = (path) => { onNavigate?.(path); setNavOpen(false); };
+  const studentSearchItems = useMemo(() => buildStudentSearchItems(nonK12Shell), [nonK12Shell]);
 
   return (
     <div className="student-page">
@@ -1365,6 +1392,8 @@ function StudentPageShell({ session, student, currentPath, onNavigate, pageKicke
               </button>
             </div>
           </div>
+
+          <SidebarSearch items={studentSearchItems} onSelect={(item) => go(item.id)} placeholder="Search pages..." />
 
           <div className="student-nav-group-label">Navigation</div>
           <nav className="student-nav">
@@ -5336,6 +5365,40 @@ function TeacherWorkspace({
     ["requests", "HR System", "requests"],
   ];
 
+  const selectTeacherTab = useCallback(
+    (key) => {
+      if (key === "exam-builder") {
+        setEditingExam(null);
+        setExamEditError("");
+      }
+      setActiveTab(key);
+      setNavOpen(false);
+    },
+    [setActiveTab]
+  );
+
+  const teacherSearchItems = useMemo(
+    () => [
+      ...teacherTabs.map(([key, label, icon]) => ({ id: key, label, section: "Teacher Workspace", iconName: icon, kind: "tab" })),
+      { id: "/quizzes", label: "Assessments", section: "Teacher Workspace", iconName: "exam", kind: "route" },
+    ],
+    // teacherTabs is rebuilt fresh each render from nonK12, so key it on that instead
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nonK12]
+  );
+
+  const handleTeacherSearchSelect = useCallback(
+    (item) => {
+      if (item.kind === "route") {
+        onNavigate?.(item.id);
+        setNavOpen(false);
+      } else {
+        selectTeacherTab(item.id);
+      }
+    },
+    [onNavigate, selectTeacherTab]
+  );
+
   useEffect(() => {
     if (!teacherTabs.some(([key]) => key === activeTab)) {
       setActiveTab("overview");
@@ -5546,20 +5609,19 @@ function TeacherWorkspace({
           <strong>{teacherName}</strong>
           <small>{data?.school?.name || session?.school?.name || "SchoolDom"}</small>
         </div>
+        <SidebarSearch
+          items={teacherSearchItems}
+          onSelect={handleTeacherSearchSelect}
+          placeholder="Search pages..."
+          renderIcon={(item) => <DashboardIcon name={item.iconName} className="inline-icon" />}
+        />
         <nav className="teacher-sidebar-nav" aria-label="Teacher workspace navigation">
           {teacherTabs.map(([key, label, icon]) => (
             <button
               key={key}
               type="button"
               className={activeTab === key ? "active" : ""}
-              onClick={() => {
-                if (key === "exam-builder") {
-                  setEditingExam(null);
-                  setExamEditError("");
-                }
-                setActiveTab(key);
-                setNavOpen(false);
-              }}
+              onClick={() => selectTeacherTab(key)}
             >
               <DashboardIcon name={icon} className="inline-icon" />
               <span>{label}</span>
@@ -8119,6 +8181,42 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
     return sections;
   }, [displayRoutes, routeByPath]);
 
+  const sidebarSearchItems = useMemo(() => {
+    const items = [];
+    for (const { label: sectionLabel, routes } of sectionedNav) {
+      for (const route of routes) {
+        if (route.children) {
+          for (const child of route.children) {
+            items.push({
+              id: child.path,
+              label: child.label,
+              section: sectionLabel,
+              group: route.label,
+              icon: ADMIN_ROUTE_ICONS[child.path],
+            });
+          }
+        } else {
+          items.push({
+            id: route.path,
+            label: route.label,
+            section: sectionLabel,
+            icon: ADMIN_ROUTE_ICONS[route.path],
+          });
+        }
+      }
+    }
+    return items;
+  }, [sectionedNav]);
+
+  const handleSidebarSearchSelect = useCallback(
+    (item) => {
+      onNavigate(item.id);
+      setNavOpen(false);
+      setDropdownOpen(null);
+    },
+    [onNavigate]
+  );
+
   const renderNavRoute = (route, isChild = false) => {
     const IconComp = ADMIN_ROUTE_ICONS[route.path];
     if (route.children) {
@@ -8196,6 +8294,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
             <X size={18} />
           </button>
         </div>
+
+        <SidebarSearch items={sidebarSearchItems} onSelect={handleSidebarSearchSelect} placeholder="Search pages..." />
 
         <nav className="app-nav" aria-label="Main navigation">
           {sectionedNav.map(({ label, routes }) => {
@@ -8812,6 +8912,15 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
 
   const go = (tab) => { setActiveTab(tab); setNavOpen(false); if (onNavigate) onNavigate(`/${tab === "dashboard" ? "dashboard" : tab}`); };
 
+  const parentSearchItems = useMemo(
+    () => [
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, section: "Parent Portal" },
+      { id: "fees", label: "School Fees", icon: DollarSign, section: "Parent Portal" },
+      { id: "payments", label: "Payment History", icon: BarChart2, section: "Parent Portal" },
+    ],
+    []
+  );
+
   const parentName = parent.name || session?.user?.full_name || session?.user?.email || "Parent";
   const initials = userInitials({ full_name: parentName });
 
@@ -8828,6 +8937,7 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
           <strong>{parentName}</strong>
           <small>{parent.email || session?.user?.email || "Parent"}</small>
         </div>
+        <SidebarSearch items={parentSearchItems} onSelect={(item) => go(item.id)} placeholder="Search pages..." />
         <nav className="student-nav">
           <button
             type="button"
