@@ -128,13 +128,20 @@ def compliance(request):
             .order_by("created_at")
             .first()
         )
-        rows.append({"school": school, "director": director})
+        rows.append({
+            "school": school,
+            "director": director,
+            "documents_complete": school.compliance_documents_complete(),
+        })
+
+    not_submitted_count = School.objects.filter(compliance_status="not_submitted").count()
 
     return render(request, "superadmin_dashboard/compliance.html", {
         "rows": rows,
         "page_obj": page_obj,
         "status": status_filter,
         "status_choices": School.COMPLIANCE_STATUS_CHOICES,
+        "not_submitted_count": not_submitted_count,
     })
 
 
@@ -144,13 +151,16 @@ def compliance_action(request, pk, action):
     School = platform_models()["school"]
     school = get_object_or_404(School, pk=pk)
 
-    if action == "approve":
+    if action in ("approve", "approve_no_documents"):
         school.compliance_status = "approved"
         school.compliance_reviewed_at = timezone.now()
         school.compliance_reviewed_by = request.user
         school.save(update_fields=["compliance_status", "compliance_reviewed_at", "compliance_reviewed_by"])
         _send_compliance_review_email(school, approved=True)
-        messages.success(request, f"{school} compliance documents were approved.")
+        if action == "approve_no_documents":
+            messages.success(request, f"{school} was approved without submitted compliance documents.")
+        else:
+            messages.success(request, f"{school} compliance documents were approved.")
     elif action == "reject":
         school.compliance_status = "rejected"
         school.compliance_reviewed_at = timezone.now()

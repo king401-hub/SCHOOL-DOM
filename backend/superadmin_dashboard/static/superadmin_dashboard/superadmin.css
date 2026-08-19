@@ -114,6 +114,20 @@ th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spa
   font-weight: 700;
   font-size: 12px;
 }
+.badge-warning {
+  background: #fff4e5;
+  color: #92400e;
+  margin-left: 6px;
+}
+.hint {
+  background: #fff9e8;
+  border: 1px solid #f2d98a;
+  color: #6b5300;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
 .filters {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(140px, 220px) auto;
@@ -155,6 +169,7 @@ button {
   color: var(--ink);
 }
 button.danger { border-color: var(--danger); background: var(--danger); }
+button.warning { border-color: #b45309; background: #b45309; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .actions form { margin: 0; }
 .actions button { min-height: 34px; padding: 0 10px; font-size: 13px; }

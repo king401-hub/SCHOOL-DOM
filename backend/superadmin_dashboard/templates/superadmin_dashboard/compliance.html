@@ -9,7 +9,18 @@
     <option value="all" {% if status == "all" %}selected{% endif %}>All statuses</option>
   </select>
   <button type="submit">Filter</button>
+  {% if status != "not_submitted" %}
+    <a class="button-link secondary" href="?status=not_submitted">
+      Schools with no documents ({{ not_submitted_count }})
+    </a>
+  {% endif %}
 </form>
+
+<p class="hint">
+  A school does not need to submit its compliance documents before it can be approved. Use
+  <strong>Approve without documents</strong> below to approve a school that has not submitted anything yet -
+  it will be recorded the same way as a normal approval, and can still be asked to submit documents later.
+</p>
 
 <section class="panel">
   <div class="table-wrap">
@@ -32,7 +43,10 @@
               <strong>{{ school.name }}</strong>
               <small>{{ school.schema_name }}</small>
             </td>
-            <td><span class="badge">{{ school.get_compliance_status_display }}</span></td>
+            <td>
+              <span class="badge">{{ school.get_compliance_status_display }}</span>
+              {% if not row.documents_complete %}<span class="badge badge-warning">No documents submitted</span>{% endif %}
+            </td>
             <td>{{ school.compliance_submitted_at|default:"-" }}</td>
             <td>
               {% if school.cac_certificate %}<a class="link" href="{{ school.cac_certificate.url }}" target="_blank">CAC certificate</a><br>{% endif %}
@@ -51,7 +65,13 @@
               {% endif %}
             </td>
             <td class="actions">
-              <form method="post" action="{% url 'superadmin_dashboard:compliance_action' school.pk 'approve' %}">{% csrf_token %}<button>Approve</button></form>
+              {% if row.documents_complete %}
+                <form method="post" action="{% url 'superadmin_dashboard:compliance_action' school.pk 'approve' %}">{% csrf_token %}<button>Approve</button></form>
+              {% else %}
+                <form method="post" action="{% url 'superadmin_dashboard:compliance_action' school.pk 'approve_no_documents' %}" onsubmit="return confirm('{{ school.name|escapejs }} has not submitted its compliance documents. Approve this school anyway?');">
+                  {% csrf_token %}<button class="warning" title="No compliance documents have been submitted for this school yet">Approve without documents</button>
+                </form>
+              {% endif %}
               <form method="post" action="{% url 'superadmin_dashboard:compliance_action' school.pk 'reject' %}">{% csrf_token %}<button class="danger">Reject</button></form>
             </td>
           </tr>
