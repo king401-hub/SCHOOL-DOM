@@ -36,6 +36,7 @@ function Invoke-RoslynFallbackBuild {
     if (!$langVersion) { $langVersion = "6" }
     $outputType = $proj.Project.PropertyGroup | ForEach-Object { $_.OutputType } | Where-Object { $_ } | Select-Object -First 1
     $targetKind = switch ($outputType) { "Library" { "library" }; "Exe" { "exe" }; default { "winexe" } }
+    $appIcon = $proj.Project.PropertyGroup | ForEach-Object { $_.ApplicationIcon } | Where-Object { $_ } | Select-Object -First 1
 
     $refArgs = @("/r:$Net40RuntimeDir\mscorlib.dll")
     foreach ($name in $refNames) {
@@ -49,7 +50,17 @@ function Invoke-RoslynFallbackBuild {
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputExePath) | Out-Null
 
-    $cscArgs = @("/nologo", "/target:$targetKind", "/langversion:$langVersion", "/out:$OutputExePath") + $refArgs + $sourceFiles
+    $cscArgs = @("/nologo", "/target:$targetKind", "/langversion:$langVersion", "/out:$OutputExePath")
+    if ($appIcon) {
+        $iconPath = Join-Path $projectDir $appIcon
+        # MSBuild embeds <ApplicationIcon> as a real Win32 resource, which is what
+        # Icon.ExtractAssociatedIcon(Application.ExecutablePath) reads at runtime for the
+        # taskbar/title bar icon - without this the exe compiles fine but silently falls
+        # back to Windows' generic exe icon everywhere.
+        if (Test-Path $iconPath) { $cscArgs += "/win32icon:$iconPath" }
+        else { Write-Warning "ApplicationIcon not found, skipping: $iconPath" }
+    }
+    $cscArgs += $refArgs + $sourceFiles
     & dotnet exec $csc.FullName @cscArgs
     if ($LASTEXITCODE -ne 0) { throw "Roslyn fallback compile failed." }
 

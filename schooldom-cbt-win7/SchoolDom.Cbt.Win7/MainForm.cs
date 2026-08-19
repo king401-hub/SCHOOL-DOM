@@ -761,20 +761,77 @@ namespace SchoolDom.Cbt.Win7
 
         private void ShowStudentList()
         {
-            using (var form = ListForm("All Students", 760, 540))
+            using (var form = ListForm("All Students", 760, 620))
             {
-                var list = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true };
-                list.Columns.Add("Name", 280);
-                list.Columns.Add("Student ID", 140);
-                list.Columns.Add("Class", 180);
-                foreach (var student in _store.State.Students.OrderBy(s => s.FullName))
+                var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Palette.Background };
+                form.Controls.Add(scroll);
+
+                var groups = _store.State.Students
+                    .GroupBy(s => string.IsNullOrWhiteSpace(s.ClassName) ? "Unassigned" : s.ClassName)
+                    .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (!groups.Any())
                 {
-                    var item = new ListViewItem(student.FullName);
-                    item.SubItems.Add(student.StudentId ?? "");
-                    item.SubItems.Add(student.ClassName ?? "");
-                    list.Items.Add(item);
+                    scroll.Controls.Add(new Label { Text = "No students have been pulled yet.", Left = 12, Top = 12, AutoSize = true, ForeColor = Palette.Muted });
+                    form.ShowDialog(this);
+                    return;
                 }
-                form.Controls.Add(list);
+
+                const int sectionWidth = 700;
+                var sections = new List<Tuple<Panel, Panel>>();
+
+                Action relayout = null;
+                relayout = () =>
+                {
+                    var y = 12;
+                    foreach (var section in sections)
+                    {
+                        section.Item1.Top = y;
+                        y += section.Item1.Height + 4;
+                        if (section.Item2.Visible)
+                        {
+                            section.Item2.Top = y;
+                            y += section.Item2.Height + 12;
+                        }
+                    }
+                };
+
+                foreach (var group in groups)
+                {
+                    var students = group.OrderBy(s => s.FullName).ToList();
+
+                    var header = new Panel { Left = 12, Width = sectionWidth, Height = 36, BackColor = Palette.LightButton, Cursor = Cursors.Hand };
+                    var arrow = new Label { Text = "▼", Left = 10, Top = 8, Width = 20, Height = 20, Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Palette.Text };
+                    var title = new Label { Text = group.Key + "  (" + students.Count + ")", Left = 34, Top = 8, Width = sectionWidth - 50, Height = 20, Font = new Font("Segoe UI", 10, FontStyle.Bold), ForeColor = Palette.Text };
+                    header.Controls.Add(arrow);
+                    header.Controls.Add(title);
+
+                    var body = new Panel { Left = 12, Width = sectionWidth, Height = students.Count * 26 + 10, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+                    var rowTop = 6;
+                    foreach (var student in students)
+                    {
+                        body.Controls.Add(new Label { Text = student.FullName, Left = 14, Top = rowTop, Width = 340, Height = 20, Font = new Font("Segoe UI", 9), ForeColor = Palette.Text });
+                        body.Controls.Add(new Label { Text = student.StudentId ?? "", Left = 360, Top = rowTop, Width = 320, Height = 20, Font = new Font("Segoe UI", 9), ForeColor = Palette.Muted });
+                        rowTop += 26;
+                    }
+
+                    scroll.Controls.Add(body);
+                    scroll.Controls.Add(header);
+                    sections.Add(Tuple.Create(header, body));
+
+                    EventHandler toggle = (s, e) =>
+                    {
+                        body.Visible = !body.Visible;
+                        arrow.Text = body.Visible ? "▼" : "▶";
+                        relayout();
+                    };
+                    header.Click += toggle;
+                    arrow.Click += toggle;
+                    title.Click += toggle;
+                }
+
+                relayout();
                 form.ShowDialog(this);
             }
         }

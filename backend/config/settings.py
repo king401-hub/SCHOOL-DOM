@@ -397,15 +397,17 @@ CBT_ADMIN_APP_VERSION = {
     "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.8"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Version bump only, to verify the in-app updater itself now that "
-        "CBT_ADMIN_APP_VERSION/download_url point at this server correctly\n"
+        "- Fixed the app showing a generic Windows icon in the taskbar/title "
+        "bar instead of the SchoolDom logo\n"
+        "- All Students is now grouped by class with collapsible sections, "
+        "instead of one long flat list\n"
         "- Carries forward 0.2.7's fixes: question/passage images synced down "
         "and reaching students over the LAN, Add/Edit Question image "
         "attachments, LAN server auto-start with a copyable address, and "
         "sign-in no longer getting stuck on the login screen when syncing "
         "fails.",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-18"),
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-19"),
     # Served straight from this server's own git-tracked installer folder
     # (schooldom-cbt-win7/release/) rather than a GitHub Release asset -
     # admin_app_installer_path() always resolves to the highest version
@@ -415,7 +417,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3754066),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3805348),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
