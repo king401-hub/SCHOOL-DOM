@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
 import RichText from "./components/RichText";
 import { formatDate, MetricCard, requestJson, Spinner } from "./AppShared";
-import { useExamAutosave, loadLocalDraft, localDraftKey, setLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
+import { setLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
 A. Paris
@@ -702,73 +702,6 @@ function buildPreparedQuestion(question) {
   };
 }
 
-// A question only needs to be individually complete (matching the backend's
-// own minimum bar) to be worth auto-saving - an in-progress/incomplete
-// question is simply held back until it's valid, rather than blocking the
-// whole auto-save tick or erroring. The local draft (localStorage) already
-// holds the true, complete state regardless.
-function isQuestionMinimallyValid(question) {
-  const questionType = question.questionType || "mcq";
-  const isTheory = THEORY_QUESTION_TYPES.has(questionType);
-  if (!question.text || question.text.trim().length < 3) return false;
-  if (isTheory) return true;
-  const options = (question.options || []).map((option) => option.trim()).filter(Boolean);
-  if (options.length < 2) return false;
-  const correctAnswer = (question.options || [])[Number(question.correctIndex)]?.trim();
-  return Boolean(correctAnswer) && options.includes(correctAnswer);
-}
-
-// Builds the auto-save request body: same shape/fields as the manual Save
-// payload, but (a) only ever-valid fields are included (empty/unset ones are
-// omitted rather than sent as invalid placeholders, since exam_detail's PATCH
-// only validates a field when its key is present at all), and (b) only
-// currently-valid questions are included, so one half-typed question never
-// blocks the rest of the exam from staying in sync.
-function buildAutosavePayload({ form, questions }) {
-  const validQuestions = questions.filter(isQuestionMinimallyValid);
-  const preparedQuestions = validQuestions.map(buildPreparedQuestion);
-
-  const payload = { autosave: true, questions: preparedQuestions };
-  const title = (form.title || "").trim();
-  if (title) payload.title = title;
-  if (form.classId) payload.class_id = form.classId;
-  if (form.subjectId) payload.subject_id = form.subjectId;
-  if (form.examFormat) payload.exam_format = form.examFormat;
-  const startDate = makeDateTime(form.startDate);
-  const endDate = makeDateTime(form.endDate);
-  if (startDate && endDate && new Date(endDate) > new Date(startDate)) {
-    payload.start_date = startDate;
-    payload.end_date = endDate;
-  }
-  const duration = Number(form.duration);
-  if (duration > 0) payload.duration_minutes = duration;
-  if (form.instructions) payload.instructions = form.instructions;
-  payload.shuffle_questions = Boolean(form.randomizeQuestions);
-
-  const hasFiles = validQuestions.some((question) => question.questionImageFile || question.questionAttachmentFile || question.group?.imageFile);
-  let requestPayload = payload;
-  if (hasFiles) {
-    const formData = new FormData();
-    Object.entries(payload).forEach(([key, value]) => {
-      formData.append(key, key === "questions" ? JSON.stringify(value) : value);
-    });
-    const addedPassageImages = new Set();
-    validQuestions.forEach((question) => {
-      if (question.questionImageFile) {
-        formData.append(`question_image_${question.id}`, question.questionImageFile);
-      }
-      if (question.questionAttachmentFile) {
-        formData.append(`question_attachment_${question.id}`, question.questionAttachmentFile);
-      }
-      if (question.groupKey && question.group?.imageFile && !addedPassageImages.has(question.groupKey)) {
-        formData.append(`passage_image_${question.groupKey}`, question.group.imageFile);
-        addedPassageImages.add(question.groupKey);
-      }
-    });
-    requestPayload = formData;
-  }
-  return { requestPayload };
-}
 export function TeacherExamManager({
   questionTemplates = [],
   pendingSubmissions = [],
@@ -961,21 +894,6 @@ export function TeacherExamManager({
   );
 }
 
-const AUTOSAVE_STATUS_COPY = {
-  idle: null,
-  saving: { label: "Saving...", tone: "info" },
-  saved: { label: "Saved", tone: "success" },
-  offline: { label: "Offline — Changes Saved Locally", tone: "warning" },
-  syncing: { label: "Syncing...", tone: "info" },
-  error: { label: "Save error — changes kept locally", tone: "danger" },
-};
-
-function AutosaveStatusPill({ status }) {
-  const copy = AUTOSAVE_STATUS_COPY[status];
-  if (!copy) return null;
-  return <span className={`cbt-status-pill tone-${copy.tone}`}>{copy.label}</span>;
-}
-
 export function TeacherExamBuilder({
   session,
   classOptions = [],
@@ -1029,21 +947,13 @@ export function TeacherExamBuilder({
   const [pendingPublish, setPendingPublish] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  const autosave = useExamAutosave({
-    session,
-    userId: session?.user?.id || "anon",
-    initialExamId: initialExam?.id || null,
-    form,
-    sections,
-    questions,
-    buildAutosavePayload,
-  });
-  // The single source of truth for "does this exam already exist server-side"
-  // - auto-save may have created the row after this component mounted with
-  // no initialExam at all, so initialExam?.id alone (frozen at mount) would
-  // go stale and cause a manual Save/Publish to POST a second exam instead
-  // of PATCHing the one auto-save already created.
-  const currentExamId = autosave.examId || initialExam?.id || null;
+  // The single source of truth for "does this exam already exist
+  // server-side" - starts from initialExam?.id, and setExamId below updates
+  // it the moment a manual Save/Publish creates the row for a brand-new
+  // exam, so a second click PATCHes that same row instead of creating
+  // another one.
+  const [examId, setExamId] = useState(initialExam?.id || null);
+  const currentExamId = examId || initialExam?.id || null;
   const isEditing = Boolean(currentExamId);
   const userId = session?.user?.id || "anon";
 
@@ -1228,32 +1138,11 @@ export function TeacherExamBuilder({
     setError("");
   }, [initialExam]);
 
-  // Restore-on-mount: overlay any local draft that's newer than what the server
-  // just returned above (offline/mid-autosave edits that hadn't synced yet
-  // before a refresh), or - for a brand-new exam - restore a draft that never
-  // made it to the server at all. Deliberately declared after the effect above
-  // so a newer local draft correctly wins over server data, per the "restore
-  // the latest saved draft automatically" requirement.
-  useEffect(() => {
-    const key = initialExam?.id ? localDraftKey("edit", initialExam.id) : localDraftKey("new", session?.user?.id || "anon");
-    const local = loadLocalDraft(key);
-    if (!local) return;
-    const serverUpdatedAt = initialExam?.updated_at ? new Date(initialExam.updated_at).getTime() : 0;
-    if (initialExam?.id && local.lastModified && local.lastModified <= serverUpdatedAt) return;
-    if (local.form) setForm(local.form);
-    if (local.sections) setSections(local.sections);
-    if (local.questions?.length) setQuestions(local.questions);
-    autosave.setRestoredNotice(
-      initialExam?.id ? "Restored your unsaved changes from this device." : "Restored your unsaved draft from this device."
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialExam?.id]);
-
   // Shared by Save Draft and Publish Exam - `requireQuestions` is the only
   // difference between them: a draft is allowed to have zero/incomplete
-  // questions (same tolerance auto-save already has), publishing is not.
-  // Returns the prepared questions array when valid, or null after already
-  // setting the error message and jumping to the offending section.
+  // questions, publishing is not. Returns the prepared questions array when
+  // valid, or null after already setting the error message and jumping to
+  // the offending section.
   const validateExamForm = ({ requireQuestions }) => {
     if (!form.title.trim() || !form.startDate || !form.endDate) {
       setError("Exam title, start date, and end date are required.");
@@ -1310,9 +1199,12 @@ export function TeacherExamBuilder({
     questions: preparedQuestions,
   });
 
-  // POSTs to create the exam the first time auto-save hasn't beaten this to
-  // it, PATCHes by currentExamId every time after - never a second POST once
-  // the draft already has a server-side id.
+  // POSTs to create the exam the first time (no currentExamId yet), PATCHes
+  // by currentExamId every time after. The moment a create succeeds,
+  // setExamId records the new id locally so the very next call - even
+  // before initialExam is re-fetched from the parent - PATCHes instead of
+  // POSTing again, which is what a second "Save Exam" click needs to not
+  // create a duplicate exam.
   const submitExamPayload = async (payload) => {
     const hasFiles = questions.some((question) => question.questionImageFile || question.questionAttachmentFile || question.group?.imageFile);
     let requestPayload = payload;
@@ -1336,7 +1228,10 @@ export function TeacherExamBuilder({
       });
       requestPayload = formData;
     }
-    return currentExamId ? onUpdateExam(currentExamId, requestPayload) : onCreateExam(requestPayload);
+    if (currentExamId) return onUpdateExam(currentExamId, requestPayload);
+    const result = await onCreateExam(requestPayload);
+    if (result?.exam?.id) setExamId(result.exam.id);
+    return result;
   };
 
   // Content-only: never touches is_published (so this never un-publishes an
@@ -1352,8 +1247,6 @@ export function TeacherExamBuilder({
     try {
       const payload = buildExamPayload(preparedQuestions);
       const result = await submitExamPayload(payload);
-      // The server is now authoritative - nothing left for the local draft to protect.
-      autosave.clearDraft();
       setFeedback(result?.message || "Draft saved successfully.");
     } catch (saveError) {
       setError(saveError.message || "Could not save exam.");
@@ -1390,7 +1283,6 @@ export function TeacherExamBuilder({
       }
       const result = await submitExamPayload(payload);
       const savedExam = result?.exam || {};
-      autosave.clearDraft();
       if (savedExam.id) clearLastActiveExamId(userId);
       if (canPublishExam) setIsPublished(true);
       const hasExistingPin = Boolean(
@@ -1698,26 +1590,11 @@ export function TeacherExamBuilder({
             <span className={`cbt-status-pill tone-${isPublished ? "success" : "info"}`}>
               {isPublished ? "Published" : "Draft"}
             </span>
-            <AutosaveStatusPill status={autosave.status} />
             <button type="button" onClick={handleSaveExam} disabled={saving}>
               {saving ? <><Spinner size={14} /> Saving...</> : "Save Draft"}
             </button>
           </div>
         </div>
-
-        {autosave.restoredNotice ? (
-          <div className="form-feedback success" role="status">
-            {autosave.restoredNotice}
-            <button
-              type="button"
-              className="table-action"
-              style={{ marginLeft: "0.6rem" }}
-              onClick={() => autosave.setRestoredNotice("")}
-            >
-              Dismiss
-            </button>
-          </div>
-        ) : null}
 
         {(feedback || error) ? (
           <div className={`form-feedback ${error ? "error" : "success"}`}>

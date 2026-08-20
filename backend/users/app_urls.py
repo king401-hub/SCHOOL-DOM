@@ -62,7 +62,6 @@ urlpatterns = [
     path("exams/question-bank/sections/topics/", app_views.cbt_question_bank_section_topics, name="app_cbt_question_bank_section_topics"),
     path("exams/question-bank/import/", app_views.cbt_question_bank_import, name="app_cbt_question_bank_import"),
     path("exams/create/", app_views.create_exam, name="app_create_exam"),
-    path("exams/autosave/", app_views.autosave_exam_draft, name="app_autosave_exam_draft"),
     path("exams/<int:exam_id>/", app_views.exam_detail, name="app_exam_detail"),
     path("exams/<int:exam_id>/results/upload/", app_views.upload_exam_results, name="app_upload_exam_results"),
     path("exams/results/<int:attempt_id>/", app_views.delete_exam_attempt_result, name="app_delete_exam_attempt_result"),

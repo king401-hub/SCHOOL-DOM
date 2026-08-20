@@ -491,78 +491,70 @@ class TheoryExamAuthoringTests(TestCase):
         self.assertEqual(types, ["essay", "mcq"])
 
 
-class ExamAutosaveTests(TestCase):
-    """Exam Builder auto-save: the lenient draft-create endpoint, the upsert-by-id
-    question sync (no duplicate Question rows across repeated auto-save ticks,
-    no data loss for questions shared via a QuestionBank), and the auto-save flag
-    that must never spam admins with a review notification on every tick."""
+class ExamDraftSaveTests(TestCase):
+    """Repeated saves of an in-progress exam draft: the upsert-by-id question
+    sync (no duplicate Question rows across repeated saves, no data loss for
+    questions shared via a QuestionBank), and notify_admin gating (a plain
+    content save must never notify admins by itself).
+
+    The background auto-save mechanism these tests used to cover (a lenient
+    draft-create endpoint plus a periodic PATCH tick) was removed - it created
+    duplicate Exam rows in production (race conditions between the periodic
+    sync and manual Save/Publish, and across multiple open tabs). Exam
+    creation now always goes through create_exam; what's still worth testing
+    here is that repeatedly PATCHing the same exam's questions updates them
+    in place rather than duplicating."""
 
     def setUp(self):
-        self.school = SchoolTenant.objects.create(name="Autosave School", schema_name="autosave_school", is_active=True)
+        self.school = SchoolTenant.objects.create(name="Draft Save School", schema_name="draft_save_school", is_active=True)
         self.teacher = User.objects.create_user(
-            email="teacher@autosave.edu", password="TeacherPass123", role="teacher",
+            email="teacher@draftsave.edu", password="TeacherPass123", role="teacher",
             tenant=self.school, is_active=True, is_verified=True,
         )
         self.admin = User.objects.create_user(
-            email="admin@autosave.edu", password="AdminPass123", role="school_admin",
+            email="admin@draftsave.edu", password="AdminPass123", role="school_admin",
             tenant=self.school, is_active=True, is_verified=True,
         )
         self.client = APIClient()
         self.client.force_authenticate(self.teacher)
 
-    def test_autosave_creates_draft_with_only_a_title_and_sane_defaults(self):
-        response = self.client.post("/api/app/exams/autosave/", {"title": "My new exam"}, format="json")
+    def _create_payload(self, title, questions):
+        now = timezone.now()
+        return {
+            "title": title,
+            "exam_format": "objective",
+            "start_date": (now + timedelta(minutes=5)).isoformat(),
+            "end_date": (now + timedelta(hours=1)).isoformat(),
+            "duration_minutes": 30,
+            "questions": questions,
+        }
 
-        self.assertEqual(response.status_code, 201, response.data)
-        exam = Exam.objects.get(id=response.data["exam"]["id"])
-        self.assertEqual(exam.title, "My new exam")
-        self.assertFalse(exam.is_published)
-        self.assertIsNotNone(exam.start_date)
-        self.assertIsNotNone(exam.end_date)
-        self.assertGreater(exam.duration_minutes, 0)
-        self.assertEqual(exam.questions.count(), 0)
-
-    def test_autosave_with_blank_title_defaults_to_untitled_draft(self):
-        response = self.client.post("/api/app/exams/autosave/", {}, format="json")
-
-        self.assertEqual(response.status_code, 201, response.data)
-        exam = Exam.objects.get(id=response.data["exam"]["id"])
-        self.assertEqual(exam.title, "Untitled Draft")
-
-    def test_autosave_does_not_notify_admins(self):
-        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
-
-        response = self.client.post("/api/app/exams/autosave/", {"title": "Quiet draft"}, format="json")
-
-        self.assertEqual(response.status_code, 201, response.data)
-        after = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
-        self.assertEqual(after, before)
-
-    def test_repeated_autosave_updates_existing_question_instead_of_duplicating(self):
+    def test_repeated_save_updates_existing_question_instead_of_duplicating(self):
         create_response = self.client.post(
-            "/api/app/exams/autosave/",
-            {
-                "title": "Repeated autosave exam",
-                "exam_format": "objective",
-                "questions": [{"text": "2 + 2?", "options": ["3", "4"], "correct_answer": "4", "points": 1}],
-            },
+            "/api/app/exams/create/",
+            self._create_payload(
+                "Repeated save exam",
+                [{"text": "2 + 2?", "options": ["3", "4"], "correct_answer": "4", "points": 1}],
+            ),
             format="json",
         )
         self.assertEqual(create_response.status_code, 201, create_response.data)
+        # create_exam's response only carries a question_count, not full
+        # question objects (unlike the removed autosave endpoint) - fetch the
+        # real id from the DB instead.
         exam_id = create_response.data["exam"]["id"]
-        question_id = create_response.data["exam"]["questions"][0]["id"]
+        question_id = Exam.objects.get(id=exam_id).questions.get().id
         self.assertEqual(Question.objects.count(), 1)
 
-        # Each tick's payload differs slightly (like real autosave ticks would as
-        # the user keeps typing) so this also isn't just exercising the
-        # unrelated request-idempotency middleware's duplicate-body cache.
+        # Each save's payload differs slightly (like a teacher's real edits
+        # would) so this also isn't just exercising the unrelated
+        # request-idempotency middleware's duplicate-body cache.
         for tick, points in enumerate([2, 3, 4], start=1):
             patch_response = self.client.patch(
                 f"/api/app/exams/{exam_id}/",
                 {
-                    "autosave": True,
                     "questions": [
-                        {"id": question_id, "text": f"2 + 2 = ? (tick {tick})", "options": ["3", "4"], "correct_answer": "4", "points": points},
+                        {"id": question_id, "text": f"2 + 2 = ? (save {tick})", "options": ["3", "4"], "correct_answer": "4", "points": points},
                     ],
                 },
                 format="json",
@@ -572,23 +564,27 @@ class ExamAutosaveTests(TestCase):
         # Same question row updated in place three times, not recreated.
         self.assertEqual(Question.objects.count(), 1)
         question = Question.objects.get(id=question_id)
-        self.assertEqual(question.text, "2 + 2 = ? (tick 3)")
+        self.assertEqual(question.text, "2 + 2 = ? (save 3)")
         self.assertEqual(question.points, 4)
 
     def test_manual_patch_only_notifies_admins_when_notify_admin_is_requested(self):
-        """Save Draft vs Send to Admin: both are manual (non-autosave) PATCHes,
-        distinguished only by the notify_admin flag - a plain content save must
-        never notify by itself (that was the old, overly-eager behavior; a
-        teacher's "Save Draft" click used to spam admins on every edit)."""
-        create_response = self.client.post("/api/app/exams/autosave/", {"title": "Notify test exam"}, format="json")
+        """Save Draft vs Send to Admin, distinguished only by the notify_admin
+        flag - a plain content save must never notify by itself (that was the
+        old, overly-eager behavior; a teacher's "Save Draft" click used to
+        spam admins on every edit)."""
+        create_response = self.client.post(
+            "/api/app/exams/create/",
+            self._create_payload(
+                "Notify test exam",
+                [{"text": "2 + 2?", "options": ["3", "4"], "correct_answer": "4"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
         exam_id = create_response.data["exam"]["id"]
         before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
 
-        self.client.patch(f"/api/app/exams/{exam_id}/", {"autosave": True, "instructions": "Read carefully."}, format="json")
-        after_autosave = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
-        self.assertEqual(after_autosave, before)
-
-        # Manual "Save Draft" (no notify_admin) - still must not notify.
+        # Manual "Save Draft" (no notify_admin) - must not notify.
         self.client.patch(f"/api/app/exams/{exam_id}/", {"instructions": "Final instructions."}, format="json")
         after_manual_save = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
         self.assertEqual(after_manual_save, before)
@@ -600,38 +596,46 @@ class ExamAutosaveTests(TestCase):
 
     def test_removing_a_question_deletes_it_unless_shared_with_a_question_bank(self):
         create_response = self.client.post(
-            "/api/app/exams/autosave/",
-            {
-                "title": "Cleanup exam",
-                "exam_format": "objective",
-                "questions": [
+            "/api/app/exams/create/",
+            self._create_payload(
+                "Cleanup exam",
+                [
                     {"text": "Orphan question", "options": ["A", "B"], "correct_answer": "A"},
                     {"text": "Bank-shared question", "options": ["A", "B"], "correct_answer": "B"},
                 ],
-            },
+            ),
             format="json",
         )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
         exam = Exam.objects.get(id=create_response.data["exam"]["id"])
-        orphan_id, shared_id = [q["id"] for q in create_response.data["exam"]["questions"]]
+        # create_exam's response only carries a question_count, not full
+        # question objects (unlike the removed autosave endpoint) - look the
+        # real ids up from the DB by their known text instead.
+        orphan_id = exam.questions.get(text="Orphan question").id
+        shared_id = exam.questions.get(text="Bank-shared question").id
         shared_question = Question.objects.get(id=shared_id)
         # get_or_create - _tenant_for_model may have already auto-vivified a
-        # legacy Tenant row matching this schema_name from an earlier autosave
-        # call in this test.
+        # legacy Tenant row matching this schema_name from an earlier call in this test.
         legacy_tenant, _ = Tenant.objects.get_or_create(slug=self.school.schema_name, defaults={"name": self.school.name})
         subject = Subject.objects.create(tenant=legacy_tenant, name="General Studies", code="GST")
         bank = QuestionBank.objects.create(tenant=legacy_tenant, name="Shared bank", subject=subject, teacher=self.teacher)
         bank.questions.add(shared_question)
 
+        # A manual save always requires at least one question left (the old
+        # "allow zero questions" leniency only ever applied to autosave
+        # ticks, which no longer exist) - so drop the orphan by omitting it
+        # while keeping the shared question in the payload, rather than
+        # saving down to zero questions.
         response = self.client.patch(
             f"/api/app/exams/{exam.id}/",
-            {"autosave": True, "questions": []},
+            {"questions": [{"id": shared_id, "text": "Bank-shared question", "options": ["A", "B"], "correct_answer": "B"}]},
             format="json",
         )
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(Question.objects.filter(id=orphan_id).exists())
         self.assertTrue(Question.objects.filter(id=shared_id).exists())
-        self.assertEqual(exam.questions.count(), 0)
+        self.assertEqual(exam.questions.count(), 1)
 
 
 class TheoryGradingFlowTests(TestCase):

@@ -4016,9 +4016,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         <>
           <TeacherExamBuilder
             // See the matching key comment in App.jsx's TeacherWorkspace -
-            // forces a clean remount (including the auto-save hook's own
-            // internal exam id) when switching between a specific draft and
-            // a brand-new one via "+ New Exam".
+            // forces a clean remount (including the builder's own internal
+            // exam id) when switching between a specific draft and a
+            // brand-new one via "+ New Exam".
             key={editingExam?.id || "new-exam"}
             session={session}
             classOptions={classOptions}

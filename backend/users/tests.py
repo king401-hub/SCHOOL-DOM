@@ -1608,22 +1608,6 @@ class TeacherDashboardAPITests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(Exam.objects.get(id=exam_id).is_published)
 
-    def test_autosave_draft_never_notifies_regardless_of_notify_admin(self):
-        # autosave ticks are exempt from notification entirely, by design -
-        # confirms that behavior wasn't disturbed by the notify_admin change.
-        self.client.force_authenticate(user=self.teacher_user)
-        create_response = self.client.post("/api/app/exams/create/", data=self._exam_create_payload(), format="json")
-        exam_id = create_response.data["exam"]["id"]
-
-        before = Notification.objects.filter(event_type="exam_ready_for_publishing").count()
-        response = self.client.patch(
-            f"/api/app/exams/{exam_id}/",
-            data={"autosave": True, "notify_admin": True, "title": "Autosave tick"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(Notification.objects.filter(event_type="exam_ready_for_publishing").count(), before)
-
     def test_only_admin_can_generate_cbt_pin_and_pin_is_numeric(self):
         exam = Exam.objects.filter(teacher=self.teacher_user).first()
 

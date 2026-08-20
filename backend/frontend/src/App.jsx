@@ -5491,11 +5491,11 @@ function TeacherWorkspace({
     if (activeTab === "exam-builder") {
       return (
         <TeacherExamBuilder
-          // Forces a remount (resetting the builder's own state and its
-          // auto-save hook's internal exam id) when switching between a
-          // specific draft and a brand-new one - without this, the auto-save
-          // hook's id would stay stuck on the old exam after "+ New Exam"
-          // (its useState initializer only runs once, not on prop changes).
+          // Forces a remount (resetting the builder's own state, including
+          // its internal exam id) when switching between a specific draft
+          // and a brand-new one - without this, the id would stay stuck on
+          // the old exam after "+ New Exam" (its useState initializer only
+          // runs once, not on prop changes).
           key={editingExam?.id || "new-exam"}
           session={session}
           classOptions={classOptions}
