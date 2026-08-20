@@ -36,6 +36,12 @@ namespace SchoolDom.Cbt.Win7
         public string LicenseLastVerifiedAtUtc { get; set; }
         public int LicenseLastVerifiedTickCount { get; set; }
 
+        // "ethernet" (default) or "wifi" - which adapter type the CBT server binds to.
+        // Ethernet is preferred automatically; Wi-Fi is only ever used once the admin
+        // explicitly switches to it from the dashboard (e.g. a room with no wired LAN
+        // run to it), and that choice is remembered across restarts.
+        public string PreferredNetworkInterface { get; set; }
+
         public AppState()
         {
             DeviceId = "device_" + Guid.NewGuid().ToString("N");

@@ -72,6 +72,7 @@ namespace SchoolDom.Cbt.Win7
             if (State.Students == null) State.Students = new System.Collections.Generic.List<StudentRecord>();
             if (State.Exams == null) State.Exams = new System.Collections.Generic.List<ExamRecord>();
             if (State.Sessions == null) State.Sessions = new System.Collections.Generic.List<SessionRecord>();
+            if (string.IsNullOrWhiteSpace(State.PreferredNetworkInterface)) State.PreferredNetworkInterface = "ethernet";
         }
 
         /// <summary>

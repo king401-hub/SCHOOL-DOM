@@ -224,7 +224,9 @@ namespace SchoolDom.Cbt.Win7
             content.Controls.Add(Metric("Students Cached", _store.State.Students.Count.ToString(), 290, 112, Palette.Green));
             content.Controls.Add(Metric("Local Sessions", _store.State.Sessions.Count.ToString(), 546, 112, Palette.Gold));
             content.Controls.Add(Metric("Submitted Results", _store.State.Sessions.Count(x => x.Status == "submitted").ToString(), 34, 202, Palette.Coral));
-            content.Controls.Add(Metric("LAN Server", _lan.IsRunning ? "On" : "Off", 290, 202, _lan.IsRunning ? Palette.Green : Palette.Coral));
+            var lanServerStatusLabel = !_lan.IsRunning ? "Off" : !string.IsNullOrWhiteSpace(_lan.NetworkWarning) ? "Warning" : "On";
+            var lanServerStatusColor = !_lan.IsRunning ? Palette.Coral : !string.IsNullOrWhiteSpace(_lan.NetworkWarning) ? Palette.Gold : Palette.Green;
+            content.Controls.Add(Metric("LAN Server", lanServerStatusLabel, 290, 202, lanServerStatusColor));
             content.Controls.Add(Metric("Package", string.IsNullOrWhiteSpace(_store.State.ActivePackageId) ? "None" : "Ready", 546, 202, Palette.Blue));
 
             var license = Card(34, 306, 760, 104);
@@ -247,28 +249,55 @@ namespace SchoolDom.Cbt.Win7
 
             var lan = Card(34, 426, 760, 104);
             lan.Controls.Add(TextLabel("Admin LAN Starter", 22, 12, 13, true, 400, Palette.Text));
-            var lanUrls = _lan.IsRunning ? _lan.LocalUrls() : new List<string>();
-            if (_lan.IsRunning && lanUrls.Any())
+            var preferWifi = string.Equals(_lan.PreferredNetworkInterface, "wifi", StringComparison.OrdinalIgnoreCase);
+            if (_lan.IsRunning && !string.IsNullOrWhiteSpace(_lan.BoundAddress))
             {
-                lan.Controls.Add(TextLabel("Give students this address if they can't auto-connect:", 22, 38, 8, false, 500, Palette.Muted));
-                var primaryLanUrl = lanUrls[0];
-                lan.Controls.Add(TextLabel(primaryLanUrl, 22, 52, 13, true, 340, Palette.Blue));
+                // Bound to a single physical adapter (Ethernet by default, or Wi-Fi once the
+                // admin explicitly switches below) - see LanServerService.DetectEthernet()/
+                // DetectWifi(). Students connect straight to this address.
+                var cbtServerUrl = "http://" + _lan.BoundAddress + ":" + LanServerService.Port;
+                var adapterNote = string.IsNullOrWhiteSpace(_lan.BoundAdapterName) ? "" : " (" + _lan.BoundAdapterName + ")";
+                lan.Controls.Add(TextLabel("CBT Server - " + _lan.BoundInterfaceKind + adapterNote + ":", 22, 38, 8, false, 500, Palette.Muted));
+                lan.Controls.Add(TextLabel(cbtServerUrl, 22, 52, 13, true, 340, Palette.Blue));
                 var copyLanUrl = MiniButton("Copy", 370, 50, 70);
-                copyLanUrl.Click += (s, e) => { try { Clipboard.SetText(primaryLanUrl); } catch { } };
+                copyLanUrl.Click += (s, e) => { try { Clipboard.SetText(cbtServerUrl); } catch { } };
                 lan.Controls.Add(copyLanUrl);
-                if (lanUrls.Count > 1)
+                if (!string.IsNullOrWhiteSpace(_lan.NetworkWarning))
                 {
-                    lan.Controls.Add(TextLabel("Also reachable at: " + string.Join(", ", lanUrls.Skip(1).ToArray()), 22, 80, 8, false, 560, Palette.Muted));
+                    lan.Controls.Add(TextLabel(_lan.NetworkWarning, 22, 80, 8, false, 560, Palette.Gold));
+                }
+                else
+                {
+                    lan.Controls.Add(TextLabel("Give students this address if they can't auto-connect. LAN-only - not reachable from the internet.", 22, 80, 8, false, 560, Palette.Muted));
                 }
             }
             else
             {
-                var lanStoppedReason = !licenseActive
-                    ? "LAN server is locked. Your school's CBT license is inactive - enter a license key above to unlock it."
-                    : "LAN server is stopped. Start it to share cached school data on this network.";
+                string lanStoppedReason;
+                if (!licenseActive)
+                {
+                    lanStoppedReason = "LAN server is locked. Your school's CBT license is inactive - enter a license key above to unlock it.";
+                }
+                else
+                {
+                    var preview = preferWifi ? LanServerService.DetectWifi() : LanServerService.DetectEthernet();
+                    var previewAdapterNote = preview.Success && !string.IsNullOrWhiteSpace(preview.AdapterName) ? " (" + preview.AdapterName + ")" : "";
+                    lanStoppedReason = preview.Success
+                        ? (preferWifi ? "Wi-Fi" : "Ethernet") + " detected at " + preview.Address + previewAdapterNote + ". Click Start to run the CBT server there."
+                        : preview.Message;
+                }
                 lan.Controls.Add(TextLabel(lanStoppedReason, 22, 44, 9, false, 560, Palette.Muted));
             }
-            var lanStartInline = MiniButton(_lan.IsRunning ? "Restart" : "Start", 600, 12, 76);
+            var switchNetworkInline = MiniButton(preferWifi ? "Switch to Ethernet" : "Switch to Wi-Fi", 422, 12, 148);
+            switchNetworkInline.Click += (s, e) =>
+            {
+                _lan.SetPreferredNetworkInterface(preferWifi ? "ethernet" : "wifi");
+                if (_lan.IsRunning) _lan.Stop();
+                try { _lan.Start(); } catch { /* the card below now shows the reason why */ }
+                ShowDashboard();
+            };
+            lan.Controls.Add(switchNetworkInline);
+            var lanStartInline = MiniButton(_lan.IsRunning ? "Restart" : "Start", 580, 12, 76);
             lanStartInline.Click += (s, e) =>
             {
                 try
@@ -283,7 +312,7 @@ namespace SchoolDom.Cbt.Win7
                 }
             };
             lan.Controls.Add(lanStartInline);
-            var lanStopInline = MiniButton("Stop", 684, 12, 62);
+            var lanStopInline = MiniButton("Stop", 664, 12, 68);
             lanStopInline.Enabled = _lan.IsRunning;
             lanStopInline.Click += (s, e) =>
             {

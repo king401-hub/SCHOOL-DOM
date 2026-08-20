@@ -22,12 +22,23 @@ namespace SchoolDom.Cbt.Win7
         // on a stale check.
         private const int LicenseGraceMs = 7 * 24 * 60 * 60 * 1000;
 
+        // How often the network-drift watcher re-checks the bound Ethernet adapter while
+        // the server is running. Cheap and local-only (no network I/O), so a short interval
+        // costs nothing.
+        private const int NetworkWatchIntervalMs = 15000;
+
         private readonly LocalStore _store;
         private TcpListener _listener;
         private UdpClient _discovery;
         private Thread _serverThread;
         private Thread _discoveryThread;
         private volatile bool _running;
+        private IPAddress _boundAddress;
+        private string _boundAdapterName;
+        private string _boundInterfaceKind;
+        private string _selectionNote;
+        private volatile string _networkWarning;
+        private System.Threading.Timer _networkWatchTimer;
 
         public LanServerService(LocalStore store)
         {
@@ -37,6 +48,56 @@ namespace SchoolDom.Cbt.Win7
         public bool IsRunning
         {
             get { return _running; }
+        }
+
+        /// <summary>
+        /// The IPv4 address the CBT server is actually bound to right now, or null when
+        /// not running. Whichever adapter type PreferredNetworkInterface selects - see
+        /// DetectEthernet()/DetectWifi().
+        /// </summary>
+        public string BoundAddress
+        {
+            get { return _boundAddress != null ? _boundAddress.ToString() : null; }
+        }
+
+        public string BoundAdapterName
+        {
+            get { return _boundAdapterName; }
+        }
+
+        /// <summary>"Ethernet" or "Wi-Fi" - which kind of adapter is actually bound right now.</summary>
+        public string BoundInterfaceKind
+        {
+            get { return _boundInterfaceKind; }
+        }
+
+        /// <summary>
+        /// "ethernet" (default) or "wifi" - the admin's saved preference for which adapter
+        /// type Start() should use. Ethernet is preferred out of the box; Wi-Fi is only ever
+        /// used once the admin explicitly switches via SetPreferredNetworkInterface, e.g. for
+        /// a room with no wired LAN run to it.
+        /// </summary>
+        public string PreferredNetworkInterface
+        {
+            get { return string.Equals(_store.State.PreferredNetworkInterface, "wifi", StringComparison.OrdinalIgnoreCase) ? "wifi" : "ethernet"; }
+        }
+
+        public void SetPreferredNetworkInterface(string kind)
+        {
+            _store.State.PreferredNetworkInterface = string.Equals(kind, "wifi", StringComparison.OrdinalIgnoreCase) ? "wifi" : "ethernet";
+            _store.Save();
+        }
+
+        /// <summary>
+        /// Non-null while running only if the bound adapter has since gone down, lost its
+        /// IP, or been replaced by a new address - the dashboard shows this as a warning
+        /// telling the admin to Restart. Deliberately does not tear down the running
+        /// listener itself; a brief network flap or DHCP lease renewal must not disconnect
+        /// students mid-exam.
+        /// </summary>
+        public string NetworkWarning
+        {
+            get { return _networkWarning; }
         }
 
         /// <summary>
@@ -68,14 +129,37 @@ namespace SchoolDom.Cbt.Win7
             {
                 throw new InvalidOperationException("Your school's CBT license is inactive. Enter a license key or contact your admin.");
             }
+            var useWifi = string.Equals(PreferredNetworkInterface, "wifi", StringComparison.OrdinalIgnoreCase);
+            var selection = useWifi ? DetectWifi() : DetectEthernet();
+            if (!selection.Success)
+            {
+                throw new InvalidOperationException(selection.Message);
+            }
+            // Bind directly to the chosen adapter's own address (not IPAddress.Any) so the
+            // server only ever accepts connections arriving over that specific network - e.g.
+            // while on Ethernet, a device reachable only via this PC's Wi-Fi (a phone hotspot,
+            // or a separate Wi-Fi network the admin PC also happens to be joined to) cannot
+            // reach it, matching "ignore the Wi-Fi adapter for CBT networking" unless the
+            // admin has explicitly switched the preference to Wi-Fi.
+            _boundAddress = selection.Address;
+            _boundAdapterName = selection.AdapterName;
+            _boundInterfaceKind = useWifi ? "Wi-Fi" : "Ethernet";
+            _selectionNote = selection.Message;
+            _networkWarning = null;
             _running = true;
-            _listener = new TcpListener(IPAddress.Any, Port);
+            _listener = new TcpListener(_boundAddress, Port);
             _listener.Start();
             _serverThread = new Thread(ServerLoop) { IsBackground = true };
             _serverThread.Start();
+            // The UDP discovery socket stays bound to IPAddress.Any - some Windows NIC
+            // drivers only deliver broadcast packets to sockets bound that way, regardless of
+            // which adapter they arrived on. The other adapter type is still excluded from
+            // discovery because IsSameSubnet() below only ever compares against the bound
+            // address.
             _discovery = new UdpClient(DiscoveryPort);
             _discoveryThread = new Thread(DiscoveryLoop) { IsBackground = true };
             _discoveryThread.Start();
+            _networkWatchTimer = new System.Threading.Timer(_ => CheckNetworkDrift(), null, NetworkWatchIntervalMs, NetworkWatchIntervalMs);
             return SnapshotMessage();
         }
 
@@ -84,19 +168,51 @@ namespace SchoolDom.Cbt.Win7
             _running = false;
             try { if (_listener != null) _listener.Stop(); } catch { }
             try { if (_discovery != null) _discovery.Close(); } catch { }
+            if (_networkWatchTimer != null) { _networkWatchTimer.Dispose(); _networkWatchTimer = null; }
+            _boundAddress = null;
+            _boundAdapterName = null;
+            _boundInterfaceKind = null;
+            _selectionNote = null;
+            _networkWarning = null;
             return "LAN server stopped.";
+        }
+
+        /// <summary>
+        /// Runs every NetworkWatchIntervalMs while the server is up. Re-detects the bound
+        /// adapter kind and compares it to what Start() actually bound to - if the cable was
+        /// pulled (or Wi-Fi dropped), the adapter went down, or DHCP handed out a new
+        /// address, this raises NetworkWarning for the dashboard rather than silently
+        /// continuing to advertise a dead address. It deliberately never stops the listener
+        /// itself here: killing the socket out from under students mid-exam over a transient
+        /// blip would be worse than a stale-but-visible warning until the admin clicks Restart.
+        /// </summary>
+        private void CheckNetworkDrift()
+        {
+            if (!_running || _boundAddress == null) return;
+            var useWifi = string.Equals(_boundInterfaceKind, "Wi-Fi", StringComparison.OrdinalIgnoreCase);
+            var current = useWifi ? DetectWifi() : DetectEthernet();
+            if (current.Success && current.Address.Equals(_boundAddress))
+            {
+                _networkWarning = null;
+                return;
+            }
+            _networkWarning = current.Success
+                ? "This PC's " + _boundInterfaceKind + " IP changed to " + current.Address + " - click Restart to move the CBT server to it."
+                : _boundInterfaceKind + " was disconnected. Students may lose their connection - reconnect it, then click Restart.";
         }
 
         public List<string> LocalUrls()
         {
-            return LocalAddresses().Select(address => "http://" + address + ":" + Port).ToList();
+            if (_boundAddress == null) return new List<string>();
+            return new List<string> { "http://" + _boundAddress + ":" + Port };
         }
 
         public string SnapshotMessage()
         {
-            var urls = LocalUrls();
-            if (!urls.Any()) return "LAN server running. No LAN address found yet.";
-            return "LAN server running at:\r\n" + string.Join("\r\n", urls.ToArray());
+            if (_boundAddress == null) return "LAN server running. No LAN address found yet.";
+            var message = "CBT Server (" + _boundInterfaceKind + "): http://" + _boundAddress + ":" + Port;
+            if (!string.IsNullOrWhiteSpace(_selectionNote)) message += "\r\n" + _selectionNote;
+            return message;
         }
 
         private void ServerLoop()
@@ -159,15 +275,11 @@ namespace SchoolDom.Cbt.Win7
 
         private bool IsSameSubnet(IPAddress remote)
         {
-            foreach (var local in LocalAddresses())
-            {
-                var localParts = local.Split('.');
-                var remoteParts = remote.ToString().Split('.');
-                if (localParts.Length == 4 && remoteParts.Length == 4 &&
-                    localParts[0] == remoteParts[0] && localParts[1] == remoteParts[1] && localParts[2] == remoteParts[2])
-                    return true;
-            }
-            return false;
+            if (_boundAddress == null) return false;
+            var localParts = _boundAddress.ToString().Split('.');
+            var remoteParts = remote.ToString().Split('.');
+            return localParts.Length == 4 && remoteParts.Length == 4 &&
+                localParts[0] == remoteParts[0] && localParts[1] == remoteParts[1] && localParts[2] == remoteParts[2];
         }
 
         private void HandleClient(TcpClient client)
@@ -347,7 +459,7 @@ namespace SchoolDom.Cbt.Win7
                 { "app", "SchoolDom Admin Sync Win7" },
                 { "school", SchoolPayload() },
                 { "port", Port },
-                { "addresses", LocalAddresses() },
+                { "addresses", _boundAddress != null ? new List<string> { _boundAddress.ToString() } : new List<string>() },
                 { "urls", LocalUrls() },
                 { "running", _running },
                 { "exams", _store.State.Exams.Count },
@@ -642,20 +754,143 @@ namespace SchoolDom.Cbt.Win7
             stream.Write(body, 0, body.Length);
         }
 
-        private static List<string> LocalAddresses()
+        // Name/description substrings that mark an adapter as virtual/software rather than a
+        // physical wired NIC - Windows reports these as NetworkInterfaceType.Ethernet too, so
+        // the type check alone isn't enough to keep VPN clients, hypervisors, etc. out of
+        // consideration for the CBT server's LAN address.
+        private static readonly string[] VirtualAdapterHints =
         {
-            var addresses = new List<string>();
+            "virtual", "vmware", "virtualbox", "hyper-v", "tap-", "npcap", "loopback",
+            "bluetooth", "docker", "wsl", "vpn", "tunnel", "pseudo"
+        };
+
+        private static bool LooksVirtual(NetworkInterface adapter)
+        {
+            var text = ((adapter.Description ?? "") + " " + (adapter.Name ?? "")).ToLowerInvariant();
+            return VirtualAdapterHints.Any(hint => text.Contains(hint));
+        }
+
+        private static bool IsLinkLocal(IPAddress address)
+        {
+            var bytes = address.GetAddressBytes();
+            return bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254;
+        }
+
+        private static List<Tuple<NetworkInterface, IPAddress>> CandidateAdapters(NetworkInterfaceType[] allowedTypes)
+        {
+            var candidates = new List<Tuple<NetworkInterface, IPAddress>>();
             foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
+                if (!allowedTypes.Contains(adapter.NetworkInterfaceType)) continue;
                 if (adapter.OperationalStatus != OperationalStatus.Up) continue;
-                foreach (var unicast in adapter.GetIPProperties().UnicastAddresses)
+                if (LooksVirtual(adapter)) continue;
+
+                IPInterfaceProperties props;
+                try { props = adapter.GetIPProperties(); } catch { continue; }
+
+                foreach (var unicast in props.UnicastAddresses)
                 {
                     if (unicast.Address.AddressFamily != AddressFamily.InterNetwork) continue;
                     if (IPAddress.IsLoopback(unicast.Address)) continue;
-                    addresses.Add(unicast.Address.ToString());
+                    if (IsLinkLocal(unicast.Address)) continue;
+                    candidates.Add(Tuple.Create(adapter, unicast.Address));
                 }
             }
-            return addresses.Distinct().ToList();
+            return candidates;
         }
+
+        // Multiple qualifying adapters of the same kind up at once (e.g. a USB NIC alongside
+        // the built-in one, or two Wi-Fi radios) - prefer whichever actually has a default
+        // gateway configured, since that is the one really routing this PC's traffic rather
+        // than an isolated/secondary connection. Ties break on the lowest interface index for
+        // determinism, and the other candidates found are named in Message so the choice is
+        // never a silent guess.
+        private static NetworkSelection ChooseFrom(List<Tuple<NetworkInterface, IPAddress>> candidates, string kindLabel)
+        {
+            if (candidates.Count == 1)
+            {
+                var only = candidates[0];
+                return new NetworkSelection { Success = true, Address = only.Item2, AdapterName = only.Item1.Name };
+            }
+
+            var withGateway = candidates.Where(candidate =>
+            {
+                try { return candidate.Item1.GetIPProperties().GatewayAddresses.Count > 0; }
+                catch { return false; }
+            }).ToList();
+            var pool = withGateway.Count > 0 ? withGateway : candidates;
+            var chosen = pool.OrderBy(candidate =>
+            {
+                try { return candidate.Item1.GetIPProperties().GetIPv4Properties().Index; }
+                catch { return int.MaxValue; }
+            }).First();
+
+            var others = candidates
+                .Where(candidate => !candidate.Item2.Equals(chosen.Item2))
+                .Select(candidate => candidate.Item1.Name + " (" + candidate.Item2 + ")")
+                .ToArray();
+            return new NetworkSelection
+            {
+                Success = true,
+                Address = chosen.Item2,
+                AdapterName = chosen.Item1.Name,
+                Message = others.Length > 0
+                    ? "Multiple " + kindLabel + " adapters detected; using " + chosen.Item1.Name + ". Also found: " + string.Join(", ", others) + "."
+                    : null
+            };
+        }
+
+        /// <summary>
+        /// Finds this PC's physical, connected Ethernet adapter and its IPv4 address. This is
+        /// what Start() uses by default (PreferredNetworkInterface == "ethernet") - wired LAN
+        /// is preferred because an exam hall's CBT traffic shouldn't depend on, or leak onto,
+        /// whatever Wi-Fi network the admin PC happens to be joined to. Returns a clear
+        /// failure reason instead of ever silently falling back to something else; the admin
+        /// can explicitly opt into Wi-Fi via SetPreferredNetworkInterface("wifi") when a room
+        /// genuinely has no wired LAN run to it.
+        /// </summary>
+        public static NetworkSelection DetectEthernet()
+        {
+            var candidates = CandidateAdapters(new[] { NetworkInterfaceType.Ethernet, NetworkInterfaceType.GigabitEthernet });
+            if (candidates.Count == 0)
+            {
+                var hardwarePresent = NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
+                    (adapter.NetworkInterfaceType == NetworkInterfaceType.Ethernet || adapter.NetworkInterfaceType == NetworkInterfaceType.GigabitEthernet)
+                    && !LooksVirtual(adapter));
+                var message = hardwarePresent
+                    ? "Ethernet is not connected. Plug a LAN cable into this PC and click Restart, or switch to Wi-Fi below."
+                    : "No Ethernet adapter was found on this PC. Switch to Wi-Fi below, or plug in a wired connection.";
+                return new NetworkSelection { Success = false, Message = message };
+            }
+            return ChooseFrom(candidates, "Ethernet");
+        }
+
+        /// <summary>
+        /// Finds this PC's connected Wi-Fi adapter and its IPv4 address. Only ever used when
+        /// the admin has explicitly set PreferredNetworkInterface to "wifi" - Start() never
+        /// falls back to this automatically just because Ethernet wasn't available.
+        /// </summary>
+        public static NetworkSelection DetectWifi()
+        {
+            var candidates = CandidateAdapters(new[] { NetworkInterfaceType.Wireless80211 });
+            if (candidates.Count == 0)
+            {
+                var hardwarePresent = NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
+                    adapter.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 && !LooksVirtual(adapter));
+                var message = hardwarePresent
+                    ? "Wi-Fi is not connected. Connect this PC to your school's Wi-Fi network and click Restart."
+                    : "No Wi-Fi adapter was found on this PC.";
+                return new NetworkSelection { Success = false, Message = message };
+            }
+            return ChooseFrom(candidates, "Wi-Fi");
+        }
+    }
+
+    public sealed class NetworkSelection
+    {
+        public bool Success;
+        public IPAddress Address;
+        public string AdapterName;
+        public string Message;
     }
 }
