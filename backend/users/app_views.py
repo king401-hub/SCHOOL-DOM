@@ -51,6 +51,7 @@ from academic.models import (
     QuestionResponse,
     GradeScale,
     ResultBatch,
+    ClassResultSnapshot,
     StudentSubjectScore,
     StudentClassPromotion,
     SchoolActivityCalendar,
@@ -11280,6 +11281,97 @@ def _class_broadsheet(class_group, term, user, include_unpublished=False):
     }
 
 
+def _resolve_term_for_academic_year(user, academic_year):
+    """The saved Class Results filter only exposes Year + Class - results are
+    still recorded per term underneath, so pick the one term within that
+    year actually worth showing: the currently active one, or (for a past
+    session with none active) the last term chronologically."""
+    terms = _scope_to_user_tenant(Term.objects.filter(academic_year=academic_year), user)
+    return terms.filter(is_active=True).first() or terms.order_by("-end_date").first()
+
+
+def _class_result_snapshot_payload(snapshot, exists=True):
+    return {
+        "exists": exists,
+        "class_id": snapshot.class_group_id,
+        "class_name": _class_label(snapshot.class_group),
+        "term": {"id": snapshot.term_id, "name": snapshot.term.name},
+        "subjects": snapshot.subjects,
+        "rows": snapshot.rows,
+        "class_size": snapshot.class_size,
+        "generated_at": snapshot.updated_at,
+        "generated_by": snapshot.generated_by.get_full_name() if snapshot.generated_by_id else "",
+    }
+
+
+def _load_class_and_year_for_snapshot(request, user, params):
+    class_id = params.get("class_id")
+    academic_year_id = params.get("academic_year_id")
+    if not class_id or not academic_year_id:
+        raise ValueError("class_id and academic_year_id are required.")
+    class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=class_id)
+    academic_year = get_object_or_404(_scope_to_user_tenant(AcademicYear.objects.all(), user), id=academic_year_id)
+    term = _resolve_term_for_academic_year(user, academic_year)
+    if not term:
+        raise ValueError(f"No term is set up for {academic_year.name} yet.")
+    return class_group, term
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def class_result_snapshot(request):
+    """Reads whatever was last saved for this class+year - never recomputes.
+    A school checking the same class's results repeatedly (the whole point
+    of saving them) should never re-run the broadsheet aggregation just to
+    look at what's already there."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can view saved class results."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        class_group, term = _load_class_and_year_for_snapshot(request, user, request.query_params)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    snapshot = ClassResultSnapshot.objects.select_related("class_group", "term", "generated_by").filter(
+        tenant=_tenant_for_model(ClassResultSnapshot, user), class_group=class_group, term=term,
+    ).first()
+    if not snapshot:
+        return Response({
+            "success": True, "exists": False,
+            "class_id": class_group.id, "class_name": _class_label(class_group),
+            "term": {"id": term.id, "name": term.name},
+        })
+    return Response({"success": True, **_class_result_snapshot_payload(snapshot)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def generate_class_result_snapshot(request):
+    """Computes the class's results fresh from StudentSubjectScore rows (the
+    same aggregation _class_broadsheet does live) and saves it, overwriting
+    any previous snapshot for this class+term - an explicit admin action,
+    not something that happens on every view."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can generate class results."}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        class_group, term = _load_class_and_year_for_snapshot(request, user, request.data)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    computed = _class_broadsheet(class_group, term, user, include_unpublished=True)
+    snapshot, _created = ClassResultSnapshot.objects.update_or_create(
+        tenant=_tenant_for_model(ClassResultSnapshot, user), class_group=class_group, term=term,
+        defaults={
+            "subjects": computed["subjects"],
+            "rows": computed["rows"],
+            "class_size": computed["class_size"],
+            "generated_by": user,
+        },
+    )
+    return Response({"success": True, "message": "Class results generated and saved.", **_class_result_snapshot_payload(snapshot)})
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def results_snapshot(request):
@@ -11366,6 +11458,10 @@ def results_snapshot(request):
             "terms": [
                 {"id": item.id, "name": item.name}
                 for item in _scope_to_user_tenant(Term.objects.all(), user)[:20]
+            ],
+            "academic_years": [
+                _academic_year_payload(item)
+                for item in _scope_to_user_tenant(AcademicYear.objects.all(), user).order_by("-start_date", "name")[:50]
             ],
         },
     }

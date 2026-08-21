@@ -10,8 +10,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from academic.models import (
+    AcademicYear,
     AttendanceRecord,
     Class,
+    ClassResultSnapshot,
     GradeScale,
     QuestionPrompt,
     QuestionResponse,
@@ -6070,3 +6072,124 @@ class ClassBroadsheetFeatureTests(TestCase):
                 "class_id": self.class_a.id, "term_id": self.term.id, "parent_ids": [str(self.parent1.user_id)],
             }, format="json")
             self.assertEqual(response.status_code, 403, f"role={role}")
+
+
+class ClassResultSnapshotTests(TestCase):
+    """The admin Results screen's "Class Results" filter (Year + Class) reads
+    a saved ClassResultSnapshot rather than recomputing the broadsheet on
+    every view - these confirm generate/save/read/regenerate all behave, and
+    that a fresh score doesn't silently show up until explicitly regenerated."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(name="Snapshot School", schema_name="snapshot_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.admin = User.objects.create_user(
+            email="admin@snapshot.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher = User.objects.create_user(
+            email="teacher@snapshot.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        self.class_a = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2025/2026",
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=270), is_active=True,
+        )
+        self.term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year, is_active=True,
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=90),
+        )
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        self.english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+
+        def make_student(email, first, last, student_id):
+            user = User.objects.create_user(
+                email=email, password="StudentPass123", first_name=first, last_name=last,
+                role="student", tenant=self.school, is_active=True, is_verified=True,
+            )
+            return StudentProfile.objects.create(
+                user=user, student_id=student_id, admission_number=f"ADM-{student_id}",
+                admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+                current_class=self.class_a,
+            )
+
+        self.student1 = make_student("s1@snapshot.edu", "Ada", "Okoro", "SN001")
+        self.student2 = make_student("s2@snapshot.edu", "Bola", "Okoro", "SN002")
+        StudentSubjectScore.objects.create(student=self.student1, subject=self.math, class_group=self.class_a, term=self.term, score=Decimal("90"), max_score=Decimal("100"), grade="A", approval_status=ResultBatch.PUBLISHED)
+        StudentSubjectScore.objects.create(student=self.student2, subject=self.math, class_group=self.class_a, term=self.term, score=Decimal("60"), max_score=Decimal("100"), grade="C", approval_status=ResultBatch.PUBLISHED)
+
+    def test_read_before_generating_reports_not_exists(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f"/api/app/results/class-snapshot/?class_id={self.class_a.id}&academic_year_id={self.year.id}")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["exists"])
+        self.assertEqual(ClassResultSnapshot.objects.count(), 0)
+
+    def test_generate_saves_ranked_rows_and_read_returns_the_saved_copy(self):
+        self.client.force_authenticate(user=self.admin)
+        generate_response = self.client.post("/api/app/results/class-snapshot/generate/", {
+            "class_id": self.class_a.id, "academic_year_id": self.year.id,
+        }, format="json")
+        self.assertEqual(generate_response.status_code, 200, generate_response.data)
+        self.assertTrue(generate_response.data["exists"])
+        self.assertEqual(generate_response.data["class_size"], 2)
+        ranked = generate_response.data["rows"]
+        self.assertEqual(ranked[0]["student_id"], "SN001")
+        self.assertEqual(ranked[0]["rank"], 1)
+        self.assertEqual(ranked[1]["rank"], 2)
+        self.assertEqual(ClassResultSnapshot.objects.count(), 1)
+
+        # A fresh score after generation must not appear until regenerated -
+        # this is the whole point of saving rather than always live-computing.
+        StudentSubjectScore.objects.create(student=self.student2, subject=self.english, class_group=self.class_a, term=self.term, score=Decimal("5"), max_score=Decimal("10"), grade="F", approval_status=ResultBatch.PUBLISHED)
+        read_response = self.client.get(f"/api/app/results/class-snapshot/?class_id={self.class_a.id}&academic_year_id={self.year.id}")
+        self.assertEqual(read_response.status_code, 200, read_response.data)
+        self.assertTrue(read_response.data["exists"])
+        self.assertEqual(read_response.data["class_size"], 2)
+        self.assertEqual(read_response.data["rows"][0]["student_id"], "SN001")
+
+    def test_regenerate_overwrites_the_same_row_instead_of_duplicating(self):
+        self.client.force_authenticate(user=self.admin)
+        payload = {"class_id": self.class_a.id, "academic_year_id": self.year.id}
+        self.client.post("/api/app/results/class-snapshot/generate/", payload, format="json")
+        StudentSubjectScore.objects.create(student=self.student2, subject=self.english, class_group=self.class_a, term=self.term, score=Decimal("50"), max_score=Decimal("50"), grade="A", approval_status=ResultBatch.PUBLISHED)
+        # Byte-identical body to the first POST - clear IdempotencyMiddleware's
+        # cache so this second call actually reaches the view instead of
+        # replaying the first response (matches the pattern used elsewhere
+        # in this file for repeated-body requests in tests).
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        second = self.client.post("/api/app/results/class-snapshot/generate/", payload, format="json")
+
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(ClassResultSnapshot.objects.count(), 1)
+        student2_row = next(r for r in second.data["rows"] if r["student_id"] == "SN002")
+        self.assertEqual(student2_row["total_score"], 110)
+
+    def test_generate_requires_admin_role(self):
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.post("/api/app/results/class-snapshot/generate/", {
+            "class_id": self.class_a.id, "academic_year_id": self.year.id,
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ClassResultSnapshot.objects.count(), 0)
+
+    def test_generate_requires_class_and_year(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/app/results/class-snapshot/generate/", {"class_id": self.class_a.id}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_generate_rejects_a_year_with_no_term_set_up(self):
+        empty_year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2030/2031",
+            start_date=timezone.localdate(), end_date=timezone.localdate() + timedelta(days=270),
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/app/results/class-snapshot/generate/", {
+            "class_id": self.class_a.id, "academic_year_id": empty_year.id,
+        }, format="json")
+        self.assertEqual(response.status_code, 400)

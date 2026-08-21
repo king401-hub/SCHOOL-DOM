@@ -4474,7 +4474,6 @@ function AdminResultsScreen({
 }) {
   const summary = data?.summary || {};
   const documentTheme = resolveDocumentTheme(data?.school, session?.school);
-  const leaderboard = data?.leaderboard || [];
   const batches = data?.result_batches || [];
   const classOptions = data?.options?.classes || [];
   const termOptions = data?.options?.terms || [];
@@ -4503,6 +4502,73 @@ function AdminResultsScreen({
   const [broadsheet, setBroadsheet] = useState(null);
   const [bsBusy, setBsBusy] = useState(false);
   const [bsError, setBsError] = useState("");
+
+  // Class Results: saved-by-default replacement for the old whole-school
+  // "Class Rankings" leaderboard. Picking a year + class reads whatever was
+  // last saved for that pair (crSnapshot.exists tells the difference between
+  // "nothing generated yet" and "generated, zero students") - generating is
+  // its own explicit action, never triggered just by opening the filter.
+  const academicYearOptions = data?.options?.academic_years || [];
+  const [crYearId, setCrYearId] = useState("");
+  const [crClassId, setCrClassId] = useState("");
+  const [crSnapshot, setCrSnapshot] = useState(null);
+  const [crLoading, setCrLoading] = useState(false);
+  const [crGenerating, setCrGenerating] = useState(false);
+  const [crError, setCrError] = useState("");
+
+  // Default to the current session so the common case (checking this year's
+  // results) needs zero clicks before the class picker - an admin can still
+  // switch to a past year for historical results.
+  useEffect(() => {
+    if (crYearId || !academicYearOptions.length) return;
+    const active = academicYearOptions.find((year) => year.is_active);
+    if (active) setCrYearId(String(active.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYearOptions]);
+
+  useEffect(() => {
+    if (!crYearId || !crClassId) {
+      setCrSnapshot(null);
+      setCrError("");
+      return;
+    }
+    let cancelled = false;
+    setCrLoading(true);
+    setCrError("");
+    (async () => {
+      try {
+        const result = await requestJson(
+          session, "GET",
+          `/api/app/results/class-snapshot/?class_id=${encodeURIComponent(crClassId)}&academic_year_id=${encodeURIComponent(crYearId)}`
+        );
+        if (!cancelled) setCrSnapshot(result);
+      } catch (loadError) {
+        if (!cancelled) {
+          setCrSnapshot(null);
+          setCrError(loadError.message || "Could not load saved class results.");
+        }
+      } finally {
+        if (!cancelled) setCrLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session, crYearId, crClassId]);
+
+  const handleGenerateClassResults = async () => {
+    if (!crYearId || !crClassId) return;
+    setCrGenerating(true);
+    setCrError("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/results/class-snapshot/generate/", {
+        class_id: crClassId, academic_year_id: crYearId,
+      });
+      setCrSnapshot(result);
+    } catch (generateError) {
+      setCrError(generateError.message || "Could not generate class results.");
+    } finally {
+      setCrGenerating(false);
+    }
+  };
 
   const [sharePanelOpen, setSharePanelOpen] = useState(false);
   const [bsParents, setBsParents] = useState([]);
@@ -5055,35 +5121,84 @@ function AdminResultsScreen({
 
       <article className="app-panel">
         <div className="panel-head">
-          <h3>Class Rankings</h3>
-          <small>Highest totals listed first.</small>
+          <h3>Class Results</h3>
+          <small>Saved once generated - pick a year and class to view it, no regenerating needed just to check.</small>
         </div>
-        {leaderboard.length ? (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Student</th>
-                <th>Class</th>
-                <th>Total</th>
-                <th>Average</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboard.map((row) => (
-                <tr key={row.student_id}>
-                  <td>#{row.rank}</td>
-                  <td>{row.student_name}</td>
-                  <td>{row.class_name || "Class"}</td>
-                  <td>{row.total_score}</td>
-                  <td>{row.average_score}</td>
-                </tr>
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Academic Year
+            <select value={crYearId} onChange={(event) => setCrYearId(event.target.value)}>
+              <option value="">Select year</option>
+              {academicYearOptions.map((year) => (
+                <option key={year.id} value={year.id}>{year.name}</option>
               ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="panel-empty">No rankings available yet.</p>
-        )}
+            </select>
+          </label>
+          <label className="panel-field">
+            Class
+            <select value={crClassId} onChange={(event) => setCrClassId(event.target.value)}>
+              <option value="">Select class</option>
+              {classOptions.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {!crYearId || !crClassId ? (
+          <p className="panel-empty">Choose a year and a class to view its saved results.</p>
+        ) : crLoading ? (
+          <p className="panel-empty"><Spinner size={12} /> Checking for saved results...</p>
+        ) : crError ? (
+          <p className="form-feedback error">{crError}</p>
+        ) : crSnapshot && !crSnapshot.exists ? (
+          <>
+            <p className="panel-empty">
+              No saved results yet for {crSnapshot.class_name} in {crSnapshot.term?.name || "this term"}.
+            </p>
+            <div className="panel-form-actions">
+              <button type="button" onClick={handleGenerateClassResults} disabled={crGenerating}>
+                {crGenerating ? <><Spinner size={12} /> Generating...</> : "Generate Results"}
+              </button>
+            </div>
+          </>
+        ) : crSnapshot && crSnapshot.exists ? (
+          <>
+            <div className="mobile-section-head">
+              <small>
+                {crSnapshot.class_name} &bull; {crSnapshot.term?.name} &bull; {crSnapshot.class_size} student{crSnapshot.class_size === 1 ? "" : "s"}
+                {crSnapshot.generated_at ? <> &bull; Generated {formatDate(crSnapshot.generated_at)}{crSnapshot.generated_by ? ` by ${crSnapshot.generated_by}` : ""}</> : null}
+              </small>
+              <button type="button" className="table-action" onClick={handleGenerateClassResults} disabled={crGenerating}>
+                {crGenerating ? <><Spinner size={12} /> Regenerating...</> : "Regenerate"}
+              </button>
+            </div>
+            {crSnapshot.rows?.length ? (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Student</th>
+                    <th>Total</th>
+                    <th>Average</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {crSnapshot.rows.map((row) => (
+                    <tr key={row.student_uuid}>
+                      <td>#{row.rank}</td>
+                      <td>{row.student_name}<small>{row.student_id}</small></td>
+                      <td>{row.total_score}</td>
+                      <td>{row.average_score}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="panel-empty">This class has no students on roll.</p>
+            )}
+          </>
+        ) : null}
       </article>
       {confirmDialog}
     </section>

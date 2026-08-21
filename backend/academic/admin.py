@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Class, StudentClassPromotion, Subject, Term, TimetableEntry
+from .models import Class, ClassResultSnapshot, StudentClassPromotion, Subject, Term, TimetableEntry
 
 
 @admin.register(Term)
@@ -35,6 +35,14 @@ class StudentClassPromotionAdmin(admin.ModelAdmin):
         "student__user__last_name",
         "batch_reference",
     )
+
+
+@admin.register(ClassResultSnapshot)
+class ClassResultSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("class_group", "term", "class_size", "generated_by", "updated_at", "tenant")
+    list_filter = ("tenant", "class_group", "term")
+    search_fields = ("class_group__name", "term__name", "tenant__name", "tenant__slug")
+    readonly_fields = ("subjects", "rows", "class_size", "generated_by", "created_at", "updated_at")
 
 
 @admin.register(TimetableEntry)

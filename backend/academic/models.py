@@ -214,6 +214,31 @@ class ResultBatch(TenantAwareModel, TimeStampedModel):
     def __str__(self):
         return self.title
 
+
+class ClassResultSnapshot(TenantAwareModel):
+    """A saved, point-in-time class result list (same shape the live
+    broadsheet computation produces from StudentSubjectScore rows), so an
+    admin re-checking a class's results for a given term doesn't force a
+    fresh aggregation of every score row on every visit. An admin explicitly
+    (re)generates this via the Class Results filter; until they do, viewing
+    it again is just reading this saved row - not recomputing anything."""
+    class_group = models.ForeignKey(Class, on_delete=models.CASCADE, related_name="result_snapshots")
+    term = models.ForeignKey("academic.Term", on_delete=models.CASCADE, related_name="result_snapshots")
+    subjects = models.JSONField(default=list, blank=True)
+    rows = models.JSONField(default=list, blank=True)
+    class_size = models.PositiveIntegerField(default=0)
+    generated_by = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="generated_class_result_snapshots",
+    )
+
+    class Meta:
+        ordering = ["-updated_at"]
+        unique_together = ("tenant", "class_group", "term")
+
+    def __str__(self):
+        return f"{self.class_group} results - {self.term}"
+
+
 class StudentSubjectScore(TenantAwareModel, TimeStampedModel):
     """
     A per-subject score submitted by a teacher for a student.
