@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone } from "lucide-react";
+import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone, Download } from "lucide-react";
 import {
   API_BASE_URL,
   LEGACY_SESSION_KEY,
@@ -1573,17 +1573,66 @@ function isImageAttachment(file) {
   return contentType.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(label) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(url);
 }
 
+function isAudioAttachment(file) {
+  const contentType = String(file?.content_type || file?.contentType || file?.type || "").toLowerCase();
+  const label = attachmentLabel(file).toLowerCase();
+  const url = attachmentUrl(file).toLowerCase().split("?")[0];
+  return contentType.startsWith("audio/") || /\.(webm|mp3|wav|m4a|ogg|opus|aac)$/i.test(label) || /\.(webm|mp3|wav|m4a|ogg|opus|aac)$/i.test(url);
+}
+
 function MessageAttachment({ attachment, index }) {
   const url = attachmentUrl(attachment);
   const label = attachmentLabel(attachment);
   const key = `${url || label}-${index}`;
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (url && isImageAttachment(attachment)) {
     return (
-      <a key={key} className="message-image-attachment" href={url} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}>
-        <img src={url} alt={label} />
-        <span>{label}</span>
-      </a>
+      <>
+        <button
+          type="button"
+          className="message-image-attachment"
+          onClick={() => setLightboxOpen(true)}
+          aria-label={`Open ${label}`}
+        >
+          <img src={url} alt={label} />
+          <span>{label}</span>
+        </button>
+        <Popup
+          open={lightboxOpen}
+          onClose={() => setLightboxOpen(false)}
+          extraCardClassName="image-lightbox-card"
+          labelledBy={`image-lightbox-title-${key}`}
+        >
+          <div className="image-lightbox-head">
+            <span id={`image-lightbox-title-${key}`} className="image-lightbox-title">{label}</span>
+            <button type="button" className="image-lightbox-close" onClick={() => setLightboxOpen(false)} aria-label="Close">
+              <XIcon size={18} />
+            </button>
+          </div>
+          <img className="image-lightbox-img" src={url} alt={label} />
+          <div className="image-lightbox-actions">
+            <a className="image-lightbox-download" href={url} download={label}>
+              <Download size={14} /> Download
+            </a>
+          </div>
+        </Popup>
+      </>
+    );
+  }
+
+  // Plays inline, right in the bubble, via the browser's native <audio>
+  // control - not by navigating to the raw file (which handed the whole tab
+  // over to the browser's own full-page media viewer instead of playing in
+  // the chat).
+  if (url && isAudioAttachment(attachment)) {
+    return (
+      <div key={key} className="message-audio-attachment">
+        <audio controls preload="none" src={url}>
+          <a href={url} download={label}>{label}</a>
+        </audio>
+        <span className="message-audio-label">{label}</span>
+      </div>
     );
   }
 

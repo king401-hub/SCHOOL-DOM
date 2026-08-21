@@ -10114,6 +10114,131 @@ body[data-theme="dark"] .chat-groups-student-picker { border-color: rgba(255,255
   white-space: nowrap;
 }
 
+/* .message-image-attachment used to be an <a>, which has no default button
+   chrome to fight - now it's a <button> (so clicking opens the lightbox
+   instead of navigating), so its own UA background/border/font need
+   resetting the same way the anchor never had to be. */
+button.message-image-attachment {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.image-lightbox-card {
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 2rem);
+  background: #0b1120;
+  border-color: #1e293b;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.image-lightbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #1e293b;
+  flex: 0 0 auto;
+}
+
+.image-lightbox-title {
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lightbox-close {
+  flex: 0 0 auto;
+  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.image-lightbox-close:hover { background: rgba(255, 255, 255, 0.16); }
+
+.image-lightbox-img {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 640px);
+  object-fit: contain;
+  background: #000;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.image-lightbox-actions {
+  flex: 0 0 auto;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.image-lightbox-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+  padding: 0.55rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.image-lightbox-download:hover { background: #1d4ed8; }
+
+.message-audio-attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 100%;
+}
+
+.message-audio-attachment audio {
+  height: 36px;
+  max-width: 260px;
+}
+
+.message-audio-label {
+  font-size: 0.68rem;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+/* Bubble background isn't reliably inherited (chat-bubble-text sets its own
+   color per in/out/theme rather than the bubble itself) - match those same
+   rules here instead of trusting inheritance. */
+.chat-bubble.in .message-audio-label { color: #64748b; }
+body[data-theme="dark"] .chat-bubble.in .message-audio-label { color: #94a3b8; }
+.chat-bubble.out .message-audio-label { color: rgba(255, 255, 255, 0.75); }
+
 .message-attachment-list.pending span {
   border-color: #fed7aa;
   background: #fff7ed;
