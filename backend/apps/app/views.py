@@ -1,5 +1,6 @@
 from pathlib import Path
 from urllib.parse import urlsplit
+import re
 import subprocess
 
 from django.conf import settings
@@ -36,6 +37,22 @@ def student_cbt_app_path(server_url):
     return Path(settings.MEDIA_ROOT) / "app" / "student-cbt" / safe_server_slug(server_url) / LEGACY_STUDENT_CBT_FILENAME
 
 
+def _version_sort_key(path):
+    """Numeric sort key from a "-1.2.10-" style version segment in a filename, so
+    "...-0.2.10-Setup.exe" correctly sorts after "...-0.2.9-Setup.exe" instead of
+    before it - glob() combined with plain string sorted(..., reverse=True) picks
+    "9" > "10" lexicographically once any version component reaches two digits,
+    which silently served a stale installer once release numbers passed 0.2.9."""
+    match = re.search(r"-(\d+(?:\.\d+)*)-", path.name)
+    if not match:
+        return (-1,)
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def _sorted_by_version(paths):
+    return sorted(paths, key=_version_sort_key, reverse=True)
+
+
 def offline_cbt_installer_candidates():
     release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-client" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
@@ -44,8 +61,8 @@ def offline_cbt_installer_candidates():
         media_dir / "SchoolDom-CBT-Client-Setup.exe",
     ]
     if release_dir.exists():
-        candidates.extend(sorted(release_dir.glob("SchoolDom-CBT-Client-*-Setup.exe"), reverse=True))
-        candidates.extend(sorted(release_dir.glob("*.exe"), reverse=True))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-CBT-Client-*-Setup.exe")))
+        candidates.extend(_sorted_by_version(release_dir.glob("*.exe")))
     return candidates
 
 
@@ -61,10 +78,10 @@ def win7_cbt_installer_candidates():
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
     candidates = []
     if release_dir.exists():
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip"), reverse=True))
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe")))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip")))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe")))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip")))
     candidates.extend([
         media_dir / STUDENT_CBT_WIN7_FILENAME,
         media_dir / "SchoolDomCBT-Win7.exe",
@@ -86,8 +103,8 @@ def win7_student_cbt_installer_candidates():
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
     candidates = []
     if release_dir.exists():
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe"), reverse=True))
-        candidates.extend(sorted(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip"), reverse=True))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-Student-CBT-Win7-*-Setup.exe")))
+        candidates.extend(_sorted_by_version(release_dir.glob("SchoolDom-Student-CBT-Win7-*.zip")))
     candidates.extend([
         media_dir / STUDENT_CBT_WIN7_CLIENT_FILENAME,
         media_dir / "SchoolDom-Student-CBT-Win7-Setup.exe",
@@ -106,14 +123,19 @@ def admin_app_installer_candidates():
     win7_release_dir = Path(settings.BASE_DIR) / "schooldom-cbt-win7" / "release"
     media_dir = Path(settings.MEDIA_ROOT) / "app" / "admin"
     win7_media_dir = Path(settings.MEDIA_ROOT) / "app" / "student-cbt"
-    candidates = [
+    # The versioned release-folder build always wins over the static media/ fallback
+    # names below - those aren't updated by build-release.ps1, so listing them first
+    # meant a new release build in schooldom-cbt-win7/release/ was silently ignored
+    # for downloads/in-app updates as long as an old file still sat at the static path.
+    candidates = []
+    if win7_release_dir.exists():
+        candidates.extend(_sorted_by_version(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe")))
+        candidates.extend(_sorted_by_version(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip")))
+    candidates.extend([
         media_dir / ADMIN_APP_FILENAME,
         win7_media_dir / STUDENT_CBT_WIN7_FILENAME,
         win7_media_dir / "SchoolDom-Admin-Sync-Win7-Setup.exe",
-    ]
-    if win7_release_dir.exists():
-        candidates.extend(sorted(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*-Setup.exe"), reverse=True))
-        candidates.extend(sorted(win7_release_dir.glob("SchoolDom-Admin-Sync-Win7-*.zip"), reverse=True))
+    ])
     return candidates
 
 
