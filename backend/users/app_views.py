@@ -6620,6 +6620,91 @@ def id_card_scan_attendance(request):
     )
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def scanner_attendance_history(request):
+    """Attendance history for the SchoolDom Scanner app's History page.
+
+    Deliberately separate from student_attendance_list, which is gated to
+    Non-K12 schools only for its own unrelated QR-list feature - this one
+    backs "Scan Student" (id_card_scan_attendance), which works at every
+    school type, so its history view needs to as well. Scoped the same way
+    id_card_scan_attendance itself scopes a scan: the whole school for
+    admins, only assigned classes for a teacher at a K12 school.
+    """
+    user = request.user
+    if user.role not in {"teacher", *ADMIN_ROLES}:
+        return Response(
+            {"success": False, "message": "Only teachers and school administrators can view attendance history."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    school = _resolve_school_tenant_for_user(user)
+    if not school:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    date_raw = str(request.query_params.get("date") or "").strip()
+    attendance_date = parse_date(date_raw) if date_raw else timezone.localdate()
+    if not attendance_date:
+        return Response({"success": False, "message": "Attendance date is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+
+    class_options_qs = _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")
+    teacher_scoped = user.role == "teacher" and not _is_non_k12_school(user)
+    if teacher_scoped:
+        class_options_qs = class_options_qs.filter(id__in=_teacher_assigned_classes(user).values_list("id", flat=True))
+
+    records_qs = AttendanceRecord.objects.select_related("student", "class_group", "noted_by").filter(
+        student__tenant=school, date=attendance_date,
+    )
+    if teacher_scoped:
+        records_qs = records_qs.filter(class_group_id__in=class_options_qs.values_list("id", flat=True))
+
+    class_id = str(request.query_params.get("class_id") or "").strip()
+    if class_id:
+        records_qs = records_qs.filter(class_group_id=class_id)
+
+    records = list(records_qs.order_by("-updated_at", "student__first_name", "student__last_name")[:500])
+
+    def _student_code(student_user):
+        try:
+            return student_user.student_profile.student_id
+        except Exception:
+            return ""
+
+    return Response(
+        {
+            "success": True,
+            "date": attendance_date,
+            "total_present": sum(1 for item in records if item.status in {"present", "late"}),
+            "total_on_site": sum(
+                1 for item in records if item.clock_in_at is not None and item.clock_out_at is None
+            ),
+            "total_clocked_out": sum(1 for item in records if item.clock_out_at is not None),
+            "class_options": [
+                {"id": item.id, "name": item.name, "section": item.section or "", "label": _class_label(item)}
+                for item in class_options_qs
+            ],
+            "records": [
+                {
+                    "id": item.id,
+                    "student_id": str(item.student_id),
+                    "student_name": item.student.get_full_name() or item.student.email,
+                    "student_code": _student_code(item.student),
+                    "class_id": item.class_group_id,
+                    "class_name": _class_label(item.class_group) if item.class_group else "Unassigned",
+                    "date": item.date,
+                    "status": item.status,
+                    "marked_by": item.noted_by.get_full_name() if item.noted_by else "Self scan",
+                    **_attendance_clock_payload(item),
+                }
+                for item in records
+            ],
+        }
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_teacher(request):

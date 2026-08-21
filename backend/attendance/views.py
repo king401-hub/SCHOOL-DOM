@@ -22,7 +22,7 @@ from .serializers import (
 from .utils import build_teacher_scan_url
 
 
-ADMIN_ROLES = {'school_admin', 'principal', 'super_admin'}
+ADMIN_ROLES = {'school_admin', 'principal', 'super_admin', 'school_superadmin'}
 ATTENDANCE_USER_ROLES = ADMIN_ROLES | {'teacher', 'staff'}
 
 
@@ -33,11 +33,12 @@ def is_attendance_admin(user):
 def can_mark_attendance(user):
     if not (user and user.is_authenticated):
         return False
-    tenant = getattr(user, 'tenant', None)
-    if tenant and (getattr(tenant, 'school_type', 'k12') or 'k12') == 'non_k12':
-        # Non-K12 schools don't use staff QR clock-in at all — students mark
-        # their own attendance instead (see users.app_views.student_qr_mark_attendance).
-        return False
+    # Note: staff/teacher/admin self check-in via the shared gate QR is enabled
+    # at every school (including Non-K12), where SchoolDom Scanner's "Scan My
+    # Attendance" action for admins/teachers relies on this. Non-K12 students
+    # additionally get their own self-scan path (see
+    # users.app_views.student_qr_mark_attendance) - the two are independent,
+    # not mutually exclusive.
     if user.role in ATTENDANCE_USER_ROLES:
         return True
     try:
@@ -53,9 +54,6 @@ def can_mark_attendance(user):
 
 
 def staff_attendance_unavailable_message(user, action):
-    tenant = getattr(user, 'tenant', None)
-    if tenant and (getattr(tenant, 'school_type', 'k12') or 'k12') == 'non_k12':
-        return f'Staff QR attendance is not used at Non-K12 schools, so you cannot {action}. Students mark their own attendance.'
     return f'Only staff, teachers, and admins can {action}.'
 
 

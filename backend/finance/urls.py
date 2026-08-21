@@ -88,6 +88,7 @@ urlpatterns = [
     # EXISTING ADMIN ENDPOINTS
     # ============================================================
     path("admin/overview/", views.admin_overview, name="admin_overview"),
+    path("admin/transactions/", views.admin_finance_transactions, name="admin_finance_transactions"),
     path("admin/payment-account/", views.admin_payment_account, name="admin_payment_account"),
     path("admin/kuda-virtual-account/", views.admin_kuda_virtual_account, name="admin_kuda_virtual_account"),
     path("admin/class-fees/", views.admin_class_fee_create, name="admin_class_fee_create"),

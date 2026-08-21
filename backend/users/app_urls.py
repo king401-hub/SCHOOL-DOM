@@ -86,6 +86,7 @@ urlpatterns = [
     path("push/subscribe/", app_views.push_subscribe, name="app_push_subscribe"),
     path("push/unsubscribe/", app_views.push_unsubscribe, name="app_push_unsubscribe"),
     path("attendance/mark/", app_views.mark_attendance, name="app_mark_attendance"),
+    path("attendance/scanner-history/", app_views.scanner_attendance_history, name="app_scanner_attendance_history"),
     path("attendance/student-qr-mark/", app_views.student_qr_mark_attendance, name="app_student_qr_mark_attendance"),
     path("attendance/students/", app_views.student_attendance_list, name="app_student_attendance_list"),
     path("attendance/class-students/", app_views.teacher_class_students, name="app_teacher_class_students"),

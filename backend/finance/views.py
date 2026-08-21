@@ -1040,6 +1040,40 @@ def admin_overview(request):
     )
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_finance_transactions(request):
+    """Lightweight recent-transactions feed for the mobile Finance section.
+
+    Deliberately separate from admin_overview (which computes a large
+    finance snapshot with fee rows, ledger logs, activation credits, etc.)
+    so this can be polled frequently for a "live" feed without the extra cost.
+    """
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        limit = max(1, min(int(request.query_params.get("limit") or 50), 100))
+    except (TypeError, ValueError):
+        limit = 50
+
+    transactions = Transaction.objects.filter(
+        Q(admin_wallet__tenant=user.tenant)
+        | Q(tx_type=Transaction.SPLIT_PAYMENT, school_id=user.tenant_id)
+    ).order_by("-created_at")[:limit]
+
+    return Response(
+        {
+            "success": True,
+            "transactions": TransactionSerializer(transactions, many=True).data,
+            "server_time": timezone.now(),
+        }
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def admin_payment_account(request):
