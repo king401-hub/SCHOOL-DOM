@@ -25,6 +25,8 @@ namespace SchoolDom.Cbt.Win7
         // Returns false → exit (installer started or user hit "Exit Application").
         private static bool CheckForUpdateAndMaybeLaunch()
         {
+            var store = new LocalStore();
+
             // Skip the network check when the snooze period is still active
             if (UpdateService.IsUpdateSnoozed())
                 return true;
@@ -33,7 +35,7 @@ namespace SchoolDom.Cbt.Win7
             try
             {
                 // Read cloud URL from stored state so we hit the right server
-                var cloudUrl = new LocalStore().State.CloudUrl ?? "https://schooldom.academy";
+                var cloudUrl = store.State.CloudUrl ?? "https://schooldom.academy";
                 info = UpdateService.CheckForUpdate(cloudUrl);
             }
             catch
@@ -44,7 +46,39 @@ namespace SchoolDom.Cbt.Win7
 
             var currentVersion = Application.ProductVersion; // e.g. "0.1.0.0"
             if (info == null || !info.IsNewerThan(currentVersion))
+            {
+                // Running a build that's caught up (or ahead) - clear any earlier stuck-loop
+                // tracking, since whatever update was pending has now clearly taken effect.
+                if (store.State.LastUpdateAttemptFromVersion != null || store.State.LastUpdateAttemptToVersion != null)
+                {
+                    store.State.LastUpdateAttemptFromVersion = null;
+                    store.State.LastUpdateAttemptToVersion = null;
+                    store.Save();
+                }
                 return true; // already up to date
+            }
+
+            // Same outdated version we already tried to silently install last launch, for
+            // the same target - the install evidently didn't take (see the comment on
+            // LaunchAndExit's /LOG flag). Repeating the exact same silent attempt would just
+            // loop forever with no visible reason why, so tell the admin plainly instead.
+            var previousAttemptStuck =
+                string.Equals(store.State.LastUpdateAttemptFromVersion, currentVersion, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(store.State.LastUpdateAttemptToVersion, info.LatestVersion, StringComparison.OrdinalIgnoreCase);
+            if (previousAttemptStuck)
+            {
+                MessageBox.Show(
+                    "SchoolDom tried to update to v" + info.LatestVersion + " last time this app opened, but it's " +
+                    "still running v" + currentVersion + " - the silent install likely didn't complete (a common " +
+                    "cause is antivirus briefly locking the app file during the update).\n\n" +
+                    "Close this app completely (check Task Manager for SchoolDom.Cbt.Win7.exe), then download and " +
+                    "run the installer yourself from schooldom.academy instead of using the in-app update button.\n\n" +
+                    "A log from the last attempt may be at:\n" +
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SchoolDomUpdate", "install.log"),
+                    "Update Did Not Complete",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
 
             var form   = new UpdateForm(currentVersion, info);
             var result = form.ShowDialog();
@@ -52,7 +86,15 @@ namespace SchoolDom.Cbt.Win7
             // OK  → installer launched; we must exit
             // Abort → user clicked "Exit Application"
             if (result == DialogResult.OK || result == DialogResult.Abort)
+            {
+                if (result == DialogResult.OK)
+                {
+                    store.State.LastUpdateAttemptFromVersion = currentVersion;
+                    store.State.LastUpdateAttemptToVersion = info.LatestVersion;
+                    store.Save();
+                }
                 return false;
+            }
 
             // Cancel (Remind Me Later) or form closed → proceed to MainForm
             return true;

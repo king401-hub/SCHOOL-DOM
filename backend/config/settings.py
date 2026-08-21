@@ -424,7 +424,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3809150),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3809488),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)

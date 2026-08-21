@@ -304,9 +304,17 @@ namespace SchoolDom.Cbt.Win7
         {
             try
             {
+                // /VERYSILENT suppresses every dialog Inno Setup would otherwise show,
+                // including a failure to overwrite the running exe (e.g. antivirus still
+                // holding a file lock a beat after this process asked to close) - without
+                // /LOG that kind of failure is invisible: the postinstall [Run] entry still
+                // relaunches whatever ends up at {app}, which if the copy silently failed is
+                // just the unchanged old exe, so this same update prompt reappears forever
+                // with no visible error anywhere. The log gives something to check instead.
+                var logPath = Path.Combine(Path.GetTempPath(), "SchoolDomUpdate", "install.log");
                 Process.Start(new ProcessStartInfo(installerPath)
                 {
-                    Arguments      = "/VERYSILENT /NORESTART /CLOSEAPPLICATIONS",
+                    Arguments      = "/VERYSILENT /NORESTART /CLOSEAPPLICATIONS /LOG=\"" + logPath + "\"",
                     UseShellExecute = true,
                 });
             }

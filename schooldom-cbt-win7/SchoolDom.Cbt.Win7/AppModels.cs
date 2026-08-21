@@ -42,6 +42,15 @@ namespace SchoolDom.Cbt.Win7
         // run to it), and that choice is remembered across restarts.
         public string PreferredNetworkInterface { get; set; }
 
+        // Set right before the auto-updater launches a silent installer, cleared once a
+        // launch shows the app is actually running a newer build. If a later launch finds
+        // BOTH still equal to that same (still-outdated) currentVersion/latestVersion pair,
+        // the previous silent install evidently didn't take effect (a common failure mode:
+        // /VERYSILENT swallows the error if antivirus/Windows hadn't released the file lock
+        // on the running exe yet) - see Program.cs.
+        public string LastUpdateAttemptFromVersion { get; set; }
+        public string LastUpdateAttemptToVersion { get; set; }
+
         public AppState()
         {
             DeviceId = "device_" + Guid.NewGuid().ToString("N");
