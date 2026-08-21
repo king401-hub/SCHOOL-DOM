@@ -10,6 +10,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
+from django.core import signing
+from django.core.signing import BadSignature, SignatureExpired
 from django.core.mail import get_connection, send_mail
 from django.template.loader import render_to_string
 from django.conf import settings
@@ -40,6 +42,27 @@ PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5
 # Accounts that never require login/signup OTP, regardless of role.
 ADMIN_OTP_EXEMPT_EMAILS = {"ayobamisolomon004@gmail.com", "autovendor1@gmail.com"}
 logger = logging.getLogger(__name__)
+
+# "First login only" admin OTP: after an admin completes OTP once on a given
+# device, that device gets a signed trust token (not tied to any DB row - the
+# signature itself is the proof) it can present on future logins to skip OTP.
+# A new device (no token, or one for a different account) still gets OTP.
+DEVICE_TRUST_SALT = "schooldom.admin-otp.device-trust"
+DEVICE_TRUST_MAX_AGE = 60 * 60 * 24 * 365 * 5  # 5 years - effectively "remember this device"
+
+
+def issue_device_trust_token(user):
+    return signing.dumps({"user_id": str(user.id)}, salt=DEVICE_TRUST_SALT, compress=True)
+
+
+def device_trust_token_valid(token, user):
+    if not token:
+        return False
+    try:
+        payload = signing.loads(token, salt=DEVICE_TRUST_SALT, max_age=DEVICE_TRUST_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return False
+    return str(payload.get("user_id") or "") == str(user.id)
 
 
 class AuthRateThrottle(AnonRateThrottle):
@@ -667,7 +690,8 @@ def login_view(request):
             user.save(update_fields=['device_tokens'])
         
         cbt_desktop_client = request.META.get('HTTP_USER_AGENT', '').startswith('SchoolDom-CBT-Win7')
-        if is_admin_otp_user(user) and not cbt_desktop_client:
+        device_trusted = device_trust_token_valid(request.data.get('device_trust_token'), user)
+        if is_admin_otp_user(user) and not cbt_desktop_client and not device_trusted:
             purpose = "login" if user.is_verified else "signup"
             try:
                 challenge = send_admin_otp(user, purpose=purpose)
@@ -715,9 +739,10 @@ def login_view(request):
             'school': auth_school_payload(user),
             'school_group': auth_school_group_payload(user),
             'redirect_url': admin_redirect_url(user),
+            'device_trust_token': issue_device_trust_token(user) if is_admin_otp_user(user) else None,
             **tokens
         })
-    
+
     return Response({
         'success': False,
         'errors': serializer.errors
@@ -920,6 +945,7 @@ def admin_verify_otp(request):
         'school': auth_school_payload(user),
         'school_group': auth_school_group_payload(user),
         'redirect_url': admin_redirect_url(user),
+        'device_trust_token': issue_device_trust_token(user),
         **tokens
     })
 

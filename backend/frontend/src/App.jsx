@@ -18,7 +18,7 @@ import TermsConditionsPage from "./TermsConditionsPage";
 import PricingPage from "./PricingPage";
 import AiChatWidget from "./AiChatWidget";
 import AccentPickerWidget from "./AccentPickerWidget";
-import { AttendanceModule, IdCardAttendanceScanner, StudentQrAttendanceScanner, TeacherQRCodeAttendancePage } from "./components/Attendance";
+import { AttendanceModule, IdCardAttendanceScanner, ScannerAppDownloadBanner, StudentQrAttendanceScanner, TeacherQRCodeAttendancePage } from "./components/Attendance";
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
@@ -1505,6 +1505,7 @@ function StudentAttendancePage({ session, onNavigate, themePreference, onThemeCh
     <StudentPageShell session={session} student={data?.student} currentPath="/attendance" onNavigate={onNavigate}
       themePreference={themePreference} onThemeChange={onThemeChange}
       pageKicker="Attendance" pageTitle="Attendance">
+      <ScannerAppDownloadBanner />
       <ScreenState loading={loading && !data} error={error} onRetry={loadAttendance} />
       {data ? (
         nonK12School ? (
@@ -5525,6 +5526,7 @@ function TeacherWorkspace({
     if (activeTab === "attendance") {
       return (
         <section className="screen-grid">
+          <ScannerAppDownloadBanner />
           <TeacherSwipeAttendancePanel session={session} classOptions={classOptions} />
           <IdCardAttendanceScanner session={session} />
         </section>

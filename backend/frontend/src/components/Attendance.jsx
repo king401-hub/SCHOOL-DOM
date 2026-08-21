@@ -1116,6 +1116,65 @@ export function TeacherQRCodeAttendancePage({ session, token, onNavigate }) {
   );
 }
 
+/** Shown on every role's Attendance page (admin, teacher, and student -
+ * including Non-K12 students) so anyone who marks or reviews attendance
+ * knows the SchoolDom Scanner Android app exists. Served from the existing
+ * app_apk_path()/download_android_apk mechanism at /app/download/apk/. */
+export function ScannerAppDownloadBanner() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: "16px 18px",
+        borderRadius: 14,
+        background: "var(--student-surface, #f7f9fd)",
+        border: "1px solid var(--student-border, #dfe6f3)",
+        marginBottom: 16,
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          background: "var(--student-accent, linear-gradient(150deg, #2563eb, #1d4ed8))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 20,
+          flexShrink: 0,
+        }}
+      >
+        📱
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <strong style={{ color: "var(--student-text-strong, #0f172a)" }}>Get the SchoolDom Scanner app</strong>
+        <p style={{ margin: "2px 0 0", color: "var(--student-text, #334155)", fontSize: 13 }}>
+          Scan ID cards and mark attendance right from your phone.
+        </p>
+      </div>
+      <a
+        href="/app/download/apk/"
+        style={{
+          flexShrink: 0,
+          padding: "9px 16px",
+          borderRadius: 10,
+          background: "#2563eb",
+          color: "#fff",
+          fontWeight: 700,
+          fontSize: 13,
+          textDecoration: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Download for Android
+      </a>
+    </div>
+  );
+}
+
 export function AttendanceModule({ session }) {
   const isAdmin = ADMIN_ROLES.has(session?.user?.role);
   const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
@@ -1167,6 +1226,7 @@ export function AttendanceModule({ session }) {
             : `Manage the shared QR code and monitor today's ${audienceLabel.toLowerCase()} check-ins in real time.`}
         </p>
       </div>
+      <ScannerAppDownloadBanner />
       <div className="segmented-control" style={{ justifyContent: "flex-start" }}>
         {tabs.map((tab) => (
           <button key={tab.id} type="button" className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
