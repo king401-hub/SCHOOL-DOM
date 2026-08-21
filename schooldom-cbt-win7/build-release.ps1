@@ -18,12 +18,23 @@ $ZipPath = Join-Path $ReleaseDir "SchoolDom-Admin-Sync-Win7-$Version.zip"
 # zip/installer file) - leaving them out of sync is what made the app keep
 # reporting an old version (and re-prompting to update forever) even after a
 # successful install.
+if ($Version -notmatch '^\d+(\.\d+){0,3}$') {
+    throw "-Version must be numeric (e.g. 0.2.12), not '$Version'."
+}
 $asmVersion = "$Version.0"
 $asmInfoPath = Join-Path $ProjectDir "Properties\AssemblyInfo.cs"
 $asmInfoContent = Get-Content $asmInfoPath -Raw
-$asmInfoContent = $asmInfoContent -replace 'AssemblyVersion\("[\d\.]+"\)', "AssemblyVersion(`"$asmVersion`")"
-$asmInfoContent = $asmInfoContent -replace 'AssemblyFileVersion\("[\d\.]+"\)', "AssemblyFileVersion(`"$asmVersion`")"
+# Matches whatever is currently inside the quotes, not just digits/dots - a regex that
+# only matched an already-numeric string would silently no-op (and this script would
+# still print "success") if a previous run ever left a bad/non-numeric value in place.
+$asmInfoContent = $asmInfoContent -replace 'AssemblyVersion\("[^"]*"\)', "AssemblyVersion(`"$asmVersion`")"
+$asmInfoContent = $asmInfoContent -replace 'AssemblyFileVersion\("[^"]*"\)', "AssemblyFileVersion(`"$asmVersion`")"
 Set-Content -Path $asmInfoPath -Value $asmInfoContent -NoNewline -Encoding UTF8
+$writtenContent = Get-Content $asmInfoPath -Raw
+if ($writtenContent -notmatch [regex]::Escape("AssemblyVersion(`"$asmVersion`")") -or
+    $writtenContent -notmatch [regex]::Escape("AssemblyFileVersion(`"$asmVersion`")")) {
+    throw "Failed to write version $asmVersion into $asmInfoPath - check its AssemblyVersion/AssemblyFileVersion lines by hand."
+}
 Write-Host "Set assembly version to $asmVersion in $asmInfoPath"
 
 # The bare v4.0.30319 MSBuild.exe (the last, always-present fallback below)
