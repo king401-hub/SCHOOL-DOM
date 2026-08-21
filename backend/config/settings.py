@@ -396,18 +396,23 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.8"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.11"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Fixed the app showing a generic Windows icon in the taskbar/title "
-        "bar instead of the SchoolDom logo\n"
-        "- All Students is now grouped by class with collapsible sections, "
-        "instead of one long flat list\n"
-        "- Carries forward 0.2.7's fixes: question/passage images synced down "
-        "and reaching students over the LAN, Add/Edit Question image "
-        "attachments, LAN server auto-start with a copyable address, and "
-        "sign-in no longer getting stuck on the login screen when syncing "
-        "fails.",
+        "- Added the SchoolDom CBT License Key system: CBT/Exam access now "
+        "requires an active license, entered as a key or unlocked by "
+        "Super Admin activation\n"
+        "- The CBT server now binds to this PC's wired Ethernet adapter by "
+        "default (never Wi-Fi silently) so student traffic can't depend on, "
+        "or leak onto, whatever Wi-Fi network the admin PC is joined to\n"
+        "- Added a \"Switch to Wi-Fi\" option on the dashboard for rooms with "
+        "no wired LAN, alongside a clear message when neither connection is "
+        "available instead of silently picking the wrong network\n"
+        "- The Admin LAN Starter card now shows the live CBT Server address "
+        "with a Copy button and warns if the network changes while running\n"
+        "- Carries forward 0.2.7-0.2.8's fixes: the SchoolDom taskbar icon, "
+        "All Students grouped by class, synced question/passage images, and "
+        "sign-in no longer getting stuck when syncing fails.",
     ),
     "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-19"),
     # Served straight from this server's own git-tracked installer folder
@@ -419,7 +424,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3805348),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3809150),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
