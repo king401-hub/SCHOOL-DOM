@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
@@ -60,12 +61,46 @@ class _ScanCameraScreenState extends State<ScanCameraScreen> {
         : null;
     if (value == null || value.isEmpty) return;
 
+    await _controller.stop();
+    await _processScan(value);
+    if (mounted) await _controller.start();
+  }
+
+  /// Lets someone scan a QR they already have as a photo (screenshot, saved
+  /// image, etc.) instead of only ever pointing the live camera at it.
+  Future<void> _pickFromGallery() async {
+    if (_busy) return;
+    await _controller.stop();
+    try {
+      final file = await ImagePicker()
+          .pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (file == null) return;
+
+      final capture = await _controller.analyzeImage(file.path);
+      final value = (capture != null && capture.barcodes.isNotEmpty)
+          ? capture.barcodes.first.rawValue
+          : null;
+      if (value == null || value.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _bannerIsError = true;
+            _banner = 'No QR code was found in that photo.';
+          });
+        }
+        return;
+      }
+      await _processScan(value);
+    } finally {
+      if (mounted) await _controller.start();
+    }
+  }
+
+  Future<void> _processScan(String value) async {
     setState(() {
       _busy = true;
       _banner = null;
     });
     final auth = context.read<AuthProvider>();
-    await _controller.stop();
 
     try {
       final result = await _handle(value, auth);
@@ -88,10 +123,7 @@ class _ScanCameraScreenState extends State<ScanCameraScreen> {
         _banner = e.toString();
       });
     } finally {
-      if (mounted) {
-        setState(() => _busy = false);
-        await _controller.start();
-      }
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -143,6 +175,11 @@ class _ScanCameraScreenState extends State<ScanCameraScreen> {
         title: Text(_title, style: const TextStyle(fontWeight: FontWeight.w900)),
         actions: [
           IconButton(
+            icon: const Icon(Icons.image_outlined),
+            tooltip: 'Upload a photo of the QR code',
+            onPressed: _pickFromGallery,
+          ),
+          IconButton(
             icon: const Icon(Icons.flash_on),
             onPressed: () => _controller.toggleTorch(),
           ),
@@ -152,7 +189,7 @@ class _ScanCameraScreenState extends State<ScanCameraScreen> {
         fit: StackFit.expand,
         children: [
           MobileScanner(controller: _controller, onDetect: _onDetect),
-          _ScanFrameOverlay(),
+          const _ScanFrameOverlay(),
           Positioned(
             left: 0,
             right: 0,
@@ -204,7 +241,14 @@ class _ScanCameraScreenState extends State<ScanCameraScreen> {
   }
 }
 
+const _kFrameSize = 260.0;
+
+/// Dims everything outside the scan area, draws corner brackets instead of a
+/// plain full rectangle border, and sweeps a glowing line up and down inside
+/// - the standard "camera scanner" look instead of a flat white box.
 class _ScanFrameOverlay extends StatefulWidget {
+  const _ScanFrameOverlay();
+
   @override
   State<_ScanFrameOverlay> createState() => _ScanFrameOverlayState();
 }
@@ -224,43 +268,133 @@ class _ScanFrameOverlayState extends State<_ScanFrameOverlay>
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 260,
-        height: 260,
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.white, width: 3),
-          borderRadius: BorderRadius.circular(20),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final left = (constraints.maxWidth - _kFrameSize) / 2;
+            final top = (constraints.maxHeight - _kFrameSize) / 2;
+            final dim = Container(color: Colors.black.withValues(alpha: 0.55));
+            return Stack(
+              children: [
+                Positioned(top: 0, left: 0, right: 0, height: top, child: dim),
+                Positioned(
+                    top: top + _kFrameSize,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: dim),
+                Positioned(top: top, left: 0, width: left, height: _kFrameSize, child: dim),
+                Positioned(
+                    top: top,
+                    right: 0,
+                    width: left,
+                    height: _kFrameSize,
+                    child: dim),
+              ],
+            );
+          },
         ),
-        clipBehavior: Clip.antiAlias,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) => Align(
-            // Sweeps the line from the top of the frame to the bottom and
-            // back (repeat(reverse:true) ping-pongs _controller.value 0->1->0).
-            alignment: Alignment(0, -1 + _controller.value * 2),
-            child: Container(
-              height: 3,
-              margin: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2),
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.primary.withValues(alpha: 0),
-                    AppColors.primary,
-                    AppColors.primary.withValues(alpha: 0),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.85),
-                    blurRadius: 10,
-                    spreadRadius: 1,
+        Center(
+          child: SizedBox(
+            width: _kFrameSize,
+            height: _kFrameSize,
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, _) => Align(
+                      // Sweeps the line from the top of the frame to the
+                      // bottom and back (repeat(reverse:true) ping-pongs
+                      // _controller.value 0->1->0).
+                      alignment: Alignment(0, -1 + _controller.value * 2),
+                      child: Container(
+                        height: 3,
+                        margin: const EdgeInsets.symmetric(horizontal: 18),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(2),
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.primary.withValues(alpha: 0),
+                              AppColors.primary,
+                              AppColors.primary.withValues(alpha: 0),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.85),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ],
-              ),
+                ),
+                _CornerBracket(top: true, left: true),
+                _CornerBracket(top: true, left: false),
+                _CornerBracket(top: false, left: true),
+                _CornerBracket(top: false, left: false),
+              ],
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CornerBracket extends StatelessWidget {
+  final bool top;
+  final bool left;
+  const _CornerBracket({required this.top, required this.left});
+
+  static const _length = 34.0;
+  static const _thickness = 5.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: top ? 0 : null,
+      bottom: top ? null : 0,
+      left: left ? 0 : null,
+      right: left ? null : 0,
+      child: SizedBox(
+        width: _length,
+        height: _length,
+        child: Stack(
+          children: [
+            Positioned(
+              top: top ? 0 : null,
+              bottom: top ? null : 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: _thickness,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(_thickness),
+                ),
+              ),
+            ),
+            Positioned(
+              left: left ? 0 : null,
+              right: left ? null : 0,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: _thickness,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(_thickness),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

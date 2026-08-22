@@ -57,6 +57,27 @@ def staff_attendance_unavailable_message(user, action):
     return f'Only staff, teachers, and admins can {action}.'
 
 
+def _apply_clock_out(attendance, location):
+    """Writes check-out fields onto an already-checked-in TeacherAttendance.
+    Shared by scan_qr_code (second same-day scan = clock out) and the
+    standalone clock_out endpoint so both paths stay in sync."""
+    attendance.check_out_time = timezone.now()
+    attendance.check_out_latitude = location['latitude']
+    attendance.check_out_longitude = location['longitude']
+    attendance.check_out_accuracy_meters = location['accuracy']
+    attendance.check_out_address = location['address']
+    if location['device_info']:
+        attendance.client_device_info = location['device_info']
+    attendance.save(update_fields=[
+        'check_out_time',
+        'check_out_latitude',
+        'check_out_longitude',
+        'check_out_accuracy_meters',
+        'check_out_address',
+        'client_device_info',
+    ])
+
+
 def attendance_role_label(user):
     if user.role == 'teacher':
         return 'teacher'
@@ -373,18 +394,36 @@ def scan_qr_code(request, token):
             )
 
         if not created:
+            if attendance.check_out_time:
+                serializer = TeacherAttendanceSerializer(attendance)
+                return Response(
+                    {
+                        'success': True,
+                        'message': 'You have already clocked out today.',
+                        'checked_in': True,
+                        'checked_out': True,
+                        'data': serializer.data,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            # Scanning the same gate QR again after checking in is how staff
+            # clock out - there's no separate "clock out" scan mode in the app,
+            # so this second scan does double duty instead of just repeating
+            # "already clocked in" with no way to act on it.
+            _apply_clock_out(attendance, location)
             serializer = TeacherAttendanceSerializer(attendance)
             return Response(
                 {
                     'success': True,
-                    'message': 'You have already clocked in today.',
+                    'message': f'Clock-out recorded at {timezone.localtime(attendance.check_out_time).strftime("%H:%M:%S")}',
                     'checked_in': True,
-                    'checked_out': bool(attendance.check_out_time),
+                    'checked_out': True,
                     'data': serializer.data,
                 },
                 status=status.HTTP_200_OK,
             )
-        
+
         serializer = TeacherAttendanceSerializer(attendance)
         return Response({
             'success': True,
@@ -505,21 +544,7 @@ def clock_out(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    attendance.check_out_time = timezone.now()
-    attendance.check_out_latitude = location['latitude']
-    attendance.check_out_longitude = location['longitude']
-    attendance.check_out_accuracy_meters = location['accuracy']
-    attendance.check_out_address = location['address']
-    if location['device_info']:
-        attendance.client_device_info = location['device_info']
-    attendance.save(update_fields=[
-        'check_out_time',
-        'check_out_latitude',
-        'check_out_longitude',
-        'check_out_accuracy_meters',
-        'check_out_address',
-        'client_device_info',
-    ])
+    _apply_clock_out(attendance, location)
     serializer = TeacherAttendanceSerializer(attendance)
     return Response({
         'success': True,
