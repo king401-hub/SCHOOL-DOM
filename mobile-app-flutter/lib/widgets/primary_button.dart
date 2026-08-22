@@ -8,6 +8,7 @@ class PrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool loading;
   final ButtonTone tone;
+  final IconData? icon;
 
   const PrimaryButton({
     super.key,
@@ -15,6 +16,7 @@ class PrimaryButton extends StatelessWidget {
     this.onPressed,
     this.loading = false,
     this.tone = ButtonTone.primary,
+    this.icon,
   });
 
   @override
@@ -52,11 +54,24 @@ class PrimaryButton extends StatelessWidget {
                   color: Colors.white,
                 ),
               )
-            : Text(
-                title,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 15),
-              ),
+            : icon == null
+                ? Text(
+                    title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15),
+                      ),
+                    ],
+                  ),
       ),
     );
   }

@@ -8,11 +8,13 @@ enum AuthStatus { booting, unauthenticated, locked, authenticated }
 class AuthProvider extends ChangeNotifier {
   Map<String, dynamic>? _session;
   AuthStatus _status = AuthStatus.booting;
+  bool _biometricEnabled = false;
 
   Map<String, dynamic>? get session => _session;
   AuthStatus get status => _status;
 
   String? get role => _session?['user']?['role'] as String?;
+  String? get email => _session?['user']?['email'] as String?;
   String? get displayName =>
       (_session?['user']?['full_name'] ??
           _session?['user']?['email']) as String?;
@@ -24,10 +26,26 @@ class AuthProvider extends ChangeNotifier {
           _session?['user']?['tenant_id'] ??
           _session?['user']?['email']) as String?;
 
+  // Mirrors backend ADMIN_ROLES (users/app_views.py + attendance/views.py).
+  static const _adminRoles = {
+    'school_admin',
+    'principal',
+    'super_admin',
+    'school_superadmin',
+  };
+  bool get isAdmin => _adminRoles.contains(role);
+  bool get isTeacher => role == 'teacher';
+  // SchoolDom Scanner: admins and teachers can scan students; everyone else
+  // (e.g. a Non-K12 student) may only scan their own attendance.
+  bool get canScanOthers => isAdmin || isTeacher;
+  bool get isNonK12School =>
+      (_session?['school']?['school_type'] as String?) == 'non_k12';
+
   Future<void> boot() async {
     final stored = await getSession();
     final bio = await isBiometricEnabled();
     _session = stored;
+    _biometricEnabled = bio;
     _status = stored == null
         ? AuthStatus.unauthenticated
         : bio
@@ -36,9 +54,20 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called whenever the app is backgrounded (see WidgetsBindingObserver in
+  /// main.dart). Without this, biometric lock only ever applied once, at
+  /// cold boot - leaving the app fully unlocked forever if it was just
+  /// backgrounded and resumed rather than fully closed and reopened.
+  void lockIfEnabled() {
+    if (_biometricEnabled && _status == AuthStatus.authenticated) {
+      _status = AuthStatus.locked;
+      notifyListeners();
+    }
+  }
+
   Future<Map<String, dynamic>> signIn(Map<String, String> credentials) async {
     final result = await login(credentials);
-    if (result['requiresOtp'] == true) return result;
+    if (result['requires_otp'] == true) return result;
     await saveSession(result);
     _session = result;
     _status = AuthStatus.authenticated;
@@ -46,8 +75,11 @@ class AuthProvider extends ChangeNotifier {
     return result;
   }
 
-  Future<void> completeOtp(Map<String, String> payload) async {
-    final result = await verifyOtp(payload);
+  /// `otpChallenge` is the login() response that carried requires_otp - it
+  /// already has the email/challenge verifyOtp needs, so only the code the
+  /// admin typed has to be passed in separately.
+  Future<void> completeOtp(Map<String, dynamic> otpChallenge, String code) async {
+    final result = await verifyOtp(otpChallenge, code: code);
     await saveSession(result);
     _session = result;
     _status = AuthStatus.authenticated;
@@ -69,6 +101,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> enableBiometrics(bool enabled) async {
     await setBiometricEnabled(enabled);
+    _biometricEnabled = enabled;
   }
 
   Future<void> signOut() async {

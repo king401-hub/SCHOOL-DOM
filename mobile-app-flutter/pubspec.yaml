@@ -1,5 +1,5 @@
 name: schooldom_app
-description: SchoolDom mobile workspace for students, teachers, and staff.
+description: SchoolDom Scanner - role-based attendance scanning for admins, teachers, and students.
 publish_to: none
 version: 1.0.0+1
 
@@ -35,7 +35,10 @@ dependencies:
 
   # Camera and file picker (Settings)
   image_picker: ^1.1.2
-  file_picker: ^8.1.7
+  file_picker: ^11.0.3
+
+  # QR / barcode camera scanner (SchoolDom Scanner attendance flows)
+  mobile_scanner: ^7.0.1
 
 dev_dependencies:
   flutter_test:

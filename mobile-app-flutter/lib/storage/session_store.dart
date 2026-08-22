@@ -3,6 +3,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const _kSession = 'schooldom_session';
 const _kBiometric = 'schooldom_biometric';
+// Deliberately a separate key from _kSession: this must survive sign-out
+// (clearSession only removes _kSession) so an admin's device stays
+// "remembered" - and OTP-exempt - across future sign-ins, not just within
+// one session.
+const _kDeviceTrust = 'schooldom_device_trust';
 
 const _storage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -32,4 +37,10 @@ Future<bool> isBiometricEnabled() async {
 
 Future<void> setBiometricEnabled(bool enabled) async {
   await _storage.write(key: _kBiometric, value: enabled ? 'true' : 'false');
+}
+
+Future<String?> getDeviceTrustToken() => _storage.read(key: _kDeviceTrust);
+
+Future<void> saveDeviceTrustToken(String token) async {
+  await _storage.write(key: _kDeviceTrust, value: token);
 }

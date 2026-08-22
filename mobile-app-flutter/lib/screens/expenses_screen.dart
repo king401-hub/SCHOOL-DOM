@@ -149,7 +149,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return RefreshableScreen(
       onRefresh: _load,
       children: [
-        const Text(
+        Text(
           'Expenses',
           style: TextStyle(
               color: AppColors.text,

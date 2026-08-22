@@ -38,7 +38,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return RefreshableScreen(
       onRefresh: _load,
       children: [
-        const Text(
+        Text(
           'Messages',
           style: TextStyle(
               color: AppColors.text,
@@ -48,7 +48,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         if (_error != null)
           Text(_error!, style: const TextStyle(color: AppColors.danger)),
         if (_messages.isEmpty && _error == null)
-          const Text('No messages yet.',
+          Text('No messages yet.',
               style: TextStyle(color: AppColors.muted)),
         for (final msg in _messages) _MessageCard(msg: msg as Map<String, dynamic>),
       ],

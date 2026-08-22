@@ -6,6 +6,7 @@ import '../storage/offline_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_screen.dart';
+import 'notifications_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -70,7 +71,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 6),
             Text(
               'Welcome, ${auth.displayName ?? 'User'}',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.text,
                 fontSize: 26,
                 fontWeight: FontWeight.w900,
@@ -79,7 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 4),
             Text(
               '${auth.role ?? 'User'} workspace synced with SchoolDom.',
-              style: const TextStyle(color: AppColors.muted),
+              style: TextStyle(color: AppColors.muted),
             ),
           ],
         ),
@@ -102,6 +103,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               label: 'Notifications',
               value:
                   (metrics['unread_notifications'] ?? 0).toString(),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const NotificationsScreen()),
+              ),
             ),
             _MetricCard(
               label: 'Students',
@@ -127,11 +132,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 class _MetricCard extends StatelessWidget {
   final String label;
   final String value;
-  const _MetricCard({required this.label, required this.value});
+  final VoidCallback? onTap;
+  const _MetricCard({required this.label, required this.value, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    final card = AppCard(
       children: [
         Text(label,
             style: const TextStyle(
@@ -143,5 +149,7 @@ class _MetricCard extends StatelessWidget {
                 fontWeight: FontWeight.w900)),
       ],
     );
+    if (onTap == null) return card;
+    return GestureDetector(onTap: onTap, child: card);
   }
 }

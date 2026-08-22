@@ -2,18 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'auth/auth_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/lock_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/attendance_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/exams_screen.dart';
 import 'screens/results_screen.dart';
 import 'screens/expenses_screen.dart';
+import 'screens/finance_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/scanner_dashboard_screen.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+// Roles allowed to manage school finances - mirrors backend FINANCE_ROLES
+// (users/... ADMIN_ROLES | {"accountant"}) used to gate finance.admin_overview
+// and finance.admin_finance_transactions.
+const _financeRoles = {
+  'school_admin',
+  'principal',
+  'super_admin',
+  'school_superadmin',
+  'accountant',
+};
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ThemeController.instance.loadPersisted();
   runApp(
     ChangeNotifierProvider(
       create: (_) => AuthProvider()..boot(),
@@ -22,13 +35,48 @@ void main() {
   );
 }
 
-class SchoolDomApp extends StatelessWidget {
+class SchoolDomApp extends StatefulWidget {
   const SchoolDomApp({super.key});
+
+  @override
+  State<SchoolDomApp> createState() => _SchoolDomAppState();
+}
+
+class _SchoolDomAppState extends State<SchoolDomApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // AppColors reads ThemeController.instance directly rather than through
+    // Theme.of(context) (see theme/app_theme.dart), so this is what actually
+    // makes the Settings light/dark toggle repaint the app live.
+    ThemeController.instance.addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ThemeController.instance.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _onThemeChanged() => setState(() {});
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-lock the moment the app leaves the foreground (switched away from,
+    // phone locked, etc.) rather than only ever checking once at cold boot -
+    // otherwise biometric lock never actually re-engages for an app that's
+    // merely backgrounded, only one that's fully closed and relaunched.
+    if (state == AppLifecycleState.paused) {
+      context.read<AuthProvider>().lockIfEnabled();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SchoolDom',
+      title: 'SchoolDom Scanner',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: const _Root(),
@@ -43,15 +91,23 @@ class _Root extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     return switch (auth.status) {
-      AuthStatus.booting => const Scaffold(
+      AuthStatus.booting => Scaffold(
           backgroundColor: AppColors.background,
-          body: Center(
+          body: const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           ),
         ),
+      // Both a fresh sign-in and returning to an already-signed-in device
+      // land on the same screen now - LoginScreen itself checks
+      // auth.status to decide whether to offer biometric/face unlock (with
+      // password as the fallback) or the full email/password/school-code
+      // form. LockScreen is kept below, unused, rather than deleted.
       AuthStatus.unauthenticated => const LoginScreen(),
-      AuthStatus.locked => const LockScreen(),
-      AuthStatus.authenticated => const MainShell(),
+      AuthStatus.locked => const LoginScreen(),
+      // SchoolDom Scanner: the app's home is now the scanner dashboard.
+      // MainShell (the previous multi-tab workspace) is kept below, unused,
+      // rather than deleted, in case that navigation is wanted back later.
+      AuthStatus.authenticated => const ScannerDashboardScreen(),
     };
   }
 }
@@ -66,23 +122,38 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  static const _tabs = [
+  static const _baseTabs = [
     _Tab(icon: Icons.home_outlined, label: 'Home', screen: DashboardScreen()),
     _Tab(icon: Icons.check_circle_outline, label: 'Attendance', screen: AttendanceScreen()),
     _Tab(icon: Icons.mail_outline, label: 'Messages', screen: MessagesScreen()),
     _Tab(icon: Icons.quiz_outlined, label: 'Exams', screen: ExamsScreen()),
     _Tab(icon: Icons.bar_chart, label: 'Results', screen: ResultsScreen()),
-    _Tab(icon: Icons.receipt_long_outlined, label: 'Expenses', screen: ExpensesScreen()),
-    _Tab(icon: Icons.settings_outlined, label: 'Settings', screen: SettingsScreen()),
   ];
+
+  static const _financeTabs = [
+    _Tab(icon: Icons.receipt_long_outlined, label: 'Expenses', screen: ExpensesScreen()),
+    _Tab(icon: Icons.account_balance_wallet_outlined, label: 'Finance', screen: FinanceScreen()),
+  ];
+
+  static const _settingsTab =
+      _Tab(icon: Icons.settings_outlined, label: 'Settings', screen: SettingsScreen());
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final canSeeFinance = _financeRoles.contains(auth.role);
+    final tabs = [
+      ..._baseTabs,
+      if (canSeeFinance) ..._financeTabs,
+      _settingsTab,
+    ];
+    if (_index >= tabs.length) _index = 0;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: IndexedStack(
         index: _index,
-        children: [for (final t in _tabs) t.screen],
+        children: [for (final t in tabs) t.screen],
       ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: AppColors.surface,
@@ -91,7 +162,7 @@ class _MainShellState extends State<MainShell> {
         onDestinationSelected: (i) => setState(() => _index = i),
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         destinations: [
-          for (final t in _tabs)
+          for (final t in tabs)
             NavigationDestination(
               icon: Icon(t.icon, color: AppColors.muted),
               selectedIcon: Icon(t.icon, color: AppColors.primary),

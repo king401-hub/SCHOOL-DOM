@@ -5,12 +5,14 @@ class AppCard extends StatelessWidget {
   final List<Widget> children;
   final EdgeInsets padding;
   final double borderRadius;
+  final bool elevated;
 
   const AppCard({
     super.key,
     required this.children,
     this.padding = const EdgeInsets.all(20),
     this.borderRadius = 16,
+    this.elevated = false,
   });
 
   @override
@@ -21,13 +23,26 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(borderRadius),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0C000000),
-            blurRadius: 12,
-            offset: Offset(0, 2),
-          ),
-        ],
+        boxShadow: elevated
+            ? const [
+                BoxShadow(
+                  color: Color(0x33000B26),
+                  blurRadius: 32,
+                  offset: Offset(0, 16),
+                ),
+                BoxShadow(
+                  color: Color(0x1A2563EB),
+                  blurRadius: 48,
+                  offset: Offset(0, 0),
+                ),
+              ]
+            : const [
+                BoxShadow(
+                  color: Color(0x0C000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

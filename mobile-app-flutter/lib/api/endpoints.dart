@@ -12,6 +12,14 @@ Future<Map<String, dynamic>> loadMessages() => getJson('/api/app/messages/');
 Future<Map<String, dynamic>> sendMessage(Map<String, dynamic> payload) =>
     postJson('/api/app/messages/send/', payload, queueWhenOffline: true);
 
+// Notifications are served from the same snapshot as Messages
+// (data['notifications']); kept as its own named call for readability.
+Future<Map<String, dynamic>> loadNotifications() =>
+    getJson('/api/app/messages/');
+
+Future<Map<String, dynamic>> markNotificationRead(String id) =>
+    postJson('/api/app/notifications/$id/read/', const {});
+
 Future<Map<String, dynamic>> loadExams() => getJson('/api/app/exams/');
 
 Future<Map<String, dynamic>> loadResults() => getJson('/api/app/results/my/');
@@ -30,3 +38,6 @@ Future<Map<String, dynamic>> createExpense(Map<String, dynamic> payload) =>
 
 Future<Map<String, dynamic>> deleteExpense(dynamic id) =>
     deleteJson('/api/finance/admin/expenses/$id/', queueWhenOffline: true);
+
+Future<Map<String, dynamic>> loadFinanceTransactions({int limit = 50}) =>
+    getJson('/api/finance/admin/transactions/?limit=$limit');

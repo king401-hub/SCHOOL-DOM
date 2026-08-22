@@ -47,7 +47,7 @@ class _LockScreenState extends State<LockScreen> {
               const Icon(Icons.lock_outline,
                   size: 72, color: AppColors.primary),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'SchoolDom is locked',
                 style: TextStyle(
                     color: AppColors.text,
@@ -55,7 +55,7 @@ class _LockScreenState extends State<LockScreen> {
                     fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Use biometrics or your device passcode to continue.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.muted),
@@ -69,7 +69,7 @@ class _LockScreenState extends State<LockScreen> {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => context.read<AuthProvider>().signOut(),
-                child: const Text('Sign out instead',
+                child: Text('Sign out instead',
                     style: TextStyle(color: AppColors.muted)),
               ),
             ],

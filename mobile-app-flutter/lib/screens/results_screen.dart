@@ -37,7 +37,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
     return RefreshableScreen(
       onRefresh: _load,
       children: [
-        const Text(
+        Text(
           'Results',
           style: TextStyle(
               color: AppColors.text,
@@ -47,7 +47,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
         if (_error != null)
           Text(_error!, style: const TextStyle(color: AppColors.danger)),
         if (_results.isEmpty && _error == null)
-          const Text('No results found.',
+          Text('No results found.',
               style: TextStyle(color: AppColors.muted)),
         for (final item in _results)
           AppCard(

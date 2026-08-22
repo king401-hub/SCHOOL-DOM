@@ -36,7 +36,7 @@ class _ExamsScreenState extends State<ExamsScreen> {
     return RefreshableScreen(
       onRefresh: _load,
       children: [
-        const Text(
+        Text(
           'Exams',
           style: TextStyle(
               color: AppColors.text,
@@ -46,7 +46,7 @@ class _ExamsScreenState extends State<ExamsScreen> {
         if (_error != null)
           Text(_error!, style: const TextStyle(color: AppColors.danger)),
         if (_items.isEmpty && _error == null)
-          const Text('No exams found.',
+          Text('No exams found.',
               style: TextStyle(color: AppColors.muted)),
         for (final item in _items)
           AppCard(

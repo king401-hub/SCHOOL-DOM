@@ -60,7 +60,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Widget build(BuildContext context) {
     return AppScreen(
       children: [
-        const Text(
+        Text(
           'Attendance',
           style: TextStyle(
               color: AppColors.text,
