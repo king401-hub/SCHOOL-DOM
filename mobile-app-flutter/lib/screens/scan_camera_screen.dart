@@ -204,7 +204,24 @@ class _ScanCameraScreenState extends State<ScanCameraScreen> {
   }
 }
 
-class _ScanFrameOverlay extends StatelessWidget {
+class _ScanFrameOverlay extends StatefulWidget {
+  @override
+  State<_ScanFrameOverlay> createState() => _ScanFrameOverlayState();
+}
+
+class _ScanFrameOverlayState extends State<_ScanFrameOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -214,6 +231,36 @@ class _ScanFrameOverlay extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border.all(color: Colors.white, width: 3),
           borderRadius: BorderRadius.circular(20),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => Align(
+            // Sweeps the line from the top of the frame to the bottom and
+            // back (repeat(reverse:true) ping-pongs _controller.value 0->1->0).
+            alignment: Alignment(0, -1 + _controller.value * 2),
+            child: Container(
+              height: 3,
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary.withValues(alpha: 0),
+                    AppColors.primary,
+                    AppColors.primary.withValues(alpha: 0),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.85),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

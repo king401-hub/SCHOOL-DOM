@@ -1,0 +1,47 @@
+name: Build unsigned iOS IPA (SchoolDom Scanner)
+
+# Produces an unsigned .ipa for the Flutter app in mobile-app-flutter/.
+# There is no Apple signing here at all - the .ipa is meant to be signed
+# on-device by a free-tier sideloading tool (Sideloadly / AltStore) using
+# the installer's own free Apple ID, since this project has no paid Apple
+# Developer account to sign with in CI.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "mobile-app-flutter/**"
+      - ".github/workflows/build-ios.yml"
+
+jobs:
+  build-unsigned-ipa:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: mobile-app-flutter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.1"
+          channel: "stable"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build unsigned iOS app
+        run: flutter build ios --release --no-codesign
+
+      - name: Package Payload/Runner.app into an .ipa
+        run: |
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r schooldom-scanner-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: schooldom-scanner-unsigned-ipa
+          path: mobile-app-flutter/build/ios/ipa/schooldom-scanner-unsigned.ipa
+          retention-days: 30

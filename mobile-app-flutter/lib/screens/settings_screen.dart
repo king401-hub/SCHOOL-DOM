@@ -8,8 +8,6 @@ import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/primary_button.dart';
 
-const _kAppVersion = '1.0.0';
-
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -318,26 +316,15 @@ class _SettingsFooter extends StatelessWidget {
         color: AppColors.surfaceSoft,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Text('Synced',
-                  style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
-            ],
-          ),
-          Text(
-            'SchoolDom Scanner · v$_kAppVersion',
-            style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-        ],
+      child: Center(
+        child: Text(
+          'Powered by Xcel Technologies',
+          style: TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2),
+        ),
       ),
     );
   }
