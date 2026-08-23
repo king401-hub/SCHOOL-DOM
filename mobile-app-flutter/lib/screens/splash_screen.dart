@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Brand intro shown once at cold start, before the login/sign-up screen -
-/// the "SD" mark scales/fades in first, then "SchoolDom Scanner" slides up
+/// the "S" drops in from above and the "D" rises in from below, meeting in
+/// the center to form the mark, then "SchoolDom Scanner" slides up
 /// underneath it. Runs for a fixed duration regardless of how quickly
 /// AuthProvider.boot() resolves (see main.dart's _Root), so the app always
 /// shows the intro rather than only when boot happens to still be running.
@@ -20,13 +21,18 @@ class _SplashScreenState extends State<SplashScreen>
     duration: const Duration(milliseconds: 1400),
   )..forward();
 
-  late final Animation<double> _logoScale = CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.0, 0.55, curve: Curves.elasticOut),
+  // "S" falls from above the mark, "D" rises from below it, both settling
+  // into place side by side - the easeOutBack curve gives them a small
+  // overshoot/bounce right as they meet in the center.
+  late final Animation<double> _sDrop = Tween<double>(begin: -220, end: 0).animate(
+    CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack)),
   );
-  late final Animation<double> _logoFade = CurvedAnimation(
+  late final Animation<double> _dRise = Tween<double>(begin: 220, end: 0).animate(
+    CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack)),
+  );
+  late final Animation<double> _lettersFade = CurvedAnimation(
     parent: _controller,
-    curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
+    curve: const Interval(0.0, 0.25, curve: Curves.easeOut),
   );
   late final Animation<Offset> _textSlide = Tween<Offset>(
     begin: const Offset(0, 0.4),
@@ -54,28 +60,52 @@ class _SplashScreenState extends State<SplashScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ScaleTransition(
-              scale: _logoScale,
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppColors.border, width: 2),
+              ),
+              clipBehavior: Clip.antiAlias,
+              alignment: Alignment.center,
               child: FadeTransition(
-                opacity: _logoFade,
-                child: Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: AppColors.border, width: 2),
-                  ),
-                  alignment: Alignment.center,
-                  child: RichText(
-                    text: const TextSpan(
-                      style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900),
-                      children: [
-                        TextSpan(text: 'S', style: TextStyle(color: Color(0xFF7DD3FC))),
-                        TextSpan(text: 'D', style: TextStyle(color: Color(0xFF4ADE80))),
-                      ],
+                opacity: _lettersFade,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _sDrop,
+                      builder: (context, child) => Transform.translate(
+                        offset: Offset(0, _sDrop.value),
+                        child: child,
+                      ),
+                      child: const Text(
+                        'S',
+                        style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF7DD3FC),
+                        ),
+                      ),
                     ),
-                  ),
+                    AnimatedBuilder(
+                      animation: _dRise,
+                      builder: (context, child) => Transform.translate(
+                        offset: Offset(0, _dRise.value),
+                        child: child,
+                      ),
+                      child: const Text(
+                        'D',
+                        style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF4ADE80),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
