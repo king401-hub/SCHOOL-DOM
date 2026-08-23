@@ -12,6 +12,9 @@ Future<Map<String, dynamic>> loadMessages() => getJson('/api/app/messages/');
 Future<Map<String, dynamic>> sendMessage(Map<String, dynamic> payload) =>
     postJson('/api/app/messages/send/', payload, queueWhenOffline: true);
 
+Future<Map<String, dynamic>> markMessageRead(String id) =>
+    postJson('/api/app/messages/$id/read/', const {});
+
 // Notifications are served from the same snapshot as Messages
 // (data['notifications']); kept as its own named call for readability.
 Future<Map<String, dynamic>> loadNotifications() =>

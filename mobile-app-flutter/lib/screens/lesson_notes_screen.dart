@@ -332,10 +332,15 @@ class _LessonPlanFormState extends State<_LessonPlanForm> {
                   Expanded(
                     child: DropdownButtonFormField<int>(
                       initialValue: _classId,
+                      style: const TextStyle(color: AppColors.textDark),
                       decoration: const InputDecoration(labelText: 'Class'),
                       items: [
                         for (final c in widget.classes)
-                          DropdownMenuItem(value: c['id'] as int, child: Text((c['label'] ?? '').toString())),
+                          DropdownMenuItem(
+                            value: c['id'] as int,
+                            child: Text((c['label'] ?? '').toString(),
+                                style: const TextStyle(color: AppColors.textDark)),
+                          ),
                       ],
                       onChanged: (v) => setState(() => _classId = v!),
                     ),
@@ -344,10 +349,15 @@ class _LessonPlanFormState extends State<_LessonPlanForm> {
                   Expanded(
                     child: DropdownButtonFormField<int>(
                       initialValue: _subjectId,
+                      style: const TextStyle(color: AppColors.textDark),
                       decoration: const InputDecoration(labelText: 'Subject'),
                       items: [
                         for (final s in widget.subjects)
-                          DropdownMenuItem(value: s['id'] as int, child: Text((s['name'] ?? '').toString())),
+                          DropdownMenuItem(
+                            value: s['id'] as int,
+                            child: Text((s['name'] ?? '').toString(),
+                                style: const TextStyle(color: AppColors.textDark)),
+                          ),
                       ],
                       onChanged: (v) => setState(() => _subjectId = v!),
                     ),
@@ -360,6 +370,7 @@ class _LessonPlanFormState extends State<_LessonPlanForm> {
                   Expanded(
                     child: TextFormField(
                       initialValue: '1',
+                      style: const TextStyle(color: AppColors.textDark),
                       decoration: const InputDecoration(labelText: 'Week'),
                       keyboardType: TextInputType.number,
                       onChanged: (v) => _week = int.tryParse(v) ?? 1,
@@ -369,11 +380,18 @@ class _LessonPlanFormState extends State<_LessonPlanForm> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: _status,
+                      style: const TextStyle(color: AppColors.textDark),
                       decoration: const InputDecoration(labelText: 'Status'),
                       items: const [
-                        DropdownMenuItem(value: 'planned', child: Text('Planned')),
-                        DropdownMenuItem(value: 'completed', child: Text('Completed')),
-                        DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                        DropdownMenuItem(
+                            value: 'planned',
+                            child: Text('Planned', style: TextStyle(color: AppColors.textDark))),
+                        DropdownMenuItem(
+                            value: 'completed',
+                            child: Text('Completed', style: TextStyle(color: AppColors.textDark))),
+                        DropdownMenuItem(
+                            value: 'draft',
+                            child: Text('Draft', style: TextStyle(color: AppColors.textDark))),
                       ],
                       onChanged: (v) => setState(() => _status = v!),
                     ),
@@ -381,16 +399,22 @@ class _LessonPlanFormState extends State<_LessonPlanForm> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(controller: _title, decoration: const InputDecoration(labelText: 'Topic / scheme of work')),
+              TextField(
+                controller: _title,
+                style: const TextStyle(color: AppColors.textDark),
+                decoration: const InputDecoration(labelText: 'Topic / scheme of work'),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _objectives,
+                style: const TextStyle(color: AppColors.textDark),
                 decoration: const InputDecoration(labelText: 'Objectives'),
                 maxLines: 2,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _activities,
+                style: const TextStyle(color: AppColors.textDark),
                 decoration: const InputDecoration(labelText: 'Activities'),
                 maxLines: 2,
               ),
@@ -462,10 +486,15 @@ class _NoteFormState extends State<_NoteForm> {
               const Text('New note',
                   style: TextStyle(color: AppColors.textDark, fontSize: 18, fontWeight: FontWeight.w900)),
               const SizedBox(height: 16),
-              TextField(controller: _title, decoration: const InputDecoration(labelText: 'Title')),
+              TextField(
+                controller: _title,
+                style: const TextStyle(color: AppColors.textDark),
+                decoration: const InputDecoration(labelText: 'Title'),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _body,
+                style: const TextStyle(color: AppColors.textDark),
                 decoration: const InputDecoration(
                   labelText: 'Note',
                   alignLabelWithHint: true,

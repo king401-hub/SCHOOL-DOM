@@ -61,6 +61,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     final metrics = (_data?['metrics'] ?? {}) as Map<String, dynamic>;
     final upcoming = (_data?['upcoming_assessments'] ?? []) as List<dynamic>;
     final announcements = (_data?['announcements'] ?? []) as List<dynamic>;
+    final subjectsTaught = (profile['subjects_taught'] ?? []) as List<dynamic>;
+    final classesTaught =
+        ((_data?['options'] as Map<String, dynamic>?)?['classes'] ?? []) as List<dynamic>;
+    final monthlySalary = profile['monthly_salary'];
     final schoolName =
         ((_data?['school'] as Map<String, dynamic>?)?['name'] ?? auth.schoolName ?? 'SchoolDom')
             .toString();
@@ -97,6 +101,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: AppColors.danger)),
               if (_data != null) ...[
+                _TeachingCard(
+                  monthlySalary: monthlySalary,
+                  subjects: subjectsTaught,
+                  classes: classesTaught,
+                ),
+                const SizedBox(height: 20),
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -177,6 +187,79 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+String _formatNaira(dynamic value) {
+  final amount = double.tryParse(value?.toString() ?? '') ?? 0;
+  final whole = amount.truncate().abs().toString();
+  final withCommas = whole.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
+  final cents = ((amount.abs() - amount.truncate().abs()) * 100).round().toString().padLeft(2, '0');
+  return '${amount < 0 ? '-' : ''}₦$withCommas.$cents';
+}
+
+class _TeachingCard extends StatelessWidget {
+  final dynamic monthlySalary;
+  final List<dynamic> subjects;
+  final List<dynamic> classes;
+  const _TeachingCard({required this.monthlySalary, required this.subjects, required this.classes});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      children: [
+        if (monthlySalary != null) ...[
+          const Text('Monthly salary',
+              style: TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w800, fontSize: 12)),
+          Text(_formatNaira(monthlySalary),
+              style: const TextStyle(color: AppColors.textDark, fontSize: 22, fontWeight: FontWeight.w900)),
+          Divider(height: 24, color: AppColors.border),
+        ],
+        const Text('Subjects',
+            style: TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 6),
+        subjects.isEmpty
+            ? const Text('No subjects assigned yet.', style: TextStyle(color: AppColors.mutedDark, fontSize: 13))
+            : Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final s in subjects) _Pill(label: s.toString()),
+                ],
+              ),
+        const SizedBox(height: 14),
+        const Text('Classes',
+            style: TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 6),
+        classes.isEmpty
+            ? const Text('No classes assigned yet.', style: TextStyle(color: AppColors.mutedDark, fontSize: 13))
+            : Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in classes)
+                    _Pill(label: ((c as Map<String, dynamic>)['label'] ?? c['name'] ?? '').toString()),
+                ],
+              ),
+      ],
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String label;
+  const _Pill({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800, fontSize: 12)),
     );
   }
 }
