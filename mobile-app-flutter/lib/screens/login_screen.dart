@@ -270,7 +270,7 @@ class _LoginScreenState extends State<LoginScreen>
                         const _BrandMark(),
                         const SizedBox(height: 16),
                         const Text(
-                          'SchoolDom Scanner',
+                          'SchoolDom App',
                           style: TextStyle(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w900,

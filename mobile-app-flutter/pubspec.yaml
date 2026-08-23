@@ -1,5 +1,5 @@
 name: schooldom_app
-description: SchoolDom Scanner - role-based attendance scanning for admins, teachers, and students.
+description: SchoolDom App - role-based mobile dashboard and attendance scanning for admins, teachers, and students.
 publish_to: none
 version: 1.0.0+1
 

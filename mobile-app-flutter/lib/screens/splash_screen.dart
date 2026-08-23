@@ -115,7 +115,7 @@ class _SplashScreenState extends State<SplashScreen>
               child: FadeTransition(
                 opacity: _textFade,
                 child: Text(
-                  'SchoolDom Scanner',
+                  'SchoolDom App',
                   style: TextStyle(
                     color: AppColors.text,
                     fontSize: 24,

@@ -238,7 +238,7 @@ class _BrandHeader extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            'SchoolDom Scanner',
+            'SchoolDom App',
             style: TextStyle(
               color: AppColors.text,
               fontSize: 22,

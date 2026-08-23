@@ -11,7 +11,9 @@ import 'screens/expenses_screen.dart';
 import 'screens/finance_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/scanner_dashboard_screen.dart';
+import 'screens/generic_shell_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/teacher_shell_screen.dart';
 import 'theme/app_theme.dart';
 
 // Roles allowed to manage school finances - mirrors backend FINANCE_ROLES
@@ -77,7 +79,7 @@ class _SchoolDomAppState extends State<SchoolDomApp> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SchoolDom Scanner',
+      title: 'SchoolDom App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: const _Root(),
@@ -125,12 +127,23 @@ class _RootState extends State<_Root> {
       // form. LockScreen is kept below, unused, rather than deleted.
       AuthStatus.unauthenticated => const LoginScreen(),
       AuthStatus.locked => const LoginScreen(),
-      // SchoolDom Scanner: the app's home is now the scanner dashboard.
-      // MainShell (the previous multi-tab workspace) is kept below, unused,
-      // rather than deleted, in case that navigation is wanted back later.
-      AuthStatus.authenticated => const ScannerDashboardScreen(),
+      AuthStatus.authenticated => _homeForRole(auth),
     };
   }
+}
+
+/// Teachers get the full purpose-built workspace (Home/Attendance/Messages/
+/// Settings); admins and self-scanning Non-K12 students keep the existing
+/// scanner-first experience; every other role (parent, K12 student, staff)
+/// gets a generic-but-real workspace instead of a dead end, until their own
+/// dashboards are built out. MainShell (the original multi-tab workspace,
+/// pre-dating both of these) is kept below, unused, in case its navigation
+/// is wanted back later.
+Widget _homeForRole(AuthProvider auth) {
+  if (auth.isTeacher) return const TeacherShellScreen();
+  if (auth.isAdmin) return const ScannerDashboardScreen();
+  if (auth.role == 'student' && auth.isNonK12School) return const ScannerDashboardScreen();
+  return const GenericShellScreen();
 }
 
 class MainShell extends StatefulWidget {
