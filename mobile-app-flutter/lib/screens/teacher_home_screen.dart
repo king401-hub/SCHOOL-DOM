@@ -4,7 +4,9 @@ import '../api/endpoints.dart';
 import '../auth/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import 'lesson_notes_screen.dart';
 import 'notifications_screen.dart';
+import 'timetable_screen.dart';
 
 /// Teacher's "Home" tab - a mobile take on the web teacher dashboard's
 /// overview: key metrics, upcoming assessments, and announcements. Pulled
@@ -124,6 +126,30 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _QuickActionCard(
+                        icon: Icons.calendar_month_outlined,
+                        label: 'Timetable',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const TimetableScreen()),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _QuickActionCard(
+                        icon: Icons.edit_note_outlined,
+                        label: 'Lesson Notes',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const LessonNotesScreen()),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 24),
                 Text('Upcoming assessments',
                     style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w900)),
@@ -172,6 +198,43 @@ class _StatCard extends StatelessWidget {
     );
     if (onTap == null) return card;
     return GestureDetector(onTap: onTap, child: card);
+  }
+}
+
+class _QuickActionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _QuickActionCard({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AppCard(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 18, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(label,
+                    style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w800, fontSize: 13)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
