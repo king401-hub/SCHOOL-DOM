@@ -2259,6 +2259,17 @@ def _teacher_assigned_classes(user):
     return _scope_to_user_tenant(teacher_profile.assigned_classes.all(), user)
 
 
+def _class_scope_for_attendance_marking(user):
+    """All classes in the school for an admin, or just a teacher's own
+    assigned classes. Mirrors scanner_attendance_history's scoping, reused by
+    teacher_class_students/teacher_mark_student_attendance so both the web
+    Tap Attendance panel and the SchoolDom Scanner app work the same way for
+    either role."""
+    if user.role in ADMIN_ROLES:
+        return _scope_to_user_tenant(Class.objects.all(), user)
+    return _teacher_assigned_classes(user)
+
+
 def _sync_teacher_hr_salary(teacher_profile):
     if StaffProfile is None:
         return
@@ -10554,8 +10565,8 @@ def _result_leaderboard(user, class_group=None, term=None, teacher=None, limit=2
 @permission_classes([IsAuthenticated])
 def teacher_class_students(request):
     user = request.user
-    if user.role != "teacher":
-        return Response({"success": False, "message": "Only teachers can view class students."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in {"teacher", *ADMIN_ROLES}:
+        return Response({"success": False, "message": "Only teachers and school administrators can view class students."}, status=status.HTTP_403_FORBIDDEN)
     if _is_non_k12_school(user) and str(request.query_params.get("context") or "").strip().lower() != "results":
         return Response(
             {"success": False, "message": "Non K-12 schools use teacher QR attendance only."},
@@ -10565,7 +10576,7 @@ def teacher_class_students(request):
     subject_id = request.query_params.get("subject_id")
     context = str(request.query_params.get("context") or "").strip().lower()
     attendance_date = parse_date(str(request.query_params.get("date") or "")) or timezone.localdate()
-    classes_qs = _teacher_assigned_classes(user)
+    classes_qs = _class_scope_for_attendance_marking(user)
     results_mode = False
     if context == "results" and subject_id:
         subject = get_object_or_404(_scope_to_user_tenant(Subject.objects.all(), user), id=subject_id)
@@ -10639,11 +10650,11 @@ def teacher_class_students(request):
 @permission_classes([IsAuthenticated])
 def teacher_mark_student_attendance(request):
     user = request.user
-    if user.role != "teacher":
-        return Response({"success": False, "message": "Only teachers can mark student attendance."}, status=status.HTTP_403_FORBIDDEN)
+    if user.role not in {"teacher", *ADMIN_ROLES}:
+        return Response({"success": False, "message": "Only teachers and school administrators can mark student attendance."}, status=status.HTTP_403_FORBIDDEN)
     if _is_non_k12_school(user):
         return Response(
-            {"success": False, "message": "Non K-12 schools use QR attendance only. Teachers cannot mark student attendance."},
+            {"success": False, "message": "Non K-12 schools use QR attendance only. Staff cannot mark student attendance."},
             status=status.HTTP_403_FORBIDDEN,
         )
     student_code = str(
@@ -10665,7 +10676,7 @@ def teacher_mark_student_attendance(request):
     status_value = str(request.data.get("status") or "").strip().lower()
     if not clock_action and status_value not in {"present", "absent", "late", "excused"}:
         return Response({"success": False, "message": "status must be present, absent, late, or excused."}, status=status.HTTP_400_BAD_REQUEST)
-    assigned_classes = _teacher_assigned_classes(user)
+    assigned_classes = _class_scope_for_attendance_marking(user)
     assigned_class_ids = set(assigned_classes.values_list("id", flat=True))
     student_profile = get_object_or_404(StudentProfile.objects.select_related("user", "current_class"), student_id__iexact=student_code, user__tenant=user.tenant)
     raw_class_id = request.data.get("class_id")

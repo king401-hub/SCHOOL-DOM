@@ -11,6 +11,7 @@ import 'screens/expenses_screen.dart';
 import 'screens/finance_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/scanner_dashboard_screen.dart';
+import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 
 // Roles allowed to manage school finances - mirrors backend FINANCE_ROLES
@@ -84,11 +85,31 @@ class _SchoolDomAppState extends State<SchoolDomApp> with WidgetsBindingObserver
   }
 }
 
-class _Root extends StatelessWidget {
+class _Root extends StatefulWidget {
   const _Root();
 
   @override
+  State<_Root> createState() => _RootState();
+}
+
+class _RootState extends State<_Root> {
+  // Plays the brand intro for a fixed duration regardless of how quickly
+  // AuthProvider.boot() itself resolves (reading local storage is normally
+  // near-instant), so the splash always gets to run rather than only
+  // flashing on a slow cold start.
+  bool _showSplash = true;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(const Duration(milliseconds: 1900), () {
+      if (mounted) setState(() => _showSplash = false);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSplash) return const SplashScreen();
     final auth = context.watch<AuthProvider>();
     return switch (auth.status) {
       AuthStatus.booting => Scaffold(

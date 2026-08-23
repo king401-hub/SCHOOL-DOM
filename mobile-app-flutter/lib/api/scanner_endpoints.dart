@@ -72,6 +72,38 @@ Future<Map<String, dynamic>> myAttendanceStatusStaff(
         {required String actorEmail}) =>
     getJson('/api/attendance/check-status/?email=${Uri.encodeComponent(actorEmail)}');
 
+String _isoDate(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// Tap Attendance: a teacher/admin steps through their class roster one
+/// student at a time instead of scanning an ID card - K12 schools only (see
+/// users/app_views.py `teacher_class_students`). Omitting classId returns
+/// just the `classes` picker list; passing it also returns that class's
+/// `students` and today's `attendance_records` for the given date.
+Future<Map<String, dynamic>> loadClassStudents({
+  int? classId,
+  required DateTime date,
+}) {
+  final params = <String, String>{'date': _isoDate(date)};
+  if (classId != null) params['class_id'] = classId.toString();
+  final query = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+  return getJson('/api/app/attendance/class-students/?$query');
+}
+
+/// See users/app_views.py `teacher_mark_student_attendance`.
+Future<Map<String, dynamic>> markStudentAttendance({
+  required String studentId,
+  required int classId,
+  required String status,
+  required DateTime date,
+}) =>
+    postJson('/api/app/attendance/teacher-mark/', {
+      'student_id': studentId,
+      'class_id': classId,
+      'status': status,
+      'date': _isoDate(date),
+    });
+
 /// SchoolDom Scanner's History page: student attendance for one day,
 /// optionally filtered by class. See users/app_views.py
 /// `scanner_attendance_history` - works at every school type (unlike

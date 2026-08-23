@@ -41,6 +41,14 @@ class AuthProvider extends ChangeNotifier {
   bool get isNonK12School =>
       (_session?['school']?['school_type'] as String?) == 'non_k12';
 
+  // Tap Attendance (teacher_class_students/teacher_mark_student_attendance)
+  // deliberately excludes school_superadmin server-side - those views assume
+  // a single request.user.tenant, which a proprietor (owns a SchoolGroup of
+  // many schools, not one school) never has. K12 only - Non-K12 is QR-only.
+  bool get canTapMarkAttendance =>
+      !isNonK12School &&
+      (isTeacher || {'school_admin', 'principal', 'super_admin'}.contains(role));
+
   Future<void> boot() async {
     final stored = await getSession();
     final bio = await isBiometricEnabled();

@@ -8,6 +8,7 @@ import '../widgets/app_card.dart';
 import 'attendance_history_screen.dart';
 import 'scan_camera_screen.dart';
 import 'settings_screen.dart';
+import 'tap_attendance_screen.dart';
 
 class ScannerDashboardScreen extends StatefulWidget {
   const ScannerDashboardScreen({super.key});
@@ -118,6 +119,17 @@ class _ScannerDashboardScreenState extends State<ScannerDashboardScreen> {
           label: 'Scan Student',
           onTap: () => _openScanner(ScanMode.student),
         ),
+        if (auth.canTapMarkAttendance) ...[
+          const SizedBox(height: 16),
+          _ScanButton(
+            icon: Icons.touch_app_outlined,
+            label: 'Tap Attendance',
+            tone: false,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TapAttendanceScreen()),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         _ScanButton(
           icon: Icons.qr_code_scanner,
