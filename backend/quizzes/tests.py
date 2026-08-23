@@ -656,6 +656,44 @@ class DailyPersonalQuizTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["questions"][0]["prompt"], "Global general question available to every tenant")
 
+    def test_text_tagged_folder_does_not_leak_into_unrelated_subject(self):
+        """Regression test for a real production bug: a folder tagged via
+        subject_code/subject_name text fields (not the subject FK) was
+        wrongly treated as an untagged/subject-agnostic pool - because the
+        fallback only checked folder__subject__isnull, not the text fields
+        - so a "Physics Personal Quiz Pool" folder was being served as
+        filler to students requesting an English Language quiz."""
+        english = Subject.objects.create(tenant=self.legacy_tenant, name="English Language", code="ENG")
+        self.school_class.subjects.add(english)
+        physics_folder = PersonalQuizFolder.objects.create(
+            tenant=None,
+            name="Physics Personal Quiz Pool",
+            subject=None,
+            subject_code="PHY",
+            subject_name="Physics",
+            class_group=None,
+        )
+        PersonalQuizFolderQuestion.objects.create(
+            folder=physics_folder,
+            question_type="objective",
+            prompt="The period of a simple pendulum is independent of",
+            options=["length of the pendulum", "mass of the bob", "amplitude (for small angles)", "acceleration due to gravity"],
+            correct_answer="mass of the bob",
+            order=1,
+        )
+
+        response = self.client.post(
+            "/api/quizzes/personal/generate/",
+            {"subject_id": english.id, "question_count": 5},
+            format="json",
+        )
+
+        # No English content exists anywhere in this test's data, so the
+        # correct outcome is an honest "no questions available" - not a
+        # 201 quietly filled with Physics questions.
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("pendulum", response.data.get("detail", "").lower())
+
     def test_submitted_daily_subject_cannot_be_recreated_until_next_day(self):
         first = self.client.post(
             "/api/quizzes/personal/generate/",

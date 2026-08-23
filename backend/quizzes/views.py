@@ -782,12 +782,19 @@ def _build_personal_questions(subject, class_group, count, tenant=None):
     )
 
     if len(folder_questions) < count:
+        # Same "truly untagged" definition as the subject-agnostic pool above
+        # (folder__subject__isnull alone isn't enough - these folders are
+        # tagged via subject_code/subject_name text fields, not the subject
+        # FK, so a Physics/Math/Civic-tagged-by-text folder would otherwise
+        # match here too and get served as filler for an unrelated subject).
         folder_questions = add_questions(
             PersonalQuizFolderQuestion.objects.filter(
                 folder__is_active=True,
                 is_active=True,
                 folder__tenant__isnull=True,
                 folder__subject__isnull=True,
+                folder__subject_code="",
+                folder__subject_name="",
                 folder__class_group__isnull=True,
             ),
             folder_questions,
