@@ -10,6 +10,10 @@ certs/
 *.pem
 *.key
 
+# Firebase service account key (backend push notification sending)
+secrets/
+firebase-service-account.json
+
 # Database
 *.sqlite3
 *.db

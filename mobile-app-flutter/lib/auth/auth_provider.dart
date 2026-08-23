@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import '../api/auth.dart';
+import '../services/push_notifications.dart';
 import '../storage/session_store.dart';
 
 enum AuthStatus { booting, unauthenticated, locked, authenticated }
@@ -60,6 +61,7 @@ class AuthProvider extends ChangeNotifier {
             ? AuthStatus.locked
             : AuthStatus.authenticated;
     notifyListeners();
+    if (_status == AuthStatus.authenticated) PushNotifications.registerToken();
   }
 
   /// Called whenever the app is backgrounded (see WidgetsBindingObserver in
@@ -80,6 +82,7 @@ class AuthProvider extends ChangeNotifier {
     _session = result;
     _status = AuthStatus.authenticated;
     notifyListeners();
+    PushNotifications.registerToken();
     return result;
   }
 
@@ -92,6 +95,7 @@ class AuthProvider extends ChangeNotifier {
     _session = result;
     _status = AuthStatus.authenticated;
     notifyListeners();
+    PushNotifications.registerToken();
   }
 
   Future<bool> unlock() async {
@@ -103,6 +107,7 @@ class AuthProvider extends ChangeNotifier {
     if (ok) {
       _status = AuthStatus.authenticated;
       notifyListeners();
+      PushNotifications.registerToken();
     }
     return ok;
   }

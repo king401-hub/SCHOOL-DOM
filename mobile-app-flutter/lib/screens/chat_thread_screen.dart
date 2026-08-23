@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
+import '../widgets/avatar.dart';
 
 /// A single conversation thread with one partner, rendered as chat bubbles
 /// with a compose bar at the bottom - built on top of the existing
@@ -20,12 +21,14 @@ import '../theme/app_theme.dart';
 class ChatThreadScreen extends StatefulWidget {
   final String partnerEmail;
   final String partnerName;
+  final String? partnerProfilePicture;
   final List<Map<String, dynamic>> initialMessages;
 
   const ChatThreadScreen({
     super.key,
     required this.partnerEmail,
     required this.partnerName,
+    this.partnerProfilePicture,
     required this.initialMessages,
   });
 
@@ -179,19 +182,25 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
   Future<void> _sendAttachment(String path, {required String filename}) async {
     if (_sending) return;
     setState(() => _sending = true);
+    final contentType = _guessContentType(path);
     final optimistic = {
       'body': '',
       'direction': 'outgoing',
       'created_at': DateTime.now().toIso8601String(),
       'is_read': false,
       'attachments': [
-        {'name': filename, 'url': path, 'content_type': _guessContentType(path), 'local': true},
+        {'name': filename, 'url': path, 'content_type': contentType, 'local': true},
       ],
     };
     setState(() => _messages.add(optimistic));
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     try {
-      await sendMessageWithAttachment(recipientEmail: widget.partnerEmail, filePath: path, filename: filename);
+      await sendMessageWithAttachment(
+        recipientEmail: widget.partnerEmail,
+        filePath: path,
+        filename: filename,
+        contentType: contentType,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -430,7 +439,17 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
         backgroundColor: AppColors.background,
         elevation: 0,
         foregroundColor: AppColors.text,
-        title: Text(widget.partnerName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+        title: Row(
+          children: [
+            Avatar(name: widget.partnerName, pictureUrl: widget.partnerProfilePicture, size: 34),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(widget.partnerName,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            ),
+          ],
+        ),
       ),
       body: SafeArea(
         child: Column(
@@ -656,7 +675,24 @@ class _AttachmentPreview extends StatelessWidget {
   const _AttachmentPreview({required this.attachment, required this.foregroundColor});
 
   bool get _isLocal => attachment['local'] == true;
-  String get _contentType => (attachment['content_type'] ?? '').toString();
+
+  // Falls back to guessing from the file name's extension whenever the
+  // stored content type is missing or the generic "application/octet-stream"
+  // - covers attachments sent before the client started passing a real
+  // Content-Type on upload (those are all stuck as octet-stream server-side).
+  String get _contentType {
+    final raw = (attachment['content_type'] ?? '').toString();
+    if (raw.isNotEmpty && raw != 'application/octet-stream') return raw;
+    final name = (attachment['name'] ?? '').toString().toLowerCase();
+    final ext = name.contains('.') ? name.split('.').last : '';
+    const images = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'};
+    const videos = {'mp4', 'mov', 'm4v', '3gp', 'avi'};
+    const audios = {'m4a', 'aac', 'mp3', 'wav', 'ogg', 'caf'};
+    if (images.contains(ext)) return 'image/$ext';
+    if (videos.contains(ext)) return 'video/$ext';
+    if (audios.contains(ext)) return 'audio/$ext';
+    return raw;
+  }
   String get _url => (attachment['url'] ?? '').toString();
 
   @override

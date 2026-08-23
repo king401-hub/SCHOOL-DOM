@@ -68,6 +68,10 @@ def push_for_notifications(notifications):
     """Call this right after Notification.objects.bulk_create(...) - bulk_create
     bypasses post_save signals entirely, so the automatic dispatch in
     notifications/signals.py never fires for these rows."""
+    from .fcm import fcm_for_notifications
+
+    notifications = list(notifications)
+    fcm_for_notifications(notifications)
     if not _vapid_configured():
         return
     for notification in notifications:

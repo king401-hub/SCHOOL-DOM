@@ -14,6 +14,7 @@ import 'screens/scanner_dashboard_screen.dart';
 import 'screens/generic_shell_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/teacher_shell_screen.dart';
+import 'services/push_notifications.dart';
 import 'theme/app_theme.dart';
 
 // Roles allowed to manage school finances - mirrors backend FINANCE_ROLES
@@ -30,6 +31,7 @@ const _financeRoles = {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeController.instance.loadPersisted();
+  await PushNotifications.initialize();
   runApp(
     ChangeNotifierProvider(
       create: (_) => AuthProvider()..boot(),

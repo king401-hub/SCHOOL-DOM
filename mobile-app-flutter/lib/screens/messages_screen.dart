@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/avatar.dart';
 import 'chat_thread_screen.dart';
 
 /// Conversation list, one row per contact - built from the server-side
@@ -89,6 +90,7 @@ class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObse
         builder: (_) => ChatThreadScreen(
           partnerEmail: conversation.partnerEmail,
           partnerName: conversation.partnerName,
+          partnerProfilePicture: conversation.partnerProfilePicture,
           initialMessages: initialMessages,
         ),
       ),
@@ -109,6 +111,7 @@ class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObse
         builder: (_) => ChatThreadScreen(
           partnerEmail: (picked['email'] ?? '').toString(),
           partnerName: (picked['name'] ?? 'Contact').toString(),
+          partnerProfilePicture: (picked['profile_picture'] as String?),
           initialMessages: const [],
         ),
       ),
@@ -174,6 +177,7 @@ class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObse
 class _Conversation {
   final String partnerEmail;
   final String partnerName;
+  final String? partnerProfilePicture;
   final String lastBody;
   final bool lastHasAttachment;
   final String lastAttachmentType;
@@ -182,6 +186,7 @@ class _Conversation {
   const _Conversation({
     required this.partnerEmail,
     required this.partnerName,
+    required this.partnerProfilePicture,
     required this.lastBody,
     required this.lastHasAttachment,
     required this.lastAttachmentType,
@@ -192,6 +197,7 @@ class _Conversation {
   factory _Conversation.fromJson(Map<String, dynamic> json) => _Conversation(
         partnerEmail: (json['partner_email'] ?? '').toString(),
         partnerName: (json['partner_name'] ?? 'Unknown').toString(),
+        partnerProfilePicture: (json['partner_profile_picture'] as String?),
         lastBody: (json['last_body'] ?? '').toString(),
         lastHasAttachment: json['last_has_attachment'] == true,
         lastAttachmentType: (json['last_attachment_type'] ?? '').toString(),
@@ -217,23 +223,13 @@ class _ConversationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initials = conversation.partnerName.trim().isEmpty
-        ? '?'
-        : conversation.partnerName.trim().split(RegExp(r'\s+')).take(2).map((s) => s[0]).join().toUpperCase();
     return GestureDetector(
       onTap: onTap,
       child: AppCard(
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(color: AppColors.primarySoft, shape: BoxShape.circle),
-                alignment: Alignment.center,
-                child: Text(initials,
-                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w900)),
-              ),
+              Avatar(name: conversation.partnerName, pictureUrl: conversation.partnerProfilePicture),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -306,6 +302,11 @@ class _RecipientPicker extends StatelessWidget {
                       final r = recipients[index];
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
+                        leading: Avatar(
+                          name: (r['name'] ?? 'Contact').toString(),
+                          pictureUrl: r['profile_picture'] as String?,
+                          size: 36,
+                        ),
                         title: Text((r['name'] ?? 'Contact').toString(),
                             style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w700)),
                         subtitle: Text((r['role'] ?? '').toString(),

@@ -85,6 +85,12 @@ VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
 VAPID_CLAIM_EMAIL = os.getenv('VAPID_CLAIM_EMAIL', 'mailto:support@schooldom.academy')
 
+# ── Firebase Cloud Messaging (Android app push - closed/backgrounded app) ───
+# Path to a Firebase service account JSON key (Project settings > Service
+# accounts > Generate new private key in the Firebase console). Push silently
+# no-ops if this is blank or the file is missing, same as the VAPID keys above.
+FCM_SERVICE_ACCOUNT_PATH = os.getenv('FCM_SERVICE_ACCOUNT_PATH', '')
+
 # ── Schooldom Secretary AI ──────────────────────────────────────────────────
 # Ollama model for the admin secretary (must support tool calling).
 # Recommended: llama3.2:3b (fast), llama3.1:8b (smarter), gemma3:4b

@@ -1,4 +1,5 @@
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'client.dart';
 
 Future<Map<String, dynamic>> loadDashboard(String? role) {
@@ -42,17 +43,27 @@ Future<Map<String, dynamic>> loadMessageThread(String partnerEmail) =>
 /// `_collect_message_attachments` - up to 5 files, 10MB each, any content
 /// type accepted). `filePath` is a local file path from image_picker or the
 /// `record` package; `filename` controls the name shown to the recipient.
+/// `contentType` (e.g. "image/jpeg") is required - without it, MultipartFile
+/// silently defaults to "application/octet-stream", which is stored as-is
+/// server-side and breaks the chat's image/video/audio previews once the
+/// thread is reloaded from the server instead of shown from local state.
 Future<Map<String, dynamic>> sendMessageWithAttachment({
   required String recipientEmail,
   String body = '',
   required String filePath,
   String? filename,
+  required String contentType,
 }) =>
     postMultipart(
       '/api/app/messages/send/',
       {'recipient_email': recipientEmail, 'body': body},
       () async => [
-        await http.MultipartFile.fromPath('attachments', filePath, filename: filename),
+        await http.MultipartFile.fromPath(
+          'attachments',
+          filePath,
+          filename: filename,
+          contentType: MediaType.parse(contentType),
+        ),
       ],
     );
 

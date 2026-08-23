@@ -9556,6 +9556,7 @@ def message_conversations(request):
                 "partner_email": partner.email,
                 "partner_name": partner.get_full_name() or partner.email,
                 "partner_role": partner.role,
+                "partner_profile_picture": _profile_picture_url(request, partner),
                 "last_body": message.body,
                 "last_has_attachment": bool(message.attachments),
                 "last_attachment_type": first_attachment.get("content_type", "") if isinstance(first_attachment, dict) else "",
@@ -9600,7 +9601,12 @@ def message_thread(request):
     return Response(
         {
             "success": True,
-            "partner": {"email": partner.email, "name": partner.get_full_name() or partner.email, "role": partner.role},
+            "partner": {
+                "email": partner.email,
+                "name": partner.get_full_name() or partner.email,
+                "role": partner.role,
+                "profile_picture": _profile_picture_url(request, partner),
+            },
             "messages": [_message_payload(item, request=request, viewer=user) for item in recent],
         }
     )

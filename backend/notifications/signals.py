@@ -1,6 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from .fcm import send_fcm_to_user
 from .models import Notification
 from .push import send_web_push_to_user
 
@@ -12,3 +13,4 @@ def push_new_notification(sender, instance, created, **kwargs):
     if not created:
         return
     send_web_push_to_user(instance.user, instance.title, instance.message, url=instance.deep_link)
+    send_fcm_to_user(instance.user, instance.title, instance.message, url=instance.deep_link)
