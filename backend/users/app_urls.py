@@ -72,6 +72,7 @@ urlpatterns = [
     path("messages/thread/", app_views.message_thread, name="app_message_thread"),
     path("messages/send/", app_views.send_message, name="app_send_message"),
     path("messages/<uuid:message_id>/read/", app_views.mark_message_read, name="app_mark_message_read"),
+    path("messages/<uuid:message_id>/edit/", app_views.edit_message, name="app_edit_message"),
     path("messages/<uuid:message_id>/", app_views.delete_message, name="app_delete_message"),
     path("messages/groups/", app_views.message_groups, name="app_message_groups"),
     path("messages/groups/student-options/", app_views.group_student_options, name="app_group_student_options"),

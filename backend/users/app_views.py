@@ -9539,7 +9539,8 @@ def message_conversations(request):
         return Response({"success": True, "conversations": []})
 
     messages_qs = (
-        InAppMessage.objects.filter(Q(sender=user) | Q(recipient=user), tenant=user.tenant, deleted_by_recipient=False)
+        InAppMessage.objects.filter(Q(sender=user) | Q(recipient=user), tenant=user.tenant)
+        .exclude(Q(sender=user, deleted_by_sender=True) | Q(recipient=user, deleted_by_recipient=True))
         .select_related("sender", "recipient")
         .order_by("-created_at")[:2000]
     )
@@ -9590,6 +9591,7 @@ def message_thread(request):
             Q(sender=user, recipient=partner) | Q(sender=partner, recipient=user),
             tenant=user.tenant,
         )
+        .exclude(Q(sender=user, deleted_by_sender=True) | Q(recipient=user, deleted_by_recipient=True))
         .select_related("sender", "recipient")
         .order_by("-created_at")[:200]
     )
@@ -12409,6 +12411,36 @@ def delete_message(request, message_id):
         )
 
     return Response({"success": True, "message": "Message deleted."})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def edit_message(request, message_id):
+    """Only the sender can edit their own message body - unlike delete
+    (which either side can do, just for their own view), editing changes
+    what the recipient sees too, so it's restricted to the person who
+    actually wrote it."""
+    if not InAppMessage:
+        return Response(
+            {"success": False, "message": "Messaging module is not available."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    message = get_object_or_404(
+        InAppMessage.objects.filter(tenant=request.user.tenant, sender=request.user),
+        id=message_id,
+    )
+    body = str(request.data.get("body") or "").strip()
+    if not body:
+        return Response({"success": False, "message": "Message body cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+    message.body = body
+    message.save(update_fields=["body"])
+    return Response(
+        {
+            "success": True,
+            "message": "Message updated.",
+            "data": _message_payload(message, request=request, viewer=request.user),
+        }
+    )
 
 
 # ─────────────────────────────────────────────

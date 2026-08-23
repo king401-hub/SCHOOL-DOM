@@ -44,6 +44,7 @@ dependencies:
   record: ^7.1.1
   audioplayers: ^6.8.1
   path_provider: ^2.1.6
+  video_player: ^2.14.0
 
 dev_dependencies:
   flutter_test:

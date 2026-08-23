@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 
@@ -286,6 +287,125 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
     if (mounted) setState(() => _isRecording = false);
   }
 
+  /// Long-press a bubble: edit (sender only) or delete (either side, but
+  /// only removes it from *your* view - the backend's delete_message is a
+  /// per-side soft delete, not a "delete for everyone").
+  Future<void> _showMessageOptions(int index) async {
+    final message = _messages[index];
+    if (message['id'] == null) return; // not yet confirmed by the server
+    final outgoing = message['direction'] == 'outgoing';
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: const BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (outgoing)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: AppColors.primary),
+                title: const Text('Edit', style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w700)),
+                onTap: () => Navigator.of(context).pop('edit'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.danger),
+              title: const Text('Delete for me',
+                  style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w700)),
+              onTap: () => Navigator.of(context).pop('delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'edit') {
+      await _editMessageAt(index);
+    } else if (action == 'delete') {
+      await _deleteMessageAt(index);
+    }
+  }
+
+  Future<void> _editMessageAt(int index) async {
+    final message = _messages[index];
+    final controller = TextEditingController(text: (message['body'] ?? '').toString());
+    final newBody = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Edit message', style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w900)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          style: const TextStyle(color: AppColors.textDark),
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('Cancel', style: TextStyle(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (newBody == null || newBody.isEmpty || !mounted) return;
+    try {
+      await editMessage(message['id'].toString(), newBody);
+      setState(() => _messages[index] = {...message, 'body': newBody});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not edit: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteMessageAt(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete message?', style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w900)),
+        content: Text('This removes it from your view only - the other person can still see it.',
+            style: TextStyle(color: AppColors.muted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('Cancel', style: TextStyle(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final id = _messages[index]['id'].toString();
+    try {
+      await deleteMessage(id);
+      if (mounted) setState(() => _messages.removeAt(index));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
   String _formatTime(dynamic raw) {
     final dt = DateTime.tryParse((raw ?? '').toString());
     if (dt == null) return '';
@@ -332,12 +452,15 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
                           final m = _messages[index];
                           final outgoing = m['direction'] == 'outgoing';
                           final attachments = (m['attachments'] ?? []) as List<dynamic>;
-                          return _MessageBubble(
-                            body: (m['body'] ?? '').toString(),
-                            outgoing: outgoing,
-                            time: _formatTime(m['created_at']),
-                            isRead: m['is_read'] == true,
-                            attachment: attachments.isNotEmpty ? attachments.first as Map<String, dynamic> : null,
+                          return GestureDetector(
+                            onLongPress: () => _showMessageOptions(index),
+                            child: _MessageBubble(
+                              body: (m['body'] ?? '').toString(),
+                              outgoing: outgoing,
+                              time: _formatTime(m['created_at']),
+                              isRead: m['is_read'] == true,
+                              attachment: attachments.isNotEmpty ? attachments.first as Map<String, dynamic> : null,
+                            ),
                           );
                         },
                       ),
@@ -552,7 +675,20 @@ class _AttachmentPreview extends StatelessWidget {
     if (_contentType.startsWith('audio/')) {
       return _VoiceNoteBubble(isLocal: _isLocal, source: _url, color: foregroundColor);
     }
-    final isVideo = _contentType.startsWith('video/');
+    if (_contentType.startsWith('video/')) {
+      return GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => _VideoViewerScreen(isLocal: _isLocal, source: _url)),
+        ),
+        child: Container(
+          width: 200,
+          height: 130,
+          decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
+          alignment: Alignment.center,
+          child: const Icon(Icons.play_circle_fill, color: Colors.white, size: 44),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: () async {
         if (_isLocal) return;
@@ -568,7 +704,7 @@ class _AttachmentPreview extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(isVideo ? Icons.videocam : Icons.insert_drive_file, color: foregroundColor),
+            Icon(Icons.insert_drive_file, color: foregroundColor),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -599,6 +735,84 @@ class _ImageViewerScreen extends StatelessWidget {
         child: InteractiveViewer(
           child: isLocal ? Image.file(File(source)) : Image.network(source),
         ),
+      ),
+    );
+  }
+}
+
+class _VideoViewerScreen extends StatefulWidget {
+  final bool isLocal;
+  final String source;
+  const _VideoViewerScreen({required this.isLocal, required this.source});
+
+  @override
+  State<_VideoViewerScreen> createState() => _VideoViewerScreenState();
+}
+
+class _VideoViewerScreenState extends State<_VideoViewerScreen> {
+  late final VideoPlayerController _controller = widget.isLocal
+      ? VideoPlayerController.file(File(widget.source))
+      : VideoPlayerController.networkUrl(Uri.parse(widget.source));
+  bool _ready = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.initialize().then((_) {
+      if (!mounted) return;
+      setState(() => _ready = true);
+      _controller.play();
+    }).catchError((e) {
+      if (mounted) setState(() => _error = e.toString());
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0),
+      body: Center(
+        child: _error != null
+            ? Text(_error!, style: const TextStyle(color: Colors.white))
+            : _ready
+                ? AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, _) => AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio == 0 ? 16 / 9 : _controller.value.aspectRatio,
+                      child: Stack(
+                        alignment: Alignment.bottomCenter,
+                        children: [
+                          VideoPlayer(_controller),
+                          Positioned.fill(
+                            child: GestureDetector(
+                              onTap: () {
+                                _controller.value.isPlaying ? _controller.pause() : _controller.play();
+                              },
+                              child: AnimatedOpacity(
+                                opacity: _controller.value.isPlaying ? 0 : 1,
+                                duration: const Duration(milliseconds: 200),
+                                child: Container(
+                                  color: Colors.black26,
+                                  alignment: Alignment.center,
+                                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 56),
+                                ),
+                              ),
+                            ),
+                          ),
+                          VideoProgressIndicator(_controller, allowScrubbing: true, padding: const EdgeInsets.all(8)),
+                        ],
+                      ),
+                    ),
+                  )
+                : const CircularProgressIndicator(color: Colors.white),
       ),
     );
   }

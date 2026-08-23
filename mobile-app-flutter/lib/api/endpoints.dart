@@ -16,6 +16,15 @@ Future<Map<String, dynamic>> sendMessage(Map<String, dynamic> payload) =>
 Future<Map<String, dynamic>> markMessageRead(String id) =>
     postJson('/api/app/messages/$id/read/', const {});
 
+/// Sender-only - see users/app_views.py `edit_message`.
+Future<Map<String, dynamic>> editMessage(String id, String body) =>
+    patchJson('/api/app/messages/$id/edit/', {'body': body});
+
+/// "Delete for me" - either side can do this for their own view without
+/// removing it for the other party. See users/app_views.py `delete_message`.
+Future<Map<String, dynamic>> deleteMessage(String id) =>
+    deleteJson('/api/app/messages/$id/');
+
 /// One row per conversation partner, aggregated server-side across every
 /// message the caller has ever sent/received - unlike loadMessages()'s
 /// `inbox` (capped at the 20 most recent messages tenant-wide), a
