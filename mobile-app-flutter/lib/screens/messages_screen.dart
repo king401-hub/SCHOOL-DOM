@@ -44,6 +44,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+  String _previewText(Map<String, dynamic> m) {
+    final body = (m['body'] ?? '').toString();
+    if (body.isNotEmpty) return body;
+    final attachments = (m['attachments'] ?? []) as List<dynamic>;
+    if (attachments.isEmpty) return '';
+    final type = (attachments.first as Map<String, dynamic>)['content_type']?.toString() ?? '';
+    if (type.startsWith('image/')) return '📷 Photo';
+    if (type.startsWith('video/')) return '🎥 Video';
+    if (type.startsWith('audio/')) return '🎤 Voice note';
+    return '📎 Attachment';
+  }
+
   List<_Conversation> get _conversations {
     final byPartner = <String, _Conversation>{};
     for (final raw in _messages) {
@@ -59,7 +71,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         byPartner[partnerEmail] = _Conversation(
           partnerEmail: partnerEmail,
           partnerName: partnerName,
-          lastBody: (m['body'] ?? '').toString(),
+          lastBody: _previewText(m),
           lastAt: createdAt,
           unreadCount: unread ? 1 : 0,
         );
@@ -68,7 +80,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
         byPartner[partnerEmail] = _Conversation(
           partnerEmail: partnerEmail,
           partnerName: partnerName,
-          lastBody: isNewer ? (m['body'] ?? '').toString() : existing.lastBody,
+          lastBody: isNewer ? _previewText(m) : existing.lastBody,
           lastAt: isNewer ? createdAt : existing.lastAt,
           unreadCount: existing.unreadCount + (unread ? 1 : 0),
         );

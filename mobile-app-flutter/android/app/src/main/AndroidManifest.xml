@@ -4,8 +4,10 @@
     <!-- GPS attendance -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- Camera (profile photo) -->
+    <!-- Camera (profile photo, chat camera/video) -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Voice notes -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- Biometric unlock -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>

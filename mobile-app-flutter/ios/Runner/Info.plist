@@ -9,11 +9,14 @@
 	<string>SchoolDom uses your location to mark GPS attendance.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>SchoolDom uses your location to mark GPS attendance.</string>
-	<!-- Camera (profile photo) -->
+	<!-- Camera (profile photo, chat camera/video) -->
 	<key>NSCameraUsageDescription</key>
-	<string>SchoolDom uses the camera to take your profile photo.</string>
+	<string>SchoolDom uses the camera to take photos and videos to share in chat and to take your profile photo.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SchoolDom accesses your photo library to set a profile picture.</string>
+	<string>SchoolDom accesses your photo library to attach photos and videos to messages and to set a profile picture.</string>
+	<!-- Voice notes -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SchoolDom uses the microphone to record voice notes in chat.</string>
 	<!-- Biometric unlock -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>SchoolDom uses Face ID to unlock the app.</string>

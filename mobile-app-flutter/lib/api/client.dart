@@ -156,6 +156,65 @@ Future<Map<String, dynamic>> deleteJson(String endpoint,
         {bool queueWhenOffline = false}) =>
     apiRequest('DELETE', endpoint, queueWhenOffline: queueWhenOffline);
 
+/// Multipart POST (chat attachments) - separate from apiRequest since that
+/// helper always JSON-encodes the body, which won't carry file bytes.
+/// Mirrors apiRequest's auth-refresh-and-retry-once behavior on a 401.
+///
+/// Takes a `buildFiles` factory rather than a plain list: each
+/// http.MultipartFile wraps a single-use byte stream, so a retry after a
+/// token refresh needs freshly-built files, not the same (now-drained) ones.
+Future<Map<String, dynamic>> postMultipart(
+  String endpoint,
+  Map<String, String> fields,
+  Future<List<http.MultipartFile>> Function() buildFiles,
+) async {
+  var session = await getSession();
+  if (session?['access'] == null) {
+    await clearSession();
+    throw SessionExpiredException();
+  }
+  final uri = Uri.parse('$apiBaseUrl$endpoint');
+
+  Future<http.StreamedResponse> send(String token) async {
+    final files = await buildFiles();
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..fields.addAll(fields)
+      ..files.addAll(files);
+    return request.send();
+  }
+
+  http.Response res;
+  try {
+    res = await http.Response.fromStream(await send(session!['access'] as String));
+  } on SocketException catch (_) {
+    throw ApiException('Network error. Check your connection.');
+  }
+
+  if (res.statusCode == 401) {
+    session = await _tryRefresh(session);
+    try {
+      res = await http.Response.fromStream(await send(session!['access'] as String));
+    } on SocketException catch (_) {
+      throw ApiException('Network error. Check your connection.');
+    }
+  }
+
+  final data = res.body.isNotEmpty
+      ? jsonDecode(res.body) as Map<String, dynamic>
+      : <String, dynamic>{};
+
+  if (res.statusCode >= 200 && res.statusCode < 300) return data;
+  if (res.statusCode == 401) {
+    await clearSession();
+    throw SessionExpiredException();
+  }
+  throw ApiException(
+    _parseError(data, 'Request failed (${res.statusCode}).'),
+    statusCode: res.statusCode,
+  );
+}
+
 Future<({int synced, int remaining})> replayOfflineQueue() async {
   final queue = await readQueue();
   if (queue.isEmpty) return (synced: 0, remaining: 0);

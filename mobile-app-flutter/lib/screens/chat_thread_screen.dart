@@ -1,4 +1,12 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 
@@ -6,7 +14,8 @@ import '../theme/app_theme.dart';
 /// with a compose bar at the bottom - built on top of the existing
 /// sender->recipient InAppMessage model (there's no separate "conversation"
 /// concept server-side, so this screen is what turns that flat message log
-/// into something that reads like a normal chat).
+/// into something that reads like a normal chat). Supports photo/video/
+/// voice-note attachments and shows sent/read ticks on outgoing messages.
 class ChatThreadScreen extends StatefulWidget {
   final String partnerEmail;
   final String partnerName;
@@ -27,12 +36,21 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   late final List<Map<String, dynamic>> _messages = List.of(widget.initialMessages);
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
+  final _recorder = AudioRecorder();
   bool _sending = false;
+  bool _hasText = false;
+  bool _isRecording = false;
+  Duration _recordDuration = Duration.zero;
+  Timer? _recordTimer;
 
   @override
   void initState() {
     super.initState();
     _sortMessages();
+    _controller.addListener(() {
+      final hasText = _controller.text.trim().isNotEmpty;
+      if (hasText != _hasText) setState(() => _hasText = hasText);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
       _markIncomingRead();
@@ -43,6 +61,8 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _recordTimer?.cancel();
+    _recorder.dispose();
     super.dispose();
   }
 
@@ -72,6 +92,32 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
           // Best-effort - a failed read receipt shouldn't block viewing the thread.
         }
       }
+    }
+  }
+
+  /// Re-fetches the shared snapshot to pick up read receipts on messages this
+  /// screen already sent (there's no push/socket layer, so this is manual),
+  /// while keeping any optimistic entries that haven't round-tripped yet
+  /// (those have no server `id`).
+  Future<void> _refresh() async {
+    try {
+      final data = await loadMessages();
+      final all = (data['inbox'] ?? data['messages'] ?? []) as List<dynamic>;
+      final partnerMessages = all
+          .cast<Map<String, dynamic>>()
+          .where((m) => m['from_email'] == widget.partnerEmail || m['to_email'] == widget.partnerEmail)
+          .toList();
+      final pendingOptimistic = _messages.where((m) => m['id'] == null).toList();
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(partnerMessages)
+          ..addAll(pendingOptimistic);
+        _sortMessages();
+      });
+      await _markIncomingRead();
+    } catch (_) {
+      // Silent - this is just a background refresh of read receipts.
     }
   }
 
@@ -106,6 +152,128 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     }
   }
 
+  String _guessContentType(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    const images = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'};
+    const videos = {'mp4', 'mov', 'm4v', '3gp', 'avi'};
+    const audios = {'m4a', 'aac', 'mp3', 'wav', 'ogg', 'caf'};
+    if (images.contains(ext)) return 'image/$ext';
+    if (videos.contains(ext)) return 'video/$ext';
+    if (audios.contains(ext)) return 'audio/$ext';
+    return 'application/octet-stream';
+  }
+
+  Future<void> _sendAttachment(String path, {required String filename}) async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    final optimistic = {
+      'body': '',
+      'direction': 'outgoing',
+      'created_at': DateTime.now().toIso8601String(),
+      'is_read': false,
+      'attachments': [
+        {'name': filename, 'url': path, 'content_type': _guessContentType(path), 'local': true},
+      ],
+    };
+    setState(() => _messages.add(optimistic));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    try {
+      await sendMessageWithAttachment(recipientEmail: widget.partnerEmail, filePath: path, filename: filename);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send attachment: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _pickMedia(ImageSource source, {required bool video}) async {
+    Navigator.of(context).pop();
+    final picker = ImagePicker();
+    final file = video
+        ? await picker.pickVideo(source: source)
+        : await picker.pickImage(source: source, imageQuality: 85);
+    if (file == null) return;
+    await _sendAttachment(file.path, filename: file.name);
+  }
+
+  void _openAttachSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        decoration: const BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _AttachOption(
+              icon: Icons.photo_camera,
+              label: 'Camera',
+              color: AppColors.primary,
+              onTap: () => _pickMedia(ImageSource.camera, video: false),
+            ),
+            _AttachOption(
+              icon: Icons.image,
+              label: 'Gallery',
+              color: AppColors.success,
+              onTap: () => _pickMedia(ImageSource.gallery, video: false),
+            ),
+            _AttachOption(
+              icon: Icons.videocam,
+              label: 'Video',
+              color: AppColors.warning,
+              onTap: () => _pickMedia(ImageSource.camera, video: true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    final allowed = await _recorder.hasPermission();
+    if (!allowed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission is needed to record a voice note.')),
+        );
+      }
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _recorder.start(const RecordConfig(), path: path);
+    setState(() {
+      _isRecording = true;
+      _recordDuration = Duration.zero;
+    });
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _recordDuration += const Duration(seconds: 1));
+    });
+  }
+
+  Future<void> _stopRecordingAndSend() async {
+    _recordTimer?.cancel();
+    final path = await _recorder.stop();
+    if (mounted) setState(() => _isRecording = false);
+    if (path != null) {
+      await _sendAttachment(path, filename: 'Voice note.m4a');
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordTimer?.cancel();
+    await _recorder.cancel();
+    if (mounted) setState(() => _isRecording = false);
+  }
+
   String _formatTime(dynamic raw) {
     final dt = DateTime.tryParse((raw ?? '').toString());
     if (dt == null) return '';
@@ -114,6 +282,12 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     final minute = local.minute.toString().padLeft(2, '0');
     final period = local.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.toString().padLeft(2, '0');
+    final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
   @override
@@ -135,61 +309,135 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                       child: Text('Say hello to ${widget.partnerName}.',
                           style: TextStyle(color: AppColors.muted)),
                     )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final m = _messages[index];
-                        final outgoing = m['direction'] == 'outgoing';
-                        return _MessageBubble(
-                          body: (m['body'] ?? '').toString(),
-                          outgoing: outgoing,
-                          time: _formatTime(m['created_at']),
-                        );
-                      },
+                  : RefreshIndicator(
+                      onRefresh: _refresh,
+                      color: AppColors.primary,
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final m = _messages[index];
+                          final outgoing = m['direction'] == 'outgoing';
+                          final attachments = (m['attachments'] ?? []) as List<dynamic>;
+                          return _MessageBubble(
+                            body: (m['body'] ?? '').toString(),
+                            outgoing: outgoing,
+                            time: _formatTime(m['created_at']),
+                            isRead: m['is_read'] == true,
+                            attachment: attachments.isNotEmpty ? attachments.first as Map<String, dynamic> : null,
+                          );
+                        },
+                      ),
                     ),
             ),
             SafeArea(
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        minLines: 1,
-                        maxLines: 4,
-                        style: const TextStyle(color: AppColors.textDark),
-                        decoration: InputDecoration(
-                          hintText: 'Message ${widget.partnerName}',
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                        onSubmitted: (_) => _send(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                      child: IconButton(
-                        onPressed: _sending ? null : _send,
-                        icon: _sending
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.send, color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ],
-                ),
+                child: _isRecording ? _buildRecordingBar() : _buildComposeBar(),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildComposeBar() {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: _sending ? null : _openAttachSheet,
+          icon: Icon(Icons.attach_file, color: AppColors.muted),
+        ),
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            minLines: 1,
+            maxLines: 4,
+            style: const TextStyle(color: AppColors.textDark),
+            decoration: InputDecoration(
+              hintText: 'Message ${widget.partnerName}',
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+            onSubmitted: (_) => _send(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+          child: IconButton(
+            onPressed: _sending ? null : (_hasText ? _send : _startRecording),
+            icon: _sending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Icon(_hasText ? Icons.send : Icons.mic, color: Colors.white, size: 20),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecordingBar() {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: _cancelRecording,
+          icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+        ),
+        Expanded(
+          child: Row(
+            children: [
+              const Icon(Icons.fiber_manual_record, color: AppColors.danger, size: 14),
+              const SizedBox(width: 8),
+              Text(_formatDuration(_recordDuration),
+                  style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 8),
+              Text('Recording voice note...', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+        Container(
+          decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+          child: IconButton(
+            onPressed: _stopRecordingAndSend,
+            icon: const Icon(Icons.check, color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AttachOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _AttachOption({required this.icon, required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.14), shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w700, fontSize: 12)),
+        ],
       ),
     );
   }
@@ -199,16 +447,25 @@ class _MessageBubble extends StatelessWidget {
   final String body;
   final bool outgoing;
   final String time;
-  const _MessageBubble({required this.body, required this.outgoing, required this.time});
+  final bool isRead;
+  final Map<String, dynamic>? attachment;
+  const _MessageBubble({
+    required this.body,
+    required this.outgoing,
+    required this.time,
+    required this.isRead,
+    this.attachment,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final textColor = outgoing ? Colors.white : AppColors.textDark;
     return Align(
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: outgoing ? AppColors.primary : AppColors.card,
           borderRadius: BorderRadius.only(
@@ -223,15 +480,205 @@ class _MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(body, style: TextStyle(color: outgoing ? Colors.white : AppColors.textDark)),
+            if (attachment != null) ...[
+              _AttachmentPreview(attachment: attachment!, foregroundColor: textColor),
+              if (body.isNotEmpty) const SizedBox(height: 6),
+            ],
+            if (body.isNotEmpty) Text(body, style: TextStyle(color: textColor)),
             if (time.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(time,
-                  style: TextStyle(
-                      color: outgoing ? Colors.white.withValues(alpha: 0.75) : AppColors.muted, fontSize: 10)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(time,
+                      style: TextStyle(
+                          color: outgoing ? Colors.white.withValues(alpha: 0.75) : AppColors.muted, fontSize: 10)),
+                  if (outgoing) ...[
+                    const SizedBox(width: 4),
+                    // No server "delivered" state exists (only sent/read), so
+                    // this is a deliberately simplified 2-state tick: single
+                    // check once sent, double blue check once actually read -
+                    // never a middle "delivered" tick.
+                    Icon(
+                      isRead ? Icons.done_all : Icons.check,
+                      size: 14,
+                      color: isRead ? const Color(0xFF34B7F1) : Colors.white70,
+                    ),
+                  ],
+                ],
+              ),
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AttachmentPreview extends StatelessWidget {
+  final Map<String, dynamic> attachment;
+  final Color foregroundColor;
+  const _AttachmentPreview({required this.attachment, required this.foregroundColor});
+
+  bool get _isLocal => attachment['local'] == true;
+  String get _contentType => (attachment['content_type'] ?? '').toString();
+  String get _url => (attachment['url'] ?? '').toString();
+
+  @override
+  Widget build(BuildContext context) {
+    if (_contentType.startsWith('image/')) {
+      final image = _isLocal
+          ? Image.file(File(_url), width: 200, height: 200, fit: BoxFit.cover)
+          : Image.network(_url, width: 200, height: 200, fit: BoxFit.cover);
+      return GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => _ImageViewerScreen(isLocal: _isLocal, source: _url)),
+        ),
+        child: ClipRRect(borderRadius: BorderRadius.circular(12), child: image),
+      );
+    }
+    if (_contentType.startsWith('audio/')) {
+      return _VoiceNoteBubble(isLocal: _isLocal, source: _url, color: foregroundColor);
+    }
+    final isVideo = _contentType.startsWith('video/');
+    return GestureDetector(
+      onTap: () async {
+        if (_isLocal) return;
+        final uri = Uri.tryParse(_url);
+        if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+      },
+      child: Container(
+        width: 200,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: foregroundColor == Colors.white ? Colors.white.withValues(alpha: 0.16) : AppColors.cardSoft,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(isVideo ? Icons.videocam : Icons.insert_drive_file, color: foregroundColor),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                (attachment['name'] ?? 'File').toString(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: foregroundColor, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageViewerScreen extends StatelessWidget {
+  final bool isLocal;
+  final String source;
+  const _ImageViewerScreen({required this.isLocal, required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0),
+      body: Center(
+        child: InteractiveViewer(
+          child: isLocal ? Image.file(File(source)) : Image.network(source),
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceNoteBubble extends StatefulWidget {
+  final bool isLocal;
+  final String source;
+  final Color color;
+  const _VoiceNoteBubble({required this.isLocal, required this.source, required this.color});
+
+  @override
+  State<_VoiceNoteBubble> createState() => _VoiceNoteBubbleState();
+}
+
+class _VoiceNoteBubbleState extends State<_VoiceNoteBubble> {
+  final _player = AudioPlayer();
+  bool _playing = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPlayerStateChanged.listen((state) {
+      if (mounted) setState(() => _playing = state == PlayerState.playing);
+    });
+    _player.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _duration = d);
+    });
+    _player.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _position = Duration.zero);
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    if (_playing) {
+      await _player.pause();
+    } else {
+      await _player.play(widget.isLocal ? DeviceFileSource(widget.source) : UrlSource(widget.source));
+    }
+  }
+
+  String _fmt(Duration d) {
+    final minutes = d.inMinutes.toString().padLeft(2, '0');
+    final seconds = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = _position > Duration.zero ? _position : _duration;
+    return SizedBox(
+      width: 190,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: Icon(_playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                size: 34, color: widget.color),
+            onPressed: _toggle,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(
+                  value: _duration.inMilliseconds == 0 ? 0 : _position.inMilliseconds / _duration.inMilliseconds,
+                  minHeight: 3,
+                  color: widget.color,
+                  backgroundColor: widget.color.withValues(alpha: 0.25),
+                ),
+                const SizedBox(height: 4),
+                Text('Voice note · ${_fmt(shown)}',
+                    style: TextStyle(color: widget.color, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

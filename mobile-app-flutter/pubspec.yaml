@@ -40,6 +40,11 @@ dependencies:
   # QR / barcode camera scanner (SchoolDom Scanner attendance flows)
   mobile_scanner: ^7.0.1
 
+  # Chat voice notes (record + playback)
+  record: ^7.1.1
+  audioplayers: ^6.8.1
+  path_provider: ^2.1.6
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
