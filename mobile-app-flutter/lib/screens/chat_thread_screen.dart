@@ -32,7 +32,7 @@ class ChatThreadScreen extends StatefulWidget {
   State<ChatThreadScreen> createState() => _ChatThreadScreenState();
 }
 
-class _ChatThreadScreenState extends State<ChatThreadScreen> {
+class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBindingObserver {
   late final List<Map<String, dynamic>> _messages = List.of(widget.initialMessages);
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
@@ -46,6 +46,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _sortMessages();
     _controller.addListener(() {
       final hasText = _controller.text.trim().isNotEmpty;
@@ -57,8 +58,20 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     });
   }
 
+  // The bug this fixes: leaving the app mid-conversation (e.g. to reply from
+  // the web instead) and coming back used to show a stale thread until a
+  // manual pull-to-refresh - a new reply from the other side just wasn't
+  // there yet. Resuming from the background now refreshes automatically.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
@@ -98,15 +111,14 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   /// Re-fetches the shared snapshot to pick up read receipts on messages this
   /// screen already sent (there's no push/socket layer, so this is manual),
   /// while keeping any optimistic entries that haven't round-tripped yet
-  /// (those have no server `id`).
+  /// (those have no server `id`). Uses the dedicated per-partner thread
+  /// endpoint rather than the tenant-wide 20-message-capped snapshot, so a
+  /// conversation's history can't silently disappear just because other
+  /// people sent messages more recently elsewhere.
   Future<void> _refresh() async {
     try {
-      final data = await loadMessages();
-      final all = (data['inbox'] ?? data['messages'] ?? []) as List<dynamic>;
-      final partnerMessages = all
-          .cast<Map<String, dynamic>>()
-          .where((m) => m['from_email'] == widget.partnerEmail || m['to_email'] == widget.partnerEmail)
-          .toList();
+      final data = await loadMessageThread(widget.partnerEmail);
+      final partnerMessages = ((data['messages'] ?? []) as List<dynamic>).cast<Map<String, dynamic>>();
       final pendingOptimistic = _messages.where((m) => m['id'] == null).toList();
       setState(() {
         _messages

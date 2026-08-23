@@ -78,19 +78,40 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
             children: [
-              Text(
-                schoolName.toUpperCase(),
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Welcome, ${profile['name'] ?? auth.displayName ?? 'Teacher'}',
-                style: TextStyle(color: AppColors.text, fontSize: 26, fontWeight: FontWeight.w900),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          schoolName.toUpperCase(),
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Welcome, ${profile['name'] ?? auth.displayName ?? 'Teacher'}',
+                          style: TextStyle(color: AppColors.text, fontSize: 26, fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _NotificationBell(
+                    unreadCount: (metrics['unread_notifications'] as num?)?.toInt() ?? 0,
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                      );
+                      _load();
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
               if (_loading && _data == null)
@@ -128,11 +149,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       value: (metrics['unread_inbox'] ?? 0).toString(),
                     ),
                     _StatCard(
-                      label: 'Notifications',
-                      value: (metrics['unread_notifications'] ?? 0).toString(),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                      ),
+                      label: 'Average score',
+                      value: '${metrics['average_cbt_score'] ?? 0}%',
                     ),
                   ],
                 ),
@@ -185,6 +203,56 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationBell extends StatelessWidget {
+  final int unreadCount;
+  final VoidCallback onTap;
+  const _NotificationBell({required this.unreadCount, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceSoft,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
+              color: unreadCount > 0 ? AppColors.primary : AppColors.muted,
+            ),
+            // The badge is the part that "disappears" once notifications are
+            // opened and marked read - the bell icon itself always stays.
+            if (unreadCount > 0)
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  decoration: const BoxDecoration(color: AppColors.danger, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: Text(
+                    unreadCount > 9 ? '9+' : unreadCount.toString(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -267,20 +335,17 @@ class _Pill extends StatelessWidget {
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
-  final VoidCallback? onTap;
-  const _StatCard({required this.label, required this.value, this.onTap});
+  const _StatCard({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final card = AppCard(
+    return AppCard(
       children: [
         Text(label, style: const TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w800, fontSize: 12)),
         Text(value,
             style: const TextStyle(color: AppColors.textDark, fontSize: 26, fontWeight: FontWeight.w900)),
       ],
     );
-    if (onTap == null) return card;
-    return GestureDetector(onTap: onTap, child: card);
   }
 }
 

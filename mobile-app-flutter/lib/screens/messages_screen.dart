@@ -4,9 +4,11 @@ import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import 'chat_thread_screen.dart';
 
-/// Groups the flat inbox (each message is sender->recipient) into one row
-/// per conversation partner, like a normal chat app's conversation list,
-/// instead of a flat timeline of individual messages.
+/// Conversation list, one row per contact - built from the server-side
+/// aggregated /api/app/messages/conversations/ endpoint so a conversation
+/// can never silently disappear just because other people sent messages
+/// more recently (that was the bug with grouping the old, tenant-wide
+/// 20-message-capped snapshot on the client instead).
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
 
@@ -14,8 +16,8 @@ class MessagesScreen extends StatefulWidget {
   State<MessagesScreen> createState() => _MessagesScreenState();
 }
 
-class _MessagesScreenState extends State<MessagesScreen> {
-  List<dynamic> _messages = [];
+class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObserver {
+  List<_Conversation> _conversations = [];
   List<dynamic> _recipients = [];
   String? _error;
   bool _loading = true;
@@ -23,7 +25,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
   }
 
   Future<void> _load() async {
@@ -32,67 +46,23 @@ class _MessagesScreenState extends State<MessagesScreen> {
       _error = null;
     });
     try {
-      final data = await loadMessages();
+      // Conversations come from the aggregated endpoint (no message cap);
+      // recipients (for "start a new conversation") still come from the
+      // lighter snapshot endpoint, which already computes that list cheaply.
+      final results = await Future.wait([loadConversations(), loadMessages()]);
+      final conversations = (results[0]['conversations'] ?? []) as List<dynamic>;
       setState(() {
-        _messages = (data['inbox'] ?? data['messages'] ?? []) as List<dynamic>;
-        _recipients = (data['recipients'] ?? []) as List<dynamic>;
+        _conversations = conversations
+            .cast<Map<String, dynamic>>()
+            .map(_Conversation.fromJson)
+            .toList();
+        _recipients = (results[1]['recipients'] ?? []) as List<dynamic>;
       });
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  String _previewText(Map<String, dynamic> m) {
-    final body = (m['body'] ?? '').toString();
-    if (body.isNotEmpty) return body;
-    final attachments = (m['attachments'] ?? []) as List<dynamic>;
-    if (attachments.isEmpty) return '';
-    final type = (attachments.first as Map<String, dynamic>)['content_type']?.toString() ?? '';
-    if (type.startsWith('image/')) return '📷 Photo';
-    if (type.startsWith('video/')) return '🎥 Video';
-    if (type.startsWith('audio/')) return '🎤 Voice note';
-    return '📎 Attachment';
-  }
-
-  List<_Conversation> get _conversations {
-    final byPartner = <String, _Conversation>{};
-    for (final raw in _messages) {
-      final m = raw as Map<String, dynamic>;
-      final outgoing = m['direction'] == 'outgoing';
-      final partnerEmail = (outgoing ? m['to_email'] : m['from_email'])?.toString() ?? '';
-      final partnerName = (outgoing ? m['to_name'] : m['from_name'])?.toString() ?? 'Unknown';
-      if (partnerEmail.isEmpty) continue;
-      final existing = byPartner[partnerEmail];
-      final createdAt = DateTime.tryParse((m['created_at'] ?? '').toString());
-      final unread = !outgoing && m['is_read'] != true;
-      if (existing == null) {
-        byPartner[partnerEmail] = _Conversation(
-          partnerEmail: partnerEmail,
-          partnerName: partnerName,
-          lastBody: _previewText(m),
-          lastAt: createdAt,
-          unreadCount: unread ? 1 : 0,
-        );
-      } else {
-        final isNewer = createdAt != null && (existing.lastAt == null || createdAt.isAfter(existing.lastAt!));
-        byPartner[partnerEmail] = _Conversation(
-          partnerEmail: partnerEmail,
-          partnerName: partnerName,
-          lastBody: isNewer ? _previewText(m) : existing.lastBody,
-          lastAt: isNewer ? createdAt : existing.lastAt,
-          unreadCount: existing.unreadCount + (unread ? 1 : 0),
-        );
-      }
-    }
-    final list = byPartner.values.toList();
-    list.sort((a, b) {
-      if (a.lastAt == null) return 1;
-      if (b.lastAt == null) return -1;
-      return b.lastAt!.compareTo(a.lastAt!);
-    });
-    return list;
   }
 
   String _formatTime(DateTime? dt) {
@@ -105,15 +75,21 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _openThread(_Conversation conversation) async {
+    List<Map<String, dynamic>> initialMessages = const [];
+    try {
+      final data = await loadMessageThread(conversation.partnerEmail);
+      initialMessages = ((data['messages'] ?? []) as List<dynamic>).cast<Map<String, dynamic>>();
+    } catch (_) {
+      // Falls through with an empty thread - ChatThreadScreen still lets you
+      // send a new message even if history failed to load just now.
+    }
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatThreadScreen(
           partnerEmail: conversation.partnerEmail,
           partnerName: conversation.partnerName,
-          initialMessages: _messages
-              .cast<Map<String, dynamic>>()
-              .where((m) => m['from_email'] == conversation.partnerEmail || m['to_email'] == conversation.partnerEmail)
-              .toList(),
+          initialMessages: initialMessages,
         ),
       ),
     );
@@ -164,7 +140,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             children: [
               if (_error != null)
                 Text(_error!, style: const TextStyle(color: AppColors.danger)),
-              if (_loading && _messages.isEmpty)
+              if (_loading && _conversations.isEmpty)
                 const Padding(
                   padding: EdgeInsets.only(top: 40),
                   child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
@@ -199,15 +175,38 @@ class _Conversation {
   final String partnerEmail;
   final String partnerName;
   final String lastBody;
+  final bool lastHasAttachment;
+  final String lastAttachmentType;
   final DateTime? lastAt;
   final int unreadCount;
   const _Conversation({
     required this.partnerEmail,
     required this.partnerName,
     required this.lastBody,
+    required this.lastHasAttachment,
+    required this.lastAttachmentType,
     required this.lastAt,
     required this.unreadCount,
   });
+
+  factory _Conversation.fromJson(Map<String, dynamic> json) => _Conversation(
+        partnerEmail: (json['partner_email'] ?? '').toString(),
+        partnerName: (json['partner_name'] ?? 'Unknown').toString(),
+        lastBody: (json['last_body'] ?? '').toString(),
+        lastHasAttachment: json['last_has_attachment'] == true,
+        lastAttachmentType: (json['last_attachment_type'] ?? '').toString(),
+        lastAt: DateTime.tryParse((json['last_at'] ?? '').toString()),
+        unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
+      );
+
+  String get preview {
+    if (lastBody.isNotEmpty) return lastBody;
+    if (!lastHasAttachment) return '';
+    if (lastAttachmentType.startsWith('image/')) return '📷 Photo';
+    if (lastAttachmentType.startsWith('video/')) return '🎥 Video';
+    if (lastAttachmentType.startsWith('audio/')) return '🎤 Voice note';
+    return '📎 Attachment';
+  }
 }
 
 class _ConversationTile extends StatelessWidget {
@@ -242,8 +241,8 @@ class _ConversationTile extends StatelessWidget {
                   children: [
                     Text(conversation.partnerName,
                         style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w900)),
-                    if (conversation.lastBody.isNotEmpty)
-                      Text(conversation.lastBody,
+                    if (conversation.preview.isNotEmpty)
+                      Text(conversation.preview,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(color: AppColors.mutedDark, fontSize: 13)),

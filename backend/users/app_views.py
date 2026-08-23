@@ -9524,6 +9524,86 @@ def messages_snapshot(request):
     )
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def message_conversations(request):
+    """One row per person the caller has ever exchanged a direct message
+    with, aggregated server-side - unlike messages_snapshot's `inbox`
+    (capped at the 20 most recent messages tenant-wide), this looks at every
+    message the caller is a sender or recipient of, so a conversation can
+    never silently vanish just because other people sent messages more
+    recently. Backs the SchoolDom Scanner app's Messages tab conversation
+    list."""
+    user = request.user
+    if not InAppMessage:
+        return Response({"success": True, "conversations": []})
+
+    messages_qs = (
+        InAppMessage.objects.filter(Q(sender=user) | Q(recipient=user), tenant=user.tenant, deleted_by_recipient=False)
+        .select_related("sender", "recipient")
+        .order_by("-created_at")[:2000]
+    )
+
+    conversations = {}
+    for message in messages_qs:
+        partner = message.recipient if message.sender_id == user.id else message.sender
+        key = partner.email
+        entry = conversations.get(key)
+        if entry is None:
+            first_attachment = (message.attachments or [{}])[0] if message.attachments else {}
+            entry = {
+                "partner_email": partner.email,
+                "partner_name": partner.get_full_name() or partner.email,
+                "partner_role": partner.role,
+                "last_body": message.body,
+                "last_has_attachment": bool(message.attachments),
+                "last_attachment_type": first_attachment.get("content_type", "") if isinstance(first_attachment, dict) else "",
+                "last_at": message.created_at,
+                "unread_count": 0,
+            }
+            conversations[key] = entry
+        if message.recipient_id == user.id and not message.is_read:
+            entry["unread_count"] += 1
+
+    ordered = sorted(conversations.values(), key=lambda item: item["last_at"], reverse=True)
+    return Response({"success": True, "conversations": ordered})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def message_thread(request):
+    """Full message history between the caller and one specific partner
+    (most recent 200, chronological), independent of messages_snapshot's
+    tenant-wide 20-message cap. Backs the SchoolDom Scanner app's chat
+    thread view."""
+    user = request.user
+    partner_email = str(request.query_params.get("email") or "").strip().lower()
+    if not partner_email:
+        return Response({"success": False, "message": "email is required."}, status=status.HTTP_400_BAD_REQUEST)
+    partner = get_object_or_404(User, email__iexact=partner_email, tenant=user.tenant)
+
+    if not InAppMessage:
+        return Response({"success": True, "messages": []})
+
+    messages_qs = (
+        InAppMessage.objects.filter(
+            Q(sender=user, recipient=partner) | Q(sender=partner, recipient=user),
+            tenant=user.tenant,
+        )
+        .select_related("sender", "recipient")
+        .order_by("-created_at")[:200]
+    )
+    recent = list(messages_qs)
+    recent.reverse()
+    return Response(
+        {
+            "success": True,
+            "partner": {"email": partner.email, "name": partner.get_full_name() or partner.email, "role": partner.role},
+            "messages": [_message_payload(item, request=request, viewer=user) for item in recent],
+        }
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_class(request):

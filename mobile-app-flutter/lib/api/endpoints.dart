@@ -16,6 +16,19 @@ Future<Map<String, dynamic>> sendMessage(Map<String, dynamic> payload) =>
 Future<Map<String, dynamic>> markMessageRead(String id) =>
     postJson('/api/app/messages/$id/read/', const {});
 
+/// One row per conversation partner, aggregated server-side across every
+/// message the caller has ever sent/received - unlike loadMessages()'s
+/// `inbox` (capped at the 20 most recent messages tenant-wide), a
+/// conversation here can never silently disappear just because other people
+/// sent messages more recently. See users/app_views.py `message_conversations`.
+Future<Map<String, dynamic>> loadConversations() => getJson('/api/app/messages/conversations/');
+
+/// Full history with one partner (most recent 200, chronological) -
+/// independent of the same tenant-wide cap. See users/app_views.py
+/// `message_thread`.
+Future<Map<String, dynamic>> loadMessageThread(String partnerEmail) =>
+    getJson('/api/app/messages/thread/?email=${Uri.encodeComponent(partnerEmail)}');
+
 /// Photo/video/voice-note attachments (see users/app_views.py
 /// `_collect_message_attachments` - up to 5 files, 10MB each, any content
 /// type accepted). `filePath` is a local file path from image_picker or the
