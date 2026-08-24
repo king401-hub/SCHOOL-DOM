@@ -2182,7 +2182,13 @@ def admin_cash_payment_record(request):
         return Response({"success": False, "message": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
 
     try:
-        payment = record_cash_payment(student, request.data.get("amount"), note=request.data.get("note"), actor=user)
+        payment = record_cash_payment(
+            student,
+            request.data.get("amount"),
+            note=request.data.get("note"),
+            actor=user,
+            payment_method=request.data.get("payment_method") or "cash",
+        )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2193,7 +2199,7 @@ def admin_cash_payment_record(request):
         user.tenant,
         user,
         "cash_payment_recorded",
-        f"Recorded cash payment from {student.user.get_full_name() or student.user.email}.",
+        f"Recorded {(payment.metadata or {}).get('payment_method', 'cash').replace('_', ' ')} payment from {student.user.get_full_name() or student.user.email}.",
         amount=payment.amount,
         currency=payment.currency,
         reference=payment.bank_reference,

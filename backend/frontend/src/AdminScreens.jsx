@@ -1248,7 +1248,7 @@ const FINANCE_SECTIONS = [
 /* Each record type names the action that produces it, so the two halves stay
    findable from each other without being interleaved on screen. */
 const FINANCE_RECORD_TABS = [
-  { key: "cash-payments", label: "Cash Payments", action: "cash-payment" },
+  { key: "cash-payments", label: "Payments", action: "cash-payment" },
   { key: "student-payments", label: "Student Payments" },
   { key: "student-fees", label: "Student Fees" },
   { key: "class-fees", label: "Fee Schedule", action: "generate-bill" },
@@ -1261,12 +1261,25 @@ const FINANCE_RECORD_TABS = [
 ];
 
 const FINANCE_ACTION_LABELS = {
-  "cash-payment": "Record Cash Payment",
+  "cash-payment": "Record Payment",
   "generate-bill": "Generate Bill",
   "assign-tokens": "Assign Tokens",
   "buy-tokens": "Buy Tokens",
   "virtual-accounts": "Provision Virtual Accounts",
   "settlement-account": "Settlement Bank Account",
+};
+
+/* Matches finance.services.RECORDABLE_PAYMENT_METHODS on the backend - the
+   only methods the Record Payment form can log in person. */
+const RECORDABLE_PAYMENT_METHODS = [
+  { value: "cash", label: "Cash" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "pos", label: "POS" },
+];
+const PAYMENT_METHOD_LABELS = {
+  cash: "Cash payment",
+  bank_transfer: "Bank transfer payment",
+  pos: "POS payment",
 };
 
 /* An action stays collapsed until asked for. Several of these forms are long,
@@ -1499,7 +1512,11 @@ function AdminFinanceScreen({
   const creditRows = finance?.activation_credit_rows || [];
   const creditPurchaseHistory = finance?.activation_credit_purchase_history || [];
   const bankPaymentRows = finance?.bank_payment_rows || [];
-  const cashPaymentRows = bankPaymentRows.filter((payment) => payment.payment_method === "cash");
+  // Payments logged in person via the Record Payment form (cash, bank
+  // transfer, or POS) - distinct from a bank transfer auto-matched by
+  // webhook, which never carries recorded_by even though it can share the
+  // same "bank_transfer" payment_method label.
+  const cashPaymentRows = bankPaymentRows.filter((payment) => payment.recorded_by);
   const transactionHistory = finance?.transaction_history || [];
   const financeLedgerRows = finance?.finance_ledger_logs || [];
   const [withdrawForm, setWithdrawForm] = useState({
@@ -1540,7 +1557,7 @@ function AdminFinanceScreen({
   const [feeEditorSearch, setFeeEditorSearch] = useState("");
   const [feeEditorClass, setFeeEditorClass] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
-  const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "" });
+  const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "", payment_method: "cash" });
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
   const [creditPurchaseUrl, setCreditPurchaseUrl] = useState("");
@@ -1641,7 +1658,6 @@ function AdminFinanceScreen({
   const totalOutflowAmount = Number(financeSummary.total_outflow || 0);
   const balanceAmount = Number(financeSummary.balance || 0);
   const spendingPercentage = Math.min(100, Math.round(Number(financeSummary.spending_percentage || 0)));
-  const studentCreditBalance = Number(finance?.total_student_credit_balance || 0);
   const receivedPercent = expectedAmount > 0 ? Math.min(100, Math.round((receivedAmount / expectedAmount) * 100)) : 0;
   const outstandingPercent = expectedAmount > 0 ? Math.min(100, Math.round((outstandingAmount / expectedAmount) * 100)) : 0;
   const requestedCreditCount = Number(creditPurchaseForm.credits || 0);
@@ -1656,6 +1672,7 @@ function AdminFinanceScreen({
                     <tr key={payment.id}>
                       <td>{payment.student_name || "-"}<small>{payment.student_id || ""}</small></td>
                       <td>{payment.receipt_number || payment.bank_reference || "-"}</td>
+                      <td>{PAYMENT_METHOD_LABELS[payment.payment_method]?.replace(" payment", "") || (payment.payment_method || "-").replace("_", " ")}</td>
                       <td>{payment.note || "-"}</td>
                       <td>{formatFinanceAmount(payment.amount)}</td>
                       <td>{formatFinanceAmount(payment.applied_amount)}</td>
@@ -1668,6 +1685,11 @@ function AdminFinanceScreen({
                         />
                       </td>
                       <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                      <td>
+                        <button type="button" className="table-action" onClick={() => handlePrintCashPaymentReceipt(payment)}>
+                          Print Receipt
+                        </button>
+                      </td>
                     </tr>
                   );
   const renderStudentPaymentRow = (row) => (<tr key={row.id}><td>{row.name}<small>{row.student_id}</small></td><td>{row.class_name}</td><td><span className={`finance-status status-${row.payment_status}`}>{row.payment_status}</span></td><td>{formatFinanceAmount(row.expected_amount)}</td><td>{formatFinanceAmount(row.amount_paid)}</td><td>{formatFinanceAmount(row.remaining_balance)}</td></tr>);
@@ -1731,14 +1753,15 @@ function AdminFinanceScreen({
      searchText/dateOf/statusOf simply say which fields the popup may filter on. */
   const financeHistoryTables = {
     cashPaymentHistory: {
-      title: "Cash Payments",
-      description: "Every cash payment recorded at the front desk, newest first.",
-      columns: ["Student", "Receipt", "Note", "Amount", "Applied", "Status", "Receipt Delivery", "Date"],
+      title: "Payments",
+      description: "Every payment recorded at the front desk (cash, bank transfer, or POS), newest first.",
+      columns: ["Student", "Receipt", "Method", "Note", "Amount", "Applied", "Status", "Receipt Delivery", "Date", "Print"],
       rows: cashPaymentRows,
       renderRow: renderCashPaymentRow,
       searchText: (row) => [row.student_name, row.student_id, row.receipt_number, row.bank_reference, row.note],
       dateOf: (row) => row.matched_at || row.created_at,
       statusOf: (row) => row.status,
+      methodOf: (row) => row.payment_method,
     },
     studentPayments: {
       title: "Student Payment Records",
@@ -2264,10 +2287,10 @@ function AdminFinanceScreen({
     setBusyAction("cashPayment");
     try {
       await onCashPaymentRecord(cashPaymentForm);
-      setFeedback("Cash payment recorded and applied.");
-      setCashPaymentForm({ student_id: "", amount: "", note: "" });
+      setFeedback(`${PAYMENT_METHOD_LABELS[cashPaymentForm.payment_method] || "Payment"} recorded and applied.`);
+      setCashPaymentForm({ student_id: "", amount: "", note: "", payment_method: "cash" });
     } catch (err) {
-      setFormError(err.message || "Unable to record cash payment.");
+      setFormError(err.message || "Unable to record payment.");
     } finally {
       setBusyAction("");
     }
@@ -2339,6 +2362,26 @@ function AdminFinanceScreen({
       </html>
     `);
     printWindow.document.close();
+  };
+
+  const handlePrintCashPaymentReceipt = (payment) => {
+    const reference = payment.receipt_number || payment.bank_reference || payment.id || `RCPT-${Date.now()}`;
+    const methodLabel = PAYMENT_METHOD_LABELS[payment.payment_method]?.replace(" payment", "") || (payment.payment_method || "-").replace("_", " ");
+    openFinancePrintout({
+      title: "Receipt",
+      reference,
+      metaRows: [
+        ["Receipt No", reference],
+        ["Student", `${payment.student_name || "-"}${payment.student_id ? ` (${payment.student_id})` : ""}`],
+        ["Date", formatDate(payment.matched_at || payment.created_at)],
+        ["Payment Method", methodLabel],
+        ["Status", payment.status || "pending"],
+      ],
+      tableRows: [[payment.note || payment.narration || "Payment received", formatFinanceAmount(payment.applied_amount || payment.amount)]],
+      totalLabel: "Amount Paid",
+      total: payment.applied_amount || payment.amount,
+      footer: "This receipt confirms the recorded payment.",
+    });
   };
 
   const handlePrintTransactionReceipt = (item) => {
@@ -2454,15 +2497,6 @@ function AdminFinanceScreen({
                 <strong>{formatFinanceAmount(balanceAmount)}</strong>
               </div>
             </article>
-            <article className="finance-summary-card tone-received" title="Prepaid balances held for future fees">
-              <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="money" className="inline-icon" />
-              </div>
-              <div>
-                <p>Student Credit Balance</p>
-                <strong>{formatFinanceAmount(studentCreditBalance)}</strong>
-              </div>
-            </article>
             <article
               className="finance-summary-card tone-received dashboard-click-card"
               role="button"
@@ -2560,8 +2594,8 @@ function AdminFinanceScreen({
 
             <FinanceActionCard
               id="cash-payment"
-              title="Record Cash Payment"
-              description="Log money taken at the front desk. The parent is texted and emailed a receipt automatically."
+              title="Record Payment"
+              description="Log a payment taken at the front desk by cash, bank transfer, or POS. The parent is texted and emailed a receipt automatically."
               icon="currency-naira"
               open={openActionCard === "cash-payment"}
               onToggle={setOpenActionCard}
@@ -2575,6 +2609,17 @@ function AdminFinanceScreen({
                     placeholder="e.g. STU0012"
                     required
                   />
+                </label>
+                <label className="panel-field">
+                  Payment Method
+                  <select
+                    value={cashPaymentForm.payment_method}
+                    onChange={(event) => setCashPaymentForm((current) => ({ ...current, payment_method: event.target.value }))}
+                  >
+                    {RECORDABLE_PAYMENT_METHODS.map((method) => (
+                      <option key={method.value} value={method.value}>{method.label}</option>
+                    ))}
+                  </select>
                 </label>
                 <label className="panel-field">
                   Amount
@@ -2597,7 +2642,7 @@ function AdminFinanceScreen({
                 </label>
                 <div className="panel-form-actions">
                   <button type="submit" disabled={!onCashPaymentRecord || anyBusy}>
-                    {busyAction === "cashPayment" ? <><Spinner /> Recording...</> : "Record Cash Payment"}
+                    {busyAction === "cashPayment" ? <><Spinner /> Recording...</> : "Record Payment"}
                   </button>
                 </div>
               </form>
@@ -2885,13 +2930,13 @@ function AdminFinanceScreen({
             {recordSection === "cash-payments" ? (
               <article className="app-panel finance-record-panel">
                 <div className="mobile-section-head">
-                  <h3>Cash Payments</h3>
-                  <small>{cashPaymentRows.length} cash payment records</small>
+                  <h3>Payments</h3>
+                  <small>{cashPaymentRows.length} payment record{cashPaymentRows.length === 1 ? "" : "s"}</small>
                 </div>
               <div className="table-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Student</th><th>Receipt</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Receipt Delivery</th><th>Date</th></tr></thead>
-                  <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map(renderCashPaymentRow) : <tr><td colSpan="8">No cash payments recorded yet.</td></tr>}</tbody>
+                  <thead><tr><th>Student</th><th>Receipt</th><th>Method</th><th>Note</th><th>Amount</th><th>Applied</th><th>Status</th><th>Receipt Delivery</th><th>Date</th><th>Print</th></tr></thead>
+                  <tbody>{cashPaymentRows.length ? visibleCashPaymentRows.map(renderCashPaymentRow) : <tr><td colSpan="10">No payments recorded yet.</td></tr>}</tbody>
                 </table>
                 {renderFinanceMoreButton("cashPaymentHistory", cashPaymentRows.length)}
               </div>
@@ -3241,6 +3286,7 @@ function AdminFinanceScreen({
           dateOf={activeHistoryTable.dateOf}
           statusOf={activeHistoryTable.statusOf}
           classOf={activeHistoryTable.classOf}
+          methodOf={activeHistoryTable.methodOf}
           onClose={() => setHistoryTable("")}
         />
       ) : null}

@@ -4826,7 +4826,16 @@ def receipt_message_for_payment(payment):
     school = payment.tenant
     student_name = student.user.get_full_name() or student.user.email if student else "student"
     school_name = getattr(school, "name", "") or "School"
-    method = PAYMENT_METHOD_LABELS.get(_payment_method_of(payment), "Auto-matched via bank transfer")
+    method_key = _payment_method_of(payment)
+    metadata = getattr(payment, "metadata", None) or {}
+    if metadata.get("recorded_by"):
+        # Recorded in person via the admin payment form - describe the method
+        # actually selected rather than the "auto-matched" wording meant for
+        # webhook-reconciled transfers (both default to method_key
+        # "bank_transfer" when unset, so they'd otherwise be indistinguishable).
+        method = PAYMENT_METHOD_LABELS.get(method_key) or f"{method_key.replace('_', ' ').title()} payment received at school"
+    else:
+        method = PAYMENT_METHOD_LABELS.get(method_key, "Auto-matched via bank transfer")
     return (
         f"{school_name}: Payment confirmed! {_format_naira(payment.applied_amount or payment.amount)} received for "
         f"{student_name}. {method}."
@@ -5186,18 +5195,39 @@ def apply_bank_payment_to_student(payment, student_profile, actor=None):
     return payment
 
 
-def record_cash_payment(student_profile, amount, note="", actor=None):
-    """Record a walk-in cash payment and apply it to the student immediately.
+RECORDABLE_PAYMENT_METHODS = ("cash", "bank_transfer", "pos")
 
-    Unlike bank transfers, cash has no narration to auto-match and no
-    ambiguity about which student it belongs to - the admin is looking at
-    the money and the student at the same time - so this skips straight to
-    apply_bank_payment_to_student instead of going through the
-    unmatched -> recover queue built for bank transfers.
+_RECORDABLE_PAYMENT_NARRATIONS = {
+    "cash": "Cash payment received in person",
+    "bank_transfer": "Bank transfer payment recorded at school",
+    "pos": "POS payment recorded at school",
+}
+
+_RECORDABLE_PAYMENT_REFERENCE_PREFIXES = {
+    "cash": "CSH",
+    "bank_transfer": "BKT",
+    "pos": "POS",
+}
+
+
+def record_cash_payment(student_profile, amount, note="", actor=None, payment_method="cash"):
+    """Record a payment taken in person (cash, bank transfer, or POS) and
+    apply it to the student immediately.
+
+    Unlike an incoming bank transfer matched by webhook, a payment recorded
+    here has no narration to auto-match and no ambiguity about which student
+    it belongs to - the admin is looking at the money and the student at the
+    same time - so this skips straight to apply_bank_payment_to_student
+    instead of going through the unmatched -> recover queue built for
+    webhook-matched bank transfers.
     """
     amount = _as_decimal(amount)
     if amount <= 0:
         raise ValueError("Amount must be greater than zero.")
+
+    payment_method = str(payment_method or "cash").strip().lower()
+    if payment_method not in RECORDABLE_PAYMENT_METHODS:
+        raise ValueError("Unsupported payment method.")
 
     tenant = student_profile.user.tenant
     reference = get_or_create_student_payment_reference(student_profile)
@@ -5207,11 +5237,15 @@ def record_cash_payment(student_profile, amount, note="", actor=None):
         payment_reference=reference,
         amount=amount,
         currency="NGN",
-        narration=str(note or "").strip() or "Cash payment received in person",
-        bank_reference=generate_reference("CSH"),
+        narration=str(note or "").strip() or _RECORDABLE_PAYMENT_NARRATIONS[payment_method],
+        bank_reference=generate_reference(_RECORDABLE_PAYMENT_REFERENCE_PREFIXES[payment_method]),
         status=BankPayment.STATUS_PENDING,
         unapplied_amount=amount,
-        metadata={"payment_method": "cash", "note": str(note or "").strip(), "recorded_by": actor.email if actor else ""},
+        metadata={
+            "payment_method": payment_method,
+            "note": str(note or "").strip(),
+            "recorded_by": actor.email if actor else "",
+        },
     )
     return apply_bank_payment_to_student(payment, student_profile, actor=actor)
 

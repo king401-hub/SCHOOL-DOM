@@ -162,6 +162,7 @@ class BankPaymentSerializer(serializers.ModelSerializer):
     reference_code = serializers.SerializerMethodField()
     payment_method = serializers.SerializerMethodField()
     note = serializers.SerializerMethodField()
+    recorded_by = serializers.SerializerMethodField()
     receipt_notification_status = serializers.CharField(read_only=True)
 
     class Meta:
@@ -183,6 +184,7 @@ class BankPaymentSerializer(serializers.ModelSerializer):
             "receipt_number",
             "payment_method",
             "note",
+            "recorded_by",
             "receipt_notification_status",
             "receipt_sms_status",
             "receipt_email_status",
@@ -211,6 +213,14 @@ class BankPaymentSerializer(serializers.ModelSerializer):
 
     def get_note(self, obj):
         return (obj.metadata or {}).get("note", "")
+
+    def get_recorded_by(self, obj):
+        # Set only when this payment was manually recorded in person (cash,
+        # bank transfer, or POS) via the admin payment form - blank for a
+        # bank transfer auto-matched from a webhook, which lets the frontend
+        # tell the two apart even though both can share payment_method
+        # "bank_transfer".
+        return (obj.metadata or {}).get("recorded_by", "")
 
 
 class ClassFeeSerializer(serializers.ModelSerializer):

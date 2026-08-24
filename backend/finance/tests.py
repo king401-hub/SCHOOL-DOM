@@ -2073,6 +2073,119 @@ class CashPaymentTests(TestCase):
         self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
 
 
+class RecordedPaymentMethodTests(TestCase):
+    """The Record Payment form covers cash, bank transfer, and POS - all three
+    go through record_cash_payment and must get the same auto-deduct /
+    overpayment treatment cash already had, just tagged with the method the
+    admin actually picked."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Recorded Payment School", schema_name="recorded_payment_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+        self.admin_user = User.objects.create_user(
+            email="admin@recorded.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@recorded.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="RCP001", admission_number="ADM-RCP-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.fee = SchoolFee.objects.create(
+            student=self.student, title="Term Fee", amount=Decimal("20000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+    def test_bank_transfer_and_pos_auto_deduct_outstanding_balance(self):
+        # Fully settle the fee from setUp first, in cash, so it can't absorb
+        # the payments below (allocation runs oldest-due-first across every
+        # unpaid fee for the student, not just the one this test creates).
+        record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+
+        for method, prefix in (("bank_transfer", "BKT"), ("pos", "POS")):
+            with self.subTest(method=method):
+                fee = SchoolFee.objects.create(
+                    student=self.student, title=f"{method} fee", amount=Decimal("15000.00"),
+                    due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+                )
+                payment = record_cash_payment(
+                    self.student, Decimal("15000.00"), actor=self.admin_user, payment_method=method,
+                )
+                fee.refresh_from_db()
+                self.assertEqual(fee.status, SchoolFee.STATUS_PAID)
+                self.assertEqual(payment.metadata.get("payment_method"), method)
+                self.assertTrue(payment.bank_reference.startswith(prefix))
+
+    def test_bank_transfer_overpayment_credits_wallet_as_overpayment(self):
+        payment = record_cash_payment(
+            self.student, Decimal("25000.00"), actor=self.admin_user, payment_method="bank_transfer",
+        )
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        wallet = Wallet.objects.get(user=self.student_user)
+        self.assertEqual(wallet.balance, Decimal("5000.00"))
+        self.assertEqual(payment.applied_amount, Decimal("20000.00"))
+
+    def test_rejects_unsupported_payment_method(self):
+        with self.assertRaises(ValueError):
+            record_cash_payment(self.student, Decimal("1000.00"), actor=self.admin_user, payment_method="cheque")
+
+    def test_admin_endpoint_records_pos_payment(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "20000", "payment_method": "pos"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["payment"]["payment_method"], "pos")
+        self.assertEqual(response.data["payment"]["recorded_by"], self.admin_user.email)
+
+    def test_admin_endpoint_rejects_unsupported_payment_method(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "20000", "payment_method": "cheque"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+
+    def test_recorded_by_distinguishes_manual_entries_from_auto_matched_transfers(self):
+        """A manually-recorded bank transfer and a webhook auto-matched one can
+        share payment_method "bank_transfer" - recorded_by is what tells them
+        apart in the admin Payments table."""
+        from finance.serializers import BankPaymentSerializer
+
+        manual = record_cash_payment(
+            self.student, Decimal("1000.00"), actor=self.admin_user, payment_method="bank_transfer",
+        )
+        auto_matched = BankPayment.objects.create(
+            tenant=self.school, student=self.student, amount=Decimal("1000.00"), currency="NGN",
+            narration="Incoming transfer", bank_reference="AUTO-REF-1",
+            status=BankPayment.STATUS_CONFIRMED, applied_amount=Decimal("1000.00"),
+        )
+
+        manual_data = BankPaymentSerializer(manual).data
+        auto_data = BankPaymentSerializer(auto_matched).data
+
+        self.assertEqual(manual_data["payment_method"], "bank_transfer")
+        self.assertEqual(manual_data["recorded_by"], self.admin_user.email)
+        self.assertEqual(auto_data["payment_method"], "bank_transfer")
+        self.assertEqual(auto_data["recorded_by"], "")
+
+
 class CashPaymentReceiptNotificationTests(TestCase):
     """A recorded cash payment must reach the parent by itself.
 

@@ -704,6 +704,7 @@ function StudentDashboard({
   const expectedFees = fees.reduce((sum, fee) => sum + Number(fee.amount || 0), 0);
   const paidFees = fees.reduce((sum, fee) => sum + Number(fee.amount_paid || 0), 0);
   const remainingFees = fees.reduce((sum, fee) => sum + Number(fee.remaining_balance ?? Math.max(Number(fee.amount || 0) - Number(fee.amount_paid || 0), 0)), 0);
+  const overpaymentBalance = Number(dashboardData.wallet?.balance || 0);
   const formatFeeAmount = (value) => `${feeCurrency}${Number(value || 0).toLocaleString()}`;
 
   const studentName = student.name || "Student";
@@ -1106,6 +1107,13 @@ function StudentDashboard({
                 <strong className="student-card-value">{formatFeeAmount(remainingFees)}</strong>
                 <span className="student-card-detail">{remainingFees > 0 ? "Outstanding balance" : "Fully paid"}</span>
               </article>
+              {overpaymentBalance > 0 ? (
+                <article className="student-card tone-indigo">
+                  <span className="student-card-label">Overpayment</span>
+                  <strong className="student-card-value">{formatFeeAmount(overpaymentBalance)}</strong>
+                  <span className="student-card-detail">Applies automatically to your next fees</span>
+                </article>
+              ) : null}
               {paymentInstructions.parent_virtual_account ? (
                 <article className="student-card tone-teal">
                   <span className="student-card-label">Parent Payment Account</span>
@@ -1729,7 +1737,7 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
             {walletBalance > 0 ? (
               <div className="fee-stat-card fee-stat-card--green" style={{ "--delay": "180ms" }}>
                 <CreditCard size={20} className="fee-stat-icon" />
-                <p className="fee-stat-label">Credit Balance</p>
+                <p className="fee-stat-label">Overpayment</p>
                 <p className="fee-stat-value">{fmt(walletBalance)}</p>
                 <p className="fee-stat-sub">Applies automatically to your next fees</p>
               </div>
@@ -6699,8 +6707,8 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       const result = await requestJson(session, "POST", "/api/finance/admin/cash-payments/record/", payload);
       addAdminNotification({
         category: "Finance",
-        module: "Cash Payments",
-        action: "Recorded a cash payment for a student. Receipt sent to the parent by SMS and email.",
+        module: "Payments",
+        action: `Recorded a ${(payload.payment_method || "cash").replace("_", " ")} payment for a student. Receipt sent to the parent by SMS and email.`,
         status: "Success",
         priority: "High",
         tone: "success",

@@ -27,18 +27,20 @@ export function FinanceHistoryModal({
   dateOf,
   statusOf,
   classOf,
+  methodOf,
   onClose,
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, classFilter, startDate, endDate]);
+  }, [search, statusFilter, classFilter, methodFilter, startDate, endDate]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -74,6 +76,18 @@ export function FinanceHistoryModal({
     return Array.from(seen).sort();
   }, [rows, classOf]);
 
+  // Same approach again for payment method - only offers Cash/Bank Transfer/
+  // POS/etc. once a payment of that kind actually exists in this table.
+  const methodOptions = useMemo(() => {
+    if (!methodOf) return [];
+    const seen = new Set();
+    rows.forEach((row) => {
+      const value = methodOf(row);
+      if (value) seen.add(String(value));
+    });
+    return Array.from(seen).sort();
+  }, [rows, methodOf]);
+
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const from = startDate ? toTime(`${startDate}T00:00:00`) : null;
@@ -89,6 +103,7 @@ export function FinanceHistoryModal({
       }
       if (statusFilter && statusOf && String(statusOf(row) || "") !== statusFilter) return false;
       if (classFilter && classOf && String(classOf(row) || "") !== classFilter) return false;
+      if (methodFilter && methodOf && String(methodOf(row) || "") !== methodFilter) return false;
       if ((from || to) && dateOf) {
         const stamp = toTime(dateOf(row));
         if (stamp === null) return false;
@@ -97,12 +112,12 @@ export function FinanceHistoryModal({
       }
       return true;
     });
-  }, [rows, search, statusFilter, classFilter, startDate, endDate, searchText, statusOf, classOf, dateOf]);
+  }, [rows, search, statusFilter, classFilter, methodFilter, startDate, endDate, searchText, statusOf, classOf, methodOf, dateOf]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-  const hasFilters = Boolean(searchText || dateOf || statusOptions.length || classOptions.length);
+  const hasFilters = Boolean(searchText || dateOf || statusOptions.length || classOptions.length || methodOptions.length);
 
   return (
     <div
@@ -151,6 +166,17 @@ export function FinanceHistoryModal({
                   <option value="">All classes</option>
                   {classOptions.map((option) => (
                     <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {methodOptions.length ? (
+              <label className="panel-field">
+                Payment Method
+                <select value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)}>
+                  <option value="">All methods</option>
+                  {methodOptions.map((option) => (
+                    <option key={option} value={option}>{option.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</option>
                   ))}
                 </select>
               </label>
