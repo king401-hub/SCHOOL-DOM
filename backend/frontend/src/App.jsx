@@ -6564,7 +6564,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [session]
   );
 
-  const handleAdminBillCancel = useCallback(
+  const handleAdminBillDelete = useCallback(
     async (billId) => requestJson(session, "DELETE", `/api/finance/admin/bills/${billId}/`),
     [session]
   );
@@ -7841,7 +7841,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onBillSave={handleAdminBillSave}
         onBillPublish={handleAdminBillPublish}
         onBillDuplicate={handleAdminBillDuplicate}
-        onBillCancel={handleAdminBillCancel}
+        onBillDelete={handleAdminBillDelete}
         onBillRecipientsLoad={handleAdminBillRecipientsLoad}
         onBillSend={handleAdminBillSend}
         onStudentFeeSave={handleAdminStudentFeeSave}

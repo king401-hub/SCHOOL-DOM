@@ -1423,10 +1423,15 @@ def admin_bills(request):
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def admin_bill_detail(request, bill_id):
-    """View, edit, or cancel (soft-delete) a bill. Once a bill is Published,
+    """View, edit, or permanently delete a bill. Once a bill is Published,
     only due_date/payment_instructions/footer_note stay editable - title,
     items, classes, and discount/tax are locked to protect already-generated
-    invoices; use Duplicate for a real change."""
+    invoices; use Duplicate for a real change.
+
+    Deleting removes the Bill/BillItem rows outright rather than soft-
+    cancelling - safe to do even for a published bill, since SchoolFee.bill
+    is SET_NULL: any invoices and payments already generated from it are
+    kept, just detached from this bill record."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
@@ -1434,13 +1439,13 @@ def admin_bill_detail(request, bill_id):
     bill = get_object_or_404(_bills_for_user(user), id=bill_id)
 
     if request.method == "DELETE":
-        bill.status = Bill.STATUS_CANCELLED
-        bill.save(update_fields=["status", "updated_at"])
+        bill_id_str, bill_title, bill_total = str(bill.id), bill.title, bill.total
+        bill.delete()
         record_finance_activity(
-            user.tenant, user, "bill_cancelled", f"Cancelled bill '{bill.title}'.",
-            amount=bill.total, currency="NGN", reference=str(bill.id),
+            user.tenant, user, "bill_deleted", f"Deleted bill '{bill_title}'.",
+            amount=bill_total, currency="NGN", reference=bill_id_str,
         )
-        return Response({"success": True, "message": "Bill cancelled."})
+        return Response({"success": True, "message": "Bill deleted."})
 
     if request.method == "GET":
         rollups = bulk_bill_status_counts([bill])

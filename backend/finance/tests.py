@@ -16,6 +16,8 @@ from finance.models import (
     ActivationCreditTransaction,
     AdminWallet,
     BankPayment,
+    Bill,
+    BillItem,
     ClassFee,
     DocumentGenerationCreditTransaction,
     ExpenseRecord,
@@ -2184,6 +2186,80 @@ class RecordedPaymentMethodTests(TestCase):
         self.assertEqual(manual_data["recorded_by"], self.admin_user.email)
         self.assertEqual(auto_data["payment_method"], "bank_transfer")
         self.assertEqual(auto_data["recorded_by"], "")
+
+
+class BillDeleteTests(TestCase):
+    """DELETE on a bill now removes it outright instead of soft-cancelling -
+    must stay safe for a published bill with real invoices/payments already
+    against it (SchoolFee.bill is SET_NULL, so those survive detached)."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Bill Delete School", schema_name="bill_delete_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@billdelete.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 1", section="A")
+        self.student_user = User.objects.create_user(
+            email="student@billdelete.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="BILL001", admission_number="ADM-BILL-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+
+    def test_deleting_a_draft_bill_removes_it_and_its_items(self):
+        bill = Bill.objects.create(tenant=self.school, title="Term 2 Fees", created_by=self.admin_user)
+        item = BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal("10000.00"))
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.delete(f"/api/finance/admin/bills/{bill.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertFalse(Bill.objects.filter(id=bill.id).exists())
+        self.assertFalse(BillItem.objects.filter(id=item.id).exists())
+
+    def test_deleting_a_published_bill_keeps_its_invoices_and_payments(self):
+        bill = Bill.objects.create(
+            tenant=self.school, title="Published Term Fees", status=Bill.STATUS_PUBLISHED,
+            created_by=self.admin_user,
+        )
+        BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal("15000.00"))
+        fee = SchoolFee.objects.create(
+            student=self.student, bill=bill, title="Published Term Fees", amount=Decimal("15000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+        payment = record_cash_payment(self.student, Decimal("15000.00"), actor=self.admin_user)
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.delete(f"/api/finance/admin/bills/{bill.id}/")
+        self.assertEqual(response.status_code, 200)
+
+        self.assertFalse(Bill.objects.filter(id=bill.id).exists())
+        fee.refresh_from_db()
+        self.assertIsNone(fee.bill_id)
+        self.assertEqual(fee.status, SchoolFee.STATUS_PAID)
+        self.assertTrue(BankPayment.objects.filter(id=payment.id).exists())
+
+    def test_delete_requires_finance_role(self):
+        bill = Bill.objects.create(tenant=self.school, title="Term 2 Fees", created_by=self.admin_user)
+        non_finance_user = User.objects.create_user(
+            email="teacher@billdelete.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        client = APIClient()
+        client.force_authenticate(user=non_finance_user)
+        response = client.delete(f"/api/finance/admin/bills/{bill.id}/")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Bill.objects.filter(id=bill.id).exists())
 
 
 class CashPaymentReceiptNotificationTests(TestCase):

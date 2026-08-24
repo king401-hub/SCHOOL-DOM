@@ -1023,7 +1023,11 @@ class Bill(models.Model):
     """Admin-authored tuition invoice template/campaign for one or more
     classes. Publishing fans out one invoice-numbered SchoolFee row per
     targeted student (mirrors ClassFee's sync_tenant_class_fees fan-out).
-    Never hard-deleted - "cancel" sets status=cancelled."""
+
+    Deleting a Bill removes the row outright (BillItem cascades with it) -
+    safe even once published, since SchoolFee.bill is SET_NULL: any invoices
+    and payments already generated survive, just detached from this record.
+    STATUS_CANCELLED remains for bills soft-cancelled before this changed."""
 
     STATUS_DRAFT = "draft"
     STATUS_PUBLISHED = "published"

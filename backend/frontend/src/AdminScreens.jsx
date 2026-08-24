@@ -1252,7 +1252,6 @@ const FINANCE_RECORD_TABS = [
   { key: "student-payments", label: "Student Payments" },
   { key: "student-fees", label: "Student Fees" },
   { key: "class-fees", label: "Fee Schedule", action: "generate-bill" },
-  { key: "bills", label: "Bills", action: "generate-bill" },
   { key: "transactions", label: "Transactions" },
   { key: "token-activity", label: "Token Activity", action: "assign-tokens" },
   { key: "token-purchases", label: "Token Purchases", action: "buy-tokens" },
@@ -1481,7 +1480,7 @@ function AdminFinanceScreen({
   onBillSave,
   onBillPublish,
   onBillDuplicate,
-  onBillCancel,
+  onBillDelete,
   onBillRecipientsLoad,
   onBillSend,
   onStudentFeeSave,
@@ -1558,6 +1557,7 @@ function AdminFinanceScreen({
   const [feeEditorClass, setFeeEditorClass] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
   const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "", payment_method: "cash" });
+  const [cashPaymentStudentPicked, setCashPaymentStudentPicked] = useState(false);
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
   const [creditPurchaseUrl, setCreditPurchaseUrl] = useState("");
@@ -1656,7 +1656,6 @@ function AdminFinanceScreen({
   const receivedAmount = Number(financeSummary.fees_collected || 0);
   const outstandingAmount = Number(financeSummary.outstanding || 0);
   const totalOutflowAmount = Number(financeSummary.total_outflow || 0);
-  const balanceAmount = Number(financeSummary.balance || 0);
   const spendingPercentage = Math.min(100, Math.round(Number(financeSummary.spending_percentage || 0)));
   const receivedPercent = expectedAmount > 0 ? Math.min(100, Math.round((receivedAmount / expectedAmount) * 100)) : 0;
   const outstandingPercent = expectedAmount > 0 ? Math.min(100, Math.round((outstandingAmount / expectedAmount) * 100)) : 0;
@@ -1744,6 +1743,17 @@ function AdminFinanceScreen({
       .toLowerCase();
     return searchable.includes(normalizedFeeEditorSearch);
   }).slice(0, 30);
+  // Record Payment only takes an exact student_id/admission_number/email on
+  // submit - this is a name-search convenience over the roster the screen
+  // already loaded (student_payment_rows, every student in the tenant), so
+  // picking a match fills the field with the exact id the backend needs.
+  // Suppressed once a match has been picked, so the dropdown doesn't keep
+  // reappearing under the id/email it just filled in.
+  const normalizedCashPaymentSearch = cashPaymentForm.student_id.trim().toLowerCase();
+  const cashPaymentStudentMatches = (cashPaymentStudentPicked || normalizedCashPaymentSearch.length < 2) ? [] : paymentRows.filter((row) => {
+    const searchable = [row.name, row.student_id, row.class_name].filter(Boolean).join(" ").toLowerCase();
+    return searchable.includes(normalizedCashPaymentSearch);
+  }).slice(0, 8);
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCreditPurchaseHistory = creditPurchaseHistory.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -2041,7 +2051,9 @@ function AdminFinanceScreen({
   }, [onBillsLoad, billFilters]);
 
   useEffect(() => {
-    if (financeSection === "records" && recordSection === "bills") {
+    // Bills render inside the Fee Schedule tab (class-fees), alongside Class
+    // Fees, rather than as their own record tab.
+    if (financeSection === "records" && recordSection === "class-fees") {
       loadBills();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2081,15 +2093,15 @@ function AdminFinanceScreen({
     }
   };
 
-  const handleBillCancel = async (billId) => {
-    if (!window.confirm("Cancel this bill? Already-generated invoices are kept, but no further invoices will be created or sent.")) return;
+  const handleBillDelete = async (billId) => {
+    if (!window.confirm("Delete this bill permanently? Already-generated invoices and payments are kept, but this bill record itself cannot be recovered.")) return;
     setBillActionBusyId(billId);
     setBillActionError("");
     try {
-      await onBillCancel(billId);
+      await onBillDelete(billId);
       await loadBills();
     } catch (err) {
-      setBillActionError(err.message || "Could not cancel bill.");
+      setBillActionError(err.message || "Could not delete bill.");
     } finally {
       setBillActionBusyId("");
     }
@@ -2289,6 +2301,7 @@ function AdminFinanceScreen({
       await onCashPaymentRecord(cashPaymentForm);
       setFeedback(`${PAYMENT_METHOD_LABELS[cashPaymentForm.payment_method] || "Payment"} recorded and applied.`);
       setCashPaymentForm({ student_id: "", amount: "", note: "", payment_method: "cash" });
+      setCashPaymentStudentPicked(false);
     } catch (err) {
       setFormError(err.message || "Unable to record payment.");
     } finally {
@@ -2488,15 +2501,6 @@ function AdminFinanceScreen({
                 <strong>{formatFinanceAmount(totalOutflowAmount)}</strong>
               </div>
             </article>
-            <article className="finance-summary-card tone-received" title="Fees Collected minus Settled Outflow">
-              <div className="finance-summary-icon" aria-hidden="true">
-                <DashboardIcon name="check" className="inline-icon" />
-              </div>
-              <div>
-                <p>Balance</p>
-                <strong>{formatFinanceAmount(balanceAmount)}</strong>
-              </div>
-            </article>
             <article
               className="finance-summary-card tone-received dashboard-click-card"
               role="button"
@@ -2601,14 +2605,36 @@ function AdminFinanceScreen({
               onToggle={setOpenActionCard}
             >
               <form className="panel-form-grid" onSubmit={handleCashPaymentSubmit}>
-                <label className="panel-field">
+                <label className="panel-field" style={{ position: "relative" }}>
                   Student ID / Admission No. / Email
                   <input
                     value={cashPaymentForm.student_id}
-                    onChange={(event) => setCashPaymentForm((current) => ({ ...current, student_id: event.target.value }))}
-                    placeholder="e.g. STU0012"
+                    onChange={(event) => {
+                      setCashPaymentStudentPicked(false);
+                      setCashPaymentForm((current) => ({ ...current, student_id: event.target.value }));
+                    }}
+                    placeholder="e.g. STU0012 or Jane Doe"
+                    autoComplete="off"
                     required
                   />
+                  {cashPaymentStudentMatches.length ? (
+                    <ul className="search-typeahead">
+                      {cashPaymentStudentMatches.map((row) => (
+                        <li key={row.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCashPaymentForm((current) => ({ ...current, student_id: row.student_id || row.id }));
+                              setCashPaymentStudentPicked(true);
+                            }}
+                          >
+                            <strong>{row.name || "Unnamed student"}</strong>
+                            <small>{[row.student_id, row.class_name].filter(Boolean).join(" · ")}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </label>
                 <label className="panel-field">
                   Payment Method
@@ -2659,7 +2685,7 @@ function AdminFinanceScreen({
               <p className="finance-action-note">Opens the bill designer, where you pick classes, add line items, set a due date, and publish.</p>
               <div className="panel-form-actions">
                 <button type="button" onClick={handleOpenNewBill} disabled={!onBillSave}>Open bill designer</button>
-                <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("bills")}>View generated bills</button>
+                <button type="button" className="btn-secondary" onClick={() => openFinanceRecords("class-fees")}>View generated bills</button>
               </div>
             </FinanceActionCard>
 
@@ -2991,10 +3017,10 @@ function AdminFinanceScreen({
               </article>
             ) : null}
 
-            {recordSection === "bills" ? (
+            {recordSection === "class-fees" ? (
               <article className="app-panel finance-record-panel">
                 <div className="mobile-section-head">
-                  <h3>Bills</h3>
+                  <h3>Generated Bills</h3>
                   <small>{bills.length} bills</small>
                 </div>
               <div className="table-scroll">
@@ -3058,11 +3084,9 @@ function AdminFinanceScreen({
                               {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : "Duplicate"}
                             </button>
                             <button type="button" className="table-action" onClick={() => handlePrintBillDocument(bill)}>Print</button>
-                            {bill.status !== "cancelled" ? (
-                              <button type="button" className="table-action danger" onClick={() => handleBillCancel(bill.id)} disabled={billActionBusyId === bill.id}>
-                                {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : "Cancel"}
-                              </button>
-                            ) : null}
+                            <button type="button" className="table-action danger" onClick={() => handleBillDelete(bill.id)} disabled={billActionBusyId === bill.id}>
+                              {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : "Delete"}
+                            </button>
                           </div>
                         </td>
                       </tr>
