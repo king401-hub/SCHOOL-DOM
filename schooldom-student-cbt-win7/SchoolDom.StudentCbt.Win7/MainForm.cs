@@ -1373,7 +1373,44 @@ namespace SchoolDom.StudentCbt.Win7
         }
         private void SetStatus(string text, Color color) { if (_status != null) { _status.Text = text; _status.ForeColor = color; _status.Refresh(); } }
         private Panel Card(int left, int top, int width, int height) { return new Panel { Left = left, Top = top, Width = width, Height = height, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle }; }
-        private TextBox Field(Control parent, string label, string value, int left, int top, bool password) { parent.Controls.Add(Label(label, left, top - 30, 9, true, 220, Palette.Text)); var box = new TextBox { Left = left, Top = top, Width = 226, Height = 34, Text = value, UseSystemPasswordChar = password, Font = new Font("Segoe UI", 11) }; parent.Controls.Add(box); return box; }
+        private TextBox Field(Control parent, string label, string value, int left, int top, bool password)
+        {
+            parent.Controls.Add(Label(label, left, top - 30, 9, true, 220, Palette.Text));
+            // Password fields give up 58px on the right to a Show/Hide toggle so the
+            // student can confirm their PIN before submitting - plain text ("Show"/"Hide"
+            // rather than an eye glyph) since Segoe UI Symbol's eye icon doesn't render
+            // reliably on Windows 7, which this app is built to support.
+            var boxWidth = password ? 226 - 58 : 226;
+            var box = new TextBox { Left = left, Top = top, Width = boxWidth, Height = 34, Text = value, UseSystemPasswordChar = password, Font = new Font("Segoe UI", 11) };
+            parent.Controls.Add(box);
+            if (password) parent.Controls.Add(PasswordRevealToggle(box, left + boxWidth + 4, top));
+            return box;
+        }
+
+        private Button PasswordRevealToggle(TextBox box, int left, int top)
+        {
+            var toggle = new Button
+            {
+                Text = "Show",
+                Left = left,
+                Top = top,
+                Width = 54,
+                Height = 34,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Palette.LightButton,
+                ForeColor = Palette.Text,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                TabStop = false,
+            };
+            toggle.FlatAppearance.BorderColor = Palette.Border;
+            toggle.Click += (s, e) =>
+            {
+                box.UseSystemPasswordChar = !box.UseSystemPasswordChar;
+                toggle.Text = box.UseSystemPasswordChar ? "Show" : "Hide";
+            };
+            return toggle;
+        }
         private void ApplyNumbersOnly(TextBox box)
         {
             box.KeyPress += (sender, args) =>

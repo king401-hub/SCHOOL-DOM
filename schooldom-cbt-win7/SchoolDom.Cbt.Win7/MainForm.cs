@@ -1462,11 +1462,16 @@ namespace SchoolDom.Cbt.Win7
                 UseCompatibleTextRendering = true
             };
             parent.Controls.Add(labelControl);
+            // Password fields give up 58px on the right to a Show/Hide toggle so the
+            // admin can confirm what they typed before submitting - plain text ("Show"/
+            // "Hide" rather than an eye glyph) since Segoe UI Symbol's eye icon doesn't
+            // render reliably on Windows 7, which this app is built to support.
+            var boxWidth = password ? 226 - 58 : 226;
             var box = new TextBox
             {
                 Left = left,
                 Top = top,
-                Width = 226,
+                Width = boxWidth,
                 Height = 34,
                 Text = value,
                 UseSystemPasswordChar = password,
@@ -1474,7 +1479,36 @@ namespace SchoolDom.Cbt.Win7
                 BorderStyle = BorderStyle.FixedSingle
             };
             parent.Controls.Add(box);
+            if (password)
+            {
+                parent.Controls.Add(PasswordRevealToggle(box, left + boxWidth + 4, top));
+            }
             return box;
+        }
+
+        private Button PasswordRevealToggle(TextBox box, int left, int top)
+        {
+            var toggle = new Button
+            {
+                Text = "Show",
+                Left = left,
+                Top = top,
+                Width = 54,
+                Height = 34,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Palette.LightButton,
+                ForeColor = Palette.Text,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                TabStop = false,
+            };
+            toggle.FlatAppearance.BorderColor = Palette.Border;
+            toggle.Click += (s, e) =>
+            {
+                box.UseSystemPasswordChar = !box.UseSystemPasswordChar;
+                toggle.Text = box.UseSystemPasswordChar ? "Show" : "Hide";
+            };
+            return toggle;
         }
 
         private ListView CompactQuestionList(int left, int top, int width, int height)

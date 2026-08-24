@@ -27,8 +27,22 @@ namespace SchoolDom.Cbt.Win7
 
                 text.Left = 16;
                 text.Top = 44;
-                text.Width = 370;
+                text.Width = password ? 370 - 58 : 370;
                 text.UseSystemPasswordChar = password;
+                if (password)
+                {
+                    var toggle = new Button
+                    {
+                        Text = "Show",
+                        Left = text.Left + text.Width + 4,
+                        Top = text.Top,
+                        Width = 54,
+                        Height = text.Height > 0 ? text.Height : 23,
+                        TabStop = false,
+                    };
+                    toggle.Click += (s, e) => { text.UseSystemPasswordChar = !text.UseSystemPasswordChar; toggle.Text = text.UseSystemPasswordChar ? "Show" : "Hide"; };
+                    form.Controls.Add(toggle);
+                }
                 if (numbersOnly)
                 {
                     text.KeyPress += (sender, args) =>
