@@ -23,7 +23,9 @@ android {
         applicationId = "com.schooldom.schooldom_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Pinned (not flutter.minSdkVersion) so the Android 8.0 (Oreo, API 26) floor is
+        // explicit and doesn't silently drift on a future Flutter SDK upgrade.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
