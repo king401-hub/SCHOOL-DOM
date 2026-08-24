@@ -402,25 +402,22 @@ OTP_EMAIL_THROTTLE_FACTOR = int(os.environ.get('OTP_EMAIL_THROTTLE_FACTOR', '1')
 # (or just edit the defaults below) whenever a new installer is published -
 # no other server-side change is needed to announce it.
 CBT_ADMIN_APP_VERSION = {
-    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.11"),
+    "version": os.environ.get("CBT_ADMIN_APP_VERSION_NUMBER", "0.2.12"),
     "release_notes": os.environ.get(
         "CBT_ADMIN_APP_RELEASE_NOTES",
-        "- Added the SchoolDom CBT License Key system: CBT/Exam access now "
-        "requires an active license, entered as a key or unlocked by "
-        "Super Admin activation\n"
-        "- The CBT server now binds to this PC's wired Ethernet adapter by "
-        "default (never Wi-Fi silently) so student traffic can't depend on, "
-        "or leak onto, whatever Wi-Fi network the admin PC is joined to\n"
-        "- Added a \"Switch to Wi-Fi\" option on the dashboard for rooms with "
-        "no wired LAN, alongside a clear message when neither connection is "
-        "available instead of silently picking the wrong network\n"
-        "- The Admin LAN Starter card now shows the live CBT Server address "
-        "with a Copy button and warns if the network changes while running\n"
-        "- Carries forward 0.2.7-0.2.8's fixes: the SchoolDom taskbar icon, "
-        "All Students grouped by class, synced question/passage images, and "
-        "sign-in no longer getting stuck when syncing fails.",
+        "- Added a Show/Hide toggle to the Cloud Login password field and the "
+        "JWT-token/LAN-PIN prompts, so you can confirm what you typed before "
+        "submitting\n"
+        "- Fixed downloads and in-app updates sometimes serving an older "
+        "installer once release numbers passed 0.2.9 (a version-sorting bug)\n"
+        "- Silent update failures (e.g. antivirus briefly locking the app "
+        "file mid-update) are no longer invisible - a failed attempt now "
+        "leaves a log and tells you plainly instead of repeating the same "
+        "update prompt forever\n"
+        "- Carries forward 0.2.11's CBT License Key system and Ethernet/"
+        "Wi-Fi networking improvements.",
     ),
-    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-19"),
+    "release_date": os.environ.get("CBT_ADMIN_APP_RELEASE_DATE", "2026-08-24"),
     # Served straight from this server's own git-tracked installer folder
     # (schooldom-cbt-win7/release/) rather than a GitHub Release asset -
     # admin_app_installer_path() always resolves to the highest version
@@ -430,7 +427,7 @@ CBT_ADMIN_APP_VERSION = {
         "CBT_ADMIN_APP_DOWNLOAD_URL",
         "https://schooldom.academy/app/download/admin/",
     ),
-    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3809488),
+    "file_size_bytes": env_int("CBT_ADMIN_APP_FILE_SIZE_BYTES", 3809877),
     "is_mandatory": env_bool("CBT_ADMIN_APP_UPDATE_MANDATORY", False),
 }
 ADMIN_OTP_ENABLED = env_bool('ADMIN_OTP_ENABLED', False)
