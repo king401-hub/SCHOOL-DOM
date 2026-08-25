@@ -82,11 +82,24 @@ def _bad_request(message):
     return Response({'success': False, 'message': message}, status=status.HTTP_400_BAD_REQUEST)
 
 
-def _require_school(user):
-    school = _resolve_school_tenant_for_user(user)
+def _require_school(user, school_code=''):
+    # school_code lets a platform super_admin (who has no tenant of their own -
+    # _resolve_school_tenant_for_user returns None for that role otherwise)
+    # operate against an explicit school, e.g. the Superadmin Control Panel's
+    # "Select School" step. Ignored/unnecessary for a normal school-level
+    # admin, whose own tenant is used regardless.
+    school = _resolve_school_tenant_for_user(user, school_code=school_code)
     if not school:
-        return None, _bad_request('Your account is not linked to a school.')
+        message = (
+            'Pick a school first.' if user.role == 'super_admin'
+            else 'Your account is not linked to a school.'
+        )
+        return None, _bad_request(message)
     return school, None
+
+
+def _school_code_from_request(request):
+    return str(request.data.get('school_code') or request.query_params.get('school_code') or '').strip()
 
 
 @api_view(['GET'])
@@ -98,7 +111,7 @@ def card_assignments_pull(request):
     if request.user.role not in SCAN_OPERATOR_ROLES:
         return _forbidden('Only school staff can sync card assignments.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 
@@ -122,7 +135,7 @@ def card_assignment_create(request):
     if request.user.role not in ADMIN_ROLES:
         return _forbidden('Only school administrators can assign RFID cards.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 
@@ -201,7 +214,7 @@ def card_assignment_revoke(request):
     if request.user.role not in ADMIN_ROLES:
         return _forbidden('Only school administrators can revoke RFID cards.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 
@@ -251,7 +264,7 @@ def attendance_scan_create(request):
     if request.user.role not in SCAN_OPERATOR_ROLES:
         return _forbidden('Only school staff can record RFID attendance.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 
@@ -411,7 +424,7 @@ def classes_lookup(request):
     if request.user.role not in ADMIN_ROLES:
         return _forbidden('Only school administrators can assign RFID cards.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 
@@ -433,7 +446,7 @@ def people_lookup(request):
     if request.user.role not in ADMIN_ROLES:
         return _forbidden('Only school administrators can assign RFID cards.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 
@@ -495,7 +508,7 @@ def attendance_history(request):
     if request.user.role not in SCAN_OPERATOR_ROLES:
         return _forbidden('Only school staff can view attendance history.')
 
-    school, error = _require_school(request.user)
+    school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
 

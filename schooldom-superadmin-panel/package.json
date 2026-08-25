@@ -1,0 +1,22 @@
+{
+  "name": "schooldom-superadmin-panel",
+  "version": "0.1.0",
+  "description": "SchoolDom Superadmin Device Control Panel - provisions, monitors, and manages SchoolDom Scanner attendance terminals.",
+  "main": "electron/main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.schooldom.superadminpanel",
+    "productName": "SchoolDom Superadmin Panel",
+    "directories": { "output": "release" },
+    "files": ["electron/**/*", "src/**/*", "package.json"],
+    "win": { "target": "nsis", "icon": "src/assets/schooldom.ico" }
+  }
+}
