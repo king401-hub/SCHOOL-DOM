@@ -5,6 +5,7 @@ import '../api/scanner_endpoints.dart';
 import '../auth/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/branded_refresh.dart';
 import 'attendance_history_screen.dart';
 import 'scan_camera_screen.dart';
 import 'settings_screen.dart';
@@ -179,9 +180,9 @@ class _ScannerDashboardScreenState extends State<ScannerDashboardScreen> {
               ),
             ),
             Expanded(
-              child: RefreshIndicator(
+              child: BrandedRefresh(
                 onRefresh: _refreshStatus,
-                color: AppColors.primary,
+                showSpinner: _loading,
                 child: LayoutBuilder(
                   builder: (context, constraints) => SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),

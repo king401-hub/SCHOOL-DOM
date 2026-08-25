@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../widgets/offline_banner.dart';
 import 'messages_screen.dart';
+import 'more_screen.dart';
 import 'scanner_dashboard_screen.dart';
-import 'settings_screen.dart';
 import 'teacher_home_screen.dart';
 
-/// Teacher's main workspace - a mobile take on the web teacher dashboard,
-/// starting with the tabs that translate well to a phone: Home (overview),
-/// Attendance (the existing scan/tap/history suite), Messages, and Settings.
-/// Exam authoring, lesson planning, and theory grading aren't included yet -
+/// Teacher's main workspace - a mobile take on the web teacher dashboard.
+/// Home | Attendance | Messages | More, with Settings/Timetable/Lesson
+/// Plans/Notes/Help folded into More rather than crowding the primary row
+/// (spec section 4). Exam authoring and theory grading aren't included yet -
 /// those are heavier authoring tools that need a proper mobile-specific
 /// design rather than a rough port of the web forms.
 class TeacherShellScreen extends StatefulWidget {
@@ -25,13 +26,18 @@ class _TeacherShellScreenState extends State<TeacherShellScreen> {
     TeacherHomeScreen(),
     ScannerDashboardScreen(),
     MessagesScreen(),
-    SettingsScreen(),
+    MoreScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _index, children: _pages),
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(child: IndexedStack(index: _index, children: _pages)),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.primary.withValues(alpha: 0.15),
@@ -55,9 +61,9 @@ class _TeacherShellScreenState extends State<TeacherShellScreen> {
             label: 'Messages',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined, color: AppColors.muted),
-            selectedIcon: const Icon(Icons.settings, color: AppColors.primary),
-            label: 'Settings',
+            icon: Icon(Icons.grid_view_outlined, color: AppColors.muted),
+            selectedIcon: const Icon(Icons.grid_view, color: AppColors.primary),
+            label: 'More',
           ),
         ],
       ),

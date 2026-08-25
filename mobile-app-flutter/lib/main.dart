@@ -16,6 +16,7 @@ import 'screens/splash_screen.dart';
 import 'screens/teacher_shell_screen.dart';
 import 'services/push_notifications.dart';
 import 'theme/app_theme.dart';
+import 'widgets/schooldom_spinner.dart';
 
 // Roles allowed to manage school finances - mirrors backend FINANCE_ROLES
 // (users/... ADMIN_ROLES | {"accountant"}) used to gate finance.admin_overview
@@ -119,7 +120,7 @@ class _RootState extends State<_Root> {
       AuthStatus.booting => Scaffold(
           backgroundColor: AppColors.background,
           body: const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
+            child: SchoolDomSpinner(size: 64),
           ),
         ),
       // Both a fresh sign-in and returning to an already-signed-in device

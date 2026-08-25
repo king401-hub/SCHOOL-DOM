@@ -8514,6 +8514,95 @@ def teacher_notes(request):
     return Response({"success": True, "notes": [_teacher_note_payload(note) for note in notes[:30]]})
 
 
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def teacher_note_detail(request, note_id):
+    """Edit or delete a single note - teacher_notes only ever supported list
+    + create, there was no way to change or remove one already saved."""
+    user = request.user
+    if user.role != "teacher":
+        return Response({"success": False, "message": "Only teachers can use the academic notepad."}, status=status.HTTP_403_FORBIDDEN)
+
+    note = get_object_or_404(TeacherNote, id=note_id, teacher=user)
+
+    if request.method == "DELETE":
+        note.delete()
+        return Response({"success": True, "message": "Note deleted."})
+
+    update_fields = []
+    if "title" in request.data:
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"success": False, "message": "Title cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        note.title = title
+        update_fields.append("title")
+    if "body" in request.data:
+        note.body = str(request.data.get("body") or "").strip()
+        update_fields.append("body")
+    if "pinned" in request.data:
+        note.pinned = _to_bool(request.data.get("pinned"), default=note.pinned)
+        update_fields.append("pinned")
+    if update_fields:
+        note.save(update_fields=update_fields + ["updated_at"])
+    return Response({"success": True, "message": "Note updated.", "note": _teacher_note_payload(note)})
+
+
+NOTIFICATION_EVENT_CATEGORIES = ("messages", "attendance", "assessments", "announcements")
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def notification_preferences(request):
+    """Read/update the caller's own notification settings.
+
+    `allow_push` is a real, already-wired master switch (see
+    notifications/push.py and notifications/fcm.py's _user_allows_push,
+    checked before every push send). The four event_preferences categories
+    are stored and returned faithfully, but nothing in the platform's
+    notification-creation call sites (exams, quizzes, finance, messages,
+    attendance) filters by them yet - that would mean touching every one of
+    those call sites, well beyond this settings screen. They're real,
+    persisted settings, just not yet enforced per-category everywhere.
+    """
+    if not NotificationPreference:
+        return Response({"success": False, "message": "Notifications module is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    user = request.user
+    preference, _ = NotificationPreference.objects.get_or_create(
+        user=user,
+        defaults={"tenant": getattr(user, "tenant", None)},
+    )
+
+    if request.method == "PATCH":
+        update_fields = []
+        if "allow_push" in request.data:
+            preference.allow_push = _to_bool(request.data.get("allow_push"), default=preference.allow_push)
+            update_fields.append("allow_push")
+        if "disable_all" in request.data:
+            preference.disable_all = _to_bool(request.data.get("disable_all"), default=preference.disable_all)
+            update_fields.append("disable_all")
+        incoming_events = request.data.get("event_preferences")
+        if isinstance(incoming_events, dict):
+            merged = dict(preference.event_preferences or {})
+            for key in NOTIFICATION_EVENT_CATEGORIES:
+                if key in incoming_events:
+                    merged[key] = _to_bool(incoming_events.get(key), default=True)
+            preference.event_preferences = merged
+            update_fields.append("event_preferences")
+        if update_fields:
+            preference.save(update_fields=update_fields + ["updated_at"])
+
+    events = dict(preference.event_preferences or {})
+    return Response(
+        {
+            "success": True,
+            "allow_push": preference.allow_push,
+            "disable_all": preference.disable_all,
+            "event_preferences": {key: events.get(key, True) for key in NOTIFICATION_EVENT_CATEGORIES},
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def exams_snapshot(request):

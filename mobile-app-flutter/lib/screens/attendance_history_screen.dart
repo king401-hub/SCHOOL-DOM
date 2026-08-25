@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/scanner_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/branded_refresh.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   const AttendanceHistoryScreen({super.key});
@@ -154,10 +155,10 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               ),
             ),
             Expanded(
-              child: RefreshIndicator(
+              child: BrandedRefresh(
                 onRefresh: _load,
-                color: AppColors.primary,
-                child: _loading
+                showSpinner: _loading && _records.isNotEmpty,
+                child: _loading && _records.isEmpty
                     ? const _HistorySkeletonList()
                     : _error != null
                         ? _centeredScrollable(

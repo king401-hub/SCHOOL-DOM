@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../api/teacher_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/branded_refresh.dart';
+import '../widgets/primary_button.dart';
+import '../widgets/skeleton.dart';
 
 /// A teacher's weekly timetable is read-only on mobile (only admins edit
 /// it) - so instead of replicating the web's cramped day-by-day grid table,
@@ -20,6 +23,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
   List<dynamic> _activities = [];
   int _selectedDay = 0;
   bool _loading = true;
+  bool _initialLoadDone = false;
   String? _error;
 
   @override
@@ -47,7 +51,12 @@ class _TimetableScreenState extends State<TimetableScreen> {
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _initialLoadDone = true;
+        });
+      }
     }
   }
 
@@ -84,64 +93,79 @@ class _TimetableScreenState extends State<TimetableScreen> {
         title: const Text('My Timetable', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _load,
-          color: AppColors.primary,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            children: [
-              if (_activities.isNotEmpty) ...[
-                Text('Upcoming school activities',
-                    style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w900, fontSize: 14)),
-                const SizedBox(height: 10),
-                for (final raw in _activities.take(3)) ...[
-                  _ActivityCard(item: raw as Map<String, dynamic>, formatDate: _formatActivityDate),
-                  const SizedBox(height: 8),
-                ],
-                const SizedBox(height: 14),
-              ],
-              if (_days.isNotEmpty)
-                SizedBox(
-                  height: 40,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _days.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final day = _days[index] as Map<String, dynamic>;
-                      final value = day['value'] as int;
-                      return _DayChip(
-                        label: (day['label'] ?? '').toString(),
-                        selected: value == _selectedDay,
-                        onTap: () => setState(() => _selectedDay = value),
-                      );
-                    },
+        child: !_initialLoadDone && _loading
+            ? const SkeletonList()
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline, color: AppColors.danger, size: 40),
+                          const SizedBox(height: 12),
+                          const Text("Couldn't load your timetable.",
+                              style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 4),
+                          Text('Check your connection and try again.',
+                              textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                          const SizedBox(height: 16),
+                          SizedBox(width: 160, child: PrimaryButton(title: 'Retry', onPressed: _load)),
+                        ],
+                      ),
+                    ),
+                  )
+                : BrandedRefresh(
+                    onRefresh: _load,
+                    showSpinner: _loading,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                      children: [
+                        if (_activities.isNotEmpty) ...[
+                          Text('Upcoming school activities',
+                              style: TextStyle(color: AppColors.text, fontWeight: FontWeight.w900, fontSize: 14)),
+                          const SizedBox(height: 10),
+                          for (final raw in _activities.take(3)) ...[
+                            _ActivityCard(item: raw as Map<String, dynamic>, formatDate: _formatActivityDate),
+                            const SizedBox(height: 8),
+                          ],
+                          const SizedBox(height: 14),
+                        ],
+                        if (_days.isNotEmpty)
+                          SizedBox(
+                            height: 40,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _days.length,
+                              separatorBuilder: (_, _) => const SizedBox(width: 8),
+                              itemBuilder: (context, index) {
+                                final day = _days[index] as Map<String, dynamic>;
+                                final value = day['value'] as int;
+                                return _DayChip(
+                                  label: (day['label'] ?? '').toString(),
+                                  selected: value == _selectedDay,
+                                  onTap: () => setState(() => _selectedDay = value),
+                                );
+                              },
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        if (_dayEntries.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 40),
+                            child: Center(
+                              child: Text('No classes scheduled for this day.',
+                                  style: TextStyle(color: AppColors.muted)),
+                            ),
+                          )
+                        else
+                          for (final entry in _dayEntries) ...[
+                            _PeriodCard(entry: entry),
+                            const SizedBox(height: 10),
+                          ],
+                      ],
+                    ),
                   ),
-                ),
-              const SizedBox(height: 16),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                )
-              else if (_error != null)
-                Text(_error!, style: const TextStyle(color: AppColors.danger))
-              else if (_dayEntries.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: Center(
-                    child: Text('No classes scheduled for this day.',
-                        style: TextStyle(color: AppColors.muted)),
-                  ),
-                )
-              else
-                for (final entry in _dayEntries) ...[
-                  _PeriodCard(entry: entry),
-                  const SizedBox(height: 10),
-                ],
-            ],
-          ),
-        ),
       ),
     );
   }

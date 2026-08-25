@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar.dart';
+import '../widgets/branded_refresh.dart';
 
 /// A single conversation thread with one partner, rendered as chat bubbles
 /// with a compose bar at the bottom - built on top of the existing
@@ -44,6 +45,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
   bool _sending = false;
   bool _hasText = false;
   bool _isRecording = false;
+  bool _refreshing = false;
   Duration _recordDuration = Duration.zero;
   Timer? _recordTimer;
 
@@ -135,6 +137,15 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
     } catch (_) {
       // Silent - this is just a background refresh of read receipts.
     }
+  }
+
+  /// Wraps [_refresh] with a visible branded spinner for an explicit
+  /// pull-to-refresh gesture - the auto-refresh-on-resume path still calls
+  /// [_refresh] directly and stays silent.
+  Future<void> _pullRefresh() async {
+    setState(() => _refreshing = true);
+    await _refresh();
+    if (mounted) setState(() => _refreshing = false);
   }
 
   Future<void> _send() async {
@@ -460,9 +471,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> with WidgetsBinding
                       child: Text('Say hello to ${widget.partnerName}.',
                           style: TextStyle(color: AppColors.muted)),
                     )
-                  : RefreshIndicator(
-                      onRefresh: _refresh,
-                      color: AppColors.primary,
+                  : BrandedRefresh(
+                      onRefresh: _pullRefresh,
+                      showSpinner: _refreshing,
                       child: ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

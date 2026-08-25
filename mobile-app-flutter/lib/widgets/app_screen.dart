@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'branded_refresh.dart';
 
 class AppScreen extends StatelessWidget {
   final List<Widget> children;
   final Widget? refreshIndicator;
   final EdgeInsets padding;
+  final bool refreshing;
 
   const AppScreen({
     super.key,
@@ -12,6 +14,7 @@ class AppScreen extends StatelessWidget {
     this.refreshIndicator,
     this.padding =
         const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+    this.refreshing = false,
   });
 
   @override
@@ -27,9 +30,9 @@ class AppScreen extends StatelessWidget {
     );
 
     if (refreshIndicator != null) {
-      body = RefreshIndicator(
+      body = BrandedRefresh(
         onRefresh: () async {},
-        color: AppColors.primary,
+        showSpinner: refreshing,
         child: body,
       );
     }
@@ -46,6 +49,7 @@ class RefreshableScreen extends StatelessWidget {
   final List<Widget> children;
   final Future<void> Function() onRefresh;
   final EdgeInsets padding;
+  final bool refreshing;
 
   const RefreshableScreen({
     super.key,
@@ -53,6 +57,7 @@ class RefreshableScreen extends StatelessWidget {
     required this.onRefresh,
     this.padding =
         const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+    this.refreshing = false,
   });
 
   @override
@@ -60,9 +65,9 @@ class RefreshableScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: RefreshIndicator(
+        child: BrandedRefresh(
           onRefresh: onRefresh,
-          color: AppColors.primary,
+          showSpinner: refreshing,
           child: ListView(
             padding: padding,
             children: [

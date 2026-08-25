@@ -68,6 +68,10 @@ class AppColors {
   static const cardSoft = Color(0xFFF8FAFC);
   static const primary = Color(0xFF2563EB);
   static const primarySoft = Color(0xFFDBEAFE);
+  // Second accent tone - used to keep a group of chips/tags (e.g. "Classes")
+  // visually distinct from ones already using primary (e.g. "Subjects").
+  static const secondary = Color(0xFF0D9488);
+  static const secondarySoft = Color(0xFFCCFBF1);
   static const success = Color(0xFF16A34A);
   static const warning = Color(0xFFF59E0B);
   static const danger = Color(0xFFDC2626);

@@ -3,6 +3,9 @@ import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/avatar.dart';
+import '../widgets/branded_refresh.dart';
+import '../widgets/primary_button.dart';
+import '../widgets/skeleton.dart';
 import 'chat_thread_screen.dart';
 
 /// Conversation list, one row per contact - built from the server-side
@@ -22,6 +25,7 @@ class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObse
   List<dynamic> _recipients = [];
   String? _error;
   bool _loading = true;
+  bool _initialLoadDone = false;
 
   @override
   void initState() {
@@ -62,7 +66,12 @@ class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObse
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _initialLoadDone = true;
+        });
+      }
     }
   }
 
@@ -135,40 +144,54 @@ class _MessagesScreenState extends State<MessagesScreen> with WidgetsBindingObse
         child: const Icon(Icons.add_comment_outlined, color: Colors.white),
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _load,
-          color: AppColors.primary,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            children: [
-              if (_error != null)
-                Text(_error!, style: const TextStyle(color: AppColors.danger)),
-              if (_loading && _conversations.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                ),
-              if (!_loading && _conversations.isEmpty && _error == null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 40),
-                  child: Center(
-                    child: Text('No conversations yet. Tap + to message someone.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.muted)),
+        child: !_initialLoadDone && _loading
+            ? const SkeletonList()
+            : _error != null && _conversations.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline, color: AppColors.danger, size: 40),
+                          const SizedBox(height: 12),
+                          const Text("Couldn't load your messages.",
+                              style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 4),
+                          Text('Check your connection and try again.',
+                              textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                          const SizedBox(height: 16),
+                          SizedBox(width: 160, child: PrimaryButton(title: 'Retry', onPressed: _load)),
+                        ],
+                      ),
+                    ),
+                  )
+                : BrandedRefresh(
+                    onRefresh: _load,
+                    showSpinner: _loading,
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      children: [
+                        if (_conversations.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 40),
+                            child: Center(
+                              child: Text('No conversations yet. Tap + to message someone.',
+                                  textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted)),
+                            ),
+                          ),
+                        for (final conversation in _conversations) ...[
+                          _ConversationTile(
+                            conversation: conversation,
+                            formatTime: _formatTime,
+                            onTap: () => _openThread(conversation),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        const SizedBox(height: 64),
+                      ],
+                    ),
                   ),
-                ),
-              for (final conversation in _conversations) ...[
-                _ConversationTile(
-                  conversation: conversation,
-                  formatTime: _formatTime,
-                  onTap: () => _openThread(conversation),
-                ),
-                const SizedBox(height: 10),
-              ],
-              const SizedBox(height: 64),
-            ],
-          ),
-        ),
       ),
     );
   }

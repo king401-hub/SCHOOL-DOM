@@ -53,6 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return RefreshableScreen(
       onRefresh: _refresh,
+      refreshing: _refreshing && _snapshot != null,
       children: [
         if (_refreshing && _snapshot == null)
           const Center(child: CircularProgressIndicator(color: AppColors.primary)),

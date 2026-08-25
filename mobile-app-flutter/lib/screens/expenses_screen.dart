@@ -148,6 +148,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Widget build(BuildContext context) {
     return RefreshableScreen(
       onRefresh: _load,
+      refreshing: _refreshing && _data != null,
       children: [
         Text(
           'Expenses',

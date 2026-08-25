@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/branded_refresh.dart';
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -143,6 +144,7 @@ class _HistoryViewState extends State<_HistoryView> {
   }
 
   Future<void> _load() async {
+    setState(() => _loading = true);
     try {
       final data = await loadFinanceTransactions(limit: 100);
       setState(() {
@@ -158,9 +160,9 @@ class _HistoryViewState extends State<_HistoryView> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    return BrandedRefresh(
       onRefresh: _load,
-      color: AppColors.primary,
+      showSpinner: _loading && _items.isNotEmpty,
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
         children: [
@@ -195,6 +197,7 @@ class _LiveTransactionsViewState extends State<_LiveTransactionsView> {
   List<dynamic> _items = [];
   String? _error;
   bool _loading = true;
+  bool _refreshing = false;
   Timer? _timer;
 
   @override
@@ -225,11 +228,21 @@ class _LiveTransactionsViewState extends State<_LiveTransactionsView> {
     }
   }
 
+  /// Wraps [_load] with a visible branded spinner for an explicit
+  /// pull-to-refresh - the 8-second auto-poll keeps calling [_load] directly
+  /// and stays silent, so this "live" screen doesn't flash a spinner on its
+  /// own timer.
+  Future<void> _pullRefresh() async {
+    setState(() => _refreshing = true);
+    await _load();
+    if (mounted) setState(() => _refreshing = false);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _load,
-      color: AppColors.primary,
+    return BrandedRefresh(
+      onRefresh: _pullRefresh,
+      showSpinner: _refreshing,
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
         children: [

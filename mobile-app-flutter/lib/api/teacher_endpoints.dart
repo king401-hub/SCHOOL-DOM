@@ -35,7 +35,7 @@ Future<Map<String, dynamic>> saveLessonPlan({
       'status': status,
     });
 
-/// See users/app_views.py `teacher_notes` - GET/POST only, no edit/delete.
+/// See users/app_views.py `teacher_notes`.
 Future<Map<String, dynamic>> loadTeacherNotes() => getJson('/api/app/academic/notes/');
 
 Future<Map<String, dynamic>> saveTeacherNote({
@@ -48,3 +48,19 @@ Future<Map<String, dynamic>> saveTeacherNote({
       'body': body,
       'pinned': pinned,
     });
+
+/// See users/app_views.py `teacher_note_detail`.
+Future<Map<String, dynamic>> editTeacherNote(
+  int id, {
+  String? title,
+  String? body,
+  bool? pinned,
+}) =>
+    patchJson('/api/app/academic/notes/$id/', {
+      if (title != null) 'title': title,
+      if (body != null) 'body': body,
+      if (pinned != null) 'pinned': pinned,
+    });
+
+Future<Map<String, dynamic>> deleteTeacherNote(int id) =>
+    deleteJson('/api/app/academic/notes/$id/');

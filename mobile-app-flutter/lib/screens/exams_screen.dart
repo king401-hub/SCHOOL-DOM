@@ -14,6 +14,7 @@ class ExamsScreen extends StatefulWidget {
 class _ExamsScreenState extends State<ExamsScreen> {
   List<dynamic> _items = [];
   String? _error;
+  bool _refreshing = false;
 
   @override
   void initState() {
@@ -22,12 +23,15 @@ class _ExamsScreenState extends State<ExamsScreen> {
   }
 
   Future<void> _load() async {
+    setState(() => _refreshing = true);
     try {
       final data = await loadExams();
       setState(() =>
           _items = (data['exams'] ?? data['upcoming_exams'] ?? []) as List<dynamic>);
     } catch (e) {
       setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -35,6 +39,7 @@ class _ExamsScreenState extends State<ExamsScreen> {
   Widget build(BuildContext context) {
     return RefreshableScreen(
       onRefresh: _load,
+      refreshing: _refreshing && _items.isNotEmpty,
       children: [
         Text(
           'Exams',

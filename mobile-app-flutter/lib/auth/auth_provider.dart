@@ -34,6 +34,7 @@ class AuthProvider extends ChangeNotifier {
     'super_admin',
     'school_superadmin',
   };
+  bool get biometricEnabled => _biometricEnabled;
   bool get isAdmin => _adminRoles.contains(role);
   bool get isTeacher => role == 'teacher';
   // SchoolDom Scanner: admins and teachers can scan students; everyone else
@@ -115,6 +116,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> enableBiometrics(bool enabled) async {
     await setBiometricEnabled(enabled);
     _biometricEnabled = enabled;
+    notifyListeners();
   }
 
   Future<void> signOut() async {

@@ -14,6 +14,7 @@ class ResultsScreen extends StatefulWidget {
 class _ResultsScreenState extends State<ResultsScreen> {
   List<dynamic> _results = [];
   String? _error;
+  bool _refreshing = false;
 
   @override
   void initState() {
@@ -22,6 +23,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
   }
 
   Future<void> _load() async {
+    setState(() => _refreshing = true);
     try {
       final data = await loadResults();
       setState(() => _results =
@@ -29,6 +31,8 @@ class _ResultsScreenState extends State<ResultsScreen> {
               as List<dynamic>);
     } catch (e) {
       setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -36,6 +40,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
   Widget build(BuildContext context) {
     return RefreshableScreen(
       onRefresh: _load,
+      refreshing: _refreshing && _results.isNotEmpty,
       children: [
         Text(
           'Results',

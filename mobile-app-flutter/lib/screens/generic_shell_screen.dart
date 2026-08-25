@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../widgets/offline_banner.dart';
 import 'dashboard_screen.dart';
 import 'messages_screen.dart';
 import 'settings_screen.dart';
@@ -27,7 +28,12 @@ class _GenericShellScreenState extends State<GenericShellScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _index, children: _pages),
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(child: IndexedStack(index: _index, children: _pages)),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.primary.withValues(alpha: 0.15),

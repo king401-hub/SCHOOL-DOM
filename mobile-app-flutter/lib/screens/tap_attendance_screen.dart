@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/scanner_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/branded_refresh.dart';
 
 /// "Tap Attendance": lets a teacher/admin step through their class roster
 /// one student at a time and tap Present/Late/Excused/Absent, instead of
@@ -168,9 +169,9 @@ class _TapAttendanceScreenState extends State<TapAttendanceScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
       ),
       body: SafeArea(
-        child: RefreshIndicator(
+        child: BrandedRefresh(
           onRefresh: _loadClasses,
-          color: AppColors.primary,
+          showSpinner: _loading && _students.isNotEmpty,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
             children: [

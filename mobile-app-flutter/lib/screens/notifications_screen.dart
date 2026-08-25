@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
+import '../widgets/branded_refresh.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -22,6 +23,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _load() async {
+    setState(() => _loading = true);
     try {
       final data = await loadNotifications();
       setState(() {
@@ -59,9 +61,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       ),
       body: SafeArea(
-        child: RefreshIndicator(
+        child: BrandedRefresh(
           onRefresh: _load,
-          color: AppColors.primary,
+          showSpinner: _loading && _items.isNotEmpty,
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             children: [

@@ -85,6 +85,37 @@ Future<Map<String, dynamic>> markAttendance(Map<String, dynamic> payload) =>
 Future<Map<String, dynamic>> registerDevice(Map<String, dynamic> payload) =>
     postJson('/api/app/mobile/device/', payload);
 
+/// See users/urls.py `change_password` - lives under /api/auth/, not
+/// /api/app/ like the rest of this file, since it's the same endpoint the
+/// web app's account settings already use.
+Future<Map<String, dynamic>> changePassword({
+  required String oldPassword,
+  required String newPassword,
+  required String confirmPassword,
+}) =>
+    postJson('/api/auth/change-password/', {
+      'old_password': oldPassword,
+      'new_password': newPassword,
+      'confirm_password': confirmPassword,
+    });
+
+/// See users/app_views.py `notification_preferences`. `allow_push` is a real
+/// master switch already enforced before every push send; the four
+/// event_preferences categories are saved faithfully but aren't yet
+/// filtered per-category at every notification-creation call site across
+/// the platform (that's a much larger cross-cutting change).
+Future<Map<String, dynamic>> loadNotificationPreferences() =>
+    getJson('/api/app/notifications/preferences/');
+
+Future<Map<String, dynamic>> updateNotificationPreferences({
+  bool? allowPush,
+  Map<String, bool>? eventPreferences,
+}) =>
+    patchJson('/api/app/notifications/preferences/', {
+      if (allowPush != null) 'allow_push': allowPush,
+      if (eventPreferences != null) 'event_preferences': eventPreferences,
+    });
+
 Future<Map<String, dynamic>> loadExpenses() =>
     getJson('/api/finance/admin/expenses/');
 
