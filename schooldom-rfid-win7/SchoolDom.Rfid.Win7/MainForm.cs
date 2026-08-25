@@ -40,6 +40,17 @@ namespace SchoolDom.Rfid.Win7
         private readonly Timer _syncTimer = new Timer { Interval = 20000 };
         private int _syncInFlight; // 0/1 guard via Interlocked, so a slow tick can't overlap the next one
 
+        // Root cause of "data stuck / pending sync count never moves": the saved
+        // JWT expires (1hr) and SyncService.Request never clears it, so every
+        // background tick kept hitting CloudAuthExpiredException and popping
+        // ANOTHER LoginForm modal every 20s - easy to miss (e.g. the main window
+        // minimized, so the dialog it owns may not surface either), and each
+        // miss just guaranteed the identical failure next tick forever. Now:
+        // the automatic 20s/network-restored triggers stop nagging with a modal
+        // after the first miss and instead leave a banner that doesn't auto-hide
+        // until the user acts (Sync Now, which prompts deliberately).
+        private bool _authExpiredNeedsAttention;
+
         public MainForm()
         {
             _sync = new SyncService(_store);
@@ -57,7 +68,10 @@ namespace SchoolDom.Rfid.Win7
             WireReaderManager();
 
             _bannerTimer.Tick += (s, e) => { _bannerTimer.Stop(); _unregisteredBanner.Visible = false; };
-            _syncTimer.Tick += (s, e) => RunFlush();
+            // Don't auto-retry once a sign-in prompt has already been missed once -
+            // see _authExpiredNeedsAttention above. Sync Now (manual: true) always
+            // tries regardless, since that's a deliberate user action.
+            _syncTimer.Tick += (s, e) => { if (!_authExpiredNeedsAttention) RunFlush(); };
             // "Auto-sync if there's an internet connection" - don't just wait for the
             // next 20s tick once connectivity actually returns; sync right away.
             NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
@@ -103,12 +117,22 @@ namespace SchoolDom.Rfid.Win7
 
         private bool PromptSignIn()
         {
+            // A ShowDialog owned by a minimized/background window can end up
+            // invisible or unfocused on some Windows versions - restore and
+            // activate first so the prompt is never silently missed.
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            Show();
+            Activate();
+
             using (var login = new LoginForm(_sync))
             {
                 var result = login.ShowDialog(this);
                 if (result == DialogResult.OK)
                 {
+                    _authExpiredNeedsAttention = false;
+                    _unregisteredBanner.Visible = false;
                     RefreshOperatorLabel();
+                    RefreshPendingSyncCount();
                     return true;
                 }
                 return false;
@@ -157,9 +181,25 @@ namespace SchoolDom.Rfid.Win7
 
                     if (authExpired)
                     {
-                        _syncTimer.Stop();
-                        PromptSignIn();
-                        _syncTimer.Start();
+                        if (manual || pullOnly)
+                        {
+                            // Sync Now, or the very first pull right after opening -
+                            // both are already a direct, in-the-moment user action, so
+                            // a modal here is expected, not a surprise interruption.
+                            _syncTimer.Stop();
+                            var signedIn = PromptSignIn();
+                            _syncTimer.Start();
+                            if (!signedIn) ShowPersistentBanner(AuthExpiredBannerText);
+                        }
+                        else
+                        {
+                            // An unattended 20s/network-restored tick - don't pop a
+                            // modal the user didn't ask for and may not even see.
+                            // Leave an un-missable banner instead; Sync Now (or
+                            // reopening the app) is what re-prompts.
+                            _authExpiredNeedsAttention = true;
+                            ShowPersistentBanner(AuthExpiredBannerText);
+                        }
                     }
                     else if (failure != null && (pullOnly || manual))
                     {
@@ -404,6 +444,15 @@ namespace SchoolDom.Rfid.Win7
             banner.Controls.Add(_unregisteredBannerDot);
             banner.Controls.Add(_unregisteredBannerLabel);
             banner.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            // Only meaningful while ShowPersistentBanner's auth-expired message is
+            // showing (Cursor.Hand at that point; Cursors.Default otherwise makes
+            // this a harmless no-op click for every other banner use).
+            EventHandler onBannerClick = (s, e) => { if (_authExpiredNeedsAttention) RunFlush(manual: true); };
+            banner.Click += onBannerClick;
+            _unregisteredBannerDot.Click += onBannerClick;
+            _unregisteredBannerLabel.Click += onBannerClick;
+
             return banner;
         }
 
@@ -685,6 +734,7 @@ namespace SchoolDom.Rfid.Win7
 
         private void ShowBanner(string message, Color accent, Color tint)
         {
+            _unregisteredBanner.Cursor = Cursors.Default;
             _unregisteredBannerLabel.Text = message;
             _unregisteredBannerLabel.ForeColor = accent;
             _unregisteredBannerDot.BackColor = accent;
@@ -692,6 +742,22 @@ namespace SchoolDom.Rfid.Win7
             _unregisteredBanner.Visible = true;
             _bannerTimer.Stop();
             _bannerTimer.Start();
+        }
+
+        private const string AuthExpiredBannerText = "Sign-in expired - nothing is syncing. Click here, or Sync Now, to sign in again.";
+
+        // Doesn't auto-hide via _bannerTimer (unlike ShowBanner) and is clickable -
+        // used specifically for "sync can't proceed until you do something",
+        // which a message that quietly vanishes after 4s would undercut.
+        private void ShowPersistentBanner(string message)
+        {
+            _bannerTimer.Stop();
+            _unregisteredBannerLabel.Text = message;
+            _unregisteredBannerLabel.ForeColor = Palette.Coral;
+            _unregisteredBannerDot.BackColor = Palette.Coral;
+            _unregisteredBanner.BackColor = Palette.CoralSoft;
+            _unregisteredBanner.Cursor = Cursors.Hand;
+            _unregisteredBanner.Visible = true;
         }
 
         private void OnReaderError(object sender, ReaderErrorEventArgs e)

@@ -14,6 +14,17 @@ namespace SchoolDom.Rfid.Win7
         public CloudAuthExpiredException(string message) : base(message) { }
     }
 
+    // Thrown only when the server genuinely could not be reached at all (DNS
+    // failure, timeout, connection refused - see RequestRaw's WebException
+    // catch with ex.Response == null). Distinct from a definite HTTP error
+    // response (400/500 with a body), which means the server WAS reached and
+    // rejected this one request specifically - FlushPendingQueue uses this
+    // distinction to decide whether stopping the whole batch makes sense.
+    public class NetworkUnavailableException : InvalidOperationException
+    {
+        public NetworkUnavailableException(string message, Exception inner) : base(message, inner) { }
+    }
+
     // A card scanned/assigned against a card_uid that's already active on a
     // different person (Section 4d) - callers catch this to show the rich
     // "already assigned to X" confirmation (name/photo/class) instead of a
@@ -69,6 +80,13 @@ namespace SchoolDom.Rfid.Win7
     // slow background request for no reason).
     internal sealed class SyncService
     {
+        // A record that's been rejected (not "too soon", an actual rejection) this
+        // many times is treated as permanently unresolvable and dropped instead of
+        // retried forever - "already clocked out today" cannot become true again
+        // until tomorrow, and there's no value in keeping such a record queued
+        // indefinitely once that's been confirmed repeatedly.
+        private const int MaxAttemptsBeforeAbandoning = 20;
+
         private readonly LocalStore _store;
 
         public SyncService(LocalStore store)
@@ -358,8 +376,11 @@ namespace SchoolDom.Rfid.Win7
                     lock (_store.StateLock) { result.RemainingInQueue = _store.State.PendingAttendance.Count; }
                     throw;
                 }
-                catch (Exception ex)
+                catch (NetworkUnavailableException ex)
                 {
+                    // The server genuinely could not be reached - every other queued
+                    // record would fail identically right now, so stop this pass
+                    // rather than burning through the whole queue for no reason.
                     lock (_store.StateLock)
                     {
                         record.AttemptCount++;
@@ -367,7 +388,31 @@ namespace SchoolDom.Rfid.Win7
                         _store.Save();
                     }
                     result.Failed++;
-                    break; // network/server is down - stop hammering, try again next tick
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    // The server WAS reached and rejected this one record specifically
+                    // (e.g. "already clocked out today") - that says nothing about
+                    // whether the next queued record would also fail, so keep going
+                    // instead of blocking everything behind it. This is the fix for
+                    // records getting permanently stuck: previously any failure here
+                    // broke the whole batch, so one record that could never succeed
+                    // (like a third scan of someone already clocked out for the day)
+                    // silently blocked every record queued after it, forever - one
+                    // such record was found with AttemptCount=91 while newer, valid
+                    // scans sat behind it untouched.
+                    bool abandoned;
+                    lock (_store.StateLock)
+                    {
+                        record.AttemptCount++;
+                        record.LastAttemptError = ex.Message;
+                        abandoned = record.AttemptCount >= MaxAttemptsBeforeAbandoning;
+                        if (abandoned) _store.State.PendingAttendance.Remove(record);
+                        _store.Save();
+                    }
+                    result.Failed++;
+                    continue;
                 }
 
                 if (pushResult.Outcome == AttendanceScanOutcome.TooSoonRetryLater)
@@ -518,7 +563,7 @@ namespace SchoolDom.Rfid.Win7
                     }
                 }
                 // No response at all - DNS failure, timeout, connection refused (network is down).
-                throw new InvalidOperationException("Network error: " + ex.Message, ex);
+                throw new NetworkUnavailableException("Network error: " + ex.Message, ex);
             }
         }
 
