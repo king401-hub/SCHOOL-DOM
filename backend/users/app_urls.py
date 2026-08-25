@@ -92,6 +92,7 @@ urlpatterns = [
     path("push/unsubscribe/", app_views.push_unsubscribe, name="app_push_unsubscribe"),
     path("attendance/mark/", app_views.mark_attendance, name="app_mark_attendance"),
     path("attendance/scanner-history/", app_views.scanner_attendance_history, name="app_scanner_attendance_history"),
+    path("attendance/admin-summary/", app_views.admin_attendance_summary, name="app_admin_attendance_summary"),
     path("attendance/student-qr-mark/", app_views.student_qr_mark_attendance, name="app_student_qr_mark_attendance"),
     path("attendance/students/", app_views.student_attendance_list, name="app_student_attendance_list"),
     path("attendance/class-students/", app_views.teacher_class_students, name="app_teacher_class_students"),
@@ -122,4 +123,7 @@ urlpatterns = [
     path("kids-monitor/<uuid:parent_id>/verify/", app_views.kids_monitor_verify, name="app_kids_monitor_verify"),
     path("kids-monitor/<uuid:parent_id>/", app_views.kids_monitor_deactivate, name="app_kids_monitor_deactivate"),
     path("countries/", app_views.countries_list, name="app_countries_list"),
+    path("announcements/", app_views.announcements_list, name="app_announcements_list"),
+    path("announcements/create/", app_views.announcement_create, name="app_announcement_create"),
+    path("announcements/<uuid:announcement_id>/", app_views.announcement_detail, name="app_announcement_detail"),
 ]

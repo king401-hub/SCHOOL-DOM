@@ -11,6 +11,7 @@ import 'screens/expenses_screen.dart';
 import 'screens/finance_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/scanner_dashboard_screen.dart';
+import 'screens/admin_shell_screen.dart';
 import 'screens/generic_shell_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/teacher_shell_screen.dart';
@@ -136,14 +137,19 @@ class _RootState extends State<_Root> {
 }
 
 /// Teachers get the full purpose-built workspace (Home/Attendance/Messages/
-/// Settings); admins and self-scanning Non-K12 students keep the existing
-/// scanner-first experience; every other role (parent, K12 student, staff)
-/// gets a generic-but-real workspace instead of a dead end, until their own
-/// dashboards are built out. MainShell (the original multi-tab workspace,
-/// pre-dating both of these) is kept below, unused, in case its navigation
-/// is wanted back later.
+/// Settings); single-school admins (school_admin/principal/super_admin) get
+/// the full Dashboard/Students/Finance/Academics/More workspace; a
+/// school_superadmin (proprietor, manages a SchoolGroup of many schools) and
+/// self-scanning Non-K12 students keep the scanner-first experience (the new
+/// admin dashboard's endpoints deliberately 403 a proprietor - see
+/// AuthProvider.isSingleSchoolAdmin); every other role (parent, K12 student,
+/// staff) gets a generic-but-real workspace instead of a dead end, until
+/// their own dashboards are built out. MainShell (the original multi-tab
+/// workspace, pre-dating both of these) is kept below, unused, in case its
+/// navigation is wanted back later.
 Widget _homeForRole(AuthProvider auth) {
   if (auth.isTeacher) return const TeacherShellScreen();
+  if (auth.isSingleSchoolAdmin) return const AdminShellScreen();
   if (auth.isAdmin) return const ScannerDashboardScreen();
   if (auth.role == 'student' && auth.isNonK12School) return const ScannerDashboardScreen();
   return const GenericShellScreen();

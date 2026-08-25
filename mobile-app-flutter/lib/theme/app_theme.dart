@@ -75,8 +75,21 @@ class AppColors {
   static const success = Color(0xFF16A34A);
   static const warning = Color(0xFFF59E0B);
   static const danger = Color(0xFFDC2626);
+  // SchoolDom brand gradient (light green -> blue) - the Admin app's spec
+  // calls for this explicitly, used sparingly for buttons/highlights/active
+  // nav/selected states rather than as a general background.
+  static const brandGreen = Color(0xFF22C55E);
+  static const brandBlue = Color(0xFF2563EB);
   static const textDark = Color(0xFF0F172A);
   static const mutedDark = Color(0xFF475569);
+}
+
+class AppGradients {
+  static const brand = LinearGradient(
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+    colors: [AppColors.brandGreen, AppColors.brandBlue],
+  );
 }
 
 class AppTheme {

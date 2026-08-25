@@ -3202,6 +3202,130 @@ def _build_unique_announcement_slug(title):
     return candidate
 
 
+def _announcement_payload(item):
+    return {
+        "id": str(item.id),
+        "title": item.title,
+        "summary": item.summary or "",
+        "content": item.content,
+        "category": item.category,
+        "priority": item.priority,
+        "audience_type": item.audience_type,
+        "is_published": item.is_published,
+        "is_pinned": item.is_pinned,
+        "publish_from": item.publish_from,
+        "publish_until": item.publish_until,
+        "author_name": item.author.get_full_name() if item.author else "",
+        "created_at": item.created_at,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def announcements_list(request):
+    """Admin app's Announcements tab - unlike _visible_announcements_for_user
+    (used by dashboards to show what's relevant to *that* viewer), an admin
+    managing announcements needs to see everything they've published for
+    their school, including unpublished/archived ones, not just what's
+    currently visible."""
+    user = request.user
+    if not Announcement:
+        return Response({"success": False, "message": "Announcements module is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can manage announcements."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant_id:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    items = Announcement.objects.filter(tenant=user.tenant).order_by("-is_pinned", "-publish_from")
+    category = str(request.query_params.get("category") or "").strip().lower()
+    if category in dict(Announcement.CATEGORY_CHOICES):
+        items = items.filter(category=category)
+
+    return Response({
+        "success": True,
+        "announcements": [_announcement_payload(item) for item in items.select_related("author")[:100]],
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def announcement_create(request):
+    user = request.user
+    if not Announcement:
+        return Response({"success": False, "message": "Announcements module is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can publish announcements."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant_id:
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    title = str(request.data.get("title") or "").strip()
+    content = str(request.data.get("content") or "").strip()
+    if not title or not content:
+        return Response({"success": False, "message": "Title and content are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    category = str(request.data.get("category") or "notice").strip().lower()
+    if category not in dict(Announcement.CATEGORY_CHOICES):
+        category = "notice"
+
+    announcement = Announcement.objects.create(
+        tenant=user.tenant,
+        author=user,
+        title=title[:200],
+        slug=_build_unique_announcement_slug(title),
+        summary=content[:500],
+        content=content,
+        category=category,
+        audience_type="all",
+        publish_from=timezone.now(),
+        is_published=True,
+    )
+    return Response(
+        {"success": True, "message": "Announcement published.", "announcement": _announcement_payload(announcement)},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def announcement_detail(request, announcement_id):
+    user = request.user
+    if not Announcement:
+        return Response({"success": False, "message": "Announcements module is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only school administrators can manage announcements."}, status=status.HTTP_403_FORBIDDEN)
+
+    announcement = get_object_or_404(Announcement, id=announcement_id, tenant=user.tenant)
+    if request.method == "DELETE":
+        announcement.delete()
+        return Response({"success": True, "message": "Announcement deleted."})
+
+    update_fields = []
+    if "title" in request.data:
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"success": False, "message": "Title cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        announcement.title = title[:200]
+        update_fields.append("title")
+    if "content" in request.data:
+        content = str(request.data.get("content") or "").strip()
+        if not content:
+            return Response({"success": False, "message": "Content cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        announcement.content = content
+        announcement.summary = content[:500]
+        update_fields.extend(["content", "summary"])
+    if "category" in request.data:
+        category = str(request.data.get("category") or "").strip().lower()
+        if category in dict(Announcement.CATEGORY_CHOICES):
+            announcement.category = category
+            update_fields.append("category")
+    if "is_published" in request.data:
+        announcement.is_published = _to_bool(request.data.get("is_published"), default=announcement.is_published)
+        update_fields.append("is_published")
+    if update_fields:
+        announcement.save(update_fields=update_fields + ["updated_at"])
+    return Response({"success": True, "message": "Announcement updated.", "announcement": _announcement_payload(announcement)})
+
+
 def _performance_status(value, low=50, mid=70, inverse=False):
     numeric = float(value or 0)
     if inverse:
@@ -5170,6 +5294,24 @@ def students_snapshot(request):
     total = students.count()
     with_guardian_phone = students.exclude(guardian_phone="").count()
     without_class = students.filter(current_class__isnull=True).count()
+    # User.gender stores single-char codes ('M'/'F'/'O'/'N'), not full words.
+    male_count = students.filter(user__gender__iexact="M").count()
+    female_count = students.filter(user__gender__iexact="F").count()
+
+    # Optional filters for the admin app's Students screen (By Class / By
+    # Status tabs) - unused/no-op for any existing caller that doesn't pass
+    # them, so this stays backward compatible.
+    listed = students
+    class_id = str(request.query_params.get("class_id") or "").strip()
+    if class_id:
+        listed = listed.filter(current_class_id=class_id)
+    status_filter = str(request.query_params.get("status") or "").strip().lower()
+    if status_filter == "active":
+        listed = listed.filter(user__is_active=True)
+    elif status_filter == "inactive":
+        listed = listed.filter(user__is_active=False)
+    elif status_filter == "unassigned":
+        listed = listed.filter(current_class__isnull=True)
 
     return Response(
         {
@@ -5179,8 +5321,10 @@ def students_snapshot(request):
                 "total_students": total,
                 "with_guardian_phone": with_guardian_phone,
                 "without_class": without_class,
+                "male_count": male_count,
+                "female_count": female_count,
             },
-            "students": [_student_payload(student, request=request) for student in students[:12]],
+            "students": [_student_payload(student, request=request) for student in listed[:60]],
             "options": {
                 "classes": [
                     {
@@ -6712,6 +6856,54 @@ def scanner_attendance_history(request):
                 }
                 for item in records
             ],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_attendance_summary(request):
+    """Present/Absent/Late/Not-Marked counts across the whole school for one
+    day, for the admin app's Attendance tab. Separate from
+    scanner_attendance_history (which is per-class-filterable, per-record
+    detail) - this is a school-wide, single-day rollup only."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can view the attendance summary."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    school = _resolve_school_tenant_for_user(user)
+    if not school:
+        return Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    date_raw = str(request.query_params.get("date") or "").strip()
+    attendance_date = parse_date(date_raw) if date_raw else timezone.localdate()
+    if not attendance_date:
+        return Response({"success": False, "message": "Attendance date is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+
+    total_students = User.objects.filter(tenant=school, role="student", is_active=True).count()
+    records_qs = AttendanceRecord.objects.filter(student__tenant=school, date=attendance_date)
+    present = records_qs.filter(status="present").count()
+    absent = records_qs.filter(status="absent").count()
+    late = records_qs.filter(status="late").count()
+    excused = records_qs.filter(status="excused").count()
+    marked = present + absent + late + excused
+    not_marked = max(total_students - marked, 0)
+
+    return Response(
+        {
+            "success": True,
+            "date": attendance_date,
+            "total_students": total_students,
+            "present": present,
+            "absent": absent,
+            "late": late,
+            "excused": excused,
+            "not_marked": not_marked,
         }
     )
 
@@ -8699,6 +8891,7 @@ def exams_snapshot(request):
             "id": exam.id,
             "title": exam.title,
             "assessment_type": _assessment_type_for_exam(exam),
+            "exam_format": exam.exam_format,
             "subject": exam.subject.name if exam.subject else "General",
             "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
             "class_id": exam.class_group_id,

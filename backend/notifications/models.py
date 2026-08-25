@@ -321,6 +321,15 @@ class Announcement(TimeStampedModel, UUIDModel):
         ('role', 'Specific Role'),
     ]
     audience_type = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default='all')
+
+    # Presentation category for the admin app's Announcements tabs - distinct
+    # from priority (urgency) and audience_type (who sees it).
+    CATEGORY_CHOICES = [
+        ('notice', 'Notice'),
+        ('circular', 'Circular'),
+        ('event', 'Event'),
+    ]
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='notice')
     
     # TODO: Uncomment when ClassArm and StudentProfile models are created
     # target_classes = models.ManyToManyField('academic.ClassArm', blank=True)

@@ -36,6 +36,13 @@ class AuthProvider extends ChangeNotifier {
   };
   bool get biometricEnabled => _biometricEnabled;
   bool get isAdmin => _adminRoles.contains(role);
+  // The new admin dashboard (AdminShellScreen) calls several single-tenant
+  // endpoints (hr_snapshot, admin_overview, admin_attendance_summary,
+  // announcements_list, etc.) that deliberately 403 a school_superadmin -
+  // proprietors manage a SchoolGroup of many schools, not one tenant, and
+  // have their own proprietor_* endpoints/screen instead. Mirrors backend
+  // ADMIN_ROLES (users/app_views.py), which excludes school_superadmin.
+  bool get isSingleSchoolAdmin => role == 'school_admin' || role == 'principal' || role == 'super_admin';
   bool get isTeacher => role == 'teacher';
   // SchoolDom Scanner: admins and teachers can scan students; everyone else
   // (e.g. a Non-K12 student) may only scan their own attendance.

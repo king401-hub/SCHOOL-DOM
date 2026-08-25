@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../api/admin_endpoints.dart';
 import '../api/endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/branded_refresh.dart';
+import '../widgets/primary_button.dart';
+import '../widgets/skeleton.dart';
+
+enum _FinanceTab { overview, transactions, live }
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -13,7 +18,7 @@ class FinanceScreen extends StatefulWidget {
 }
 
 class _FinanceScreenState extends State<FinanceScreen> {
-  bool _showLive = false;
+  _FinanceTab _tab = _FinanceTab.overview;
 
   @override
   Widget build(BuildContext context) {
@@ -40,16 +45,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _SegmentedToggle(
-                showLive: _showLive,
-                onChanged: (v) => setState(() => _showLive = v),
-              ),
+              child: _SegmentedToggle(tab: _tab, onChanged: (v) => setState(() => _tab = v)),
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: _showLive
-                  ? const _LiveTransactionsView()
-                  : const _HistoryView(),
+              child: switch (_tab) {
+                _FinanceTab.overview => const _OverviewView(),
+                _FinanceTab.transactions => const _HistoryView(),
+                _FinanceTab.live => const _LiveTransactionsView(),
+              },
             ),
           ],
         ),
@@ -59,9 +63,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
 }
 
 class _SegmentedToggle extends StatelessWidget {
-  final bool showLive;
-  final ValueChanged<bool> onChanged;
-  const _SegmentedToggle({required this.showLive, required this.onChanged});
+  final _FinanceTab tab;
+  final ValueChanged<_FinanceTab> onChanged;
+  const _SegmentedToggle({required this.tab, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -75,16 +79,23 @@ class _SegmentedToggle extends StatelessWidget {
         children: [
           Expanded(
             child: _SegmentButton(
-              label: 'History',
-              selected: !showLive,
-              onTap: () => onChanged(false),
+              label: 'Overview',
+              selected: tab == _FinanceTab.overview,
+              onTap: () => onChanged(_FinanceTab.overview),
             ),
           ),
           Expanded(
             child: _SegmentButton(
-              label: 'Live transactions',
-              selected: showLive,
-              onTap: () => onChanged(true),
+              label: 'Transactions',
+              selected: tab == _FinanceTab.transactions,
+              onTap: () => onChanged(_FinanceTab.transactions),
+            ),
+          ),
+          Expanded(
+            child: _SegmentButton(
+              label: 'Live',
+              selected: tab == _FinanceTab.live,
+              onTap: () => onChanged(_FinanceTab.live),
             ),
           ),
         ],
@@ -108,7 +119,7 @@ class _SegmentButton extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.transparent,
+          gradient: selected ? AppGradients.brand : null,
           borderRadius: BorderRadius.circular(9),
         ),
         alignment: Alignment.center,
@@ -121,6 +132,148 @@ class _SegmentButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _OverviewView extends StatefulWidget {
+  const _OverviewView();
+
+  @override
+  State<_OverviewView> createState() => _OverviewViewState();
+}
+
+class _OverviewViewState extends State<_OverviewView> {
+  Map<String, dynamic>? _data;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await loadFinanceOverview();
+      setState(() => _data = data);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _naira(dynamic value) {
+    final amount = double.tryParse(value?.toString() ?? '') ?? 0;
+    final whole = amount.truncate().toString();
+    final withCommas = whole.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
+    return '₦$withCommas';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading && _data == null) return const SkeletonList();
+    if (_error != null && _data == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: AppColors.danger, size: 40),
+              const SizedBox(height: 12),
+              const Text("Couldn't load the finance summary.",
+                  style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 16),
+              SizedBox(width: 160, child: PrimaryButton(title: 'Retry', onPressed: _load)),
+            ],
+          ),
+        ),
+      );
+    }
+    final expected = double.tryParse(_data?['expected_fee_amount']?.toString() ?? '') ?? 0;
+    final collected = double.tryParse(_data?['amount_received']?.toString() ?? '') ?? 0;
+    final outstanding = double.tryParse(_data?['outstanding_balance']?.toString() ?? '') ?? 0;
+    final rate = expected > 0 ? (collected / expected * 100).clamp(0, 100) : 0.0;
+
+    return BrandedRefresh(
+      onRefresh: _load,
+      showSpinner: _loading,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(gradient: AppGradients.brand, borderRadius: BorderRadius.circular(18)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Total Collected',
+                    style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(_naira(collected),
+                    style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 4),
+                Text('${rate.toStringAsFixed(0)}% collection rate',
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryTile(
+                    label: 'Outstanding', value: _naira(outstanding), color: AppColors.warning),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SummaryTile(label: 'Expected Fees', value: _naira(expected), color: AppColors.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryTile(
+                    label: 'Pending', value: '${_data?['pending_fees'] ?? 0}', color: AppColors.muted),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SummaryTile(
+                    label: 'Overdue', value: '${_data?['overdue_fees'] ?? 0}', color: AppColors.danger),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _SummaryTile({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      elevated: true,
+      children: [
+        Text(label, style: const TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w800, fontSize: 12)),
+        Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900)),
+      ],
     );
   }
 }
