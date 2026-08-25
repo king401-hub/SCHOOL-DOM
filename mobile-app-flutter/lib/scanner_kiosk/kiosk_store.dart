@@ -1,0 +1,52 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+/// Device identity/metadata for kiosk mode - kept separate from the normal
+/// app's session_store.dart (which only holds `access`/`refresh` in the
+/// generic shape apiRequest expects). Provisioning writes to BOTH: the
+/// device's synthetic-user JWT goes into the normal session store (so every
+/// existing apiRequest()/postJson() call in the app just works, offline
+/// queue included, as if a human staff member were logged in), while this
+/// store holds kiosk-only bookkeeping: whether kiosk mode is even on, and
+/// the device's own identity for the heartbeat endpoint (a different
+/// credential - see device_fleet.views._device_from_token on the backend).
+class KioskStore {
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
+  static const _kEnabled = 'kiosk_mode_enabled';
+  static const _kDeviceId = 'kiosk_device_id';
+  static const _kDeviceAuthToken = 'kiosk_device_auth_token';
+  static const _kSchoolName = 'kiosk_school_name';
+
+  static Future<bool> isEnabled() async {
+    return (await _storage.read(key: _kEnabled)) == 'true';
+  }
+
+  static Future<void> activate({
+    required String deviceId,
+    required String deviceAuthToken,
+    required String schoolName,
+  }) async {
+    await _storage.write(key: _kEnabled, value: 'true');
+    await _storage.write(key: _kDeviceId, value: deviceId);
+    await _storage.write(key: _kDeviceAuthToken, value: deviceAuthToken);
+    await _storage.write(key: _kSchoolName, value: schoolName);
+  }
+
+  static Future<String?> get deviceId => _storage.read(key: _kDeviceId);
+  static Future<String?> get deviceAuthToken =>
+      _storage.read(key: _kDeviceAuthToken);
+  static Future<String?> get schoolName => _storage.read(key: _kSchoolName);
+
+  /// Deliberately NOT exposed as a normal "sign out" - spec section 9: "Normal
+  /// users must not have a logout button." Only called after a superadmin
+  /// remote-revokes and the app itself detects it (heartbeat/scan responses
+  /// reporting authorized:false), never from anything the on-site user taps.
+  static Future<void> deactivate() async {
+    await _storage.delete(key: _kEnabled);
+    await _storage.delete(key: _kDeviceId);
+    await _storage.delete(key: _kDeviceAuthToken);
+    await _storage.delete(key: _kSchoolName);
+  }
+}

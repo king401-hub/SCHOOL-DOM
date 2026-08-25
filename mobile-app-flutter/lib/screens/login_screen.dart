@@ -3,6 +3,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
 import '../api/auth.dart';
 import '../auth/auth_provider.dart';
+import '../scanner_kiosk/kiosk_provisioning_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/primary_button.dart';
@@ -487,6 +488,18 @@ class _LoginScreenState extends State<LoginScreen>
             child: const Text(
               'Need help signing in? Contact your school admin',
               style: TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        Center(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const KioskProvisioningScreen()),
+            ),
+            child: Text(
+              'Set up as Scanner Terminal',
+              style: TextStyle(color: AppColors.mutedDark.withValues(alpha: 0.55), fontSize: 12),
               textAlign: TextAlign.center,
             ),
           ),

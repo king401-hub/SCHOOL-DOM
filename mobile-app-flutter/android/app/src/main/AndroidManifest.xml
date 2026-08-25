@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <!-- Push notifications (Android 13+ requires this explicitly) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- SchoolDom Scanner kiosk mode: NFC card reading -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <!-- Not required=true - most roles never touch kiosk mode, and this app
+         still needs to install/run on devices without NFC hardware. -->
+    <uses-feature android:name="android.hardware.nfc" android:required="false"/>
+    <!-- Kiosk mode keeps the screen awake while showing "Ready to Scan" -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
         android:label="SchoolDom App"
