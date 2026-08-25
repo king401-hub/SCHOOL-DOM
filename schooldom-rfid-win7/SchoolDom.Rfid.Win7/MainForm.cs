@@ -9,6 +9,7 @@ namespace SchoolDom.Rfid.Win7
     {
         private readonly LocalStore _store = new LocalStore();
         private readonly ReaderManager _readerManager = new ReaderManager();
+        private readonly SyncService _sync;
 
         private StatusPill _hidStatusPill;
         private StatusPill _sdkStatusPill;
@@ -18,10 +19,17 @@ namespace SchoolDom.Rfid.Win7
         private Panel _unregisteredBanner;
         private Panel _unregisteredBannerDot;
         private Label _unregisteredBannerLabel;
+        private Label _operatorLabel;
         private readonly Timer _bannerTimer = new Timer { Interval = 4000 };
+        // Section 3 "background retry mechanism" - flushes the offline queue every
+        // 20s regardless of how it got new entries (a scan, or a stalled retry from
+        // last tick), so a connection coming back doesn't need a manual nudge.
+        private readonly Timer _syncTimer = new Timer { Interval = 20000 };
 
         public MainForm()
         {
+            _sync = new SyncService(_store);
+
             Text = "SchoolDom RFID Attendance";
             Width = 1180;
             Height = 760;
@@ -35,9 +43,81 @@ namespace SchoolDom.Rfid.Win7
             WireReaderManager();
 
             _bannerTimer.Tick += (s, e) => { _bannerTimer.Stop(); _unregisteredBanner.Visible = false; };
+            _syncTimer.Tick += (s, e) => RunFlush();
 
-            Load += (s, e) => _readerManager.Start();
-            FormClosing += (s, e) => _readerManager.Dispose();
+            Load += OnLoad;
+            FormClosing += (s, e) => { _readerManager.Dispose(); _syncTimer.Stop(); };
+        }
+
+        private void OnLoad(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_store.State.AccessToken))
+            {
+                if (!PromptSignIn())
+                {
+                    Application.Exit();
+                    return;
+                }
+            }
+
+            RefreshOperatorLabel();
+            _readerManager.Start();
+            _syncTimer.Start();
+            RefreshPendingSyncCount();
+
+            try
+            {
+                _sync.PullCardAssignments();
+            }
+            catch (CloudAuthExpiredException)
+            {
+                PromptSignIn();
+            }
+            catch (Exception ex)
+            {
+                // Offline on first launch, or the server is unreachable - not fatal,
+                // Section 1d's local cache (possibly empty on a first run) still
+                // governs matching until the next successful pull.
+                ShowBanner("Could not refresh the card list from the cloud: " + ex.Message, Palette.Gold, Palette.GoldSoft);
+            }
+        }
+
+        private bool PromptSignIn()
+        {
+            using (var login = new LoginForm(_sync))
+            {
+                var result = login.ShowDialog(this);
+                if (result == DialogResult.OK)
+                {
+                    RefreshOperatorLabel();
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        private void RunFlush()
+        {
+            try
+            {
+                _sync.FlushPendingQueue();
+                RefreshPendingSyncCount();
+                // Section 1d: "refreshed from the SchoolDom API whenever online" -
+                // piggybacks on the same 20s tick rather than a separate timer.
+                _sync.PullCardAssignments();
+            }
+            catch (CloudAuthExpiredException)
+            {
+                _syncTimer.Stop();
+                PromptSignIn();
+                _syncTimer.Start();
+            }
+            catch (Exception)
+            {
+                // Network still down - RefreshPendingSyncCount already reflects
+                // whatever FlushPendingQueue managed before it stopped; just retry
+                // on the next tick rather than surfacing every transient failure.
+            }
         }
 
         private void BuildLayout()
@@ -71,15 +151,47 @@ namespace SchoolDom.Rfid.Win7
             sidebar.Controls.Add(title);
             sidebar.Controls.Add(subtitle);
 
-            var nav = BuildNavButton("Dashboard", 110, active: true);
-            sidebar.Controls.Add(nav);
+            sidebar.Controls.Add(BuildNavButton("Dashboard", 110, active: true, onClick: null));
+            sidebar.Controls.Add(BuildNavButton("Assign Cards", 154, active: false, onClick: (s, e) => OpenCardAssignment()));
+            sidebar.Controls.Add(BuildNavButton("Bulk Assign", 198, active: false, onClick: (s, e) => OpenBulkAssign()));
+
+            _operatorLabel = new Label
+            {
+                Text = "",
+                Left = 24,
+                Top = 660,
+                Width = 200,
+                Height = 40,
+                Font = Palette.Caption,
+                ForeColor = Palette.SoftText,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+            };
+            sidebar.Controls.Add(_operatorLabel);
+
+            var signOut = new LinkLabel
+            {
+                Text = "Sign Out",
+                Left = 24,
+                Top = 700,
+                AutoSize = true,
+                LinkColor = Palette.SoftText,
+                ActiveLinkColor = Color.White,
+                Font = Palette.Caption,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+            };
+            signOut.LinkClicked += (s, e) =>
+            {
+                _sync.SignOut();
+                if (!PromptSignIn()) Application.Exit();
+            };
+            sidebar.Controls.Add(signOut);
 
             return sidebar;
         }
 
-        private Panel BuildNavButton(string text, int top, bool active)
+        private Panel BuildNavButton(string text, int top, bool active, EventHandler onClick)
         {
-            var button = new Panel { Left = 0, Top = top, Width = 240, Height = 44, BackColor = active ? Palette.SideButton : Palette.Navy };
+            var button = new Panel { Left = 0, Top = top, Width = 240, Height = 44, BackColor = active ? Palette.SideButton : Palette.Navy, Cursor = onClick != null ? Cursors.Hand : Cursors.Default };
             var accent = new Panel { Left = 0, Top = 0, Width = 4, Height = 44, BackColor = active ? Palette.Blue : Palette.Navy };
             var label = new Label
             {
@@ -91,11 +203,43 @@ namespace SchoolDom.Rfid.Win7
                 Width = 200,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Font = Palette.BodyBold,
-                ForeColor = active ? Color.White : Palette.SoftText
+                ForeColor = active ? Color.White : Palette.SoftText,
+                Cursor = onClick != null ? Cursors.Hand : Cursors.Default
             };
             button.Controls.Add(accent);
             button.Controls.Add(label);
+
+            if (onClick != null)
+            {
+                button.Click += onClick;
+                label.Click += onClick;
+                label.MouseEnter += (s, e) => label.ForeColor = Color.White;
+                label.MouseLeave += (s, e) => label.ForeColor = Palette.SoftText;
+            }
             return button;
+        }
+
+        private void RefreshOperatorLabel()
+        {
+            var name = string.IsNullOrWhiteSpace(_store.State.OperatorName) ? "Signed in" : _store.State.OperatorName;
+            var school = string.IsNullOrWhiteSpace(_store.State.SchoolName) ? "" : "\n" + _store.State.SchoolName;
+            _operatorLabel.Text = name + school;
+        }
+
+        private void OpenCardAssignment()
+        {
+            using (var form = new CardAssignmentForm(_readerManager, _sync, _store))
+            {
+                form.ShowDialog(this);
+            }
+        }
+
+        private void OpenBulkAssign()
+        {
+            using (var form = new BulkAssignForm(_readerManager, _sync))
+            {
+                form.ShowDialog(this);
+            }
         }
 
         private Panel BuildContent()
@@ -309,6 +453,8 @@ namespace SchoolDom.Rfid.Win7
         // Section 1d - shared scan handling, regardless of which reader produced the scan.
         private void OnCardScanned(object sender, CardScannedEventArgs e)
         {
+            if (_readerManager.AssignmentModeActive) return;
+
             var assignment = _store.FindActiveAssignment(e.Uid);
             var entry = new ScanFeedEntry
             {

@@ -51,12 +51,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AppModels.cs" />
+    <Compile Include="BulkAssignForm.cs" />
+    <Compile Include="CardAssignmentForm.cs" />
     <Compile Include="Controls\RoundedButton.cs" />
     <Compile Include="Controls\Card.cs" />
     <Compile Include="Controls\StatusPill.cs" />
     <Compile Include="HidRfidReader.cs" />
     <Compile Include="JsonUtil.cs" />
     <Compile Include="LocalStore.cs" />
+    <Compile Include="LoginForm.cs" />
     <Compile Include="MainForm.cs" />
     <Compile Include="NativeInterop.cs" />
     <Compile Include="Palette.cs" />
@@ -64,6 +67,7 @@
     <Compile Include="ReaderManager.cs" />
     <Compile Include="RfidReader.cs" />
     <Compile Include="SdkRfidReader.cs" />
+    <Compile Include="SyncService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

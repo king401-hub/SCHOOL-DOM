@@ -10,6 +10,11 @@ namespace SchoolDom.Rfid.Win7
         public string DeviceId { get; set; }
         public string CloudUrl { get; set; }
         public string SchoolName { get; set; }
+        public string SchoolCode { get; set; }
+        public string AccessToken { get; set; }
+        public string OperatorName { get; set; }
+        public string LastSyncAtUtc { get; set; }
+        public string LastAssignmentsPullAtUtc { get; set; }
 
         // Locally cached student/staff card-UID mapping (Section 1d) - refreshed from
         // the SchoolDom API whenever online, consulted on every scan whether online or
@@ -47,6 +52,28 @@ namespace SchoolDom.Rfid.Win7
         public string ReaderName { get; set; }
         public int AttemptCount { get; set; }
         public string LastAttemptError { get; set; }
+    }
+
+    // UI-only lookup rows (Section 4b/4c pickers) - never persisted.
+    internal sealed class ClassOption
+    {
+        public string Id { get; set; }
+        public string Label { get; set; }
+        public override string ToString() { return Label; }
+    }
+
+    internal sealed class StudentOption
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string StudentCode { get; set; }
+        public string ClassName { get; set; }
+        public bool HasActiveCard { get; set; }
+        public override string ToString()
+        {
+            var code = string.IsNullOrEmpty(StudentCode) ? "" : " (" + StudentCode + ")";
+            return Name + code;
+        }
     }
 
     // UI-only row for the live scan feed - never persisted, just what MainForm renders.

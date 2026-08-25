@@ -59,6 +59,14 @@ namespace SchoolDom.Rfid.Win7
 
         public HidRfidReader HidReader { get { return _hidReader; } }
 
+        // Section 4b/4c "listening mode" - CardAssignmentForm/BulkAssignForm set this
+        // while open so MainForm's normal attendance handling (queueing a
+        // PendingAttendanceRecord, showing the "unregistered card" banner) doesn't
+        // also fire for a scan that's actually meant to assign a card. Both forms
+        // still read scans through the same CardScanned event and the same
+        // IRfidReader implementations - this only gates what MainForm does with them.
+        public bool AssignmentModeActive { get; set; }
+
         public IEnumerable<IRfidReader> ActiveReaders
         {
             get

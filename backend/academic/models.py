@@ -381,6 +381,15 @@ class AttendanceRecord(TenantAwareModel, TimeStampedModel):
     )
     remarks = models.TextField(blank=True, default="")
 
+    # Set only when this record was created/updated by an RFID scan (see
+    # rfid_attendance.views.attendance_scan_create) - card_uid is for audit
+    # ("which physical card produced this row"), idempotency_key is what makes
+    # a retried sync POST from the desktop app's offline queue safe: a repeat
+    # request with the same key returns the existing row instead of toggling
+    # clock_in -> clock_out a second time.
+    card_uid = models.CharField(max_length=64, blank=True, default="")
+    idempotency_key = models.CharField(max_length=64, blank=True, null=True, unique=True)
+
     class Meta:
         unique_together = ("student", "date")
         verbose_name = "Attendance Record"
