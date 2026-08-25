@@ -294,36 +294,42 @@ namespace SchoolDom.Rfid.Win7
             sidebar.Controls.Add(BuildNavButton("Bulk Assign", 198, active: false, onClick: (s, e) => OpenBulkAssign()));
             sidebar.Controls.Add(BuildNavButton("Attendance History", 242, active: false, onClick: (s, e) => OpenAttendanceHistory()));
 
+            // Fixed position below the nav buttons, NOT Anchor=Bottom - these two
+            // controls were completely invisible before (found while adding the
+            // Sign Out button: a fresh Panel() defaults to ~100px tall, and Anchor
+            // captures its "distance from the bottom edge" against whatever the
+            // parent's size is at the moment the control is added - which here is
+            // that ~100px default, not the ~700px this sidebar actually ends up
+            // once Dock=Left resolves against the Form. Both controls inherited a
+            // bogus, deeply-off-screen offset from that mismatch and rendered
+            // nowhere - not clipped, not behind anything, just positioned off the
+            // visible sidebar entirely). Anchoring to the bottom would need these
+            // added after the sidebar itself is parented and Dock has resolved;
+            // simplest fix is to just not depend on that ordering at all.
             _operatorLabel = new Label
             {
                 Text = "",
                 Left = 24,
-                Top = 660,
+                Top = 320,
                 Width = 200,
                 Height = 40,
                 Font = Palette.Caption,
-                ForeColor = Palette.SoftText,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+                ForeColor = Palette.SoftText
             };
             sidebar.Controls.Add(_operatorLabel);
 
-            var signOut = new LinkLabel
-            {
-                Text = "Sign Out",
-                Left = 24,
-                Top = 700,
-                AutoSize = true,
-                LinkColor = Palette.SoftText,
-                ActiveLinkColor = Color.White,
-                Font = Palette.Caption,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
-            };
-            signOut.LinkClicked += (s, e) =>
+            // Was a plain LinkLabel - easy to miss against the navy sidebar (small,
+            // muted, no visible button shape). A real RoundedButton reads as an
+            // actual control instead of blending into the background.
+            var signOutButton = RoundedButton.Secondary("Sign Out", 192, 36);
+            signOutButton.Left = 24;
+            signOutButton.Top = 364;
+            signOutButton.Click += (s, e) =>
             {
                 _sync.SignOut();
                 if (!PromptSignIn()) Application.Exit();
             };
-            sidebar.Controls.Add(signOut);
+            sidebar.Controls.Add(signOutButton);
 
             return sidebar;
         }
