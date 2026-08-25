@@ -122,8 +122,14 @@ namespace SchoolDom.Rfid.Win7
 
         private void BuildLayout()
         {
-            Controls.Add(BuildSidebar());
+            // Dock order matters and is easy to get backwards: WinForms docks
+            // controls in the order added, so DockStyle.Fill must be added FIRST -
+            // otherwise Fill claims the entire client area before Left gets a chance
+            // to reserve its 240px, and the sidebar just renders on top of it instead
+            // of beside it (which is exactly what happened here - see the commit this
+            // comment shipped in for the diagnostic dump that caught it).
             Controls.Add(BuildContent());
+            Controls.Add(BuildSidebar());
         }
 
         private Panel BuildSidebar()
@@ -244,7 +250,10 @@ namespace SchoolDom.Rfid.Win7
 
         private Panel BuildContent()
         {
-            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, AutoScroll = true, Padding = new Padding(32) };
+            // No Padding here - every child below already positions itself with its
+            // own Left=32 margin. Panel.Padding would double up on top of that AND
+            // feed into AutoScrollMinSize, silently widening the scrollable area.
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background, AutoScroll = true };
 
             var header = new Label
             {
@@ -278,14 +287,14 @@ namespace SchoolDom.Rfid.Win7
 
         private Panel BuildUnregisteredBanner()
         {
-            var banner = new Panel { Left = 32, Top = 104, Width = 1080, Height = 44, BackColor = Palette.CoralSoft, Visible = false };
+            var banner = new Panel { Left = 32, Top = 104, Width = 880, Height = 44, BackColor = Palette.CoralSoft, Visible = false };
             _unregisteredBannerDot = new Panel { Left = 16, Top = 16, Width = 10, Height = 10, BackColor = Palette.Coral };
             _unregisteredBannerLabel = new Label
             {
                 Left = 38,
                 Top = 0,
                 Height = 44,
-                Width = 1020,
+                Width = 820,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Font = Palette.BodyBold,
                 ForeColor = Palette.Coral,
@@ -299,7 +308,7 @@ namespace SchoolDom.Rfid.Win7
 
         private Card BuildReaderStatusCard()
         {
-            var card = new Card { Left = 32, Top = 160, Width = 1080, Height = 108 };
+            var card = new Card { Left = 32, Top = 160, Width = 880, Height = 108 };
             card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             var title = new Label { Text = "Readers", Left = 20, Top = 16, AutoSize = true, Font = Palette.BodyBold, ForeColor = Palette.Text };
@@ -338,7 +347,7 @@ namespace SchoolDom.Rfid.Win7
 
         private Card BuildScanFeedCard()
         {
-            var card = new Card { Left = 32, Top = 284, Width = 1080, Height = 400 };
+            var card = new Card { Left = 32, Top = 284, Width = 880, Height = 400 };
             card.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
 
             var title = new Label { Text = "Recent Scans", Left = 20, Top = 16, AutoSize = true, Font = Palette.BodyBold, ForeColor = Palette.Text };
@@ -347,7 +356,7 @@ namespace SchoolDom.Rfid.Win7
             _feedList = BuildFeedListView();
             _feedList.Left = 20;
             _feedList.Top = 48;
-            _feedList.Width = 1040;
+            _feedList.Width = 840;
             _feedList.Height = 336;
             _feedList.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             card.Controls.Add(_feedList);
@@ -368,11 +377,11 @@ namespace SchoolDom.Rfid.Win7
                 Font = Palette.Body,
                 BackColor = Palette.Surface
             };
-            list.Columns.Add("", 90);
-            list.Columns.Add("Card UID", 220);
-            list.Columns.Add("Student", 320);
-            list.Columns.Add("Reader", 200);
-            list.Columns.Add("Time", 190);
+            list.Columns.Add("", 70);
+            list.Columns.Add("Card UID", 180);
+            list.Columns.Add("Student", 260);
+            list.Columns.Add("Reader", 170);
+            list.Columns.Add("Time", 140);
 
             list.DrawColumnHeader += (s, e) =>
             {

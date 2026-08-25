@@ -55,7 +55,10 @@ namespace SchoolDom.Rfid.Win7.Controls
             using (var g = CreateGraphics())
             {
                 var textSize = g.MeasureString(_text, Font);
-                Width = (int)textSize.Width + 34;
+                // Must match OnPaint's textRect math (Width - dotRect.Right - 16,
+                // where dotRect.Right = 20): textSize.Width + 36 is the exact fit,
+                // +40 leaves a couple px of breathing room rather than a hairline.
+                Width = (int)textSize.Width + 40;
             }
         }
 
