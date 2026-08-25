@@ -109,6 +109,21 @@ class Device(models.Model):
     authorized = models.BooleanField(default=False)
     auth_token = models.CharField(max_length=64, blank=True, default='', db_index=True)
     authorized_at = models.DateTimeField(null=True, blank=True)
+
+    # "Permanent login" (spec section 9) is implemented with the SchoolDom
+    # API's existing JWT auth, not a parallel credential system: each device
+    # gets its own synthetic staff-role User (password unusable - login is
+    # only ever by refresh token) created at provisioning time, so a scan
+    # posted from this device hits rfid_attendance.attendance_scan_create
+    # exactly like a human staff member's phone would, with normal
+    # role/tenant scoping and audit trail. The device stores a long-lived
+    # refresh token (7 days, rotated on each use - see SIMPLE_JWT in
+    # settings) and silently refreshes it forever; revoking here deletes
+    # this user's ability to authenticate at all (see revoke_device).
+    scanner_user = models.OneToOneField(
+        'users.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='scanner_device',
+    )
     revoked_at = models.DateTimeField(null=True, blank=True)
     revoked_by = models.ForeignKey(
         'users.User', on_delete=models.SET_NULL, null=True, blank=True,

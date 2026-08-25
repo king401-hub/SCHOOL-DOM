@@ -19,8 +19,10 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from core.models import SchoolTenant
+from users.models import User
 
 from .models import Device, DeviceAuditLog, ProvisioningKey
 from .serializers import DeviceAuditLogSerializer, DeviceSerializer, ProvisioningKeySerializer
@@ -171,6 +173,15 @@ def assign_school(request, device_pk):
         device.status = 'active'
     device.save(update_fields=['tenant', 'status', 'updated_at'])
 
+    if device.scanner_user_id:
+        # Scans this device posts (via its own JWT, not this admin's) resolve
+        # to a school through _resolve_school_tenant_for_user's plain
+        # user.tenant check - keep it in lockstep with the device's own
+        # assignment, especially on reassignment where the old school's
+        # students must stop being reachable through this device at all.
+        device.scanner_user.tenant = school
+        device.scanner_user.save(update_fields=['tenant'])
+
     action = 'device_reassigned' if was_reassignment else 'device_assigned'
     details = f'{old_school_name} -> {school.name}' if was_reassignment else school.name
     _log(device, request.user, action, details=details)
@@ -195,12 +206,24 @@ def unassign_school(request, device_pk):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def _set_scanner_user_active(device, is_active):
+    if device.scanner_user_id:
+        device.scanner_user.is_active = is_active
+        device.scanner_user.save(update_fields=['is_active'])
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def suspend_device(request, device_pk):
     device, error = _device_action(request, device_pk)
     if error:
         return error
     device.status = 'suspended'
     device.save(update_fields=['status', 'updated_at'])
+    # is_active=False makes SimpleJWT reject this user's access AND refresh
+    # tokens on the next request - the device can't silently keep scanning
+    # just because its current access token hasn't expired yet.
+    _set_scanner_user_active(device, False)
     _log(device, request.user, 'device_suspended')
     return Response({'success': True, 'data': DeviceSerializer(device).data})
 
@@ -213,6 +236,7 @@ def reactivate_device(request, device_pk):
         return error
     device.status = 'active' if device.tenant_id else 'unregistered'
     device.save(update_fields=['status', 'updated_at'])
+    _set_scanner_user_active(device, True)
     _log(device, request.user, 'device_reactivated')
     return Response({'success': True, 'data': DeviceSerializer(device).data})
 
@@ -229,6 +253,10 @@ def revoke_device(request, device_pk):
     device.revoked_at = timezone.now()
     device.revoked_by = request.user
     device.save(update_fields=['authorized', 'auth_token', 'status', 'revoked_at', 'revoked_by', 'updated_at'])
+    # Permanent, unlike suspend - re-authorizing a revoked device means
+    # provisioning it again from scratch (spec: "Require authorized
+    # reactivation before normal operation resumes"), not a simple toggle.
+    _set_scanner_user_active(device, False)
     _log(device, request.user, 'session_revoked')
     return Response({'success': True, 'data': DeviceSerializer(device).data})
 
@@ -277,6 +305,20 @@ def device_provision(request):
         first_activated_at=timezone.now(),
     )
 
+    # "Permanent login" (spec section 9) - a real staff-role User the device
+    # authenticates as via a normal JWT refresh token, not a bespoke session
+    # system. Unusable password: this account can never be logged into by
+    # email/password, only by the refresh token handed back below.
+    device.scanner_user = User.objects.create_user(
+        email=f'device-{device.device_id.lower()}@scanner.schooldom.internal',
+        password=None,
+        first_name='SchoolDom Scanner',
+        last_name=device.device_id,
+        role='staff',
+        is_active=True,
+    )
+    device.save(update_fields=['scanner_user'])
+
     if key.single_use:
         key.status = 'used'
     key.used_at = timezone.now()
@@ -284,6 +326,8 @@ def device_provision(request):
     key.save(update_fields=['status', 'used_at', 'used_by_device'])
 
     _log(device, None, 'device_registered', details=f'via key {key.key}')
+
+    refresh = RefreshToken.for_user(device.scanner_user)
 
     return Response({
         'success': True,
@@ -293,6 +337,11 @@ def device_provision(request):
             'device_id': device.device_id,
             'auth_token': device.auth_token,
             'status': device.status,
+            # Store this permanently and use it like any other SchoolDom
+            # client's session (POST /api/token/refresh/ to get a fresh
+            # access token whenever needed) - there is no separate login step.
+            'refresh_token': str(refresh),
+            'access_token': str(refresh.access_token),
         },
     }, status=status.HTTP_201_CREATED)
 
