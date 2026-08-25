@@ -12,6 +12,13 @@ namespace SchoolDom.Rfid.Win7.Controls
     {
         private const int CornerRadius = 12;
 
+        // The color actually painted inside the rounded shape (see OnPaint) - not
+        // the same as this.BackColor, which stays Palette.Background (the area
+        // outside the rounded corners). A child control that needs to blend its own
+        // corners against what a Card actually shows (see RoundedButton) should read
+        // this, not Parent.BackColor.
+        public static readonly Color SurfaceColor = Palette.Surface;
+
         public Card()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);

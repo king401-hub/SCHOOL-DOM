@@ -20,16 +20,19 @@ namespace SchoolDom.Rfid.Win7.Controls
 
         public RoundedButton()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
+            // Without this, Button still lets the OS theme (uxtheme) render its own
+            // edge/shadow underneath OnPaint - the "ghost border" that shows up on
+            // owner-drawn buttons if this isn't turned off.
+            UseVisualStyleBackColor = false;
             Cursor = Cursors.Hand;
             Font = Palette.BodyBold;
             NormalBackColor = Palette.Blue;
             HoverBackColor = Palette.BlueHover;
             BorderColor = Color.Transparent;
             ForeColor = Color.White;
-            BackColor = Color.Transparent;
 
             MouseEnter += (s, e) => { _hovering = true; Invalidate(); };
             MouseLeave += (s, e) => { _hovering = false; Invalidate(); };
@@ -37,10 +40,27 @@ namespace SchoolDom.Rfid.Win7.Controls
             MouseUp += (s, e) => { _pressed = false; Invalidate(); };
         }
 
+        // Deliberately does nothing - OnPaint below erases the whole control itself
+        // (parent-color corners, then the rounded shape). WinForms' BackColor =
+        // Color.Transparent is not real alpha compositing - it just snapshots the
+        // parent once - and left a persistent shadow/ghost edge around this button's
+        // sharp corners whenever the default background painting ran underneath it.
+        protected override void OnPaintBackground(PaintEventArgs pevent)
+        {
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // Card's own BackColor property is the color outside its rounded shape,
+            // not the white surface it actually paints inside it - ask it directly
+            // rather than reading the wrong property for a button placed on one.
+            var card = Parent as Card;
+            var backdropColor = card != null ? Card.SurfaceColor : (Parent != null ? Parent.BackColor : Palette.Background);
+            using (var backdropBrush = new SolidBrush(backdropColor))
+                g.FillRectangle(backdropBrush, ClientRectangle);
 
             var fill = !Enabled
                 ? Palette.LightButton

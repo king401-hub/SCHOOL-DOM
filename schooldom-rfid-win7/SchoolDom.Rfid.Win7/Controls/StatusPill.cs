@@ -35,7 +35,12 @@ namespace SchoolDom.Rfid.Win7.Controls
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
             Font = Palette.BodyBold;
             Height = 28;
-            BackColor = Color.Transparent;
+        }
+
+        // See RoundedButton.OnPaintBackground for why this is empty and why OnPaint
+        // below paints its own backdrop instead of using BackColor = Transparent.
+        protected override void OnPaintBackground(PaintEventArgs pevent)
+        {
         }
 
         public void SetState(string text, Color dot, Color tint)
@@ -58,6 +63,12 @@ namespace SchoolDom.Rfid.Win7.Controls
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            var card = Parent as Card;
+            var backdropColor = card != null ? Card.SurfaceColor : (Parent != null ? Parent.BackColor : Palette.Background);
+            using (var backdropBrush = new SolidBrush(backdropColor))
+                g.FillRectangle(backdropBrush, ClientRectangle);
+
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var path = RoundedRect(rect, Height / 2))
             using (var brush = new SolidBrush(_tint))

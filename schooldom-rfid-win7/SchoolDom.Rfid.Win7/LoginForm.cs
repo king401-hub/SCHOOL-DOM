@@ -79,7 +79,15 @@ namespace SchoolDom.Rfid.Win7
             _signInButton.Click += OnSignInClick;
             body.Controls.Add(_signInButton);
 
-            AcceptButton = _signInButton;
+            // Not using Form.AcceptButton here - Windows draws BS_DEFPUSHBUTTON
+            // ("this is the default button") as an extra dark outline baked into
+            // non-client painting, which shows through even on a fully owner-drawn
+            // RoundedButton. Enter-to-submit via KeyDown gets the same UX without it.
+            KeyPreview = true;
+            KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter) OnSignInClick(s, EventArgs.Empty);
+            };
             _emailBox.Focus();
         }
 
