@@ -79,6 +79,7 @@ namespace SchoolDom.Rfid.Win7
         public string Name { get; set; }
         public string Role { get; set; }
         public string RoleLabel { get; set; }
+        public string PhotoUrl { get; set; }
         public string StudentCode { get; set; }
         public string ClassName { get; set; }
         public bool HasActiveCard { get; set; }
@@ -101,6 +102,12 @@ namespace SchoolDom.Rfid.Win7
         public bool WasCooldown { get; set; }
         public ReaderType SourceReaderType { get; set; }
         public string SourceReaderName { get; set; }
+
+        // Matched back to the SyncedScanResult that flushed this scan (see
+        // MainForm.OnSyncCompleted) so the row can update from "Pending" to
+        // "Clocked In"/"Clocked Out" once the server has actually resolved it.
+        public string IdempotencyKey { get; set; }
+        public string ClockAction { get; set; } // null (not synced yet) | "clock_in" | "clock_out"
     }
 
     // Attendance History screen row (pulled fresh from the server, never cached locally).

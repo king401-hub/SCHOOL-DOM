@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Net.NetworkInformation;
 using System.Windows.Forms;
 using SchoolDom.Rfid.Win7.Controls;
 
@@ -21,6 +22,7 @@ namespace SchoolDom.Rfid.Win7
         private StatusPill _hidStatusPill;
         private StatusPill _sdkStatusPill;
         private StatusPill _pendingSyncPill;
+        private RoundedButton _syncNowButton;
         private CheckBox _globalCaptureToggle;
         private ListView _feedList;
         private Panel _unregisteredBanner;
@@ -56,9 +58,25 @@ namespace SchoolDom.Rfid.Win7
 
             _bannerTimer.Tick += (s, e) => { _bannerTimer.Stop(); _unregisteredBanner.Visible = false; };
             _syncTimer.Tick += (s, e) => RunFlush();
+            // "Auto-sync if there's an internet connection" - don't just wait for the
+            // next 20s tick once connectivity actually returns; sync right away.
+            NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
 
             Load += OnLoad;
-            FormClosing += (s, e) => { _readerManager.Dispose(); _syncTimer.Stop(); };
+            FormClosing += (s, e) =>
+            {
+                NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
+                _readerManager.Dispose();
+                _syncTimer.Stop();
+            };
+        }
+
+        // Fires on a ThreadPool thread already, not the UI thread - safe, since
+        // RunFlush's synchronous portion never touches a control directly (the
+        // actual UI update it eventually queues is still marshaled the normal way).
+        private void OnNetworkAvailabilityChanged(object sender, NetworkAvailabilityEventArgs e)
+        {
+            if (e.IsAvailable) RunFlush();
         }
 
         private void OnLoad(object sender, EventArgs e)
@@ -102,17 +120,20 @@ namespace SchoolDom.Rfid.Win7
         // freezing every ~20s. _syncInFlight guards against a slow tick (e.g. a
         // request stuck near its 30s timeout) overlapping the next timer tick and
         // running two of these concurrently.
-        private void RunFlush(bool pullOnly = false)
+        private void RunFlush(bool pullOnly = false, bool manual = false)
         {
             if (System.Threading.Interlocked.CompareExchange(ref _syncInFlight, 1, 0) != 0) return;
+
+            if (manual) RunOnUiThreadIfAlive(() => SetSyncNowButtonBusy(true));
 
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
             {
                 var authExpired = false;
                 Exception failure = null;
+                FlushResult flushResult = null;
                 try
                 {
-                    if (!pullOnly) _sync.FlushPendingQueue();
+                    if (!pullOnly) flushResult = _sync.FlushPendingQueue();
                     _sync.PullCardAssignments();
                 }
                 catch (CloudAuthExpiredException)
@@ -131,18 +152,50 @@ namespace SchoolDom.Rfid.Win7
                 {
                     _syncInFlight = 0;
                     RefreshPendingSyncCount();
+                    if (manual) SetSyncNowButtonBusy(false);
+                    if (flushResult != null) UpdateFeedRowsFromSync(flushResult.Synced);
+
                     if (authExpired)
                     {
                         _syncTimer.Stop();
                         PromptSignIn();
                         _syncTimer.Start();
                     }
-                    else if (pullOnly && failure != null)
+                    else if (failure != null && (pullOnly || manual))
                     {
-                        ShowBanner("Could not refresh the card list from the cloud: " + failure.Message, Palette.Gold, Palette.GoldSoft);
+                        ShowBanner("Could not sync with the cloud: " + failure.Message, Palette.Gold, Palette.GoldSoft);
                     }
                 });
             });
+        }
+
+        private void SetSyncNowButtonBusy(bool busy)
+        {
+            _syncNowButton.Enabled = !busy;
+            _syncNowButton.Text = busy ? "Syncing..." : "Sync Now";
+        }
+
+        // Section 3 follow-up - "clocked in and clocked out timer": once a queued
+        // scan actually makes it to the server, the server (not the desktop app)
+        // knows whether it resolved to a clock-in or a clock-out. Match the result
+        // back to its feed row by idempotency key and update the label in place.
+        private void UpdateFeedRowsFromSync(System.Collections.Generic.List<SyncedScanResult> synced)
+        {
+            if (synced == null || synced.Count == 0) return;
+            foreach (ListViewItem item in _feedList.Items)
+            {
+                var entry = item.Tag as ScanFeedEntry;
+                if (entry == null || string.IsNullOrEmpty(entry.IdempotencyKey)) continue;
+                foreach (var result in synced)
+                {
+                    if (string.Equals(entry.IdempotencyKey, result.IdempotencyKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        entry.ClockAction = result.Action;
+                        break;
+                    }
+                }
+            }
+            _feedList.Invalidate();
         }
 
         // The form (or its handle) can be gone by the time a background callback
@@ -390,6 +443,12 @@ namespace SchoolDom.Rfid.Win7
             _pendingSyncPill.SetState("0 pending sync", Palette.Muted, Palette.LightButton);
             card.Controls.Add(_pendingSyncPill);
 
+            _syncNowButton = RoundedButton.Secondary("Sync Now", 110, 28);
+            _syncNowButton.Left = 750;
+            _syncNowButton.Top = 68;
+            _syncNowButton.Click += (s, e) => RunFlush(manual: true);
+            card.Controls.Add(_syncNowButton);
+
             return card;
         }
 
@@ -426,10 +485,11 @@ namespace SchoolDom.Rfid.Win7
                 BackColor = Palette.Surface
             };
             list.Columns.Add("", 70);
-            list.Columns.Add("Card UID", 180);
-            list.Columns.Add("Person", 260);
-            list.Columns.Add("Reader", 170);
-            list.Columns.Add("Time", 140);
+            list.Columns.Add("Card UID", 150);
+            list.Columns.Add("Person", 230);
+            list.Columns.Add("Status", 110);
+            list.Columns.Add("Reader", 110);
+            list.Columns.Add("Time", 130);
 
             list.DrawColumnHeader += (s, e) =>
             {
@@ -469,10 +529,20 @@ namespace SchoolDom.Rfid.Win7
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.LeftAndRightPadding);
                         break;
                     case 3:
-                        TextRenderer.DrawText(e.Graphics, entry.SourceReaderName, Palette.Caption, e.Bounds, Palette.Muted,
+                        string statusText;
+                        Color statusColor;
+                        if (entry.WasCooldown || !entry.Matched) { statusText = ""; statusColor = Palette.Muted; }
+                        else if (entry.ClockAction == "clock_in") { statusText = "Clocked In"; statusColor = Palette.Green; }
+                        else if (entry.ClockAction == "clock_out") { statusText = "Clocked Out"; statusColor = Palette.Gold; }
+                        else { statusText = "Pending sync"; statusColor = Palette.Muted; }
+                        TextRenderer.DrawText(e.Graphics, statusText, Palette.Caption, e.Bounds, statusColor,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.LeftAndRightPadding);
                         break;
                     case 4:
+                        TextRenderer.DrawText(e.Graphics, entry.SourceReaderName, Palette.Caption, e.Bounds, Palette.Muted,
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.LeftAndRightPadding);
+                        break;
+                    case 5:
                         TextRenderer.DrawText(e.Graphics, entry.ScannedAtLocal.ToString("HH:mm:ss"), Palette.Caption, e.Bounds, Palette.Muted,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.LeftAndRightPadding);
                         break;
@@ -529,6 +599,7 @@ namespace SchoolDom.Rfid.Win7
             _store.RecordScanForCooldown(e.Uid);
 
             var assignment = _store.FindActiveAssignment(e.Uid);
+            var idempotencyKey = assignment != null ? Guid.NewGuid().ToString("N") : null;
             var entry = new ScanFeedEntry
             {
                 ScannedAtLocal = e.ScannedAtUtc.ToLocalTime(),
@@ -536,7 +607,8 @@ namespace SchoolDom.Rfid.Win7
                 Matched = assignment != null,
                 PersonName = assignment != null ? assignment.PersonName : null,
                 SourceReaderType = e.SourceReaderType,
-                SourceReaderName = e.SourceReaderName
+                SourceReaderName = e.SourceReaderName,
+                IdempotencyKey = idempotencyKey
             };
             PrependFeedEntry(entry);
 
@@ -544,7 +616,7 @@ namespace SchoolDom.Rfid.Win7
             {
                 _store.EnqueuePendingAttendance(new PendingAttendanceRecord
                 {
-                    IdempotencyKey = Guid.NewGuid().ToString("N"),
+                    IdempotencyKey = idempotencyKey,
                     CardUid = e.Uid,
                     PersonId = assignment.PersonId,
                     ScannedAtUtc = e.ScannedAtUtc.ToString("o"),
@@ -597,7 +669,7 @@ namespace SchoolDom.Rfid.Win7
 
         private void PrependFeedEntry(ScanFeedEntry entry)
         {
-            var item = new ListViewItem(new[] { "", entry.Uid, "", "", "" }) { Tag = entry };
+            var item = new ListViewItem(new[] { "", entry.Uid, "", "", "", "" }) { Tag = entry };
             _feedList.Items.Insert(0, item);
             while (_feedList.Items.Count > 200) _feedList.Items.RemoveAt(_feedList.Items.Count - 1);
         }

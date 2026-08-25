@@ -30,6 +30,7 @@ from users.app_views import (
     _attendance_clock_payload,
     _attendance_location_payload,
     _class_label,
+    _profile_picture_url,
     _record_attendance_clock,
     _resolve_school_tenant_for_user,
     _tenant_for_model,
@@ -47,6 +48,30 @@ SCAN_OPERATOR_ROLES = ADMIN_ROLES | {'teacher', 'staff'}
 # ?roles= filter is given - deliberately excludes 'parent': a parent picking
 # a child up at the gate isn't what this feature is for.
 ASSIGNABLE_ROLES = SCAN_OPERATOR_ROLES | {'student'}
+# A clock-in followed immediately by a clock-out is almost always an
+# accidental second tap, not someone actually leaving - require this much
+# elapsed time before a scan is accepted as the clock-out half. Separate
+# from ATTENDANCE_DOUBLE_SCAN_SECONDS (users/app_views.py, 120s) which
+# guards the shared QR/GPS clock flow other clients use - this is an
+# RFID-specific, longer rule layered on top, not a replacement for it.
+MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT = 3600
+
+
+def _person_summary(request, user_obj):
+    """Name/role/photo/class for one person - used both by the card-assignment
+    conflict response (Section 4d: "show the already-assigned person's name,
+    picture, and class") and anywhere else a rich person card is useful."""
+    if not user_obj:
+        return None
+    profile = StudentProfile.objects.select_related('current_class').filter(user=user_obj).first()
+    return {
+        'id': str(user_obj.id),
+        'name': user_obj.get_full_name() or user_obj.email,
+        'role': user_obj.role,
+        'role_label': user_obj.get_role_display(),
+        'photo_url': _profile_picture_url(request, user_obj),
+        'class_name': _class_label(profile.current_class) if profile and profile.current_class else None,
+    }
 
 
 def _forbidden(message):
@@ -133,7 +158,10 @@ def card_assignment_create(request):
                         if card_conflict
                         else f'{person.get_full_name()} already has an active card ({person_conflict.card_uid}).'
                     ),
-                    'conflicting_person_name': card_conflict.holder.get_full_name() if card_conflict else None,
+                    # Section 4d - "show the already-assigned person's name,
+                    # picture, and class" so the admin can positively confirm
+                    # they're revoking the right link before doing so.
+                    'conflicting_person': _person_summary(request, card_conflict.holder) if card_conflict else None,
                     'conflicting_card_uid': person_conflict.card_uid if person_conflict else None,
                 },
                 status=status.HTTP_409_CONFLICT,
@@ -262,7 +290,27 @@ def attendance_scan_create(request):
     return _record_staff_scan(request, school, holder, card_uid, idempotency_key)
 
 
+def _too_soon_response(person, clocked_in_at):
+    remaining = MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT - (timezone.now() - clocked_in_at).total_seconds()
+    remaining_minutes = max(1, int(remaining // 60) + 1)
+    return Response(
+        {
+            'success': False,
+            'too_soon': True,
+            'message': f'{person.get_full_name()} clocked in recently - wait {remaining_minutes} more minute(s) before clocking out.',
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 def _record_student_scan(request, school, student, card_uid, idempotency_key):
+    today = timezone.localdate()
+    existing_today = AttendanceRecord.objects.filter(student=student, date=today).first()
+    if existing_today and existing_today.clock_in_at and not existing_today.clock_out_at:
+        elapsed = (timezone.now() - existing_today.clock_in_at).total_seconds()
+        if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
+            return _too_soon_response(student, existing_today.clock_in_at)
+
     student_profile = StudentProfile.objects.select_related('current_class').filter(user=student).first()
 
     tenant_obj = _tenant_for_model(AttendanceRecord, request.user)
@@ -325,6 +373,10 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
         action = 'clock_in'
         message = f"{staff.get_full_name()} clocked in at {timezone.localtime(attendance.check_in_time).strftime('%I:%M %p').lstrip('0')}."
     elif existing.check_out_time is None:
+        elapsed = (timezone.now() - existing.check_in_time).total_seconds()
+        if elapsed < MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT:
+            return _too_soon_response(staff, existing.check_in_time)
+
         no_location = {'latitude': None, 'longitude': None, 'accuracy': None, 'address': '', 'device_info': 'SchoolDom RFID'}
         _apply_clock_out(existing, no_location)
         attendance = existing
@@ -423,6 +475,7 @@ def people_lookup(request):
             'name': person.get_full_name() or person.email,
             'role': person.role,
             'role_label': person.get_role_display(),
+            'photo_url': _profile_picture_url(request, person),
             'student_id': profile.student_id if profile else None,
             'class_name': _class_label(profile.current_class) if profile and profile.current_class else None,
             'has_active_card': has_card,

@@ -54,6 +54,7 @@
     <Compile Include="AttendanceHistoryForm.cs" />
     <Compile Include="BulkAssignForm.cs" />
     <Compile Include="CardAssignmentForm.cs" />
+    <Compile Include="CardConflictDialog.cs" />
     <Compile Include="Controls\RoundedButton.cs" />
     <Compile Include="CrashLog.cs" />
     <Compile Include="Controls\Card.cs" />

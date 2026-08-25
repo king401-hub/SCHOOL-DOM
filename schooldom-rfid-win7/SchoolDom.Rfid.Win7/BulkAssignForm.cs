@@ -189,11 +189,15 @@ namespace SchoolDom.Rfid.Win7
         {
             var student = _studentPicker.SelectedItem as PersonOption;
             if (student == null || string.IsNullOrEmpty(_capturedUid)) return;
+            AttemptAssign(student, force: false);
+        }
 
+        private void AttemptAssign(PersonOption student, bool force)
+        {
             Cursor = Cursors.WaitCursor;
             try
             {
-                _sync.AssignCard(_capturedUid, student.Id, student.Name, student.Role, force: false);
+                _sync.AssignCard(_capturedUid, student.Id, student.Name, student.Role, force);
                 _sessionLog.Items.Insert(0, _capturedUid + "  ->  " + student.Name);
                 _unassignedInClass.Remove(student);
                 RefreshProgressLabel();
@@ -206,29 +210,18 @@ namespace SchoolDom.Rfid.Win7
             catch (CardAssignmentConflictException ex)
             {
                 Cursor = Cursors.Default;
-                var result = MessageBox.Show(
-                    this,
-                    ex.Message + "\r\n\r\nReassign this card to " + student.Name + "?",
-                    "Card Already Assigned",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning);
-                if (result == DialogResult.Yes)
+                // Section 4d: same rich name/photo/class popup + explicit
+                // Unassign-then-retry flow as the single-assign screen.
+                string cardToRevoke = !string.IsNullOrEmpty(ex.ConflictingPersonName) ? _capturedUid : ex.ConflictingCardUid;
+                string personName = !string.IsNullOrEmpty(ex.ConflictingPersonName) ? ex.ConflictingPersonName : student.Name;
+                string roleLabel = !string.IsNullOrEmpty(ex.ConflictingPersonName) ? ex.ConflictingPersonRoleLabel : student.RoleLabel;
+                string className = !string.IsNullOrEmpty(ex.ConflictingPersonName) ? ex.ConflictingPersonClassName : student.ClassName;
+                string photoUrl = !string.IsNullOrEmpty(ex.ConflictingPersonName) ? ex.ConflictingPersonPhotoUrl : student.PhotoUrl;
+
+                using (var dialog = new CardConflictDialog(_sync, cardToRevoke, personName, roleLabel, className, photoUrl))
                 {
-                    try
-                    {
-                        _sync.AssignCard(_capturedUid, student.Id, student.Name, student.Role, force: true);
-                        _sessionLog.Items.Insert(0, _capturedUid + "  ->  " + student.Name + " (reassigned)");
-                        _unassignedInClass.Remove(student);
-                        RefreshProgressLabel();
-                        RefreshStudentPicker();
-                        _capturedUid = null;
-                        _capturedUidLabel.Text = "Waiting for a scan...";
-                        _confirmButton.Enabled = false;
-                    }
-                    catch (Exception ex2)
-                    {
-                        MessageBox.Show(this, ex2.Message, "Could Not Assign Card", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    }
+                    dialog.ShowDialog(this);
+                    if (dialog.WasUnassigned) AttemptAssign(student, force: false);
                 }
             }
             catch (CloudAuthExpiredException)

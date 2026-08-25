@@ -15,19 +15,37 @@ namespace SchoolDom.Rfid.Win7
     }
 
     // A card scanned/assigned against a card_uid that's already active on a
-    // different person (Section 4d) - callers catch this to show the "reassign?"
-    // confirmation instead of a plain error.
+    // different person (Section 4d) - callers catch this to show the rich
+    // "already assigned to X" confirmation (name/photo/class) instead of a
+    // plain error, and require an explicit unassign before reassigning.
     public class CardAssignmentConflictException : InvalidOperationException
     {
         public string ConflictingPersonName { get; private set; }
+        public string ConflictingPersonRoleLabel { get; private set; }
+        public string ConflictingPersonClassName { get; private set; }
+        public string ConflictingPersonPhotoUrl { get; private set; }
         public string ConflictingCardUid { get; private set; }
 
-        public CardAssignmentConflictException(string message, string conflictingPersonName, string conflictingCardUid)
+        public CardAssignmentConflictException(
+            string message, string conflictingPersonName, string conflictingPersonRoleLabel,
+            string conflictingPersonClassName, string conflictingPersonPhotoUrl, string conflictingCardUid)
             : base(message)
         {
             ConflictingPersonName = conflictingPersonName;
+            ConflictingPersonRoleLabel = conflictingPersonRoleLabel;
+            ConflictingPersonClassName = conflictingPersonClassName;
+            ConflictingPersonPhotoUrl = conflictingPersonPhotoUrl;
             ConflictingCardUid = conflictingCardUid;
         }
+    }
+
+    // One flushed record's outcome - MainForm uses Action to update the live
+    // feed row ("Clocked In"/"Clocked Out") once the server has actually
+    // resolved which one it was, matched back by IdempotencyKey.
+    internal sealed class SyncedScanResult
+    {
+        public string IdempotencyKey;
+        public string Action; // "clock_in" | "clock_out" | null
     }
 
     internal sealed class FlushResult
@@ -35,6 +53,7 @@ namespace SchoolDom.Rfid.Win7
         public int Succeeded;
         public int Failed;
         public int RemainingInQueue;
+        public List<SyncedScanResult> Synced = new List<SyncedScanResult>();
     }
 
     // Everything the desktop app sends to/pulls from the SchoolDom API. Modeled
@@ -173,9 +192,13 @@ namespace SchoolDom.Rfid.Win7
             if (response.StatusCode == 409)
             {
                 var conflictData = JsonUtil.DeserializeObject(response.Body);
+                var conflictingPerson = conflictData.ContainsKey("conflicting_person") ? conflictData["conflicting_person"] as Dictionary<string, object> : null;
                 throw new CardAssignmentConflictException(
                     JsonUtil.Text(conflictData.ContainsKey("message") ? conflictData["message"] : null, "This card or person already has an active assignment."),
-                    conflictData.ContainsKey("conflicting_person_name") ? JsonUtil.Text(conflictData["conflicting_person_name"]) : null,
+                    conflictingPerson != null ? JsonUtil.Text(conflictingPerson.ContainsKey("name") ? conflictingPerson["name"] : null) : null,
+                    conflictingPerson != null ? JsonUtil.Text(conflictingPerson.ContainsKey("role_label") ? conflictingPerson["role_label"] : null) : null,
+                    conflictingPerson != null ? JsonUtil.Text(conflictingPerson.ContainsKey("class_name") ? conflictingPerson["class_name"] : null) : null,
+                    conflictingPerson != null ? JsonUtil.Text(conflictingPerson.ContainsKey("photo_url") ? conflictingPerson["photo_url"] : null) : null,
                     conflictData.ContainsKey("conflicting_card_uid") ? JsonUtil.Text(conflictData["conflicting_card_uid"]) : null);
             }
             if (response.StatusCode < 200 || response.StatusCode >= 300)
@@ -242,6 +265,7 @@ namespace SchoolDom.Rfid.Win7
                         Name = JsonUtil.Text(map.ContainsKey("name") ? map["name"] : null),
                         Role = JsonUtil.Text(map.ContainsKey("role") ? map["role"] : null),
                         RoleLabel = JsonUtil.Text(map.ContainsKey("role_label") ? map["role_label"] : null),
+                        PhotoUrl = JsonUtil.Text(map.ContainsKey("photo_url") ? map["photo_url"] : null),
                         StudentCode = JsonUtil.Text(map.ContainsKey("student_id") ? map["student_id"] : null),
                         ClassName = JsonUtil.Text(map.ContainsKey("class_name") ? map["class_name"] : null),
                         HasActiveCard = map.ContainsKey("has_active_card") && Convert.ToBoolean(map["has_active_card"])
@@ -324,10 +348,10 @@ namespace SchoolDom.Rfid.Win7
 
             foreach (var record in snapshot)
             {
-                AttendanceScanOutcome outcome;
+                PushScanResult pushResult;
                 try
                 {
-                    outcome = PushAttendanceScan(record);
+                    pushResult = PushAttendanceScan(record);
                 }
                 catch (CloudAuthExpiredException)
                 {
@@ -346,6 +370,14 @@ namespace SchoolDom.Rfid.Win7
                     break; // network/server is down - stop hammering, try again next tick
                 }
 
+                if (pushResult.Outcome == AttendanceScanOutcome.TooSoonRetryLater)
+                {
+                    // The 1-hour clock-in/clock-out gate hasn't cleared yet - this
+                    // isn't a failure, it's not due. Leave it queued and move on to
+                    // the next record instead of blocking the whole batch behind it.
+                    continue;
+                }
+
                 lock (_store.StateLock)
                 {
                     // Card was unassigned/revoked between the scan and now (CardNoLongerValid)
@@ -354,17 +386,28 @@ namespace SchoolDom.Rfid.Win7
                     _store.Save();
                 }
 
-                if (outcome == AttendanceScanOutcome.Success || outcome == AttendanceScanOutcome.AlreadyRecorded)
+                if (pushResult.Outcome == AttendanceScanOutcome.Success || pushResult.Outcome == AttendanceScanOutcome.AlreadyRecorded)
+                {
                     result.Succeeded++;
+                    result.Synced.Add(new SyncedScanResult { IdempotencyKey = record.IdempotencyKey, Action = pushResult.Action });
+                }
                 else
+                {
                     result.Failed++;
+                }
             }
 
             lock (_store.StateLock) { result.RemainingInQueue = _store.State.PendingAttendance.Count; }
             return result;
         }
 
-        private AttendanceScanOutcome PushAttendanceScan(PendingAttendanceRecord record)
+        private struct PushScanResult
+        {
+            public AttendanceScanOutcome Outcome;
+            public string Action;
+        }
+
+        private PushScanResult PushAttendanceScan(PendingAttendanceRecord record)
         {
             string deviceId;
             lock (_store.StateLock) { deviceId = _store.State.DeviceId; }
@@ -381,7 +424,13 @@ namespace SchoolDom.Rfid.Win7
             {
                 var data = JsonUtil.DeserializeObject(response.Body);
                 var unregistered = data.ContainsKey("unregistered") && Convert.ToBoolean(data["unregistered"]);
-                if (unregistered) return AttendanceScanOutcome.CardNoLongerValid;
+                if (unregistered) return new PushScanResult { Outcome = AttendanceScanOutcome.CardNoLongerValid };
+            }
+            if (response.StatusCode == 400)
+            {
+                var data = JsonUtil.DeserializeObject(response.Body);
+                var tooSoon = data.ContainsKey("too_soon") && Convert.ToBoolean(data["too_soon"]);
+                if (tooSoon) return new PushScanResult { Outcome = AttendanceScanOutcome.TooSoonRetryLater };
             }
             if (response.StatusCode < 200 || response.StatusCode >= 300)
             {
@@ -390,10 +439,15 @@ namespace SchoolDom.Rfid.Win7
 
             var success = JsonUtil.DeserializeObject(response.Body);
             var duplicate = success.ContainsKey("duplicate") && Convert.ToBoolean(success["duplicate"]);
-            return duplicate ? AttendanceScanOutcome.AlreadyRecorded : AttendanceScanOutcome.Success;
+            var action = success.ContainsKey("action") ? JsonUtil.Text(success["action"]) : null;
+            return new PushScanResult
+            {
+                Outcome = duplicate ? AttendanceScanOutcome.AlreadyRecorded : AttendanceScanOutcome.Success,
+                Action = action
+            };
         }
 
-        private enum AttendanceScanOutcome { Success, AlreadyRecorded, CardNoLongerValid }
+        private enum AttendanceScanOutcome { Success, AlreadyRecorded, CardNoLongerValid, TooSoonRetryLater }
 
         private HttpApiResponse Request(string method, string path, string body)
         {

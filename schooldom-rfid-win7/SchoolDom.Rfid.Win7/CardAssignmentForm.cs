@@ -205,13 +205,7 @@ namespace SchoolDom.Rfid.Win7
             catch (CardAssignmentConflictException ex)
             {
                 Cursor = Cursors.Default;
-                var result = MessageBox.Show(
-                    this,
-                    ex.Message + "\r\n\r\nReassign this card to " + _selectedPerson.Name + "? The previous link will be revoked.",
-                    "Card Already Assigned",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning);
-                if (result == DialogResult.Yes) AttemptAssign(force: true);
+                if (ShowConflictAndUnassign(ex)) AttemptAssign(force: false);
             }
             catch (CloudAuthExpiredException)
             {
@@ -224,6 +218,44 @@ namespace SchoolDom.Rfid.Win7
             finally
             {
                 Cursor = Cursors.Default;
+            }
+        }
+
+        // Section 4d: shows the already-assigned person's name/photo/class and
+        // requires an explicit Unassign before the caller may retry the
+        // assignment - never a one-click "force reassign". Returns true if the
+        // conflicting card was unassigned (safe to retry), false if the admin
+        // cancelled. Handles both conflict shapes: the *card* already belongs to
+        // someone else (ex.ConflictingPersonName is set - shows that other
+        // person, revokes the card we were trying to assign), or the *person*
+        // already has a different card (ex.ConflictingCardUid is set - shows the
+        // person already selected on this screen, revokes their old card).
+        private bool ShowConflictAndUnassign(CardAssignmentConflictException ex)
+        {
+            string cardToRevoke;
+            string personName, roleLabel, className, photoUrl;
+
+            if (!string.IsNullOrEmpty(ex.ConflictingPersonName))
+            {
+                cardToRevoke = _capturedUid;
+                personName = ex.ConflictingPersonName;
+                roleLabel = ex.ConflictingPersonRoleLabel;
+                className = ex.ConflictingPersonClassName;
+                photoUrl = ex.ConflictingPersonPhotoUrl;
+            }
+            else
+            {
+                cardToRevoke = ex.ConflictingCardUid;
+                personName = _selectedPerson.Name;
+                roleLabel = _selectedPerson.RoleLabel;
+                className = _selectedPerson.ClassName;
+                photoUrl = _selectedPerson.PhotoUrl;
+            }
+
+            using (var dialog = new CardConflictDialog(_sync, cardToRevoke, personName, roleLabel, className, photoUrl))
+            {
+                dialog.ShowDialog(this);
+                return dialog.WasUnassigned;
             }
         }
 
