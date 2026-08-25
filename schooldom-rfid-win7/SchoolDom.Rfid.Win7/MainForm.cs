@@ -7,6 +7,13 @@ namespace SchoolDom.Rfid.Win7
 {
     public sealed class MainForm : Form
     {
+        // A card held too close to the reader for too long makes some HID readers
+        // repeat-fire the same UID several times a second - without this, that
+        // would clock the same person in and back out again within the same
+        // breath. Ignoring/holding off further scans of the *same* UID for this
+        // long (a different person's card is never blocked) fixes it.
+        private const int ScanCooldownSeconds = 8;
+
         private readonly LocalStore _store = new LocalStore();
         private readonly ReaderManager _readerManager = new ReaderManager();
         private readonly SyncService _sync;
@@ -23,8 +30,13 @@ namespace SchoolDom.Rfid.Win7
         private readonly Timer _bannerTimer = new Timer { Interval = 4000 };
         // Section 3 "background retry mechanism" - flushes the offline queue every
         // 20s regardless of how it got new entries (a scan, or a stalled retry from
-        // last tick), so a connection coming back doesn't need a manual nudge.
+        // last tick), so a connection coming back doesn't need a manual nudge. The
+        // work itself runs on a background thread (see RunFlush) - it used to run
+        // directly on this tick, which froze the whole app ("Not Responding") for
+        // up to the 30s HTTP timeout every single time the network was slow, since
+        // this timer fires unprompted all day regardless of what the user is doing.
         private readonly Timer _syncTimer = new Timer { Interval = 20000 };
+        private int _syncInFlight; // 0/1 guard via Interlocked, so a slow tick can't overlap the next one
 
         public MainForm()
         {
@@ -65,21 +77,10 @@ namespace SchoolDom.Rfid.Win7
             _syncTimer.Start();
             RefreshPendingSyncCount();
 
-            try
-            {
-                _sync.PullCardAssignments();
-            }
-            catch (CloudAuthExpiredException)
-            {
-                PromptSignIn();
-            }
-            catch (Exception ex)
-            {
-                // Offline on first launch, or the server is unreachable - not fatal,
-                // Section 1d's local cache (possibly empty on a first run) still
-                // governs matching until the next successful pull.
-                ShowBanner("Could not refresh the card list from the cloud: " + ex.Message, Palette.Gold, Palette.GoldSoft);
-            }
+            // Off the UI thread - on a slow/dead connection this would otherwise
+            // freeze the window for up to 30s before the app has even finished
+            // opening.
+            RunFlush(pullOnly: true);
         }
 
         private bool PromptSignIn()
@@ -96,28 +97,66 @@ namespace SchoolDom.Rfid.Win7
             }
         }
 
-        private void RunFlush()
+        // Runs the network part of a sync pass on a background thread and marshals
+        // only the UI update back via BeginInvoke - this is the fix for the app
+        // freezing every ~20s. _syncInFlight guards against a slow tick (e.g. a
+        // request stuck near its 30s timeout) overlapping the next timer tick and
+        // running two of these concurrently.
+        private void RunFlush(bool pullOnly = false)
+        {
+            if (System.Threading.Interlocked.CompareExchange(ref _syncInFlight, 1, 0) != 0) return;
+
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var authExpired = false;
+                Exception failure = null;
+                try
+                {
+                    if (!pullOnly) _sync.FlushPendingQueue();
+                    _sync.PullCardAssignments();
+                }
+                catch (CloudAuthExpiredException)
+                {
+                    authExpired = true;
+                }
+                catch (Exception ex)
+                {
+                    // Network still down, or the server is unreachable - not fatal,
+                    // Section 1d's local cache still governs matching; just retry
+                    // on the next tick rather than surfacing every transient failure.
+                    failure = ex;
+                }
+
+                RunOnUiThreadIfAlive(() =>
+                {
+                    _syncInFlight = 0;
+                    RefreshPendingSyncCount();
+                    if (authExpired)
+                    {
+                        _syncTimer.Stop();
+                        PromptSignIn();
+                        _syncTimer.Start();
+                    }
+                    else if (pullOnly && failure != null)
+                    {
+                        ShowBanner("Could not refresh the card list from the cloud: " + failure.Message, Palette.Gold, Palette.GoldSoft);
+                    }
+                });
+            });
+        }
+
+        // The form (or its handle) can be gone by the time a background callback
+        // completes if the app is closing - guard every marshal-back with this
+        // instead of letting BeginInvoke throw into a background thread unhandled.
+        private void RunOnUiThreadIfAlive(Action action)
         {
             try
             {
-                _sync.FlushPendingQueue();
-                RefreshPendingSyncCount();
-                // Section 1d: "refreshed from the SchoolDom API whenever online" -
-                // piggybacks on the same 20s tick rather than a separate timer.
-                _sync.PullCardAssignments();
+                if (IsDisposed || !IsHandleCreated) return;
+                BeginInvoke(action);
             }
-            catch (CloudAuthExpiredException)
-            {
-                _syncTimer.Stop();
-                PromptSignIn();
-                _syncTimer.Start();
-            }
-            catch (Exception)
-            {
-                // Network still down - RefreshPendingSyncCount already reflects
-                // whatever FlushPendingQueue managed before it stopped; just retry
-                // on the next tick rather than surfacing every transient failure.
-            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
         }
 
         private void BuildLayout()
@@ -160,6 +199,7 @@ namespace SchoolDom.Rfid.Win7
             sidebar.Controls.Add(BuildNavButton("Dashboard", 110, active: true, onClick: null));
             sidebar.Controls.Add(BuildNavButton("Assign Cards", 154, active: false, onClick: (s, e) => OpenCardAssignment()));
             sidebar.Controls.Add(BuildNavButton("Bulk Assign", 198, active: false, onClick: (s, e) => OpenBulkAssign()));
+            sidebar.Controls.Add(BuildNavButton("Attendance History", 242, active: false, onClick: (s, e) => OpenAttendanceHistory()));
 
             _operatorLabel = new Label
             {
@@ -243,6 +283,14 @@ namespace SchoolDom.Rfid.Win7
         private void OpenBulkAssign()
         {
             using (var form = new BulkAssignForm(_readerManager, _sync))
+            {
+                form.ShowDialog(this);
+            }
+        }
+
+        private void OpenAttendanceHistory()
+        {
+            using (var form = new AttendanceHistoryForm(_sync))
             {
                 form.ShowDialog(this);
             }
@@ -379,7 +427,7 @@ namespace SchoolDom.Rfid.Win7
             };
             list.Columns.Add("", 70);
             list.Columns.Add("Card UID", 180);
-            list.Columns.Add("Student", 260);
+            list.Columns.Add("Person", 260);
             list.Columns.Add("Reader", 170);
             list.Columns.Add("Time", 140);
 
@@ -405,7 +453,7 @@ namespace SchoolDom.Rfid.Win7
                 switch (e.ColumnIndex)
                 {
                     case 0:
-                        var dotColor = entry.Matched ? Palette.Green : Palette.Coral;
+                        var dotColor = entry.WasCooldown ? Palette.Gold : entry.Matched ? Palette.Green : Palette.Coral;
                         var dotRect = new Rectangle(e.Bounds.Left + 14, e.Bounds.Top + (e.Bounds.Height - 10) / 2, 10, 10);
                         using (var dotBrush = new SolidBrush(dotColor))
                             e.Graphics.FillEllipse(dotBrush, dotRect);
@@ -415,8 +463,8 @@ namespace SchoolDom.Rfid.Win7
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.LeftAndRightPadding);
                         break;
                     case 2:
-                        var name = entry.Matched ? entry.StudentName : "Unregistered card";
-                        var color = entry.Matched ? Palette.Text : Palette.Coral;
+                        var name = entry.WasCooldown ? "Already scanned - cooling off" : entry.Matched ? entry.PersonName : "Unregistered card";
+                        var color = entry.WasCooldown ? Palette.Gold : entry.Matched ? Palette.Text : Palette.Coral;
                         TextRenderer.DrawText(e.Graphics, name, Palette.BodyBold, e.Bounds, color,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.LeftAndRightPadding);
                         break;
@@ -464,13 +512,29 @@ namespace SchoolDom.Rfid.Win7
         {
             if (_readerManager.AssignmentModeActive) return;
 
+            var cooldownRemaining = _store.SecondsUntilCooldownClears(e.Uid, ScanCooldownSeconds);
+            if (cooldownRemaining > 0)
+            {
+                PrependFeedEntry(new ScanFeedEntry
+                {
+                    ScannedAtLocal = e.ScannedAtUtc.ToLocalTime(),
+                    Uid = e.Uid,
+                    WasCooldown = true,
+                    SourceReaderType = e.SourceReaderType,
+                    SourceReaderName = e.SourceReaderName
+                });
+                ShowCooldownCountdown(e.Uid, cooldownRemaining);
+                return;
+            }
+            _store.RecordScanForCooldown(e.Uid);
+
             var assignment = _store.FindActiveAssignment(e.Uid);
             var entry = new ScanFeedEntry
             {
                 ScannedAtLocal = e.ScannedAtUtc.ToLocalTime(),
                 Uid = e.Uid,
                 Matched = assignment != null,
-                StudentName = assignment != null ? assignment.StudentName : null,
+                PersonName = assignment != null ? assignment.PersonName : null,
                 SourceReaderType = e.SourceReaderType,
                 SourceReaderName = e.SourceReaderName
             };
@@ -482,7 +546,7 @@ namespace SchoolDom.Rfid.Win7
                 {
                     IdempotencyKey = Guid.NewGuid().ToString("N"),
                     CardUid = e.Uid,
-                    StudentId = assignment.StudentId,
+                    PersonId = assignment.PersonId,
                     ScannedAtUtc = e.ScannedAtUtc.ToString("o"),
                     ReaderType = e.SourceReaderType.ToString(),
                     ReaderName = e.SourceReaderName
@@ -491,8 +555,44 @@ namespace SchoolDom.Rfid.Win7
             }
             else
             {
-                ShowBanner("Unregistered card scanned: " + e.Uid + " — not linked to any student.", Palette.Coral, Palette.CoralSoft);
+                ShowBanner("Unregistered card scanned: " + e.Uid + " — not linked to anyone.", Palette.Coral, Palette.CoralSoft);
             }
+        }
+
+        // A live-ticking "wait 8s..." banner instead of a static message, so it's
+        // obvious the second scan wasn't just silently ignored/dropped. Manages the
+        // banner's visibility itself (stopping/restarting _bannerTimer each tick) -
+        // otherwise the unrelated 4s auto-hide would cut the countdown off partway
+        // through whenever the cooldown is longer than 4 seconds.
+        private void ShowCooldownCountdown(string cardUid, int initialSeconds)
+        {
+            var remaining = initialSeconds;
+            _bannerTimer.Stop();
+            ShowCooldownBannerText(cardUid, remaining);
+            _unregisteredBanner.Visible = true;
+
+            var countdownTimer = new Timer { Interval = 1000 };
+            countdownTimer.Tick += (s, e) =>
+            {
+                remaining--;
+                if (remaining <= 0)
+                {
+                    countdownTimer.Stop();
+                    countdownTimer.Dispose();
+                    _unregisteredBanner.Visible = false;
+                    return;
+                }
+                ShowCooldownBannerText(cardUid, remaining);
+            };
+            countdownTimer.Start();
+        }
+
+        private void ShowCooldownBannerText(string cardUid, int remainingSeconds)
+        {
+            _unregisteredBannerLabel.Text = "Card " + cardUid + " already scanned - cooling off for " + remainingSeconds + "s to avoid a duplicate.";
+            _unregisteredBannerLabel.ForeColor = Palette.Gold;
+            _unregisteredBannerDot.BackColor = Palette.Gold;
+            _unregisteredBanner.BackColor = Palette.GoldSoft;
         }
 
         private void PrependFeedEntry(ScanFeedEntry entry)
@@ -504,7 +604,7 @@ namespace SchoolDom.Rfid.Win7
 
         private void RefreshPendingSyncCount()
         {
-            var count = _store.State.PendingAttendance.Count;
+            var count = _store.PendingAttendanceCount();
             if (count == 0)
                 _pendingSyncPill.SetState("0 pending sync", Palette.Muted, Palette.LightButton);
             else

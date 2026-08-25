@@ -15,17 +15,17 @@ namespace SchoolDom.Rfid.Win7
     }
 
     // A card scanned/assigned against a card_uid that's already active on a
-    // different student (Section 4d) - callers catch this to show the "reassign?"
+    // different person (Section 4d) - callers catch this to show the "reassign?"
     // confirmation instead of a plain error.
     public class CardAssignmentConflictException : InvalidOperationException
     {
-        public string ConflictingStudentName { get; private set; }
+        public string ConflictingPersonName { get; private set; }
         public string ConflictingCardUid { get; private set; }
 
-        public CardAssignmentConflictException(string message, string conflictingStudentName, string conflictingCardUid)
+        public CardAssignmentConflictException(string message, string conflictingPersonName, string conflictingCardUid)
             : base(message)
         {
-            ConflictingStudentName = conflictingStudentName;
+            ConflictingPersonName = conflictingPersonName;
             ConflictingCardUid = conflictingCardUid;
         }
     }
@@ -41,6 +41,13 @@ namespace SchoolDom.Rfid.Win7
     // directly on SchoolDom.Cbt.Win7's CloudSyncService (same HttpWebRequest +
     // JsonUtil approach, same auth-expiry detection) so both apps behave
     // identically against flaky school networks and old-Windows TLS quirks.
+    //
+    // Called from both the UI thread (user-initiated actions - login, assign,
+    // search) and a background thread (MainForm's periodic sync timer, see
+    // RunFlush there) - every method that touches _store.State holds
+    // _store.StateLock for exactly that part, never around the network I/O
+    // itself (which would serialize an unrelated UI-thread action behind a
+    // slow background request for no reason).
     internal sealed class SyncService
     {
         private readonly LocalStore _store;
@@ -83,35 +90,41 @@ namespace SchoolDom.Rfid.Win7
                 throw new InvalidOperationException("Sign-in succeeded but no access token was returned.");
             }
 
-            _store.State.CloudUrl = normalized;
-            _store.State.AccessToken = Convert.ToString(data["access"]);
-
             var school = data.ContainsKey("school") ? data["school"] as Dictionary<string, object> : null;
-            if (school != null)
-            {
-                if (school.ContainsKey("name")) _store.State.SchoolName = Convert.ToString(school["name"]);
-                if (school.ContainsKey("school_code")) _store.State.SchoolCode = Convert.ToString(school["school_code"]);
-            }
             var user = data.ContainsKey("user") ? data["user"] as Dictionary<string, object> : null;
-            if (user != null)
-            {
-                var first = user.ContainsKey("first_name") ? Convert.ToString(user["first_name"]) : "";
-                var last = user.ContainsKey("last_name") ? Convert.ToString(user["last_name"]) : "";
-                var full = (first + " " + last).Trim();
-                if (full.Length > 0) _store.State.OperatorName = full;
-            }
 
-            _store.Save();
+            lock (_store.StateLock)
+            {
+                _store.State.CloudUrl = normalized;
+                _store.State.AccessToken = Convert.ToString(data["access"]);
+
+                if (school != null)
+                {
+                    if (school.ContainsKey("name")) _store.State.SchoolName = Convert.ToString(school["name"]);
+                    if (school.ContainsKey("school_code")) _store.State.SchoolCode = Convert.ToString(school["school_code"]);
+                }
+                if (user != null)
+                {
+                    var first = user.ContainsKey("first_name") ? Convert.ToString(user["first_name"]) : "";
+                    var last = user.ContainsKey("last_name") ? Convert.ToString(user["last_name"]) : "";
+                    var full = (first + " " + last).Trim();
+                    if (full.Length > 0) _store.State.OperatorName = full;
+                }
+                _store.Save();
+            }
             return "Signed in to SchoolDom cloud.";
         }
 
         public void SignOut()
         {
-            _store.State.AccessToken = null;
-            _store.Save();
+            lock (_store.StateLock)
+            {
+                _store.State.AccessToken = null;
+                _store.Save();
+            }
         }
 
-        // Section 1d/4e - refreshes the local card_uid -> student cache every scan
+        // Section 1d/4e - refreshes the local card_uid -> person cache every scan
         // is checked against, so a network blip after login never blocks matching.
         public List<CardAssignmentRecord> PullCardAssignments()
         {
@@ -127,27 +140,33 @@ namespace SchoolDom.Rfid.Win7
                     if (map == null) continue;
                     result.Add(new CardAssignmentRecord
                     {
-                        StudentId = JsonUtil.Text(map.ContainsKey("student_id") ? map["student_id"] : null),
-                        StudentName = JsonUtil.Text(map.ContainsKey("student_name") ? map["student_name"] : null),
+                        PersonId = JsonUtil.Text(map.ContainsKey("person_id") ? map["person_id"] : null),
+                        PersonName = JsonUtil.Text(map.ContainsKey("person_name") ? map["person_name"] : null),
+                        Role = JsonUtil.Text(map.ContainsKey("role") ? map["role"] : null),
                         CardUid = JsonUtil.Text(map.ContainsKey("card_uid") ? map["card_uid"] : null),
                         Status = "active"
                     });
                 }
             }
-            _store.State.CardAssignments = result;
-            _store.State.LastAssignmentsPullAtUtc = JsonUtil.IsoNow();
-            _store.Save();
+            lock (_store.StateLock)
+            {
+                _store.State.CardAssignments = result;
+                _store.State.LastAssignmentsPullAtUtc = JsonUtil.IsoNow();
+                _store.Save();
+            }
             return result;
         }
 
         // Section 4b/4c/4d. Throws CardAssignmentConflictException (not force) when
-        // the card or student already has an active link, so the caller can show
-        // the "reassign?" confirmation and retry with force=true.
-        public CardAssignmentRecord AssignCard(string cardUid, string studentId, string studentName, bool force)
+        // the card or person already has an active link, so the caller can show
+        // the "reassign?" confirmation and retry with force=true. personId can be
+        // any tenant user - student, teacher, or admin (admins can assign
+        // themselves a card too).
+        public CardAssignmentRecord AssignCard(string cardUid, string personId, string personName, string role, bool force)
         {
             var body = new Dictionary<string, object>
             {
-                { "card_uid", cardUid }, { "student_id", studentId }, { "force", force }
+                { "card_uid", cardUid }, { "person_id", personId }, { "force", force }
             };
             var response = Request("POST", "/api/rfid/card-assignments/assign/", JsonUtil.Serialize(body));
 
@@ -155,8 +174,8 @@ namespace SchoolDom.Rfid.Win7
             {
                 var conflictData = JsonUtil.DeserializeObject(response.Body);
                 throw new CardAssignmentConflictException(
-                    JsonUtil.Text(conflictData.ContainsKey("message") ? conflictData["message"] : null, "This card or student already has an active assignment."),
-                    conflictData.ContainsKey("conflicting_student_name") ? JsonUtil.Text(conflictData["conflicting_student_name"]) : null,
+                    JsonUtil.Text(conflictData.ContainsKey("message") ? conflictData["message"] : null, "This card or person already has an active assignment."),
+                    conflictData.ContainsKey("conflicting_person_name") ? JsonUtil.Text(conflictData["conflicting_person_name"]) : null,
                     conflictData.ContainsKey("conflicting_card_uid") ? JsonUtil.Text(conflictData["conflicting_card_uid"]) : null);
             }
             if (response.StatusCode < 200 || response.StatusCode >= 300)
@@ -164,11 +183,14 @@ namespace SchoolDom.Rfid.Win7
                 throw new InvalidOperationException(ExtractJsonMessage(response.Body, "Could not assign this card."));
             }
 
-            var record = new CardAssignmentRecord { StudentId = studentId, StudentName = studentName, CardUid = cardUid, Status = "active" };
-            var existing = _store.State.CardAssignments.FirstOrDefault(a => string.Equals(a.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
-            if (existing != null) _store.State.CardAssignments.Remove(existing);
-            _store.State.CardAssignments.Add(record);
-            _store.Save();
+            var record = new CardAssignmentRecord { PersonId = personId, PersonName = personName, Role = role, CardUid = cardUid, Status = "active" };
+            lock (_store.StateLock)
+            {
+                var existing = _store.State.CardAssignments.FirstOrDefault(a => string.Equals(a.PersonId, personId, StringComparison.OrdinalIgnoreCase));
+                if (existing != null) _store.State.CardAssignments.Remove(existing);
+                _store.State.CardAssignments.Add(record);
+                _store.Save();
+            }
             return record;
         }
 
@@ -195,26 +217,31 @@ namespace SchoolDom.Rfid.Win7
             return result;
         }
 
-        public List<StudentOption> PullStudents(string classId, string search, bool excludeAssigned)
+        // roles: null/empty = every assignable role (student/teacher/staff/admin);
+        // otherwise a comma-separated list, e.g. "student" for Bulk Assign.
+        public List<PersonOption> PullPeople(string classId, string search, string roles, bool excludeAssigned)
         {
-            var url = "/api/rfid/students/?exclude_assigned=" + (excludeAssigned ? "true" : "false");
+            var url = "/api/rfid/people/?exclude_assigned=" + (excludeAssigned ? "true" : "false");
             if (!string.IsNullOrEmpty(classId)) url += "&class_id=" + Uri.EscapeDataString(classId);
             if (!string.IsNullOrEmpty(search)) url += "&search=" + Uri.EscapeDataString(search);
+            if (!string.IsNullOrEmpty(roles)) url += "&roles=" + Uri.EscapeDataString(roles);
 
             var response = Request("GET", url, "");
             var data = JsonUtil.DeserializeObject(response.Body);
             var rows = data.ContainsKey("data") ? data["data"] as object[] : null;
-            var result = new List<StudentOption>();
+            var result = new List<PersonOption>();
             if (rows != null)
             {
                 foreach (var row in rows)
                 {
                     var map = row as Dictionary<string, object>;
                     if (map == null) continue;
-                    result.Add(new StudentOption
+                    result.Add(new PersonOption
                     {
                         Id = JsonUtil.Text(map.ContainsKey("id") ? map["id"] : null),
                         Name = JsonUtil.Text(map.ContainsKey("name") ? map["name"] : null),
+                        Role = JsonUtil.Text(map.ContainsKey("role") ? map["role"] : null),
+                        RoleLabel = JsonUtil.Text(map.ContainsKey("role_label") ? map["role_label"] : null),
                         StudentCode = JsonUtil.Text(map.ContainsKey("student_id") ? map["student_id"] : null),
                         ClassName = JsonUtil.Text(map.ContainsKey("class_name") ? map["class_name"] : null),
                         HasActiveCard = map.ContainsKey("has_active_card") && Convert.ToBoolean(map["has_active_card"])
@@ -224,20 +251,62 @@ namespace SchoolDom.Rfid.Win7
             return result;
         }
 
-        public void RevokeCard(string cardUid, string studentId)
+        public void RevokeCard(string cardUid, string personId)
         {
-            var body = new Dictionary<string, object> { { "card_uid", cardUid ?? "" }, { "student_id", studentId ?? "" } };
+            var body = new Dictionary<string, object> { { "card_uid", cardUid ?? "" }, { "person_id", personId ?? "" } };
             var response = Request("POST", "/api/rfid/card-assignments/revoke/", JsonUtil.Serialize(body));
             if (response.StatusCode < 200 || response.StatusCode >= 300)
             {
                 throw new InvalidOperationException(ExtractJsonMessage(response.Body, "Could not unassign this card."));
             }
 
-            var existing = _store.State.CardAssignments.FirstOrDefault(a =>
-                (!string.IsNullOrEmpty(cardUid) && string.Equals(a.CardUid, cardUid, StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(studentId) && string.Equals(a.StudentId, studentId, StringComparison.OrdinalIgnoreCase)));
-            if (existing != null) _store.State.CardAssignments.Remove(existing);
-            _store.Save();
+            lock (_store.StateLock)
+            {
+                var existing = _store.State.CardAssignments.FirstOrDefault(a =>
+                    (!string.IsNullOrEmpty(cardUid) && string.Equals(a.CardUid, cardUid, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(personId) && string.Equals(a.PersonId, personId, StringComparison.OrdinalIgnoreCase)));
+                if (existing != null) _store.State.CardAssignments.Remove(existing);
+                _store.Save();
+            }
+        }
+
+        // Attendance History screen - always fetched fresh, never cached locally.
+        public List<AttendanceHistoryEntry> PullAttendanceHistory(string dateIso)
+        {
+            var url = "/api/rfid/attendance/history/";
+            if (!string.IsNullOrEmpty(dateIso)) url += "?date=" + Uri.EscapeDataString(dateIso);
+
+            var response = Request("GET", url, "");
+            var data = JsonUtil.DeserializeObject(response.Body);
+            var rows = data.ContainsKey("data") ? data["data"] as object[] : null;
+            var result = new List<AttendanceHistoryEntry>();
+            if (rows != null)
+            {
+                foreach (var row in rows)
+                {
+                    var map = row as Dictionary<string, object>;
+                    if (map == null) continue;
+                    result.Add(new AttendanceHistoryEntry
+                    {
+                        PersonName = JsonUtil.Text(map.ContainsKey("person_name") ? map["person_name"] : null),
+                        Role = JsonUtil.Text(map.ContainsKey("role") ? map["role"] : null),
+                        ClockInAt = ParseIsoOrNull(map.ContainsKey("clock_in_at") ? map["clock_in_at"] : null),
+                        ClockOutAt = ParseIsoOrNull(map.ContainsKey("clock_out_at") ? map["clock_out_at"] : null),
+                        Status = JsonUtil.Text(map.ContainsKey("status") ? map["status"] : null),
+                        CardUid = JsonUtil.Text(map.ContainsKey("card_uid") ? map["card_uid"] : null),
+                    });
+                }
+            }
+            return result;
+        }
+
+        private static DateTime? ParseIsoOrNull(object value)
+        {
+            if (value == null) return null;
+            DateTime parsed;
+            if (DateTime.TryParse(Convert.ToString(value), null, System.Globalization.DateTimeStyles.RoundtripKind, out parsed))
+                return parsed.ToLocalTime();
+            return null;
         }
 
         // Section 3 - flushes the offline queue oldest-first, stopping the whole
@@ -247,9 +316,13 @@ namespace SchoolDom.Rfid.Win7
         public FlushResult FlushPendingQueue()
         {
             var result = new FlushResult();
-            var queue = _store.State.PendingAttendance;
+            List<PendingAttendanceRecord> snapshot;
+            lock (_store.StateLock)
+            {
+                snapshot = _store.State.PendingAttendance.OrderBy(r => r.ScannedAtUtc).ToList();
+            }
 
-            foreach (var record in queue.OrderBy(r => r.ScannedAtUtc).ToList())
+            foreach (var record in snapshot)
             {
                 AttendanceScanOutcome outcome;
                 try
@@ -258,44 +331,49 @@ namespace SchoolDom.Rfid.Win7
                 }
                 catch (CloudAuthExpiredException)
                 {
-                    result.RemainingInQueue = queue.Count;
+                    lock (_store.StateLock) { result.RemainingInQueue = _store.State.PendingAttendance.Count; }
                     throw;
                 }
                 catch (Exception ex)
                 {
-                    record.AttemptCount++;
-                    record.LastAttemptError = ex.Message;
-                    _store.Save();
+                    lock (_store.StateLock)
+                    {
+                        record.AttemptCount++;
+                        record.LastAttemptError = ex.Message;
+                        _store.Save();
+                    }
                     result.Failed++;
                     break; // network/server is down - stop hammering, try again next tick
                 }
 
+                lock (_store.StateLock)
+                {
+                    // Card was unassigned/revoked between the scan and now (CardNoLongerValid)
+                    // - that specific record can never succeed; drop it rather than retry forever.
+                    _store.State.PendingAttendance.Remove(record);
+                    _store.Save();
+                }
+
                 if (outcome == AttendanceScanOutcome.Success || outcome == AttendanceScanOutcome.AlreadyRecorded)
-                {
-                    queue.Remove(record);
                     result.Succeeded++;
-                }
                 else
-                {
-                    // Card was unassigned/revoked between the scan and now - this
-                    // specific record can never succeed; drop it rather than retry forever.
-                    queue.Remove(record);
                     result.Failed++;
-                }
             }
 
-            _store.Save();
-            result.RemainingInQueue = queue.Count;
+            lock (_store.StateLock) { result.RemainingInQueue = _store.State.PendingAttendance.Count; }
             return result;
         }
 
         private AttendanceScanOutcome PushAttendanceScan(PendingAttendanceRecord record)
         {
+            string deviceId;
+            lock (_store.StateLock) { deviceId = _store.State.DeviceId; }
+
             var body = new Dictionary<string, object>
             {
                 { "card_uid", record.CardUid },
                 { "idempotency_key", record.IdempotencyKey },
-                { "device_id", _store.State.DeviceId },
+                { "device_id", deviceId },
             };
             var response = Request("POST", "/api/rfid/attendance/scan/", JsonUtil.Serialize(body));
 
@@ -319,12 +397,18 @@ namespace SchoolDom.Rfid.Win7
 
         private HttpApiResponse Request(string method, string path, string body)
         {
-            if (string.IsNullOrWhiteSpace(_store.State.AccessToken))
+            string accessToken, cloudUrl;
+            lock (_store.StateLock)
+            {
+                accessToken = _store.State.AccessToken;
+                cloudUrl = _store.State.CloudUrl;
+            }
+            if (string.IsNullOrWhiteSpace(accessToken))
             {
                 throw new CloudAuthExpiredException("Sign in before syncing.");
             }
-            var url = NormalizeCloudUrl(_store.State.CloudUrl) + path;
-            var response = RequestRaw(method, url, body, _store.State.AccessToken);
+            var url = NormalizeCloudUrl(cloudUrl) + path;
+            var response = RequestRaw(method, url, body, accessToken);
             if (response.StatusCode == 401 || IsExpiredTokenMessage(response.Body))
             {
                 throw new CloudAuthExpiredException("Your saved sign-in has expired. Please sign in again.");

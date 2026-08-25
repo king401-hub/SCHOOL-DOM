@@ -131,7 +131,15 @@ class TeacherAttendance(models.Model):
     check_out_accuracy_meters = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
     check_out_address = models.TextField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
-    
+
+    # Set only when this record was created/updated by an RFID scan (see
+    # rfid_attendance.views.attendance_scan_create) - same purpose as the
+    # matching fields on academic.AttendanceRecord: card_uid is for audit,
+    # idempotency_key makes a retried sync POST from the desktop app's
+    # offline queue safe instead of double-toggling check-in/check-out.
+    card_uid = models.CharField(max_length=64, blank=True, default="")
+    idempotency_key = models.CharField(max_length=64, blank=True, null=True, unique=True)
+
     class Meta:
         verbose_name = "Teacher Attendance"
         verbose_name_plural = "Teacher Attendances"

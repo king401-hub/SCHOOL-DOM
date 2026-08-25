@@ -1,9 +1,13 @@
-"""Card-to-student mapping for the RFID attendance desktop app.
+"""Card-to-person mapping for the RFID attendance desktop app.
 
-Attendance records themselves stay in academic.AttendanceRecord (see the
-card_uid/idempotency_key fields added there) - this app only owns the
-card_uid -> student assignment, matching the spec's requirement that this
-mapping is written exclusively by the desktop app and only ever *read* by
+A card can be assigned to any tenant user - student, teacher, or admin
+(admins can badge themselves in too) - which is why the FK below is named
+`holder`, not `student`. Attendance records land in different places
+depending on the holder's role (academic.AttendanceRecord for students,
+attendance.TeacherAttendance for everyone else) - see
+attendance_scan_create in views.py. This app only owns the card_uid ->
+holder assignment, matching the spec's requirement that this mapping is
+written exclusively by the desktop app and only ever *read* by
 Android/web through the API.
 """
 import uuid
@@ -24,11 +28,10 @@ class CardAssignment(models.Model):
         on_delete=models.CASCADE,
         related_name='card_assignments',
     )
-    student = models.ForeignKey(
+    holder = models.ForeignKey(
         'users.User',
         on_delete=models.CASCADE,
         related_name='card_assignments',
-        limit_choices_to={'role': 'student'},
     )
     card_uid = models.CharField(max_length=64)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
@@ -64,11 +67,11 @@ class CardAssignment(models.Model):
                 condition=Q(status='active'),
                 name='unique_active_card_uid_per_tenant',
             ),
-            # A student can have at most one active card at a time.
+            # A person can have at most one active card at a time.
             models.UniqueConstraint(
-                fields=['student'],
+                fields=['holder'],
                 condition=Q(status='active'),
-                name='unique_active_card_per_student',
+                name='unique_active_card_per_holder',
             ),
         ]
         indexes = [
@@ -77,4 +80,4 @@ class CardAssignment(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.card_uid} -> {self.student.get_full_name()} ({self.status})'
+        return f'{self.card_uid} -> {self.holder.get_full_name()} ({self.status})'

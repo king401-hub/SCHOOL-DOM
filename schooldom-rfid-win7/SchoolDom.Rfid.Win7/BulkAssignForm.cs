@@ -23,7 +23,7 @@ namespace SchoolDom.Rfid.Win7
         private RoundedButton _confirmButton;
         private ListBox _sessionLog;
 
-        private List<StudentOption> _unassignedInClass = new List<StudentOption>();
+        private List<PersonOption> _unassignedInClass = new List<PersonOption>();
         private int _totalInClass;
         private string _capturedUid;
 
@@ -136,7 +136,9 @@ namespace SchoolDom.Rfid.Win7
             Cursor = Cursors.WaitCursor;
             try
             {
-                var allInClass = _sync.PullStudents(selected.Id, "", false);
+                // Bulk Assign is deliberately student-only ("class" isn't a concept
+                // for staff) - roles="student" scopes the picker accordingly.
+                var allInClass = _sync.PullPeople(selected.Id, "", "student", false);
                 _totalInClass = allInClass.Count;
                 _unassignedInClass = allInClass.Where(s => !s.HasActiveCard).ToList();
                 RefreshProgressLabel();
@@ -185,13 +187,13 @@ namespace SchoolDom.Rfid.Win7
 
         private void OnConfirmClick(object sender, EventArgs e)
         {
-            var student = _studentPicker.SelectedItem as StudentOption;
+            var student = _studentPicker.SelectedItem as PersonOption;
             if (student == null || string.IsNullOrEmpty(_capturedUid)) return;
 
             Cursor = Cursors.WaitCursor;
             try
             {
-                _sync.AssignCard(_capturedUid, student.Id, student.Name, force: false);
+                _sync.AssignCard(_capturedUid, student.Id, student.Name, student.Role, force: false);
                 _sessionLog.Items.Insert(0, _capturedUid + "  ->  " + student.Name);
                 _unassignedInClass.Remove(student);
                 RefreshProgressLabel();
@@ -214,7 +216,7 @@ namespace SchoolDom.Rfid.Win7
                 {
                     try
                     {
-                        _sync.AssignCard(_capturedUid, student.Id, student.Name, force: true);
+                        _sync.AssignCard(_capturedUid, student.Id, student.Name, student.Role, force: true);
                         _sessionLog.Items.Insert(0, _capturedUid + "  ->  " + student.Name + " (reassigned)");
                         _unassignedInClass.Remove(student);
                         RefreshProgressLabel();

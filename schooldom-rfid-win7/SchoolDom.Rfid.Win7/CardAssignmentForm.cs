@@ -6,11 +6,14 @@ using SchoolDom.Rfid.Win7.Controls;
 
 namespace SchoolDom.Rfid.Win7
 {
-    // Section 4b (single-student assign) + Section 4d (reassignment/revocation).
-    // Puts the reader into "listening mode" (Section 4b: "reuse the RfidReader
-    // interface from Section 1 - works with either HID or SDK reader, whichever
-    // is connected") by setting ReaderManager.AssignmentModeActive so MainForm's
-    // normal attendance handling steps aside for scans captured here.
+    // Section 4b (single-person assign) + Section 4d (reassignment/revocation).
+    // Searches across every role at the school (student/teacher/admin - admins
+    // can assign themselves a card too), unlike BulkAssignForm which is
+    // deliberately student-only (it's built around "class", a concept staff
+    // don't have). Puts the reader into "listening mode" (Section 4b: "reuse
+    // the RfidReader interface from Section 1 - works with either HID or SDK
+    // reader, whichever is connected") by setting ReaderManager.AssignmentModeActive
+    // so MainForm's normal attendance handling steps aside for scans captured here.
     internal sealed class CardAssignmentForm : Form
     {
         private readonly ReaderManager _readerManager;
@@ -18,7 +21,7 @@ namespace SchoolDom.Rfid.Win7
         private readonly LocalStore _store;
 
         private TextBox _searchBox;
-        private ListBox _studentList;
+        private ListBox _peopleList;
         private Label _currentCardLabel;
         private RoundedButton _unassignButton;
         private Card _scanCard;
@@ -26,7 +29,7 @@ namespace SchoolDom.Rfid.Win7
         private Label _capturedUidLabel;
         private RoundedButton _confirmButton;
 
-        private StudentOption _selectedStudent;
+        private PersonOption _selectedPerson;
         private string _capturedUid;
         private readonly Timer _searchDebounce = new Timer { Interval = 350 };
 
@@ -50,7 +53,7 @@ namespace SchoolDom.Rfid.Win7
             {
                 _readerManager.AssignmentModeActive = true;
                 _readerManager.CardScanned += OnScan;
-                LoadStudents("");
+                LoadPeople("");
             };
             FormClosed += (s, e) =>
             {
@@ -64,21 +67,21 @@ namespace SchoolDom.Rfid.Win7
             var left = new Panel { Left = 20, Top = 20, Width = 340, Height = 500, BackColor = Palette.Background };
             Controls.Add(left);
 
-            left.Controls.Add(new Label { Text = "Find a student", Left = 0, Top = 0, AutoSize = true, Font = Palette.BodyBold, ForeColor = Palette.Text });
+            left.Controls.Add(new Label { Text = "Find a student, teacher, or admin", Left = 0, Top = 0, AutoSize = true, Font = Palette.BodyBold, ForeColor = Palette.Text });
             _searchBox = new TextBox { Left = 0, Top = 28, Width = 340, Height = 34, Font = new Font("Segoe UI", 11), BorderStyle = BorderStyle.FixedSingle };
             _searchBox.TextChanged += (s, e) => { _searchDebounce.Stop(); _searchDebounce.Start(); };
-            _searchDebounce.Tick += (s, e) => { _searchDebounce.Stop(); LoadStudents(_searchBox.Text.Trim()); };
+            _searchDebounce.Tick += (s, e) => { _searchDebounce.Stop(); LoadPeople(_searchBox.Text.Trim()); };
             left.Controls.Add(_searchBox);
 
-            _studentList = new ListBox { Left = 0, Top = 70, Width = 340, Height = 430, Font = Palette.Body, BorderStyle = BorderStyle.FixedSingle, IntegralHeight = false };
-            _studentList.SelectedIndexChanged += OnStudentSelected;
-            left.Controls.Add(_studentList);
+            _peopleList = new ListBox { Left = 0, Top = 70, Width = 340, Height = 430, Font = Palette.Body, BorderStyle = BorderStyle.FixedSingle, IntegralHeight = false };
+            _peopleList.SelectedIndexChanged += OnPersonSelected;
+            left.Controls.Add(_peopleList);
 
             var right = new Card { Left = 380, Top = 20, Width = 360, Height = 500 };
             Controls.Add(right);
 
-            right.Controls.Add(new Label { Text = "Selected Student", Left = 20, Top = 16, AutoSize = true, Font = Palette.Caption, ForeColor = Palette.Muted });
-            _currentCardLabel = new Label { Text = "Choose a student on the left.", Left = 20, Top = 40, Width = 320, Height = 60, Font = Palette.BodyBold, ForeColor = Palette.Text };
+            right.Controls.Add(new Label { Text = "Selected Person", Left = 20, Top = 16, AutoSize = true, Font = Palette.Caption, ForeColor = Palette.Muted });
+            _currentCardLabel = new Label { Text = "Choose someone on the left.", Left = 20, Top = 40, Width = 320, Height = 60, Font = Palette.BodyBold, ForeColor = Palette.Text };
             right.Controls.Add(_currentCardLabel);
 
             _unassignButton = RoundedButton.Danger("Unassign Current Card", 320, 36);
@@ -93,7 +96,7 @@ namespace SchoolDom.Rfid.Win7
 
             _scanInstructionLabel = new Label
             {
-                Text = "Select a student, then hand them the reader.",
+                Text = "Select a person, then hand them the reader.",
                 Left = 20, Top = 20, Width = 280, Height = 60, Font = Palette.Body, ForeColor = Palette.Muted
             };
             _scanCard.Controls.Add(_scanInstructionLabel);
@@ -115,13 +118,14 @@ namespace SchoolDom.Rfid.Win7
             _scanCard.Controls.Add(_confirmButton);
         }
 
-        private void LoadStudents(string search)
+        private void LoadPeople(string search)
         {
             Cursor = Cursors.WaitCursor;
             try
             {
-                var students = _sync.PullStudents(null, search, false);
-                _studentList.DataSource = students;
+                // roles: null -> every assignable role (student/teacher/staff/admin).
+                var people = _sync.PullPeople(null, search, null, false);
+                _peopleList.DataSource = people;
             }
             catch (CloudAuthExpiredException)
             {
@@ -129,7 +133,7 @@ namespace SchoolDom.Rfid.Win7
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, "Could Not Load Students", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, ex.Message, "Could Not Load People", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally
             {
@@ -137,38 +141,43 @@ namespace SchoolDom.Rfid.Win7
             }
         }
 
-        private void OnStudentSelected(object sender, EventArgs e)
+        private void OnPersonSelected(object sender, EventArgs e)
         {
-            _selectedStudent = _studentList.SelectedItem as StudentOption;
+            _selectedPerson = _peopleList.SelectedItem as PersonOption;
             _capturedUid = null;
             _capturedUidLabel.Text = "—";
             _confirmButton.Enabled = false;
 
-            if (_selectedStudent == null)
+            if (_selectedPerson == null)
             {
-                _currentCardLabel.Text = "Choose a student on the left.";
+                _currentCardLabel.Text = "Choose someone on the left.";
                 _unassignButton.Visible = false;
                 _scanCard.Enabled = false;
                 return;
             }
 
-            var existing = _store.State.CardAssignments.FirstOrDefault(a =>
-                string.Equals(a.StudentId, _selectedStudent.Id, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(a.Status, "active", StringComparison.OrdinalIgnoreCase));
+            CardAssignmentRecord existing;
+            lock (_store.StateLock)
+            {
+                existing = _store.State.CardAssignments.FirstOrDefault(a =>
+                    string.Equals(a.PersonId, _selectedPerson.Id, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(a.Status, "active", StringComparison.OrdinalIgnoreCase));
+            }
 
+            var label = _selectedPerson.Name + (string.IsNullOrEmpty(_selectedPerson.RoleLabel) ? "" : " (" + _selectedPerson.RoleLabel + ")");
             _currentCardLabel.Text = existing != null
-                ? _selectedStudent.Name + "\nCurrent card: " + existing.CardUid
-                : _selectedStudent.Name + "\nNo card assigned yet.";
+                ? label + "\nCurrent card: " + existing.CardUid
+                : label + "\nNo card assigned yet.";
             _unassignButton.Visible = existing != null;
             _scanCard.Enabled = true;
-            _scanInstructionLabel.Text = "Ask " + _selectedStudent.Name + " to scan their card now.";
+            _scanInstructionLabel.Text = "Ask " + _selectedPerson.Name + " to scan their card now.";
         }
 
         // Section 1's shared IRfidReader interface, same as the live feed - this
         // form just intercepts the scan instead of MainForm (see AssignmentModeActive).
         private void OnScan(object sender, CardScannedEventArgs e)
         {
-            if (_selectedStudent == null) return;
+            if (_selectedPerson == null) return;
             _capturedUid = e.Uid;
             _capturedUidLabel.Text = e.Uid;
             _confirmButton.Enabled = true;
@@ -181,24 +190,24 @@ namespace SchoolDom.Rfid.Win7
 
         private void AttemptAssign(bool force)
         {
-            if (_selectedStudent == null || string.IsNullOrEmpty(_capturedUid)) return;
+            if (_selectedPerson == null || string.IsNullOrEmpty(_capturedUid)) return;
 
             Cursor = Cursors.WaitCursor;
             try
             {
-                _sync.AssignCard(_capturedUid, _selectedStudent.Id, _selectedStudent.Name, force);
-                MessageBox.Show(this, "Card " + _capturedUid + " assigned to " + _selectedStudent.Name + ".", "Card Assigned", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _sync.AssignCard(_capturedUid, _selectedPerson.Id, _selectedPerson.Name, _selectedPerson.Role, force);
+                MessageBox.Show(this, "Card " + _capturedUid + " assigned to " + _selectedPerson.Name + ".", "Card Assigned", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 _capturedUid = null;
                 _capturedUidLabel.Text = "—";
                 _confirmButton.Enabled = false;
-                OnStudentSelected(this, EventArgs.Empty);
+                OnPersonSelected(this, EventArgs.Empty);
             }
             catch (CardAssignmentConflictException ex)
             {
                 Cursor = Cursors.Default;
                 var result = MessageBox.Show(
                     this,
-                    ex.Message + "\r\n\r\nReassign this card to " + _selectedStudent.Name + "? The previous link will be revoked.",
+                    ex.Message + "\r\n\r\nReassign this card to " + _selectedPerson.Name + "? The previous link will be revoked.",
                     "Card Already Assigned",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Warning);
@@ -220,15 +229,15 @@ namespace SchoolDom.Rfid.Win7
 
         private void OnUnassignClick(object sender, EventArgs e)
         {
-            if (_selectedStudent == null) return;
-            var confirm = MessageBox.Show(this, "Unassign the current card from " + _selectedStudent.Name + "?", "Unassign Card", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (_selectedPerson == null) return;
+            var confirm = MessageBox.Show(this, "Unassign the current card from " + _selectedPerson.Name + "?", "Unassign Card", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (confirm != DialogResult.Yes) return;
 
             Cursor = Cursors.WaitCursor;
             try
             {
-                _sync.RevokeCard(null, _selectedStudent.Id);
-                OnStudentSelected(this, EventArgs.Empty);
+                _sync.RevokeCard(null, _selectedPerson.Id);
+                OnPersonSelected(this, EventArgs.Empty);
             }
             catch (CloudAuthExpiredException)
             {

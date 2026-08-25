@@ -4,6 +4,14 @@ the same JWT login every other SchoolDom client uses (POST /api/auth/login/) -
 there is no separate device-pairing token, matching the decision to drop QR
 pairing from this feature's scope. Whoever is signed into the desktop app acts
 as the "operator" for both card assignment and attendance scans.
+
+A card can be assigned to any tenant user, not just students - teachers and
+admins can badge themselves in too. Where the resulting attendance record
+lands depends on the holder's role: students go to academic.AttendanceRecord
+(GPS-aware, used by the rest of the student attendance system), everyone else
+goes to attendance.TeacherAttendance (no GPS - an RFID desktop scan has no
+location to offer, unlike the phone-based QR self-scan that model was
+originally built for).
 """
 from django.db import transaction
 from django.db.models import Q
@@ -14,6 +22,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from academic.models import AttendanceRecord, Class
+from attendance.models import TeacherAttendance
+from attendance.views import _apply_clock_out, get_client_ip
 from users.models import StudentProfile, User
 from users.app_views import (
     AttendanceClockError,
@@ -30,9 +40,13 @@ from .serializers import CardAssignmentSerializer
 
 # Card assignment is admin-only ("built strictly into the desktop app", spec
 # Section 4) - a teacher/staff member can still operate the reader for
-# attendance scans, but cannot create/revoke the card-to-student mapping.
+# attendance scans, but cannot create/revoke the card-to-person mapping.
 ADMIN_ROLES = {'school_admin', 'principal', 'super_admin', 'school_superadmin'}
 SCAN_OPERATOR_ROLES = ADMIN_ROLES | {'teacher', 'staff'}
+# Default set the "assign a card" picker searches across when no explicit
+# ?roles= filter is given - deliberately excludes 'parent': a parent picking
+# a child up at the gate isn't what this feature is for.
+ASSIGNABLE_ROLES = SCAN_OPERATOR_ROLES | {'student'}
 
 
 def _forbidden(message):
@@ -63,9 +77,9 @@ def card_assignments_pull(request):
     if error:
         return error
 
-    assignments = CardAssignment.objects.select_related('student').filter(
+    assignments = CardAssignment.objects.select_related('holder').filter(
         tenant=school, status='active',
-    ).order_by('student__first_name', 'student__last_name')
+    ).order_by('holder__first_name', 'holder__last_name')
     return Response({
         'success': True,
         'data': CardAssignmentSerializer(assignments, many=True).data,
@@ -75,8 +89,9 @@ def card_assignments_pull(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def card_assignment_create(request):
-    """Section 4b/4c/4d - assign a card to a student. `force=true` is how the
-    desktop app confirms a reassignment after showing the admin both student
+    """Section 4b/4c/4d - assign a card to any person at this school (student,
+    teacher, or admin - admins can assign themselves one too). `force=true` is
+    how the desktop app confirms a reassignment after showing the admin both
     names (Section 4d); without it, a conflict is reported, never silently
     overwritten."""
     if request.user.role not in ADMIN_ROLES:
@@ -87,39 +102,39 @@ def card_assignment_create(request):
         return error
 
     card_uid = str(request.data.get('card_uid') or '').strip()
-    student_id = str(request.data.get('student_id') or '').strip()
+    person_id = str(request.data.get('person_id') or request.data.get('student_id') or '').strip()
     force = bool(request.data.get('force'))
-    if not card_uid or not student_id:
-        return _bad_request('card_uid and student_id are required.')
+    if not card_uid or not person_id:
+        return _bad_request('card_uid and person_id are required.')
 
     try:
-        student = User.objects.get(id=student_id, tenant=school, role='student')
+        person = User.objects.get(id=person_id, tenant=school)
     except (User.DoesNotExist, ValueError):
         return Response(
-            {'success': False, 'message': 'Student not found at this school.'},
+            {'success': False, 'message': 'Person not found at this school.'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
     with transaction.atomic():
         card_conflict = CardAssignment.objects.select_for_update().filter(
             tenant=school, card_uid=card_uid, status='active',
-        ).exclude(student=student).select_related('student').first()
-        student_conflict = CardAssignment.objects.select_for_update().filter(
-            tenant=school, student=student, status='active',
+        ).exclude(holder=person).select_related('holder').first()
+        person_conflict = CardAssignment.objects.select_for_update().filter(
+            tenant=school, holder=person, status='active',
         ).exclude(card_uid=card_uid).first()
 
-        if (card_conflict or student_conflict) and not force:
+        if (card_conflict or person_conflict) and not force:
             return Response(
                 {
                     'success': False,
                     'conflict': True,
                     'message': (
-                        f'Card {card_uid} is already assigned to {card_conflict.student.get_full_name()}.'
+                        f'Card {card_uid} is already assigned to {card_conflict.holder.get_full_name()}.'
                         if card_conflict
-                        else f'{student.get_full_name()} already has an active card ({student_conflict.card_uid}).'
+                        else f'{person.get_full_name()} already has an active card ({person_conflict.card_uid}).'
                     ),
-                    'conflicting_student_name': card_conflict.student.get_full_name() if card_conflict else None,
-                    'conflicting_card_uid': student_conflict.card_uid if student_conflict else None,
+                    'conflicting_person_name': card_conflict.holder.get_full_name() if card_conflict else None,
+                    'conflicting_card_uid': person_conflict.card_uid if person_conflict else None,
                 },
                 status=status.HTTP_409_CONFLICT,
             )
@@ -130,15 +145,15 @@ def card_assignment_create(request):
             card_conflict.revoked_at = now
             card_conflict.revoked_by = request.user
             card_conflict.save(update_fields=['status', 'revoked_at', 'revoked_by'])
-        if student_conflict:
-            student_conflict.status = 'revoked'
-            student_conflict.revoked_at = now
-            student_conflict.revoked_by = request.user
-            student_conflict.save(update_fields=['status', 'revoked_at', 'revoked_by'])
+        if person_conflict:
+            person_conflict.status = 'revoked'
+            person_conflict.revoked_at = now
+            person_conflict.revoked_by = request.user
+            person_conflict.save(update_fields=['status', 'revoked_at', 'revoked_by'])
 
         assignment = CardAssignment.objects.create(
             tenant=school,
-            student=student,
+            holder=person,
             card_uid=card_uid,
             status='active',
             assigned_by=request.user,
@@ -163,15 +178,15 @@ def card_assignment_revoke(request):
         return error
 
     card_uid = str(request.data.get('card_uid') or '').strip()
-    student_id = str(request.data.get('student_id') or '').strip()
-    if not card_uid and not student_id:
-        return _bad_request('card_uid or student_id is required.')
+    person_id = str(request.data.get('person_id') or request.data.get('student_id') or '').strip()
+    if not card_uid and not person_id:
+        return _bad_request('card_uid or person_id is required.')
 
     query = CardAssignment.objects.filter(tenant=school, status='active')
     if card_uid:
         query = query.filter(card_uid=card_uid)
-    if student_id:
-        query = query.filter(student_id=student_id)
+    if person_id:
+        query = query.filter(holder_id=person_id)
     assignment = query.first()
     if not assignment:
         return Response(
@@ -184,6 +199,18 @@ def card_assignment_revoke(request):
     assignment.revoked_by = request.user
     assignment.save(update_fields=['status', 'revoked_at', 'revoked_by'])
     return Response({'success': True, 'message': 'Card unassigned.'})
+
+
+def _find_by_idempotency_key(idempotency_key):
+    """Checks both attendance tables - a retried sync POST doesn't know (or
+    care) which one its own scan landed in last time."""
+    student_record = AttendanceRecord.objects.filter(idempotency_key=idempotency_key).first()
+    if student_record:
+        return 'student', student_record
+    staff_record = TeacherAttendance.objects.filter(idempotency_key=idempotency_key).first()
+    if staff_record:
+        return 'staff', staff_record
+    return None, None
 
 
 @api_view(['POST'])
@@ -205,29 +232,37 @@ def attendance_scan_create(request):
     if not card_uid or not idempotency_key:
         return _bad_request('card_uid and idempotency_key are required.')
 
-    existing = AttendanceRecord.objects.filter(idempotency_key=idempotency_key).select_related('student').first()
+    kind, existing = _find_by_idempotency_key(idempotency_key)
     if existing:
+        payload = (
+            {'status': existing.status, 'date': existing.date, **_attendance_clock_payload(existing)}
+            if kind == 'student'
+            else {'status': existing.status, 'check_in_time': existing.check_in_time, 'check_out_time': existing.check_out_time}
+        )
         return Response({
             'success': True,
             'message': 'Already recorded (retry of a previous scan).',
             'duplicate': True,
-            'attendance': {
-                'status': existing.status,
-                'date': existing.date,
-                **_attendance_clock_payload(existing),
-            },
+            'attendance': payload,
         })
 
-    assignment = CardAssignment.objects.select_related('student').filter(
+    assignment = CardAssignment.objects.select_related('holder').filter(
         tenant=school, card_uid=card_uid, status='active',
     ).first()
     if not assignment:
         return Response(
-            {'success': False, 'unregistered': True, 'message': f'Card {card_uid} is not linked to any student.'},
+            {'success': False, 'unregistered': True, 'message': f'Card {card_uid} is not linked to anyone.'},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    student = assignment.student
+    holder = assignment.holder
+
+    if holder.role == 'student':
+        return _record_student_scan(request, school, holder, card_uid, idempotency_key)
+    return _record_staff_scan(request, school, holder, card_uid, idempotency_key)
+
+
+def _record_student_scan(request, school, student, card_uid, idempotency_key):
     student_profile = StudentProfile.objects.select_related('current_class').filter(user=student).first()
 
     tenant_obj = _tenant_for_model(AttendanceRecord, request.user)
@@ -261,7 +296,7 @@ def attendance_scan_create(request):
         'success': True,
         'message': message,
         'action': action,
-        'student': {'id': str(student.id), 'name': student.get_full_name()},
+        'person': {'id': str(student.id), 'name': student.get_full_name(), 'role': student.role},
         'attendance': {
             'status': attendance.status,
             'date': attendance.date,
@@ -270,10 +305,57 @@ def attendance_scan_create(request):
     }, status=status.HTTP_201_CREATED)
 
 
+def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
+    """Teacher/admin path - attendance.TeacherAttendance, no GPS. An RFID
+    desktop scan has no location to offer, unlike the phone-based QR
+    self-scan (scan_qr_code) this model was originally built for - every
+    location field below is left null on purpose, all of which are nullable
+    on TeacherAttendance already."""
+    today = timezone.localdate()
+    existing = TeacherAttendance.objects.filter(teacher=staff, attendance_date=today).first()
+
+    if existing is None:
+        attendance = TeacherAttendance.objects.create(
+            teacher=staff,
+            tenant=school,
+            status='present',
+            ip_address=get_client_ip(request),
+            device_info='SchoolDom RFID',
+        )
+        action = 'clock_in'
+        message = f"{staff.get_full_name()} clocked in at {timezone.localtime(attendance.check_in_time).strftime('%I:%M %p').lstrip('0')}."
+    elif existing.check_out_time is None:
+        no_location = {'latitude': None, 'longitude': None, 'accuracy': None, 'address': '', 'device_info': 'SchoolDom RFID'}
+        _apply_clock_out(existing, no_location)
+        attendance = existing
+        action = 'clock_out'
+        message = f"{staff.get_full_name()} clocked out at {timezone.localtime(attendance.check_out_time).strftime('%I:%M %p').lstrip('0')}."
+    else:
+        return _bad_request(f'{staff.get_full_name()} has already clocked out today.')
+
+    TeacherAttendance.objects.filter(pk=attendance.pk).update(
+        idempotency_key=idempotency_key,
+        card_uid=card_uid,
+    )
+
+    return Response({
+        'success': True,
+        'message': message,
+        'action': action,
+        'person': {'id': str(staff.id), 'name': staff.get_full_name(), 'role': staff.role},
+        'attendance': {
+            'status': attendance.status,
+            'check_in_time': attendance.check_in_time,
+            'check_out_time': attendance.check_out_time,
+        },
+    }, status=status.HTTP_201_CREATED)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def classes_lookup(request):
-    """Feeds the desktop app's class picker for Section 4c (Bulk Assign Cards)."""
+    """Feeds the desktop app's class picker for Section 4c (Bulk Assign Cards) -
+    students only, since "class" isn't a concept for staff."""
     if request.user.role not in ADMIN_ROLES:
         return _forbidden('Only school administrators can assign RFID cards.')
 
@@ -290,11 +372,12 @@ def classes_lookup(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def students_lookup(request):
-    """Feeds the desktop app's student picker for Section 4b/4c - search by
-    name/ID, optionally scoped to one class, optionally excluding students who
-    already have an active card (used by Bulk Assign to default to the next
-    unassigned student)."""
+def people_lookup(request):
+    """Feeds the desktop app's assign-a-card picker (Section 4b/4c) - search by
+    name/email, optionally restricted to specific roles (?roles=teacher,staff;
+    Bulk Assign passes roles=student), optionally scoped to one class (students
+    only), optionally excluding people who already have an active card (used
+    by Bulk Assign to default to the next unassigned student)."""
     if request.user.role not in ADMIN_ROLES:
         return _forbidden('Only school administrators can assign RFID cards.')
 
@@ -302,36 +385,113 @@ def students_lookup(request):
     if error:
         return error
 
-    qs = StudentProfile.objects.select_related('user', 'current_class').filter(user__tenant=school)
+    roles_param = str(request.query_params.get('roles') or '').strip()
+    roles = {r.strip() for r in roles_param.split(',') if r.strip()} or ASSIGNABLE_ROLES
+
+    qs = User.objects.filter(tenant=school, is_active=True, role__in=roles)
 
     class_id = str(request.query_params.get('class_id') or '').strip()
     if class_id:
-        qs = qs.filter(current_class_id=class_id)
+        student_ids_in_class = StudentProfile.objects.filter(
+            user__tenant=school, current_class_id=class_id,
+        ).values_list('user_id', flat=True)
+        qs = qs.filter(id__in=list(student_ids_in_class))
 
     search = str(request.query_params.get('search') or '').strip()
     if search:
         qs = qs.filter(
-            Q(user__first_name__icontains=search)
-            | Q(user__last_name__icontains=search)
-            | Q(student_id__icontains=search)
+            Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(email__icontains=search)
         )
 
-    active_card_student_ids = set(
-        CardAssignment.objects.filter(tenant=school, status='active').values_list('student_id', flat=True)
+    profiles_by_user_id = {
+        p.user_id: p
+        for p in StudentProfile.objects.filter(user__tenant=school).select_related('current_class')
+    }
+    active_card_holder_ids = set(
+        CardAssignment.objects.filter(tenant=school, status='active').values_list('holder_id', flat=True)
     )
     exclude_assigned = str(request.query_params.get('exclude_assigned') or '').lower() == 'true'
 
     results = []
-    for profile in qs.order_by('user__first_name', 'user__last_name')[:300]:
-        has_card = profile.user_id in active_card_student_ids
+    for person in qs.order_by('first_name', 'last_name')[:300]:
+        has_card = person.id in active_card_holder_ids
         if exclude_assigned and has_card:
             continue
+        profile = profiles_by_user_id.get(person.id)
         results.append({
-            'id': str(profile.user_id),
-            'name': profile.user.get_full_name() or profile.user.email,
-            'student_id': profile.student_id,
-            'class_name': _class_label(profile.current_class) if profile.current_class else None,
+            'id': str(person.id),
+            'name': person.get_full_name() or person.email,
+            'role': person.role,
+            'role_label': person.get_role_display(),
+            'student_id': profile.student_id if profile else None,
+            'class_name': _class_label(profile.current_class) if profile and profile.current_class else None,
             'has_active_card': has_card,
         })
 
     return Response({'success': True, 'data': results})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attendance_history(request):
+    """Powers the desktop app's Attendance History screen - merges student
+    (academic.AttendanceRecord) and staff (attendance.TeacherAttendance) rows
+    that were captured via RFID (card_uid non-empty) into one list, newest
+    first. ?date=YYYY-MM-DD filters to a single day; default is the last 7
+    days so the screen isn't empty on a quiet week."""
+    if request.user.role not in SCAN_OPERATOR_ROLES:
+        return _forbidden('Only school staff can view attendance history.')
+
+    school, error = _require_school(request.user)
+    if error:
+        return error
+
+    date_str = str(request.query_params.get('date') or '').strip()
+    if date_str:
+        try:
+            from datetime import datetime
+            start_date = end_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return _bad_request('date must be YYYY-MM-DD.')
+    else:
+        end_date = timezone.localdate()
+        start_date = end_date - timezone.timedelta(days=7)
+
+    student_rows = (
+        AttendanceRecord.objects.select_related('student')
+        .filter(student__tenant=school, date__gte=start_date, date__lte=end_date)
+        .exclude(card_uid='')
+        .order_by('-date', '-clock_in_at')[:200]
+    )
+    staff_rows = (
+        TeacherAttendance.objects.select_related('teacher')
+        .filter(tenant=school, attendance_date__gte=start_date, attendance_date__lte=end_date)
+        .exclude(card_uid='')
+        .order_by('-attendance_date', '-check_in_time')[:200]
+    )
+
+    entries = []
+    for r in student_rows:
+        entries.append({
+            'person_name': r.student.get_full_name() or r.student.email,
+            'role': 'student',
+            'date': r.date,
+            'clock_in_at': r.clock_in_at,
+            'clock_out_at': r.clock_out_at,
+            'status': r.status,
+            'card_uid': r.card_uid,
+        })
+    for r in staff_rows:
+        entries.append({
+            'person_name': r.teacher.get_full_name() or r.teacher.email,
+            'role': r.teacher.role,
+            'date': r.attendance_date,
+            'clock_in_at': r.check_in_time,
+            'clock_out_at': r.check_out_time,
+            'status': r.status,
+            'card_uid': r.card_uid,
+        })
+
+    entries.sort(key=lambda e: e['clock_in_at'] or timezone.now(), reverse=True)
+
+    return Response({'success': True, 'data': entries[:300]})

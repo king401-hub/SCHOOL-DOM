@@ -15,6 +15,14 @@ namespace SchoolDom.Rfid.Win7
         private static readonly byte[] _entropy = Encoding.UTF8.GetBytes("SchoolDom.RfidWin7.LocalStore.v1");
         public AppState State { get; private set; }
 
+        // The periodic sync now runs on a background thread (see MainForm.RunFlush)
+        // so a slow/dead network can't freeze the UI, but that means State can be
+        // touched from two threads at once - a scan on the UI thread enqueuing a
+        // PendingAttendanceRecord while a background flush is iterating/removing
+        // from that same List. Every read or write of State anywhere in the app
+        // (here and in SyncService) must go through this lock.
+        public readonly object StateLock = new object();
+
         public LocalStore()
         {
             var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SchoolDom", "RfidWin7");
@@ -71,15 +79,64 @@ namespace SchoolDom.Rfid.Win7
         public CardAssignmentRecord FindActiveAssignment(string cardUid)
         {
             var value = (cardUid ?? "").Trim();
-            return State.CardAssignments.FirstOrDefault(a =>
-                string.Equals(a.CardUid, value, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(a.Status, "active", StringComparison.OrdinalIgnoreCase));
+            lock (StateLock)
+            {
+                return State.CardAssignments.FirstOrDefault(a =>
+                    string.Equals(a.CardUid, value, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(a.Status, "active", StringComparison.OrdinalIgnoreCase));
+            }
         }
 
         public void EnqueuePendingAttendance(PendingAttendanceRecord record)
         {
-            State.PendingAttendance.Add(record);
-            Save();
+            lock (StateLock)
+            {
+                State.PendingAttendance.Add(record);
+                Save();
+            }
+        }
+
+        public int PendingAttendanceCount()
+        {
+            lock (StateLock) { return State.PendingAttendance.Count; }
+        }
+
+        // Cool-off (Section 3 follow-up): returns how many seconds remain before this
+        // exact card is allowed to produce another scan, or 0 if it's clear. Also
+        // opportunistically prunes any UID whose cooldown has long since expired, so
+        // this dictionary doesn't grow for the lifetime of the process.
+        public int SecondsUntilCooldownClears(string cardUid, int cooldownSeconds)
+        {
+            var value = (cardUid ?? "").Trim();
+            lock (StateLock)
+            {
+                string lastAtIso;
+                if (!State.LastScanAtUtcByCardUid.TryGetValue(value, out lastAtIso))
+                    return 0;
+
+                DateTime lastAt;
+                if (!DateTime.TryParse(lastAtIso, null, System.Globalization.DateTimeStyles.RoundtripKind, out lastAt))
+                    return 0;
+
+                var elapsed = (DateTime.UtcNow - lastAt).TotalSeconds;
+                var remaining = cooldownSeconds - elapsed;
+
+                if (remaining <= 0)
+                {
+                    State.LastScanAtUtcByCardUid.Remove(value);
+                    return 0;
+                }
+                return (int)Math.Ceiling(remaining);
+            }
+        }
+
+        public void RecordScanForCooldown(string cardUid)
+        {
+            var value = (cardUid ?? "").Trim();
+            lock (StateLock)
+            {
+                State.LastScanAtUtcByCardUid[value] = JsonUtil.IsoNow();
+            }
         }
     }
 }

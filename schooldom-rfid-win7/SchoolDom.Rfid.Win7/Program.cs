@@ -11,6 +11,27 @@ namespace SchoolDom.Rfid.Win7
         [STAThread]
         private static void Main()
         {
+            // Without these two handlers, .NET Framework's default behavior for an
+            // unhandled exception is to terminate the process outright - silently on
+            // a ThreadPool/background thread (no dialog, nothing in the Windows Event
+            // Log's Application channel), and via an OS-level crash dialog on the UI
+            // thread. Both looked identical to "the app just stops working" from the
+            // outside. Logging + a message box turns that into something diagnosable,
+            // and for the UI-thread case, keeps the app running instead of dying.
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                var ex = e.ExceptionObject as Exception;
+                if (ex != null) CrashLog.Write("AppDomain.UnhandledException (fatal)", ex);
+            };
+            Application.ThreadException += (s, e) =>
+            {
+                CrashLog.Write("Application.ThreadException (recovered)", e.Exception);
+                MessageBox.Show(
+                    "Something went wrong and was logged, but the app will keep running:\r\n\r\n" + e.Exception.Message,
+                    "Unexpected Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            };
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+
             BootstrapNetworkSecurity();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
