@@ -54,6 +54,46 @@ function enterApp(session) {
 
 let _pendingOtp = null; // { email, challenge } while the OTP card is showing
 
+// Decorative particles drifting up through the login background - purely
+// visual, generated once at load since hand-writing dozens of divs isn't
+// practical. Positions/timings are randomized so each launch looks alive.
+function generateLoginParticles() {
+  const container = $('#login-particles');
+  if (!container) return;
+  for (let i = 0; i < 26; i++) {
+    const el = document.createElement('div');
+    el.className = 'login-particle';
+    const size = (2 + Math.random() * 3).toFixed(1);
+    const left = (Math.random() * 100).toFixed(1);
+    const top = (Math.random() * 100).toFixed(1);
+    const duration = (6 + Math.random() * 9).toFixed(1);
+    const delay = (Math.random() * duration).toFixed(1);
+    const opacity = (0.25 + Math.random() * 0.45).toFixed(2);
+    const hue = Math.random() > 0.5 ? 'var(--login-green)' : 'var(--login-blue)';
+    el.style.cssText = `width:${size}px;height:${size}px;left:${left}%;top:${top}%;` +
+      `animation-duration:${duration}s;animation-delay:-${delay}s;--op:${opacity};` +
+      `color:${hue};background:${hue};`;
+    container.appendChild(el);
+  }
+}
+generateLoginParticles();
+
+const REMEMBER_EMAIL_KEY = 'schooldom_superadmin_remember_email';
+const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY);
+if (rememberedEmail) {
+  $('#login-email').value = rememberedEmail;
+  $('#login-remember').checked = true;
+}
+
+$('#login-password-toggle').addEventListener('click', () => {
+  const input = $('#login-password');
+  input.type = input.type === 'password' ? 'text' : 'password';
+});
+
+$('#login-forgot').addEventListener('click', () => {
+  showToast('Contact your SchoolDom administrator to reset your password.');
+});
+
 $('#login-submit').addEventListener('click', async () => {
   const email = $('#login-email').value.trim();
   const password = $('#login-password').value;
@@ -64,9 +104,11 @@ $('#login-submit').addEventListener('click', async () => {
     errorBox.style.display = 'block';
     return;
   }
+  if ($('#login-remember').checked) localStorage.setItem(REMEMBER_EMAIL_KEY, email);
+  else localStorage.removeItem(REMEMBER_EMAIL_KEY);
   const btn = $('#login-submit');
   btn.disabled = true;
-  btn.textContent = 'Signing in...';
+  $('#login-submit-label').textContent = 'Signing in...';
   try {
     const result = await API.login(email, password);
 
@@ -94,7 +136,7 @@ $('#login-submit').addEventListener('click', async () => {
     errorBox.style.display = 'block';
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Sign In';
+    $('#login-submit-label').textContent = 'Sign In';
   }
 });
 
@@ -113,7 +155,7 @@ $('#otp-submit').addEventListener('click', async () => {
   }
   const btn = $('#otp-submit');
   btn.disabled = true;
-  btn.textContent = 'Verifying...';
+  $('#otp-submit-label').textContent = 'Verifying...';
   try {
     const session = await API.verifyOtp(_pendingOtp.email, code, _pendingOtp.challenge);
     if (session.userRole && session.userRole !== 'super_admin') {
@@ -126,7 +168,7 @@ $('#otp-submit').addEventListener('click', async () => {
     errorBox.style.display = 'block';
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Verify';
+    $('#otp-submit-label').textContent = 'Verify';
   }
 });
 
