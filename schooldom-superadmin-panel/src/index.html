@@ -115,21 +115,24 @@
 <!-- ============== APP SHELL ============== -->
 <div id="app-shell">
   <div class="sidebar">
-    <div class="sidebar-logo">School<span>Dom</span></div>
-    <div class="sidebar-tagline">Superadmin Control Panel</div>
+    <div class="sidebar-brand">
+      <div class="sidebar-logo-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12.5V17c0 1.1 2.7 3 6 3s6-1.9 6-3v-4.5"/><path d="M22 10v6"/></svg></div>
+      <div class="sidebar-logo">School<span>Dom</span></div>
+    </div>
+    <div class="sidebar-tagline">SUPERADMIN CONTROL PANEL</div>
 
     <ul class="nav-list">
-      <li class="nav-item active" data-view="dashboard"><span class="nav-icon">&#9635;</span> Dashboard</li>
-      <li class="nav-item" data-view="devices"><span class="nav-icon">&#128241;</span> Devices</li>
-      <li class="nav-item" data-view="schools"><span class="nav-icon">&#127979;</span> Schools</li>
-      <li class="nav-item" data-view="students"><span class="nav-icon">&#128101;</span> Students</li>
-      <li class="nav-item" data-view="cards"><span class="nav-icon">&#128179;</span> Card Management</li>
-      <li class="nav-item" data-view="attendance"><span class="nav-icon">&#128203;</span> Attendance Logs</li>
-      <li class="nav-item" data-view="alerts"><span class="nav-icon">&#9888;</span> Alerts</li>
-      <li class="nav-item" data-view="reports"><span class="nav-icon">&#128202;</span> Reports</li>
-      <li class="nav-item" data-view="settings"><span class="nav-icon">&#9881;</span> Settings</li>
-      <li class="nav-item" data-view="users"><span class="nav-icon">&#128100;</span> Users</li>
-      <li class="nav-item" data-view="audit"><span class="nav-icon">&#128220;</span> Audit Logs</li>
+      <li class="nav-item active" data-view="dashboard"><span class="nav-icon"></span> Dashboard</li>
+      <li class="nav-item" data-view="devices"><span class="nav-icon"></span> Devices</li>
+      <li class="nav-item" data-view="schools"><span class="nav-icon"></span> Schools</li>
+      <li class="nav-item" data-view="students"><span class="nav-icon"></span> Students</li>
+      <li class="nav-item" data-view="cards"><span class="nav-icon"></span> Card Management</li>
+      <li class="nav-item" data-view="attendance"><span class="nav-icon"></span> Attendance Logs</li>
+      <li class="nav-item" data-view="alerts"><span class="nav-icon"></span> Alerts</li>
+      <li class="nav-item" data-view="reports"><span class="nav-icon"></span> Reports</li>
+      <li class="nav-item" data-view="settings"><span class="nav-icon"></span> Settings</li>
+      <li class="nav-item" data-view="users"><span class="nav-icon"></span> Users</li>
+      <li class="nav-item" data-view="audit"><span class="nav-icon"></span> Audit Logs</li>
     </ul>
 
     <div class="sidebar-footer">
@@ -140,7 +143,7 @@
           <div class="sidebar-user-role" id="user-email">superadmin@schooldom.com</div>
         </div>
       </div>
-      <button id="sign-out-btn" class="btn btn-secondary btn-block" style="margin-top:0;">Sign Out</button>
+      <button id="sign-out-btn" class="sidebar-signout"></button>
     </div>
   </div>
 
@@ -148,44 +151,55 @@
 
     <!-- ---------- Dashboard view ---------- -->
     <div id="view-dashboard" class="view">
-      <div class="page-header">
-        <h1 class="page-title">Device Command Center</h1>
-        <p class="page-subtitle">Provision, monitor, and manage every SchoolDom Scanner terminal.</p>
+      <div class="topbar">
+        <div class="page-header">
+          <h1 class="page-title">Device Command Center</h1>
+          <p class="page-subtitle">Provision, monitor, and manage every SchoolDom Scanner terminal.</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="connection-pill"><span class="status-dot"></span>Live</span>
+          <button class="topbar-icon-btn" id="topbar-bell" title="Alerts"><span class="dot" id="topbar-bell-dot" style="display:none;"></span></button>
+          <div class="topbar-avatar" id="topbar-avatar">SA</div>
+        </div>
       </div>
 
-      <div class="stat-grid">
+      <div class="stat-grid" id="stat-grid">
         <div class="stat-card">
-          <div class="stat-icon" style="background:var(--light-button);color:var(--blue);">&#128241;</div>
-          <div><div class="stat-label">Total Devices</div><div class="stat-value" id="stat-total">&mdash;</div></div>
+          <div class="stat-icon" style="background:var(--light-button);color:var(--blue);"></div>
+          <div><div class="stat-label">Total Devices</div><div class="stat-value" id="stat-total">0</div></div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon" style="background:var(--green-soft);color:var(--green);">&#9679;</div>
-          <div><div class="stat-label">Online Devices</div><div class="stat-value" id="stat-online">&mdash;</div><div class="stat-sub" id="stat-online-pct" style="color:var(--green);"></div></div>
+          <div class="stat-icon" style="background:var(--green-soft);color:var(--green);"></div>
+          <div><div class="stat-label">Online Devices</div><div class="stat-value" id="stat-online">0</div><div class="stat-sub" id="stat-online-pct" style="color:var(--green);"></div></div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon" style="background:var(--coral-soft);color:var(--coral);">&#10005;</div>
-          <div><div class="stat-label">Offline Devices</div><div class="stat-value" id="stat-offline">&mdash;</div><div class="stat-sub" id="stat-offline-pct" style="color:var(--coral);"></div></div>
+          <div class="stat-icon" style="background:var(--coral-soft);color:var(--coral);"></div>
+          <div><div class="stat-label">Offline Devices</div><div class="stat-value" id="stat-offline">0</div><div class="stat-sub" id="stat-offline-pct" style="color:var(--coral);"></div></div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon" style="background:var(--light-button);color:var(--blue);">&#127979;</div>
-          <div><div class="stat-label">Total Schools</div><div class="stat-value" id="stat-schools">&mdash;</div></div>
+          <div class="stat-icon" style="background:var(--light-button);color:var(--blue);"></div>
+          <div><div class="stat-label">Assigned Schools</div><div class="stat-value" id="stat-schools">0</div></div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon" style="background:var(--gold-soft);color:var(--gold);">&#9888;</div>
-          <div><div class="stat-label">Needs Attention</div><div class="stat-value" id="stat-attention">&mdash;</div></div>
+          <div class="stat-icon" style="background:var(--gold-soft);color:var(--gold);"></div>
+          <div><div class="stat-label">Needs Attention</div><div class="stat-value" id="stat-attention">0</div></div>
         </div>
       </div>
 
       <div class="dash-grid">
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Device Status Overview</span>
-            <span class="card-link" data-view-link="devices">View all devices &rarr;</span>
+            <div><span class="card-title">Device Status Overview</span><div class="card-subtitle">Fleet health at a glance</div></div>
+            <span class="card-link" data-view-link="devices" id="dash-view-all-devices">View all devices</span>
+          </div>
+          <div class="card-body" id="donut-body"></div>
+          <div class="card-header" style="border-top:1px solid var(--border);">
+            <span class="card-title" style="font-size:13px;">Recent Devices</span>
           </div>
           <div class="card-body" style="padding:0;">
             <table>
               <thead>
-                <tr><th>Device</th><th>License Key</th><th>School</th><th>Status</th><th>Battery</th><th>Last Seen</th></tr>
+                <tr><th>Device</th><th>School</th><th>Status</th><th>Battery</th><th>Last Seen</th></tr>
               </thead>
               <tbody id="device-table-body"></tbody>
             </table>
@@ -194,24 +208,20 @@
 
         <div class="card">
           <div class="card-header"><span class="card-title">Device Details</span></div>
-          <div class="card-body" id="device-detail-body">
-            <div class="empty-hint">Select a device from the table to see details.</div>
-          </div>
+          <div class="card-body" id="device-detail-body"></div>
         </div>
 
         <div class="card">
           <div class="card-header"><span class="card-title">Battery &amp; Device Health</span></div>
-          <div class="card-body" id="battery-panel-body">
-            <div class="empty-hint">Select a device to see battery &amp; health.</div>
-          </div>
+          <div class="card-body" id="battery-panel-body"></div>
         </div>
       </div>
 
       <div class="dash-row2">
         <div class="card">
-          <div class="card-header"><span class="card-title">Assign Card to Student</span></div>
+          <div class="card-header"><span class="card-title">Assign Student Card</span></div>
           <div class="card-body">
-            <div class="wizard-steps">
+            <div class="wizard-steps" id="wizard-steps">
               <div class="wizard-step">
                 <div class="wizard-step-title"><span class="wizard-step-num">1</span> Select School</div>
                 <select id="wiz-school" class="text-input"></select>
@@ -227,7 +237,7 @@
               </div>
               <div class="wizard-step" style="display:flex;flex-direction:column;justify-content:space-between;">
                 <div class="wizard-step-title"><span class="wizard-step-num">4</span> Confirm</div>
-                <button id="wiz-assign-btn" class="btn btn-primary btn-block" style="margin-top:0;">Assign Card</button>
+                <button id="wiz-assign-btn" class="btn-gradient" style="padding:9px 12px;font-size:12.5px;">Assign Card</button>
               </div>
             </div>
           </div>
@@ -235,34 +245,36 @@
 
         <div class="card">
           <div class="card-header"><span class="card-title">Recent Activity</span></div>
-          <div class="card-body" id="activity-list"><div class="empty-hint">No recent activity.</div></div>
+          <div class="card-body" id="activity-list"></div>
         </div>
 
         <div class="card">
           <div class="card-header"><span class="card-title">Alerts</span></div>
-          <div class="card-body" id="alerts-list"><div class="empty-hint">No active alerts.</div></div>
+          <div class="card-body" id="alerts-list"></div>
         </div>
 
         <div class="card">
           <div class="card-header"><span class="card-title">Quick Actions</span></div>
-          <div class="card-body quick-actions">
-            <button class="btn btn-secondary" id="qa-register-device">+ Register New Device</button>
-            <button class="btn btn-secondary" id="qa-generate-key">&#128273; Generate License Key</button>
-            <button class="btn btn-secondary" id="qa-refresh">&#8635; Refresh Now</button>
-          </div>
+          <div class="card-body quick-actions" id="quick-actions-body"></div>
         </div>
       </div>
     </div>
 
     <!-- ---------- Devices view (full table) ---------- -->
     <div id="view-devices" class="view" style="display:none;">
-      <div class="page-header">
-        <h1 class="page-title">Devices</h1>
-        <p class="page-subtitle">Every SchoolDom Scanner terminal registered on the platform.</p>
+      <div class="topbar">
+        <div class="page-header">
+          <h1 class="page-title">Devices</h1>
+          <p class="page-subtitle">Every SchoolDom Scanner terminal registered on the platform.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="search-bar"><span id="device-search-icon"></span><input class="text-input" id="device-search" placeholder="Search devices..." /></div>
+          <button class="btn-gradient" id="devices-register-btn" style="width:auto;padding:10px 16px;font-size:12.5px;">Register Device</button>
+        </div>
       </div>
-      <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;" id="device-filter-bar"></div>
+      <div class="toolbar" id="device-filter-bar"></div>
       <div class="card">
-        <div class="card-body" style="padding:0;">
+        <div class="card-body" style="padding:0;" id="devices-table-wrap">
           <table>
             <thead>
               <tr><th>Device</th><th>License Key</th><th>School</th><th>Status</th><th>Battery</th><th>Health</th><th>Last Seen</th><th></th></tr>
@@ -275,12 +287,17 @@
 
     <!-- ---------- Audit logs view ---------- -->
     <div id="view-audit" class="view" style="display:none;">
-      <div class="page-header">
-        <h1 class="page-title">Audit Logs</h1>
-        <p class="page-subtitle">Every device-management action, who did it, and when.</p>
+      <div class="topbar">
+        <div class="page-header">
+          <h1 class="page-title">Audit Logs</h1>
+          <p class="page-subtitle">Every device-management action, who did it, and when.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="search-bar"><span id="audit-search-icon"></span><input class="text-input" id="audit-search" placeholder="Search actions, devices, actors..." /></div>
+        </div>
       </div>
       <div class="card">
-        <div class="card-body" style="padding:0;">
+        <div class="card-body" style="padding:0;" id="audit-table-wrap">
           <table>
             <thead><tr><th>Time</th><th>Action</th><th>Device</th><th>Actor</th><th>Result</th></tr></thead>
             <tbody id="audit-table-body"></tbody>
@@ -295,19 +312,53 @@
         <h1 class="page-title">Card Management</h1>
         <p class="page-subtitle">Assign, replace, and unassign RFID/NFC cards - shares the same card registry as the RFID Win7 desktop app.</p>
       </div>
+      <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);" id="cards-stat-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:var(--light-button);color:var(--blue);" id="cards-stat-icon-total"></div>
+          <div><div class="stat-label">Total Cards</div><div class="stat-value" id="cards-stat-total">0</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:var(--green-soft);color:var(--green);" id="cards-stat-icon-assigned"></div>
+          <div><div class="stat-label">Assigned</div><div class="stat-value" id="cards-stat-assigned">0</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:var(--gold-soft);color:var(--gold);" id="cards-stat-icon-unassigned"></div>
+          <div><div class="stat-label">Unassigned</div><div class="stat-value" id="cards-stat-unassigned">0</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:var(--light-button);color:var(--blue);" id="cards-stat-icon-recent"></div>
+          <div><div class="stat-label">Recently Assigned</div><div class="stat-value" id="cards-stat-recent">0</div></div>
+        </div>
+      </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Active Card Assignments</span></div>
-        <div class="card-body" style="padding:0;">
+        <div class="card-header">
+          <span class="card-title">Active Card Assignments</span>
+          <div class="search-bar" style="max-width:240px;"><span id="cards-search-icon"></span><input class="text-input" id="cards-search" placeholder="Search student..." /></div>
+        </div>
+        <div class="card-body" style="padding:0;" id="cards-table-wrap">
           <table>
-            <thead><tr><th>Card UID</th><th>Person</th><th>Role</th><th>Assigned</th><th></th></tr></thead>
+            <thead><tr><th>Student</th><th>Student ID</th><th>Role</th><th>Assigned</th><th></th></tr></thead>
             <tbody id="cards-table-body"></tbody>
           </table>
         </div>
       </div>
     </div>
 
+    <!-- ---------- Schools view ---------- -->
+    <div id="view-schools" class="view" style="display:none;">
+      <div class="topbar">
+        <div class="page-header">
+          <h1 class="page-title">Schools</h1>
+          <p class="page-subtitle">Every school connected to the SchoolDom scanner network.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="search-bar"><span id="schools-search-icon"></span><input class="text-input" id="schools-search" placeholder="Search schools..." /></div>
+        </div>
+      </div>
+      <div id="schools-body"></div>
+    </div>
+
     <!-- ---------- Placeholder views ---------- -->
-    <div id="view-schools" class="view placeholder-view" style="display:none;"></div>
     <div id="view-students" class="view placeholder-view" style="display:none;"></div>
     <div id="view-attendance" class="view placeholder-view" style="display:none;"></div>
     <div id="view-alerts" class="view placeholder-view" style="display:none;"></div>
@@ -322,7 +373,7 @@
 
 <div class="modal-backdrop" id="key-modal">
   <div class="modal-card">
-    <div class="modal-header">New Device License Key <span class="modal-close" id="key-modal-close">&times;</span></div>
+    <div class="modal-header">New Device License Key <span class="modal-close" id="key-modal-close"></span></div>
     <div class="modal-body">
       <p style="font-size:13px;color:var(--muted);margin:0;">Enter this key on the new device's provisioning screen. It's valid for one device and expires after use.</p>
       <div class="key-display" id="key-modal-value">----</div>
@@ -334,6 +385,21 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="signout-modal">
+  <div class="modal-card">
+    <div class="modal-header">Sign Out <span class="modal-close" id="signout-modal-close"></span></div>
+    <div class="modal-body">
+      <div class="modal-icon i-red" id="signout-modal-icon"></div>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 0;">Are you sure you want to sign out of the Superadmin Control Panel?</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="signout-modal-cancel">Cancel</button>
+      <button class="btn btn-danger" id="signout-modal-confirm">Sign Out</button>
+    </div>
+  </div>
+</div>
+
+<script src="icons.js"></script>
 <script src="api.js"></script>
 <script src="app.js"></script>
 </body>

@@ -13,7 +13,7 @@ RFID Win7 desktop app does.
 """
 import secrets
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -54,9 +54,22 @@ def schools_list(request):
         return forbidden
 
     schools = SchoolTenant.objects.filter(is_active=True).order_by('name')
+    student_counts = {
+        row['tenant_id']: row['c']
+        for row in User.objects.filter(tenant__in=schools, role='student', is_active=True)
+        .values('tenant_id').annotate(c=Count('id'))
+    }
     return Response({
         'success': True,
-        'data': [{'id': str(s.id), 'schema_name': s.schema_name, 'name': s.name} for s in schools],
+        'data': [
+            {
+                'id': str(s.id),
+                'schema_name': s.schema_name,
+                'name': s.name,
+                'student_count': student_counts.get(s.id, 0),
+            }
+            for s in schools
+        ],
     })
 
 

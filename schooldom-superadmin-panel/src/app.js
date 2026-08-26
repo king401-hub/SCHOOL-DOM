@@ -1,6 +1,7 @@
 // Single-page app logic - no framework/build step, just DOM + fetch via API
-// (api.js). Views are plain <div id="view-...">, toggled by data-view nav
-// clicks; each view's data is (re)loaded when it becomes active.
+// (api.js) and a shared inline-SVG icon set (icons.js). Views are plain
+// <div id="view-...">, toggled by data-view nav clicks; each view's data is
+// (re)loaded when it becomes active.
 
 let currentDevices = [];
 let selectedDeviceId = null;
@@ -30,9 +31,42 @@ function timeAgo(iso) {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---------------------------------------------------------------- Static icon injection
+// Everything that's part of the static page shell (sidebar nav, sign-out
+// button, modal close buttons, search fields) gets its icon filled in once
+// at load, from the shared ICONS set - keeps every icon in the app visually
+// consistent instead of mixing in emoji glyphs.
+
+const NAV_ICON_MAP = {
+  dashboard: 'dashboard', devices: 'devices', schools: 'school', students: 'students',
+  cards: 'card', attendance: 'attendance', alerts: 'bell', reports: 'reports',
+  settings: 'settings', users: 'user', audit: 'audit',
+};
+
+function injectStaticIcons() {
+  $all('.nav-item').forEach(item => {
+    const icon = NAV_ICON_MAP[item.dataset.view];
+    const slot = item.querySelector('.nav-icon');
+    if (icon && slot) slot.innerHTML = ICONS[icon];
+  });
+  $('#sign-out-btn').innerHTML = ICONS.logout + '<span>Sign Out</span>';
+  $('#dash-view-all-devices').innerHTML = 'View all devices' + ICONS.chevronRight;
+  $('#topbar-bell').innerHTML = (ICONS.bell || '') + '<span class="dot" id="topbar-bell-dot" style="display:none;"></span>';
+  $('#key-modal-close').innerHTML = ICONS.x;
+  $('#signout-modal-close').innerHTML = ICONS.x;
+  $('#signout-modal-icon').innerHTML = ICONS.logout;
+  const searchIcons = ['device-search-icon', 'audit-search-icon', 'cards-search-icon', 'schools-search-icon'];
+  searchIcons.forEach(id => { const el = $('#' + id); if (el) el.outerHTML = ICONS.search; });
+}
+
 // ---------------------------------------------------------------- Auth
 
 function boot() {
+  injectStaticIcons();
   const session = API.currentSession();
   if (session && session.access) {
     enterApp(session);
@@ -47,8 +81,9 @@ function enterApp(session) {
   $('#app-shell').classList.add('active');
   $('#user-name').textContent = session.userName || 'Superadmin';
   $('#user-email').textContent = session.userEmail || '';
-  $('#user-avatar').textContent = (session.userName || 'SA')
-    .split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() || 'SA';
+  const initials = (session.userName || 'SA').split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() || 'SA';
+  $('#user-avatar').textContent = initials;
+  $('#topbar-avatar').textContent = initials;
   loadDashboard();
 }
 
@@ -191,7 +226,12 @@ $('#otp-resend').addEventListener('click', async () => {
   }
 });
 
-$('#sign-out-btn').addEventListener('click', () => {
+// Sign-out now goes through a confirmation modal (spec: no accidental
+// sign-outs) instead of acting immediately on click.
+$('#sign-out-btn').addEventListener('click', () => $('#signout-modal').classList.add('active'));
+$('#signout-modal-close').addEventListener('click', () => $('#signout-modal').classList.remove('active'));
+$('#signout-modal-cancel').addEventListener('click', () => $('#signout-modal').classList.remove('active'));
+$('#signout-modal-confirm').addEventListener('click', () => {
   API.signOut();
   location.reload();
 });
@@ -215,13 +255,12 @@ $all('[data-view-link]').forEach(link => {
 });
 
 const PLACEHOLDER_COPY = {
-  schools: ['&#127979;', 'Schools', 'Full school directory and onboarding is next on the list.'],
-  students: ['&#128101;', 'Students', 'A cross-school student directory is next on the list.'],
-  attendance: ['&#128203;', 'Attendance Logs', 'A merged attendance log across every device is next on the list.'],
-  alerts: ['&#9888;', 'Alerts', 'Alerts show live on the Dashboard for now - a dedicated history view is next.'],
-  reports: ['&#128202;', 'Reports', 'Usage and attendance reporting is next on the list.'],
-  settings: ['&#9881;', 'Settings', 'Global platform settings are next on the list.'],
-  users: ['&#128100;', 'Users', 'Superadmin user management is next on the list.'],
+  students: ['students', 'Students', 'A cross-school student directory is next on the list.'],
+  attendance: ['attendance', 'Attendance Logs', 'A merged attendance log across every device is next on the list.'],
+  alerts: ['bell', 'Alerts', 'Alerts show live on the Dashboard for now - a dedicated history and resolution view is next.'],
+  reports: ['reports', 'Reports', 'Usage, attendance, and device analytics reporting is next on the list.'],
+  settings: ['settings', 'Settings', 'Global platform, security, and device-default settings are next on the list.'],
+  users: ['user', 'Users', 'Superadmin account management is next on the list.'],
 };
 
 function switchView(name) {
@@ -233,8 +272,14 @@ function switchView(name) {
   view.style.display = 'block';
 
   if (view.classList.contains('placeholder-view') && !view.dataset.rendered) {
-    const [icon, title, copy] = PLACEHOLDER_COPY[name] || ['&#128736;', title, 'Coming soon.'];
-    view.innerHTML = `<div class="placeholder"><div class="placeholder-icon">${icon}</div><h3>${title}</h3><p>${copy}</p></div>`;
+    const [icon, title, copy] = PLACEHOLDER_COPY[name] || ['settings', title, 'Coming soon.'];
+    view.innerHTML = `
+      <div class="placeholder">
+        <div class="placeholder-icon">${ICONS[icon] || ICONS.settings}</div>
+        <h3>${title}</h3>
+        <p>${copy}</p>
+        <div class="placeholder-badge">${ICONS.clock}In active development</div>
+      </div>`;
     view.dataset.rendered = '1';
   }
 
@@ -242,11 +287,21 @@ function switchView(name) {
   if (name === 'devices') loadDevicesView();
   if (name === 'audit') loadAuditView();
   if (name === 'cards') loadCardsView();
+  if (name === 'schools') loadSchoolsView();
 }
 
 // ---------------------------------------------------------------- Dashboard
 
+function skeletonRows(n, cols) {
+  return Array.from({ length: n }).map(() => `
+    <tr class="skel-row">${Array.from({ length: cols }).map(() => `<td><div class="skel skel-text" style="width:${40 + Math.random() * 40}%;"></div></td>`).join('')}</tr>
+  `).join('');
+}
+
 async function loadDashboard() {
+  $('#device-table-body').innerHTML = skeletonRows(5, 5);
+  renderDeviceDetail(null);
+  renderBatteryPanel(null);
   try {
     const [devicesRes, auditRes] = await Promise.all([
       API.get('/api/device-fleet/devices/'),
@@ -254,30 +309,103 @@ async function loadDashboard() {
     ]);
     currentDevices = devicesRes.data;
     renderStats(devicesRes.stats);
+    renderDonut(devicesRes.stats);
     renderDeviceTable('#device-table-body', currentDevices.slice(0, 6), false);
     renderActivity(auditRes.data.slice(0, 6));
     renderAlerts(currentDevices);
+    renderQuickActions();
     loadWizardSchools();
   } catch (err) {
     handleApiError(err);
   }
 }
 
+// Animates each stat number counting up from its previous value - runs once
+// per render, driven by requestAnimationFrame rather than setInterval so it
+// stays smooth and self-terminating.
+function countUp(el, to) {
+  const from = parseInt(el.textContent, 10) || 0;
+  if (from === to) { el.textContent = to; return; }
+  const duration = 600;
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(from + (to - from) * eased);
+    if (t < 1) requestAnimationFrame(tick);
+    else el.textContent = to;
+  }
+  requestAnimationFrame(tick);
+}
+
 function renderStats(stats) {
-  $('#stat-total').textContent = stats.total;
-  $('#stat-online').textContent = stats.online;
-  $('#stat-offline').textContent = stats.offline;
-  $('#stat-schools').textContent = stats.total_schools;
-  $('#stat-attention').textContent = stats.needs_attention;
-  $('#stat-online-pct').textContent = stats.total ? `${Math.round(100 * stats.online / stats.total)}%` : '';
-  $('#stat-offline-pct').textContent = stats.total ? `${Math.round(100 * stats.offline / stats.total)}%` : '';
+  $('#stat-grid').querySelectorAll('.stat-icon')[0].innerHTML = ICONS.devices;
+  $('#stat-grid').querySelectorAll('.stat-icon')[1].innerHTML = ICONS.wifi;
+  $('#stat-grid').querySelectorAll('.stat-icon')[2].innerHTML = ICONS.wifiOff;
+  $('#stat-grid').querySelectorAll('.stat-icon')[3].innerHTML = ICONS.school;
+  $('#stat-grid').querySelectorAll('.stat-icon')[4].innerHTML = ICONS.alertTriangle;
+  countUp($('#stat-total'), stats.total);
+  countUp($('#stat-online'), stats.online);
+  countUp($('#stat-offline'), stats.offline);
+  countUp($('#stat-schools'), stats.total_schools);
+  countUp($('#stat-attention'), stats.needs_attention);
+  $('#stat-online-pct').textContent = stats.total ? `${Math.round(100 * stats.online / stats.total)}% of fleet` : '';
+  $('#stat-offline-pct').textContent = stats.total ? `${Math.round(100 * stats.offline / stats.total)}% of fleet` : '';
+  $('#topbar-bell-dot').style.display = stats.needs_attention > 0 ? 'block' : 'none';
+}
+
+// ---------------------------------------------------------------- Donut chart
+
+function renderDonut(stats) {
+  const suspended = currentDevices.filter(d => d.status === 'suspended').length;
+  const unassigned = currentDevices.filter(d => !d.school_name).length;
+  const online = stats.online;
+  const offlineAssigned = Math.max(0, stats.offline - suspended - unassigned);
+  const total = stats.total || 1;
+  const segments = [
+    { label: 'Online', value: online, color: 'var(--green)' },
+    { label: 'Offline', value: offlineAssigned, color: 'var(--coral)' },
+    { label: 'Suspended', value: suspended, color: 'var(--gold)' },
+    { label: 'Unassigned', value: unassigned, color: 'var(--muted)' },
+  ];
+  const r = 52, circ = 2 * Math.PI * r;
+  let offset = 0;
+  const circles = segments.map(s => {
+    const frac = s.value / total;
+    const dash = frac * circ;
+    const el = `<circle cx="60" cy="60" r="${r}" fill="none" stroke="${s.color}" stroke-width="14"
+      stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset}" stroke-linecap="round" />`;
+    offset += dash;
+    return el;
+  }).join('');
+
+  $('#donut-body').innerHTML = `
+    <div class="donut-wrap">
+      <svg class="donut-svg" width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--light-button)" stroke-width="14" />
+        ${circles}
+        <g transform="rotate(90 60 60)">
+          <text x="60" y="56" class="donut-center" font-size="22" font-weight="800" fill="var(--text)">${stats.total}</text>
+          <text x="60" y="72" class="donut-center" font-size="10" font-weight="700" fill="var(--muted)">DEVICES</text>
+        </g>
+      </svg>
+      <div class="donut-legend">
+        ${segments.map(s => `
+          <div class="donut-legend-item">
+            <span class="donut-legend-left"><span class="donut-legend-dot" style="background:${s.color}"></span>${s.label}</span>
+            <span class="donut-legend-value">${s.value}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function statusPill(device) {
   if (device.status === 'suspended') return `<span class="pill pill-gold"><span class="pill-dot" style="background:var(--gold)"></span>Suspended</span>`;
   if (device.status === 'revoked') return `<span class="pill pill-red"><span class="pill-dot" style="background:var(--coral)"></span>Revoked</span>`;
-  if (!device.tenant_id && !device.school_name) return `<span class="pill pill-muted"><span class="pill-dot" style="background:var(--muted)"></span>Unassigned</span>`;
-  if (device.is_online) return `<span class="pill pill-green"><span class="pill-dot" style="background:var(--green)"></span>Online</span>`;
+  if (!device.school_name) return `<span class="pill pill-muted"><span class="pill-dot" style="background:var(--muted)"></span>Unassigned</span>`;
+  if (device.is_online) return `<span class="pill pill-green"><span class="pill-dot pulse" style="background:var(--green)"></span>Online</span>`;
   return `<span class="pill pill-red"><span class="pill-dot" style="background:var(--coral)"></span>Offline</span>`;
 }
 
@@ -294,27 +422,49 @@ function batteryHtml(device) {
   }
   const color = batteryColor(device.battery_percentage);
   return `<span class="battery-bar" style="color:${color}">
-    <span class="battery-shell"><span class="battery-fill" style="width:${Math.max(2, device.battery_percentage * 0.2)}px;background:${color}"></span></span>
-    ${device.battery_percentage}%${device.battery_charging ? ' &#9889;' : ''}
+    <span class="battery-shell"><span class="battery-fill" style="width:${Math.max(6, device.battery_percentage)}%;background:${color}"></span></span>
+    ${device.battery_percentage}%${device.battery_charging ? `<span class="battery-bolt">${ICONS.bolt}</span>` : ''}
   </span>`;
+}
+
+function deviceRowIcon(d) {
+  if (d.status === 'suspended' || d.status === 'revoked') return ICONS.alertTriangle;
+  return ICONS.devices;
 }
 
 function renderDeviceTable(bodySelector, devices, full) {
   const body = $(bodySelector);
   if (!devices.length) {
-    body.innerHTML = `<tr><td colspan="8" class="empty-hint">No devices registered yet.</td></tr>`;
+    const cols = full ? 8 : 5;
+    body.innerHTML = `<tr><td colspan="${cols}" style="padding:0;">
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.devices}</div>
+        <div class="empty-state-title">No devices registered yet</div>
+        <div class="empty-state-desc">Register your first SchoolDom scanner to begin monitoring devices.</div>
+        <button class="btn-gradient" style="width:auto;padding:9px 16px;" id="empty-register-device">${ICONS.plusCircle}Register Device</button>
+      </div>
+    </td></tr>`;
+    $('#empty-register-device')?.addEventListener('click', () => $('#qa-generate-key')?.click());
     return;
   }
   body.innerHTML = devices.map(d => `
     <tr class="device-row ${d.id === selectedDeviceId ? 'selected' : ''}" data-id="${d.id}">
-      <td class="dev-name">${d.device_id}${d.name ? ' &middot; ' + escapeHtml(d.name) : ''}</td>
-      <td class="mono">${d.license_key || '&mdash;'}</td>
+      <td>
+        <div class="cell-with-icon">
+          <span class="table-row-icon">${deviceRowIcon(d)}</span>
+          <div>
+            <div class="dev-name">${d.device_id}</div>
+            ${d.name ? `<div class="dev-name-sub">${escapeHtml(d.name)}</div>` : ''}
+          </div>
+        </div>
+      </td>
+      ${full ? `<td class="mono">${d.license_key || '&mdash;'}</td>` : ''}
       <td>${d.school_name || '<span style="color:var(--muted)">Unassigned</span>'}</td>
       <td>${statusPill(d)}</td>
       <td>${batteryHtml(d)}</td>
       ${full ? `<td>${healthPill(d.battery_health)}</td>` : ''}
       <td style="color:var(--muted);font-size:12px;">${timeAgo(d.last_seen_at)}</td>
-      ${full ? `<td><span class="card-link" data-open-detail="${d.id}">Manage</span></td>` : ''}
+      ${full ? `<td><span class="card-link" data-open-detail="${d.id}">Manage${ICONS.chevronRight}</span></td>` : ''}
     </tr>
   `).join('');
 
@@ -329,8 +479,8 @@ function renderDeviceTable(bodySelector, devices, full) {
 function healthPill(health) {
   const labels = { good: 'Good', normal: 'Normal', fair: 'Fair', poor: 'Poor', unknown: 'Unknown', not_supported: 'Not Supported' };
   if (!health) return '<span style="color:var(--muted);font-size:12px;">Not reported</span>';
-  const color = health === 'good' ? 'var(--green)' : health === 'poor' ? 'var(--coral)' : health === 'fair' ? 'var(--gold)' : 'var(--muted)';
-  return `<span style="color:${color};font-weight:700;">${labels[health] || health}</span>`;
+  const cls = health === 'good' ? 'pill-green' : health === 'poor' ? 'pill-red' : health === 'fair' ? 'pill-gold' : 'pill-muted';
+  return `<span class="pill ${cls}">${labels[health] || health}</span>`;
 }
 
 function selectDevice(id) {
@@ -343,15 +493,24 @@ function selectDevice(id) {
 }
 
 function renderDeviceDetail(d) {
+  if (!d) {
+    $('#device-detail-body').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.devices}</div>
+        <div class="empty-state-title">Select a device</div>
+        <div class="empty-state-desc">Choose a scanner from the device list to view battery, health, school assignment, and device controls.</div>
+      </div>`;
+    return;
+  }
   $('#device-detail-body').innerHTML = `
-    <div class="detail-row"><span class="detail-label">Device</span><span class="detail-value">${d.device_id}</span></div>
-    <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value">${statusPill(d)}</span></div>
-    <div class="detail-row"><span class="detail-label">School</span><span class="detail-value">${d.school_name || 'Unassigned'}</span></div>
-    <div class="detail-row"><span class="detail-label">License Key</span><span class="detail-value mono">${d.license_key || '&mdash;'}</span></div>
-    <div class="detail-row"><span class="detail-label">App Version</span><span class="detail-value">${d.app_version || 'Unknown'}</span></div>
-    <div class="detail-row"><span class="detail-label">Device Model</span><span class="detail-value">${d.device_model || 'Unknown'}</span></div>
-    <div class="detail-row"><span class="detail-label">Last Seen</span><span class="detail-value">${timeAgo(d.last_seen_at)}</span></div>
-    <div class="detail-row"><span class="detail-label">Last Sync</span><span class="detail-value">${timeAgo(d.last_sync_at)}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.devices}Device</span><span class="detail-value">${d.device_id}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.checkCircle}Status</span><span class="detail-value">${statusPill(d)}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.school}School</span><span class="detail-value">${d.school_name || 'Unassigned'}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.key}License Key</span><span class="detail-value mono">${d.license_key || '&mdash;'}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.laptop}App Version</span><span class="detail-value">${d.app_version || 'Not supported'}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.devices}Device Model</span><span class="detail-value">${d.device_model || 'Not supported'}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.clock}Last Seen</span><span class="detail-value">${timeAgo(d.last_seen_at)}</span></div>
+    <div class="detail-row"><span class="detail-label">${ICONS.refresh}Last Sync</span><span class="detail-value">${timeAgo(d.last_sync_at)}</span></div>
     <div class="detail-actions">
       <button class="btn btn-danger" data-action="revoke">Log Out Device</button>
       ${d.status === 'suspended'
@@ -367,6 +526,15 @@ function renderDeviceDetail(d) {
 }
 
 function renderBatteryPanel(d) {
+  if (!d) {
+    $('#battery-panel-body').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.battery}</div>
+        <div class="empty-state-title">No device selected</div>
+        <div class="empty-state-desc">Battery level, charging status, and health appear here once you pick a device.</div>
+      </div>`;
+    return;
+  }
   const pct = d.battery_percentage;
   const color = batteryColor(pct);
   const deg = pct === null || pct === undefined ? 0 : Math.round(pct * 3.6);
@@ -384,8 +552,9 @@ function renderBatteryPanel(d) {
     </div>
     <div class="health-list">
       <div class="health-item"><span class="detail-label">Battery Health</span>${healthPill(d.battery_health)}</div>
-      <div class="health-item"><span class="detail-label">Charging Status</span><span class="detail-value">${d.battery_charging === null ? 'Not reported' : (d.battery_charging ? 'Charging' : 'Not charging')}</span></div>
+      <div class="health-item"><span class="detail-label">Charging Status</span><span class="detail-value">${d.battery_charging === null ? 'Not supported' : (d.battery_charging ? 'Charging' : 'Not charging')}</span></div>
       <div class="health-item"><span class="detail-label">Temperature</span><span class="detail-value">${d.battery_temperature_c !== null && d.battery_temperature_c !== undefined ? d.battery_temperature_c + '&deg;C' : 'Not supported'}</span></div>
+      <div class="health-item"><span class="detail-label">Last Update</span><span class="detail-value">${timeAgo(d.last_seen_at)}</span></div>
     </div>
   `;
 }
@@ -423,58 +592,134 @@ function openReassignPrompt(device) {
     .catch(handleApiError);
 }
 
+// ---------------------------------------------------------------- Recent Activity (timeline)
+
+const ACTION_ICON = {
+  device_registered: ['devices', 'i-green'], device_provisioned: ['devices', 'i-green'],
+  card_assigned: ['card', 'i-blue'], card_revoked: ['card', 'i-gold'],
+  device_suspended: ['alertTriangle', 'i-gold'], device_reactivated: ['checkCircle', 'i-green'],
+  device_revoked: ['xCircle', 'i-red'], school_assigned: ['school', 'i-blue'], school_unassigned: ['school', 'i-gold'],
+};
+
 function renderActivity(logs) {
   const el = $('#activity-list');
-  if (!logs.length) { el.innerHTML = '<div class="empty-hint">No recent activity.</div>'; return; }
-  el.innerHTML = logs.map(l => `
-    <div class="activity-item">
-      <div class="activity-text">${formatAction(l.action)}${l.device_id ? ` &middot; ${l.device_id}` : ''}</div>
-      <div class="activity-time">${l.actor_name} &bull; ${timeAgo(l.created_at)}</div>
-    </div>
-  `).join('');
+  if (!logs.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">${ICONS.audit}</div>
+      <div class="empty-state-title">No recent activity</div>
+      <div class="empty-state-desc">Device and card management actions will show up here.</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = `<div class="timeline">${logs.map(l => {
+    const [iconKey, cls] = ACTION_ICON[l.action] || ['audit', 'i-blue'];
+    return `
+    <div class="timeline-item">
+      <span class="timeline-icon ${cls}">${ICONS[iconKey]}</span>
+      <div class="timeline-body">
+        <div class="activity-text">${formatAction(l.action)}</div>
+        ${l.device_id ? `<div class="activity-sub">${l.device_id}</div>` : ''}
+        <div class="activity-time">${l.actor_name} &bull; ${timeAgo(l.created_at)}</div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function formatAction(action) {
   return (action || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// ---------------------------------------------------------------- Alerts
+
 function renderAlerts(devices) {
   const el = $('#alerts-list');
   const alerts = [];
   devices.forEach(d => {
-    if (d.is_low_battery) alerts.push({ color: 'var(--coral)', text: `${d.device_id} battery is at ${d.battery_percentage}%.` });
-    if (!d.is_online && d.last_seen_at) alerts.push({ color: 'var(--coral)', text: `${d.device_id} has been offline for ${timeAgo(d.last_seen_at)}.` });
-    if (d.battery_health === 'poor') alerts.push({ color: 'var(--gold)', text: `${d.device_id} reports poor battery health.` });
-    if (d.status === 'suspended') alerts.push({ color: 'var(--gold)', text: `${d.device_id} is suspended.` });
+    if (d.is_low_battery) alerts.push({ icon: 'battery', cls: 'i-red', text: `${d.device_id} battery is at ${d.battery_percentage}%.` });
+    if (!d.is_online && d.last_seen_at) alerts.push({ icon: 'wifiOff', cls: 'i-red', text: `${d.device_id} has been offline since ${timeAgo(d.last_seen_at)}.` });
+    if (d.battery_health === 'poor') alerts.push({ icon: 'battery', cls: 'i-gold', text: `${d.device_id} reports poor battery health.` });
+    if (d.status === 'suspended') alerts.push({ icon: 'alertTriangle', cls: 'i-gold', text: `${d.device_id} is suspended.` });
   });
-  if (!alerts.length) { el.innerHTML = '<div class="empty-hint">No active alerts.</div>'; return; }
+  if (!alerts.length) {
+    el.innerHTML = `<div class="empty-state empty-state-good">
+      <div class="empty-state-icon">${ICONS.checkCircle}</div>
+      <div class="empty-state-title">Everything looks good</div>
+      <div class="empty-state-desc">No device alerts require your attention.</div>
+    </div>`;
+    return;
+  }
   el.innerHTML = alerts.slice(0, 8).map(a => `
-    <div class="alert-item"><span class="alert-dot" style="background:${a.color}"></span><span>${a.text}</span></div>
+    <div class="alert-item">
+      <span class="alert-icon ${a.cls}">${ICONS[a.icon]}</span>
+      <div><div class="alert-text">${a.text}</div></div>
+    </div>
   `).join('');
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// ---------------------------------------------------------------- Quick actions
+
+function renderQuickActions() {
+  $('#quick-actions-body').innerHTML = `
+    <button class="qa-btn" id="qa-register-device"><span class="qa-icon">${ICONS.plusCircle}</span>Register New Device</button>
+    <button class="qa-btn" id="qa-generate-key"><span class="qa-icon">${ICONS.key}</span>Generate License Key</button>
+    <button class="qa-btn" id="qa-assign-card" data-view-link-inline="cards"><span class="qa-icon">${ICONS.card}</span>Assign Card</button>
+    <button class="qa-btn" id="qa-view-devices" data-view-link-inline="devices"><span class="qa-icon">${ICONS.devices}</span>View Devices</button>
+    <button class="qa-btn" id="qa-refresh"><span class="qa-icon">${ICONS.refresh}</span>Refresh Data</button>
+  `;
+  $('#qa-refresh').addEventListener('click', loadDashboard);
+  $('#qa-generate-key').addEventListener('click', generateLicenseKey);
+  $('#qa-register-device').addEventListener('click', generateLicenseKey);
+  $all('[data-view-link-inline]').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.viewLinkInline)));
 }
+
+async function generateLicenseKey() {
+  try {
+    const res = await API.post('/api/device-fleet/provisioning-keys/', {});
+    $('#key-modal-value').textContent = res.data.key;
+    $('#key-modal').classList.add('active');
+  } catch (err) {
+    handleApiError(err);
+  }
+}
+
+$('#key-modal-close').addEventListener('click', () => $('#key-modal').classList.remove('active'));
+$('#key-modal-done').addEventListener('click', () => $('#key-modal').classList.remove('active'));
+$('#key-modal-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('#key-modal-value').textContent);
+    showToast('Copied to clipboard.');
+  } catch {
+    showToast('Could not copy - select and copy manually.', true);
+  }
+});
 
 // ---------------------------------------------------------------- Devices view
 
 async function loadDevicesView(filterKey) {
+  $('#device-table-body-full').innerHTML = skeletonRows(6, 8);
   try {
     const path = '/api/device-fleet/devices/' + (filterKey && filterKey !== 'all' ? `?filter=${filterKey}` : '');
     const res = await API.get(path);
     currentDevices = filterKey ? currentDevices : res.data;
-    renderDeviceTable('#device-table-body-full', res.data, true);
+    let rows = res.data;
+    const search = ($('#device-search').value || '').trim().toLowerCase();
+    if (search) {
+      rows = rows.filter(d => d.device_id.toLowerCase().includes(search) || (d.school_name || '').toLowerCase().includes(search) || (d.name || '').toLowerCase().includes(search));
+    }
+    renderDeviceTable('#device-table-body-full', rows, true);
     renderDeviceFilterBar(filterKey || 'all');
   } catch (err) {
     handleApiError(err);
   }
 }
 
+$('#device-search').addEventListener('input', debounce(() => loadDevicesView(), 300));
+$('#devices-register-btn').addEventListener('click', generateLicenseKey);
+
 function renderDeviceFilterBar(active) {
   const filters = ['all', 'online', 'offline', 'low_battery', 'charging', 'unassigned', 'suspended', 'needs_attention'];
   $('#device-filter-bar').innerHTML = filters.map(f => `
-    <button class="btn ${f === active ? 'btn-primary' : 'btn-secondary'}" data-filter="${f}" style="padding:7px 14px;font-size:12px;">
+    <button class="filter-chip ${f === active ? 'active' : ''}" data-filter="${f}">
       ${f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
     </button>
   `).join('');
@@ -483,55 +728,133 @@ function renderDeviceFilterBar(active) {
 
 // ---------------------------------------------------------------- Audit view
 
+let auditCache = [];
+
 async function loadAuditView() {
+  $('#audit-table-body').innerHTML = skeletonRows(6, 5);
   try {
     const res = await API.get('/api/device-fleet/audit-logs/');
-    const body = $('#audit-table-body');
-    if (!res.data.length) { body.innerHTML = '<tr><td colspan="5" class="empty-hint">No audit events yet.</td></tr>'; return; }
-    body.innerHTML = res.data.map(l => `
-      <tr>
-        <td style="color:var(--muted);font-size:12px;">${new Date(l.created_at).toLocaleString()}</td>
-        <td style="font-weight:700;">${formatAction(l.action)}</td>
-        <td>${l.device_id || '&mdash;'}</td>
-        <td>${l.actor_name}</td>
-        <td>${l.result === 'success' ? '<span class="pill pill-green">Success</span>' : `<span class="pill pill-red">${l.result}</span>`}</td>
-      </tr>
-    `).join('');
+    auditCache = res.data;
+    renderAuditTable(auditCache);
   } catch (err) {
     handleApiError(err);
   }
 }
 
+function renderAuditTable(logs) {
+  const body = $('#audit-table-body');
+  if (!logs.length) {
+    body.innerHTML = `<tr><td colspan="5" style="padding:0;">
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.audit}</div>
+        <div class="empty-state-title">No audit events yet</div>
+        <div class="empty-state-desc">Every device-management action will be recorded here.</div>
+      </div>
+    </td></tr>`;
+    return;
+  }
+  body.innerHTML = logs.map(l => `
+    <tr>
+      <td style="color:var(--muted);font-size:12px;">${new Date(l.created_at).toLocaleString()}</td>
+      <td style="font-weight:700;">${formatAction(l.action)}</td>
+      <td class="mono">${l.device_id || '&mdash;'}</td>
+      <td>${l.actor_name}</td>
+      <td>${l.result === 'success' ? `<span class="pill pill-green">${ICONS.check}Success</span>` : `<span class="pill pill-red">${ICONS.x}${l.result}</span>`}</td>
+    </tr>
+  `).join('');
+}
+
+$('#audit-search').addEventListener('input', debounce(() => {
+  const search = $('#audit-search').value.trim().toLowerCase();
+  const filtered = search
+    ? auditCache.filter(l => formatAction(l.action).toLowerCase().includes(search) || (l.device_id || '').toLowerCase().includes(search) || (l.actor_name || '').toLowerCase().includes(search))
+    : auditCache;
+  renderAuditTable(filtered);
+}, 250));
+
 // ---------------------------------------------------------------- Card management
 
+let cardsCache = [];
+
 async function loadCardsView() {
+  $('#cards-table-body').innerHTML = skeletonRows(5, 5);
   try {
     await loadWizardSchools();
     const school = $('#wiz-school').value;
     if (!school) {
-      $('#cards-table-body').innerHTML = '<tr><td colspan="5" class="empty-hint">Select a school in the Assign Card wizard on the Dashboard first.</td></tr>';
+      cardsCache = [];
+      renderCardsStats([]);
+      $('#cards-table-body').innerHTML = `<tr><td colspan="5" style="padding:0;">
+        <div class="empty-state">
+          <div class="empty-state-icon">${ICONS.card}</div>
+          <div class="empty-state-title">Select a school</div>
+          <div class="empty-state-desc">Pick a school in the Assign Card wizard on the Dashboard to see its card assignments.</div>
+        </div>
+      </td></tr>`;
       return;
     }
     const res = await API.get(`/api/rfid/card-assignments/?school_code=${encodeURIComponent(school)}`);
-    const body = $('#cards-table-body');
-    if (!res.data.length) { body.innerHTML = '<tr><td colspan="5" class="empty-hint">No active card assignments for this school.</td></tr>'; return; }
-    body.innerHTML = res.data.map(c => `
-      <tr>
-        <td class="mono">${c.card_uid}</td>
-        <td style="font-weight:700;">${c.person_name}</td>
-        <td>${c.role}</td>
-        <td style="color:var(--muted);font-size:12px;">${timeAgo(c.assigned_at)}</td>
-        <td><span class="card-link" data-unassign="${c.card_uid}">Unassign</span></td>
-      </tr>
-    `).join('');
-    $all('[data-unassign]').forEach(link => link.addEventListener('click', () => unassignCard(link.dataset.unassign, school)));
+    cardsCache = res.data;
+    renderCardsStats(cardsCache);
+    renderCardsTable(cardsCache, school);
   } catch (err) {
     handleApiError(err);
   }
 }
 
+function renderCardsStats(cards) {
+  ['total', 'assigned', 'unassigned', 'recent'].forEach(k => { const el = $('#cards-stat-icon-' + k); if (el) el.innerHTML = ''; });
+  $('#cards-stat-icon-total').innerHTML = ICONS.card;
+  $('#cards-stat-icon-assigned').innerHTML = ICONS.checkCircle;
+  $('#cards-stat-icon-unassigned').innerHTML = ICONS.xCircle;
+  $('#cards-stat-icon-recent').innerHTML = ICONS.clock;
+  const recent = cards.filter(c => c.assigned_at && (Date.now() - new Date(c.assigned_at).getTime()) < 7 * 86400000).length;
+  countUp($('#cards-stat-total'), cards.length);
+  countUp($('#cards-stat-assigned'), cards.length);
+  countUp($('#cards-stat-unassigned'), 0);
+  countUp($('#cards-stat-recent'), recent);
+}
+
+function renderCardsTable(cards, school) {
+  const body = $('#cards-table-body');
+  if (!cards.length) {
+    body.innerHTML = `<tr><td colspan="5" style="padding:0;">
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.card}</div>
+        <div class="empty-state-title">No active card assignments</div>
+        <div class="empty-state-desc">Assign a card to a student from the wizard on the Dashboard.</div>
+      </div>
+    </td></tr>`;
+    return;
+  }
+  body.innerHTML = cards.map(c => `
+    <tr>
+      <td>
+        <div class="cell-with-icon">
+          <span class="table-row-icon">${ICONS.user}</span>
+          <div style="font-weight:700;">${escapeHtml(c.person_name)}</div>
+        </div>
+      </td>
+      <td class="mono">${c.student_id || '&mdash;'}</td>
+      <td><span class="pill pill-blue">${escapeHtml(c.role)}</span></td>
+      <td style="color:var(--muted);font-size:12px;">${timeAgo(c.assigned_at)}</td>
+      <td><span class="card-link" data-unassign="${c.card_uid}">Unassign</span></td>
+    </tr>
+  `).join('');
+  $all('[data-unassign]').forEach(link => link.addEventListener('click', () => unassignCard(link.dataset.unassign, school)));
+}
+
+$('#cards-search').addEventListener('input', debounce(() => {
+  const search = $('#cards-search').value.trim().toLowerCase();
+  const school = $('#wiz-school').value;
+  const filtered = search
+    ? cardsCache.filter(c => c.person_name.toLowerCase().includes(search) || (c.student_id || '').toLowerCase().includes(search))
+    : cardsCache;
+  renderCardsTable(filtered, school);
+}, 250));
+
 async function unassignCard(cardUid, schoolCode) {
-  if (!confirm(`Unassign card ${cardUid}?`)) return;
+  if (!confirm(`Unassign this card?`)) return;
   try {
     await API.post('/api/rfid/card-assignments/revoke/', { card_uid: cardUid, school_code: schoolCode });
     showToast('Card unassigned.');
@@ -540,6 +863,77 @@ async function unassignCard(cardUid, schoolCode) {
     handleApiError(err);
   }
 }
+
+// ---------------------------------------------------------------- Schools view
+
+async function loadSchoolsView() {
+  $('#schools-body').innerHTML = `<div class="schools-grid">${Array.from({ length: 3 }).map(() => `
+    <div class="school-card"><div class="skel" style="height:110px;"></div></div>
+  `).join('')}</div>`;
+  try {
+    const [schoolsRes, devicesRes] = await Promise.all([
+      API.get('/api/device-fleet/schools/'),
+      API.get('/api/device-fleet/devices/'),
+    ]);
+    schoolsCache = schoolsRes.data;
+    currentDevices = devicesRes.data;
+    renderSchools(schoolsCache);
+  } catch (err) {
+    handleApiError(err);
+  }
+}
+
+function renderSchools(schools) {
+  const el = $('#schools-body');
+  if (!schools.length) {
+    el.innerHTML = `<div class="card"><div class="empty-state">
+      <div class="empty-state-icon">${ICONS.school}</div>
+      <div class="empty-state-title">No schools connected yet</div>
+      <div class="empty-state-desc">Schools appear here once they're set up on the SchoolDom platform.</div>
+    </div></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="schools-grid">${schools.map(s => {
+    const devices = currentDevices.filter(d => d.school_name === s.name);
+    const online = devices.filter(d => d.is_online).length;
+    const lastSeen = devices.reduce((max, d) => {
+      if (!d.last_seen_at) return max;
+      const t = new Date(d.last_seen_at).getTime();
+      return t > max ? t : max;
+    }, 0);
+    return `
+    <div class="school-card" data-school="${s.schema_name}">
+      <div class="school-card-top">
+        <span class="school-icon">${ICONS.school}</span>
+        <div>
+          <div class="school-name">${escapeHtml(s.name)}</div>
+          <div class="school-code">${s.schema_name}</div>
+        </div>
+      </div>
+      <div class="school-stats">
+        <div><div class="school-stat-value">${devices.length}</div><div class="school-stat-label">Devices</div></div>
+        <div><div class="school-stat-value">${online}</div><div class="school-stat-label">Online</div></div>
+        <div><div class="school-stat-value">${s.student_count ?? '&mdash;'}</div><div class="school-stat-label">Students</div></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <span class="pill pill-green">${ICONS.check}Active</span>
+        <span style="font-size:11px;color:var(--muted);font-weight:600;">${lastSeen ? timeAgo(new Date(lastSeen).toISOString()) : 'No activity yet'}</span>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+
+  $all('[data-school]').forEach(card => card.addEventListener('click', () => {
+    switchView('devices');
+    $('#device-search').value = card.dataset.school;
+    loadDevicesView();
+  }));
+}
+
+$('#schools-search').addEventListener('input', debounce(() => {
+  const search = $('#schools-search').value.trim().toLowerCase();
+  const filtered = search ? schoolsCache.filter(s => s.name.toLowerCase().includes(search) || s.schema_name.toLowerCase().includes(search)) : schoolsCache;
+  renderSchools(filtered);
+}, 250));
 
 // ---------------------------------------------------------------- Assign Card wizard
 
@@ -555,8 +949,17 @@ async function loadWizardSchools() {
   }
 }
 
-$('#wiz-school').addEventListener('change', loadWizardStudents);
+function updateWizardStepState() {
+  const steps = $all('#wizard-steps .wizard-step');
+  steps[0]?.classList.toggle('done', !!$('#wiz-school').value);
+  steps[1]?.classList.toggle('done', !!$('#wiz-student').value);
+  steps[2]?.classList.toggle('done', !!$('#wiz-card-uid').value.trim());
+}
+
+$('#wiz-school').addEventListener('change', () => { loadWizardStudents(); updateWizardStepState(); });
 $('#wiz-student-search').addEventListener('input', debounce(loadWizardStudents, 350));
+$('#wiz-student').addEventListener('change', updateWizardStepState);
+$('#wiz-card-uid').addEventListener('input', updateWizardStepState);
 
 function debounce(fn, ms) {
   let t;
@@ -594,6 +997,7 @@ $('#wiz-assign-btn').addEventListener('click', async () => {
     });
     showToast(`Card assigned to ${studentName}.`);
     $('#wiz-card-uid').value = '';
+    updateWizardStepState();
   } catch (err) {
     if (err.message && err.message.includes('already')) {
       if (confirm(err.message + '\n\nReassign anyway?')) {
@@ -603,39 +1007,13 @@ $('#wiz-assign-btn').addEventListener('click', async () => {
           });
           showToast(`Card reassigned to ${studentName}.`);
           $('#wiz-card-uid').value = '';
+          updateWizardStepState();
           return;
         } catch (err2) { handleApiError(err2); return; }
       }
       return;
     }
     handleApiError(err);
-  }
-});
-
-// ---------------------------------------------------------------- Quick actions
-
-$('#qa-refresh').addEventListener('click', loadDashboard);
-
-$('#qa-generate-key').addEventListener('click', async () => {
-  try {
-    const res = await API.post('/api/device-fleet/provisioning-keys/', {});
-    $('#key-modal-value').textContent = res.data.key;
-    $('#key-modal').classList.add('active');
-  } catch (err) {
-    handleApiError(err);
-  }
-});
-
-$('#qa-register-device').addEventListener('click', () => $('#qa-generate-key').click());
-
-$('#key-modal-close').addEventListener('click', () => $('#key-modal').classList.remove('active'));
-$('#key-modal-done').addEventListener('click', () => $('#key-modal').classList.remove('active'));
-$('#key-modal-copy').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText($('#key-modal-value').textContent);
-    showToast('Copied to clipboard.');
-  } catch {
-    showToast('Could not copy - select and copy manually.', true);
   }
 });
 
