@@ -9,7 +9,7 @@
 
 <!-- ============== LOGIN ============== -->
 <div id="login-screen">
-  <div class="login-card">
+  <div class="login-card" id="login-card-main">
     <div class="login-logo">School<span>Dom</span></div>
     <div class="login-subtitle">Superadmin Device Control Panel</div>
 
@@ -21,6 +21,19 @@
 
     <button id="login-submit" class="btn btn-primary btn-block">Sign In</button>
     <div id="login-error" class="login-error"></div>
+  </div>
+
+  <div class="login-card" id="otp-card" style="display:none;">
+    <div class="login-logo">School<span>Dom</span></div>
+    <div class="login-subtitle">Enter the 6-digit code sent to your email</div>
+
+    <div class="field-label">Verification Code</div>
+    <input id="otp-code" class="text-input" type="text" inputmode="numeric" maxlength="6"
+      style="letter-spacing:6px;font-size:20px;text-align:center;font-weight:700;" autocomplete="one-time-code" />
+
+    <button id="otp-submit" class="btn btn-primary btn-block">Verify</button>
+    <button id="otp-resend" class="btn btn-secondary btn-block" style="margin-top:8px;">Resend Code</button>
+    <div id="otp-error" class="login-error"></div>
   </div>
 </div>
 

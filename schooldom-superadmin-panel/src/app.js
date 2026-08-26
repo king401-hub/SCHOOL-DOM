@@ -52,6 +52,8 @@ function enterApp(session) {
   loadDashboard();
 }
 
+let _pendingOtp = null; // { email, challenge } while the OTP card is showing
+
 $('#login-submit').addEventListener('click', async () => {
   const email = $('#login-email').value.trim();
   const password = $('#login-password').value;
@@ -66,7 +68,22 @@ $('#login-submit').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Signing in...';
   try {
-    const session = await API.login(email, password);
+    const result = await API.login(email, password);
+
+    if (result.status === 'otp_required') {
+      if (result.userRole && result.userRole !== 'super_admin') {
+        throw new Error('This account is not a SchoolDom super administrator.');
+      }
+      _pendingOtp = { email, challenge: result.challenge };
+      $('#login-card-main').style.display = 'none';
+      $('#otp-card').style.display = 'block';
+      $('#otp-code').value = '';
+      $('#otp-error').style.display = 'none';
+      $('#otp-code').focus();
+      return;
+    }
+
+    const session = result.session;
     if (session.userRole && session.userRole !== 'super_admin') {
       API.signOut();
       throw new Error('This account is not a SchoolDom super administrator.');
@@ -83,6 +100,53 @@ $('#login-submit').addEventListener('click', async () => {
 
 $('#login-password').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('#login-submit').click();
+});
+
+$('#otp-submit').addEventListener('click', async () => {
+  const code = $('#otp-code').value.trim();
+  const errorBox = $('#otp-error');
+  errorBox.style.display = 'none';
+  if (!/^\d{6}$/.test(code)) {
+    errorBox.textContent = 'Enter the 6-digit code.';
+    errorBox.style.display = 'block';
+    return;
+  }
+  const btn = $('#otp-submit');
+  btn.disabled = true;
+  btn.textContent = 'Verifying...';
+  try {
+    const session = await API.verifyOtp(_pendingOtp.email, code, _pendingOtp.challenge);
+    if (session.userRole && session.userRole !== 'super_admin') {
+      API.signOut();
+      throw new Error('This account is not a SchoolDom super administrator.');
+    }
+    enterApp(session);
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Verify';
+  }
+});
+
+$('#otp-code').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#otp-submit').click();
+});
+
+$('#otp-resend').addEventListener('click', async () => {
+  const btn = $('#otp-resend');
+  btn.disabled = true;
+  try {
+    const data = await API.resendOtp(_pendingOtp.email, _pendingOtp.challenge);
+    if (data && data.otp_challenge) _pendingOtp.challenge = data.otp_challenge;
+    showToast('A new code has been sent.');
+  } catch (err) {
+    $('#otp-error').textContent = err.message;
+    $('#otp-error').style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 $('#sign-out-btn').addEventListener('click', () => {

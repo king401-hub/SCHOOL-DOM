@@ -23,6 +23,12 @@ function extractErrorMessage(data) {
 const API = (() => {
   const BASE_URL = 'https://schooldom.academy';
   const STORAGE_KEY = 'schooldom_superadmin_session';
+  // Separate from the session (which login/OTP-verify wipe and recreate) -
+  // this survives across logins for the same account on this machine so a
+  // returning superadmin skips OTP (login_view's own
+  // device_trust_token_valid check), rather than needing a 6-digit code
+  // every single time they open the app.
+  const TRUST_KEY = 'schooldom_superadmin_device_trust';
 
   function loadSession() {
     try {
@@ -39,6 +45,24 @@ const API = (() => {
 
   function clearSession() {
     localStorage.removeItem(STORAGE_KEY);
+  }
+
+  function loadTrustToken() {
+    return localStorage.getItem(TRUST_KEY);
+  }
+
+  function saveTrustToken(token) {
+    if (token) localStorage.setItem(TRUST_KEY, token);
+  }
+
+  function sessionFromTokens(data, email) {
+    return {
+      access: data.access,
+      refresh: data.refresh,
+      userName: data.user ? `${data.user.first_name || ''} ${data.user.last_name || ''}`.trim() : email,
+      userEmail: email,
+      userRole: data.user ? data.user.role : null,
+    };
   }
 
   async function request(method, path, body) {
@@ -74,16 +98,44 @@ const API = (() => {
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
 
+    // Every real superadmin account requires OTP (users.views.ADMIN_OTP_ROLES
+    // includes super_admin) unless this device already holds a valid trust
+    // token from a previous verification - login_view returns a plain
+    // {success, requires_otp, otp_challenge, ...} with NO access/refresh at
+    // all in that case, not an error. Callers must check result.status.
     async login(email, password) {
-      const data = await request('POST', '/api/auth/login/', { email, password });
-      if (!data || !data.access) throw new Error('Sign-in succeeded but no access token was returned.');
-      saveSession({
-        access: data.access,
-        userName: data.user ? `${data.user.first_name || ''} ${data.user.last_name || ''}`.trim() : email,
-        userEmail: email,
-        userRole: data.user ? data.user.role : null,
+      const data = await request('POST', '/api/auth/login/', {
+        email,
+        password,
+        device_trust_token: loadTrustToken() || undefined,
       });
+
+      if (data && data.requires_otp) {
+        return {
+          status: 'otp_required',
+          email,
+          challenge: data.otp_challenge,
+          userRole: data.user ? data.user.role : null,
+        };
+      }
+      if (!data || !data.access) {
+        throw new Error('Sign-in succeeded but no access token was returned.');
+      }
+      if (data.device_trust_token) saveTrustToken(data.device_trust_token);
+      saveSession(sessionFromTokens(data, email));
+      return { status: 'ok', session: loadSession() };
+    },
+
+    async verifyOtp(email, code, challenge) {
+      const data = await request('POST', '/api/auth/admin/verify-otp/', { email, code, challenge });
+      if (!data || !data.access) throw new Error('Verification succeeded but no access token was returned.');
+      if (data.device_trust_token) saveTrustToken(data.device_trust_token);
+      saveSession(sessionFromTokens(data, email));
       return loadSession();
+    },
+
+    async resendOtp(email, challenge) {
+      return request('POST', '/api/auth/admin/resend-otp/', { email, challenge });
     },
 
     signOut() { clearSession(); },
