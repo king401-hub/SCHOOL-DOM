@@ -59,6 +59,7 @@ function injectStaticIcons() {
   $('#topbar-bell').innerHTML = (ICONS.bell || '') + '<span class="dot" id="topbar-bell-dot" style="display:none;"></span>';
   $('#key-modal-close').innerHTML = ICONS.x;
   $('#signout-modal-close').innerHTML = ICONS.x;
+  $('#reassign-modal-close').innerHTML = ICONS.x;
   $('#signout-modal-icon').innerHTML = ICONS.logout;
   const searchIcons = ['device-search-icon', 'audit-search-icon', 'cards-search-icon', 'schools-search-icon'];
   searchIcons.forEach(id => { const el = $('#' + id); if (el) el.outerHTML = ICONS.search; });
@@ -599,21 +600,44 @@ async function deviceAction(id, action, confirmMsg) {
   }
 }
 
-function openReassignPrompt(device) {
-  const target = prompt(`Reassign ${device.device_id} to which school? Enter the school's short code (schema name).`, '');
-  if (!target) return;
-  const school = schoolsCache.find(s => s.schema_name.toLowerCase() === target.trim().toLowerCase());
-  if (!school) { showToast('No school found with that code.', true); return; }
-  API.post(`/api/device-fleet/devices/${device.id}/assign-school/`, { school_id: school.id })
-    .then(res => {
-      showToast(`${device.device_id} assigned to ${school.name}.`);
-      const idx = currentDevices.findIndex(d => d.id === device.id);
-      if (idx >= 0) currentDevices[idx] = res.data;
-      selectDevice(device.id);
-      renderDeviceTable('#device-table-body', currentDevices.slice(0, 6), false);
-    })
-    .catch(handleApiError);
+// window.prompt() isn't implemented in Electron's renderer at all (throws
+// "prompt() is not supported") - use the app's own modal instead of the
+// native dialog, and a dropdown of real school names rather than asking
+// the admin to type an exact schema code from memory.
+let _reassignDevice = null;
+
+async function openReassignPrompt(device) {
+  _reassignDevice = device;
+  await loadWizardSchools();
+  $('#reassign-device-name').textContent = device.device_id;
+  $('#reassign-school-select').innerHTML = schoolsCache
+    .map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  $('#reassign-error').style.display = 'none';
+  $('#reassign-modal').classList.add('active');
 }
+
+function closeReassignModal() { $('#reassign-modal').classList.remove('active'); }
+$('#reassign-modal-close').addEventListener('click', closeReassignModal);
+$('#reassign-modal-cancel').addEventListener('click', closeReassignModal);
+
+$('#reassign-modal-confirm').addEventListener('click', async () => {
+  const device = _reassignDevice;
+  const schoolId = $('#reassign-school-select').value;
+  const school = schoolsCache.find(s => s.id === schoolId);
+  if (!device || !school) return;
+  try {
+    const res = await API.post(`/api/device-fleet/devices/${device.id}/assign-school/`, { school_id: school.id });
+    showToast(`${device.device_id} assigned to ${school.name}.`);
+    const idx = currentDevices.findIndex(d => d.id === device.id);
+    if (idx >= 0) currentDevices[idx] = res.data;
+    selectDevice(device.id);
+    renderDeviceTable('#device-table-body', currentDevices.slice(0, 6), false);
+    closeReassignModal();
+  } catch (err) {
+    $('#reassign-error').textContent = err.message;
+    $('#reassign-error').style.display = 'block';
+  }
+});
 
 // ---------------------------------------------------------------- Recent Activity (timeline)
 

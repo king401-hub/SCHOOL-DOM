@@ -394,6 +394,22 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="reassign-modal">
+  <div class="modal-card">
+    <div class="modal-header">Reassign Device <span class="modal-close" id="reassign-modal-close"></span></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">Move <strong id="reassign-device-name" style="color:var(--text);"></strong> to a different school.</p>
+      <div class="field-label" style="margin-top:0;">School</div>
+      <select id="reassign-school-select" class="text-input"></select>
+      <div id="reassign-error" class="login-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="reassign-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="reassign-modal-confirm">Reassign</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="signout-modal">
   <div class="modal-card">
     <div class="modal-header">Sign Out <span class="modal-close" id="signout-modal-close"></span></div>
