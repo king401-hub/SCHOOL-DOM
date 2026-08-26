@@ -98,6 +98,40 @@ class Question(TenantAwareModel, TimeStampedModel):
     # this is what the random-import-by-topic endpoint filters/samples on.
     topic = models.ForeignKey(Topic, on_delete=models.SET_NULL, null=True, blank=True, related_name="topic_questions")
 
+class ExamGroup(TenantAwareModel, TimeStampedModel):
+    """A bundle of subject-Exams sharing one Exam PIN and one availability window.
+    Each subject is still a fully normal, independently-functional Exam row (see
+    Exam.group below) - this model exists purely so admins can configure/PIN them
+    together; grading, results, and the exam-taking flow itself never reference it."""
+
+    TIMING_GENERAL = "general"
+    TIMING_PER_SUBJECT = "per_subject"
+    TIMING_CHOICES = [
+        (TIMING_GENERAL, "One duration for all subjects"),
+        (TIMING_PER_SUBJECT, "Individual duration per subject"),
+    ]
+
+    title = models.CharField(max_length=200)
+    class_group = models.ForeignKey('academic.Class', on_delete=models.CASCADE, null=True, blank=True)
+    teacher = models.ForeignKey('users.User', on_delete=models.CASCADE, null=True, blank=True)
+    timing_mode = models.CharField(max_length=20, choices=TIMING_CHOICES, default=TIMING_GENERAL)
+    # Only meaningful when timing_mode=general - cascades onto every member
+    # Exam.duration_minutes at create/update time. In per_subject mode each member
+    # keeps its own submitted duration and this stays null.
+    duration_minutes = models.IntegerField(null=True, blank=True)
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField()
+    instructions = models.TextField(blank=True)
+    shuffle_questions = models.BooleanField(default=False)
+    # Cascades onto every member Exam.is_published - that field is the real access
+    # gate everywhere (StudentCbtEntryView, ExamListView, offline sync all filter on
+    # Exam.is_published directly and know nothing about ExamGroup), this is bookkeeping.
+    is_published = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.title
+
+
 class Exam(TenantAwareModel, TimeStampedModel):
     EXAM_FORMATS = [
         ('objective', 'Objective (MCQ)'),
@@ -113,6 +147,10 @@ class Exam(TenantAwareModel, TimeStampedModel):
     exam_format = models.CharField(max_length=10, choices=EXAM_FORMATS, default='objective')
     questions = models.ManyToManyField(Question, related_name="exams", blank=True)
     instructions = models.TextField(blank=True)
+    # Set when this exam is one subject within an Exam Group (see ExamGroup above) -
+    # null for an ordinary standalone exam. SET_NULL (not CASCADE) so deleting a
+    # group never destroys member exams' attempt history; it just detaches them.
+    group = models.ForeignKey(ExamGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="group_exams")
 
     # Scheduling
     start_date = models.DateTimeField()
@@ -143,7 +181,11 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         (USE_REUSABLE, "Reusable"),
     ]
 
-    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name="pins")
+    # Exactly one of exam/group is set (enforced by the exampin_requires_exam_xor_group
+    # constraint below) - a PIN belongs either to one standalone Exam or to one
+    # ExamGroup (whose member exams it then unlocks all at once).
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name="pins", null=True, blank=True)
+    group = models.ForeignKey(ExamGroup, on_delete=models.CASCADE, related_name="pins", null=True, blank=True)
     pin_digest = models.CharField(max_length=64, unique=True, db_index=True)
     pin_hash = models.CharField(max_length=128)
     pin_preview = models.CharField(max_length=8, blank=True, default="")
@@ -187,7 +229,17 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["exam", "is_active", "expires_at"]),
+            models.Index(fields=["group", "is_active", "expires_at"]),
             models.Index(fields=["tenant", "created_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(exam__isnull=False, group__isnull=True)
+                    | models.Q(exam__isnull=True, group__isnull=False)
+                ),
+                name="exampin_requires_exam_xor_group",
+            ),
         ]
 
     @staticmethod
@@ -237,7 +289,8 @@ class ExamPin(TenantAwareModel, TimeStampedModel):
         return True, ""
 
     def __str__(self):
-        return f"{self.exam.title} PIN ending {self.pin_preview or 'hidden'}"
+        owner = self.exam.title if self.exam_id else (self.group.title if self.group_id else "orphaned")
+        return f"{owner} PIN ending {self.pin_preview or 'hidden'}"
 
 
 class ExamPinUsage(TenantAwareModel, TimeStampedModel):
@@ -255,7 +308,11 @@ class ExamPinUsage(TenantAwareModel, TimeStampedModel):
     ]
 
     pin = models.ForeignKey(ExamPin, on_delete=models.CASCADE, related_name="usages", null=True, blank=True)
-    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name="pin_usage_events")
+    # Exactly one of exam/group is set, same rule as ExamPin - a group-PIN-accepted
+    # event (StudentCbtEntryView's group path) has no single exam yet at that point,
+    # since the student hasn't picked a subject.
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name="pin_usage_events", null=True, blank=True)
+    group = models.ForeignKey(ExamGroup, on_delete=models.CASCADE, related_name="pin_usage_events", null=True, blank=True)
     student = models.ForeignKey(
         "users.User",
         on_delete=models.SET_NULL,
@@ -274,8 +331,20 @@ class ExamPinUsage(TenantAwareModel, TimeStampedModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["exam", "status", "created_at"]),
+            models.Index(fields=["group", "status", "created_at"]),
             models.Index(fields=["pin", "status", "created_at"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(exam__isnull=False, group__isnull=True)
+                    | models.Q(exam__isnull=True, group__isnull=False)
+                ),
+                name="exampinusage_requires_exam_xor_group",
+            ),
+        ]
+
+
 class ExamAttempt(TenantAwareModel, TimeStampedModel):
     exam = models.ForeignKey(Exam, on_delete=models.CASCADE)
     student = models.ForeignKey('users.User', on_delete=models.CASCADE)

@@ -26,15 +26,23 @@ class ExamSerializer(serializers.ModelSerializer):
     class_name = serializers.SerializerMethodField()
     question_count = serializers.SerializerMethodField()
     pin_required = serializers.SerializerMethodField()
-    
+    # Named exam_group_* (not group_*) to avoid colliding with the unrelated
+    # QuestionGroup ("group" of linked passage questions) vocabulary already
+    # used by QuestionGroupSerializer above - null when this exam is standalone.
+    exam_group_id = serializers.IntegerField(source='group_id', read_only=True)
+    exam_group_title = serializers.SerializerMethodField()
+
     class Meta:
         model = Exam
         fields = [
             'id', 'title', 'subject', 'duration_minutes', 'questions',
             'shuffle_questions', 'show_results_immediately', 'instructions',
             'start_date', 'end_date', 'subject_name', 'class_name', 'question_count',
-            'pin_required'
+            'pin_required', 'exam_group_id', 'exam_group_title',
         ]
+
+    def get_exam_group_title(self, obj):
+        return obj.group.title if obj.group_id else ""
 
     def get_questions(self, obj):
         """

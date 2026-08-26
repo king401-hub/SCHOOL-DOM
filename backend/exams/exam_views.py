@@ -24,7 +24,7 @@ from notifications.push import push_for_notifications
 from licensing.services import current_license_for, has_active_cbt_license
 from users.models import StudentEnrollment, User, resolve_legacy_tenant_for_school
 from users.app_views import _profile_picture_url
-from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, Question, StudentAnswer
+from .models import Exam, ExamAttempt, ExamGroup, ExamPin, ExamPinUsage, Question, StudentAnswer
 from .serializers import (
     ExamSerializer,
     ExamAttemptSerializer,
@@ -92,17 +92,29 @@ def _find_students_by_identifier(identifier):
     )
 
 
-def _exams_for_student(student, *, pin):
+def _exams_for_student(student, *, pin=None, base_queryset=None):
+    """Resolve which of `exams` (or, by default, whichever single exam `pin`
+    matches) this student may actually enter - class/enrollment/tenant scoped.
+
+    `base_queryset` lets a caller supply an already-filtered set of candidate
+    exams (e.g. every member of an ExamGroup) and get the exact same
+    downstream scoping applied, without re-deriving it from a PIN lookup -
+    see _group_exams_for_student below. Default behavior (pin-digest lookup)
+    is unchanged for every existing caller.
+    """
     now = timezone.now()
-    normalized_pin = ExamPin.normalize_pin(pin)
-    pin_digest = ExamPin.digest_pin(normalized_pin)
-    exams = Exam.objects.filter(
-        pins__pin_digest=pin_digest,
-        pins__is_active=True,
-        is_published=True,
-        start_date__lte=now,
-        end_date__gte=now,
-    ).distinct()
+    if base_queryset is not None:
+        exams = base_queryset
+    else:
+        normalized_pin = ExamPin.normalize_pin(pin)
+        pin_digest = ExamPin.digest_pin(normalized_pin)
+        exams = Exam.objects.filter(
+            pins__pin_digest=pin_digest,
+            pins__is_active=True,
+            is_published=True,
+            start_date__lte=now,
+            end_date__gte=now,
+        ).distinct()
 
     profile = getattr(student, "student_profile", None)
     enrolled_exam_ids = []
@@ -128,6 +140,15 @@ def _exams_for_student(student, *, pin):
     if not legacy_tenant:
         return exams.none()
     return exams.filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant)).order_by("start_date")
+
+
+def _group_exams_for_student(student, group):
+    """Same class/enrollment/tenant scoping as _exams_for_student, applied to
+    every currently-open member exam of an ExamGroup instead of a single
+    pin-matched exam - this is what lets one group PIN resolve to N subjects."""
+    now = timezone.now()
+    base = group.group_exams.filter(is_published=True, start_date__lte=now, end_date__gte=now)
+    return _exams_for_student(student, base_queryset=base)
 
 
 def _published_exam_queryset_for_user(user):
@@ -579,6 +600,10 @@ class ExamListView(APIView):
             end_date__gte=now,
         ).filter(Q(class_group__tenant=legacy_tenant) | Q(tenant=legacy_tenant))
 
+        group_id = request.query_params.get("group_id")
+        if group_id:
+            exams = exams.filter(group_id=group_id)
+
         student_profile = getattr(request.user, "student_profile", None)
         enrolled_exam_ids = []
         if student_profile:
@@ -639,6 +664,86 @@ class StudentCbtEntryView(APIView):
             return Response({"success": False, "message": "Student ID was not found."}, status=status.HTTP_404_NOT_FOUND)
         if not entered_pin:
             return Response({"success": False, "message": "Enter the exam PIN."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # pin_digest is globally unique, so at most one ExamPin row can ever match -
+        # resolve which exam/group this PIN belongs to once, up front, instead of
+        # re-discovering it inside the per-candidate loop below (which exists purely
+        # to disambiguate student_id collisions across tenants, not to find the PIN).
+        pin_row = ExamPin.objects.filter(
+            pin_digest=ExamPin.digest_pin(entered_pin), is_active=True
+        ).select_related("exam", "group").first()
+
+        if pin_row and pin_row.group_id:
+            group = pin_row.group
+            student = None
+            member_exams = None
+            for candidate in candidates:
+                candidate_members = list(_group_exams_for_student(candidate, group))
+                if candidate_members:
+                    student, member_exams = candidate, candidate_members
+                    break
+            if not student or not member_exams:
+                return Response({"success": False, "message": "No open exam matches this Student ID and PIN."}, status=status.HTTP_404_NOT_FOUND)
+
+            if not has_active_cbt_license(group.tenant):
+                return Response(
+                    {"success": False, "message": "This school's CBT license is not active. Ask your admin to activate a license."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            already_granted = pin_row.usages.filter(status=ExamPinUsage.STATUS_ACCEPTED, student=student, group=group).exists()
+            if not already_granted:
+                usable, reason = pin_row.can_be_used()
+                if not usable:
+                    return Response({"success": False, "message": reason}, status=status.HTTP_403_FORBIDDEN)
+                ExamPinUsage.objects.create(
+                    tenant=group.tenant,
+                    pin=pin_row,
+                    exam=None,
+                    group=group,
+                    student=student,
+                    attempt=None,
+                    entered_pin_digest=ExamPin.digest_pin(entered_pin),
+                    status=ExamPinUsage.STATUS_ACCEPTED,
+                    message="PIN accepted from Student CBT desktop entry (exam group).",
+                    ip_address=_client_ip(request),
+                    user_agent=str(request.META.get("HTTP_USER_AGENT", ""))[:255],
+                )
+
+            # No ExamAttempt is created here - the student hasn't picked a subject
+            # yet. The frontend shows a subject picker, then calls StartExamView
+            # (unchanged) per subject using the access token issued below; that
+            # works because a group's member exams carry no ExamPin rows of their
+            # own, so _validate_exam_pin_for_start's "no active pins on this exam"
+            # branch skips re-asking for a PIN there.
+            tokens = _tokens_for_cbt_student(student)
+            return Response({
+                "success": True,
+                "is_group": True,
+                "group": {"id": group.id, "title": group.title},
+                "exams": [
+                    {
+                        "id": member.id,
+                        "title": member.title,
+                        "subject": member.subject.name if member.subject else "",
+                        "subject_id": member.subject_id,
+                        "duration_minutes": member.duration_minutes,
+                        "exam_format": member.exam_format,
+                        "question_count": member.questions.count(),
+                    }
+                    for member in member_exams
+                ],
+                "student": _student_session_payload(student),
+                "session": {
+                    "user": _student_session_payload(student),
+                    "access": tokens["access"],
+                    "refresh": tokens["refresh"],
+                    "school_code": student.tenant.schema_name if student.tenant else "",
+                    "signedInAt": timezone.now().isoformat(),
+                    "auth_mode": "cbt_entry",
+                    "group_id": group.id,
+                },
+            }, status=status.HTTP_200_OK)
 
         # student_id/admission_number can collide across schools - only accept a candidate
         # whose OWN tenant has an exam this PIN actually unlocks, never the first match.
@@ -1498,7 +1603,7 @@ def cbt_offline_sync_package(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    exams = _published_exam_queryset_for_user(request.user).prefetch_related("questions", "pins").select_related("subject", "class_group")
+    exams = _published_exam_queryset_for_user(request.user).prefetch_related("questions", "pins", "group__pins").select_related("subject", "class_group", "group")
     student_queryset = User.objects.filter(role="student", is_active=True).select_related("tenant", "student_profile", "student_profile__current_class")
     if getattr(request.user, "tenant", None):
         student_queryset = student_queryset.filter(tenant=request.user.tenant)
@@ -1507,7 +1612,17 @@ def cbt_offline_sync_package(request):
 
     exam_rows = []
     for exam in exams.order_by("start_date"):
-        active_pin = exam.pins.filter(is_active=True).order_by("-created_at").first()
+        # A group member exam carries no ExamPin rows of its own - its PIN lives
+        # on the group. Using the group's shared pin here means every member's
+        # offline_pin_hash comes out identical, which is what lets the offline
+        # Win7 client's existing multi-match "Available Exams" picker (it already
+        # filters ALL locally-cached exams by PinHash into a list) surface a whole
+        # group's subjects together with zero changes on that side.
+        active_pin = (
+            exam.group.pins.filter(is_active=True).order_by("-created_at").first()
+            if exam.group_id else
+            exam.pins.filter(is_active=True).order_by("-created_at").first()
+        )
         questions = [_offline_question_payload(question, request) for question in _question_queryset_for_exam(exam).order_by("id")]
         exam_rows.append(
             {

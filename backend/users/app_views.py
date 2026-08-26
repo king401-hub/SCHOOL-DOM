@@ -61,7 +61,7 @@ from academic.models import (
 from core.models import SchoolTenant, Domain
 from settings_app.models import DocumentTheme
 from django_countries import countries as django_countries_list
-from exams.models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer, Topic
+from exams.models import Exam, ExamAttempt, ExamGroup, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer, Topic
 from tenants.models import Tenant
 from users.models import DatabaseImportJob, KidsMonitorSubscription, LoanApplication, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, StudentTestimonial, SupportTicket, TeacherProfile, User, generate_short_student_id, generate_short_teacher_id, random_code_digits, school_code_letters
 from apps.app.views import ADMIN_APP_FILENAME, admin_app_installer_path
@@ -769,21 +769,42 @@ def _notify_admins_exam_ready(exam, teacher):
 
 
 def _exam_pin_payload(pin, include_usage=False):
-    exam = pin.exam
     usage_qs = pin.usages.select_related("student", "attempt").order_by("-created_at")
     successful_qs = usage_qs.filter(status=ExamPinUsage.STATUS_ACCEPTED)
-    payload = {
-        "id": pin.id,
-        "exam_id": pin.exam_id,
-        "exam_title": exam.title,
-        "subject": exam.subject.name if exam.subject else "General",
-        "subject_id": exam.subject_id,
-        "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
-        "class_id": exam.class_group_id,
-        "exam_type": exam.exam_type.name if exam.exam_type else "Exam",
-        "start_date": exam.start_date,
-        "end_date": exam.end_date,
-        "usage_policy": pin.usage_policy,
+    if pin.group_id:
+        group = pin.group
+        member_subjects = [m.subject.name for m in group.group_exams.select_related("subject").all() if m.subject]
+        payload = {
+            "id": pin.id,
+            "exam_id": None,
+            "group_id": group.id,
+            "exam_title": group.title,
+            "subject": ", ".join(member_subjects) or "Multiple subjects",
+            "subject_id": None,
+            "class_name": _class_label(group.class_group) if group.class_group else "All classes",
+            "class_id": group.class_group_id,
+            "exam_type": "Exam Group",
+            "start_date": group.start_date,
+            "end_date": group.end_date,
+            "usage_policy": pin.usage_policy,
+        }
+    else:
+        exam = pin.exam
+        payload = {
+            "id": pin.id,
+            "exam_id": pin.exam_id,
+            "group_id": None,
+            "exam_title": exam.title,
+            "subject": exam.subject.name if exam.subject else "General",
+            "subject_id": exam.subject_id,
+            "class_name": _class_label(exam.class_group) if exam.class_group else "All classes",
+            "class_id": exam.class_group_id,
+            "exam_type": exam.exam_type.name if exam.exam_type else "Exam",
+            "start_date": exam.start_date,
+            "end_date": exam.end_date,
+            "usage_policy": pin.usage_policy,
+        }
+    payload.update({
         "is_active": pin.is_active,
         "is_expired": pin.is_expired,
         "expires_at": pin.expires_at,
@@ -795,7 +816,7 @@ def _exam_pin_payload(pin, include_usage=False):
         "reset_at": pin.reset_at,
         "usage_count": successful_qs.count(),
         "rejected_count": usage_qs.filter(status=ExamPinUsage.STATUS_REJECTED).count(),
-    }
+    })
     if include_usage:
         payload["usage_history"] = [
             {
@@ -8802,7 +8823,7 @@ def exams_snapshot(request):
     now = timezone.now()
 
     exams = _scope_to_user_tenant(
-        Exam.objects.select_related("subject", "class_group", "exam_type").prefetch_related("questions"),
+        Exam.objects.select_related("subject", "class_group", "exam_type", "group").prefetch_related("questions"),
         user,
     ).order_by("-start_date")
     if user.role == "teacher":
@@ -8902,9 +8923,18 @@ def exams_snapshot(request):
             "question_count": exam.questions.count(),
             "attempts": attempts_by_exam.get(exam.id, 0),
             "submissions": submissions_by_exam.get(exam.id, 0),
+            "group_id": exam.group_id,
+            "group_title": exam.group.title if exam.group_id else "",
         }
         exam_row.update(_exam_pin_summary_for_user(exam, user))
         exam_rows.append(exam_row)
+
+    exam_groups = []
+    if user.role in ADMIN_ROLES:
+        exam_groups = [
+            _exam_group_summary_payload(group, user)
+            for group in _exam_group_scope_for_user(user).prefetch_related("group_exams__subject", "pins").order_by("-start_date")[:100]
+        ]
 
     # Soft check only - the page still gets its data either way, and the
     # frontend renders a lock screen + activation modal instead of the exam
@@ -8940,6 +8970,7 @@ def exams_snapshot(request):
                 "average_cbt_score": round(float(average_percentage), 1),
             },
             "exams": exam_rows,
+            "exam_groups": exam_groups,
             "downloads": {
                 "admin_app": request.build_absolute_uri(reverse("admin_app_download")),
                 "student_cbt": request.build_absolute_uri(reverse("student_cbt_app_download")),
@@ -9068,6 +9099,53 @@ def _exam_pin_summary_for_user(exam, user):
         "active_pin_preview": active_pin.pin_preview if active_pin else "",
         "active_pin_plain": getattr(active_pin, "plain_pin", "") if active_pin else "",
     }
+
+
+def _exam_group_pin_summary_for_user(group, user):
+    if not _can_manage_exam_pins(user):
+        return {
+            "pin_required": False,
+            "active_pin_count": 0,
+            "active_pin_preview": "",
+        }
+    active_pin = group.pins.filter(is_active=True).order_by("-created_at").first()
+    return {
+        "pin_required": bool(active_pin),
+        "active_pin_count": group.pins.filter(is_active=True).count(),
+        "active_pin_preview": active_pin.pin_preview if active_pin else "",
+        "active_pin_plain": getattr(active_pin, "plain_pin", "") if active_pin else "",
+    }
+
+
+def _exam_group_summary_payload(group, user):
+    members = list(group.group_exams.select_related("subject").order_by("id"))
+    payload = {
+        "id": group.id,
+        "title": group.title,
+        "class_name": _class_label(group.class_group) if group.class_group else "All classes",
+        "class_id": group.class_group_id,
+        "timing_mode": group.timing_mode,
+        "duration_minutes": group.duration_minutes,
+        "start_date": group.start_date,
+        "end_date": group.end_date,
+        "instructions": group.instructions,
+        "shuffle_questions": group.shuffle_questions,
+        "is_published": group.is_published,
+        "subject_count": len(members),
+        "subjects": [
+            {
+                "exam_id": member.id,
+                "subject_id": member.subject_id,
+                "subject": member.subject.name if member.subject else "General",
+                "exam_format": member.exam_format,
+                "duration_minutes": member.duration_minutes,
+                "question_count": member.questions.count(),
+            }
+            for member in members
+        ],
+    }
+    payload.update(_exam_group_pin_summary_for_user(group, user))
+    return payload
 
 
 def _exam_editor_payload(exam, request=None):
@@ -9328,6 +9406,13 @@ def _cbt_bank_question_payload(question, bank=None):
     }
 
 
+def _exam_group_scope_for_user(user):
+    groups = _scope_to_user_tenant(ExamGroup.objects.select_related("class_group", "teacher"), user)
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return groups.none()
+    return groups
+
+
 def _admin_exam_pin_queryset(user):
     pins = _scope_to_user_tenant(
         ExamPin.objects.select_related(
@@ -9335,8 +9420,10 @@ def _admin_exam_pin_queryset(user):
             "exam__subject",
             "exam__class_group",
             "exam__exam_type",
+            "group",
+            "group__class_group",
             "created_by",
-        ).prefetch_related("usages"),
+        ).prefetch_related("usages", "group__group_exams__subject"),
         user,
     )
     if getattr(user, "role", None) not in ADMIN_ROLES:
@@ -9364,12 +9451,31 @@ def cbt_exam_pins(request):
         exam_id = request.query_params.get("exam_id")
         if exam_id:
             pins = pins.filter(exam_id=exam_id)
+        group_id = request.query_params.get("group_id")
+        if group_id:
+            pins = pins.filter(group_id=group_id)
         return Response({"success": True, "pins": [_exam_pin_payload(pin, include_usage=True) for pin in pins[:100]]})
 
-    exam = get_object_or_404(
-        _scope_to_user_tenant(Exam.objects.select_related("subject", "class_group", "exam_type"), user),
-        id=request.data.get("exam_id"),
-    )
+    exam_id = request.data.get("exam_id")
+    group_id = request.data.get("group_id")
+    if bool(exam_id) == bool(group_id):
+        return Response({"success": False, "message": "Provide exactly one of exam_id or group_id."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if exam_id:
+        exam = get_object_or_404(
+            _scope_to_user_tenant(Exam.objects.select_related("subject", "class_group", "exam_type"), user),
+            id=exam_id,
+        )
+        if exam.group_id:
+            return Response(
+                {"success": False, "message": "This exam belongs to an Exam Group - generate the PIN on the group instead."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        owner_tenant, owner_kwargs = exam.tenant, {"exam": exam, "group": None}
+    else:
+        group = get_object_or_404(_exam_group_scope_for_user(user), id=group_id)
+        owner_tenant, owner_kwargs = group.tenant, {"exam": None, "group": group}
+
     usage_policy = str(request.data.get("usage_policy") or ExamPin.USE_ONE_TIME).strip()
     if usage_policy not in {ExamPin.USE_ONE_TIME, ExamPin.USE_REUSABLE}:
         return Response({"success": False, "message": "usage_policy must be one_time or reusable."}, status=status.HTTP_400_BAD_REQUEST)
@@ -9383,11 +9489,11 @@ def cbt_exam_pins(request):
 
     plain_pin = _generate_unique_exam_pin()
     pin = ExamPin(
-        tenant=exam.tenant,
-        exam=exam,
+        tenant=owner_tenant,
         usage_policy=usage_policy,
         expires_at=expires_at,
         created_by=user,
+        **owner_kwargs,
     )
     pin.set_pin(plain_pin)
     pin.save()
@@ -9425,7 +9531,7 @@ def cbt_exam_pin_detail(request, pin_id):
         pin.last_regenerated_at = timezone.now()
         pin.last_regenerated_by = user
         pin.save(update_fields=["pin_digest", "pin_hash", "pin_preview", "plain_pin", "is_active", "deactivated_at", "deactivated_by", "last_regenerated_at", "last_regenerated_by", "updated_at"])
-        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, student=user, status=ExamPinUsage.STATUS_REGENERATED, message="PIN regenerated by administrator.")
+        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, group=pin.group, student=user, status=ExamPinUsage.STATUS_REGENERATED, message="PIN regenerated by administrator.")
         return Response({"success": True, "message": "Exam PIN regenerated.", "pin": _exam_pin_payload(pin, include_usage=True), "plain_pin": plain_pin})
 
     if action == "deactivate":
@@ -9433,7 +9539,7 @@ def cbt_exam_pin_detail(request, pin_id):
         pin.deactivated_at = timezone.now()
         pin.deactivated_by = user
         pin.save(update_fields=["is_active", "deactivated_at", "deactivated_by", "updated_at"])
-        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, student=user, status=ExamPinUsage.STATUS_DEACTIVATED, message="PIN deactivated by administrator.")
+        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, group=pin.group, student=user, status=ExamPinUsage.STATUS_DEACTIVATED, message="PIN deactivated by administrator.")
         return Response({"success": True, "message": "Exam PIN deactivated.", "pin": _exam_pin_payload(pin, include_usage=True)})
 
     if action == "reset":
@@ -9443,7 +9549,7 @@ def cbt_exam_pin_detail(request, pin_id):
         pin.deactivated_at = None
         pin.deactivated_by = None
         pin.save(update_fields=["reset_at", "reset_by", "is_active", "deactivated_at", "deactivated_by", "updated_at"])
-        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, student=user, status=ExamPinUsage.STATUS_RESET, message="PIN usage reset by administrator.")
+        ExamPinUsage.objects.create(tenant=pin.tenant, pin=pin, exam=pin.exam, group=pin.group, student=user, status=ExamPinUsage.STATUS_RESET, message="PIN usage reset by administrator.")
         return Response({"success": True, "message": "Exam PIN reset.", "pin": _exam_pin_payload(pin, include_usage=True)})
 
     if action in {"update", ""}:
@@ -10664,6 +10770,354 @@ def exam_detail(request, exam_id):
             "exam": _exam_editor_payload(exam, request),
         }
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_exam_group(request):
+    if request.user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only authorized administrators can create Exam Groups."}, status=status.HTTP_403_FORBIDDEN)
+
+    title = str(request.data.get("title", "")).strip()
+    if len(title) < 3:
+        return Response({"success": False, "message": "Exam Group title must be at least 3 characters."}, status=status.HTTP_400_BAD_REQUEST)
+
+    start_raw = request.data.get("start_date")
+    end_raw = request.data.get("end_date")
+    start_date = parse_datetime(start_raw) if start_raw else None
+    end_date = parse_datetime(end_raw) if end_raw else None
+    if not start_date or not end_date:
+        return Response({"success": False, "message": "Valid start_date and end_date are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if end_date <= start_date:
+        return Response({"success": False, "message": "Exam Group end date must be after start date."}, status=status.HTTP_400_BAD_REQUEST)
+
+    timing_mode = str(request.data.get("timing_mode") or ExamGroup.TIMING_GENERAL).strip()
+    if timing_mode not in {ExamGroup.TIMING_GENERAL, ExamGroup.TIMING_PER_SUBJECT}:
+        return Response({"success": False, "message": "timing_mode must be 'general' or 'per_subject'."}, status=status.HTTP_400_BAD_REQUEST)
+
+    group_duration = None
+    if timing_mode == ExamGroup.TIMING_GENERAL:
+        group_duration = _positive_duration_minutes(request.data.get("duration_minutes"))
+        if group_duration <= 0:
+            return Response({"success": False, "message": "Valid duration_minutes is required for a general-timing exam group."}, status=status.HTTP_400_BAD_REQUEST)
+
+    is_published = _to_bool(request.data.get("is_published"), default=False)
+
+    raw_subjects = request.data.get("subjects")
+    if isinstance(raw_subjects, str):
+        try:
+            raw_subjects = json.loads(raw_subjects)
+        except Exception:
+            return Response({"success": False, "message": "subjects payload must be valid JSON."}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(raw_subjects, list) or not raw_subjects:
+        return Response({"success": False, "message": "Add at least one subject to the Exam Group."}, status=status.HTTP_400_BAD_REQUEST)
+
+    tenant_obj = _tenant_for_model(ExamGroup, request.user, school_code=request.data.get("school_code"))
+    if not tenant_obj:
+        return Response(
+            {"success": False, "message": "Could not resolve tenant for exam group creation. Use a valid school code when signing in."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    class_group = None
+    class_id = request.data.get("class_id")
+    if class_id not in (None, ""):
+        class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), request.user), id=class_id)
+
+    shuffle_questions = _to_bool(request.data.get("shuffle_questions"), default=False)
+    group_instructions = str(request.data.get("instructions") or "").strip()
+
+    # Validate every subject up front, before creating anything, so a bad subject
+    # entry never leaves a half-created group + some member exams behind.
+    seen_subject_ids = set()
+    validated_subjects = []
+    for index, raw_item in enumerate(raw_subjects, start=1):
+        if not isinstance(raw_item, dict):
+            return Response({"success": False, "message": f"Subject {index} is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+        subject_id = raw_item.get("subject_id")
+        if subject_id in (None, ""):
+            return Response({"success": False, "message": f"Subject {index} is missing a subject_id."}, status=status.HTTP_400_BAD_REQUEST)
+        if subject_id in seen_subject_ids:
+            return Response({"success": False, "message": "Each subject can only appear once in an Exam Group."}, status=status.HTTP_400_BAD_REQUEST)
+        seen_subject_ids.add(subject_id)
+        subject = get_object_or_404(_scope_to_user_tenant(Subject.objects.all(), request.user), id=subject_id)
+        if _hide_from_admin_exam_subjects(subject):
+            return Response({"success": False, "message": "Physics and Chemistry are not available for admin exams."}, status=status.HTTP_400_BAD_REQUEST)
+
+        exam_format = str(raw_item.get("exam_format", "objective")).strip().lower() or "objective"
+        if exam_format not in dict(Exam.EXAM_FORMATS):
+            return Response({"success": False, "message": f"Subject {index}: exam_format must be one of objective, theory, mixed."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if timing_mode == ExamGroup.TIMING_PER_SUBJECT:
+            member_duration = _positive_duration_minutes(raw_item.get("duration_minutes"))
+            if member_duration <= 0:
+                return Response({"success": False, "message": f"Subject {index} ({subject.name}) needs a valid duration_minutes."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            member_duration = group_duration
+
+        cleaned_questions, questions_error = _clean_exam_questions_payload(
+            raw_item.get("questions") or [], exam_format, allow_empty=not is_published
+        )
+        if questions_error:
+            return Response({"success": False, "message": f"Subject {index} ({subject.name}): {questions_error}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        validated_subjects.append({
+            "subject": subject,
+            "exam_format": exam_format,
+            "duration_minutes": member_duration,
+            "instructions": str(raw_item.get("instructions") or "").strip(),
+            "cleaned_questions": cleaned_questions,
+        })
+
+    exam_type = ExamType.objects.filter(tenant=tenant_obj, name__iexact="Exam").first()
+    if not exam_type:
+        exam_type = ExamType.objects.create(tenant=tenant_obj, name="Exam")
+
+    with db_transaction.atomic():
+        group = ExamGroup.objects.create(
+            title=title,
+            class_group=class_group,
+            teacher=request.user,
+            timing_mode=timing_mode,
+            duration_minutes=group_duration,
+            start_date=start_date,
+            end_date=end_date,
+            instructions=group_instructions,
+            shuffle_questions=shuffle_questions,
+            is_published=is_published,
+            tenant=tenant_obj,
+        )
+        for subject_item in validated_subjects:
+            member = Exam.objects.create(
+                title=f"{title} — {subject_item['subject'].name}",
+                subject=subject_item["subject"],
+                class_group=class_group,
+                teacher=request.user,
+                exam_type=exam_type,
+                exam_format=subject_item["exam_format"],
+                start_date=start_date,
+                end_date=end_date,
+                duration_minutes=subject_item["duration_minutes"],
+                instructions=subject_item["instructions"] or group_instructions,
+                shuffle_questions=shuffle_questions,
+                is_published=is_published,
+                tenant=tenant_obj,
+                group=group,
+            )
+            groups_by_key = _question_groups_from_payload(subject_item["cleaned_questions"], tenant_obj, request.user, request)
+            created_questions = [
+                _exam_question_from_payload(item, tenant_obj, request.user, request, groups_by_key, idx)
+                for idx, item in enumerate(subject_item["cleaned_questions"], start=1)
+            ]
+            member.questions.add(*created_questions)
+
+    return Response(
+        {
+            "success": True,
+            "message": "Exam group created and published." if is_published else "Exam group draft saved.",
+            "group": _exam_group_summary_payload(group, request.user),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def exam_group_detail(request, group_id):
+    if request.user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Only authorized administrators can manage Exam Groups."}, status=status.HTTP_403_FORBIDDEN)
+
+    group = get_object_or_404(_exam_group_scope_for_user(request.user), id=group_id)
+
+    if request.method == "GET":
+        payload = _exam_group_summary_payload(group, request.user)
+        payload["subjects_detail"] = [
+            _exam_editor_payload(member, request)
+            for member in group.group_exams.select_related("subject", "class_group", "exam_type").prefetch_related("questions").order_by("id")
+        ]
+        return Response({"success": True, "group": payload})
+
+    if request.method == "DELETE":
+        if group.is_published:
+            return Response(
+                {"success": False, "message": "Published Exam Groups can only be unpublished, not deleted. Contact support if you need to remove a live group."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        with db_transaction.atomic():
+            group.group_exams.all().delete()
+            group.delete()
+        return Response({"success": True, "message": "Exam group deleted."})
+
+    # PATCH
+    update_fields = []
+    if "title" in request.data:
+        title = str(request.data.get("title", "")).strip()
+        if len(title) < 3:
+            return Response({"success": False, "message": "Exam Group title must be at least 3 characters."}, status=status.HTTP_400_BAD_REQUEST)
+        group.title = title
+        update_fields.append("title")
+
+    if "start_date" in request.data:
+        start_date = parse_datetime(request.data.get("start_date"))
+        if not start_date:
+            return Response({"success": False, "message": "Invalid start_date."}, status=status.HTTP_400_BAD_REQUEST)
+        group.start_date = start_date
+        update_fields.append("start_date")
+
+    if "end_date" in request.data:
+        end_date = parse_datetime(request.data.get("end_date"))
+        if not end_date:
+            return Response({"success": False, "message": "Invalid end_date."}, status=status.HTTP_400_BAD_REQUEST)
+        group.end_date = end_date
+        update_fields.append("end_date")
+
+    if "class_id" in request.data:
+        class_id = request.data.get("class_id")
+        group.class_group = None if class_id in (None, "") else get_object_or_404(_scope_to_user_tenant(Class.objects.all(), request.user), id=class_id)
+        update_fields.append("class_group")
+
+    if "timing_mode" in request.data:
+        timing_mode = str(request.data.get("timing_mode") or "").strip()
+        if timing_mode not in {ExamGroup.TIMING_GENERAL, ExamGroup.TIMING_PER_SUBJECT}:
+            return Response({"success": False, "message": "timing_mode must be 'general' or 'per_subject'."}, status=status.HTTP_400_BAD_REQUEST)
+        group.timing_mode = timing_mode
+        update_fields.append("timing_mode")
+
+    if "duration_minutes" in request.data and group.timing_mode == ExamGroup.TIMING_GENERAL:
+        duration_minutes = _positive_duration_minutes(request.data.get("duration_minutes"))
+        if duration_minutes <= 0:
+            return Response({"success": False, "message": "Valid duration_minutes is required for a general-timing exam group."}, status=status.HTTP_400_BAD_REQUEST)
+        group.duration_minutes = duration_minutes
+        update_fields.append("duration_minutes")
+
+    if "instructions" in request.data:
+        group.instructions = str(request.data.get("instructions") or "").strip()
+        update_fields.append("instructions")
+
+    if "shuffle_questions" in request.data:
+        group.shuffle_questions = _to_bool(request.data.get("shuffle_questions"), default=group.shuffle_questions)
+        update_fields.append("shuffle_questions")
+
+    if "is_published" in request.data:
+        group.is_published = _to_bool(request.data.get("is_published"), default=group.is_published)
+        update_fields.append("is_published")
+
+    if update_fields:
+        if "start_date" in update_fields or "end_date" in update_fields:
+            if not group.start_date or not group.end_date or group.end_date <= group.start_date:
+                return Response({"success": False, "message": "Exam Group end date must be after start date."}, status=status.HTTP_400_BAD_REQUEST)
+        group.save(update_fields=list(dict.fromkeys(update_fields)))
+        # Cascade shared fields onto every member exam - these are the fields
+        # every access-gating query (StudentCbtEntryView, ExamListView, offline
+        # sync) actually reads; ExamGroup's own copies are bookkeeping only.
+        member_update_fields = {}
+        if "start_date" in update_fields:
+            member_update_fields["start_date"] = group.start_date
+        if "end_date" in update_fields:
+            member_update_fields["end_date"] = group.end_date
+        if "class_group" in update_fields:
+            member_update_fields["class_group"] = group.class_group
+        if "shuffle_questions" in update_fields:
+            member_update_fields["shuffle_questions"] = group.shuffle_questions
+        if "is_published" in update_fields:
+            member_update_fields["is_published"] = group.is_published
+        if "duration_minutes" in update_fields and group.timing_mode == ExamGroup.TIMING_GENERAL:
+            member_update_fields["duration_minutes"] = group.duration_minutes
+        if member_update_fields:
+            group.group_exams.update(**member_update_fields)
+
+    if "subjects" in request.data:
+        raw_subjects = request.data.get("subjects")
+        if isinstance(raw_subjects, str):
+            try:
+                raw_subjects = json.loads(raw_subjects)
+            except Exception:
+                return Response({"success": False, "message": "subjects payload must be valid JSON."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(raw_subjects, list) or not raw_subjects:
+            return Response({"success": False, "message": "An Exam Group needs at least one subject."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_members = {member.id: member for member in group.group_exams.all()}
+        incoming_ids = {item.get("exam_id") for item in raw_subjects if isinstance(item, dict) and item.get("exam_id")}
+        removed_ids = set(existing_members) - incoming_ids
+        for removed_id in removed_ids:
+            member = existing_members[removed_id]
+            if member.pin_usage_events.exists() or ExamAttempt.objects.filter(exam=member).exists():
+                return Response(
+                    {"success": False, "message": f"Cannot remove {member.subject.name if member.subject else member.title} - students have already attempted it."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        tenant_obj = group.tenant or _tenant_for_model(Exam, request.user, school_code=request.data.get("school_code"))
+        exam_type = ExamType.objects.filter(tenant=tenant_obj, name__iexact="Exam").first()
+        if not exam_type:
+            exam_type = ExamType.objects.create(tenant=tenant_obj, name="Exam")
+
+        with db_transaction.atomic():
+            for removed_id in removed_ids:
+                existing_members[removed_id].delete()
+
+            for raw_item in raw_subjects:
+                if not isinstance(raw_item, dict):
+                    return Response({"success": False, "message": "Each subject entry must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+                exam_id = raw_item.get("exam_id")
+                exam_format = str(raw_item.get("exam_format", "objective")).strip().lower() or "objective"
+                if exam_format not in dict(Exam.EXAM_FORMATS):
+                    return Response({"success": False, "message": "exam_format must be one of objective, theory, mixed."}, status=status.HTTP_400_BAD_REQUEST)
+
+                if group.timing_mode == ExamGroup.TIMING_PER_SUBJECT:
+                    member_duration = _positive_duration_minutes(raw_item.get("duration_minutes"))
+                    if member_duration <= 0:
+                        return Response({"success": False, "message": "Each subject needs a valid duration_minutes."}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    member_duration = group.duration_minutes
+
+                cleaned_questions, questions_error = _clean_exam_questions_payload(
+                    raw_item.get("questions") or [], exam_format, allow_empty=not group.is_published
+                )
+                if questions_error:
+                    return Response({"success": False, "message": questions_error}, status=status.HTTP_400_BAD_REQUEST)
+
+                if exam_id and exam_id in existing_members:
+                    # subject_id is intentionally immutable on an existing member -
+                    # changing it would silently orphan any attempt history under a
+                    # relabeled subject.
+                    member = existing_members[exam_id]
+                    member.exam_format = exam_format
+                    member.duration_minutes = member_duration
+                    member.instructions = str(raw_item.get("instructions") or "").strip() or member.instructions
+                    member.save(update_fields=["exam_format", "duration_minutes", "instructions", "updated_at"])
+                    _sync_exam_questions(member, cleaned_questions, tenant_obj, request.user, request)
+                else:
+                    subject_id = raw_item.get("subject_id")
+                    if subject_id in (None, ""):
+                        return Response({"success": False, "message": "A new subject entry needs a subject_id."}, status=status.HTTP_400_BAD_REQUEST)
+                    subject = get_object_or_404(_scope_to_user_tenant(Subject.objects.all(), request.user), id=subject_id)
+                    if _hide_from_admin_exam_subjects(subject):
+                        return Response({"success": False, "message": "Physics and Chemistry are not available for admin exams."}, status=status.HTTP_400_BAD_REQUEST)
+                    member = Exam.objects.create(
+                        title=f"{group.title} — {subject.name}",
+                        subject=subject,
+                        class_group=group.class_group,
+                        teacher=request.user,
+                        exam_type=exam_type,
+                        exam_format=exam_format,
+                        start_date=group.start_date,
+                        end_date=group.end_date,
+                        duration_minutes=member_duration,
+                        instructions=str(raw_item.get("instructions") or "").strip() or group.instructions,
+                        shuffle_questions=group.shuffle_questions,
+                        is_published=group.is_published,
+                        tenant=tenant_obj,
+                        group=group,
+                    )
+                    groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
+                    created_questions = [
+                        _exam_question_from_payload(item, tenant_obj, request.user, request, groups_by_key, idx)
+                        for idx, item in enumerate(cleaned_questions, start=1)
+                    ]
+                    member.questions.add(*created_questions)
+
+    return Response({"success": True, "message": "Exam group updated.", "group": _exam_group_summary_payload(group, request.user)})
 
 
 @api_view(["POST"])
