@@ -2209,6 +2209,490 @@ export function TeacherExamBuilder({
   );
 }
 
+const defaultQuestionTypeForFormat = (examFormat) => (examFormat === "theory" ? "short_answer" : "mcq");
+
+const normalizeGroupBankQuestion = (item) => {
+  const options = [...(item.options || [])];
+  while (options.length < 4) options.push("");
+  const correctIndex = Math.max(0, options.findIndex((option) => option === item.correct_answer));
+  return {
+    id: `bank-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    cbtBankQuestionId: item.id,
+    sourceLabel: item.bank_name || "CBT question bank",
+    questionType: "mcq",
+    text: item.text || "",
+    marks: String(item.points || 1),
+    options,
+    correctIndex,
+    explanation: item.explanation || "",
+    groupKey: "",
+    group: { title: "", group_type: "passage", passage_text: "", imagePreview: "" },
+  };
+};
+
+// Compact per-subject board -> subject -> topic -> count picker, mirroring
+// TeacherExamBuilder's own central-bank import (same three endpoints), just
+// scoped to whichever subject row it's mounted under.
+function ExamGroupBankPicker({ session, existingBankIds, onImport }) {
+  const [boards, setBoards] = useState([]);
+  const [board, setBoard] = useState("");
+  const [subjects, setSubjects] = useState([]);
+  const [subject, setSubject] = useState("");
+  const [topics, setTopics] = useState([]);
+  const [topicId, setTopicId] = useState("");
+  const [count, setCount] = useState("10");
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!session) return;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", "/api/app/exams/question-bank/sections/");
+        setBoards(result.boards || []);
+      } catch {
+        setBoards([]);
+      }
+    })();
+  }, [session]);
+
+  useEffect(() => {
+    setSubject("");
+    setSubjects([]);
+    setTopicId("");
+    setTopics([]);
+    if (!session || !board) return;
+    (async () => {
+      try {
+        const result = await requestJson(session, "GET", `/api/app/exams/question-bank/sections/subjects/?board=${encodeURIComponent(board)}`);
+        setSubjects(result.subjects || []);
+      } catch (loadError) {
+        setError(loadError.message || "Could not load subjects for that board.");
+      }
+    })();
+  }, [session, board]);
+
+  useEffect(() => {
+    setTopicId("");
+    setTopics([]);
+    if (!session || !board || !subject) return;
+    (async () => {
+      try {
+        const params = new URLSearchParams({ board, subject });
+        const result = await requestJson(session, "GET", `/api/app/exams/question-bank/sections/topics/?${params.toString()}`);
+        setTopics(result.topics || []);
+      } catch (loadError) {
+        setError(loadError.message || "Could not load topics for that subject.");
+      }
+    })();
+  }, [session, board, subject]);
+
+  if (!boards.length) return null;
+
+  const handleImport = async () => {
+    const numericCount = Number(count);
+    if (!board || !subject || !topicId) {
+      setError("Select a board, subject, and topic first.");
+      return;
+    }
+    if (!Number.isInteger(numericCount) || numericCount < 1) {
+      setError("Enter how many questions you want.");
+      return;
+    }
+    setError("");
+    setImporting(true);
+    try {
+      const result = await requestJson(session, "POST", "/api/app/exams/question-bank/import/", {
+        board,
+        subject,
+        topic_id: topicId,
+        count: numericCount,
+        exclude_ids: existingBankIds,
+      });
+      onImport((result.questions || []).map(normalizeGroupBankQuestion));
+    } catch (importError) {
+      setError(importError.message || "Could not import questions from the central bank.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="app-panel eg-bank-picker">
+      <h4>Import from Question Bank</h4>
+      <div className="panel-form-grid">
+        <label className="panel-field">
+          Board
+          <select value={board} onChange={(event) => setBoard(event.target.value)}>
+            <option value="">Select board</option>
+            {boards.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="panel-field">
+          Subject
+          <select value={subject} onChange={(event) => setSubject(event.target.value)} disabled={!board}>
+            <option value="">Select subject</option>
+            {subjects.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="panel-field">
+          Topic
+          <select value={topicId} onChange={(event) => setTopicId(event.target.value)} disabled={!subject}>
+            <option value="">Select topic</option>
+            {topics.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <label className="panel-field">
+          Number of questions
+          <input type="number" min="1" value={count} onChange={(event) => setCount(event.target.value)} />
+        </label>
+      </div>
+      <button type="button" className="btn-secondary" onClick={handleImport} disabled={importing}>
+        {importing ? <><Spinner /> Importing...</> : "Import questions"}
+      </button>
+      {error ? <p className="form-feedback error">{error}</p> : null}
+    </div>
+  );
+}
+
+function ExamGroupQuestionRow({ question, index, examFormat, onUpdate, onRemove }) {
+  const isTheory = THEORY_QUESTION_TYPES.has(question.questionType);
+  return (
+    <div className="app-panel eg-question-row">
+      <div className="panel-form-grid">
+        {examFormat === "mixed" ? (
+          <label className="panel-field">
+            Type
+            <select value={question.questionType} onChange={(event) => onUpdate({ questionType: event.target.value, correctIndex: 0 })}>
+              {Object.entries(QUESTION_TYPE_LABELS).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+            </select>
+          </label>
+        ) : null}
+        <label className="panel-field full">
+          {`Question ${index + 1}`}{question.sourceLabel ? ` — from ${question.sourceLabel}` : ""}
+          <textarea value={question.text} onChange={(event) => onUpdate({ text: event.target.value })} rows={2} />
+        </label>
+        {!isTheory ? (
+          <>
+            {[0, 1, 2, 3].map((optionIndex) => (
+              <label className="panel-field" key={optionIndex}>
+                {`Option ${String.fromCharCode(65 + optionIndex)}`}
+                <input
+                  value={question.options[optionIndex] || ""}
+                  onChange={(event) => {
+                    const options = [...question.options];
+                    options[optionIndex] = event.target.value;
+                    onUpdate({ options });
+                  }}
+                />
+              </label>
+            ))}
+            <label className="panel-field">
+              Correct Answer
+              <select value={question.correctIndex} onChange={(event) => onUpdate({ correctIndex: Number(event.target.value) })}>
+                {question.options.map((option, optionIndex) => (
+                  <option key={optionIndex} value={optionIndex}>{option || `Option ${String.fromCharCode(65 + optionIndex)}`}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
+        <label className="panel-field">
+          Marks
+          <input type="number" min="1" value={question.marks} onChange={(event) => onUpdate({ marks: event.target.value })} />
+        </label>
+      </div>
+      <button type="button" className="table-action danger" onClick={onRemove}>Remove question</button>
+    </div>
+  );
+}
+
+function ExamGroupSubjectPanel({ session, row, subjectOptions, timingMode, onUpdateRow, onRemoveRow, canRemove }) {
+  const updateQuestion = (questionId, patch) => {
+    onUpdateRow(row.rowId, {
+      questions: row.questions.map((item) => (item.id === questionId ? { ...item, ...patch } : item)),
+    });
+  };
+  const addQuestion = () => {
+    onUpdateRow(row.rowId, {
+      questions: [...row.questions, { ...newBuilderQuestion(defaultQuestionTypeForFormat(row.examFormat)) }],
+    });
+  };
+  const removeQuestion = (questionId) => {
+    onUpdateRow(row.rowId, { questions: row.questions.filter((item) => item.id !== questionId) });
+  };
+  const existingBankIds = row.questions.map((item) => item.cbtBankQuestionId).filter(Boolean);
+
+  return (
+    <article className="app-panel eg-subject-panel">
+      <div className="panel-form-grid">
+        <label className="panel-field">
+          Subject
+          <select value={row.subjectId} onChange={(event) => onUpdateRow(row.rowId, { subjectId: event.target.value })}>
+            <option value="">Select subject</option>
+            {subjectOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <label className="panel-field">
+          Format
+          <select
+            value={row.examFormat}
+            onChange={(event) => onUpdateRow(row.rowId, { examFormat: event.target.value })}
+          >
+            <option value="objective">Objective (MCQ)</option>
+            <option value="theory">Theory</option>
+            <option value="mixed">Mixed (Objective + Theory)</option>
+          </select>
+        </label>
+        {timingMode === ExamGroupBuilder.TIMING_PER_SUBJECT ? (
+          <label className="panel-field">
+            Duration (minutes)
+            <input type="number" min="1" value={row.duration} onChange={(event) => onUpdateRow(row.rowId, { duration: event.target.value })} />
+          </label>
+        ) : null}
+        {canRemove ? (
+          <button type="button" className="table-action danger" onClick={() => onRemoveRow(row.rowId)}>Remove subject</button>
+        ) : null}
+      </div>
+
+      <ExamGroupBankPicker
+        session={session}
+        existingBankIds={existingBankIds}
+        onImport={(imported) => onUpdateRow(row.rowId, { questions: [...row.questions, ...imported] })}
+      />
+
+      <div className="exam-builder-list">
+        {row.questions.map((question, index) => (
+          <ExamGroupQuestionRow
+            key={question.id}
+            question={question}
+            index={index}
+            examFormat={row.examFormat}
+            onUpdate={(patch) => updateQuestion(question.id, patch)}
+            onRemove={() => removeQuestion(question.id)}
+          />
+        ))}
+      </div>
+      <button type="button" className="btn-secondary" onClick={addQuestion}>+ Add question manually</button>
+    </article>
+  );
+}
+
+let examGroupRowSeq = 0;
+const newExamGroupRow = (examFormat = "objective") => ({
+  rowId: `subject-row-${Date.now()}-${examGroupRowSeq++}`,
+  subjectId: "",
+  examFormat,
+  duration: "60",
+  questions: [{ ...newBuilderQuestion(defaultQuestionTypeForFormat(examFormat)) }],
+});
+
+/* Bundles multiple subject-exams under one shared Exam PIN - each subject
+   still goes through create_exam_group as a fully normal Exam row (own
+   questions, own grading), so this component's only job is collecting one
+   payload covering all of them plus the group-level timing choice. */
+export function ExamGroupBuilder({
+  session,
+  classOptions = [],
+  subjectOptions = [],
+  onCreateExamGroup,
+  onBackToList,
+}) {
+  const [groupForm, setGroupForm] = useState({
+    title: "",
+    classId: "",
+    timingMode: ExamGroupBuilder.TIMING_GENERAL,
+    duration: "60",
+    startDate: "",
+    endDate: "",
+    instructions: "",
+  });
+  const [rows, setRows] = useState([newExamGroupRow()]);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+  const [createdPin, setCreatedPin] = useState(null);
+
+  const setGroupField = (field, value) => setGroupForm((previous) => ({ ...previous, [field]: value }));
+  const updateRow = (rowId, patch) => setRows((previous) => previous.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)));
+  const addRow = () => setRows((previous) => [...previous, newExamGroupRow()]);
+  const removeRow = (rowId) => setRows((previous) => previous.filter((row) => row.rowId !== rowId));
+
+  const submitGroup = async ({ publish }) => {
+    setError("");
+    setFeedback("");
+    if (!groupForm.title.trim() || !groupForm.startDate || !groupForm.endDate) {
+      setError("Exam Group title, start date, and end date are required.");
+      return;
+    }
+    if (groupForm.timingMode === ExamGroupBuilder.TIMING_GENERAL && (!Number(groupForm.duration) || Number(groupForm.duration) <= 0)) {
+      setError("Enter a general exam duration for the group.");
+      return;
+    }
+    if (!rows.length || rows.some((row) => !row.subjectId)) {
+      setError("Every subject row needs a subject selected.");
+      return;
+    }
+    const subjectIds = rows.map((row) => row.subjectId);
+    if (new Set(subjectIds).size !== subjectIds.length) {
+      setError("Each subject can only be added once to an Exam Group.");
+      return;
+    }
+    if (groupForm.timingMode === ExamGroupBuilder.TIMING_PER_SUBJECT && rows.some((row) => !Number(row.duration) || Number(row.duration) <= 0)) {
+      setError("Enter a duration for every subject.");
+      return;
+    }
+    if (publish && rows.some((row) => row.questions.length === 0)) {
+      setError("Every subject needs at least one question before publishing.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        title: groupForm.title.trim(),
+        class_id: groupForm.classId || "",
+        timing_mode: groupForm.timingMode,
+        duration_minutes: groupForm.timingMode === ExamGroupBuilder.TIMING_GENERAL ? Number(groupForm.duration) : undefined,
+        start_date: makeDateTime(groupForm.startDate),
+        end_date: makeDateTime(groupForm.endDate),
+        instructions: groupForm.instructions,
+        is_published: publish,
+        subjects: rows.map((row) => ({
+          subject_id: row.subjectId,
+          exam_format: row.examFormat,
+          duration_minutes: groupForm.timingMode === ExamGroupBuilder.TIMING_PER_SUBJECT ? Number(row.duration) : undefined,
+          questions: row.questions.map(buildPreparedQuestion),
+        })),
+      };
+      const result = await onCreateExamGroup(payload);
+      if (publish && result?.group?.id) {
+        const pinResult = await requestJson(session, "POST", "/api/app/exams/pins/", {
+          group_id: result.group.id,
+          usage_policy: "reusable",
+          expires_at: payload.end_date,
+        });
+        setCreatedPin({ pin: pinResult.plain_pin || "", groupTitle: payload.title });
+        setFeedback("Exam Group published. Share the CBT PIN with eligible students.");
+      } else {
+        setFeedback(result?.message || (publish ? "Exam Group published." : "Exam Group draft saved."));
+      }
+    } catch (submitError) {
+      setError(submitError.message || "Could not save the Exam Group.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <div className="screen-hero-title-row">
+          <h2>Exam Group</h2>
+          {onBackToList ? <button type="button" className="btn-secondary" onClick={onBackToList}>Back</button> : null}
+        </div>
+        <p>Bundle multiple subjects under one shared Exam PIN. Students enter the PIN once and choose which subject to take.</p>
+      </div>
+
+      {(feedback || error) ? (
+        <div className={`form-feedback ${error ? "error" : "success"}`}>{error || feedback}</div>
+      ) : null}
+
+      <article className="app-panel">
+        <div className="panel-form-grid">
+          <label className="panel-field full">
+            Exam Group Title
+            <input value={groupForm.title} onChange={(event) => setGroupField("title", event.target.value)} placeholder="SS2 First Term Mock Exams" />
+          </label>
+          <label className="panel-field">
+            Class
+            <select value={groupForm.classId} onChange={(event) => setGroupField("classId", event.target.value)}>
+              <option value="">All classes</option>
+              {classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}
+            </select>
+          </label>
+          <label className="panel-field">
+            Timing
+            <select value={groupForm.timingMode} onChange={(event) => setGroupField("timingMode", event.target.value)}>
+              <option value={ExamGroupBuilder.TIMING_GENERAL}>One duration for all subjects</option>
+              <option value={ExamGroupBuilder.TIMING_PER_SUBJECT}>Individual duration per subject</option>
+            </select>
+          </label>
+          {groupForm.timingMode === ExamGroupBuilder.TIMING_GENERAL ? (
+            <label className="panel-field">
+              Duration (minutes, applies to every subject)
+              <input type="number" min="1" value={groupForm.duration} onChange={(event) => setGroupField("duration", event.target.value)} />
+            </label>
+          ) : null}
+          <label className="panel-field">
+            Start Date
+            <input type="datetime-local" value={groupForm.startDate} onChange={(event) => setGroupField("startDate", event.target.value)} />
+          </label>
+          <label className="panel-field">
+            End Date
+            <input type="datetime-local" value={groupForm.endDate} onChange={(event) => setGroupField("endDate", event.target.value)} />
+          </label>
+          <label className="panel-field full">
+            Instructions for Students
+            <textarea value={groupForm.instructions} onChange={(event) => setGroupField("instructions", event.target.value)} rows={3} />
+          </label>
+        </div>
+      </article>
+
+      {rows.map((row) => (
+        <ExamGroupSubjectPanel
+          key={row.rowId}
+          session={session}
+          row={row}
+          subjectOptions={subjectOptions}
+          timingMode={groupForm.timingMode}
+          onUpdateRow={updateRow}
+          onRemoveRow={removeRow}
+          canRemove={rows.length > 1}
+        />
+      ))}
+      <button type="button" className="btn-secondary" onClick={addRow}>+ Add subject</button>
+
+      <div className="panel-form-actions">
+        <button type="button" disabled={saving} onClick={() => submitGroup({ publish: false })}>
+          {saving ? <><Spinner /> Saving...</> : "Save Draft"}
+        </button>
+        <button type="button" className="btn-secondary" disabled={saving} onClick={() => submitGroup({ publish: true })}>
+          Publish Exam Group
+        </button>
+      </div>
+
+      {createdPin ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={(event) => { if (event.target === event.currentTarget) setCreatedPin(null); }}>
+          <article className="app-panel edit-modal-card">
+            <div className="edit-modal-head">
+              <div>
+                <h3>Exam Group PIN</h3>
+                <p className="panel-sub">{createdPin.groupTitle}</p>
+              </div>
+              <button type="button" className="edit-modal-close" onClick={() => setCreatedPin(null)} aria-label="Close">×</button>
+            </div>
+            <p className="eg-pin-display">{createdPin.pin}</p>
+            <div className="panel-form-actions">
+              <button
+                type="button"
+                onClick={async () => {
+                  try { await navigator.clipboard.writeText(createdPin.pin); } catch { /* clipboard may be unavailable */ }
+                }}
+              >
+                Copy PIN
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setCreatedPin(null)}>Done</button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+ExamGroupBuilder.TIMING_GENERAL = "general";
+ExamGroupBuilder.TIMING_PER_SUBJECT = "per_subject";
+
 // Self-contained: fetches its own queue and per-attempt answers, so it drops
 // into either dashboard as <TheoryGradingPanel session={session} /> with no
 // extra prop-threading through App.jsx - unlike TeacherExamBuilder there is

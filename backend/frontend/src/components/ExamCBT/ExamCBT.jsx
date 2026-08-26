@@ -654,8 +654,14 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
   }
 
   if (completed) {
-    const returnPath = session?.auth_mode === "cbt_entry" ? "/student-cbt" : "/dashboard";
-    const returnLabel = session?.auth_mode === "cbt_entry" ? "Next Student" : "Return to Dashboard";
+    // A student mid-way through an Exam Group (session.group_id set) must not
+    // be signed out here - the same access token is still needed to start the
+    // next subject, so this returns to the group's subject picker instead of
+    // clearing the kiosk session; the picker itself owns the "all subjects
+    // done, sign out" affordance.
+    const inGroup = session?.auth_mode === "cbt_entry" && session?.group_id;
+    const returnPath = inGroup ? `/exam-group/${session.group_id}` : session?.auth_mode === "cbt_entry" ? "/student-cbt" : "/dashboard";
+    const returnLabel = inGroup ? "Back to Subjects" : session?.auth_mode === "cbt_entry" ? "Next Student" : "Return to Dashboard";
     return (
       <div className="exam-completed-screen">
         <div className="exam-completed-card">
@@ -667,7 +673,7 @@ const ExamCBT = ({ attemptId, session, onNavigate }) => {
             type="button"
             className="btn-home"
             onClick={() => {
-              if (session?.auth_mode === "cbt_entry") {
+              if (session?.auth_mode === "cbt_entry" && !inGroup) {
                 window.sessionStorage.removeItem("schooldom.session");
               }
               onNavigate?.(returnPath, { replace: true });

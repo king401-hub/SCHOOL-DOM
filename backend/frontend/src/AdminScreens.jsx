@@ -37,7 +37,7 @@ import {
   ReportCardSheet,
   Popup,
 } from "./AppShared";
-import { TeacherExamBuilder, TheoryGradingPanel } from "./TeacherExamPanels";
+import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
@@ -3512,10 +3512,11 @@ function AdminGradingSystemPanel({ onLoad, onSave, onDelete }) {
   );
 }
 
-function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, onDeleteExam, session, onCreateExam, onUpdateExam, onLoadGradingScales, onSaveGradingScale, onDeleteGradingScale }) {
+function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, onDeleteResult, onDeleteExam, session, onCreateExam, onUpdateExam, onCreateExamGroup, onLoadGradingScales, onSaveGradingScale, onDeleteGradingScale }) {
   const results = data?.exam_results || data?.submitted_results || data?.cbt_results || data?.results || [];
   const autoSubmissions = data?.auto_submitted_exams || data?.auto_submissions || [];
   const exams = data?.exams || data?.available_exams || [];
+  const examGroups = data?.exam_groups || [];
   const classOptions = data?.options?.classes || data?.classes || [];
   const subjectOptions = (data?.options?.subjects || data?.subjects || []).filter((subject) => {
     const code = `${subject?.code || ""}`.trim().toUpperCase();
@@ -3550,6 +3551,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [pinBusyId, setPinBusyId] = useState("");
   const [pinFeedback, setPinFeedback] = useState("");
   const [pinError, setPinError] = useState("");
+  const [groupPins, setGroupPins] = useState({});
+  const [visibleGroupPins, setVisibleGroupPins] = useState({});
+  const [groupPinBusyId, setGroupPinBusyId] = useState("");
+  const [groupPinFeedback, setGroupPinFeedback] = useState("");
+  const [groupPinError, setGroupPinError] = useState("");
   const [deleteExamBusyId, setDeleteExamBusyId] = useState("");
   const [deleteExamError, setDeleteExamError] = useState("");
   const [deleteExamFeedback, setDeleteExamFeedback] = useState("");
@@ -3685,6 +3691,82 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             disabled={pinBusyId === String(examId)}
           >
             {pinBusyId === String(examId) ? <><Spinner size={12} /> Generating...</> : hasActivePin ? "New PIN" : "Generate"}
+          </button>
+        ) : (
+          <small>Publish first</small>
+        )}
+      </div>
+    );
+  };
+
+  const generateGroupPin = async (group) => {
+    if (!group?.id) return;
+    setGroupPinBusyId(String(group.id));
+    setGroupPinFeedback("");
+    setGroupPinError("");
+    try {
+      const result = await requestJson(session, "POST", "/api/app/exams/pins/", {
+        group_id: group.id,
+        usage_policy: "reusable",
+        expires_at: group.end_date || "",
+      });
+      const plainPin = result.plain_pin || "";
+      setGroupPins((previous) => ({
+        ...previous,
+        [group.id]: {
+          plain: result.pin?.plain_pin || plainPin,
+          preview: result.pin?.pin_preview || plainPin.slice(-4),
+        },
+      }));
+      setVisibleGroupPins((previous) => ({ ...previous, [group.id]: false }));
+      setGroupPinFeedback(`PIN generated for ${group.title || "exam group"}.`);
+      onRetry?.();
+    } catch (pinGenerateError) {
+      setGroupPinError(pinGenerateError.message || "Could not generate PIN.");
+    } finally {
+      setGroupPinBusyId("");
+    }
+  };
+
+  const toggleGroupPin = (groupId) => {
+    setVisibleGroupPins((previous) => ({ ...previous, [groupId]: !previous[groupId] }));
+  };
+
+  const renderGroupPinCell = (group) => {
+    const generated = groupPins[group.id];
+    const revealablePin = generated?.plain || group.active_pin_plain || "";
+    const hasActivePin = Boolean(group.pin_required || generated?.plain);
+    const preview = generated?.preview || group.active_pin_preview || "";
+    const canReveal = Boolean(revealablePin);
+    const isVisible = Boolean(visibleGroupPins[group.id] && canReveal);
+    const displayValue = isVisible
+      ? revealablePin
+      : hasActivePin
+        ? "•".repeat(Math.max(6, String(preview || revealablePin || "").length || 6))
+        : "No PIN";
+
+    return (
+      <div className="exam-pin-cell">
+        <span className={`exam-pin-code ${hasActivePin ? "" : "empty"}`}>{displayValue}</span>
+        {hasActivePin ? (
+          <button
+            type="button"
+            className="exam-pin-eye"
+            onClick={() => (canReveal ? toggleGroupPin(group.id) : setGroupPinError("This PIN was created before full PIN viewing was enabled. Generate a new PIN once to make it viewable anytime."))}
+            title={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "Regenerate this old PIN once to view it anytime"}
+            aria-label={canReveal ? (isVisible ? "Hide PIN" : "Show PIN") : "PIN cannot be revealed yet"}
+          >
+            <EyeIcon closed={isVisible} />
+          </button>
+        ) : null}
+        {group.is_published ? (
+          <button
+            type="button"
+            className={`table-action ${hasActivePin ? "active" : ""}`}
+            onClick={() => generateGroupPin(group)}
+            disabled={groupPinBusyId === String(group.id)}
+          >
+            {groupPinBusyId === String(group.id) ? <><Spinner size={12} /> Generating...</> : hasActivePin ? "New PIN" : "Generate"}
           </button>
         ) : (
           <small>Publish first</small>
@@ -4066,6 +4148,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         <button type="button" className={`table-action ${activeView === "builder" ? "active" : ""}`} onClick={() => setActiveView("builder")}>
           Set Exam
         </button>
+        <button type="button" className={`table-action ${activeView === "exam-group" ? "active" : ""}`} onClick={() => setActiveView("exam-group")}>
+          Exam Group
+        </button>
         <button type="button" className={`table-action ${activeView === "results" ? "active" : ""}`} onClick={() => setActiveView("results")}>
           View Results
         </button>
@@ -4170,6 +4255,60 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
               </table>
             ) : (
               <p className="panel-empty">No admin CBT exams yet.</p>
+            )}
+          </article>
+        </>
+      ) : null}
+
+      {activeView === "exam-group" ? (
+        <>
+          <ExamGroupBuilder
+            session={session}
+            classOptions={classOptions}
+            subjectOptions={subjectOptions}
+            onCreateExamGroup={onCreateExamGroup}
+            onBackToList={() => setActiveView("exam-group")}
+          />
+          <article className="app-panel">
+            <div className="panel-head">
+              <div>
+                <h3>Existing Exam Groups</h3>
+                <small>Each group bundles several subjects under one shared PIN.</small>
+              </div>
+            </div>
+            {groupPinError ? <p className="form-feedback error">{groupPinError}</p> : null}
+            {groupPinFeedback ? <p className="form-feedback success">{groupPinFeedback}</p> : null}
+            {examGroups.length ? (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Exam Group</th>
+                    <th>Class</th>
+                    <th>Subjects</th>
+                    <th>Timing</th>
+                    <th>Status</th>
+                    <th>PIN</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {examGroups.map((group) => (
+                    <tr key={group.id}>
+                      <td>{group.title}</td>
+                      <td>{group.class_name || "All classes"}</td>
+                      <td>{(group.subjects || []).map((subject) => subject.subject).join(", ") || "-"}</td>
+                      <td>{group.timing_mode === "per_subject" ? "Individual per subject" : `${group.duration_minutes || "-"} min (all subjects)`}</td>
+                      <td>
+                        <span className={`student-status-pill status-${group.is_published ? "present" : "unmarked"}`}>
+                          {group.is_published ? "Published" : "Draft"}
+                        </span>
+                      </td>
+                      <td>{renderGroupPinCell(group)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="panel-empty">No Exam Groups yet.</p>
             )}
           </article>
         </>

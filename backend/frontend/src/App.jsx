@@ -22,6 +22,7 @@ import { AttendanceModule, IdCardAttendanceScanner, ScannerAppDownloadBanner, St
 import ExamCBT from "./components/ExamCBT/ExamCBT";
 import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
+import ExamGroupPicker from "./components/ExamCBT/ExamGroupPicker";
 import FormattedTextarea from "./components/FormattedTextarea";
 import SidebarSearch from "./components/SidebarSearch";
 import SignaturePad from "./components/SignaturePad";
@@ -338,24 +339,46 @@ function StudentCbtEntry({ onEntry }) {
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.success || !payload?.session || !payload?.attempt_id) {
+      // A group PIN entry deliberately has no attempt_id yet - the student
+      // hasn't picked a subject - so that check must not apply to it.
+      if (!response.ok || !payload?.success || !payload?.session || !(payload?.is_group ? payload?.exams : payload?.attempt_id)) {
         throw new Error(payload?.message || payload?.error || "Could not open this CBT exam.");
       }
-      const nextSession = { ...payload.session, auth_mode: "cbt_entry" };
+      const nextSession = {
+        ...payload.session,
+        auth_mode: "cbt_entry",
+        ...(payload.is_group ? { group_exams: payload.exams, group_title: payload.group?.title || "" } : {}),
+      };
       window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
       const cache = readCbtEntryCache();
-      cache[cacheKey] = {
-        attempt_id: payload.attempt_id,
-        exam_id: payload.exam_id,
-        session: nextSession,
-        student_id: studentId.trim(),
-        exam_pin: normalizedPin,
-        cached_at: new Date().toISOString(),
-      };
+      cache[cacheKey] = payload.is_group
+        ? {
+            is_group: true,
+            group: payload.group,
+            exams: payload.exams,
+            session: nextSession,
+            student_id: studentId.trim(),
+            exam_pin: normalizedPin,
+            cached_at: new Date().toISOString(),
+          }
+        : {
+            attempt_id: payload.attempt_id,
+            exam_id: payload.exam_id,
+            session: nextSession,
+            student_id: studentId.trim(),
+            exam_pin: normalizedPin,
+            cached_at: new Date().toISOString(),
+          };
       writeCbtEntryCache(cache);
-      onEntry?.(nextSession, payload.attempt_id);
+      onEntry?.(nextSession, payload.attempt_id, payload);
     } catch (entryError) {
       const cached = readCbtEntryCache()[cacheKey];
+      if (cached?.is_group && cached?.session) {
+        window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached.session));
+        setOfflineNotice("Offline mode: reopening the last exam group saved on this computer.");
+        onEntry?.({ ...cached.session, auth_mode: "cbt_entry" }, null, { is_group: true, group: cached.group, exams: cached.exams });
+        return;
+      }
       if (cached?.attempt_id && cached?.session) {
         window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached.session));
         setOfflineNotice("Offline mode: reopening the last exam package saved on this computer.");
@@ -7517,6 +7540,23 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleCreateExamGroup = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/exam-groups/create/", payload);
+      addAdminNotification({
+        category: "Exams",
+        module: "Exam Group Builder",
+        action: `Created exam group ${payload?.title || "record"}.`,
+        status: payload?.is_published ? "Published" : "Draft",
+        priority: "High",
+        tone: "success",
+      });
+      await Promise.all([loadScreen("/exams", true), loadScreen("/dashboard", true)]);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleLoadGradingScales = useCallback(
     async () => requestJson(session, "GET", "/api/app/results/grades/"),
     [session]
@@ -8122,6 +8162,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         session={session}
         onCreateExam={handleAdminCreateExam}
         onUpdateExam={handleAdminUpdateExam}
+        onCreateExamGroup={handleCreateExamGroup}
         onLoadGradingScales={handleLoadGradingScales}
         onSaveGradingScale={handleSaveGradingScale}
         onDeleteGradingScale={handleDeleteGradingScale}
@@ -9546,8 +9587,12 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
   );
 
   const handleCbtEntry = useCallback(
-    (nextSession, attemptId) => {
+    (nextSession, attemptId, payload) => {
       setSession(nextSession);
+      if (payload?.is_group) {
+        navigate(`/exam-group/${payload.group?.id}`, { replace: true });
+        return;
+      }
       navigate(`/exam/${attemptId}`, { replace: true });
     },
     [navigate]
@@ -9726,6 +9771,20 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         <PwaUpdatePrompt />
         <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
         <ExamCBT attemptId={attemptId} session={session} onNavigate={navigate} />
+      </>
+    );
+  }
+
+  if (currentPath.match(/^\/exam-group\/\d+\/?$/)) {
+    // Same anti-cheat-safe bypass of withGlobalHome as /exam/:id above - this
+    // is the "pick a subject" step of a live kiosk exam-group session, not a
+    // page a student should be able to leave via the AI/accent widgets.
+    const groupId = parseInt(currentPath.split("/")[2]);
+    return (
+      <>
+        <PwaUpdatePrompt />
+        <GlobalHomeButton session={session} currentPath={currentPath} onNavigate={navigate} />
+        <ExamGroupPicker groupId={groupId} session={session} onNavigate={navigate} />
       </>
     );
   }

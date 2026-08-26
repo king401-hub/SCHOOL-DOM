@@ -16404,6 +16404,55 @@ body[data-theme="dark"] .exam-builder-bottom-actions p {
   background: #f8fbff;
 }
 
+/* ── Exam Group builder ──────────────────────────────────────────────────── */
+
+.eg-subject-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.eg-bank-picker {
+  border: 1px solid #dbe4f0;
+  background: #f8fafc;
+  display: grid;
+  gap: 12px;
+}
+
+.eg-question-row {
+  border: 1px solid #dbe4f0;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.eg-pin-display {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+body[data-theme="dark"] .eg-bank-picker,
+body[data-theme="dark"] .eg-question-row {
+  background: #111827;
+  border-color: #1e293b;
+}
+
+body[data-theme="dark"] .eg-pin-display {
+  background: #111827;
+  border-color: #1e293b;
+  color: #e2e8f0;
+}
+
 .cbt-bank-picker-head {
   display: flex;
   align-items: flex-start;
