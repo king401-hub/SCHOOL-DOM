@@ -35,6 +35,8 @@ lib64/
 # Flutter source — override the lib/ rule above
 !mobile-app-flutter/lib/
 !mobile-app-flutter/lib/**
+!schooldom-scanner-kiosk/lib/
+!schooldom-scanner-kiosk/lib/**
 parts/
 sdist/
 var/
