@@ -98,9 +98,10 @@ const API = (() => {
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
 
-    // Every real superadmin account requires OTP (users.views.ADMIN_OTP_ROLES
-    // includes super_admin) unless this device already holds a valid trust
-    // token from a previous verification - login_view returns a plain
+    // super_admin accounts don't require OTP (users.views.ADMIN_OTP_ROLES
+    // excludes super_admin) - this still handles requires_otp defensively in
+    // case a school_admin/principal/school_superadmin account ever logs in
+    // through this same panel, since login_view returns a plain
     // {success, requires_otp, otp_challenge, ...} with NO access/refresh at
     // all in that case, not an error. Callers must check result.status.
     async login(email, password) {

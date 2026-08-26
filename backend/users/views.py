@@ -34,7 +34,7 @@ from .serializers import (
 from .serializers import ResendVerificationSerializer
 from finance.services import get_or_create_activation_credit_pool, grant_school_registration_credits, student_has_login_credit, update_student_activation_alerts
 
-ADMIN_OTP_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
+ADMIN_OTP_ROLES = {"school_admin", "principal", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
 ADMIN_OTP_EXPIRY_MINUTES = 10
 PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10
