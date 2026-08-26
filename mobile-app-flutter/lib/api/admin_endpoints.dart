@@ -49,6 +49,16 @@ Future<Map<String, dynamic>> loadHrOverview() => getJson('/api/hr/overview/');
 Future<Map<String, dynamic>> loadAdminAttendanceSummary() =>
     getJson('/api/app/attendance/admin-summary/');
 
+/// Whole-school STAFF attendance for one day (Present/Absent/Late/Excused/
+/// Not-Marked + per-person records) - the staff counterpart to
+/// scanner_attendance_history, backed by hr.StaffAttendance instead of
+/// academic.AttendanceRecord. See hr/views.py `staff_attendance_day_summary`.
+Future<Map<String, dynamic>> loadStaffAttendanceDaySummary(DateTime date) {
+  final formatted =
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  return getJson('/api/hr/attendance/day-summary/?date=$formatted');
+}
+
 /// Announcements (Notice/Circular/Event). See users/app_views.py
 /// `announcements_list` / `announcement_create` / `announcement_detail`.
 Future<Map<String, dynamic>> loadAnnouncements({String? category}) {

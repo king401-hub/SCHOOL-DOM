@@ -626,6 +626,54 @@ def staff_attendance_logs(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def staff_attendance_day_summary(request):
+    """Whole-school staff attendance for one day - the "Staff" side of the
+    admin app's Attendance History screen (mirrors users/app_views.py
+    `scanner_attendance_history`'s per-day/whole-school shape, but for
+    StaffAttendance instead of academic.AttendanceRecord). Separate from
+    staff_attendance_logs, which is one staff member's full history instead
+    of everyone on one day."""
+    user = request.user
+    if not _require_admin(user):
+        return Response({"success": False, "message": "Only admins can view attendance history."}, status=status.HTTP_403_FORBIDDEN)
+    tenant = _tenant_for_user(user)
+    if not tenant:
+        return Response({"success": False, "message": "Could not resolve school tenant."}, status=status.HTTP_400_BAD_REQUEST)
+
+    date_raw = str(request.query_params.get("date") or "").strip()
+    attendance_date = parse_date(date_raw) if date_raw else timezone.localdate()
+    if not attendance_date:
+        return Response({"success": False, "message": "Attendance date is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+
+    total_staff = StaffProfile.objects.filter(tenant=tenant).exclude(employment_status=StaffProfile.EXITED).count()
+    records = list(
+        StaffAttendance.objects.filter(staff__tenant=tenant, date=attendance_date)
+        .select_related("staff", "marked_by")
+        .order_by("-created_at")
+    )
+    present = sum(1 for r in records if r.status == StaffAttendance.PRESENT)
+    absent = sum(1 for r in records if r.status == StaffAttendance.ABSENT)
+    late = sum(1 for r in records if r.status == StaffAttendance.LATE)
+    excused = sum(1 for r in records if r.status == StaffAttendance.EXCUSED)
+    not_marked = max(total_staff - len(records), 0)
+
+    return Response(
+        {
+            "success": True,
+            "date": attendance_date,
+            "total_staff": total_staff,
+            "present": present,
+            "absent": absent,
+            "late": late,
+            "excused": excused,
+            "not_marked": not_marked,
+            "records": [_staff_attendance_log_row(record) for record in records],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def staff_attendance_logs_export(request):
     user = request.user
     if not _require_admin(user):

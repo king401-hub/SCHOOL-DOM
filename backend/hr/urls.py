@@ -12,6 +12,7 @@ urlpatterns = [
     path("attendance-logs/staff/", views.attendance_logs_staff_lookup, name="hr_attendance_logs_staff_lookup"),
     path("attendance-logs/records/", views.staff_attendance_logs, name="hr_staff_attendance_logs"),
     path("attendance-logs/records/export/", views.staff_attendance_logs_export, name="hr_staff_attendance_logs_export"),
+    path("attendance/day-summary/", views.staff_attendance_day_summary, name="hr_staff_attendance_day_summary"),
     path("staff/create/", views.create_staff, name="hr_create_staff"),
     path("staff/<uuid:staff_id>/qr/download/", views.download_staff_qr, name="hr_staff_qr_download"),
     path("staff/<uuid:staff_id>/", views.staff_detail, name="hr_staff_detail"),

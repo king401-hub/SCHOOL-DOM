@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import '../api/admin_endpoints.dart';
 import '../api/scanner_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/branded_refresh.dart';
+
+enum _AttendanceView { students, staff }
 
 class AttendanceHistoryScreen extends StatefulWidget {
   const AttendanceHistoryScreen({super.key});
@@ -12,6 +15,7 @@ class AttendanceHistoryScreen extends StatefulWidget {
 }
 
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
+  _AttendanceView _view = _AttendanceView.students;
   DateTime _date = DateTime.now();
   int? _classId;
   List<dynamic> _classOptions = [];
@@ -19,6 +23,13 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   int _present = 0;
   int _onSite = 0;
   int _clockedOut = 0;
+
+  List<dynamic> _staffRecords = [];
+  int _staffPresent = 0;
+  int _staffAbsent = 0;
+  int _staffLate = 0;
+  int _staffNotMarked = 0;
+
   bool _loading = true;
   String? _error;
 
@@ -34,19 +45,36 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       _error = null;
     });
     try {
-      final data = await loadScannerAttendanceHistory(date: _date, classId: _classId);
-      setState(() {
-        _records = (data['records'] ?? []) as List<dynamic>;
-        _classOptions = (data['class_options'] ?? []) as List<dynamic>;
-        _present = (data['total_present'] ?? 0) as int;
-        _onSite = (data['total_on_site'] ?? 0) as int;
-        _clockedOut = (data['total_clocked_out'] ?? 0) as int;
-      });
+      if (_view == _AttendanceView.students) {
+        final data = await loadScannerAttendanceHistory(date: _date, classId: _classId);
+        setState(() {
+          _records = (data['records'] ?? []) as List<dynamic>;
+          _classOptions = (data['class_options'] ?? []) as List<dynamic>;
+          _present = (data['total_present'] ?? 0) as int;
+          _onSite = (data['total_on_site'] ?? 0) as int;
+          _clockedOut = (data['total_clocked_out'] ?? 0) as int;
+        });
+      } else {
+        final data = await loadStaffAttendanceDaySummary(_date);
+        setState(() {
+          _staffRecords = (data['records'] ?? []) as List<dynamic>;
+          _staffPresent = (data['present'] ?? 0) as int;
+          _staffAbsent = (data['absent'] ?? 0) as int;
+          _staffLate = (data['late'] ?? 0) as int;
+          _staffNotMarked = (data['not_marked'] ?? 0) as int;
+        });
+      }
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _switchView(_AttendanceView view) {
+    if (view == _view) return;
+    setState(() => _view = view);
+    _load();
   }
 
   Future<void> _pickDate() async {
@@ -89,6 +117,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
   /// Groups records by class, preserving first-seen order, so the list can
   /// render as collapsible per-class sections instead of one long flat list.
+  List<dynamic> get _currentList => _view == _AttendanceView.students ? _records : _staffRecords;
+
   List<MapEntry<String, List<dynamic>>> get _groupedRecords {
     final groups = <String, List<dynamic>>{};
     for (final raw in _records) {
@@ -117,6 +147,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: Column(
                 children: [
+                  _ViewToggle(view: _view, onChanged: _switchView),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
@@ -126,30 +158,45 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                           onTap: _pickDate,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _ClassFilterChip(
-                          options: _classOptions,
-                          selectedId: _classId,
-                          onChanged: (id) {
-                            setState(() => _classId = id);
-                            _load();
-                          },
+                      if (_view == _AttendanceView.students) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _ClassFilterChip(
+                            options: _classOptions,
+                            selectedId: _classId,
+                            onChanged: (id) {
+                              setState(() => _classId = id);
+                              _load();
+                            },
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   if (!_loading && _error == null) ...[
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        _SummaryPill(label: 'Present', value: _present, color: AppColors.success),
-                        const SizedBox(width: 10),
-                        _SummaryPill(label: 'On site', value: _onSite, color: AppColors.warning),
-                        const SizedBox(width: 10),
-                        _SummaryPill(label: 'Clocked out', value: _clockedOut, color: AppColors.muted),
-                      ],
-                    ),
+                    if (_view == _AttendanceView.students)
+                      Row(
+                        children: [
+                          _SummaryPill(label: 'Present', value: _present, color: AppColors.success),
+                          const SizedBox(width: 10),
+                          _SummaryPill(label: 'On site', value: _onSite, color: AppColors.warning),
+                          const SizedBox(width: 10),
+                          _SummaryPill(label: 'Clocked out', value: _clockedOut, color: AppColors.muted),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          _SummaryPill(label: 'Present', value: _staffPresent, color: AppColors.success),
+                          const SizedBox(width: 10),
+                          _SummaryPill(label: 'Absent', value: _staffAbsent, color: AppColors.danger),
+                          const SizedBox(width: 10),
+                          _SummaryPill(label: 'Late', value: _staffLate, color: AppColors.warning),
+                          const SizedBox(width: 10),
+                          _SummaryPill(label: 'Not marked', value: _staffNotMarked, color: AppColors.muted),
+                        ],
+                      ),
                   ],
                 ],
               ),
@@ -157,8 +204,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             Expanded(
               child: BrandedRefresh(
                 onRefresh: _load,
-                showSpinner: _loading && _records.isNotEmpty,
-                child: _loading && _records.isEmpty
+                showSpinner: _loading && _currentList.isNotEmpty,
+                child: _loading && _currentList.isEmpty
                     ? const _HistorySkeletonList()
                     : _error != null
                         ? _centeredScrollable(
@@ -169,32 +216,43 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                               message: _error!,
                             ),
                           )
-                        : _records.isEmpty
-                            ? _centeredScrollable(const _StateMessage(
+                        : _currentList.isEmpty
+                            ? _centeredScrollable(_StateMessage(
                                 icon: Icons.event_busy_outlined,
                                 iconColor: AppColors.primary,
                                 title: 'No attendance recorded',
-                                message:
-                                    'Nothing was scanned for this day yet. Pull down to refresh or try another date.',
+                                message: _view == _AttendanceView.students
+                                    ? 'Nothing was scanned for this day yet. Pull down to refresh or try another date.'
+                                    : 'No staff attendance was marked for this day yet. Pull down to refresh or try another date.',
                               ))
-                            : ListView(
-                                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                                children: [
-                                  for (final group in _groupedRecords) ...[
-                                    _ClassGroupSection(
-                                      className: group.key,
-                                      records: group.value,
-                                      formatTime: _formatTime,
-                                      // Only expanded by default when a single class is
-                                      // already selected via the filter - otherwise "All
-                                      // classes" starts fully collapsed so the list isn't
-                                      // one long wall of cards.
-                                      initiallyExpanded: _classId != null,
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
-                                ],
-                              ),
+                            : _view == _AttendanceView.students
+                                ? ListView(
+                                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                                    children: [
+                                      for (final group in _groupedRecords) ...[
+                                        _ClassGroupSection(
+                                          className: group.key,
+                                          records: group.value,
+                                          formatTime: _formatTime,
+                                          // Only expanded by default when a single class is
+                                          // already selected via the filter - otherwise "All
+                                          // classes" starts fully collapsed so the list isn't
+                                          // one long wall of cards.
+                                          initiallyExpanded: _classId != null,
+                                        ),
+                                        const SizedBox(height: 16),
+                                      ],
+                                    ],
+                                  )
+                                : ListView(
+                                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                                    children: [
+                                      for (final raw in _staffRecords) ...[
+                                        _StaffAttendanceCard(record: raw as Map<String, dynamic>),
+                                        const SizedBox(height: 10),
+                                      ],
+                                    ],
+                                  ),
               ),
             ),
           ],
@@ -327,6 +385,64 @@ class _HistorySkeletonList extends StatelessWidget {
           const SizedBox(height: 16),
         ],
       ],
+    );
+  }
+}
+
+class _ViewToggle extends StatelessWidget {
+  final _AttendanceView view;
+  final ValueChanged<_AttendanceView> onChanged;
+  const _ViewToggle({required this.view, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: AppColors.surfaceSoft, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Expanded(child: _ViewToggleButton(
+            label: 'Students',
+            selected: view == _AttendanceView.students,
+            onTap: () => onChanged(_AttendanceView.students),
+          )),
+          Expanded(child: _ViewToggleButton(
+            label: 'Staff',
+            selected: view == _AttendanceView.staff,
+            onTap: () => onChanged(_AttendanceView.staff),
+          )),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViewToggleButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ViewToggleButton({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : AppColors.muted,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -610,6 +726,71 @@ class _HistoryCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _StaffAttendanceCard extends StatelessWidget {
+  final Map<String, dynamic> record;
+  const _StaffAttendanceCard({required this.record});
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'present':
+        return AppColors.success;
+      case 'late':
+        return AppColors.warning;
+      case 'absent':
+        return AppColors.danger;
+      default:
+        return AppColors.muted;
+    }
+  }
+
+  String _formatDateTime(dynamic raw) {
+    final parsed = DateTime.tryParse((raw ?? '').toString());
+    if (parsed == null) return '';
+    final local = parsed.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final period = local.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = (record['status'] ?? '').toString();
+    final color = _statusColor(status);
+    final subtitleParts = [
+      (record['staff_type'] ?? '').toString(),
+      (record['department'] ?? '').toString(),
+    ].where((s) => s.isNotEmpty).join(' · ');
+    final timeMarked = _formatDateTime(record['time_marked']);
+
+    return AppCard(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text((record['staff_name'] ?? 'Staff').toString(),
+                  style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w900)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+              child: Text(status.toUpperCase(),
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 10)),
+            ),
+          ],
+        ),
+        if (subtitleParts.isNotEmpty)
+          Text(subtitleParts, style: const TextStyle(color: AppColors.mutedDark, fontSize: 13)),
+        if (timeMarked.isNotEmpty)
+          Text('Marked $timeMarked', style: const TextStyle(color: AppColors.mutedDark, fontSize: 13)),
+        if ((record['marked_by'] ?? '-').toString() != '-')
+          Text('By ${record['marked_by']} · ${record['method'] ?? ''}',
+              style: TextStyle(color: AppColors.muted, fontSize: 11)),
+      ],
     );
   }
 }
