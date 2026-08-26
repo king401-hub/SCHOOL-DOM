@@ -54,7 +54,7 @@ ASSIGNABLE_ROLES = SCAN_OPERATOR_ROLES | {'student'}
 # from ATTENDANCE_DOUBLE_SCAN_SECONDS (users/app_views.py, 120s) which
 # guards the shared QR/GPS clock flow other clients use - this is an
 # RFID-specific, longer rule layered on top, not a replacement for it.
-MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT = 3600
+MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT = 3 * 3600
 
 
 def _person_summary(request, user_obj):

@@ -159,7 +159,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
         await _showResult(_ScanOutcome.invalid);
       } else if (e.statusCode == 400 && _looksLikeAlreadyHandled(e.message)) {
         // Covers both attendance_scan_create's "X already has clocked out
-        // today" AND the 1-hour clock-in/out gate's "clocked in recently -
+        // today" AND the 3-hour clock-in/out gate's "clocked in recently -
         // wait N minutes" - neither can succeed right now, but neither is a
         // real error either; both read to the person at the terminal as
         // "you're already accounted for."

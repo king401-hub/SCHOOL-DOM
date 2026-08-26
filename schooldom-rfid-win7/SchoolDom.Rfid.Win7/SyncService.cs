@@ -417,7 +417,7 @@ namespace SchoolDom.Rfid.Win7
 
                 if (pushResult.Outcome == AttendanceScanOutcome.TooSoonRetryLater)
                 {
-                    // The 1-hour clock-in/clock-out gate hasn't cleared yet - this
+                    // The 3-hour clock-in/clock-out gate hasn't cleared yet - this
                     // isn't a failure, it's not due. Leave it queued and move on to
                     // the next record instead of blocking the whole batch behind it.
                     continue;
