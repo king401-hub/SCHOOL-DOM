@@ -55,6 +55,7 @@ function injectStaticIcons() {
   });
   $('#sign-out-btn').innerHTML = ICONS.logout + '<span>Sign Out</span>';
   $('#dash-view-all-devices').innerHTML = 'View all devices' + ICONS.chevronRight;
+  renderThemeToggleIcon();
   $('#topbar-bell').innerHTML = (ICONS.bell || '') + '<span class="dot" id="topbar-bell-dot" style="display:none;"></span>';
   $('#key-modal-close').innerHTML = ICONS.x;
   $('#signout-modal-close').innerHTML = ICONS.x;
@@ -62,6 +63,28 @@ function injectStaticIcons() {
   const searchIcons = ['device-search-icon', 'audit-search-icon', 'cards-search-icon', 'schools-search-icon'];
   searchIcons.forEach(id => { const el = $('#' + id); if (el) el.outerHTML = ICONS.search; });
 }
+
+// ---------------------------------------------------------------- Theme
+
+const THEME_KEY = 'schooldom_superadmin_theme';
+
+function renderThemeToggleIcon() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  // Icon + label describe the mode a click switches TO, not the current mode.
+  $('#theme-toggle-btn').innerHTML = (isDark ? ICONS.sun : ICONS.moon) + `<span>${isDark ? 'Light Mode' : 'Dark Mode'}</span>`;
+}
+
+$('#theme-toggle-btn').addEventListener('click', () => {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.removeItem(THEME_KEY);
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem(THEME_KEY, 'dark');
+  }
+  renderThemeToggleIcon();
+});
 
 // ---------------------------------------------------------------- Auth
 

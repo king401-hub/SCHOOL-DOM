@@ -209,7 +209,10 @@ button, input, select { font-family: inherit; }
   padding: 0;
 }
 
-.text-input {
+/* Dark, translucent styling is only correct on the login screen's dark
+   card - scoped here so it doesn't leak into the light app-shell's forms
+   (wizard fields, search bars), which need their own light styling below. */
+#login-screen .text-input {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid rgba(148, 197, 235, 0.18);
@@ -218,8 +221,8 @@ button, input, select { font-family: inherit; }
   color: #fff;
   background: rgba(255,255,255,0.04);
 }
-.text-input::placeholder { color: #64748b; }
-.text-input:focus { outline: none; border-color: var(--login-green); background: rgba(255,255,255,0.06); }
+#login-screen .text-input::placeholder { color: #64748b; }
+#login-screen .text-input:focus { outline: none; border-color: var(--login-green); background: rgba(255,255,255,0.06); }
 
 .login-row {
   display: flex;
@@ -309,7 +312,51 @@ button, input, select { font-family: inherit; }
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* ---------- Dark theme ---------- */
+/* Nearly every app-shell rule already reads color through these tokens
+   (including var() inside inline styles and SVG attributes, e.g. the
+   donut chart and battery gauge), so redefining them here is enough to
+   re-theme the whole shell - the sidebar/login screen are already dark
+   and intentionally don't change with this toggle. */
+html[data-theme="dark"] {
+  --bg: #0B1220;
+  --surface: #131C2E;
+  --text: #EEF2F8;
+  --muted: #93A3BC;
+  --soft-text: #93A3BC;
+  --border: #223049;
+  --light-button: #1B2740;
+  --blue: #5CA3F0;
+  --blue-hover: #7FB6F5;
+  --green: #34D399;
+  --green-soft: rgba(52, 211, 153, 0.14);
+  --gold: #FBBF24;
+  --gold-soft: rgba(251, 191, 36, 0.14);
+  --coral: #F87171;
+  --coral-soft: rgba(248, 113, 113, 0.14);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.24), 0 12px 28px rgba(0, 0, 0, 0.22);
+  --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.3), 0 18px 36px rgba(0, 0, 0, 0.26);
+}
+html[data-theme="dark"] .modal-backdrop { background: rgba(0, 0, 0, 0.6); }
+html[data-theme="dark"] .key-display { background: var(--light-button); }
+
 /* ---------- App shell ---------- */
+
+/* Base form-control styling for every input/select inside the app shell
+   (wizard fields, search bars, filters) - deliberately separate from the
+   login screen's dark #login-screen .text-input rule above. */
+.text-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--text);
+  background: var(--surface);
+  transition: border-color 0.15s var(--ease, ease), box-shadow 0.15s var(--ease, ease);
+}
+.text-input::placeholder { color: var(--muted); }
+.text-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(24, 96, 180, 0.12); }
 
 #app-shell { display: none; height: 100vh; }
 #app-shell.active { display: flex; }
@@ -394,7 +441,7 @@ button, input, select { font-family: inherit; }
 }
 .sidebar-user-name { font-size: 13px; font-weight: 700; color: #fff; }
 .sidebar-user-role { font-size: 11px; color: var(--soft-text); opacity: 0.8; }
-.sidebar-signout {
+.sidebar-signout, .sidebar-theme-toggle {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; background: rgba(255,255,255,0.06); color: var(--soft-text);
   border: 1px solid rgba(255,255,255,0.08); border-radius: 9px;
@@ -402,7 +449,9 @@ button, input, select { font-family: inherit; }
   transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
 .sidebar-signout:hover { background: rgba(196, 74, 62, 0.18); color: #ff9d92; border-color: rgba(196,74,62,0.3); }
-.sidebar-signout svg { width: 14px; height: 14px; }
+.sidebar-signout svg, .sidebar-theme-toggle svg { width: 14px; height: 14px; }
+.sidebar-theme-toggle { margin-bottom: 8px; }
+.sidebar-theme-toggle:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
 .main {
   flex: 1;

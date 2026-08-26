@@ -217,8 +217,6 @@ def unassign_school(request, device_pk):
     return Response({'success': True, 'data': DeviceSerializer(device).data})
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def _set_scanner_user_active(device, is_active):
     if device.scanner_user_id:
         device.scanner_user.is_active = is_active
