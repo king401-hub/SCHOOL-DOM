@@ -1,21 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Internet (API calls) -->
+    <!-- Internet (device provisioning, scan submission, heartbeat) -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- GPS attendance -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- Camera (profile photo, chat camera/video) -->
-    <uses-permission android:name="android.permission.CAMERA"/>
-    <!-- Voice notes -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <!-- Biometric unlock -->
-    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
-    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
-    <!-- Push notifications (Android 13+ requires this explicitly) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- NFC card reading - the entire point of this app -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="true"/>
+    <!-- Keeps the screen awake while showing "Ready to Scan" -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <application
-        android:label="SchoolDom App"
+        android:label="SchoolDom Attendance Scanner"
         android:usesCleartextTraffic="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
@@ -46,11 +39,6 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Routes background/closed-app FCM notifications to the same
-             channel push_notifications.dart creates for foreground ones. -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="schooldom_default" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -1,0 +1,37 @@
+name: schooldom_scanner_kiosk
+description: "SchoolDom Attendance Scanner - locked-down NFC kiosk terminal app. Provisioned via a device license key from the Superadmin Control Panel; never installed by, or shown to, students/teachers/parents."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # HTTP client
+  http: ^1.2.2
+
+  # Secure token storage (device session + kiosk identity)
+  flutter_secure_storage: ^9.2.2
+
+  # Offline scan queue (SharedPreferences)
+  shared_preferences: ^2.3.2
+
+  # NFC card reading + voice feedback
+  nfc_manager: ^3.5.0
+  flutter_tts: ^4.2.0
+  wakelock_plus: ^1.2.8
+  battery_plus: ^6.2.1
+  package_info_plus: ^8.1.2
+  device_info_plus: ^11.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

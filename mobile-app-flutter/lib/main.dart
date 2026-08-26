@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'auth/auth_provider.dart';
-import 'scanner_kiosk/kiosk_home_screen.dart';
-import 'scanner_kiosk/kiosk_store.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/attendance_screen.dart';
@@ -107,19 +105,9 @@ class _RootState extends State<_Root> {
   // flashing on a slow cold start.
   bool _showSplash = true;
 
-  // Checked before anything else - a provisioned scanner terminal (spec
-  // section 9: "permanently logged in... closing/reopening the app should
-  // not require login") boots straight to Ready to Scan on every launch,
-  // bypassing the normal splash/login/dashboard flow entirely rather than
-  // ever showing them and then redirecting away.
-  bool? _kioskProvisioned;
-
   @override
   void initState() {
     super.initState();
-    KioskStore.isEnabled().then((enabled) {
-      if (mounted) setState(() => _kioskProvisioned = enabled);
-    });
     Future.delayed(const Duration(milliseconds: 1900), () {
       if (mounted) setState(() => _showSplash = false);
     });
@@ -127,12 +115,6 @@ class _RootState extends State<_Root> {
 
   @override
   Widget build(BuildContext context) {
-    if (_kioskProvisioned == null) {
-      return const Scaffold(backgroundColor: Color(0xFF0B1220), body: SizedBox.shrink());
-    }
-    if (_kioskProvisioned == true) {
-      return const KioskHomeScreen();
-    }
     if (_showSplash) return const SplashScreen();
     final auth = context.watch<AuthProvider>();
     return switch (auth.status) {
