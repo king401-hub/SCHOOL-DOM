@@ -11471,7 +11471,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                           <td>{tx.balance_after ?? "—"}</td>
                           <td>{tx.created_at ? new Date(tx.created_at).toLocaleString() : ""}</td>
                           <td>
-                            <button type="button" className="table-action" onClick={() => printReceipt(tx)}>
+                            <button type="button" className="table-action sms-receipt-btn" onClick={() => printReceipt(tx)}>
                               {tx.tx_type === "purchase" && tx.status === "successful" ? "Receipt" : "Record"}
                             </button>
                           </td>

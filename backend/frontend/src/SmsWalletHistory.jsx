@@ -286,7 +286,7 @@ export function SmsTransactionHistoryModal({ session, school, onClose }) {
                     <td>{tx.credits > 0 ? `+${tx.credits}` : tx.credits}</td>
                     <td>{tx.balance_after ?? "—"}</td>
                     <td>
-                      <button type="button" className="table-action" onClick={() => printReceipt(tx)}>
+                      <button type="button" className="table-action sms-receipt-btn" onClick={() => printReceipt(tx)}>
                         {tx.tx_type === "purchase" && tx.status === "successful" ? "Receipt" : "Record"}
                       </button>
                     </td>

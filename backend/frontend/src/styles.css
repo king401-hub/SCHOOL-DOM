@@ -8290,6 +8290,13 @@ body[data-theme="dark"] .token-usage-toast {
   border-color: #8cab2f;
 }
 
+.sms-receipt-btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.92rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
 .table-actions-inline {
   display: flex;
   align-items: center;
