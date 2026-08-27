@@ -4769,6 +4769,36 @@ body[data-theme="dark"] .data-table tbody tr:hover { background: #0f2040 !import
 
 .promo-group-row.is-open .promo-group-chevron { transform: rotate(180deg); }
 
+/* ── Collapsible exam builder questions ──────────────────────────────────── */
+
+.exam-question-toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.exam-question-chevron { flex: 0 0 auto; color: #94a3b8; transition: transform 160ms ease; }
+
+.exam-question-toggle.is-open .exam-question-chevron { transform: rotate(180deg); }
+
+.exam-question-summary {
+  color: #64748b;
+  font-weight: 400;
+  font-size: 0.85em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 24rem;
+}
+body[data-theme="dark"] .exam-question-summary { color: #94a3b8; }
+
 .promo-student-row td { padding-left: 2.1rem; color: #64748b; background: #f8fafc; font-weight: 400; }
 body[data-theme="dark"] .promo-student-row td { background: #0f1623; color: #94a3b8; }
 

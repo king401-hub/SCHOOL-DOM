@@ -40,7 +40,7 @@ import {
 import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 import SignaturePad from "./components/SignaturePad";
-import { SmsTransactionHistoryModal, SmsWalletStatusPill } from "./SmsWalletHistory";
+import { SmsTransactionHistoryModal, SmsWalletStatusPill, useSmsWalletReceipt } from "./SmsWalletHistory";
 import { FinanceHistoryModal } from "./FinanceHistoryModal";
 import ExamSubmissionModal from "./components/ExamSubmissionModal";
 import ResultBatchReviewModal from "./components/ResultBatchReviewModal";
@@ -11306,6 +11306,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   const [paying, setPaying] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const paidRef = useRef(false);
+  const { printReceipt, receiptNode, receiptError } = useSmsWalletReceipt(school);
 
   useEffect(() => {
     if (window.PaystackPop || !data?.paystack_public_key) return;
@@ -11444,6 +11445,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
 
           <article className="app-panel">
             <h3>Recent Transactions</h3>
+            {receiptError ? <p className="form-feedback error">{receiptError}</p> : null}
             {transactions.length > 0 ? (
               <>
                 <div className="table-scroll">
@@ -11456,6 +11458,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                         <th>Credits</th>
                         <th>Balance After</th>
                         <th>Date</th>
+                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -11467,6 +11470,11 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
                           <td>{tx.credits > 0 ? `+${tx.credits}` : tx.credits}</td>
                           <td>{tx.balance_after ?? "—"}</td>
                           <td>{tx.created_at ? new Date(tx.created_at).toLocaleString() : ""}</td>
+                          <td>
+                            <button type="button" className="table-action" onClick={() => printReceipt(tx)}>
+                              {tx.tx_type === "purchase" && tx.status === "successful" ? "Receipt" : "Record"}
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -11485,7 +11493,8 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
         </>
       ) : null}
 
-      {historyOpen ? <SmsTransactionHistoryModal session={session} onClose={() => setHistoryOpen(false)} /> : null}
+      {receiptNode}
+      {historyOpen ? <SmsTransactionHistoryModal session={session} school={school} onClose={() => setHistoryOpen(false)} /> : null}
     </section>
   );
 }

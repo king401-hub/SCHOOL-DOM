@@ -617,6 +617,12 @@ const isBlankBuilderQuestion = (question) =>
 
 const THEORY_QUESTION_TYPES = new Set(["short_answer", "paragraph", "essay"]);
 
+// question.text is sanitized editor HTML (FormattedTextarea/RichText), not
+// plain text - a collapsed question's one-line summary needs the tags
+// stripped or it shows raw markup instead of the words a teacher typed.
+const questionTextPreview = (html) =>
+  String(html || "").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+
 /* A composition is an essay - one long written response against a topic - so it
    is stored as `essay`, the type the backend, the grading queue and the student
    apps already understand. What it gets here is its own way in: a roomier
@@ -924,6 +930,15 @@ export function TeacherExamBuilder({
   const [questions, setQuestions] = useState([
     { ...newBuilderQuestion(), id: 1 },
   ]);
+  const [collapsedQuestionIds, setCollapsedQuestionIds] = useState(() => new Set());
+  const toggleQuestionCollapsed = useCallback((id) => {
+    setCollapsedQuestionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const [centralBoards, setCentralBoards] = useState([]);
   const [centralBoard, setCentralBoard] = useState("");
   const [centralSubjects, setCentralSubjects] = useState([]);
@@ -1787,13 +1802,23 @@ export function TeacherExamBuilder({
                 <div key={question.id} className="exam-builder-question">
                   {question.sourceLabel ? <div className="cbt-question-source">From {question.sourceLabel}</div> : null}
                   <div className="exam-builder-row question-reorder-row">
-                    <span className="question-index">
-                      Question {index + 1}
-                      <small className="question-index-kind">
-                        {isComposition ? "Composition" : QUESTION_TYPE_LABELS[questionType] || questionType}
-                        {question.groupKey ? " · in passage" : ""}
-                      </small>
-                    </span>
+                    <button
+                      type="button"
+                      className={`exam-question-toggle${collapsedQuestionIds.has(question.id) ? "" : " is-open"}`}
+                      onClick={() => toggleQuestionCollapsed(question.id)}
+                    >
+                      <span className="exam-question-chevron">▾</span>
+                      <span className="question-index">
+                        Question {index + 1}
+                        <small className="question-index-kind">
+                          {isComposition ? "Composition" : QUESTION_TYPE_LABELS[questionType] || questionType}
+                          {question.groupKey ? " · in passage" : ""}
+                        </small>
+                      </span>
+                      {collapsedQuestionIds.has(question.id) && question.text ? (
+                        <span className="exam-question-summary">{questionTextPreview(question.text)}</span>
+                      ) : null}
+                    </button>
                     <div className="table-actions-inline">
                       <button type="button" className="table-action" onClick={() => moveQuestion(question.id, -1)} disabled={index === 0} aria-label="Move question up">↑</button>
                       <button type="button" className="table-action" onClick={() => moveQuestion(question.id, 1)} disabled={index === questions.length - 1} aria-label="Move question down">↓</button>
@@ -1807,6 +1832,8 @@ export function TeacherExamBuilder({
                       </button>
                     </div>
                   </div>
+                  {collapsedQuestionIds.has(question.id) ? null : (
+                  <>
                   <div className="exam-builder-row">
                     <label className="panel-field full">
                       {isComposition ? "Composition topic / instructions" : "Question text"}
@@ -2019,6 +2046,8 @@ export function TeacherExamBuilder({
                         />
                       </label>
                     </div>
+                  )}
+                  </>
                   )}
                 </div>
                 );
@@ -2357,52 +2386,65 @@ function ExamGroupBankPicker({ session, existingBankIds, onImport }) {
 
 function ExamGroupQuestionRow({ question, index, examFormat, onUpdate, onRemove }) {
   const isTheory = THEORY_QUESTION_TYPES.has(question.questionType);
+  const [expanded, setExpanded] = useState(true);
+  const preview = questionTextPreview(question.text);
+
   return (
     <div className="app-panel eg-question-row">
-      <div className="panel-form-grid">
-        {examFormat === "mixed" ? (
-          <label className="panel-field">
-            Type
-            <select value={question.questionType} onChange={(event) => onUpdate({ questionType: event.target.value, correctIndex: 0 })}>
-              {Object.entries(QUESTION_TYPE_LABELS).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
-            </select>
-          </label>
-        ) : null}
-        <label className="panel-field full">
-          {`Question ${index + 1}`}{question.sourceLabel ? ` — from ${question.sourceLabel}` : ""}
-          <textarea value={question.text} onChange={(event) => onUpdate({ text: event.target.value })} rows={2} />
-        </label>
-        {!isTheory ? (
-          <>
-            {[0, 1, 2, 3].map((optionIndex) => (
-              <label className="panel-field" key={optionIndex}>
-                {`Option ${String.fromCharCode(65 + optionIndex)}`}
-                <input
-                  value={question.options[optionIndex] || ""}
-                  onChange={(event) => {
-                    const options = [...question.options];
-                    options[optionIndex] = event.target.value;
-                    onUpdate({ options });
-                  }}
-                />
+      <button type="button" className={`exam-question-toggle${expanded ? " is-open" : ""}`} onClick={() => setExpanded((prev) => !prev)}>
+        <span className="exam-question-chevron">▾</span>
+        <strong>{`Question ${index + 1}`}</strong>
+        {question.sourceLabel ? <span> — from {question.sourceLabel}</span> : null}
+        {!expanded && preview ? <span className="exam-question-summary">{preview}</span> : null}
+      </button>
+      {expanded ? (
+        <>
+          <div className="panel-form-grid">
+            {examFormat === "mixed" ? (
+              <label className="panel-field">
+                Type
+                <select value={question.questionType} onChange={(event) => onUpdate({ questionType: event.target.value, correctIndex: 0 })}>
+                  {Object.entries(QUESTION_TYPE_LABELS).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+                </select>
               </label>
-            ))}
-            <label className="panel-field">
-              Correct Answer
-              <select value={question.correctIndex} onChange={(event) => onUpdate({ correctIndex: Number(event.target.value) })}>
-                {question.options.map((option, optionIndex) => (
-                  <option key={optionIndex} value={optionIndex}>{option || `Option ${String.fromCharCode(65 + optionIndex)}`}</option>
-                ))}
-              </select>
+            ) : null}
+            <label className="panel-field full">
+              {`Question ${index + 1}`}
+              <textarea value={question.text} onChange={(event) => onUpdate({ text: event.target.value })} rows={2} />
             </label>
-          </>
-        ) : null}
-        <label className="panel-field">
-          Marks
-          <input type="number" min="1" value={question.marks} onChange={(event) => onUpdate({ marks: event.target.value })} />
-        </label>
-      </div>
-      <button type="button" className="table-action danger" onClick={onRemove}>Remove question</button>
+            {!isTheory ? (
+              <>
+                {[0, 1, 2, 3].map((optionIndex) => (
+                  <label className="panel-field" key={optionIndex}>
+                    {`Option ${String.fromCharCode(65 + optionIndex)}`}
+                    <input
+                      value={question.options[optionIndex] || ""}
+                      onChange={(event) => {
+                        const options = [...question.options];
+                        options[optionIndex] = event.target.value;
+                        onUpdate({ options });
+                      }}
+                    />
+                  </label>
+                ))}
+                <label className="panel-field">
+                  Correct Answer
+                  <select value={question.correctIndex} onChange={(event) => onUpdate({ correctIndex: Number(event.target.value) })}>
+                    {question.options.map((option, optionIndex) => (
+                      <option key={optionIndex} value={optionIndex}>{option || `Option ${String.fromCharCode(65 + optionIndex)}`}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
+            <label className="panel-field">
+              Marks
+              <input type="number" min="1" value={question.marks} onChange={(event) => onUpdate({ marks: event.target.value })} />
+            </label>
+          </div>
+          <button type="button" className="table-action danger" onClick={onRemove}>Remove question</button>
+        </>
+      ) : null}
     </div>
   );
 }
