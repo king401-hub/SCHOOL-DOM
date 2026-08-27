@@ -4775,16 +4775,36 @@ body[data-theme="dark"] .data-table tbody tr:hover { background: #0f2040 !import
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
   background: none;
   border: none;
-  padding: 0;
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  margin: -0.3rem 0 -0.3rem -0.5rem;
   font: inherit;
   color: inherit;
   text-align: left;
+  transition: background 120ms ease;
 }
 
-.exam-question-chevron { flex: 0 0 auto; color: #94a3b8; transition: transform 160ms ease; }
+.exam-question-toggle:hover,
+.exam-question-toggle:focus-visible {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.exam-question-chevron {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  font-size: 1.1rem;
+  color: #6366f1;
+  transition: transform 160ms ease;
+}
 
 .exam-question-toggle.is-open .exam-question-chevron { transform: rotate(180deg); }
 

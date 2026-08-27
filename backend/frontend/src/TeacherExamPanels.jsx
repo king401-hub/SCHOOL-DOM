@@ -1367,17 +1367,6 @@ export function TeacherExamBuilder({
     setError("");
   };
 
-  const moveQuestion = (questionId, direction) => {
-    setQuestions((previous) => {
-      const index = previous.findIndex((item) => item.id === questionId);
-      const nextIndex = index + direction;
-      if (index === -1 || nextIndex < 0 || nextIndex >= previous.length) return previous;
-      const next = [...previous];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
-  };
-
   const importStandardQuestions = () => {
     setImportError("");
     setImportFeedback("");
@@ -1820,8 +1809,6 @@ export function TeacherExamBuilder({
                       ) : null}
                     </button>
                     <div className="table-actions-inline">
-                      <button type="button" className="table-action" onClick={() => moveQuestion(question.id, -1)} disabled={index === 0} aria-label="Move question up">↑</button>
-                      <button type="button" className="table-action" onClick={() => moveQuestion(question.id, 1)} disabled={index === questions.length - 1} aria-label="Move question down">↓</button>
                       <button
                         type="button"
                         className="table-action danger"
