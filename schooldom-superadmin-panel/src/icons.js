@@ -5,7 +5,9 @@
 const ICONS = {
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="5" rx="1.6"/><rect x="13" y="12" width="8" height="9" rx="1.6"/><rect x="3" y="14" width="8" height="7" rx="1.6"/></svg>',
   devices: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2.5" width="12" height="19" rx="2.2"/><path d="M10.5 18.2h3" stroke-linecap="round"/></svg>',
-  school: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 21V10l8-5 8 5v11"/><path d="M9 21v-6h6v6M4 21h16"/><circle cx="12" cy="6.4" r="1.1"/><path d="M12 7.5v2.2"/></svg>',
+  // Adapted from the real SchoolDom app icon (backend/frontend/public/icons/icon-192.svg)
+  // so this glyph matches the actual logo's house silhouette, not a generic building.
+  school: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M4.75 11.38 12 5.63l7.25 5.75v7.13a1.13 1.13 0 0 1-1.13 1.13h-3.88v-4.5H9.75v4.5H5.88a1.13 1.13 0 0 1-1.13-1.13V11.38Z"/><path d="M7.25 10.5 12 6.75l4.75 3.75v1.25L12 8.13 7.25 11.75V10.5Z" opacity=".6"/></svg>',
   students: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="5.5" r="2.2"/><circle cx="5.5" cy="17" r="2"/><circle cx="18.5" cy="17" r="2"/><path d="M12 7.7v3M12 10.7 6.6 15.4M12 10.7l5.4 4.7"/></svg>',
   card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2.5" y="5" width="19" height="14" rx="1.8"/><circle cx="8" cy="11" r="2"/><path d="M5.3 16.4c.5-1.6 1.7-2.4 2.7-2.4s2.2.8 2.7 2.4"/><path d="M14.5 9.5h4M14.5 12.5h4M14.5 15.5h2.5"/></svg>',
   attendance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.2"/><path d="M3 9.5h18"/><path d="M8 2.5v4M16 2.5v4"/><path d="m8.5 14 2 2 4-4"/></svg>',
