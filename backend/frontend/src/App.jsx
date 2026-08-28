@@ -3637,6 +3637,7 @@ function SchoolActivitiesList({ activities, emptyMessage = "No upcoming school a
 function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassColumn = true }) {
   const [entries, setEntries] = useState([]);
   const [days, setDays] = useState(TIMETABLE_DAY_FALLBACK);
+  const [timeSlots, setTimeSlots] = useState([]);
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -3648,6 +3649,7 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
       const result = await requestJson(session, "GET", "/api/app/timetables/");
       setEntries(result?.entries || []);
       if (result?.days?.length) setDays(result.days);
+      setTimeSlots(result?.time_slots || []);
       setActivities(result?.school_activities || []);
     } catch (loadError) {
       setError(loadError.message || "Could not load the timetable.");
@@ -3677,6 +3679,7 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
         <TimetableGridTable
           entries={entries}
           days={days}
+          timeSlots={timeSlots}
           emptyMessage={emptyMessage}
           renderCell={(entry) => (
             <>
@@ -7637,6 +7640,32 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  const handleSaveTimetableSettings = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "PATCH", "/api/app/timetables/settings/", payload);
+      await loadScreen("/timetables", true);
+      return result;
+    },
+    [loadScreen, session]
+  );
+
+  const handleGenerateTimetable = useCallback(
+    async (payload) => {
+      const result = await requestJson(session, "POST", "/api/app/timetables/generate/", payload || {});
+      addAdminNotification({
+        category: "Academics",
+        module: "Timetable",
+        action: result?.message || "Generated timetable entries for empty slots.",
+        status: "Scheduled",
+        priority: "Normal",
+        tone: "success",
+      });
+      await loadScreen("/timetables", true);
+      return result;
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleAccountDeletionRequest = useCallback(async () => {
     const result = await requestJson(session, "POST", "/api/app/account/deletion-request/");
     setScreenData((previous) => ({
@@ -8178,6 +8207,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreate={handleCreateTimetableEntry}
         onUpdate={handleUpdateTimetableEntry}
         onDelete={handleDeleteTimetableEntry}
+        onSaveSettings={handleSaveTimetableSettings}
+        onGenerate={handleGenerateTimetable}
       />
     );
   } else if (activePath === "/results") {

@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -23,6 +23,8 @@ from academic.models import (
     StudentSubjectScore,
     Subject,
     Term,
+    TimetableEntry,
+    TimetableSettings,
 )
 from core.models import Domain, SchoolGroup, SchoolTenant
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
@@ -5446,6 +5448,169 @@ class SchoolActivitiesOnTimetableTests(TestCase):
         # should still see tenant-wide school activities.
         self.assertEqual(response.data["entries"], [])
         self.assertIn("Inter-House Sports", self._activity_titles(response))
+
+
+class TimetableSettingsAndGeneratorTests(TestCase):
+    """The generator's one hard rule: it may only ever fill an empty slot,
+    never touch/overwrite an existing TimetableEntry - so it's always safe
+    to press again after an admin has hand-edited part of the timetable."""
+
+    def setUp(self):
+        # The project-wide IdempotencyMiddleware caches successful POST
+        # responses by (user id, method, path, body) for 10s - a stale entry
+        # from a previous test's identical request would otherwise get
+        # replayed here instead of actually reaching the view.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        self.client = APIClient()
+        self.school = SchoolTenant.objects.create(
+            name="Timetable School", schema_name="timetable_school_20260828", is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        self.admin_user = User.objects.create_user(
+            email="admin@timetable.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@timetable.edu", password="TeacherPass123", first_name="Tea", last_name="Cher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        TeacherProfile.objects.create(
+            user=self.teacher_user, employee_id="TCH-TT-1", qualification="B.Ed",
+            specialization="Mathematics", hire_date=date(2020, 1, 1),
+        )
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        self.english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+        self.class_a = Class.objects.create(name="Grade 8", section="A", tenant=self.legacy_tenant)
+        self.class_a.subjects.set([self.math, self.english])
+        self.class_b = Class.objects.create(name="Grade 9", section="A", tenant=self.legacy_tenant)
+        self.class_b.subjects.set([self.math])
+        self.teacher_user.teacher_profile.subjects.set([self.math])
+        self.teacher_user.teacher_profile.assigned_classes.set([self.class_a, self.class_b])
+
+    def tearDown(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
+    def test_settings_get_returns_sensible_defaults_without_creating_a_row(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get("/api/app/timetables/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        settings_data = response.data["settings"]
+        self.assertEqual(settings_data["periods_per_day"], 8)
+        self.assertEqual(settings_data["period_duration_minutes"], 40)
+        self.assertEqual(settings_data["school_days"], [0, 1, 2, 3, 4])
+        self.assertEqual(len(settings_data["time_slots"]), 8)
+        self.assertFalse(TimetableSettings.objects.filter(tenant=self.legacy_tenant).exists())
+
+    def test_settings_patch_saves_and_persists(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            "/api/app/timetables/settings/",
+            {"periods_per_day": 6, "period_duration_minutes": 45, "day_start_time": "09:00", "school_days": [0, 1, 2, 3, 4, 5]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        saved = TimetableSettings.objects.get(tenant=self.legacy_tenant)
+        self.assertEqual(saved.periods_per_day, 6)
+        self.assertEqual(saved.period_duration_minutes, 45)
+        self.assertEqual(saved.day_start_time.strftime("%H:%M"), "09:00")
+        self.assertEqual(saved.school_days, [0, 1, 2, 3, 4, 5])
+
+    def test_settings_patch_rejects_invalid_values(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch("/api/app/timetables/settings/", {"periods_per_day": 0}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.patch("/api/app/timetables/settings/", {"school_days": []}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_admin_cannot_reach_settings_or_generate(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.assertEqual(self.client.get("/api/app/timetables/settings/").status_code, 403)
+        self.assertEqual(self.client.post("/api/app/timetables/generate/").status_code, 403)
+
+    def test_generate_fills_every_configured_slot_for_each_class(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post("/api/app/timetables/generate/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        # 8 periods x 5 days = 40 slots per class, 2 classes with subjects assigned.
+        self.assertEqual(response.data["created_count"], 80)
+        self.assertEqual(TimetableEntry.objects.filter(class_group=self.class_a).count(), 40)
+        self.assertEqual(TimetableEntry.objects.filter(class_group=self.class_b).count(), 40)
+
+    def test_generate_never_touches_an_existing_entry(self):
+        manual_entry = TimetableEntry.objects.create(
+            tenant=self.legacy_tenant, class_group=self.class_a, subject=self.english,
+            title="", teacher=None, day_of_week=TimetableEntry.MONDAY,
+            start_time=time(8, 0), end_time=time(8, 40), room="Hand-picked room",
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post("/api/app/timetables/generate/", {"class_ids": [self.class_a.id]}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        manual_entry.refresh_from_db()
+        self.assertEqual(manual_entry.subject_id, self.english.id)
+        self.assertEqual(manual_entry.room, "Hand-picked room")
+        self.assertIsNone(manual_entry.teacher_id)
+        # The generator's own count of skipped slots should reflect the one
+        # slot the manual entry already occupies.
+        self.assertGreaterEqual(response.data["skipped_existing_count"], 1)
+
+    def test_generate_is_idempotent_second_call_creates_nothing_new(self):
+        self.client.force_authenticate(user=self.admin_user)
+        first = self.client.post("/api/app/timetables/generate/", {}, format="json")
+        self.assertGreater(first.data["created_count"], 0)
+        total_after_first = TimetableEntry.objects.count()
+
+        # A byte-identical second request would be replayed by the project's
+        # IdempotencyMiddleware (10s window) rather than actually reaching the
+        # view again - passing a harmless extra field defeats that fingerprint
+        # so this genuinely re-runs generate_timetable and proves its own
+        # "skip anything already filled" logic, not just the cache replay.
+        second = self.client.post("/api/app/timetables/generate/", {"_retry": "second-call"}, format="json")
+        self.assertEqual(second.data["created_count"], 0)
+        self.assertEqual(TimetableEntry.objects.count(), total_after_first)
+
+    def test_generate_never_double_books_a_teacher_across_classes(self):
+        self.client.force_authenticate(user=self.admin_user)
+        self.client.post("/api/app/timetables/generate/", {}, format="json")
+
+        teacher_bookings = TimetableEntry.objects.filter(teacher=self.teacher_user).values_list(
+            "day_of_week", "start_time"
+        )
+        # Same (day, start_time) pair must never appear twice for this teacher,
+        # even though they're eligible for Mathematics in both classes.
+        self.assertEqual(len(teacher_bookings), len(set(teacher_bookings)))
+
+    def test_generate_skips_a_class_with_no_subjects_assigned(self):
+        empty_class = Class.objects.create(name="Grade 10", section="A", tenant=self.legacy_tenant)
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post("/api/app/timetables/generate/", {"class_ids": [empty_class.id]}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["created_count"], 0)
+
+    def test_editing_an_entry_into_a_clash_is_rejected(self):
+        first = TimetableEntry.objects.create(
+            tenant=self.legacy_tenant, class_group=self.class_a, subject=self.math,
+            teacher=self.teacher_user, day_of_week=TimetableEntry.MONDAY,
+            start_time=time(8, 0), end_time=time(8, 40),
+        )
+        second = TimetableEntry.objects.create(
+            tenant=self.legacy_tenant, class_group=self.class_a, subject=self.english,
+            teacher=None, day_of_week=TimetableEntry.MONDAY,
+            start_time=time(8, 40), end_time=time(9, 20),
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            f"/api/app/timetables/{second.id}/", {"start_time": "08:00", "end_time": "08:40"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        second.refresh_from_db()
+        self.assertEqual(second.start_time.strftime("%H:%M"), "08:40")
 
 
 class AuthRateThrottleTests(TestCase):

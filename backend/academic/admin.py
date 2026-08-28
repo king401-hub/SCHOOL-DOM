@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Class, ClassResultSnapshot, StudentClassPromotion, Subject, Term, TimetableEntry
+from .models import Class, ClassResultSnapshot, StudentClassPromotion, Subject, Term, TimetableEntry, TimetableSettings
 
 
 @admin.register(Term)
@@ -50,3 +50,10 @@ class TimetableEntryAdmin(admin.ModelAdmin):
     list_display = ("class_group", "display_label", "teacher", "day_of_week", "start_time", "end_time", "room", "tenant")
     list_filter = ("tenant", "day_of_week", "class_group")
     search_fields = ("class_group__name", "subject__name", "title", "teacher__first_name", "teacher__last_name", "room")
+
+
+@admin.register(TimetableSettings)
+class TimetableSettingsAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "periods_per_day", "period_duration_minutes", "day_start_time", "school_days")
+    list_filter = ("tenant",)
+    search_fields = ("tenant__name", "tenant__slug")

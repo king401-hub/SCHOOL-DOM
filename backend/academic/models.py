@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 
 from django.db import models
@@ -535,3 +536,41 @@ class TimetableEntry(TenantAwareModel, TimeStampedModel):
 
     def __str__(self):
         return f"{self.get_day_of_week_display()} {self.start_time}-{self.end_time}: {self.display_label} ({self.class_group})"
+
+
+def _default_school_days():
+    return [
+        TimetableEntry.MONDAY, TimetableEntry.TUESDAY, TimetableEntry.WEDNESDAY,
+        TimetableEntry.THURSDAY, TimetableEntry.FRIDAY,
+    ]
+
+
+class TimetableSettings(TenantAwareModel, TimeStampedModel):
+    """Per-tenant configuration for the weekly timetable grid and the
+    auto-generator: how many periods a day has, how long each is, which time
+    the day starts, and which days count as school days. One row per tenant,
+    lazily created on first access - the generator and the grid both read the
+    same computed period boundaries from here so they can never disagree."""
+
+    periods_per_day = models.PositiveSmallIntegerField(default=8)
+    period_duration_minutes = models.PositiveSmallIntegerField(default=40)
+    day_start_time = models.TimeField(default=datetime.time(8, 0))
+    school_days = models.JSONField(default=_default_school_days, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["tenant"])]
+
+    def __str__(self):
+        return f"TimetableSettings({self.tenant})"
+
+    def compute_periods(self):
+        """Return the fixed list of periods for one school day, as
+        [{"index": 1, "start_time": time, "end_time": time}, ...] - purely
+        computed from settings, never stored per-period."""
+        periods = []
+        cursor = datetime.datetime.combine(datetime.date.today(), self.day_start_time)
+        for index in range(1, self.periods_per_day + 1):
+            period_end = cursor + datetime.timedelta(minutes=self.period_duration_minutes)
+            periods.append({"index": index, "start_time": cursor.time(), "end_time": period_end.time()})
+            cursor = period_end
+        return periods

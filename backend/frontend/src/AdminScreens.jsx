@@ -5463,12 +5463,14 @@ const TIMETABLE_DAY_FALLBACK = [
   { value: 5, label: "Saturday" },
 ];
 
-function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, onUpdate, onDelete }) {
+function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, onUpdate, onDelete, onSaveSettings, onGenerate }) {
   const entries = data?.entries || [];
   const classes = data?.classes || [];
   const subjects = data?.subjects || [];
   const teachers = data?.teachers || [];
   const days = data?.days?.length ? data.days : TIMETABLE_DAY_FALLBACK;
+  const timeSlots = data?.time_slots || [];
+  const settings = data?.settings || null;
 
   const [filterClassId, setFilterClassId] = useState("");
   const [form, setForm] = useState({
@@ -5480,6 +5482,78 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [confirm, confirmDialog] = useConfirm();
+
+  const [settingsForm, setSettingsForm] = useState({
+    periods_per_day: "8", period_duration_minutes: "40", day_start_time: "08:00", school_days: [0, 1, 2, 3, 4],
+  });
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSuccess, setSettingsSuccess] = useState("");
+  const [generateBusy, setGenerateBusy] = useState(false);
+  const [generateError, setGenerateError] = useState("");
+  const [generateMessage, setGenerateMessage] = useState("");
+
+  // Syncs to whatever the server last reported (initial load, and again
+  // right after a save) - never clobbers in-progress typing otherwise, since
+  // `settings` only changes when the screen actually reloads.
+  useEffect(() => {
+    if (!settings) return;
+    setSettingsForm({
+      periods_per_day: String(settings.periods_per_day),
+      period_duration_minutes: String(settings.period_duration_minutes),
+      day_start_time: settings.day_start_time,
+      school_days: settings.school_days,
+    });
+  }, [settings]);
+
+  const toggleSettingsDay = (value) => {
+    setSettingsForm((current) => {
+      const has = current.school_days.includes(value);
+      const next = has
+        ? current.school_days.filter((day) => day !== value)
+        : [...current.school_days, value].sort((a, b) => a - b);
+      return { ...current, school_days: next };
+    });
+  };
+
+  const handleSettingsSubmit = async (event) => {
+    event.preventDefault();
+    setSettingsError("");
+    setSettingsSuccess("");
+    if (!settingsForm.school_days.length) {
+      setSettingsError("Select at least one school day.");
+      return;
+    }
+    setSettingsBusy(true);
+    try {
+      const result = await onSaveSettings?.({
+        periods_per_day: Number(settingsForm.periods_per_day),
+        period_duration_minutes: Number(settingsForm.period_duration_minutes),
+        day_start_time: settingsForm.day_start_time,
+        school_days: settingsForm.school_days,
+      });
+      setSettingsSuccess(result?.message || "Timetable settings saved.");
+    } catch (actionError) {
+      setSettingsError(actionError.message || "Could not save timetable settings.");
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+
+  const handleGenerateClick = async () => {
+    setGenerateError("");
+    setGenerateMessage("");
+    setGenerateBusy(true);
+    try {
+      const payload = filterClassId ? { class_ids: [filterClassId] } : {};
+      const result = await onGenerate?.(payload);
+      setGenerateMessage(result?.message || "Timetable generated.");
+    } catch (actionError) {
+      setGenerateError(actionError.message || "Could not generate the timetable.");
+    } finally {
+      setGenerateBusy(false);
+    }
+  };
 
   const dayLabel = (value) => days.find((item) => String(item.value) === String(value))?.label || "-";
 
@@ -5578,6 +5652,65 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
 
       <article className="app-panel">
         <div className="panel-head">
+          <h3>Timetable Settings</h3>
+          <small>How many periods a day has, how long each is, and which days count as school days. The weekly grid and Generate Timetable below both use these.</small>
+        </div>
+        <form className="panel-form" onSubmit={handleSettingsSubmit}>
+          <div className="panel-form-grid">
+            <label className="panel-field">
+              Periods per day
+              <input
+                type="number" min="1" max="20"
+                value={settingsForm.periods_per_day}
+                onChange={(event) => setSettingsForm((current) => ({ ...current, periods_per_day: event.target.value }))}
+                disabled={settingsBusy}
+              />
+            </label>
+            <label className="panel-field">
+              Period duration (minutes)
+              <input
+                type="number" min="5" max="240"
+                value={settingsForm.period_duration_minutes}
+                onChange={(event) => setSettingsForm((current) => ({ ...current, period_duration_minutes: event.target.value }))}
+                disabled={settingsBusy}
+              />
+            </label>
+            <label className="panel-field">
+              Day starts at
+              <input
+                type="time"
+                value={settingsForm.day_start_time}
+                onChange={(event) => setSettingsForm((current) => ({ ...current, day_start_time: event.target.value }))}
+                disabled={settingsBusy}
+              />
+            </label>
+            <label className="panel-field full">
+              School days
+              <div className="panel-field-row">
+                {TIMETABLE_DAY_FALLBACK.map((day) => (
+                  <label key={day.value}>
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.school_days.includes(day.value)}
+                      onChange={() => toggleSettingsDay(day.value)}
+                      disabled={settingsBusy}
+                    />
+                    {" "}{day.label}
+                  </label>
+                ))}
+              </div>
+            </label>
+          </div>
+          {settingsError ? <p className="form-feedback error">{settingsError}</p> : null}
+          {settingsSuccess ? <p className="form-feedback success">{settingsSuccess}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={settingsBusy}>{settingsBusy ? <><Spinner /> Saving...</> : "Save Settings"}</button>
+          </div>
+        </form>
+      </article>
+
+      <article className="app-panel">
+        <div className="panel-head">
           <h3>{editingEntry ? "Edit Timetable Entry" : "Add Timetable Entry"}</h3>
           <small>Assign a subject and teacher to a class for a specific day and time.</small>
         </div>
@@ -5659,11 +5792,21 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
               ))}
             </select>
           </label>
+          <button type="button" className="btn-secondary" onClick={handleGenerateClick} disabled={generateBusy}>
+            {generateBusy ? <><Spinner size={12} /> Generating...</> : filterClassId ? "Generate for This Class" : "Generate Timetable"}
+          </button>
         </div>
+        <p className="finance-action-note">
+          Generate only fills empty slots for the configured periods and school days above - it never changes or
+          removes an entry that already exists, whether generated before or added by hand.
+        </p>
+        {generateError ? <p className="form-feedback error">{generateError}</p> : null}
+        {generateMessage ? <p className="form-feedback success">{generateMessage}</p> : null}
         <TimetableGridTable
           entries={filteredEntries}
           days={days}
-          emptyMessage="No timetable entries yet. Add one above to get started."
+          timeSlots={timeSlots}
+          emptyMessage="No timetable entries yet. Configure settings above, then generate or add one below to get started."
           renderCell={(entry) => (
             <div className="timetable-grid-entry-body">
               <strong>{entry.display_label || entry.subject_name}</strong>

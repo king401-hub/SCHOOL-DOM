@@ -1415,8 +1415,13 @@ export function ScreenState({ loading, error, onRetry }) {
   );
 }
 
-export function TimetableGridTable({ entries = [], days = [], renderCell, emptyMessage = "No timetable entries yet." }) {
-  const timeSlots = useMemo(() => {
+export function TimetableGridTable({ entries = [], days = [], timeSlots: configuredTimeSlots, renderCell, emptyMessage = "No timetable entries yet." }) {
+  // Prefer the fixed periods computed from the admin's timetable settings
+  // (start/end always the same, whether or not that slot has an entry yet)
+  // so the grid stays a stable, full week even when mostly empty. Falls
+  // back to deriving rows from whatever entries exist, for any caller that
+  // hasn't wired settings-driven time_slots through yet.
+  const derivedTimeSlots = useMemo(() => {
     const seen = new Map();
     entries.forEach((entry) => {
       const key = `${entry.start_time}|${entry.end_time}`;
@@ -1427,7 +1432,9 @@ export function TimetableGridTable({ entries = [], days = [], renderCell, emptyM
     return Array.from(seen.values()).sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
   }, [entries]);
 
-  if (!entries.length) {
+  const timeSlots = configuredTimeSlots?.length ? configuredTimeSlots : derivedTimeSlots;
+
+  if (!timeSlots.length || !days.length) {
     return <p className="panel-empty">{emptyMessage}</p>;
   }
 

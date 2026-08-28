@@ -57,6 +57,7 @@ from academic.models import (
     SchoolActivityCalendar,
     TeacherNote,
     TimetableEntry,
+    TimetableSettings,
 )
 from core.models import SchoolTenant, Domain
 from settings_app.models import DocumentTheme
@@ -10256,6 +10257,34 @@ def _parse_time_value(raw):
     return None
 
 
+def _get_timetable_settings(user):
+    """The tenant's timetable settings, or a sensible unsaved default if none
+    has been configured yet - never writes on a read, so loading the
+    timetable (by any role, on every page view) can't create rows."""
+    tenant_obj = _tenant_for_model(TimetableSettings, user)
+    existing = TimetableSettings.objects.filter(tenant=tenant_obj).first() if tenant_obj else None
+    return existing or TimetableSettings(tenant=tenant_obj)
+
+
+def _timetable_settings_payload(settings_obj):
+    periods = settings_obj.compute_periods()
+    return {
+        "periods_per_day": settings_obj.periods_per_day,
+        "period_duration_minutes": settings_obj.period_duration_minutes,
+        "day_start_time": settings_obj.day_start_time.strftime("%H:%M"),
+        "school_days": settings_obj.school_days,
+        "time_slots": [
+            {
+                "index": period["index"],
+                "start_time": period["start_time"].strftime("%H:%M"),
+                "end_time": period["end_time"].strftime("%H:%M"),
+                "label": f"Period {period['index']}",
+            }
+            for period in periods
+        ],
+    }
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def timetables_snapshot(request):
@@ -10277,14 +10306,24 @@ def timetables_snapshot(request):
     if class_id and role in ADMIN_ROLES:
         entries_qs = entries_qs.filter(class_group_id=class_id)
 
+    settings_obj = _get_timetable_settings(user)
+    settings_payload = _timetable_settings_payload(settings_obj)
+    configured_days = settings_obj.school_days or [value for value, _label in TimetableEntry.DAY_CHOICES]
+
     response = {
         "success": True,
         "entries": [_timetable_entry_payload(item) for item in entries_qs[:500]],
-        "days": [{"value": value, "label": label} for value, label in TimetableEntry.DAY_CHOICES],
+        "days": [
+            {"value": value, "label": label}
+            for value, label in TimetableEntry.DAY_CHOICES
+            if value in configured_days
+        ],
+        "time_slots": settings_payload["time_slots"],
         "school_activities": _upcoming_school_activities(user),
     }
 
     if role in ADMIN_ROLES:
+        response["settings"] = settings_payload
         response["classes"] = [
             _class_payload(class_obj)
             for class_obj in _scope_to_user_tenant(Class.objects.prefetch_related("subjects"), user).order_by("name", "section")[:100]
@@ -10466,10 +10505,207 @@ def timetable_entry_detail(request, entry_id):
         entry.room = str(request.data.get("room") or "").strip()
         update_fields.append("room")
 
+    # Re-run the same overlap check create_timetable_entry does whenever an
+    # edit touches anything that affects it - otherwise moving an entry's
+    # day/time/teacher/class here could introduce a clash that a fresh
+    # create would have blocked outright.
+    if {"class_id", "teacher_id", "day_of_week", "start_time", "end_time"} & set(request.data.keys()):
+        conflicts = _scope_to_user_tenant(TimetableEntry.objects.all(), user).exclude(id=entry.id).filter(
+            day_of_week=entry.day_of_week, start_time__lt=entry.end_time, end_time__gt=entry.start_time,
+        ).filter(Q(class_group=entry.class_group) | (Q(teacher=entry.teacher) if entry.teacher_id else Q(pk=None)))
+        if conflicts.exists():
+            return Response(
+                {"success": False, "message": "This clashes with an existing timetable entry for the class or teacher."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     if update_fields:
         entry.save(update_fields=update_fields)
 
     return Response({"success": True, "message": "Timetable entry updated.", "entry": _timetable_entry_payload(entry)})
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def timetable_settings_view(request):
+    """The knobs the auto-generator (and the fixed weekly grid) read from:
+    how many periods a day has, how long each is, what time the day starts,
+    and which days count as school days. Lazily created on first PATCH -
+    GET never writes, so it's safe to call from any page load."""
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can manage the timetable."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == "GET":
+        return Response({"success": True, "settings": _timetable_settings_payload(_get_timetable_settings(user))})
+
+    tenant_obj = _tenant_for_model(TimetableSettings, user)
+    if not tenant_obj:
+        return Response({"success": False, "message": "Could not resolve your school."}, status=status.HTTP_400_BAD_REQUEST)
+    settings_obj, _created = TimetableSettings.objects.get_or_create(tenant=tenant_obj)
+
+    if "periods_per_day" in request.data:
+        try:
+            periods_per_day = int(request.data.get("periods_per_day"))
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "Enter a valid number of periods."}, status=status.HTTP_400_BAD_REQUEST)
+        if periods_per_day < 1 or periods_per_day > 20:
+            return Response({"success": False, "message": "Number of periods must be between 1 and 20."}, status=status.HTTP_400_BAD_REQUEST)
+        settings_obj.periods_per_day = periods_per_day
+
+    if "period_duration_minutes" in request.data:
+        try:
+            period_duration_minutes = int(request.data.get("period_duration_minutes"))
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "Enter a valid period duration."}, status=status.HTTP_400_BAD_REQUEST)
+        if period_duration_minutes < 5 or period_duration_minutes > 240:
+            return Response({"success": False, "message": "Period duration must be between 5 and 240 minutes."}, status=status.HTTP_400_BAD_REQUEST)
+        settings_obj.period_duration_minutes = period_duration_minutes
+
+    if "day_start_time" in request.data:
+        day_start_time = _parse_time_value(request.data.get("day_start_time"))
+        if not day_start_time:
+            return Response({"success": False, "message": "Enter a valid start time."}, status=status.HTTP_400_BAD_REQUEST)
+        settings_obj.day_start_time = day_start_time
+
+    if "school_days" in request.data:
+        raw_days = request.data.get("school_days")
+        if not isinstance(raw_days, list) or not raw_days:
+            return Response({"success": False, "message": "Select at least one school day."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            school_days = sorted({int(day) for day in raw_days})
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "Select valid school days."}, status=status.HTTP_400_BAD_REQUEST)
+        if any(day not in dict(TimetableEntry.DAY_CHOICES) for day in school_days):
+            return Response({"success": False, "message": "Select valid school days."}, status=status.HTTP_400_BAD_REQUEST)
+        settings_obj.school_days = school_days
+
+    settings_obj.save()
+    return Response({"success": True, "message": "Timetable settings saved.", "settings": _timetable_settings_payload(settings_obj)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def generate_timetable(request):
+    """Fill empty timetable slots from the configured settings - never
+    touches a slot that already has an entry, whether that entry came from a
+    previous generate run or was created/edited by hand. This is the only
+    way "generate" can be safe to press more than once: it is purely
+    additive, so an admin's manual edits can never be silently lost."""
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can manage the timetable."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    settings_obj = _get_timetable_settings(user)
+    periods = settings_obj.compute_periods()
+    # settings_obj.school_days is never actually empty - the model field's
+    # default callable populates it even on an unsaved instance - but guard
+    # anyway in case a row was ever hand-edited to an empty list.
+    school_days = settings_obj.school_days or [value for value, _label in TimetableEntry.DAY_CHOICES]
+    if not periods or not school_days:
+        return Response({"success": False, "message": "Configure timetable settings first."}, status=status.HTTP_400_BAD_REQUEST)
+
+    classes_qs = _scope_to_user_tenant(Class.objects.prefetch_related("subjects"), user)
+    class_ids = request.data.get("class_ids")
+    if class_ids:
+        classes_qs = classes_qs.filter(id__in=class_ids)
+    classes = list(classes_qs.order_by("name", "section"))
+    if not classes:
+        return Response({"success": False, "message": "No classes to generate a timetable for."}, status=status.HTTP_400_BAD_REQUEST)
+
+    tenant_obj = _tenant_for_model(TimetableEntry, user)
+    active_year = _active_academic_year(user)
+    active_term = _active_term(user)
+
+    # Seeded from every entry already in the tenant (not just the classes
+    # being generated for this call), so a new placement for Class A can
+    # never double-book a teacher already committed to Class B at that exact
+    # day and time - and so a manually-created entry with non-standard times
+    # still blocks a period that would otherwise overlap it.
+    existing_entries = list(_scope_to_user_tenant(TimetableEntry.objects.all(), user))
+    class_slots = {}
+    teacher_slots = {}
+    for existing in existing_entries:
+        class_slots.setdefault(existing.class_group_id, []).append(
+            (existing.day_of_week, existing.start_time, existing.end_time)
+        )
+        if existing.teacher_id:
+            teacher_slots.setdefault(existing.teacher_id, []).append(
+                (existing.day_of_week, existing.start_time, existing.end_time)
+            )
+
+    def overlaps(booked, day, start, end):
+        return any(d == day and s < end and e > start for d, s, e in booked)
+
+    created_entries = []
+    skipped_existing = 0
+
+    for class_obj in classes:
+        subjects = list(class_obj.subjects.all().order_by("name"))
+        if not subjects:
+            continue
+        eligible_by_subject = {
+            subject.id: [
+                teacher_profile.user
+                for teacher_profile in TeacherProfile.objects.select_related("user")
+                .filter(user__tenant=user.tenant, subjects=subject, assigned_classes=class_obj)
+                .order_by("user__first_name", "user__last_name")
+            ]
+            for subject in subjects
+        }
+        subject_cycle_index = 0
+        for day in school_days:
+            for period in periods:
+                start_time, end_time = period["start_time"], period["end_time"]
+                if overlaps(class_slots.get(class_obj.id, []), day, start_time, end_time):
+                    skipped_existing += 1
+                    continue
+
+                subject_obj = subjects[subject_cycle_index % len(subjects)]
+                subject_cycle_index += 1
+
+                teacher_obj = None
+                for candidate in eligible_by_subject.get(subject_obj.id, []):
+                    if not overlaps(teacher_slots.get(candidate.id, []), day, start_time, end_time):
+                        teacher_obj = candidate
+                        break
+
+                entry = TimetableEntry.objects.create(
+                    tenant=tenant_obj,
+                    class_group=class_obj,
+                    subject=subject_obj,
+                    teacher=teacher_obj,
+                    day_of_week=day,
+                    start_time=start_time,
+                    end_time=end_time,
+                    academic_year=active_year,
+                    term=active_term,
+                )
+                created_entries.append(entry)
+                class_slots.setdefault(class_obj.id, []).append((day, start_time, end_time))
+                if teacher_obj:
+                    teacher_slots.setdefault(teacher_obj.id, []).append((day, start_time, end_time))
+
+    created_count = len(created_entries)
+    message = (
+        f"Generated {created_count} new timetable entr{'y' if created_count == 1 else 'ies'}. "
+        "Existing entries were left unchanged."
+        if created_count
+        else "Every configured slot already has a timetable entry - nothing new to generate."
+    )
+    return Response({
+        "success": True,
+        "message": message,
+        "created_count": created_count,
+        "skipped_existing_count": skipped_existing,
+        "entries": [_timetable_entry_payload(entry) for entry in created_entries],
+    })
 
 
 @api_view(["POST"])
