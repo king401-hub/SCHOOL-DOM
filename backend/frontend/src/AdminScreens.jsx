@@ -11002,6 +11002,7 @@ function ParentDirectoryTable({
   searchLabel = "Search by parent, phone, email, or student",
   searchPlaceholder = "Example: 0803 or Amina",
   emptyMessage,
+  extraFilters,
 }) {
   const allSelected = Boolean(selection) && parents.length > 0 && selection.selectedIds.size === parents.length;
   return (
@@ -11012,6 +11013,7 @@ function ParentDirectoryTable({
           {searchLabel}
           <input value={searchTerm} onChange={(event) => onSearchChange(event.target.value)} placeholder={searchPlaceholder} />
         </label>
+        {extraFilters}
       </div>
       {parents.length > 0 ? (
         <table className="data-table">
@@ -11100,16 +11102,33 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
   const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
+  const [classFilter, setClassFilter] = useState("");
+  const [defaultersOnly, setDefaultersOnly] = useState(false);
+
+  // "those too" (fee reminders, bills) reuse this same filtered list rather
+  // than each building their own - one class/defaulter filter, applied
+  // uniformly no matter which template or channel is selected.
+  const availableClasses = useMemo(() => {
+    const set = new Set();
+    parents.forEach((parent) => (parent.children || []).forEach((child) => {
+      if (child.class_name) set.add(child.class_name);
+    }));
+    return Array.from(set).sort();
+  }, [parents]);
 
   const filteredParents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return parents;
     return parents.filter((item) => {
-      const childrenText = (item.children || []).map((child) => `${child.name} ${child.student_id}`).join(" ");
-      const haystack = [item.name, item.email, item.phone, childrenText].filter(Boolean).join(" ").toLowerCase();
-      return haystack.includes(query);
+      if (query) {
+        const childrenText = (item.children || []).map((child) => `${child.name} ${child.student_id}`).join(" ");
+        const haystack = [item.name, item.email, item.phone, childrenText].filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      if (classFilter && !(item.children || []).some((child) => child.class_name === classFilter)) return false;
+      if (defaultersOnly && !item.has_outstanding_balance) return false;
+      return true;
     });
-  }, [parents, searchTerm]);
+  }, [parents, searchTerm, classFilter, defaultersOnly]);
 
   const buildTemplate = (tpl) => {
     const schoolName = schoolData?.school?.name || school?.name || "School";
@@ -11122,6 +11141,7 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
       const shortTime = now.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit", hour12: true });
       const smsTpls = {
         fee_reminder: `${schoolName}: School fees for your ward are outstanding. Please pay via the school portal or contact the office. Thank you.`,
+        bill: `${schoolName}: Your ward's itemized fee bill is ready. A link to view the full breakdown will be included.`,
         meeting: `${schoolName}: You're invited to a parent-teacher meeting on ${shortDate} at ${shortTime}. Please endeavour to attend.`,
         general: `${schoolName}: Important notice - please check the school portal or contact the office for details.`,
         resumption: `${schoolName}: Reminder - school resumes on ${shortDate}. Kindly ensure your ward is present. Thank you.`,
@@ -11133,6 +11153,7 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
     const time = now.toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: true });
     const tpls = {
       fee_reminder: `Dear Parent,\n\n${schoolName} reminds you that your ward's school fees are currently outstanding. Kindly ensure payment is made promptly.\n\nFor payment details, please log in to the school portal or contact the school office.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName} Administration`,
+      bill: `Dear Parent,\n\nPlease find your ward's itemized fee bill below, including any outstanding balance and payment details.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName} Administration`,
       meeting: `Dear Parent,\n\n${schoolName} invites you to an important parent-teacher meeting.\n\nDate: ${date}\nTime: ${time}\n\nPlease endeavour to attend.\n\n— ${schoolName} Administration`,
       general: `Dear Parent,\n\n${schoolName} has an important announcement for you. Please visit the school office or check the school portal for further details.\n\nDate: ${date}  Time: ${time}\n\n— ${schoolName}`,
       resumption: `Dear Parent,\n\n${schoolName} wishes to remind you that resumption for the new term is scheduled. Kindly ensure your ward is in school on the appropriate date.\n\nDate: ${date}\n\n— ${schoolName} Administration`,
@@ -11165,7 +11186,8 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
         parent_ids: Array.from(bulkSelectedIds),
         channel: bulkChannel,
         message: bulkMessage,
-        personalize: bulkTemplate === "fee_reminder",
+        personalize: bulkTemplate === "fee_reminder" || bulkTemplate === "bill",
+        personalize_mode: bulkTemplate === "bill" ? "bill" : "fee_reminder",
       });
       setBulkResult(result);
     } catch (err) {
@@ -11202,7 +11224,7 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
         {/* Template picker */}
         <div className="bulk-template-row">
           <span className="bulk-template-label">Templates:</span>
-          {[["fee_reminder", "Fee Reminder"], ["meeting", "Meeting Notice"], ["general", "General Notice"], ["resumption", "Resumption Reminder"]].map(([tpl, lbl]) => (
+          {[["fee_reminder", "Fee Reminder"], ["bill", "Send Bill"], ["meeting", "Meeting Notice"], ["general", "General Notice"], ["resumption", "Resumption Reminder"]].map(([tpl, lbl]) => (
             <button
               key={tpl}
               type="button"
@@ -11240,6 +11262,11 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
           {bulkTemplate === "fee_reminder" && (
             <span className="bulk-message-hint">
               Each parent will get their own children's names, outstanding balance, and payment account instead of this preview text.
+            </span>
+          )}
+          {bulkTemplate === "bill" && (
+            <span className="bulk-message-hint">
+              Each parent will get a link to their own itemized bill (per child, per fee) instead of this preview text.
             </span>
           )}
         </label>
@@ -11293,6 +11320,21 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
         title="Recipients"
         searchLabel="Search recipients by parent, phone, email, or student"
         selection={{ selectedIds: bulkSelectedIds, onToggle: handleBulkSelectToggle, onSelectAll: handleBulkSelectAll }}
+        extraFilters={
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "1rem", flexWrap: "wrap" }}>
+            <label className="panel-field">
+              Class
+              <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
+                <option value="">All classes</option>
+                {availableClasses.map((cls) => <option key={cls} value={cls}>{cls}</option>)}
+              </select>
+            </label>
+            <label className="bulk-select-label" style={{ marginBottom: "0.6rem" }}>
+              <input type="checkbox" checked={defaultersOnly} onChange={(event) => setDefaultersOnly(event.target.checked)} />
+              Fee defaulters only
+            </label>
+          </div>
+        }
       />
     </>
   );
@@ -11403,8 +11445,6 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
             </div>
           ) : null}
 
-          <BulkMessagingPanel session={session} school={school} schoolData={data} parents={parentsData?.parents || []} />
-
           <article className="app-panel cm-pricing-card">
             <h3>Buy SMS Credits</h3>
             {data.paystack_public_key ? (
@@ -11442,6 +11482,8 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
               <p className="panel-empty compact">Payments are not configured for this school yet.</p>
             )}
           </article>
+
+          <BulkMessagingPanel session={session} school={school} schoolData={data} parents={parentsData?.parents || []} />
 
           <article className="app-panel">
             <h3>Recent Transactions</h3>

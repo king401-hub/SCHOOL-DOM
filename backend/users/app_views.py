@@ -1140,9 +1140,17 @@ def _find_parent_user_by_phone(tenant, phone_key):
     return None
 
 
-def _parent_payload(parent_profile, request=None):
+def _parent_payload(parent_profile, request=None, outstanding_student_ids=None):
     parent_user = parent_profile.user
     children = list(parent_profile.children.select_related("user", "current_class").all())
+    # outstanding_student_ids, when passed, is a batch-computed set covering
+    # every listed parent's children in one pass (see parents_snapshot) -
+    # recomputing per-parent here would be the N+1 this was built to avoid.
+    has_outstanding_balance = (
+        any(child.id in outstanding_student_ids for child in children)
+        if outstanding_student_ids is not None
+        else None
+    )
 
     # Fetch admin-assigned virtual account (if any)
     virtual_account = None
@@ -1195,6 +1203,7 @@ def _parent_payload(parent_profile, request=None):
         "child_monitor_active": child_monitor_active,
         "child_monitor_ref": child_monitor_ref,
         "child_monitor_expires_at": child_monitor_expires_at,
+        "has_outstanding_balance": has_outstanding_balance,
         "created_at": parent_profile.created_at,
     }
 
@@ -5415,6 +5424,33 @@ def parents_snapshot(request):
     parents_list = list(parents[:200])
     _reconcile_stuck_child_monitor_payments(parents_list)
 
+    # Fee-defaulter status for every listed parent, computed in one batch
+    # pass rather than per-parent (bulk_fee_paid_amounts amortizes to a
+    # fixed handful of queries regardless of how many students are involved -
+    # see its docstring) so the Bulk Messaging "defaulters only" filter has
+    # something real to filter on without an N+1 per page load.
+    from finance.models import SchoolFee
+    from finance.services import bulk_fee_paid_amounts, total_outstanding_for_fees
+
+    all_student_ids = [child.id for parent in parents_list for child in parent.children.all()]
+    outstanding_student_ids = set()
+    if all_student_ids:
+        unpaid_fees = list(
+            SchoolFee.objects.filter(
+                student_id__in=all_student_ids,
+                status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_PARTIAL, SchoolFee.STATUS_OVERDUE],
+            )
+        )
+        paid_amounts = bulk_fee_paid_amounts(unpaid_fees)
+        fees_by_student = {}
+        for fee in unpaid_fees:
+            fees_by_student.setdefault(fee.student_id, []).append(fee)
+        outstanding_student_ids = {
+            student_id
+            for student_id, fees in fees_by_student.items()
+            if total_outstanding_for_fees(fees, paid_amounts) > 0
+        }
+
     return Response(
         {
             "success": True,
@@ -5426,7 +5462,10 @@ def parents_snapshot(request):
             },
             "paystack_public_key": getattr(settings, "PAYSTACK_PUBLIC_KEY", ""),
             "child_monitor_price": KIDS_MONITOR_PRICE,
-            "parents": [_parent_payload(parent, request=request) for parent in parents_list],
+            "parents": [
+                _parent_payload(parent, request=request, outstanding_student_ids=outstanding_student_ids)
+                for parent in parents_list
+            ],
         }
     )
 

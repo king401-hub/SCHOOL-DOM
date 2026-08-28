@@ -3658,6 +3658,9 @@ def admin_bulk_message_parents(request):
     channel = str(request.data.get("channel") or "sms").lower().strip()
     message = str(request.data.get("message") or "").strip()
     personalize = bool(request.data.get("personalize"))
+    personalize_mode = str(request.data.get("personalize_mode") or "fee_reminder").lower().strip()
+    if personalize_mode not in ("fee_reminder", "bill"):
+        personalize_mode = "fee_reminder"
 
     if not parent_ids:
         return Response({"success": False, "message": "No parents selected."}, status=status.HTTP_400_BAD_REQUEST)
@@ -3669,7 +3672,9 @@ def admin_bulk_message_parents(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    result = send_bulk_message_to_parents(user.tenant, parent_ids, channel, message, personalize=personalize)
+    result = send_bulk_message_to_parents(
+        user.tenant, parent_ids, channel, message, personalize=personalize, personalize_mode=personalize_mode,
+    )
 
     record_finance_activity(
         user.tenant,

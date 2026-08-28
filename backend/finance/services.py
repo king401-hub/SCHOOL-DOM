@@ -4445,12 +4445,17 @@ def send_parent_virtual_account_fee_reminder(parent_user) -> dict:
         return {"success": False, "message": str(exc)}
 
 
-def _build_personalized_fee_reminder(parent_user, channel: str):
+def _build_personalized_fee_reminder(parent_user, channel: str, mode: str = "fee_reminder"):
     """
-    Build a fee reminder personalized with this parent's linked children's
-    outstanding balances and their virtual account (if provisioned).
+    Build a fee reminder (or itemized bill) personalized with this parent's
+    linked children's outstanding balances and their virtual account (if
+    provisioned). Same underlying data either way - mode only changes the
+    wording emphasis ("please pay" vs "here is your bill").
     Returns (message, has_outstanding). SMS is kept within the 160-char limit;
     WhatsApp/email have no such constraint so get the fuller per-child breakdown.
+    Every channel gets a link to the full itemized bill, not just SMS - a
+    parent reading this by email deserves the same per-fee breakdown as one
+    reading it by text.
     """
     from finance.models import ParentVirtualAccount
     from users.models import ParentProfile
@@ -4498,35 +4503,37 @@ def _build_personalized_fee_reminder(parent_user, channel: str):
         return "", False
 
     virtual_account = ParentVirtualAccount.objects.filter(parent=parent_user, is_active=True).first()
+    is_bill = mode == "bill"
+
+    bill_data = {
+        "type": "bill",
+        "school_name": school_name,
+        "parent_name": parent_user.get_full_name() or parent_user.email,
+        "students": bill_students,
+        "virtual_account": {
+            "number": virtual_account.account_number,
+            "bank": virtual_account.bank_name,
+            "name": virtual_account.account_name,
+        } if virtual_account else None,
+        "total_outstanding": str(total_outstanding),
+        "generated_at": timezone.now().strftime("%d %b %Y"),
+    }
+    receipt_url = create_receipt_link(bill_data, tenant=getattr(parent_user, "tenant", None), receipt_type="bill")
 
     if channel == "sms":
         child_part = per_child[0][0] if len(per_child) == 1 else (
             f"{per_child[0][0]} & {len(per_child) - 1} other{'s' if len(per_child) > 2 else ''}"
         )
-        parts = [f"{school_name}: {child_part} fees outstanding: {_plain_amount(total_outstanding)}."]
+        lead = "fees:" if is_bill else "fees outstanding:"
+        parts = [f"{school_name}: {child_part} {lead} {_plain_amount(total_outstanding)}."]
         if virtual_account:
             parts.append(f"Pay {virtual_account.account_number} {virtual_account.bank_name}.")
         else:
             parts.append("Contact school office to pay.")
         message = " ".join(parts)
-
-        bill_data = {
-            "type": "bill",
-            "school_name": school_name,
-            "parent_name": parent_user.get_full_name() or parent_user.email,
-            "students": bill_students,
-            "virtual_account": {
-                "number": virtual_account.account_number,
-                "bank": virtual_account.bank_name,
-                "name": virtual_account.account_name,
-            } if virtual_account else None,
-            "total_outstanding": str(total_outstanding),
-            "generated_at": timezone.now().strftime("%d %b %Y"),
-        }
-        receipt_url = create_receipt_link(bill_data, tenant=getattr(parent_user, "tenant", None), receipt_type="bill")
         return _sms_message_with_receipt_link(message, receipt_url), True
 
-    lines = [f"{school_name} Fee Reminder"]
+    lines = [f"{school_name} {'Fee Bill' if is_bill else 'Fee Reminder'}"]
     for child_name, balance in per_child:
         lines.append(f"{child_name}: {_format_naira(balance)} outstanding")
     if virtual_account:
@@ -4534,16 +4541,21 @@ def _build_personalized_fee_reminder(parent_user, channel: str):
         lines.append("Payments are matched automatically.")
     else:
         lines.append("\nContact school office for payment details.")
+    lines.append(f"\nFull itemized {'bill' if is_bill else 'statement'}: {receipt_url}")
     return "\n".join(lines), True
 
 
-def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, message: str, personalize: bool = False) -> dict:
+def send_bulk_message_to_parents(
+    tenant, parent_user_ids: list, channel: str, message: str, personalize: bool = False, personalize_mode: str = "fee_reminder",
+) -> dict:
     """
     Send bulk SMS / WhatsApp / Email to a list of parents (User UUIDs).
     channel: "sms" | "whatsapp" | "email"
-    personalize: when True (fee-reminder bulk sends), ignores `message` and builds a
+    personalize: when True (fee-reminder or bill bulk sends), ignores `message` and builds a
     per-parent message from their own children's balances + virtual account instead.
-    Parents with no outstanding balance are skipped rather than sent a blank reminder.
+    personalize_mode: "fee_reminder" (a nudge to pay) or "bill" (an itemized statement,
+    same underlying data, different wording/emphasis) - only meaningful when personalize=True.
+    Parents with no outstanding balance are skipped rather than sent a blank reminder/bill.
     Returns: {"sent": int, "failed": int, "skipped": int, "errors": list[str]}
     """
     from django.conf import settings
@@ -4563,7 +4575,7 @@ def send_bulk_message_to_parents(tenant, parent_user_ids: list, channel: str, me
         name = parent.get_full_name() or email
 
         if personalize:
-            outgoing_message, has_outstanding = _build_personalized_fee_reminder(parent, channel)
+            outgoing_message, has_outstanding = _build_personalized_fee_reminder(parent, channel, mode=personalize_mode)
             if not has_outstanding:
                 results["skipped"] += 1
                 continue
