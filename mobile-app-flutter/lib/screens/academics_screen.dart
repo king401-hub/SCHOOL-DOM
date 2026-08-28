@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import '../api/endpoints.dart';
+import '../api/grading_endpoints.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/branded_refresh.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/skeleton.dart';
 import 'create_exam_screen.dart';
+import 'grading_detail_screen.dart';
 
-/// Admin app's "Academics" nav tab - All Exams / CBT / Results, all pulled
-/// from the single existing users/app_views.py `exams_snapshot` payload
-/// (exam_format was added to each exam row for the CBT filter; everything
-/// else - exams, submitted_results, class/subject options - already existed).
+/// Admin app's "Academics" nav tab - All Exams / CBT / Results / Grading,
+/// all pulled from the single existing users/app_views.py `exams_snapshot`
+/// payload (exam_format was added to each exam row for the CBT filter;
+/// everything else - exams, submitted_results, class/subject options -
+/// already existed). Grading itself is its own screen (GradingQueueScreen),
+/// reached via a tab here since it's still an exams-related workflow.
 class AcademicsScreen extends StatefulWidget {
   const AcademicsScreen({super.key});
 
@@ -19,7 +23,7 @@ class AcademicsScreen extends StatefulWidget {
 }
 
 class _AcademicsScreenState extends State<AcademicsScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 3, vsync: this);
+  late final TabController _tabController = TabController(length: 4, vsync: this);
   Map<String, dynamic>? _data;
   bool _loading = true;
   String? _error;
@@ -82,7 +86,7 @@ class _AcademicsScreenState extends State<AcademicsScreen> with SingleTickerProv
           labelColor: AppColors.primary,
           unselectedLabelColor: AppColors.muted,
           indicatorColor: AppColors.primary,
-          tabs: const [Tab(text: 'All Exams'), Tab(text: 'CBT'), Tab(text: 'Results')],
+          tabs: const [Tab(text: 'All Exams'), Tab(text: 'CBT'), Tab(text: 'Results'), Tab(text: 'Grading')],
         ),
       ),
       floatingActionButton: Container(
@@ -124,6 +128,7 @@ class _AcademicsScreenState extends State<AcademicsScreen> with SingleTickerProv
                         _ExamList(items: allExams.cast<Map<String, dynamic>>()),
                         _ExamList(items: cbtExams.cast<Map<String, dynamic>>()),
                         _ResultsList(items: results.cast<Map<String, dynamic>>()),
+                        const _GradingTab(),
                       ],
                     ),
                   ),
@@ -218,6 +223,116 @@ class _ResultsList extends StatelessWidget {
           const SizedBox(height: 10),
         ],
       ],
+    );
+  }
+}
+
+/// Submitted attempts with at least one ungraded theory answer - embedded
+/// directly (rather than pushing GradingQueueScreen) so it sits inline as
+/// this tab's content instead of nesting a second Scaffold/AppBar.
+class _GradingTab extends StatefulWidget {
+  const _GradingTab();
+
+  @override
+  State<_GradingTab> createState() => _GradingTabState();
+}
+
+class _GradingTabState extends State<_GradingTab> {
+  List<dynamic> _attempts = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await loadGradingQueue();
+      setState(() => _attempts = (data['attempts'] ?? []) as List<dynamic>);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _open(Map<String, dynamic> attempt) async {
+    final graded = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => GradingDetailScreen(attemptId: attempt['attempt_id'] as int)),
+    );
+    if (graded == true) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading && _attempts.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+    }
+    if (_error != null && _attempts.isEmpty) {
+      return Center(child: Text(_error!, style: const TextStyle(color: AppColors.danger)));
+    }
+    if (_attempts.isEmpty) {
+      return Center(child: Text('No submissions need grading right now.', style: TextStyle(color: AppColors.muted)));
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: AppColors.primary,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 90),
+        children: [
+          for (final raw in _attempts) ...[
+            _GradingAttemptRow(item: raw as Map<String, dynamic>, onTap: () => _open(raw)),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GradingAttemptRow extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final VoidCallback onTap;
+  const _GradingAttemptRow({required this.item, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AppCard(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text((item['student_name'] ?? 'Student').toString(),
+                        style: const TextStyle(color: AppColors.textDark, fontWeight: FontWeight.w900)),
+                    Text((item['exam_title'] ?? 'Exam').toString(),
+                        style: const TextStyle(color: AppColors.mutedDark, fontSize: 13)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                child: const Text('PENDING',
+                    style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w800, fontSize: 10)),
+              ),
+              const SizedBox(width: 6),
+              Icon(Icons.chevron_right, color: AppColors.muted),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

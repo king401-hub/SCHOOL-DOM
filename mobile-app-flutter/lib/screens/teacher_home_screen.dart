@@ -9,6 +9,7 @@ import '../widgets/avatar.dart';
 import '../widgets/branded_refresh.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/skeleton.dart';
+import 'grading_queue_screen.dart';
 import 'notifications_screen.dart';
 import 'timetable_screen.dart';
 
@@ -288,6 +289,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with TickerProvid
                         value: (metrics['pending_submissions'] ?? 0).toString(),
                         icon: Icons.edit_note_outlined,
                         accent: AppColors.warning,
+                        onTap: () => Navigator.of(context)
+                            .push(MaterialPageRoute(builder: (_) => const GradingQueueScreen())),
                       ),
                     ),
                   ],
@@ -568,13 +571,20 @@ class _StatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color accent;
-  const _StatCard({required this.label, required this.value, required this.icon, required this.accent});
+  final VoidCallback? onTap;
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.accent,
+    this.onTap,
+  });
 
   bool get _isZero => (double.tryParse(value.replaceAll('%', '')) ?? -1) == 0;
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    final card = AppCard(
       elevated: true,
       padding: const EdgeInsets.all(14),
       gradient: LinearGradient(
@@ -615,6 +625,8 @@ class _StatCard extends StatelessWidget {
         ),
       ],
     );
+    if (onTap == null) return card;
+    return GestureDetector(onTap: onTap, child: card);
   }
 }
 
