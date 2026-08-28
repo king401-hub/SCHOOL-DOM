@@ -247,8 +247,16 @@ def chat(request):
         },
     }
 
+    # This VPS runs Ollama on CPU only (no GPU), so even the small 1b model
+    # can take well over a minute per reply under load - this timeout must
+    # stay comfortably BELOW gunicorn's --timeout (see schooldom.service),
+    # which must in turn stay below nginx's proxy_read_timeout on /api/ (see
+    # sites-enabled/schooldom). Whichever of the three is shortest silently
+    # kills the other two - a mismatch here is what caused a mid-reply 500
+    # with gunicorn logging "Worker exiting" instead of a clean timeout
+    # response reaching the user.
     try:
-        upstream = requests.post(OLLAMA_CHAT_URL, json=payload, stream=True, timeout=(5, 120))
+        upstream = requests.post(OLLAMA_CHAT_URL, json=payload, stream=True, timeout=(5, 180))
     except requests.exceptions.RequestException:
         return JsonResponse(
             {
