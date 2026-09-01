@@ -126,10 +126,19 @@ export function normalizePath(pathname) {
   if (!pathname || pathname === "/") {
     return "/";
   }
-  if (pathname.length > 1 && pathname.endsWith("/")) {
-    return pathname.slice(0, -1);
+
+  const normalized = pathname.endsWith("/") && pathname.length > 1 ? pathname.slice(0, -1) : pathname;
+  const appBase = "/app";
+
+  if (normalized === appBase) {
+    return "/";
   }
-  return pathname;
+
+  if (normalized.startsWith(`${appBase}/`)) {
+    return normalized.slice(appBase.length) || "/";
+  }
+
+  return normalized;
 }
 
 export function isTeacherAttendanceScanPath(pathname) {

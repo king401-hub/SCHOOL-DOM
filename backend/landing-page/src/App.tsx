@@ -15,7 +15,9 @@ import PrivacyPage from './pages/Privacy';
 
 const SignUpPage = lazy(() => import('./pages/SignUp'));
 
-const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || ((import.meta as any).env?.PROD ? '/app/' : 'http://localhost:5173/');
+const ADMIN_APP_URL =
+  (import.meta as any).env?.VITE_ADMIN_APP_URL ||
+  (import.meta.env.DEV ? 'http://localhost:5173/app/' : '/app/');
 
 function WhatsAppButton() {
   return (
@@ -47,7 +49,7 @@ function AmbientIcons() {
 }
 
 function HomePage() {
-  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}sign-in`; };
+  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}signin`; };
   const handleDemo = () => { document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }); };
 
   return (
@@ -63,7 +65,7 @@ function HomePage() {
 }
 
 export default function App() {
-  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}sign-in`; };
+  const handleSignIn = () => { window.location.href = `${ADMIN_APP_URL}signin`; };
 
   return (
     <HashRouter>

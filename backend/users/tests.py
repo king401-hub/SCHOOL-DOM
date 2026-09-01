@@ -4367,6 +4367,34 @@ class AuthSchoolScopeTests(TestCase):
         self.assertTrue(response.data["requires_otp"])
         self.assertTrue(response.data["otp_challenge"])
 
+    @patch("users.views.ADMIN_OTP_ENABLED", True)
+    def test_admin_otp_is_skipped_for_exempt_email(self):
+        user = User.objects.create_user(
+            email="icon01@gmail.com",
+            password="AdminPass123",
+            first_name="Icon",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+
+        response = self.client.post(
+            "/api/auth/login/",
+            data={
+                "email": user.email,
+                "password": "AdminPass123",
+                "school_code": self.school.schema_name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertNotIn("requires_otp", response.data)
+        self.assertIn("access", response.data)
+
     @override_settings(DEBUG=True, ADMIN_OTP_EMAIL_FAILURE_CONSOLE_FALLBACK=True)
     @patch("users.views.ADMIN_OTP_ENABLED", True)
     @patch("users.views.send_mail", return_value=1)

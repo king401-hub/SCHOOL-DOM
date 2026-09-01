@@ -18,7 +18,8 @@ export default defineConfig(({ mode }) => {
       assetsDir: 'lp-assets',
     },
     server: {
-      port: 5174,
+      host: '0.0.0.0',
+      port: 5175,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       proxy: {
@@ -26,6 +27,12 @@ export default defineConfig(({ mode }) => {
           target: proxyTarget,
           changeOrigin: true,
           secure: false,
+        },
+        '/app': {
+          target: 'http://127.0.0.1:5173',
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/app/, '') || '/',
         },
       },
     },

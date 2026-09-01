@@ -73,10 +73,13 @@ def secretary_chat(request):
     if result.get("error") and not result.get("reply"):
         return JsonResponse({"detail": result["error"]}, status=503)
 
-    return JsonResponse({
+    response = {
         "reply": result["reply"],
         "tools_called": result.get("tools_called", []),
-    })
+    }
+    if result.get("route"):
+        response["route"] = result["route"]
+    return JsonResponse(response)
 
 
 @api_view(["GET"])

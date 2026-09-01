@@ -148,7 +148,31 @@ const DAILY_PERSONAL_QUESTION_LIMIT = 20;
 const ADMIN_ACTIVITY_LOG_KEY = "schooldom.admin_activity_notifications";
 const STUDENT_CBT_DESKTOP_PATH = "/student-cbt";
 const TEACHER_TAB_STORAGE_KEY = "schooldom.teacher_active_tab";
-const LANDING_PAGE_URL = import.meta.env.VITE_LANDING_PAGE_URL || (import.meta.env.PROD ? "/" : "http://localhost:5174");
+const APP_BASE_PATH = import.meta.env.VITE_APP_BASE_PATH || "/app";
+const LANDING_PAGE_URL =
+  import.meta.env.VITE_LANDING_PAGE_URL ||
+  (import.meta.env.DEV ? "http://localhost:5175/" : "/");
+
+function getBrowserPath(targetPath) {
+  const nextPath = normalizePath(targetPath || "/");
+  if (nextPath === "/") {
+    return APP_BASE_PATH === "/" ? "/" : `${APP_BASE_PATH}/`;
+  }
+  const base = APP_BASE_PATH.replace(/\/+$/, "") || "";
+  return `${base}${nextPath}`;
+}
+
+function getClientRoute(pathname) {
+  const browserPath = normalizePath(pathname || "/");
+  const base = APP_BASE_PATH.replace(/\/+$/, "") || "";
+  if (browserPath === "/") {
+    return "/";
+  }
+  if (base && browserPath.startsWith(`${base}/`)) {
+    return browserPath.slice(base.length) || "/";
+  }
+  return browserPath;
+}
 
 function isMobileQuizViewport() {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -9456,34 +9480,45 @@ function DashboardLoader({ message = "Loading dashboard..." }) {
 
 export default function App() {
   const [session, setSession] = useState(() => readStoredSession());
-const [currentPath, setCurrentPath] = useState(() => normalizePath(window.location.pathname || "/"));
+  const [currentPath, setCurrentPath] = useState(() => getClientRoute(window.location.pathname || "/"));
   const [themePreference, setThemePreference] = useState(() => readStoredTheme());
 
   const navigate = useCallback((targetPath, options = {}) => {
     const { replace = false } = options;
     const nextPath = normalizePath(targetPath);
-    const current = normalizePath(window.location.pathname || "/");
+    const current = getClientRoute(window.location.pathname || "/");
 
     if (current === nextPath) {
       setCurrentPath(nextPath);
       return;
     }
 
+    const browserPath = getBrowserPath(nextPath);
     if (replace) {
-      window.history.replaceState({}, "", nextPath);
+      window.history.replaceState({}, "", browserPath);
     } else {
-      window.history.pushState({}, "", nextPath);
+      window.history.pushState({}, "", browserPath);
     }
     setCurrentPath(nextPath);
   }, []);
 
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentPath(normalizePath(window.location.pathname || "/"));
+      setCurrentPath(getClientRoute(window.location.pathname || "/"));
+    };
+    const handleAssistantNavigate = (event) => {
+      const nextRoute = event?.detail?.route || event?.detail?.path || "/dashboard";
+      if (typeof nextRoute === "string" && nextRoute.trim()) {
+        navigate(nextRoute, { replace: false });
+      }
     };
     window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+    window.addEventListener("schooldom:assistant-navigate", handleAssistantNavigate);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("schooldom:assistant-navigate", handleAssistantNavigate);
+    };
+  }, [navigate]);
 
 useEffect(() => {
   if (!session) {

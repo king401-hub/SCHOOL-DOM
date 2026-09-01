@@ -170,7 +170,17 @@ export default function SecretaryWidget({ session }) {
         role: "assistant",
         content: data.reply || "Done ✅",
         tools: data.tools_called || [],
+        route: data.route || null,
       };
+
+      if (assistantMsg.route && typeof window !== "undefined") {
+        const normalizedRoute = assistantMsg.route.startsWith("/") ? assistantMsg.route : `/${assistantMsg.route}`;
+        try {
+          window.dispatchEvent(new CustomEvent("schooldom:assistant-navigate", { detail: { route: normalizedRoute } }));
+        } catch (err) {
+          console.warn("Secretary navigation dispatch failed", err);
+        }
+      }
 
       setMessages((prev) => {
         const updated = [...prev.filter((m) => !m.thinking), assistantMsg];

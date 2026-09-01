@@ -18,7 +18,7 @@ type Role = 'school_admin' | 'school_superadmin';
 type SchoolType = 'k12' | 'non_k12';
 
 const SESSION_KEY = 'schooldom.session';
-const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || ((import.meta as any).env?.PROD ? '/app/' : 'http://localhost:5173/');
+const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || '/app/';
 
 const ROLES: { value: Role; title: string; desc: string; icon: typeof ShieldCheck }[] = [
   { value: 'school_admin', title: 'School Admin', desc: 'Direct management of single school operations, staff, and configurations.', icon: ShieldCheck },
