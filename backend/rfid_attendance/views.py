@@ -357,7 +357,7 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
         'success': True,
         'message': message,
         'action': action,
-        'person': {'id': str(student.id), 'name': student.get_full_name(), 'role': student.role},
+        'person': _person_summary(request, student),
         'attendance': {
             'status': attendance.status,
             'date': attendance.date,
@@ -407,7 +407,7 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
         'success': True,
         'message': message,
         'action': action,
-        'person': {'id': str(staff.id), 'name': staff.get_full_name(), 'role': staff.role},
+        'person': _person_summary(request, staff),
         'attendance': {
             'status': attendance.status,
             'check_in_time': attendance.check_in_time,

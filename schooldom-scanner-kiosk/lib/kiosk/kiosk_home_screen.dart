@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:nfc_manager/nfc_manager.dart';
@@ -48,6 +49,21 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   Timer? _resultTimer;
   Timer? _heartbeatTimer;
 
+  // ------------------------------------------------------ External USB HID reader
+  // A plugged-in USB HID keyboard-emulation card reader (the common/cheap type -
+  // same category the Windows app's HidRfidReader.cs handles) shows up to Android
+  // exactly like a physical keyboard: no USB permission dialog, no native plugin,
+  // just ordinary key events delivered to whichever widget holds focus. This
+  // FocusNode/KeyboardListener pair is that "whichever widget" - it must hold
+  // focus at all times since kiosk mode has nothing else to give it to, and it
+  // feeds the same _handleScan used by the built-in-NFC path above.
+  final FocusNode _hidFocusNode = FocusNode();
+  final StringBuffer _hidBuffer = StringBuffer();
+  DateTime? _lastHidKeyAt;
+  bool _hidBufferLooksLikeScan = true;
+  static const _hidFastKeystrokeThresholdMs = 50;
+  static const _hidIdleResetMs = 400;
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +73,13 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     _startNfcSession();
     _sendHeartbeat();
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) => _sendHeartbeat());
+    _hidFocusNode.addListener(() {
+      if (!_hidFocusNode.hasFocus) {
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) _hidFocusNode.requestFocus();
+        });
+      }
+    });
   }
 
   @override
@@ -64,9 +87,85 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     _resultTimer?.cancel();
     _heartbeatTimer?.cancel();
     NfcManager.instance.stopSession();
+    _hidFocusNode.dispose();
     WakelockPlus.disable();
     _tts.stop();
     super.dispose();
+  }
+
+  /// Distinguishing a card scan from stray/human key input is done purely by
+  /// inter-keystroke timing, mirroring HidRfidReader.cs exactly: keys arriving
+  /// less than [_hidFastKeystrokeThresholdMs] apart are a candidate scan;
+  /// Enter/Tab commits the buffer; a gap larger than [_hidIdleResetMs] at any
+  /// point invalidates the buffer as "not a scan" (dropped, never forwarded).
+  void _handleHidKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final now = DateTime.now();
+    final gapMs = _lastHidKeyAt == null ? null : now.difference(_lastHidKeyAt!).inMilliseconds;
+    _lastHidKeyAt = now;
+
+    if (gapMs == null || gapMs > _hidIdleResetMs) {
+      _hidBuffer.clear();
+      _hidBufferLooksLikeScan = true;
+    } else if (_hidBuffer.isNotEmpty && gapMs > _hidFastKeystrokeThresholdMs) {
+      _hidBufferLooksLikeScan = false;
+    }
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter || key == LogicalKeyboardKey.tab) {
+      _commitHidBuffer();
+      return;
+    }
+
+    final ch = _hidCharFor(key);
+    if (ch != null) {
+      _hidBuffer.write(ch);
+    } else {
+      // Any key that isn't a plausible UID character (arrows, function keys,
+      // modifiers, etc.) can't be part of a reader payload.
+      _hidBufferLooksLikeScan = false;
+    }
+  }
+
+  // Deliberately simple, matching HidRfidReader.VirtualKeyToChar: readers only
+  // ever "type" digits and occasionally uppercase letters (hex UIDs), always
+  // via the shift-independent physical key regardless of actual shift state.
+  // Not `const` - LogicalKeyboardKey overrides == / hashCode, which the
+  // language disallows as a const-map key even though these values never
+  // change at runtime.
+  static final _hidDigitKeys = {
+    LogicalKeyboardKey.digit0: '0', LogicalKeyboardKey.digit1: '1',
+    LogicalKeyboardKey.digit2: '2', LogicalKeyboardKey.digit3: '3',
+    LogicalKeyboardKey.digit4: '4', LogicalKeyboardKey.digit5: '5',
+    LogicalKeyboardKey.digit6: '6', LogicalKeyboardKey.digit7: '7',
+    LogicalKeyboardKey.digit8: '8', LogicalKeyboardKey.digit9: '9',
+    LogicalKeyboardKey.numpad0: '0', LogicalKeyboardKey.numpad1: '1',
+    LogicalKeyboardKey.numpad2: '2', LogicalKeyboardKey.numpad3: '3',
+    LogicalKeyboardKey.numpad4: '4', LogicalKeyboardKey.numpad5: '5',
+    LogicalKeyboardKey.numpad6: '6', LogicalKeyboardKey.numpad7: '7',
+    LogicalKeyboardKey.numpad8: '8', LogicalKeyboardKey.numpad9: '9',
+  };
+  static final _hidLetterKeys = {
+    LogicalKeyboardKey.keyA: 'A', LogicalKeyboardKey.keyB: 'B', LogicalKeyboardKey.keyC: 'C',
+    LogicalKeyboardKey.keyD: 'D', LogicalKeyboardKey.keyE: 'E', LogicalKeyboardKey.keyF: 'F',
+    LogicalKeyboardKey.keyG: 'G', LogicalKeyboardKey.keyH: 'H', LogicalKeyboardKey.keyI: 'I',
+    LogicalKeyboardKey.keyJ: 'J', LogicalKeyboardKey.keyK: 'K', LogicalKeyboardKey.keyL: 'L',
+    LogicalKeyboardKey.keyM: 'M', LogicalKeyboardKey.keyN: 'N', LogicalKeyboardKey.keyO: 'O',
+    LogicalKeyboardKey.keyP: 'P', LogicalKeyboardKey.keyQ: 'Q', LogicalKeyboardKey.keyR: 'R',
+    LogicalKeyboardKey.keyS: 'S', LogicalKeyboardKey.keyT: 'T', LogicalKeyboardKey.keyU: 'U',
+    LogicalKeyboardKey.keyV: 'V', LogicalKeyboardKey.keyW: 'W', LogicalKeyboardKey.keyX: 'X',
+    LogicalKeyboardKey.keyY: 'Y', LogicalKeyboardKey.keyZ: 'Z',
+  };
+
+  String? _hidCharFor(LogicalKeyboardKey key) => _hidDigitKeys[key] ?? _hidLetterKeys[key];
+
+  void _commitHidBuffer() {
+    final candidate = _hidBuffer.toString();
+    _hidBuffer.clear();
+    final wasQualified = _hidBufferLooksLikeScan;
+    _hidBufferLooksLikeScan = true;
+    if (!wasQualified || candidate.isEmpty) return;
+    _handleScan(candidate);
   }
 
   Future<void> _loadSchoolName() async {
@@ -156,7 +255,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
       );
     } on ApiException catch (e) {
       if (e.statusCode == 404) {
-        await _showResult(_ScanOutcome.invalid);
+        // attendance_scan_create's "unregistered" response names the exact
+        // card_uid it looked up and didn't find (e.g. "Card 0012345678 is
+        // not linked to anyone.") - surfacing it is the only way to tell a
+        // genuinely-unregistered card apart from a UID-format mismatch
+        // against whatever string card_assignment_create actually stored.
+        await _showResult(_ScanOutcome.invalid, message: e.message);
       } else if (e.statusCode == 400 && _looksLikeAlreadyHandled(e.message)) {
         // Covers both attendance_scan_create's "X already has clocked out
         // today" AND the 3-hour clock-in/out gate's "clocked in recently -
@@ -280,12 +384,17 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0B1220),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Center(child: _outcome == null ? _buildReadyState() : _buildResultState()),
-            Positioned(top: 12, left: 0, right: 0, child: _buildStatusBar()),
-          ],
+      body: KeyboardListener(
+        focusNode: _hidFocusNode,
+        autofocus: true,
+        onKeyEvent: _handleHidKeyEvent,
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Center(child: _outcome == null ? _buildReadyState() : _buildResultState()),
+              Positioned(top: 12, left: 0, right: 0, child: _buildStatusBar()),
+            ],
+          ),
         ),
       ),
     );
@@ -306,10 +415,51 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
               const SizedBox(width: 12),
             ],
             Icon(_online ? Icons.wifi : Icons.wifi_off, size: 14, color: _online ? Colors.white38 : Colors.redAccent),
+            const SizedBox(width: 12),
+            // Re-opens the license-key entry screen - for recovering from a
+            // wrong/expired code or a terminal stuck on "Waiting for school
+            // assignment". Gated behind a confirmation dialog rather than
+            // acting on a bare tap, since a single accidental tap
+            // de-registering a live terminal would be worse than the
+            // friction of one extra step.
+            GestureDetector(
+              onTap: _confirmReProvision,
+              child: const Icon(Icons.key_outlined, size: 14, color: Colors.white38),
+            ),
           ]),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmReProvision() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF15213A),
+        title: const Text('Re-enter license key?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'This deactivates this terminal\'s current registration and returns to the activation screen. '
+          'Use this if the wrong key was entered, or the device is stuck waiting for a school assignment.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Continue', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await clearSession();
+    await KioskStore.deactivate();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   Widget _buildReadyState() {
@@ -346,8 +496,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
         const Text('Ready to Scan', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          _nfcAvailable ? 'Tap or scan your student card' : 'NFC is not available on this device',
-          style: TextStyle(color: _nfcAvailable ? Colors.white54 : Colors.redAccent, fontSize: 14),
+          // The connected USB reader path works regardless of _nfcAvailable
+          // (it doesn't touch the device's own NFC antenna at all), so this
+          // no longer claims scanning is unavailable just because the
+          // device's built-in NFC is missing/off.
+          _nfcAvailable ? 'Tap your card, or scan it on the connected reader' : 'Scan your card on the connected reader',
+          style: const TextStyle(color: Colors.white54, fontSize: 14),
         ),
       ],
     );
@@ -371,11 +525,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
       _ScanOutcome.error => 'Something Went Wrong',
     };
     final name = _resultData?['name'] as String?;
+    final photoUrl = _resultData?['photo_url'] as String?;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
+    Widget iconCircle() => Container(
           width: 120,
           height: 120,
           decoration: BoxDecoration(shape: BoxShape.circle, color: color.withValues(alpha: 0.15)),
@@ -384,7 +536,27 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
             color: color,
             size: 64,
           ),
-        ),
+        );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // A recognized person's own photo reads far better at a glance than a
+        // generic checkmark - falls back to the checkmark/icon circle above
+        // whenever there's no photo on file, or the scan wasn't a real match
+        // (invalid/duplicate/error never have a person to show a photo of).
+        if (isGood && name != null && (photoUrl ?? '').isNotEmpty)
+          ClipOval(
+            child: Image.network(
+              photoUrl!,
+              width: 120,
+              height: 120,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => iconCircle(),
+            ),
+          )
+        else
+          iconCircle(),
         const SizedBox(height: 24),
         Text(title, style: TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.w900)),
         if (name != null) ...[

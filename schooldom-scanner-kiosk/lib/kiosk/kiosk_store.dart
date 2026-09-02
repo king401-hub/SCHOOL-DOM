@@ -40,10 +40,11 @@ class KioskStore {
       _storage.read(key: _kDeviceAuthToken);
   static Future<String?> get schoolName => _storage.read(key: _kSchoolName);
 
-  /// Deliberately NOT exposed as a normal "sign out" - spec section 9: "Normal
-  /// users must not have a logout button." Only called after a superadmin
-  /// remote-revokes and the app itself detects it (heartbeat/scan responses
-  /// reporting authorized:false), never from anything the on-site user taps.
+  /// Called either after a superadmin remote-revokes (detected via
+  /// heartbeat/scan responses reporting authorized:false), or from the
+  /// confirmation-gated "Re-enter license key?" action on KioskHomeScreen's
+  /// status bar (recovering from a wrong code or a terminal stuck waiting
+  /// for school assignment) - not a bare, one-tap "sign out".
   static Future<void> deactivate() async {
     await _storage.delete(key: _kEnabled);
     await _storage.delete(key: _kDeviceId);
