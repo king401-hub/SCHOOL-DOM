@@ -1637,6 +1637,18 @@ function StudentIdCardPage({ session, onNavigate, themePreference, onThemeChange
   }, [loadCard]);
 
   const school = resolveSchoolBrand(data?.school, session?.school, session);
+  const documentTheme = resolveDocumentTheme(data?.school, session?.school);
+
+  const handlePrint = () => {
+    let styleTag = document.getElementById("id-card-page-style");
+    if (!styleTag) {
+      styleTag = document.createElement("style");
+      styleTag.id = "id-card-page-style";
+      document.head.appendChild(styleTag);
+    }
+    styleTag.textContent = `@page{size:${documentTheme.page_size} ${documentTheme.id_card_orientation};margin:${documentTheme.margin_mm}mm}`;
+    window.print();
+  };
 
   return (
     <StudentPageShell session={session} student={data?.person} currentPath="/id-card" onNavigate={onNavigate}
@@ -1649,7 +1661,13 @@ function StudentIdCardPage({ session, onNavigate, themePreference, onThemeChange
           <Suspense fallback={<ScreenState loading />}>
             <StudentIdCardPreview person={data.person} school={school} qrDataUrl={data.qr_data_url} />
           </Suspense>
-        ) : !loading && !error ? (
+        ) : null}
+        {data?.person ? (
+          <div className="panel-form-actions id-card-actions">
+            <button type="button" className="student-primary-btn" onClick={handlePrint}>Print ID Card</button>
+          </div>
+        ) : null}
+        {!data?.person && !loading && !error ? (
           <article className="student-panel">
             <h3>No ID card yet</h3>
             <p className="student-panel-sub">{data?.message || "Your school admin has not generated your ID card yet."}</p>

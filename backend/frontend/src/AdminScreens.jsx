@@ -7433,7 +7433,10 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
               <div>
                 <p>{person.name || "Unnamed user"}</p>
                 <strong>{person.unique_id || "No ID assigned"}</strong>
-                <span>{person.primary_label || "-"}</span>
+                {/* Class dropped from the student card per school policy - staff
+                    still show their role/specialization here, which is what
+                    primary_label actually means for that person_type. */}
+                <span>{person.person_type === "student" ? (person.secondary_label || "Learner") : (person.primary_label || "-")}</span>
               </div>
             </section>
 
@@ -7450,10 +7453,17 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
                 <dt>Gender</dt>
                 <dd>{genderDisplay(person.gender)}</dd>
               </div>
-              <div>
-                <dt>{person.person_type === "student" ? "Class" : "Role"}</dt>
-                <dd>{person.primary_label || "-"}</dd>
-              </div>
+              {person.person_type === "student" ? (
+                <div>
+                  <dt>Blood Group</dt>
+                  <dd>{person.blood_group || "-"}</dd>
+                </div>
+              ) : (
+                <div>
+                  <dt>Role</dt>
+                  <dd>{person.primary_label || "-"}</dd>
+                </div>
+              )}
               <div>
                 <dt>{person.person_type === "student" ? "Guardian" : "Department"}</dt>
                 <dd>{person.guardian_name || person.department || person.secondary_label || "-"}</dd>
@@ -7684,59 +7694,6 @@ export function IdCardVerificationPage() {
       </section>
     </main>
   );
-}
-
-function buildIdCardHtml(person, school, qrDataUrl) {
-  const brand = resolveSchoolBrand(school);
-  const photoBlock = person.profile_picture
-    ? `<img src="${escapeHtml(person.profile_picture)}" alt="${escapeHtml(person.name)} profile" />`
-    : `<span>${escapeHtml(userInitials({ full_name: person.name }))}</span>`;
-  const logoBlock = brand.logo
-    ? `<img src="${escapeHtml(brand.logo)}" alt="${escapeHtml(brand.name)} logo" />`
-    : `<span>${escapeHtml(brand.initials)}</span>`;
-  const signatureBlock = brand.signature
-    ? `<div class="sigBlock"><img src="${escapeHtml(brand.signature)}" alt="Authorized signature" class="sigImg" /><span>Authorized Signature</span></div>`
-    : "";
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(person.name)} ID Card</title>
-  <style>
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#eef3f8;font-family:Inter,Arial,sans-serif;color:#102033}.stage{display:grid;gap:16px;justify-items:center;padding:24px}.flip{width:360px;height:560px;perspective:1400px}.inner{position:relative;width:100%;height:100%;transition:transform .55s ease;transform-style:preserve-3d}.inner.flipped{transform:rotateY(180deg)}.card{position:absolute;inset:0;width:360px;min-height:560px;background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 24px 60px rgba(15,23,42,.18);border:1px solid #dbe5f0;backface-visibility:hidden}.back{transform:rotateY(180deg);background:#08111f;color:#fff}.ribbon{background:#0f3d5e;color:#fff;text-align:center;text-transform:uppercase;font-weight:800;letter-spacing:.12em;font-size:12px;padding:10px}.top,.backHead{display:flex;gap:12px;align-items:center;padding:18px 22px;background:linear-gradient(135deg,#f8fbff,#e8f2fb)}.backHead{background:#102033;color:#fff}.logo,.photo{display:grid;place-items:center;overflow:hidden;background:#fff;border:1px solid #d8e3ef}.logo{width:54px;height:54px;border-radius:16px;flex:0 0 auto}.logo img,.photo img,.qr img{width:100%;height:100%;object-fit:cover}.logo span,.photo span{font-weight:900;color:#0f3d5e}.top strong,.backHead strong{display:block;font-size:18px}.motto{display:block;color:#0f3d5e;font-size:11px;font-style:italic;font-weight:800;margin-top:2px}.backHead .motto{color:#a7f3d0}.top span,.backHead span{display:block;color:#64748b;font-size:12px;margin-top:2px}.backHead span{color:#cbd5e1}.person{display:grid;grid-template-columns:94px 1fr;gap:16px;padding:24px 22px 18px}.photo{width:94px;height:112px;border-radius:18px}.person p{margin:4px 0 8px;font-size:24px;line-height:1.05;font-weight:900}.person strong{display:inline-flex;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:6px 10px;font-size:13px}.person span{display:block;color:#475569;margin-top:10px;font-weight:700}.details{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 22px 18px}.details div{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fafc}.details dt{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.details dd{margin:4px 0 0;font-weight:800;font-size:13px}.sigBlock{display:grid;justify-items:center;gap:2px;padding:0 22px 10px}.sigImg{height:36px;max-width:140px;object-fit:contain}.sigBlock span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}.frontFooter{margin:0 22px 22px;padding:16px;border-radius:18px;background:#08111f;color:#fff}.frontFooter strong,.frontFooter span{display:block}.frontFooter span{color:#cbd5e1;font-size:12px;margin-top:6px}.backPanel{display:grid;justify-items:center;padding:18px 22px 10px;text-align:center}.backPanel p{margin:0 0 16px;text-transform:uppercase;letter-spacing:.12em;font-weight:900;color:#a7f3d0}.qr{width:250px;height:250px;border-radius:18px;background:#fff;padding:12px;display:grid;place-items:center;color:#0f3d5e;font-weight:900}.qr img{object-fit:contain}.backPanel strong{display:inline-flex;margin-top:12px;background:#e7f7ef;color:#0d6b3f;border-radius:999px;padding:7px 12px;font-size:14px}.backPanel span{display:block;margin-top:6px;font-size:22px;line-height:1.05;font-weight:900}.backFooter{padding:0 24px 32px;text-align:center;color:#cbd5e1;font-size:12px;line-height:1.45}.flipBtn{border:0;border-radius:8px;background:#0f3d5e;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}@media print{body{background:#fff;display:block}.stage{display:grid;grid-template-columns:360px 360px;gap:18px;place-content:center;padding:0}.flip{display:contents}.inner{display:contents;transform:none!important}.card{position:relative;inset:auto;box-shadow:none;page-break-inside:avoid;backface-visibility:visible}.back{transform:none}.flipBtn{display:none}}
-  </style>
-</head>
-<body>
-  <div class="stage">
-    <div class="flip">
-      <div class="inner" id="cardInner">
-        <article class="card front">
-          <div class="ribbon">${escapeHtml(person.display_type)}</div>
-          <header class="top"><div class="logo">${logoBlock}</div><div><strong>${escapeHtml(brand.name)}</strong>${brand.motto ? `<small class="motto">${escapeHtml(brand.motto)}</small>` : ""}<span>${escapeHtml(brand.code || "Official Identity Card")}</span></div></header>
-          <section class="person"><div class="photo">${photoBlock}</div><div><p>${escapeHtml(person.name || "Unnamed user")}</p><strong>${escapeHtml(person.unique_id || "No ID assigned")}</strong><span>${escapeHtml(person.primary_label || "-")}</span></div></section>
-          <dl class="details">
-            <div><dt>${person.person_type === "student" ? "Admission" : "Employment"}</dt><dd>${escapeHtml(idCardDate(person.admission_or_employment_date))}</dd></div>
-            <div><dt>Date of Birth</dt><dd>${escapeHtml(idCardDate(person.date_of_birth))}</dd></div>
-            <div><dt>Gender</dt><dd>${escapeHtml(genderDisplay(person.gender))}</dd></div>
-            <div><dt>${person.person_type === "student" ? "Class" : "Role"}</dt><dd>${escapeHtml(person.primary_label || "-")}</dd></div>
-            <div><dt>${person.person_type === "student" ? "Guardian" : "Department"}</dt><dd>${escapeHtml(person.guardian_name || person.department || person.secondary_label || "-")}</dd></div>
-            <div><dt>Phone</dt><dd>${escapeHtml(person.phone || person.guardian_phone || "-")}</dd></div>
-          </dl>
-          ${signatureBlock}
-          <footer class="frontFooter"><strong>Flip card to verify</strong><span>${escapeHtml(person.email || person.secondary_label || "SchoolDom profile verification")}</span></footer>
-        </article>
-        <article class="card back">
-          <header class="backHead"><div class="logo">${logoBlock}</div><div><strong>${escapeHtml(brand.name)}</strong>${brand.motto ? `<small class="motto">${escapeHtml(brand.motto)}</small>` : ""}<span>Official ID verification</span></div></header>
-          <section class="backPanel"><p>Scan to verify</p><div class="qr"><img src="${escapeHtml(qrDataUrl || "")}" alt="Verification QR code" /></div><strong>${escapeHtml(person.unique_id || "No ID assigned")}</strong><span>${escapeHtml(person.name || "Unnamed user")}</span></section>
-          <footer class="backFooter">Valid only when the scan page confirms this profile as verified and active.</footer>
-        </article>
-      </div>
-    </div>
-    <button class="flipBtn" type="button" onclick="document.getElementById('cardInner').classList.toggle('flipped')">Flip ID Card</button>
-  </div>
-</body>
-</html>`;
 }
 
 function AdminIdCardsScreen({ data, loading, error, onRetry, session, school }) {

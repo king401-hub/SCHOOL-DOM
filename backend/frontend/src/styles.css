@@ -23951,7 +23951,7 @@ body[data-theme="dark"] .heat-bar-track {
   transform: rotateY(180deg);
   display: grid;
   grid-template-rows: 42px minmax(0, 1fr) 24px;
-  background: #08111f;
+  background: var(--doc-secondary, #0f172a);
   color: #ffffff;
 }
 
@@ -23960,8 +23960,8 @@ body[data-theme="dark"] .heat-bar-track {
   color: #ffffff;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0;
-  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  font-size: 0.6rem;
   font-weight: 900;
   padding: 0.22rem 0.55rem;
 }
@@ -23970,8 +23970,22 @@ body[data-theme="dark"] .heat-bar-track {
   display: flex;
   gap: 0.55rem;
   align-items: center;
-  padding: 0.36rem 0.62rem;
-  background: linear-gradient(135deg, #f8fbff, #e8f2fb);
+  padding: 0.4rem 0.62rem;
+  background: linear-gradient(120deg, var(--id-card-teal), var(--doc-secondary, #0f172a) 150%);
+  position: relative;
+  overflow: hidden;
+}
+
+/* A faint diagonal sheen across the header band - cheap to render, reads as
+   a deliberate "security card" finish rather than a flat color fill. z-index
+   0 (vs. 1 on the logo/text below) keeps it a backdrop, not an overlay. */
+.id-card-top::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 38%);
+  pointer-events: none;
 }
 
 .id-card-school-logo {
@@ -23980,27 +23994,33 @@ body[data-theme="dark"] .heat-bar-track {
   border-radius: 8px;
   background: #ffffff;
   flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+  position: relative;
+  z-index: 1;
 }
 
 .id-card-top strong,
 .id-card-top span {
   display: block;
+  position: relative;
+  z-index: 1;
 }
 
 .id-card-top strong {
   font-size: 0.72rem;
   line-height: 1.05;
+  color: #ffffff;
 }
 
 .id-card-top span {
-  color: var(--id-card-muted);
+  color: rgba(255, 255, 255, 0.78);
   font-size: 0.52rem;
   margin-top: 0.08rem;
 }
 
 .id-card-motto {
   display: block;
-  color: var(--id-card-teal);
+  color: #d7ecff;
   font-size: 0.5rem;
   font-style: italic;
   font-weight: 800;
@@ -24017,6 +24037,17 @@ body[data-theme="dark"] .heat-bar-track {
   gap: 0.45rem;
   min-height: 0;
   padding: 0.42rem 0.62rem 0.35rem;
+  /* A near-invisible diagonal hatch, in the school's own accent color, so
+     the card reads as a printed security document rather than a plain
+     white rectangle with text on it - too faint to interfere with the
+     photo/badge/detail-tile content sitting on top of it. */
+  background-image: repeating-linear-gradient(
+    -35deg,
+    color-mix(in srgb, var(--id-card-teal) 5%, transparent) 0px,
+    color-mix(in srgb, var(--id-card-teal) 5%, transparent) 1px,
+    transparent 1px,
+    transparent 7px
+  );
 }
 
 .id-card-person {
@@ -24032,13 +24063,16 @@ body[data-theme="dark"] .heat-bar-track {
   width: 58px;
   height: 70px;
   border-radius: 8px;
-  border: 1px solid var(--id-card-line);
+  border: 2px solid var(--id-card-teal);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
   background: #f8fafc;
   overflow: hidden;
   display: grid;
   place-items: center;
   font-weight: 900;
   color: var(--id-card-teal);
+  position: relative;
+  z-index: 1;
 }
 
 .id-card-photo img {
@@ -24096,7 +24130,7 @@ body[data-theme="dark"] .heat-bar-track {
 .id-card-details dt {
   color: var(--id-card-muted);
   text-transform: uppercase;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   font-size: 0.38rem;
   font-weight: 900;
 }
@@ -24117,8 +24151,10 @@ body[data-theme="dark"] .heat-bar-track {
   margin: 0 0.62rem 0.42rem;
   padding: 0.26rem 0.42rem;
   border-radius: 7px;
-  background: #08111f;
+  background: var(--doc-secondary, #0f172a);
   color: #ffffff;
+  position: relative;
+  z-index: 1;
 }
 
 .id-card-front-footer {
@@ -24214,7 +24250,7 @@ body[data-theme="dark"] .heat-bar-track {
   margin: 0 0 0.18rem;
   color: #a7f3d0;
   text-transform: uppercase;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   font-size: 0.48rem;
   font-weight: 900;
 }
@@ -24599,12 +24635,14 @@ body[data-theme="dark"] .qr-scanner-copy p {
 }
 
 @media print {
-  .student-id-card-page,
-  .student-id-card-page * {
-    display: none !important;
-    visibility: hidden !important;
-  }
-
+  /* The "hide everything but the card" trick lives entirely in the
+     visibility rules below (body * hidden, then the print area shown
+     again) - a separate display:none on .student-id-card-page used to
+     also exist here to hide page chrome, but that wrapper is the direct
+     parent of the card on a student's own /id-card page, so it was
+     blanking the card itself whenever a student tried to print. Removed;
+     the visibility-based approach already hides the surrounding page on
+     every ID-card surface (admin and student) without that side effect. */
   body * {
     visibility: hidden !important;
   }
@@ -24612,6 +24650,13 @@ body[data-theme="dark"] .qr-scanner-copy p {
   .id-card-print-area,
   .id-card-print-area * {
     visibility: visible !important;
+    /* Chrome/Edge strip background colors and gradients on print by
+       default unless the user manually enables "Background graphics" -
+       without this the card's brand header, ribbon, footer, and back
+       panel all print as plain white, which is the main reason a
+       genuinely colorful on-screen card looks flat and "lame" on paper. */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .id-card-print-area {
@@ -24646,9 +24691,11 @@ body[data-theme="dark"] .qr-scanner-copy p {
     width: 3.375in;
     height: 2.125in;
     box-shadow: none;
+    border-color: #94a3b8;
   }
 
-  .id-card-flip-button {
+  .id-card-flip-button,
+  .id-card-actions {
     display: none;
   }
 }
