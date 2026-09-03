@@ -6787,6 +6787,228 @@ function AdminHRPayrollScreen({
   );
 }
 
+const PAYROLL_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "approved", label: "Approved" },
+  { value: "paid", label: "Paid" },
+];
+
+const PAYROLL_MONTH_OPTIONS = [
+  { value: 1, label: "January" }, { value: 2, label: "February" }, { value: 3, label: "March" },
+  { value: 4, label: "April" }, { value: 5, label: "May" }, { value: 6, label: "June" },
+  { value: 7, label: "July" }, { value: 8, label: "August" }, { value: 9, label: "September" },
+  { value: 10, label: "October" }, { value: 11, label: "November" }, { value: 12, label: "December" },
+];
+
+function AdminPayrollScreen({ data, loading, error, onRetry, session }) {
+  const [staffId, setStaffId] = useState("");
+  const [year, setYear] = useState("");
+  const [month, setMonth] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [department, setDepartment] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const limit = 25;
+  const [result, setResult] = useState(data || null);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+
+  useEffect(() => {
+    setResult(data || null);
+  }, [data]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [staffId, year, month, statusFilter, department, search]);
+
+  const buildParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (staffId) params.set("staff_id", staffId);
+    if (year) params.set("year", year);
+    if (month) params.set("month", month);
+    if (statusFilter) params.set("status", statusFilter);
+    if (department) params.set("department", department);
+    if (search) params.set("search", search);
+    params.set("page", String(page));
+    params.set("limit", String(limit));
+    return params;
+  }, [staffId, year, month, statusFilter, department, search, page]);
+
+  const hasFilters = Boolean(staffId || year || month || statusFilter || department || search);
+
+  const fetchPayroll = useCallback(async () => {
+    if (!session) return;
+    setFetching(true);
+    setFetchError("");
+    try {
+      const params = buildParams();
+      const res = await requestJson(session, "GET", `/api/hr/payroll/?${params.toString()}`);
+      setResult(res);
+    } catch (err) {
+      setFetchError(err.message || "Could not load payroll records.");
+    } finally {
+      setFetching(false);
+    }
+  }, [session, buildParams]);
+
+  // The initial page load already comes from `data` (the generic screen
+  // loader) - only re-fetch once a filter or page actually changes, so
+  // mounting the screen doesn't fire a redundant duplicate request.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return undefined;
+    }
+    const timer = window.setTimeout(fetchPayroll, 300);
+    return () => window.clearTimeout(timer);
+  }, [fetchPayroll]);
+
+  const rows = result?.results || [];
+  const summary = result?.summary || {};
+  const staffOptions = result?.staff_options || data?.staff_options || [];
+  const departmentOptions = result?.departments || data?.departments || [];
+  const yearOptions = result?.years || data?.years || [];
+  const totalPages = Math.max(1, Math.ceil((result?.count || 0) / limit));
+  const formatMoney = (value) => `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString()}`;
+
+  const handleClearFilters = () => {
+    setStaffId("");
+    setYear("");
+    setMonth("");
+    setStatusFilter("");
+    setDepartment("");
+    setSearch("");
+  };
+
+  return (
+    <section className="screen-grid">
+      <div className="screen-hero">
+        <h2>Payroll</h2>
+        <p>Every payroll run for this school, filterable by staff, period, status, and department.</p>
+      </div>
+
+      <ScreenState loading={loading && !data} error={error} onRetry={onRetry} />
+
+      {data ? (
+        <>
+          <div className="metric-grid">
+            <MetricCard label="Total Net" value={formatMoney(summary.total_net)} helper={hasFilters ? "Matches current filters" : "All payroll records"} />
+            <MetricCard label="Total Paid" value={formatMoney(summary.total_paid)} />
+            <MetricCard label="Outstanding Balance" value={formatMoney(summary.total_balance)} />
+          </div>
+
+          <article className="app-panel">
+            <div className="panel-head"><h3>Filters</h3></div>
+            <div className="panel-form-grid">
+              <label className="panel-field">
+                Staff
+                <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+                  <option value="">All staff</option>
+                  {staffOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </label>
+              <label className="panel-field">
+                Search
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Staff name or code" />
+              </label>
+              <label className="panel-field">
+                Year
+                <select value={year} onChange={(e) => setYear(e.target.value)}>
+                  <option value="">All years</option>
+                  {yearOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="panel-field">
+                Month
+                <select value={month} onChange={(e) => setMonth(e.target.value)}>
+                  <option value="">All months</option>
+                  {PAYROLL_MONTH_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="panel-field">
+                Status
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="">All statuses</option>
+                  {PAYROLL_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="panel-field">
+                Department
+                <select value={department} onChange={(e) => setDepartment(e.target.value)}>
+                  <option value="">All departments</option>
+                  {departmentOptions.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                </select>
+              </label>
+            </div>
+            {hasFilters ? (
+              <div className="panel-form-actions">
+                <button type="button" className="btn-secondary" onClick={handleClearFilters}>Clear filters</button>
+              </div>
+            ) : null}
+          </article>
+
+          <article className="app-panel">
+            <div className="panel-head"><h3>Payroll records</h3></div>
+            {fetchError ? <p className="form-feedback error">{fetchError}</p> : null}
+            {rows.length ? (
+              <>
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Staff</th>
+                        <th>Department</th>
+                        <th>Period</th>
+                        <th>Base</th>
+                        <th>Allowances</th>
+                        <th>Deductions</th>
+                        <th>Net</th>
+                        <th>Paid</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.staff_name}</td>
+                          <td>{item.department || "-"}</td>
+                          <td>{item.period}</td>
+                          <td>{formatMoney(item.base_salary)}</td>
+                          <td>{formatMoney(item.allowances)}</td>
+                          <td>{formatMoney(item.deductions)}</td>
+                          <td>{formatMoney(item.net_salary)}</td>
+                          <td>{formatMoney(item.amount_paid)}</td>
+                          <td>{formatMoney(item.balance_after_payment)}</td>
+                          <td style={{ textTransform: "capitalize" }}>{item.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="panel-form-actions" style={{ justifyContent: "space-between", marginTop: "0.75rem" }}>
+                  <button type="button" className="btn-secondary" disabled={page <= 1 || fetching} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                    Prev
+                  </button>
+                  <span>
+                    Page {page} of {totalPages} &bull; {result?.count ?? 0} record{(result?.count ?? 0) === 1 ? "" : "s"}
+                  </span>
+                  <button type="button" className="btn-secondary" disabled={page >= totalPages || fetching} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                    Next
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="panel-empty">{fetching ? "Loading..." : "No payroll records match these filters."}</p>
+            )}
+          </article>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function AdminNonTeachingStaffScreen({
   data,
   loading,
@@ -14384,6 +14606,7 @@ export {
   AdminTableScreen,
   AdminClassesScreen,
   AdminHRPayrollScreen,
+  AdminPayrollScreen,
   AdminNonTeachingStaffScreen,
   AdminHRActivityScreen,
   AdminIdCardsScreen,

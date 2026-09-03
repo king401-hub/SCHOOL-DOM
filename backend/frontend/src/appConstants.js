@@ -55,6 +55,7 @@ export const ADMIN_ROUTES = [
       { path: "/expenses", label: "Expenses" },
       { path: "/sms-wallet", label: "SMS Wallet" },
       { path: "/hr/activity", label: "HR Management" },
+      { path: "/payroll", label: "Payroll" },
       { path: "/loan-application", label: "Loan Application" },
     ]
   },
@@ -108,6 +109,7 @@ export const ADMIN_ENDPOINTS = {
   "/sms-wallet": "/api/finance/admin/sms-wallet/",
   "/hr-self-service": "/api/hr/self-service/",
   "/hr/activity": "/api/hr/overview/",
+  "/payroll": "/api/hr/payroll/",
   "/non-teaching-staff": "/api/hr/overview/",
   "/students": "/api/app/students/",
   "/parents": "/api/app/parents/",

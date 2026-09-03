@@ -329,6 +329,7 @@ def _payroll_payload(item):
         "id": str(item.id),
         "staff_id": str(item.staff_id),
         "staff_name": item.staff.full_name,
+        "department": item.staff.department,
         "period": item.period_label,
         "year": item.year,
         "month": item.month,
@@ -404,6 +405,94 @@ def hr_snapshot(request):
                 }
                 for item in StaffActivity.objects.filter(tenant=tenant).select_related("staff", "actor").order_by("-created_at")[:40]
             ],
+        }
+    )
+
+
+_PAYROLL_SORT_FIELDS = {
+    "period": ("year", "month"),
+    "-period": ("-year", "-month"),
+    "staff": ("staff__first_name", "staff__last_name"),
+    "-staff": ("-staff__first_name", "-staff__last_name"),
+    "net_salary": ("net_salary",),
+    "-net_salary": ("-net_salary",),
+}
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def hr_payroll_list(request):
+    """Payroll as its own filterable, paginated subpage - hr_snapshot only
+    ever returns the newest 80 records with no way to narrow by staff,
+    period, status, or department, so older or specific payroll runs were
+    effectively unreachable once a school had more than a page of history."""
+    user = request.user
+    if not _require_admin(user):
+        return Response({"success": False, "message": "Only admins can view payroll."}, status=status.HTTP_403_FORBIDDEN)
+    tenant = _tenant_for_user(user)
+    if not tenant:
+        return Response({"success": False, "message": "Could not resolve school tenant."}, status=status.HTTP_400_BAD_REQUEST)
+
+    qs = PayrollRecord.objects.filter(staff__tenant=tenant).select_related("staff")
+
+    staff_id = str(request.query_params.get("staff_id") or "").strip()
+    if staff_id:
+        qs = qs.filter(staff_id=staff_id)
+
+    year = str(request.query_params.get("year") or "").strip()
+    if year:
+        qs = qs.filter(year=year)
+
+    month = str(request.query_params.get("month") or "").strip()
+    if month:
+        qs = qs.filter(month=month)
+
+    status_filter = str(request.query_params.get("status") or "").strip().lower()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+
+    department = str(request.query_params.get("department") or "").strip()
+    if department:
+        qs = qs.filter(staff__department=department)
+
+    search = str(request.query_params.get("search") or "").strip()
+    if search:
+        qs = qs.filter(
+            Q(staff__first_name__icontains=search) | Q(staff__last_name__icontains=search) | Q(staff__staff_code__icontains=search)
+        )
+
+    totals = qs.aggregate(
+        total_net=Sum("net_salary"),
+        total_paid=Sum("amount_paid"),
+        total_balance=Sum("balance_after_payment"),
+    )
+
+    order_fields = _PAYROLL_SORT_FIELDS.get(str(request.query_params.get("sort") or "-period"), ("-year", "-month"))
+    qs = qs.order_by(*order_fields, "staff__first_name")
+
+    limit = max(1, min(int(request.query_params.get("limit") or 25), 100))
+    page = max(1, int(request.query_params.get("page") or 1))
+    offset = (page - 1) * limit
+    count = qs.count()
+    page_rows = list(qs[offset: offset + limit])
+
+    staff_qs = _staff_queryset(user).order_by("first_name", "last_name")
+
+    return Response(
+        {
+            "success": True,
+            "count": count,
+            "page": page,
+            "limit": limit,
+            "summary": {
+                "total_net": totals["total_net"] or Decimal("0.00"),
+                "total_paid": totals["total_paid"] or Decimal("0.00"),
+                "total_balance": totals["total_balance"] or Decimal("0.00"),
+            },
+            "results": [_payroll_payload(item) for item in page_rows],
+            "staff_options": [{"id": item.id, "name": item.full_name, "staff_code": item.staff_code} for item in staff_qs],
+            "departments": list(staff_qs.exclude(department="").values_list("department", flat=True).distinct().order_by("department")),
+            "years": list(PayrollRecord.objects.filter(staff__tenant=tenant).values_list("year", flat=True).distinct().order_by("-year")),
         }
     )
 

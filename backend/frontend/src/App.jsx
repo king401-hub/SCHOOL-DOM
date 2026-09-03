@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive, Palette, KeyRound,
+  Package, Archive, Palette, KeyRound, Wallet,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -123,6 +123,7 @@ const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
 const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
 const AdminClassesScreen = lazyAdminScreen("AdminClassesScreen");
 const AdminHRPayrollScreen = lazyAdminScreen("AdminHRPayrollScreen");
+const AdminPayrollScreen = lazyAdminScreen("AdminPayrollScreen");
 const AdminNonTeachingStaffScreen = lazyAdminScreen("AdminNonTeachingStaffScreen");
 const AdminHRActivityScreen = lazyAdminScreen("AdminHRActivityScreen");
 const AdminIdCardsScreen = lazyAdminScreen("AdminIdCardsScreen");
@@ -5991,6 +5992,7 @@ const ADMIN_ROUTE_ICONS = {
   "/sms-wallet": MessageCircle,
   "/attendance": CalendarCheck,
   "/hr/activity": Briefcase,
+  "/payroll": Wallet,
   "/hr-self-service": UserCheck,
   "/students": GraduationCap,
   "/parents": Users,
@@ -8026,6 +8028,16 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onReviewLeave={handleReviewHrLeave}
         onCreateAdvance={handleCreateHrAdvance}
         onReviewAdvance={handleReviewHrAdvance}
+      />
+    );
+  } else if (activePath === "/payroll") {
+    content = (
+      <AdminPayrollScreen
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        session={session}
       />
     );
   } else if (activePath === "/non-teaching-staff") {

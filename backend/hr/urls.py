@@ -24,4 +24,5 @@ urlpatterns = [
     path("advances/create/", views.create_advance_request, name="hr_create_advance"),
     path("advances/<uuid:advance_id>/review/", views.review_advance_request, name="hr_review_advance"),
     path("payroll/create/", views.create_payroll_record, name="hr_create_payroll"),
+    path("payroll/", views.hr_payroll_list, name="hr_payroll_list"),
 ]
