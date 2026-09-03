@@ -4866,6 +4866,28 @@ body[data-theme="dark"] .timetable-grid-blank {
   color: #334155;
 }
 
+.timetable-grid-break-row {
+  background: #fffbeb;
+}
+
+.timetable-grid-break-label {
+  display: block;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+body[data-theme="dark"] .timetable-grid-break-row {
+  background: rgba(180, 83, 9, 0.12);
+}
+
+body[data-theme="dark"] .timetable-grid-break-label {
+  color: #fbbf24;
+}
+
 .timetable-grid-entry {
   display: flex;
   flex-direction: column;

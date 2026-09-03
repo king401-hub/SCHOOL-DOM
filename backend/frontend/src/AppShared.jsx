@@ -1460,7 +1460,7 @@ export function TimetableGridTable({ entries = [], days = [], timeSlots: configu
         </thead>
         <tbody>
           {timeSlots.map((slot) => (
-            <tr key={`${slot.start_time}-${slot.end_time}`}>
+            <tr key={`${slot.start_time}-${slot.end_time}`} className={slot.is_break ? "timetable-grid-break-row" : undefined}>
               <td className="timetable-grid-time-col">{slot.start_time} - {slot.end_time}</td>
               {days.map((day) => {
                 const cellEntries = entries.filter(
@@ -1477,6 +1477,8 @@ export function TimetableGridTable({ entries = [], days = [], timeSlots: configu
                           {renderCell(entry)}
                         </div>
                       ))
+                    ) : slot.is_break ? (
+                      <span className="timetable-grid-break-label">Break</span>
                     ) : (
                       <span className="timetable-grid-blank">-</span>
                     )}

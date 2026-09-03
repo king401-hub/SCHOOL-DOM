@@ -556,6 +556,12 @@ class TimetableSettings(TenantAwareModel, TimeStampedModel):
     period_duration_minutes = models.PositiveSmallIntegerField(default=40)
     day_start_time = models.TimeField(default=datetime.time(8, 0))
     school_days = models.JSONField(default=_default_school_days, blank=True)
+    # 1-based period indices (matching compute_periods()'s "index") that are
+    # non-teaching breaks - e.g. [4] for a mid-morning break at period 4.
+    # Applies uniformly across every class and day, so it needs no per-class
+    # TimetableEntry rows: the generator just skips these indices, and the
+    # grid renders them as "Break" straight from this list.
+    break_periods = models.JSONField(default=list, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["tenant"])]

@@ -5484,7 +5484,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   const [confirm, confirmDialog] = useConfirm();
 
   const [settingsForm, setSettingsForm] = useState({
-    periods_per_day: "8", period_duration_minutes: "40", day_start_time: "08:00", school_days: [0, 1, 2, 3, 4],
+    periods_per_day: "8", period_duration_minutes: "40", day_start_time: "08:00", school_days: [0, 1, 2, 3, 4], break_periods: [],
   });
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState("");
@@ -5503,6 +5503,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
       period_duration_minutes: String(settings.period_duration_minutes),
       day_start_time: settings.day_start_time,
       school_days: settings.school_days,
+      break_periods: settings.break_periods || [],
     });
   }, [settings]);
 
@@ -5516,6 +5517,16 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     });
   };
 
+  const toggleSettingsBreakPeriod = (index) => {
+    setSettingsForm((current) => {
+      const has = current.break_periods.includes(index);
+      const next = has
+        ? current.break_periods.filter((period) => period !== index)
+        : [...current.break_periods, index].sort((a, b) => a - b);
+      return { ...current, break_periods: next };
+    });
+  };
+
   const handleSettingsSubmit = async (event) => {
     event.preventDefault();
     setSettingsError("");
@@ -5526,11 +5537,13 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     }
     setSettingsBusy(true);
     try {
+      const periodsPerDay = Number(settingsForm.periods_per_day);
       const result = await onSaveSettings?.({
-        periods_per_day: Number(settingsForm.periods_per_day),
+        periods_per_day: periodsPerDay,
         period_duration_minutes: Number(settingsForm.period_duration_minutes),
         day_start_time: settingsForm.day_start_time,
         school_days: settingsForm.school_days,
+        break_periods: settingsForm.break_periods.filter((period) => period <= periodsPerDay),
       });
       setSettingsSuccess(result?.message || "Timetable settings saved.");
     } catch (actionError) {
@@ -5699,6 +5712,23 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
                   </label>
                 ))}
               </div>
+            </label>
+            <label className="panel-field full">
+              Break periods
+              <div className="panel-field-row">
+                {Array.from({ length: Math.max(0, Number(settingsForm.periods_per_day) || 0) }, (_, i) => i + 1).map((index) => (
+                  <label key={index}>
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.break_periods.includes(index)}
+                      onChange={() => toggleSettingsBreakPeriod(index)}
+                      disabled={settingsBusy}
+                    />
+                    {" "}Period {index}
+                  </label>
+                ))}
+              </div>
+              <small className="field-note">Periods marked as breaks are skipped by Generate Timetable and shown as "Break" on the grid for every class.</small>
             </label>
           </div>
           {settingsError ? <p className="form-feedback error">{settingsError}</p> : null}

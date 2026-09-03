@@ -10268,17 +10268,20 @@ def _get_timetable_settings(user):
 
 def _timetable_settings_payload(settings_obj):
     periods = settings_obj.compute_periods()
+    break_periods = settings_obj.break_periods or []
     return {
         "periods_per_day": settings_obj.periods_per_day,
         "period_duration_minutes": settings_obj.period_duration_minutes,
         "day_start_time": settings_obj.day_start_time.strftime("%H:%M"),
         "school_days": settings_obj.school_days,
+        "break_periods": break_periods,
         "time_slots": [
             {
                 "index": period["index"],
                 "start_time": period["start_time"].strftime("%H:%M"),
                 "end_time": period["end_time"].strftime("%H:%M"),
                 "label": f"Period {period['index']}",
+                "is_break": period["index"] in break_periods,
             }
             for period in periods
         ],
@@ -10583,6 +10586,19 @@ def timetable_settings_view(request):
             return Response({"success": False, "message": "Select valid school days."}, status=status.HTTP_400_BAD_REQUEST)
         settings_obj.school_days = school_days
 
+    if "break_periods" in request.data:
+        raw_breaks = request.data.get("break_periods")
+        if not isinstance(raw_breaks, list):
+            return Response({"success": False, "message": "Select valid break periods."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            break_periods = sorted({int(period) for period in raw_breaks})
+        except (TypeError, ValueError):
+            return Response({"success": False, "message": "Select valid break periods."}, status=status.HTTP_400_BAD_REQUEST)
+        periods_per_day = settings_obj.periods_per_day
+        if any(period < 1 or period > periods_per_day for period in break_periods):
+            return Response({"success": False, "message": "Break periods must be within the configured number of periods."}, status=status.HTTP_400_BAD_REQUEST)
+        settings_obj.break_periods = break_periods
+
     settings_obj.save()
     return Response({"success": True, "message": "Timetable settings saved.", "settings": _timetable_settings_payload(settings_obj)})
 
@@ -10603,7 +10619,8 @@ def generate_timetable(request):
         )
 
     settings_obj = _get_timetable_settings(user)
-    periods = settings_obj.compute_periods()
+    break_period_indexes = set(settings_obj.break_periods or [])
+    periods = [period for period in settings_obj.compute_periods() if period["index"] not in break_period_indexes]
     # settings_obj.school_days is never actually empty - the model field's
     # default callable populates it even on an unsaved instance - but guard
     # anyway in case a row was ever hand-edited to an empty list.
