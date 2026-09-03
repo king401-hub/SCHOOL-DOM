@@ -90,7 +90,26 @@ namespace SchoolDom.Cbt.Win7
                     ClassName = FirstText(row, "class_name", "class_label"),
                     ProfilePicture = FirstText(row, "profile_picture", "profile_picture_url", "photo", "photo_url"),
                     ProfilePictureData = FirstText(row, "profile_picture_data", "photo_data"),
-                    IsActive = isActive
+                    IsActive = isActive,
+                    AdmissionNumber = FirstText(row, "admission_number"),
+                    Email = FirstText(row, "email"),
+                    Phone = FirstText(row, "phone"),
+                    DateOfBirth = FirstText(row, "date_of_birth"),
+                    Gender = FirstText(row, "gender"),
+                    AdmissionDate = FirstText(row, "admission_date"),
+                    StateOfOrigin = FirstText(row, "state_of_origin"),
+                    LocalGovernment = FirstText(row, "local_government"),
+                    GuardianName = FirstText(row, "guardian_name"),
+                    GuardianPhone = FirstText(row, "guardian_phone"),
+                    GuardianEmail = FirstText(row, "guardian_email"),
+                    GuardianRelation = FirstText(row, "guardian_relation"),
+                    SecondGuardianName = FirstText(row, "second_guardian_name"),
+                    SecondGuardianPhone = FirstText(row, "second_guardian_phone"),
+                    BloodGroup = FirstText(row, "blood_group"),
+                    Disability = FirstText(row, "disability"),
+                    HomeAddress = FirstText(row, "home_address"),
+                    Allergies = FirstText(row, "allergies"),
+                    MedicalConditions = FirstText(row, "medical_conditions")
                 });
                 var cached = _store.State.Students[_store.State.Students.Count - 1];
                 if (string.IsNullOrWhiteSpace(cached.ProfilePictureData))

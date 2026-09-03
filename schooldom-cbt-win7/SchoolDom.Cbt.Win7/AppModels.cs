@@ -70,6 +70,30 @@ namespace SchoolDom.Cbt.Win7
         public string ProfilePicture { get; set; }
         public string ProfilePictureData { get; set; }
         public bool IsActive { get; set; } = true;
+
+        // Full profile fields, synced from the cloud's offline-sync package
+        // (backend/exams/exam_views.py _offline_student_payload) - shown on the
+        // student terminal's profile view. All optional/blank when the cloud
+        // hasn't recorded them, same as everywhere else this data is displayed.
+        public string AdmissionNumber { get; set; }
+        public string Email { get; set; }
+        public string Phone { get; set; }
+        public string DateOfBirth { get; set; }
+        public string Gender { get; set; }
+        public string AdmissionDate { get; set; }
+        public string StateOfOrigin { get; set; }
+        public string LocalGovernment { get; set; }
+        public string GuardianName { get; set; }
+        public string GuardianPhone { get; set; }
+        public string GuardianEmail { get; set; }
+        public string GuardianRelation { get; set; }
+        public string SecondGuardianName { get; set; }
+        public string SecondGuardianPhone { get; set; }
+        public string BloodGroup { get; set; }
+        public string Disability { get; set; }
+        public string HomeAddress { get; set; }
+        public string Allergies { get; set; }
+        public string MedicalConditions { get; set; }
     }
 
     public class ExamRecord

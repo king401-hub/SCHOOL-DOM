@@ -224,9 +224,15 @@ namespace SchoolDom.StudentCbt.Win7
             const int profileCardWidth = 290;
             const int profileBadgeWidth = 242;
             const int profileBadgeHeight = 136;
-            const int profileCardHeight = profileBadgeHeight + 16;
+            const int profileButtonHeight = 40;
+            const int profileCardHeight = profileBadgeHeight + profileButtonHeight + 16;
             var profileCard = Card(0, y, profileCardWidth, profileCardHeight);
-            profileCard.Controls.Add(CreateLargeStudentBadge((profileCardWidth - profileBadgeWidth) / 2, (profileCardHeight - profileBadgeHeight) / 2));
+            var profileBadgeTop = (profileCardHeight - profileBadgeHeight - profileButtonHeight) / 2;
+            profileCard.Controls.Add(CreateLargeStudentBadge((profileCardWidth - profileBadgeWidth) / 2, profileBadgeTop));
+            var viewProfileBtn = SecondaryButton("View Full Profile", (profileCardWidth - profileBadgeWidth) / 2, profileBadgeTop + profileBadgeHeight + 8, profileBadgeWidth);
+            viewProfileBtn.Height = 32;
+            viewProfileBtn.Click += (s, e) => ShowStudentProfileDialog();
+            profileCard.Controls.Add(viewProfileBtn);
             column.Controls.Add(profileCard);
             y += profileCard.Height + 28;
 
@@ -315,7 +321,11 @@ namespace SchoolDom.StudentCbt.Win7
             y += 26;
             const int profileBadgeWidth = 242;
             card.Controls.Add(CreateLargeStudentBadge(28, y));
-            var profileBottom = y + 136;
+            var viewProfileBtn = SecondaryButton("View Full Profile", 28, y + 136 + 8, profileBadgeWidth);
+            viewProfileBtn.Height = 32;
+            viewProfileBtn.Click += (s, e) => ShowStudentProfileDialog();
+            card.Controls.Add(viewProfileBtn);
+            var profileBottom = y + 136 + 8 + viewProfileBtn.Height;
 
             var metaLeft = 28 + profileBadgeWidth + 48;
             var metaTop = y + 4;
@@ -1294,6 +1304,105 @@ namespace SchoolDom.StudentCbt.Win7
             };
             MakeCircle(badge);
             return badge;
+        }
+
+        /// <summary>
+        /// Full student profile - guardian, medical, and location details that don't
+        /// fit on the small badge shown on the login/instructions screens. Reads the
+        /// same _student dictionary the badge does, so it needs no extra sync call;
+        /// it just shows more of what's already there (see PackageService.cs's
+        /// StudentRecord mapping and backend/exams/exam_views.py's
+        /// _offline_student_payload for where these fields come from). A row is
+        /// skipped entirely when the school hasn't recorded that field.
+        /// </summary>
+        private void ShowStudentProfileDialog()
+        {
+            using (var dialog = new Form())
+            {
+                dialog.Text = "Student Profile";
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.MaximizeBox = false;
+                dialog.MinimizeBox = false;
+                dialog.ShowInTaskbar = false;
+                dialog.ClientSize = new Size(560, 640);
+                dialog.BackColor = Palette.Background;
+
+                var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Palette.Navy };
+                header.Controls.Add(CreateProfileControl(20, 14, 56));
+                header.Controls.Add(Label(DisplayStudentName(), 88, 16, 13, true, 440, Color.White));
+                header.Controls.Add(Label(DisplayStudentId(), 88, 44, 10, false, 440, Palette.SoftText));
+                dialog.Controls.Add(header);
+
+                var footer = new Panel { Dock = DockStyle.Bottom, Height = 60, BackColor = Color.White };
+                var closeBtn = SecondaryButton("Close", dialog.ClientSize.Width - 24 - 120, 12, 120);
+                closeBtn.Click += (s, e) => dialog.Close();
+                footer.Controls.Add(closeBtn);
+                dialog.Controls.Add(footer);
+
+                var content = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Palette.Background };
+                var y = 20;
+                const int labelLeft = 24;
+                const int valueLeft = 190;
+                const int rowWidth = 320;
+
+                Action<string> section = title =>
+                {
+                    content.Controls.Add(Label(title.ToUpperInvariant(), labelLeft, y, 9, true, 480, Palette.Blue));
+                    y += 26;
+                };
+                Action<string, string> row = (label, value) =>
+                {
+                    if (string.IsNullOrWhiteSpace(value)) return;
+                    content.Controls.Add(Label(label, labelLeft, y, 9, true, valueLeft - labelLeft - 10, Palette.Muted));
+                    content.Controls.Add(Label(value, valueLeft, y, 10, false, rowWidth, Palette.Text));
+                    y += 26;
+                };
+
+                section("Personal");
+                row("Date of Birth", Value(_student, "date_of_birth", "DateOfBirth"));
+                row("Gender", Value(_student, "gender", "Gender"));
+                row("Phone", Value(_student, "phone", "Phone"));
+                row("Email", Value(_student, "email", "Email"));
+                y += 8;
+
+                section("Academic");
+                row("Admission Number", Value(_student, "admission_number", "AdmissionNumber"));
+                row("Admission Date", Value(_student, "admission_date", "AdmissionDate"));
+                row("Class", Value(_student, "class_name", "ClassName"));
+                y += 8;
+
+                section("Guardian");
+                row("Guardian Name", Value(_student, "guardian_name", "GuardianName"));
+                row("Guardian Phone", Value(_student, "guardian_phone", "GuardianPhone"));
+                row("Guardian Email", Value(_student, "guardian_email", "GuardianEmail"));
+                row("Relationship", Value(_student, "guardian_relation", "GuardianRelation"));
+                row("2nd Guardian Name", Value(_student, "second_guardian_name", "SecondGuardianName"));
+                row("2nd Guardian Phone", Value(_student, "second_guardian_phone", "SecondGuardianPhone"));
+                y += 8;
+
+                section("Location");
+                row("State of Origin", Value(_student, "state_of_origin", "StateOfOrigin"));
+                row("LGA", Value(_student, "local_government", "LocalGovernment"));
+                row("Home Address", Value(_student, "home_address", "HomeAddress"));
+                y += 8;
+
+                section("Medical");
+                row("Blood Group", Value(_student, "blood_group", "BloodGroup"));
+                row("Disability", Value(_student, "disability", "Disability"));
+                row("Allergies", Value(_student, "allergies", "Allergies"));
+                row("Medical Conditions", Value(_student, "medical_conditions", "MedicalConditions"));
+
+                if (content.Controls.Count == 0)
+                {
+                    content.Controls.Add(Label(
+                        "No additional profile details have been recorded for this student yet.",
+                        labelLeft, y, 10, false, 480, Palette.Muted));
+                }
+
+                dialog.Controls.Add(content);
+                dialog.ShowDialog(this);
+            }
         }
 
         private Image ImageFromDataUrl(string dataUrl)

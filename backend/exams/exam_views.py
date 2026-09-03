@@ -275,6 +275,27 @@ def _offline_student_payload(user, request=None):
         "class_name": str(getattr(profile, "current_class", "") or ""),
         "profile_picture": profile_picture,
         "is_active": user.is_active,
+        # Full profile fields for the terminal apps' student profile view - all
+        # already available off the select_related student_profile, so no extra
+        # queries. Documents (birth certificate, etc.) are deliberately left out;
+        # this is a display profile, not a document store.
+        "phone": getattr(user, "phone", "") or "",
+        "date_of_birth": user.date_of_birth,
+        "gender": getattr(user, "gender", "") or "",
+        "admission_date": getattr(profile, "admission_date", None),
+        "state_of_origin": getattr(profile, "state_of_origin", "") or "",
+        "local_government": getattr(profile, "local_government", "") or "",
+        "guardian_name": getattr(profile, "guardian_name", "") or "",
+        "guardian_phone": getattr(profile, "guardian_phone", "") or "",
+        "guardian_email": getattr(profile, "guardian_email", "") or "",
+        "guardian_relation": getattr(profile, "guardian_relation", "") or "",
+        "second_guardian_name": getattr(profile, "second_guardian_name", "") or "",
+        "second_guardian_phone": getattr(profile, "second_guardian_phone", "") or "",
+        "blood_group": getattr(profile, "blood_group", "") or "",
+        "disability": getattr(profile, "disability", "") or "",
+        "home_address": getattr(profile, "home_address", "") or "",
+        "allergies": getattr(profile, "allergies", "") or "",
+        "medical_conditions": getattr(profile, "medical_conditions", "") or "",
     }
 
 
