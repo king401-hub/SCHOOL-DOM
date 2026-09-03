@@ -1,6 +1,20 @@
-from django.contrib import admin
+import csv
+import io
 
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
+from django.shortcuts import redirect, render
+from django.urls import path
+
+from .bulk_import import clean_question_record, import_central_bank_topics
 from .models import Exam, ExamAttempt, ExamPin, ExamPinUsage, ExamType, Question, QuestionBank, QuestionGroup, StudentAnswer, Topic
+
+# Columns a bulk-upload CSV must have. One row is one MCQ; group rows under the
+# same "topic" value to add several questions to that topic in one file.
+QUESTION_BANK_CSV_COLUMNS = [
+    "topic", "question", "option_1", "option_2", "option_3", "option_4",
+    "correct_answer", "explanation", "points",
+]
 
 
 class PlatformAdminOnlyMixin:
@@ -63,6 +77,102 @@ class QuestionBankAdmin(PlatformAdminOnlyMixin, admin.ModelAdmin):
     autocomplete_fields = ("subject", "teacher")
     filter_horizontal = ("questions",)
     inlines = [TopicInline]
+    change_list_template = "admin/exams/questionbank/change_list.html"
+
+    def get_urls(self):
+        custom = [
+            path("upload-csv/", self.admin_site.admin_view(self.upload_csv_view), name="exams_questionbank_upload_csv"),
+        ]
+        return custom + super().get_urls()
+
+    def upload_csv_view(self, request):
+        """Bulk-add questions to the central JAMB/WAEC/NECO bank from a CSV
+        instead of the shell-only `import_central_bank` management command -
+        both paths share the exact same import/dedup logic (see bulk_import.py)."""
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        board_choices = QuestionBank.BOARD_CHOICES
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Bulk upload questions",
+            "opts": self.model._meta,
+            "board_choices": board_choices,
+            "csv_columns": QUESTION_BANK_CSV_COLUMNS,
+        }
+
+        if request.method != "POST":
+            return render(request, "admin/exams/questionbank/upload_csv.html", context)
+
+        board = str(request.POST.get("board") or "").strip().upper()
+        subject_name = str(request.POST.get("subject") or "").strip()
+        replace_topics = request.POST.get("replace_topics") == "on"
+        upload = request.FILES.get("csv_file")
+
+        if board not in dict(board_choices):
+            messages.error(request, f"Choose a valid board ({', '.join(dict(board_choices))}).")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+        if not subject_name:
+            messages.error(request, "Subject is required.")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+        if not upload:
+            messages.error(request, "Choose a CSV file to upload.")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+
+        try:
+            decoded = upload.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            messages.error(request, "That file isn't valid UTF-8 text. Save it as CSV UTF-8 and try again.")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+
+        reader = csv.DictReader(io.StringIO(decoded))
+        missing_columns = [col for col in ("topic", "question", "option_1", "option_2", "correct_answer") if col not in (reader.fieldnames or [])]
+        if missing_columns:
+            messages.error(request, f"CSV is missing required column(s): {', '.join(missing_columns)}.")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+
+        topics_data = {}
+        skipped = 0
+        row_count = 0
+        for row_index, row in enumerate(reader, start=2):  # header is row 1
+            row_count += 1
+            topic_name = str(row.get("topic") or "").strip()
+            if not topic_name:
+                messages.warning(request, f"Row {row_index}: skipped - no topic given.")
+                skipped += 1
+                continue
+            options = [row.get(f"option_{n}") or "" for n in (1, 2, 3, 4)]
+            raw_record = {
+                "text": row.get("question"),
+                "options": options,
+                "correct_answer": row.get("correct_answer"),
+                "explanation": row.get("explanation"),
+                "points": row.get("points"),
+            }
+            cleaned_record, error = clean_question_record(raw_record, label=f"row {row_index}")
+            if error:
+                messages.warning(request, error.capitalize())
+                skipped += 1
+                continue
+            topics_data.setdefault(topic_name, []).append(cleaned_record)
+
+        if not row_count:
+            messages.error(request, "That CSV had no data rows.")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+        if not topics_data:
+            messages.error(request, f"None of the {row_count} row(s) were usable - nothing was imported.")
+            return redirect(f"{self.admin_site.name}:exams_questionbank_upload_csv")
+
+        result = import_central_bank_topics(
+            board=board, subject_name=subject_name, topics_data=topics_data, replace_topics=replace_topics,
+        )
+        messages.success(
+            request,
+            f"Imported into '{result['bank_name']}': {result['created_questions']} new question(s), "
+            f"{result['reused_questions']} matched/updated, across {result['topics_total']} topic(s)"
+            f"{f' ({skipped} row(s) skipped)' if skipped else ''}.",
+        )
+        return redirect(f"{self.admin_site.name}:exams_questionbank_changelist")
 
 
 class TopicQuestionInline(admin.TabularInline):

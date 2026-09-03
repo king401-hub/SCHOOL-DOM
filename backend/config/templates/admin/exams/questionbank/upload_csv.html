@@ -1,0 +1,79 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  <p class="cp-confirm-copy">
+    Add many multiple-choice questions to the central JAMB/WAEC/NECO bank at once, instead of
+    running the <code>import_central_bank</code> management command by hand. Safe to re-run:
+    a question matching one already in that topic (same text, options, and correct answer) is
+    updated in place rather than duplicated.
+  </p>
+
+  <form method="post" enctype="multipart/form-data" class="stacked-form">
+    {% csrf_token %}
+    <label style="display:block;margin-bottom:10px;">
+      <span style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;">Board</span>
+      <select name="board" required>
+        <option value="">Select a board</option>
+        {% for value, label in board_choices %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label style="display:block;margin-bottom:10px;">
+      <span style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;">Subject</span>
+      <input type="text" name="subject" placeholder="e.g. English Language" required>
+    </label>
+    <label style="display:block;margin-bottom:10px;">
+      <span style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;">CSV file</span>
+      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+    </label>
+    <label style="display:block;margin-bottom:10px;">
+      <input type="checkbox" name="replace_topics">
+      For any topic already present, remove its existing questions first instead of adding to them
+    </label>
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="Upload" class="cp-btn-ok">
+      <a class="button cp-btn-cancel" href="../">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<div class="module cp-confirm-card">
+  <h2>{% translate "CSV format" %}</h2>
+  <p class="cp-confirm-copy">
+    First row is the header. One row is one multiple-choice question - group several rows under
+    the same <code>topic</code> value to add them all to that topic.
+  </p>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+    <thead>
+      <tr>
+        {% for column in csv_columns %}
+        <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border-color, #444);">{{ column }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding:4px 8px;">Synonyms</td>
+        <td style="padding:4px 8px;">Choose the word closest in meaning to "happy".</td>
+        <td style="padding:4px 8px;">Joyful</td>
+        <td style="padding:4px 8px;">Angry</td>
+        <td style="padding:4px 8px;">Tired</td>
+        <td style="padding:4px 8px;">Bored</td>
+        <td style="padding:4px 8px;">Joyful</td>
+        <td style="padding:4px 8px;">"Happy" means feeling or showing pleasure.</td>
+        <td style="padding:4px 8px;">1</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="cp-confirm-copy" style="margin-top:10px;">
+    <code>option_3</code>, <code>option_4</code>, <code>explanation</code>, and <code>points</code> are
+    optional (points default to 1). <code>correct_answer</code> must exactly match the text of one of
+    the options on that row. A row missing its question text, fewer than 2 usable options, or a correct
+    answer that doesn't match any option is skipped, not fatal to the rest of the file.
+  </p>
+</div>
+{% endblock %}
