@@ -391,6 +391,18 @@ class SecretaryTools:
         except Exception:
             return None
 
+    def _active_term_and_year(self):
+        """Whichever Term/AcademicYear is currently active for the requesting
+        user's school - same source of truth exams created from the admin
+        Exam Builder are tagged with, so a Phoenix-created exam is filterable
+        by term exactly like a manually-built one."""
+        try:
+            from users.app_views import _active_term, _active_academic_year
+            return _active_term(self.requesting_user), _active_academic_year(self.requesting_user)
+        except Exception:
+            logger.debug("Active term/year lookup failed for user %s", getattr(self.requesting_user, 'id', None), exc_info=True)
+            return None, None
+
     def _get_legacy_tenant(self):
         """Resolve the older tenants.Tenant object expected by legacy academic/exam models."""
         try:
@@ -562,6 +574,7 @@ class SecretaryTools:
 
             legacy_tenant = self._get_legacy_tenant()
             now = dj_timezone.now()
+            active_term, active_academic_year = self._active_term_and_year()
             exam = self.Exam.objects.create(
                 tenant=legacy_tenant,
                 title=f"{subject_name} CBT - {class_label}",
@@ -570,6 +583,8 @@ class SecretaryTools:
                 end_date=now + timedelta(minutes=time_limit_minutes or 60),
                 duration_minutes=time_limit_minutes or 60,
                 is_published=False,
+                term=active_term,
+                academic_year=active_academic_year,
             )
             return {
                 "status": "success",
@@ -619,6 +634,7 @@ class SecretaryTools:
             class_obj = self._get_class(class_name)
             start_dt = dj_timezone.make_aware(exam_date)
             end_dt = start_dt + timedelta(minutes=duration_minutes)
+            active_term, active_academic_year = self._active_term_and_year()
 
             exam = self.Exam.objects.create(
                 tenant=self.tenant,
@@ -628,6 +644,8 @@ class SecretaryTools:
                 end_date=end_dt,
                 duration_minutes=duration_minutes,
                 is_published=False,
+                term=active_term,
+                academic_year=active_academic_year,
             )
             return {
                 "status": "success",

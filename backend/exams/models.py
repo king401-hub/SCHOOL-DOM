@@ -152,6 +152,12 @@ class Exam(TenantAwareModel, TimeStampedModel):
     # group never destroys member exams' attempt history; it just detaches them.
     group = models.ForeignKey(ExamGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="group_exams")
 
+    # Auto-tagged from whichever term/year is active at creation - lets exams
+    # be filtered and archived per term the same way results and bills
+    # already are (see academic.Term/AcademicYear).
+    term = models.ForeignKey("academic.Term", on_delete=models.SET_NULL, null=True, blank=True, related_name="exams")
+    academic_year = models.ForeignKey("academic.AcademicYear", on_delete=models.SET_NULL, null=True, blank=True, related_name="exams")
+
     # Scheduling
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()

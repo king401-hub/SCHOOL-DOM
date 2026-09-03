@@ -8863,9 +8863,12 @@ def exams_snapshot(request):
     now = timezone.now()
 
     exams = _scope_to_user_tenant(
-        Exam.objects.select_related("subject", "class_group", "exam_type", "group").prefetch_related("questions"),
+        Exam.objects.select_related("subject", "class_group", "exam_type", "group", "term", "academic_year").prefetch_related("questions"),
         user,
     ).order_by("-start_date")
+    term_id = request.query_params.get("term_id")
+    if term_id and user.role in ADMIN_ROLES:
+        exams = exams.filter(term_id=term_id)
     if user.role == "teacher":
         exams = exams.filter(teacher=user)
     elif user.role == "student":
@@ -8965,6 +8968,9 @@ def exams_snapshot(request):
             "submissions": submissions_by_exam.get(exam.id, 0),
             "group_id": exam.group_id,
             "group_title": exam.group.title if exam.group_id else "",
+            "term_id": exam.term_id,
+            "term_name": exam.term.name if exam.term_id else "",
+            "academic_year_id": exam.academic_year_id,
         }
         exam_row.update(_exam_pin_summary_for_user(exam, user))
         exam_rows.append(exam_row)
@@ -9079,6 +9085,10 @@ def exams_snapshot(request):
                     {"value": "exam", "label": "Exam"},
                     {"value": "test", "label": "Test"},
                 ],
+                "terms": [
+                    {"id": item.id, "name": item.name}
+                    for item in _scope_to_user_tenant(Term.objects.all(), user).order_by("-start_date")[:20]
+                ] if user.role in ADMIN_ROLES else [],
             },
         },
     )
@@ -10831,6 +10841,8 @@ def create_exam(request):
         show_results_immediately=False,
         is_published=is_published,
         tenant=tenant_obj,
+        term=_active_term(request.user),
+        academic_year=_active_academic_year(request.user),
     )
     groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
     created_questions = [
@@ -11165,6 +11177,8 @@ def create_exam_group(request):
     if not exam_type:
         exam_type = ExamType.objects.create(tenant=tenant_obj, name="Exam")
 
+    active_term = _active_term(request.user)
+    active_academic_year = _active_academic_year(request.user)
     with db_transaction.atomic():
         group = ExamGroup.objects.create(
             title=title,
@@ -11195,6 +11209,8 @@ def create_exam_group(request):
                 is_published=is_published,
                 tenant=tenant_obj,
                 group=group,
+                term=active_term,
+                academic_year=active_academic_year,
             )
             groups_by_key = _question_groups_from_payload(subject_item["cleaned_questions"], tenant_obj, request.user, request)
             created_questions = [
@@ -11401,6 +11417,8 @@ def exam_group_detail(request, group_id):
                         is_published=group.is_published,
                         tenant=tenant_obj,
                         group=group,
+                        term=_active_term(request.user),
+                        academic_year=_active_academic_year(request.user),
                     )
                     groups_by_key = _question_groups_from_payload(cleaned_questions, tenant_obj, request.user, request)
                     created_questions = [
@@ -11851,6 +11869,10 @@ def teacher_mark_student_attendance(request):
             date=attendance_date,
             defaults=defaults,
         )
+        if _created:
+            attendance.term = _active_term(user)
+            attendance.academic_year = _active_academic_year(user)
+            attendance.save(update_fields=["term", "academic_year"])
         if status_value in {"present", "late"} and attendance.clock_in_at is None:
             attendance.clock_in_at = timezone.now()
             attendance.save(update_fields=["clock_in_at", "updated_at"])
@@ -13766,6 +13788,10 @@ def _record_attendance_clock(
                     "device_info": location["device_info"],
                 },
             )
+            if _created:
+                attendance.term = _active_term(actor)
+                attendance.academic_year = _active_academic_year(actor)
+                attendance.save(update_fields=["term", "academic_year"])
             event_time = attendance.clock_in_at
             message = f"{student_name} clocked in at {timezone.localtime(event_time).strftime('%I:%M %p').lstrip('0')}."
         else:

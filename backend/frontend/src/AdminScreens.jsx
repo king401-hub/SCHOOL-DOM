@@ -4209,6 +4209,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                   <tr>
                     <th>Exam</th>
                     <th>Class</th>
+                    <th>Term</th>
                     <th>Questions</th>
                     <th>Status</th>
                     <th>PIN</th>
@@ -4221,6 +4222,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                     <tr key={exam.id || exam.exam_id}>
                       <td>{exam.title || exam.name || `Exam ${exam.id || exam.exam_id}`}</td>
                       <td>{exam.class_name || exam.class || "All classes"}</td>
+                      <td>{exam.term_name || "—"}</td>
                       <td>{exam.question_count ?? "-"}</td>
                       <td>
                         <span className={`student-status-pill status-${exam.is_published ? "present" : "unmarked"}`}>

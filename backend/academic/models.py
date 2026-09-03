@@ -346,6 +346,25 @@ class AttendanceRecord(TenantAwareModel, TimeStampedModel):
         blank=True,
         related_name="attendance_records",
     )
+    # Set once, at creation, from whichever term/year is active that day -
+    # never touched again on a later same-day status correction, so a record
+    # can't silently jump to a different term just because it was edited
+    # after a term rollover. Lets attendance be filtered/reported per term
+    # the same way results and bills already are.
+    term = models.ForeignKey(
+        "academic.Term",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendance_records",
+    )
+    academic_year = models.ForeignKey(
+        "academic.AcademicYear",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attendance_records",
+    )
     date = models.DateField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="present")
     noted_by = models.ForeignKey(
