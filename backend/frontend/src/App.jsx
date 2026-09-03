@@ -102,6 +102,7 @@ import {
   ReportCardSheet,
   resolveDocumentTheme,
   downloadPrintablePng,
+  downloadPrintablePdf,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
@@ -2059,6 +2060,8 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
   const [error, setError] = useState("");
   const [pngBusy, setPngBusy] = useState(false);
   const [pngError, setPngError] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const documentTheme = resolveDocumentTheme(reportCard?.school, data?.school, session?.school);
 
   const handleLoadResults = async () => {
@@ -2096,6 +2099,24 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
     }
   };
 
+  const handleDownloadReportPdf = async () => {
+    if (!reportCard) return;
+    setPdfBusy(true);
+    setPdfError("");
+    try {
+      await downloadPrintablePdf(
+        "student-results-report-card-image",
+        `report-card-${reportCard?.student?.student_id || "student"}.pdf`,
+        "Report Card",
+        documentTheme
+      );
+    } catch (err) {
+      setPdfError(err.message || "Could not generate the report card PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   return (
     <StudentPageShell session={session} currentPath="/results" onNavigate={onNavigate}
       themePreference={themePreference} onThemeChange={onThemeChange}
@@ -2111,6 +2132,7 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
         ) : reportCard ? (
           <>
             {pngError ? <p className="form-feedback error">{pngError}</p> : null}
+            {pdfError ? <p className="form-feedback error">{pdfError}</p> : null}
             {reportCard.scores && reportCard.scores.length ? (
               <ReportCardSheet report={reportCard} gradeScales={reportCard.grade_scales || []} elementId="student-results-report-card-image" />
             ) : (
@@ -2122,9 +2144,14 @@ function StudentResultsPage({ session, data, onNavigate, themePreference, onThem
         )}
         <div className="panel-form-actions">
           {reportCard && reportCard.scores && reportCard.scores.length ? (
-            <button type="button" className="student-link-btn" onClick={handleDownloadReportPng} disabled={pngBusy}>
-              {pngBusy ? <><Spinner size={12} /> Generating...</> : "Download as Image"}
-            </button>
+            <>
+              <button type="button" className="student-link-btn" onClick={handleDownloadReportPdf} disabled={pdfBusy}>
+                {pdfBusy ? <><Spinner size={12} /> Generating...</> : "Download as PDF"}
+              </button>
+              <button type="button" className="student-link-btn" onClick={handleDownloadReportPng} disabled={pngBusy}>
+                {pngBusy ? <><Spinner size={12} /> Generating...</> : "Download as Image"}
+              </button>
+            </>
           ) : null}
           <button type="button" className="student-link-btn" onClick={handleLoadResults} disabled={loading}>
             {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh Results"}

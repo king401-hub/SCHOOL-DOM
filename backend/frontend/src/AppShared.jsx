@@ -1073,9 +1073,10 @@ const CANVAS_UNSAFE_FONT_FALLBACK = {
 };
 
 /** Rasterizes the given element (via an SVG foreignObject -> canvas, no
- * external library) into a downloaded PNG, styled with the same
- * documentStylesForExport(theme) used by print/PDF output. */
-export async function downloadPrintablePng(elementId, filename, title, theme) {
+ * external library) into an in-memory <canvas>, styled with the same
+ * documentStylesForExport(theme) used by print output. Shared by both the
+ * PNG and PDF export paths below, so they can never drift out of sync. */
+async function renderPrintableElementToCanvas(elementId, title, theme) {
   const element = document.getElementById(elementId);
   if (!element) {
     throw new Error("The document preview is not ready yet.");
@@ -1101,33 +1102,44 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport(canvasSafeTheme)}</style>${html}</foreignObject></svg>`;
   const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   const image = new Image();
+  try {
+    const canvas = await new Promise((resolve, reject) => {
+      image.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          const scale = 2;
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          const context = canvas.getContext("2d");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.scale(scale, scale);
+          context.drawImage(image, 0, 0);
+          resolve(canvas);
+        } catch (renderError) {
+          reject(renderError);
+        }
+      };
+      image.onerror = () => reject(new Error(`Could not render ${title || "document"}.`));
+      image.src = svgUrl;
+    });
+    return { canvas, width, height };
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
+export async function downloadPrintablePng(elementId, filename, title, theme) {
+  const { canvas } = await renderPrintableElementToCanvas(elementId, title, theme);
   const pngUrl = await new Promise((resolve, reject) => {
-    image.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const scale = 2;
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const context = canvas.getContext("2d");
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.scale(scale, scale);
-        context.drawImage(image, 0, 0);
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(new Error("Could not render PNG."));
-            return;
-          }
-          resolve(URL.createObjectURL(blob));
-        }, "image/png");
-      } catch (renderError) {
-        reject(renderError);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Could not render PNG."));
+        return;
       }
-    };
-    image.onerror = () => reject(new Error(`Could not render ${title || "document"} as PNG.`));
-    image.src = svgUrl;
+      resolve(URL.createObjectURL(blob));
+    }, "image/png");
   });
-  URL.revokeObjectURL(svgUrl);
   const link = document.createElement("a");
   link.href = pngUrl;
   link.download = filename;
@@ -1135,6 +1147,22 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
   link.click();
   link.remove();
   URL.revokeObjectURL(pngUrl);
+}
+
+/** Same rasterized render as downloadPrintablePng, wrapped in a single-page
+ * PDF sized to the document instead of exported as an image file. jsPDF is
+ * loaded on demand so it never adds weight to the main bundle for the
+ * common case where a user never clicks "Download as PDF". */
+export async function downloadPrintablePdf(elementId, filename, title, theme) {
+  const { canvas, width, height } = await renderPrintableElementToCanvas(elementId, title, theme);
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({
+    orientation: width > height ? "landscape" : "portrait",
+    unit: "pt",
+    format: [width, height],
+  });
+  doc.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, width, height);
+  doc.save(filename);
 }
 
 export function academicGroupLabels(...sources) {
