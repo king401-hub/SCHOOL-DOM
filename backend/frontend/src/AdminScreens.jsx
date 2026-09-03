@@ -11440,7 +11440,165 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
   );
 }
 
-function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData }) {
+function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }) {
+  const [studentId, setStudentId] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [phone, setPhone] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [sendFeedback, setSendFeedback] = useState("");
+
+  useEffect(() => {
+    const query = studentId.trim();
+    if (query.length < 2 || !onStudentSearch) {
+      setSearchResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await onStudentSearch(query);
+        if (!cancelled) setSearchResults(result?.results || []);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [studentId, onStudentSearch]);
+
+  const loadReport = async (idOverride) => {
+    const trimmed = (idOverride ?? studentId).trim();
+    if (!trimmed || !onSearchReport) return;
+    setLoading(true);
+    setLoadError("");
+    setSendError("");
+    setSendFeedback("");
+    setReport(null);
+    try {
+      const result = await onSearchReport(trimmed);
+      const card = result?.report_card || result?.report || null;
+      if (!card) {
+        setLoadError("No published results found for this student.");
+        return;
+      }
+      setReport(card);
+      setPhone(card.student?.guardian_phone || "");
+    } catch (err) {
+      setLoadError(err.message || "Could not fetch report card.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePick = (candidate) => {
+    setStudentId(candidate.student_id);
+    setSearchResults([]);
+    loadReport(candidate.student_id);
+  };
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    loadReport();
+  };
+
+  const handleSend = async (event) => {
+    event.preventDefault();
+    const phones = phone.split(/[,;]+/).map((p) => p.replace(/\s+/g, "").trim()).filter(Boolean);
+    if (!phones.length) {
+      setSendError("Enter at least one phone number.");
+      return;
+    }
+    setSending(true);
+    setSendError("");
+    setSendFeedback("");
+    try {
+      const result = await onSendReportSms?.({ phones, report });
+      setSendFeedback(result?.message || "Report card SMS sent.");
+    } catch (err) {
+      setSendError(err.message || "Could not send report card SMS.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <article className="app-panel">
+      <div className="bulk-panel-header">
+        <h3>Send a Report Card</h3>
+      </div>
+      <div className="bulk-panel-body">
+        <form className="panel-form" onSubmit={handleSearchSubmit}>
+          <div className="panel-form-grid">
+            <label className="panel-field" style={{ position: "relative" }}>
+              Student Name or ID
+              <input
+                value={studentId}
+                onChange={(event) => setStudentId(event.target.value)}
+                placeholder="e.g. STU2026-001 or Jane Doe"
+                autoComplete="off"
+              />
+              {searchResults.length ? (
+                <ul className="search-typeahead">
+                  {searchResults.map((candidate) => (
+                    <li key={candidate.id}>
+                      <button type="button" onClick={() => handlePick(candidate)}>
+                        <strong>{candidate.name}</strong>
+                        <small>{candidate.student_id} · {candidate.class_name}</small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </label>
+          </div>
+          {loadError ? <p className="form-feedback error">{loadError}</p> : null}
+          <div className="panel-form-actions">
+            <button type="submit" disabled={loading}>
+              {loading ? <><Spinner size={12} /> Looking up...</> : "Find student"}
+            </button>
+          </div>
+        </form>
+
+        {report ? (
+          <form onSubmit={handleSend} style={{ marginTop: "1rem" }}>
+            <div style={{ background: "var(--surface-2, #f8fafc)", borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "0.9rem", fontSize: "0.85rem" }}>
+              <strong>{report.student?.name}</strong> · {report.student?.class_name || "—"}
+              <br />
+              Average: {report.average_score ?? 0}
+              {report.class_position ? ` · Position: ${report.class_position}/${report.class_size}` : ""}
+            </div>
+            <div className="panel-form-grid">
+              <label className="panel-field full">
+                Parent / Guardian phone number
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. 08012345678"
+                />
+                <small className="field-note">Pre-filled from student record. A link to the full report card is included.</small>
+              </label>
+            </div>
+            {sendError ? <p className="form-feedback error">{sendError}</p> : null}
+            {sendFeedback ? <p className="form-feedback success">{sendFeedback}</p> : null}
+            <div className="panel-form-actions">
+              <button type="submit" disabled={sending}>
+                {sending ? <><Spinner size={12} /> Sending...</> : "Send report card SMS"}
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData, onStudentSearch, onSearchReport, onSendReportSms }) {
   const pricing = data?.unit_pricing || { block_size: 100, block_price: "1000.00", minimum_units: 100, currency: "NGN" };
   const blockSize = pricing.block_size || 100;
   const blockPrice = Number(pricing.block_price || 1000);
@@ -11584,6 +11742,8 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
           </article>
 
           <BulkMessagingPanel session={session} school={school} schoolData={data} parents={parentsData?.parents || []} />
+
+          <ReportCardSmsPanel onStudentSearch={onStudentSearch} onSearchReport={onSearchReport} onSendReportSms={onSendReportSms} />
 
           <article className="app-panel">
             <h3>Recent Transactions</h3>

@@ -8131,6 +8131,9 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         session={session}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         parentsData={screenData["/parents"]}
+        onStudentSearch={handleStudentSearch}
+        onSearchReport={handleSearchReport}
+        onSendReportSms={handleSendReportSms}
       />
     );
   } else if (activePath === "/id-cards") {
