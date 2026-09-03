@@ -111,8 +111,15 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
       _hidBufferLooksLikeScan = false;
     }
 
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter || key == LogicalKeyboardKey.tab) {
+    // physicalKey, not logicalKey: logicalKey is translated through whatever
+    // keyboard layout/locale Android has assigned to this external HID
+    // device, and a generic/unbranded USB HID reader can get assigned a
+    // non-US layout - digit keys then arrive as letters or symbols. The
+    // physical key position is layout-independent, exactly like the Windows
+    // app's raw virtual-key-code hook (VK_0-VK_9 are the same regardless of
+    // layout there too).
+    final key = event.physicalKey;
+    if (key == PhysicalKeyboardKey.enter || key == PhysicalKeyboardKey.numpadEnter || key == PhysicalKeyboardKey.tab) {
       _commitHidBuffer();
       return;
     }
@@ -130,34 +137,34 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   // Deliberately simple, matching HidRfidReader.VirtualKeyToChar: readers only
   // ever "type" digits and occasionally uppercase letters (hex UIDs), always
   // via the shift-independent physical key regardless of actual shift state.
-  // Not `const` - LogicalKeyboardKey overrides == / hashCode, which the
+  // Not `const` - PhysicalKeyboardKey overrides == / hashCode, which the
   // language disallows as a const-map key even though these values never
   // change at runtime.
   static final _hidDigitKeys = {
-    LogicalKeyboardKey.digit0: '0', LogicalKeyboardKey.digit1: '1',
-    LogicalKeyboardKey.digit2: '2', LogicalKeyboardKey.digit3: '3',
-    LogicalKeyboardKey.digit4: '4', LogicalKeyboardKey.digit5: '5',
-    LogicalKeyboardKey.digit6: '6', LogicalKeyboardKey.digit7: '7',
-    LogicalKeyboardKey.digit8: '8', LogicalKeyboardKey.digit9: '9',
-    LogicalKeyboardKey.numpad0: '0', LogicalKeyboardKey.numpad1: '1',
-    LogicalKeyboardKey.numpad2: '2', LogicalKeyboardKey.numpad3: '3',
-    LogicalKeyboardKey.numpad4: '4', LogicalKeyboardKey.numpad5: '5',
-    LogicalKeyboardKey.numpad6: '6', LogicalKeyboardKey.numpad7: '7',
-    LogicalKeyboardKey.numpad8: '8', LogicalKeyboardKey.numpad9: '9',
+    PhysicalKeyboardKey.digit0: '0', PhysicalKeyboardKey.digit1: '1',
+    PhysicalKeyboardKey.digit2: '2', PhysicalKeyboardKey.digit3: '3',
+    PhysicalKeyboardKey.digit4: '4', PhysicalKeyboardKey.digit5: '5',
+    PhysicalKeyboardKey.digit6: '6', PhysicalKeyboardKey.digit7: '7',
+    PhysicalKeyboardKey.digit8: '8', PhysicalKeyboardKey.digit9: '9',
+    PhysicalKeyboardKey.numpad0: '0', PhysicalKeyboardKey.numpad1: '1',
+    PhysicalKeyboardKey.numpad2: '2', PhysicalKeyboardKey.numpad3: '3',
+    PhysicalKeyboardKey.numpad4: '4', PhysicalKeyboardKey.numpad5: '5',
+    PhysicalKeyboardKey.numpad6: '6', PhysicalKeyboardKey.numpad7: '7',
+    PhysicalKeyboardKey.numpad8: '8', PhysicalKeyboardKey.numpad9: '9',
   };
   static final _hidLetterKeys = {
-    LogicalKeyboardKey.keyA: 'A', LogicalKeyboardKey.keyB: 'B', LogicalKeyboardKey.keyC: 'C',
-    LogicalKeyboardKey.keyD: 'D', LogicalKeyboardKey.keyE: 'E', LogicalKeyboardKey.keyF: 'F',
-    LogicalKeyboardKey.keyG: 'G', LogicalKeyboardKey.keyH: 'H', LogicalKeyboardKey.keyI: 'I',
-    LogicalKeyboardKey.keyJ: 'J', LogicalKeyboardKey.keyK: 'K', LogicalKeyboardKey.keyL: 'L',
-    LogicalKeyboardKey.keyM: 'M', LogicalKeyboardKey.keyN: 'N', LogicalKeyboardKey.keyO: 'O',
-    LogicalKeyboardKey.keyP: 'P', LogicalKeyboardKey.keyQ: 'Q', LogicalKeyboardKey.keyR: 'R',
-    LogicalKeyboardKey.keyS: 'S', LogicalKeyboardKey.keyT: 'T', LogicalKeyboardKey.keyU: 'U',
-    LogicalKeyboardKey.keyV: 'V', LogicalKeyboardKey.keyW: 'W', LogicalKeyboardKey.keyX: 'X',
-    LogicalKeyboardKey.keyY: 'Y', LogicalKeyboardKey.keyZ: 'Z',
+    PhysicalKeyboardKey.keyA: 'A', PhysicalKeyboardKey.keyB: 'B', PhysicalKeyboardKey.keyC: 'C',
+    PhysicalKeyboardKey.keyD: 'D', PhysicalKeyboardKey.keyE: 'E', PhysicalKeyboardKey.keyF: 'F',
+    PhysicalKeyboardKey.keyG: 'G', PhysicalKeyboardKey.keyH: 'H', PhysicalKeyboardKey.keyI: 'I',
+    PhysicalKeyboardKey.keyJ: 'J', PhysicalKeyboardKey.keyK: 'K', PhysicalKeyboardKey.keyL: 'L',
+    PhysicalKeyboardKey.keyM: 'M', PhysicalKeyboardKey.keyN: 'N', PhysicalKeyboardKey.keyO: 'O',
+    PhysicalKeyboardKey.keyP: 'P', PhysicalKeyboardKey.keyQ: 'Q', PhysicalKeyboardKey.keyR: 'R',
+    PhysicalKeyboardKey.keyS: 'S', PhysicalKeyboardKey.keyT: 'T', PhysicalKeyboardKey.keyU: 'U',
+    PhysicalKeyboardKey.keyV: 'V', PhysicalKeyboardKey.keyW: 'W', PhysicalKeyboardKey.keyX: 'X',
+    PhysicalKeyboardKey.keyY: 'Y', PhysicalKeyboardKey.keyZ: 'Z',
   };
 
-  String? _hidCharFor(LogicalKeyboardKey key) => _hidDigitKeys[key] ?? _hidLetterKeys[key];
+  String? _hidCharFor(PhysicalKeyboardKey key) => _hidDigitKeys[key] ?? _hidLetterKeys[key];
 
   void _commitHidBuffer() {
     final candidate = _hidBuffer.toString();
