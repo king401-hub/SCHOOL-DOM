@@ -4,6 +4,8 @@ from . import app_views, proprietor_views
 
 urlpatterns = [
     path("dashboard/", app_views.dashboard_snapshot, name="app_dashboard_snapshot"),
+    path("term-transition/resolve/", app_views.term_transition_resolve, name="app_term_transition_resolve"),
+    path("term-transition/summary/", app_views.term_transition_summary, name="app_term_transition_summary"),
     path("proprietor/overview/", proprietor_views.proprietor_overview, name="app_proprietor_overview"),
     path("proprietor/schools/", proprietor_views.proprietor_create_school, name="app_proprietor_create_school"),
     path("proprietor/schools/<int:school_id>/admins/", proprietor_views.proprietor_add_school_admin, name="app_proprietor_add_school_admin"),

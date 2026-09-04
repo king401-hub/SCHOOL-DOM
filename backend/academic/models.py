@@ -34,6 +34,98 @@ class AcademicYear(TenantAwareModel):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        sync_implicit_term_for_non_k12_year(self)
+
+
+def _is_non_k12_legacy_tenant(legacy_tenant):
+    """AcademicYear/Term key off the legacy tenants.Tenant (see
+    TenantAwareModel), but school_type only lives on core.SchoolTenant -
+    bridge via the shared slug/schema_name value, same bridge documented in
+    licensing/services.py:_as_school_tenant (run in reverse of
+    users.models.resolve_legacy_tenant_for_school)."""
+    if not legacy_tenant:
+        return False
+    from core.tenant import SchoolTenant
+
+    school = SchoolTenant.objects.filter(schema_name__iexact=legacy_tenant.slug).first()
+    return bool(school and school.school_type == SchoolTenant.NON_K12)
+
+
+def sync_implicit_term_for_non_k12_year(academic_year):
+    """Non-K12 schools never manage terms directly (session IS the only
+    period, per spec) - but every term-FK'd model (results, bills, exams,
+    attendance, promotion) still needs a real Term row to point at. Ensures
+    exactly one Term mirrors this AcademicYear's name/dates/active-state.
+    A no-op for K12 schools. Called on every AcademicYear.save(), and
+    defensively from academic.tasks.advance_terms so years created before
+    this existed (or outside the app, e.g. via Django admin) self-heal."""
+    if not _is_non_k12_legacy_tenant(academic_year.tenant):
+        return None
+    term, created = Term.objects.get_or_create(
+        tenant=academic_year.tenant,
+        academic_year=academic_year,
+        defaults={
+            "name": f"{academic_year.name} Session",
+            "start_date": academic_year.start_date,
+            "end_date": academic_year.end_date,
+            "is_active": academic_year.is_active,
+        },
+    )
+    if not created and (
+        term.start_date != academic_year.start_date
+        or term.end_date != academic_year.end_date
+        or term.is_active != academic_year.is_active
+    ):
+        term.start_date = academic_year.start_date
+        term.end_date = academic_year.end_date
+        term.is_active = academic_year.is_active
+        term.save(update_fields=["start_date", "end_date", "is_active", "updated_at"])
+    return term
+
+
+class TermTransitionState(TenantAwareModel, TimeStampedModel):
+    """One row per school, tracking a term/session boundary the nightly
+    advance_terms task just crossed. School-wide (not per-admin-user):
+    whichever admin logs in first sees the confirmation popup and resolves
+    it, clearing it for every other admin at that school. See
+    academic/tasks.py:advance_terms for what creates/updates this."""
+
+    ended_term = models.ForeignKey(
+        Term,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transitions_ended",
+    )
+    # True once this term's academic year has no further term to advance
+    # into (or, for a non-K12 school, always - their one implicit term per
+    # year IS the session) - drives whether the popup also offers the
+    # student-promotion step.
+    session_also_ended = models.BooleanField(default=False)
+    # True when the nightly task found the term had ended but no successor
+    # Term row exists yet for the school to move into - the popup then asks
+    # the admin to set up the next term/session instead of just confirming.
+    next_term_missing = models.BooleanField(default=False)
+    is_resolved = models.BooleanField(default=False)
+    resolved_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_term_transitions",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant"], name="unique_term_transition_state_per_tenant"),
+        ]
+
+    def __str__(self):
+        return f"TermTransitionState({self.tenant}) resolved={self.is_resolved}"
+
 
 class SchoolActivityCalendar(TenantAwareModel, TimeStampedModel):
     month = models.PositiveSmallIntegerField()

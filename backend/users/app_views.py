@@ -58,6 +58,7 @@ from academic.models import (
     TeacherNote,
     TimetableEntry,
     TimetableSettings,
+    TermTransitionState,
 )
 from core.models import SchoolTenant, Domain
 from settings_app.models import DocumentTheme
@@ -540,6 +541,30 @@ def _academic_year_payload(item):
         "start_date": item.start_date,
         "end_date": item.end_date,
         "is_active": item.is_active,
+    }
+
+
+def _pending_term_transition(user):
+    """The tenant's unresolved TermTransitionState, if any - school-wide,
+    not per-admin, so whichever admin loads /dashboard first sees it and
+    resolving it (via term_transition_resolve below) clears it for every
+    other admin at that school too."""
+    return (
+        _scope_to_user_tenant(TermTransitionState.objects.select_related("ended_term", "ended_term__academic_year"), user)
+        .filter(is_resolved=False)
+        .first()
+    )
+
+
+def _term_transition_payload(state):
+    if not state:
+        return None
+    term = state.ended_term
+    return {
+        "id": str(state.id),
+        "ended_term": {"id": term.id, "name": term.name} if term else None,
+        "session_also_ended": state.session_also_ended,
+        "next_term_missing": state.next_term_missing,
     }
 
 
@@ -3728,11 +3753,18 @@ def dashboard_snapshot(request):
     except Exception:
         pass
 
+    term_transition = (
+        _term_transition_payload(_pending_term_transition(user))
+        if user.role in ADMIN_ROLES
+        else None
+    )
+
     return Response(
         {
             "success": True,
             "school": _school_payload(user.tenant, request),
             "alerts": alerts,
+            "term_transition": term_transition,
             "metrics": {
                 "active_students": active_students,
                 "new_students_7d": new_students_7d,
@@ -3765,6 +3797,79 @@ def dashboard_snapshot(request):
                 }
                 for student in recent_students
             ],
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def term_transition_resolve(request):
+    """Confirms the tenant's pending term transition, resolving it for
+    every admin at that school (not just the one who clicked) - see
+    TermTransitionState's docstring for why this is school-wide."""
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can resolve a term transition."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    state = _pending_term_transition(user)
+    if not state:
+        return Response({"success": True, "message": "No pending term transition."})
+
+    state.is_resolved = True
+    state.resolved_by = user
+    state.resolved_at = timezone.now()
+    state.save(update_fields=["is_resolved", "resolved_by", "resolved_at", "updated_at"])
+    return Response({"success": True, "message": "Term transition confirmed."})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def term_transition_summary(request):
+    """Compact stats for the term that just ended, for the transition
+    popup - reuses existing aggregations rather than a new report."""
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return Response(
+            {"success": False, "message": "Only school administrators can view this summary."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    state = _pending_term_transition(user)
+    term = state.ended_term if state else None
+    if not term:
+        return Response({"success": False, "message": "No ended term to summarize."}, status=status.HTTP_400_BAD_REQUEST)
+
+    student_count = StudentProfile.objects.filter(user__tenant=user.tenant, current_term=term).count()
+    if not student_count:
+        # Non-K12/implicit-term schools (and any school that doesn't stamp
+        # current_term per student) fall back to the whole tenant roster.
+        student_count = StudentProfile.objects.filter(user__tenant=user.tenant).count()
+
+    results_published = ResultBatch.objects.filter(tenant=term.tenant, term=term, status=ResultBatch.PUBLISHED).count()
+
+    attendance_qs = AttendanceRecord.objects.filter(tenant=term.tenant, term=term)
+    attendance_total = attendance_qs.count()
+    attendance_present = attendance_qs.filter(status__in=["present", "late"]).count()
+    attendance_percentage = round(attendance_present / attendance_total * 100, 1) if attendance_total else None
+
+    from finance.models import SchoolFee
+    fees_collected = SchoolFee.objects.filter(
+        student__user__tenant=user.tenant, bill__term=term,
+    ).aggregate(total=Sum("amount_paid"))["total"] or 0
+
+    return Response(
+        {
+            "success": True,
+            "term": {"id": term.id, "name": term.name, "start_date": term.start_date, "end_date": term.end_date},
+            "summary": {
+                "student_count": student_count,
+                "results_published": results_published,
+                "attendance_percentage": attendance_percentage,
+                "fees_collected": fees_collected,
+            },
         }
     )
 

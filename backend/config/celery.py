@@ -36,6 +36,13 @@ app.conf.beat_schedule = {
         "task": "users.tasks.clear_old_database_imports",
         "schedule": crontab(hour=2, minute=0),
     },
+    # Daily at 00:30 — advance any school whose active term has ended into
+    # its next term (if one is already configured), flag it if not, and
+    # queue a school-wide transition popup either way.
+    "advance-terms": {
+        "task": "academic.tasks.advance_terms",
+        "schedule": crontab(hour=0, minute=30),
+    },
     # Daily at 06:00 — expire due token allocations (revokes pool credits) and
     # send staged 7-day/1-day/expired notices
     "process-token-allocation-expirations": {
