@@ -5475,6 +5475,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   const settings = data?.settings || null;
 
   const [filterClassId, setFilterClassId] = useState("");
+  const [scheduleViewMode, setScheduleViewMode] = useState("grid");
   const [form, setForm] = useState({
     class_id: "", subject_id: "", title: "", teacher_id: "", day_of_week: "0",
     start_time: "", end_time: "", room: "",
@@ -5830,28 +5831,73 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
         </div>
         <p className="finance-action-note">
           Generate only fills empty slots for the configured periods and school days above - it never changes or
-          removes an entry that already exists, whether generated before or added by hand.
+          removes an entry that already exists, whether generated before or added by hand. Every entry is saved
+          immediately - there is no separate save step.
         </p>
         {generateError ? <p className="form-feedback error">{generateError}</p> : null}
         {generateMessage ? <p className="form-feedback success">{generateMessage}</p> : null}
-        <TimetableGridTable
-          entries={filteredEntries}
-          days={days}
-          timeSlots={timeSlots}
-          emptyMessage="No timetable entries yet. Configure settings above, then generate or add one below to get started."
-          renderCell={(entry) => (
-            <div className="timetable-grid-entry-body">
-              <strong>{entry.display_label || entry.subject_name}</strong>
-              {!filterClassId ? <span>{entry.class_name}</span> : null}
-              <span>{entry.teacher_name || "Unassigned"}</span>
-              {entry.room ? <span className="timetable-grid-room">{entry.room}</span> : null}
-              <div className="timetable-grid-entry-actions">
-                <button type="button" onClick={() => handleEdit(entry)}>Edit</button>
-                <button type="button" onClick={() => handleDelete(entry)}>Remove</button>
+        <div className="results-view-toggle">
+          <button type="button" className={scheduleViewMode === "grid" ? "is-active" : ""} onClick={() => setScheduleViewMode("grid")}>
+            Grid View
+          </button>
+          <button type="button" className={scheduleViewMode === "list" ? "is-active" : ""} onClick={() => setScheduleViewMode("list")}>
+            List View
+          </button>
+        </div>
+        {scheduleViewMode === "grid" ? (
+          <TimetableGridTable
+            entries={filteredEntries}
+            days={days}
+            timeSlots={timeSlots}
+            emptyMessage="No timetable entries yet. Configure settings above, then generate or add one below to get started."
+            renderCell={(entry) => (
+              <div className="timetable-grid-entry-body">
+                <strong>{entry.display_label || entry.subject_name}</strong>
+                {!filterClassId ? <span>{entry.class_name}</span> : null}
+                <span>{entry.teacher_name || "Unassigned"}</span>
+                {entry.room ? <span className="timetable-grid-room">{entry.room}</span> : null}
+                <div className="timetable-grid-entry-actions">
+                  <button type="button" onClick={() => handleEdit(entry)}>Edit</button>
+                  <button type="button" onClick={() => handleDelete(entry)}>Remove</button>
+                </div>
               </div>
-            </div>
-          )}
-        />
+            )}
+          />
+        ) : filteredEntries.length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th>Time</th>
+                  {!filterClassId ? <th>Class</th> : null}
+                  <th>Subject</th>
+                  <th>Teacher</th>
+                  <th>Room</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{dayLabel(entry.day_of_week)}</td>
+                    <td>{entry.start_time} - {entry.end_time}</td>
+                    {!filterClassId ? <td>{entry.class_name}</td> : null}
+                    <td>{entry.display_label || entry.subject_name}</td>
+                    <td>{entry.teacher_name || "Unassigned"}</td>
+                    <td>{entry.room || "-"}</td>
+                    <td>
+                      <button type="button" className="table-action" onClick={() => handleEdit(entry)}>Edit</button>
+                      <button type="button" className="table-action danger" onClick={() => handleDelete(entry)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="panel-empty">No timetable entries yet. Configure settings above, then generate or add one below to get started.</p>
+        )}
       </article>
 
       {confirmDialog}
