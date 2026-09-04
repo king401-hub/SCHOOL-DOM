@@ -1616,6 +1616,7 @@ function AdminFinanceScreen({
   const classFees = finance?.class_fee_rows || [];
   const studentFeeRows = finance?.student_fee_rows || [];
   const classOptions = finance?.class_options || [];
+  const billTermOptions = finance?.term_options || [];
   const paymentRows = finance?.student_payment_rows || [];
   const creditPool = finance?.activation_credit_pool || {};
   const creditSummary = finance?.activation_credit_summary || {};
@@ -1650,7 +1651,7 @@ function AdminFinanceScreen({
   const [bills, setBills] = useState([]);
   const [billsLoading, setBillsLoading] = useState(false);
   const [billsError, setBillsError] = useState("");
-  const [billFilters, setBillFilters] = useState({ status: "", class_id: "", title: "", payment_status: "" });
+  const [billFilters, setBillFilters] = useState({ status: "", class_id: "", title: "", payment_status: "", term_id: "" });
   const [showBillDesigner, setShowBillDesigner] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
   const [sendingBill, setSendingBill] = useState(null);
@@ -3161,6 +3162,14 @@ function AdminFinanceScreen({
                     <option value="paid">Paid</option>
                     <option value="overdue">Overdue</option>
                   </select>
+                  {billTermOptions.length ? (
+                    <select value={billFilters.term_id} onChange={(event) => setBillFilters((current) => ({ ...current, term_id: event.target.value }))}>
+                      <option value="">All terms</option>
+                      {billTermOptions.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                  ) : null}
                   <button type="button" className="table-action" onClick={loadBills} disabled={billsLoading}>
                     {billsLoading ? <><Spinner size={12} /> Loading...</> : "Search"}
                   </button>
@@ -3634,6 +3643,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
     const name = `${subject?.name || ""}`.trim().toLowerCase();
     return !["PHY", "CHEM"].includes(code) && !["physics", "chemistry"].includes(name);
   });
+  const termOptions = data?.options?.terms || [];
   const broadsheetSchool = resolveSchoolBrand(data?.school, session?.school, session?.user?.school);
   const documentTheme = resolveDocumentTheme(data?.school, session?.school, session?.user?.school);
 
@@ -3644,6 +3654,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [subjectFilter, setSubjectFilter] = useState("all");
+  const [examTermFilter, setExamTermFilter] = useState("all");
+  const filteredExams = useMemo(
+    () => (examTermFilter === "all" ? exams : exams.filter((item) => String(item.term_id) === String(examTermFilter))),
+    [exams, examTermFilter]
+  );
   const [sortKey, setSortKey] = useState("score");
   const [broadsheetExamId, setBroadsheetExamId] = useState("all");
   const [broadsheetClassName, setBroadsheetClassName] = useState("all");
@@ -4305,6 +4320,17 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                 <h3>Admin CBT exams</h3>
                 <small>Continue a draft or open a published exam to update questions.</small>
               </div>
+              {termOptions.length ? (
+                <label className="panel-field" style={{ marginBottom: 0 }}>
+                  Term
+                  <select value={examTermFilter} onChange={(event) => setExamTermFilter(event.target.value)}>
+                    <option value="all">All terms</option>
+                    {termOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <button type="button" className="table-action" onClick={handleStartNewExam}>
                 + New Exam
               </button>
@@ -4314,7 +4340,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
             {pinFeedback ? <p className="form-feedback success">{pinFeedback}</p> : null}
             {deleteExamError ? <p className="form-feedback error">{deleteExamError}</p> : null}
             {deleteExamFeedback ? <p className="form-feedback success">{deleteExamFeedback}</p> : null}
-            {exams.length ? (
+            {filteredExams.length ? (
               <table className="data-table">
                 <thead>
                   <tr>
@@ -4329,7 +4355,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                   </tr>
                 </thead>
                 <tbody>
-                  {exams.map((exam) => (
+                  {filteredExams.map((exam) => (
                     <tr key={exam.id || exam.exam_id}>
                       <td>{exam.title || exam.name || `Exam ${exam.id || exam.exam_id}`}</td>
                       <td>{exam.class_name || exam.class || "All classes"}</td>
@@ -4367,7 +4393,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
                 </tbody>
               </table>
             ) : (
-              <p className="panel-empty">No admin CBT exams yet.</p>
+              <p className="panel-empty">{exams.length ? "No exams for the selected term." : "No admin CBT exams yet."}</p>
             )}
           </article>
         </>
@@ -4800,6 +4826,7 @@ function AdminResultsScreen({
   const classOptions = data?.options?.classes || [];
   const termOptions = data?.options?.terms || [];
   const [studentId, setStudentId] = useState("");
+  const [singleReportTermId, setSingleReportTermId] = useState("");
   const [report, setReport] = useState(data?.report_card || null);
   const [busy, setBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState("");
@@ -4933,7 +4960,7 @@ function AdminResultsScreen({
     setFeedback("");
     setReport(null);
     try {
-      const result = await onSearch(trimmed);
+      const result = await onSearch(trimmed, singleReportTermId);
       const card = result?.report_card || result?.report || result?.reportCard || null;
       setReport(card);
       if (card) {
@@ -5213,6 +5240,17 @@ function AdminResultsScreen({
                 </ul>
               ) : null}
             </label>
+            {termOptions.length ? (
+              <label className="panel-field">
+                Term (optional)
+                <select value={singleReportTermId} onChange={(event) => setSingleReportTermId(event.target.value)}>
+                  <option value="">Current term</option>
+                  {termOptions.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
           {searchError ? <p className="form-feedback error">{searchError}</p> : null}
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}

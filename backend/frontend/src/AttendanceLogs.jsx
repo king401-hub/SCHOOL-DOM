@@ -91,6 +91,7 @@ export function AttendanceLogsPanel({ session }) {
   const [endDate, setEndDate] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [termFilter, setTermFilter] = useState("");
   const [sort, setSort] = useState("-date");
   const [page, setPage] = useState(1);
   const limit = 20;
@@ -164,7 +165,13 @@ export function AttendanceLogsPanel({ session }) {
 
   useEffect(() => {
     setPage(1);
-  }, [activePersonId, startDate, endDate, statusFilter, sort]);
+  }, [activePersonId, startDate, endDate, statusFilter, termFilter, sort]);
+
+  // Term only applies to students - AttendanceRecord (student attendance) has
+  // a term FK, but staff attendance has no term concept at all.
+  useEffect(() => {
+    if (isStaffMode) setTermFilter("");
+  }, [isStaffMode]);
 
   const buildParams = useCallback(
     (forExport) => {
@@ -173,6 +180,7 @@ export function AttendanceLogsPanel({ session }) {
         params.set("staff_id", activePersonId);
       } else {
         params.set("student_id", activePersonId);
+        if (termFilter) params.set("term_id", termFilter);
       }
       if (startDate) params.set("start_date", startDate);
       if (endDate) params.set("end_date", endDate);
@@ -185,7 +193,7 @@ export function AttendanceLogsPanel({ session }) {
       }
       return params;
     },
-    [isStaffMode, activePersonId, startDate, endDate, statusFilter, search, sort, page]
+    [isStaffMode, activePersonId, startDate, endDate, statusFilter, termFilter, search, sort, page]
   );
 
   const fetchLogs = useCallback(async () => {
@@ -219,6 +227,7 @@ export function AttendanceLogsPanel({ session }) {
   const statusOptions = isStaffMode ? STAFF_STATUS_OPTIONS : STUDENT_STATUS_OPTIONS;
   const rows = result?.results || [];
   const summary = result?.summary || null;
+  const termOptions = !isStaffMode ? result?.term_options || [] : [];
   const totalPages = result ? Math.max(1, Math.ceil((result.count || 0) / limit)) : 1;
 
   const personLabel = isStaffMode ? selectedStaff?.name : selectedStudent?.name;
@@ -395,6 +404,17 @@ export function AttendanceLogsPanel({ session }) {
                   ))}
                 </select>
               </label>
+              {termOptions.length ? (
+                <label className="panel-field">
+                  Term
+                  <select value={termFilter} onChange={(event) => setTermFilter(event.target.value)}>
+                    <option value="">All terms</option>
+                    {termOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <div className="panel-field" style={{ alignSelf: "end", display: "flex", gap: "0.5rem" }}>
                 <button type="button" className="btn-secondary" onClick={handlePrint} disabled={printBusy || !rows.length}>
                   {printBusy ? <><Spinner /> Preparing...</> : "Print"}

@@ -7789,12 +7789,14 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   );
 
   const handleSearchReport = useCallback(
-    async (studentId) => {
+    async (studentId, termId) => {
       const trimmed = String(studentId || "").trim();
       if (!trimmed) {
         throw new Error("Enter a student ID first.");
       }
-      const result = await requestJson(session, "GET", `/api/app/results/?student_id=${encodeURIComponent(trimmed)}`);
+      const params = new URLSearchParams({ student_id: trimmed });
+      if (termId) params.set("term_id", termId);
+      const result = await requestJson(session, "GET", `/api/app/results/?${params.toString()}`);
       setScreenData((previous) => ({ ...previous, "/results": result }));
       return result;
     },

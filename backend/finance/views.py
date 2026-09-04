@@ -144,7 +144,7 @@ from finance.services import (
 from hr.models import PayrollRecord, StaffProfile
 from request_queue.services import enqueue_request
 from tenants.models import Tenant
-from users.models import StudentProfile, User
+from users.models import StudentProfile, User, resolve_legacy_tenant_for_school
 
 
 ADMIN_ROLES = {"school_admin", "principal", "super_admin", "school_superadmin"}
@@ -993,10 +993,18 @@ def admin_overview(request):
     except Exception:
         # If anything goes wrong (e.g., legacy data mismatch), don't fail the entire overview.
         recent_students_payload = []
+
+    legacy_tenant = resolve_legacy_tenant_for_school(user.tenant)
+    term_options = (
+        [{"id": t.id, "name": t.name} for t in Term.objects.filter(tenant=legacy_tenant).order_by("-start_date")[:20]]
+        if legacy_tenant else []
+    )
+
     return Response(
         {
             "success": True,
             "admin_wallet": AdminWalletSerializer(admin_wallet).data,
+            "term_options": term_options,
             "pending_fees": pending_fees,
             "overdue_fees": overdue_fees,
             "expected_fee_amount": finance_snapshot["expected_fee_amount"],

@@ -4905,6 +4905,9 @@ def _student_attendance_logs_queryset(request, user):
     status_filter = str(request.query_params.get("status") or "").strip().lower()
     if status_filter:
         qs = qs.filter(status=status_filter)
+    term_id = str(request.query_params.get("term_id") or "").strip()
+    if term_id:
+        qs = qs.filter(term_id=term_id)
     search = str(request.query_params.get("search") or "").strip()
     if search:
         qs = qs.filter(
@@ -4927,9 +4930,7 @@ _ATTENDANCE_LOG_SORT_FIELDS = {
 @permission_classes([IsAuthenticated])
 def student_attendance_logs(request):
     """Full historical attendance for one student, across every term/session
-    ever recorded unless start_date/end_date narrow it - AttendanceRecord has
-    no Term/AcademicYear FK at all, so there is nothing to scope to besides
-    the date range itself."""
+    ever recorded unless start_date/end_date/term_id narrow it."""
     user = request.user
     if not _can_manage_school_settings(user):
         return Response({"success": False, "message": "Only school administrators can view attendance logs."}, status=status.HTTP_403_FORBIDDEN)
@@ -4969,6 +4970,10 @@ def student_attendance_logs(request):
                 "attendance_percentage": percentage,
             },
             "results": [_student_attendance_log_row(record) for record in page_rows],
+            "term_options": [
+                {"id": item.id, "name": item.name}
+                for item in _scope_to_user_tenant(Term.objects.all(), user).order_by("-start_date")[:20]
+            ],
         }
     )
 
