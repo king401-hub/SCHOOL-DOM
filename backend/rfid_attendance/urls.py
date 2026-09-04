@@ -12,4 +12,9 @@ urlpatterns = [
     path('attendance/history/', views.attendance_history, name='attendance_history'),
     path('classes/', views.classes_lookup, name='classes_lookup'),
     path('people/', views.people_lookup, name='people_lookup'),
+    path('gate-settings/', views.gate_settings_get, name='gate_settings_get'),
+    path('gate-settings/update/', views.gate_settings_update, name='gate_settings_update'),
+    path('gate-settings/verify-pin/', views.gate_pin_verify, name='gate_pin_verify'),
+    path('gate-settings/set-pin/', views.gate_pin_set, name='gate_pin_set'),
+    path('fee-reminder/send/', views.fee_reminder_send, name='fee_reminder_send'),
 ]

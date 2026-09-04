@@ -138,6 +138,8 @@ Future<Map<String, dynamic>> postJson(String endpoint, Map<String, dynamic> payl
     apiRequest('POST', endpoint,
         payload: payload, queueWhenOffline: queueWhenOffline);
 
+Future<Map<String, dynamic>> getJson(String endpoint) => apiRequest('GET', endpoint);
+
 Future<({int synced, int remaining})> replayOfflineQueue() async {
   final queue = await readQueue();
   if (queue.isEmpty) return (synced: 0, remaining: 0);

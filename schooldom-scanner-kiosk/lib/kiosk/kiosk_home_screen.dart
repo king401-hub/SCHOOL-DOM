@@ -11,8 +11,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../api/client.dart';
 import '../api/config.dart';
+import '../api/gate_endpoints.dart';
+import '../services/receipt_printer.dart';
 import '../storage/session_store.dart';
 import '../theme/app_theme.dart';
+import 'gate_settings_screen.dart';
 import 'kiosk_store.dart';
 
 enum _ScanOutcome { welcome, goodbye, invalid, duplicate, error }
@@ -30,7 +33,10 @@ class KioskHomeScreen extends StatefulWidget {
 class _KioskHomeScreenState extends State<KioskHomeScreen> {
   // A card held near the reader too long can be discovered repeatedly in a
   // single tap - same reasoning as the RFID Win7 desktop app's cooldown.
-  static const _cooldownSeconds = 8;
+  // Default of 8s until gate settings load; then server-configurable
+  // (spec section 7 - "duplicate-protection interval should ideally be
+  // configurable at the backend/device level").
+  int _cooldownSeconds = 8;
   static const _resultDisplaySeconds = 4;
 
   final FlutterTts _tts = FlutterTts();
@@ -70,6 +76,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     WakelockPlus.enable();
     _tts.setSpeechRate(0.46);
     _loadSchoolName();
+    _loadGateSettings();
     _startNfcSession();
     _sendHeartbeat();
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) => _sendHeartbeat());
@@ -180,6 +187,17 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     if (mounted) setState(() => _schoolName = name);
   }
 
+  Future<void> _loadGateSettings() async {
+    try {
+      final res = await loadGateSettings();
+      final data = res['data'] as Map<String, dynamic>;
+      final seconds = (data['duplicate_protection_seconds'] as num?)?.toInt();
+      if (mounted && seconds != null) setState(() => _cooldownSeconds = seconds);
+    } catch (_) {
+      // Keep the 8s default - a settings-fetch failure shouldn't block scanning.
+    }
+  }
+
   // ---------------------------------------------------------------- NFC
 
   Future<void> _startNfcSession() async {
@@ -229,7 +247,10 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
 
     final lastAt = _recentScans[uid];
     if (lastAt != null && DateTime.now().difference(lastAt).inSeconds < _cooldownSeconds) {
-      return; // Same card tapped again almost immediately - ignore silently, no re-announcement.
+      // Spec section 7: an explicit message instead of a silent ignore -
+      // "Attendance already recorded at 7:42 AM."
+      await _showResult(_ScanOutcome.duplicate, message: 'Attendance already recorded at ${_formatTime(lastAt)}.');
+      return;
     }
     _recentScans[uid] = DateTime.now();
     _recentScans.removeWhere((_, t) => DateTime.now().difference(t).inMinutes > 10);
@@ -255,9 +276,18 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
 
       final action = result['action'] as String?;
       final person = result['person'] as Map<String, dynamic>?;
+      // fees/student_dva are only ever non-null when the backend's own
+      // Fee Tracker + clock-in gating (spec sections 2, 3) allows it - the
+      // client trusts that gate rather than re-deciding it here.
+      final combined = {
+        ...?person,
+        'fees': result['fees'],
+        'student_dva': result['student_dva'],
+        'attendance_event': result['attendance_event'],
+      };
       await _showResult(
         action == 'clock_out' ? _ScanOutcome.goodbye : _ScanOutcome.welcome,
-        data: person,
+        data: combined,
         message: result['message'] as String?,
       );
     } on ApiException catch (e) {
@@ -314,8 +344,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     };
     unawaited(_tts.speak(line));
 
+    // Fee Tracker's result (with Print/Send SMS buttons to act on) needs
+    // real time to read and tap, unlike the plain welcome/goodbye flash -
+    // spec sections 2B/8 assume a brief pause here, not an instant return.
+    final hasFees = data?['fees'] != null;
     _resultTimer?.cancel();
-    _resultTimer = Timer(const Duration(seconds: _resultDisplaySeconds), () {
+    _resultTimer = Timer(Duration(seconds: hasFees ? 15 : _resultDisplaySeconds), () {
       if (mounted) setState(() => _outcome = null);
     });
   }
@@ -376,6 +410,13 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
   String _uuid() {
     final rnd = Random.secure();
     final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
@@ -429,6 +470,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
             // acting on a bare tap, since a single accidental tap
             // de-registering a live terminal would be worse than the
             // friction of one extra step.
+            GestureDetector(
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const GatePinScreen())),
+              child: const Icon(Icons.settings_outlined, size: 14, color: Colors.white38),
+            ),
+            const SizedBox(width: 12),
             GestureDetector(
               onTap: _confirmReProvision,
               child: const Icon(Icons.key_outlined, size: 14, color: Colors.white38),
@@ -533,6 +580,17 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     };
     final name = _resultData?['name'] as String?;
     final photoUrl = _resultData?['photo_url'] as String?;
+    final role = _resultData?['role'] as String?;
+    final roleLabel = _resultData?['role_label'] as String?;
+    final className = _resultData?['class_name'] as String?;
+    final studentId = _resultData?['student_id'] as String?;
+    // Spec sections 2B/3: fees/DVA are only ever non-null when the backend's
+    // own mode+direction gating allows it (Fee Tracker mode, clock-in only) -
+    // never shown on clock-out or in Attendance Only mode, and never
+    // re-decided client-side.
+    final fees = _resultData?['fees'] as Map<String, dynamic>?;
+    final studentDva = _resultData?['student_dva'] as Map<String, dynamic>?;
+    final isTeacher = isGood && role != null && role != 'student';
 
     Widget iconCircle() => Container(
           width: 120,
@@ -545,38 +603,171 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
           ),
         );
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // A recognized person's own photo reads far better at a glance than a
-        // generic checkmark - falls back to the checkmark/icon circle above
-        // whenever there's no photo on file, or the scan wasn't a real match
-        // (invalid/duplicate/error never have a person to show a photo of).
-        if (isGood && name != null && (photoUrl ?? '').isNotEmpty)
-          ClipOval(
-            child: Image.network(
-              photoUrl!,
-              width: 120,
-              height: 120,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => iconCircle(),
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // A recognized person's own photo reads far better at a glance than a
+          // generic checkmark - falls back to the checkmark/icon circle above
+          // whenever there's no photo on file, or the scan wasn't a real match
+          // (invalid/duplicate/error never have a person to show a photo of).
+          if (isGood && name != null && (photoUrl ?? '').isNotEmpty)
+            ClipOval(
+              child: Image.network(
+                photoUrl!,
+                width: 120,
+                height: 120,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => iconCircle(),
+              ),
+            )
+          else
+            iconCircle(),
+          const SizedBox(height: 24),
+          Text(title, style: TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.w900)),
+          if (name != null) ...[
+            const SizedBox(height: 14),
+            Text(name, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+            // Spec section 4: "Teacher cards must be distinguishable from
+            // student cards" - staff/admin get a role badge; students get
+            // their class + Student ID instead (sections 2A/2B).
+            if (isTeacher) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
+                child: Text((roleLabel ?? role).toUpperCase(),
+                    style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+            ] else if (className != null || studentId != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                [if (className != null) className, if (studentId != null) studentId].join(' · '),
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+            ],
+          ] else if (_resultMessage != null) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(_resultMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14)),
             ),
-          )
-        else
-          iconCircle(),
-        const SizedBox(height: 24),
-        Text(title, style: TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.w900)),
-        if (name != null) ...[
+          ],
+          if (fees != null) ...[
+            const SizedBox(height: 20),
+            _buildFeeCard(fees, studentDva, name ?? '', className ?? '', studentId ?? ''),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeeCard(
+    Map<String, dynamic> fees,
+    Map<String, dynamic>? studentDva,
+    String name,
+    String className,
+    String studentId,
+  ) {
+    final paid = (fees['paid'] ?? '0').toString();
+    final outstanding = (fees['outstanding'] ?? '0').toString();
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: const Color(0xFF15213A), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          _feeRow('Fees Paid', '₦$paid', AppColors.success),
+          const SizedBox(height: 6),
+          _feeRow('Outstanding', '₦$outstanding', AppColors.danger),
+          if (studentDva != null) ...[
+            const SizedBox(height: 10),
+            const Divider(color: Colors.white12, height: 1),
+            const SizedBox(height: 10),
+            Text('Student DVA', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
+            Text('${studentDva['bank_name']} · ${studentDva['account_number']}',
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ],
           const SizedBox(height: 14),
-          Text(name, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
-        ] else if (_resultMessage != null) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(_resultMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _printFeeReminder(name, className, studentId, paid, outstanding),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.print_outlined, size: 16),
+                  label: const Text('Print', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _sendFeeReminderSms(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.sms_outlined, size: 16),
+                  label: const Text('Send SMS', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _feeRow(String label, String value, Color valueColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+        Text(value, style: TextStyle(color: valueColor, fontSize: 15, fontWeight: FontWeight.w800)),
       ],
     );
+  }
+
+  Future<void> _printFeeReminder(String name, String className, String studentId, String paid, String outstanding) async {
+    try {
+      await ReceiptPrinter.printFeeReminder(
+        schoolName: _schoolName ?? 'SchoolDom',
+        studentName: name,
+        studentClass: className,
+        studentId: studentId,
+        paid: '₦$paid',
+        outstanding: '₦$outstanding',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not print: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendFeeReminderSms() async {
+    final studentId = _resultData?['id'] as String?;
+    if (studentId == null) return;
+    try {
+      await sendFeeReminder(studentId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Fee reminder sent.'), backgroundColor: AppColors.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    }
   }
 }

@@ -28,6 +28,14 @@ dependencies:
   package_info_plus: ^8.1.2
   device_info_plus: ^11.2.2
 
+  # Fee Reminder receipt printing - targets the built-in printer on
+  # Sunmi-family Android POS terminals (the common "normal POS terminal
+  # with a printer" hardware this app is meant to run on). See
+  # lib/services/receipt_printer.dart for the one place this is called -
+  # swap the implementation there if the actual hardware turns out to be a
+  # different vendor.
+  sunmi_printer_plus: ^4.0.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

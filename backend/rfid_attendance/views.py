@@ -13,9 +13,13 @@ goes to attendance.TeacherAttendance (no GPS - an RFID desktop scan has no
 location to offer, unlike the phone-based QR self-scan that model was
 originally built for).
 """
+import threading
+
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_time
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -24,6 +28,7 @@ from rest_framework.response import Response
 from academic.models import AttendanceRecord, Class
 from attendance.models import TeacherAttendance
 from attendance.views import _apply_clock_out, get_client_ip
+from finance.services import fee_totals_by_student, send_ebulksms
 from users.models import StudentProfile, User
 from users.app_views import (
     AttendanceClockError,
@@ -33,10 +38,11 @@ from users.app_views import (
     _profile_picture_url,
     _record_attendance_clock,
     _resolve_school_tenant_for_user,
+    _send_attendance_sms_batch,
     _tenant_for_model,
 )
 
-from .models import CardAssignment
+from .models import CardAssignment, GateSettings
 from .serializers import CardAssignmentSerializer
 
 # Card assignment is admin-only ("built strictly into the desktop app", spec
@@ -57,6 +63,79 @@ ASSIGNABLE_ROLES = SCAN_OPERATOR_ROLES | {'student'}
 MIN_SECONDS_BETWEEN_CLOCK_IN_AND_OUT = 3 * 3600
 
 
+def get_or_create_gate_settings(tenant):
+    """Lazily creates a GateSettings row (with the spec's example defaults)
+    the first time any SchoolGate terminal at this school asks for its
+    settings, rather than requiring a migration data-fixture per school."""
+    settings_obj, _created = GateSettings.objects.get_or_create(tenant=tenant)
+    return settings_obj
+
+
+def _gate_settings_payload(gate_settings):
+    return {
+        'mode': gate_settings.mode,
+        'early_start': gate_settings.early_start,
+        'early_end': gate_settings.early_end,
+        'late_start': gate_settings.late_start,
+        'late_end': gate_settings.late_end,
+        'clockout_start': gate_settings.clockout_start,
+        'clockout_end': gate_settings.clockout_end,
+        'duplicate_protection_seconds': gate_settings.duplicate_protection_seconds,
+        'has_pin': bool(gate_settings.admin_pin_hash),
+    }
+
+
+def _fees_payload_for_student(student_profile):
+    # fee_totals_by_student's class_ids param feeds an `__in=` lookup, which
+    # requires a real iterable (None raises TypeError) - matching how every
+    # other caller builds it (finance/services.py's own admin snapshot).
+    class_ids = [student_profile.current_class_id] if student_profile.current_class_id else []
+    per_student, _fee_data = fee_totals_by_student([student_profile], class_ids)
+    expected, paid = per_student.get(student_profile.id, (0, 0))
+    outstanding = max(expected - paid, 0)
+    return {'paid': str(paid), 'outstanding': str(outstanding)}
+
+
+def _student_dva_payload(student_profile):
+    """The spec's "Student DVA" - there's no per-student virtual account in
+    the system, only a per-parent one (finance.ParentVirtualAccount), so
+    this looks up the student's first parent's account and returns None if
+    that parent has never been assigned one."""
+    parent = student_profile.parents.select_related('user__virtual_account').first()
+    account = getattr(getattr(parent, 'user', None), 'virtual_account', None)
+    if not account:
+        return None
+    return {
+        'account_number': account.account_number,
+        'bank_name': account.bank_name,
+        'account_name': account.account_name,
+    }
+
+
+def _gate_sms_text(student, action, event):
+    """Deliberately separate from users.app_views._attendance_sms_text -
+    that one is gated behind a parent's paid Kids Monitor subscription
+    (see _notify_parents_on_attendance); SchoolGate's parent SMS is
+    unconditional and funded outside the school's SMS wallet (per product
+    decision), so it reuses the same send_ebulksms plumbing but not that
+    gated call site."""
+    now_str = timezone.localtime(timezone.now()).strftime('%I:%M %p').lstrip('0')
+    name = student.get_full_name() or student.email
+    if action == 'clock_out':
+        return f'{name} left school at {now_str}. -SchoolDom'
+    event_label = {'early': 'arrived (early)', 'late': 'arrived (late)'}.get(event, 'arrived')
+    return f'{name} {event_label} at {now_str}. -SchoolDom'
+
+
+def _send_gate_sms(student_user, student_profile, action, event):
+    from finance.services import guardian_contacts_for_student
+    phone, _email = guardian_contacts_for_student(student_profile)
+    if not phone:
+        return
+    message = _gate_sms_text(student_user, action, event)
+    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)],), daemon=True).start()
+
+
 def _person_summary(request, user_obj):
     """Name/role/photo/class for one person - used both by the card-assignment
     conflict response (Section 4d: "show the already-assigned person's name,
@@ -71,6 +150,10 @@ def _person_summary(request, user_obj):
         'role_label': user_obj.get_role_display(),
         'photo_url': _profile_picture_url(request, user_obj),
         'class_name': _class_label(profile.current_class) if profile and profile.current_class else None,
+        # SchoolGate spec sections 2A/2B - the human-readable student ID
+        # (e.g. "STU/2024/001"), not user_obj.id (a UUID never shown to
+        # anyone at the terminal). None for non-students.
+        'student_id': profile.student_id if profile else None,
     }
 
 
@@ -353,11 +436,32 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
         card_uid=card_uid,
     )
 
+    gate_settings = get_or_create_gate_settings(school)
+    event = gate_settings.classify_event(timezone.localtime(timezone.now()).time())
+
+    # SchoolGate spec section 3: "No fee information should be displayed
+    # during clock-out" - and section 2A (Attendance Only mode) never shows
+    # fees at all, regardless of direction.
+    fees = None
+    student_dva = None
+    if gate_settings.mode == GateSettings.MODE_FEE_TRACKER and action == 'clock_in' and student_profile:
+        fees = _fees_payload_for_student(student_profile)
+        student_dva = _student_dva_payload(student_profile)
+
+    # Unconditional parent SMS on every scan (both directions) - a product
+    # decision to send regardless of the paid Kids Monitor subscription
+    # gate the phone/QR clock flow uses, and not charged to the school's
+    # SMS wallet (see _send_gate_sms / _gate_sms_text docstrings).
+    _send_gate_sms(student, student_profile, action, event)
+
     return Response({
         'success': True,
         'message': message,
         'action': action,
+        'attendance_event': event,
         'person': _person_summary(request, student),
+        'fees': fees,
+        'student_dva': student_dva,
         'attendance': {
             'status': attendance.status,
             'date': attendance.date,
@@ -414,6 +518,127 @@ def _record_staff_scan(request, school, staff, card_uid, idempotency_key):
             'check_out_time': attendance.check_out_time,
         },
     }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gate_settings_get(request):
+    """SchoolGate terminal's Settings screen (spec section 6) - operating
+    mode, attendance windows, duplicate-protection interval. Never returns
+    admin_pin_hash itself, only whether one has been set (has_pin)."""
+    school, error = _require_school(request.user, _school_code_from_request(request))
+    if error:
+        return error
+    gate_settings = get_or_create_gate_settings(school)
+    return Response({'success': True, 'data': _gate_settings_payload(gate_settings)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gate_settings_update(request):
+    school, error = _require_school(request.user, _school_code_from_request(request))
+    if error:
+        return error
+    gate_settings = get_or_create_gate_settings(school)
+
+    update_fields = []
+    if 'mode' in request.data:
+        mode = str(request.data.get('mode') or '').strip()
+        if mode not in dict(GateSettings.MODE_CHOICES):
+            return _bad_request('Invalid mode.')
+        gate_settings.mode = mode
+        update_fields.append('mode')
+
+    time_fields = ['early_start', 'early_end', 'late_start', 'late_end', 'clockout_start', 'clockout_end']
+    for field in time_fields:
+        if field in request.data:
+            parsed = parse_time(str(request.data.get(field) or ''))
+            if not parsed:
+                return _bad_request(f'{field} must be a valid HH:MM time.')
+            setattr(gate_settings, field, parsed)
+            update_fields.append(field)
+
+    if 'duplicate_protection_seconds' in request.data:
+        try:
+            seconds = int(request.data.get('duplicate_protection_seconds'))
+        except (TypeError, ValueError):
+            return _bad_request('duplicate_protection_seconds must be a whole number.')
+        if seconds < 0:
+            return _bad_request('duplicate_protection_seconds cannot be negative.')
+        gate_settings.duplicate_protection_seconds = seconds
+        update_fields.append('duplicate_protection_seconds')
+
+    if update_fields:
+        gate_settings.save(update_fields=update_fields + ['updated_at'])
+    return Response({'success': True, 'data': _gate_settings_payload(gate_settings)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gate_pin_verify(request):
+    """No PIN configured yet is treated as open, not locked - a school
+    shouldn't be locked out of Settings before ever setting one up."""
+    school, error = _require_school(request.user, _school_code_from_request(request))
+    if error:
+        return error
+    gate_settings = get_or_create_gate_settings(school)
+    pin = str(request.data.get('pin') or '')
+    if not gate_settings.admin_pin_hash:
+        return Response({'success': True, 'valid': True})
+    return Response({'success': True, 'valid': check_password(pin, gate_settings.admin_pin_hash)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gate_pin_set(request):
+    """Changing an existing PIN requires the current one; setting the very
+    first PIN (admin_pin_hash blank) does not."""
+    school, error = _require_school(request.user, _school_code_from_request(request))
+    if error:
+        return error
+    gate_settings = get_or_create_gate_settings(school)
+
+    current_pin = str(request.data.get('current_pin') or '')
+    new_pin = str(request.data.get('new_pin') or '').strip()
+    if not new_pin:
+        return _bad_request('new_pin is required.')
+    if gate_settings.admin_pin_hash and not check_password(current_pin, gate_settings.admin_pin_hash):
+        return Response({'success': False, 'message': 'Current PIN is incorrect.'}, status=status.HTTP_403_FORBIDDEN)
+
+    gate_settings.admin_pin_hash = make_password(new_pin)
+    gate_settings.save(update_fields=['admin_pin_hash', 'updated_at'])
+    return Response({'success': True, 'message': 'PIN updated.'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def fee_reminder_send(request):
+    """SchoolGate spec section 2B's "Send Fee Reminder" button - an
+    on-demand SMS, distinct from the automatic per-scan attendance SMS
+    (_send_gate_sms), sent the same unconditional, non-wallet way."""
+    school, error = _require_school(request.user, _school_code_from_request(request))
+    if error:
+        return error
+    # student_id here is the User id, matching what _person_summary's
+    # 'id' field (str(user_obj.id)) actually returns to the kiosk app -
+    # not StudentProfile's own (different) primary key.
+    student_id = request.data.get('student_id')
+    student_profile = StudentProfile.objects.select_related('user').filter(
+        user_id=student_id, user__tenant=school,
+    ).first()
+    if not student_profile:
+        return Response({'success': False, 'message': 'Student not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    from finance.services import guardian_contacts_for_student
+    phone, _email = guardian_contacts_for_student(student_profile)
+    if not phone:
+        return _bad_request('No guardian phone number on file for this student.')
+
+    fees = _fees_payload_for_student(student_profile)
+    name = student_profile.user.get_full_name() or student_profile.user.email
+    message = f'Reminder: {name} has an outstanding fee balance of ₦{fees["outstanding"]}. Please make payment at your earliest convenience. -SchoolDom'
+    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)],), daemon=True).start()
+    return Response({'success': True, 'message': 'Fee reminder sent.'})
 
 
 @api_view(['GET'])
