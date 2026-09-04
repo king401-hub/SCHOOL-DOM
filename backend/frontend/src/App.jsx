@@ -123,6 +123,7 @@ const AdminTimetablesScreen = lazyAdminScreen("AdminTimetablesScreen");
 const AdminResultsScreen = lazyAdminScreen("AdminResultsScreen");
 const AdminTableScreen = lazyAdminScreen("AdminTableScreen");
 const AdminClassesScreen = lazyAdminScreen("AdminClassesScreen");
+const TermTransitionPopup = lazyAdminScreen("TermTransitionPopup");
 const AdminHRPayrollScreen = lazyAdminScreen("AdminHRPayrollScreen");
 const AdminPayrollScreen = lazyAdminScreen("AdminPayrollScreen");
 const AdminNonTeachingStaffScreen = lazyAdminScreen("AdminNonTeachingStaffScreen");
@@ -6191,6 +6192,15 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     }
   }, [loadScreen, screenData, screenError, screenLoading]);
 
+  // Loaded regardless of the active route so a pending term_transition (see
+  // dashboard_snapshot) surfaces on first load even if the admin's current
+  // page isn't Dashboard - same reasoning as /settings and /messages above.
+  useEffect(() => {
+    if (!screenData["/dashboard"] && !screenLoading["/dashboard"] && !screenError["/dashboard"]) {
+      loadScreen("/dashboard");
+    }
+  }, [loadScreen, screenData, screenError, screenLoading]);
+
   // SMS Wallet's Bulk Messaging panel needs the parent directory - only fetch it
   // once the admin actually visits that screen, not on every session.
   useEffect(() => {
@@ -8624,6 +8634,15 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
 
         <Suspense fallback={<ScreenState loading />}>
           {content}
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <TermTransitionPopup
+            data={screenData["/dashboard"]?.term_transition}
+            session={session}
+            onNavigate={onNavigate}
+            onResolved={() => loadScreen("/dashboard", true)}
+          />
         </Suspense>
 
         {notificationsOpen ? (

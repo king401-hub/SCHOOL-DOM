@@ -71,6 +71,117 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", danger =
   );
 }
 
+/** School-wide "a term/session just ended" confirmation, driven by
+ * screenData["/dashboard"]?.term_transition (see backend/users/app_views.py
+ * dashboard_snapshot's term_transition key). Not dismissible via backdrop
+ * click or Escape - it's a once-per-transition confirmation, not a casual
+ * notice, and it clears for every admin at the school the moment any one of
+ * them confirms it (see term_transition_resolve on the backend). */
+function TermTransitionPopup({ data, session, onResolved, onNavigate }) {
+  const [summary, setSummary] = useState(null);
+  const [summaryError, setSummaryError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!data || data.next_term_missing) {
+      setSummary(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setSummary(null);
+    setSummaryError("");
+    requestJson(session, "GET", "/api/app/term-transition/summary/")
+      .then((result) => {
+        if (!cancelled) setSummary(result?.summary || null);
+      })
+      .catch((err) => {
+        if (!cancelled) setSummaryError(err.message || "Could not load the previous term's summary.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, session]);
+
+  if (!data) return null;
+
+  const handleConfirm = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await requestJson(session, "POST", "/api/app/term-transition/resolve/", {});
+      onResolved?.();
+    } catch (err) {
+      setError(err.message || "Could not confirm the term transition.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Popup open onClose={() => {}} closeOnBackdrop={false} labelledBy="term-transition-title" role="alertdialog">
+      <div style={{ padding: "0.5rem 0.25rem", minWidth: "360px", maxWidth: "480px" }}>
+        <h3 id="term-transition-title" style={{ marginTop: 0 }}>
+          {data.next_term_missing
+            ? "A term has ended"
+            : data.session_also_ended
+            ? "The academic session has ended"
+            : "A new term has begun"}
+        </h3>
+
+        {data.next_term_missing ? (
+          <>
+            <p>
+              {data.ended_term?.name || "The active term"} has ended and no next term is set up yet. Configure the
+              next term/session, then this notice will clear on its own.
+            </p>
+            <div className="panel-form-actions">
+              <button type="button" className="btn-primary" onClick={() => onNavigate?.("/timetables")}>
+                Open Term Settings
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>
+              {data.ended_term?.name || "The previous term"} has ended
+              {data.session_also_ended ? " and so has the academic session." : "."}
+            </p>
+            {summary ? (
+              <div className="metric-grid" style={{ margin: "1rem 0" }}>
+                <MetricCard label="Students" value={summary.student_count} />
+                <MetricCard label="Results Published" value={summary.results_published} />
+                <MetricCard
+                  label="Attendance"
+                  value={summary.attendance_percentage != null ? `${summary.attendance_percentage}%` : "—"}
+                />
+                <MetricCard label="Fees Collected" value={`${NAIRA_SYMBOL}${Number(summary.fees_collected || 0).toLocaleString()}`} />
+              </div>
+            ) : summaryError ? (
+              <p className="form-feedback error">{summaryError}</p>
+            ) : (
+              <p className="panel-empty compact">Loading previous term summary...</p>
+            )}
+            {data.session_also_ended ? (
+              <div className="panel-form-actions">
+                <button type="button" className="btn-secondary" onClick={() => onNavigate?.("/classes")}>
+                  Review Student Promotion
+                </button>
+              </div>
+            ) : null}
+            {error ? <p className="form-feedback error">{error}</p> : null}
+            <div className="panel-form-actions">
+              <button type="button" className="btn-primary" onClick={handleConfirm} disabled={busy}>
+                {busy ? <><Spinner size={12} /> Confirming...</> : "Confirm and continue"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Popup>
+  );
+}
+
 function useConfirm() {
   const [state, setState] = useState(null);
   const [open, setOpen] = useState(false);
@@ -14675,6 +14786,7 @@ function AdminLicenseScreen({ data, loading, error, onRetry, onActivate, onPurch
 }
 
 export {
+  TermTransitionPopup,
   AdminDashboardScreen,
   AdminPerformanceHeatmapScreen,
   AdminFinanceScreen,
