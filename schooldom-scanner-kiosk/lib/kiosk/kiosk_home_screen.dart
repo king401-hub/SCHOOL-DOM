@@ -70,6 +70,25 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   static const _hidFastKeystrokeThresholdMs = 50;
   static const _hidIdleResetMs = 400;
 
+  // Settings/PIN screens are pushed ON TOP of this one - KioskHomeScreen
+  // stays mounted underneath (Navigator.push never disposes the route it
+  // covers), so without this flag the reclaim-focus listener below would
+  // keep stealing focus back from those screens' own text fields every
+  // 50ms, making their on-screen keyboard flash open/closed in a fight
+  // for focus. _pauseHidCapture()/_resumeHidCapture() bracket every such
+  // navigation.
+  bool _hidCaptureEnabled = true;
+
+  void _pauseHidCapture() {
+    _hidCaptureEnabled = false;
+    _hidFocusNode.unfocus();
+  }
+
+  void _resumeHidCapture() {
+    _hidCaptureEnabled = true;
+    if (mounted) _hidFocusNode.requestFocus();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -81,9 +100,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     _sendHeartbeat();
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) => _sendHeartbeat());
     _hidFocusNode.addListener(() {
-      if (!_hidFocusNode.hasFocus) {
+      if (_hidCaptureEnabled && !_hidFocusNode.hasFocus) {
         Future.delayed(const Duration(milliseconds: 50), () {
-          if (mounted) _hidFocusNode.requestFocus();
+          if (mounted && _hidCaptureEnabled) _hidFocusNode.requestFocus();
         });
       }
     });
@@ -471,8 +490,11 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
             // de-registering a live terminal would be worse than the
             // friction of one extra step.
             GestureDetector(
-              onTap: () => Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const GatePinScreen())),
+              onTap: () async {
+                _pauseHidCapture();
+                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GatePinScreen()));
+                _resumeHidCapture();
+              },
               child: const Icon(Icons.settings_outlined, size: 14, color: Colors.white38),
             ),
             const SizedBox(width: 12),
