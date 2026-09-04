@@ -541,12 +541,37 @@ function renderDeviceDetail(d) {
         ? '<button class="btn btn-secondary" data-action="reactivate">Reactivate</button>'
         : '<button class="btn btn-secondary" data-action="suspend">Deactivate</button>'}
       <button class="btn btn-secondary" data-action="reassign">Reassign School</button>
+      <button class="btn btn-danger" data-action="delete">Delete Device</button>
     </div>
   `;
   $('[data-action="revoke"]').addEventListener('click', () => deviceAction(d.id, 'revoke', 'Log out this device? It will need to be re-authorized before scanning again.'));
   $('[data-action="suspend"]')?.addEventListener('click', () => deviceAction(d.id, 'suspend'));
   $('[data-action="reactivate"]')?.addEventListener('click', () => deviceAction(d.id, 'reactivate'));
   $('[data-action="reassign"]').addEventListener('click', () => openReassignPrompt(d));
+  $('[data-action="delete"]').addEventListener('click', () => deleteDeviceAction(d.id));
+}
+
+// Unlike deviceAction (a state transition - the device row still exists
+// afterward, just with new fields), deleting removes the row entirely, so
+// there's no updated device object to merge back in - just drop it from
+// the in-memory list and re-render both the table and the now-empty detail
+// panel.
+async function deleteDeviceAction(id) {
+  if (!confirm('Permanently delete this device? This cannot be undone - the device will need to be provisioned again from scratch to be used.')) return;
+  try {
+    await API.post(`/api/device-fleet/devices/${id}/delete/`, {});
+    showToast('Device deleted.');
+    currentDevices = currentDevices.filter(d => d.id !== id);
+    if (selectedDeviceId === id) selectedDeviceId = null;
+    renderDeviceTable('#device-table-body', currentDevices.slice(0, 6), false);
+    if (document.querySelector('#view-devices').style.display !== 'none') {
+      renderDeviceTable('#device-table-body-full', currentDevices, true);
+    }
+    renderDeviceDetail(null);
+    renderBatteryPanel(null);
+  } catch (err) {
+    handleApiError(err);
+  }
 }
 
 function renderBatteryPanel(d) {

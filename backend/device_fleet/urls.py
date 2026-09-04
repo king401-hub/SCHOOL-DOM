@@ -13,6 +13,7 @@ urlpatterns = [
     path('devices/<uuid:device_pk>/suspend/', views.suspend_device, name='suspend_device'),
     path('devices/<uuid:device_pk>/reactivate/', views.reactivate_device, name='reactivate_device'),
     path('devices/<uuid:device_pk>/revoke/', views.revoke_device, name='revoke_device'),
+    path('devices/<uuid:device_pk>/delete/', views.delete_device, name='delete_device'),
     path('provisioning-keys/', views.generate_provisioning_key, name='generate_provisioning_key'),
     path('audit-logs/', views.audit_logs_list, name='audit_logs_list'),
 

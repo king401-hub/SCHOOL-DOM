@@ -272,6 +272,27 @@ def revoke_device(request, device_pk):
     return Response({'success': True, 'data': DeviceSerializer(device).data})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def delete_device(request, device_pk):
+    """Removes the device record entirely - unlike revoke (permanent but
+    keeps the row, e.g. for audit history), this is for cleaning up
+    test/duplicate device entries that shouldn't show up in the fleet at
+    all. scanner_user is a synthetic per-device account with no purpose
+    once its device is gone (every FK referencing it elsewhere is
+    SET_NULL), so it's deleted too rather than left dangling."""
+    forbidden = _require_superadmin(request.user)
+    if forbidden:
+        return forbidden
+    device = Device.objects.filter(pk=device_pk).first()
+    if not device:
+        return Response({'success': False, 'message': 'Device not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if device.scanner_user_id:
+        device.scanner_user.delete()
+    device.delete()
+    return Response({'success': True})
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def audit_logs_list(request):
