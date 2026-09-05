@@ -456,8 +456,13 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     # Unconditional parent SMS on every scan (both directions) - a product
     # decision to send regardless of the paid Kids Monitor subscription
     # gate the phone/QR clock flow uses, and not charged to the school's
-    # SMS wallet (see _send_gate_sms / _gate_sms_text docstrings).
-    _send_gate_sms(student, student_profile, action, event)
+    # SMS wallet (see _send_gate_sms / _gate_sms_text docstrings). SchoolGate
+    # Basic doesn't include this - only Premium gets the daily clock-in/out
+    # SMS (Basic still gets the weekly summary, see
+    # rfid_attendance.tasks.send_schoolgate_weekly_reports). Full-product
+    # schools are unaffected either way.
+    if not (school.is_schoolgate and school.subscription_tier == "basic"):
+        _send_gate_sms(student, student_profile, action, event)
 
     return Response({
         'success': True,

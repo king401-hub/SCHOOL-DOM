@@ -813,8 +813,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
               value={schoolgatePlan}
               onChange={(event) => setSchoolgatePlan(event.target.value)}
             >
-              <option value="basic">Basic - ₦500 / student / term (no Child Monitor)</option>
-              <option value="premium">Premium - ₦1,500 / student / term (with Child Monitor)</option>
+              <option value="basic">Basic - ₦700 / student / term (weekly SMS report, no daily clock-in/out SMS)</option>
+              <option value="premium">Premium - ₦1,500 / student / term (daily clock-in/out SMS + weekly report, with Child Monitor)</option>
             </select>
           </div>
           <p className="help-text">

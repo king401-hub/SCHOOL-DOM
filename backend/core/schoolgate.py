@@ -27,7 +27,7 @@ SCHOOLGATE_UNPAID_MESSAGE = (
 # differs between plans.
 SCHOOLGATE_DEVICE_FEE = 50000
 SCHOOLGATE_PLAN_PRICES = {
-    'basic': 500,
+    'basic': 700,
     'premium': 1500,
 }
 

@@ -85,4 +85,11 @@ app.conf.beat_schedule = {
         "task": "inventory.tasks.check_scheduled_maintenance",
         "schedule": crontab(hour=3, minute=45),
     },
+    # Friday at 17:00 — SchoolGate's weekly attendance SMS digest (both
+    # Basic and Premium get this; only Premium also gets the daily
+    # clock-in/out SMS, gated separately in rfid_attendance/views.py).
+    "schoolgate-weekly-reports": {
+        "task": "rfid_attendance.tasks.send_schoolgate_weekly_reports",
+        "schedule": crontab(day_of_week=5, hour=17, minute=0),
+    },
 }

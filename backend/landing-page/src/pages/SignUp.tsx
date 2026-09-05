@@ -452,8 +452,8 @@ export default function SignUpPage() {
                     <div>
                       <label className="block text-slate-500 text-xs mb-1.5">SchoolGate plan</label>
                       <select value={schoolgatePlan} onChange={e => setSchoolgatePlan(e.target.value as SchoolGatePlan)} className={inputCls}>
-                        <option value="basic">Basic - ₦500 / student / term (no Child Monitor)</option>
-                        <option value="premium">Premium - ₦1,500 / student / term (with Child Monitor)</option>
+                        <option value="basic">Basic - ₦700 / student / term (weekly SMS report, no daily clock-in/out SMS)</option>
+                        <option value="premium">Premium - ₦1,500 / student / term (daily clock-in/out SMS + weekly report, with Child Monitor)</option>
                       </select>
                     </div>
                   )}
