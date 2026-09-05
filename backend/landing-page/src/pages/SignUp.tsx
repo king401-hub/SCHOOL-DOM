@@ -16,6 +16,8 @@ const stepMotion = {
 
 type Role = 'school_admin' | 'school_superadmin';
 type SchoolType = 'k12' | 'non_k12';
+type Product = 'full' | 'schoolgate';
+type SchoolGatePlan = 'basic' | 'premium';
 
 const SESSION_KEY = 'schooldom.session';
 const ADMIN_APP_URL = (import.meta as any).env?.VITE_ADMIN_APP_URL || '/app/';
@@ -105,6 +107,10 @@ export default function SignUpPage() {
   const [address, setAddress] = useState('');
   const [schoolGroupName, setSchoolGroupName] = useState('');
   const [certified, setCertified] = useState(false);
+  // Orthogonal to schoolType - SchoolGate is offered under both K-12 and
+  // Non-K12. schoolgatePlan only matters when product === 'schoolgate'.
+  const [product, setProduct] = useState<Product>('full');
+  const [schoolgatePlan, setSchoolgatePlan] = useState<SchoolGatePlan>('basic');
 
   // useState's initializer only runs on mount, so if this page is ever reached
   // twice without a full remount (e.g. browser back/forward between
@@ -179,6 +185,8 @@ export default function SignUpPage() {
           email: email.trim(),
           school_type: schoolType,
           address: address.trim(),
+          product,
+          schoolgate_plan: schoolgatePlan,
         });
         code = schoolData?.school?.school_code || '';
         setSchoolCode(code);
@@ -429,6 +437,26 @@ export default function SignUpPage() {
                     </select>
                     <p className="text-slate-500 text-xs mt-1.5">Select 'K-12' for foundational schools, or 'Non-K12' for higher/vocational education.</p>
                   </div>
+                  <div>
+                    <label className="block text-slate-500 text-xs mb-1.5">What do you need?</label>
+                    <select value={product} onChange={e => setProduct(e.target.value as Product)} className={inputCls}>
+                      <option value="full">Full SchoolDom (complete school management)</option>
+                      <option value="schoolgate">SchoolGate only (attendance gate terminal)</option>
+                    </select>
+                    <p className="text-slate-500 text-xs mt-1.5">
+                      SchoolGate gives you Attendance, Staff, Finance, and Students only - billed per student each
+                      term. You can activate full School Management later at any time.
+                    </p>
+                  </div>
+                  {product === 'schoolgate' && (
+                    <div>
+                      <label className="block text-slate-500 text-xs mb-1.5">SchoolGate plan</label>
+                      <select value={schoolgatePlan} onChange={e => setSchoolgatePlan(e.target.value as SchoolGatePlan)} className={inputCls}>
+                        <option value="basic">Basic - ₦500 / student / term (no Child Monitor)</option>
+                        <option value="premium">Premium - ₦1,500 / student / term (with Child Monitor)</option>
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-slate-500 text-xs mb-1.5">Institutional Physical Address (Optional)</label>
                     <input type="text" value={address} onChange={e => setAddress(e.target.value)}
