@@ -3683,7 +3683,44 @@ const SCHOOLGATE_ALLOWED_PATHS = new Set([
   "/loan-application",
 ]);
 
-function SchoolGateLocked({ pageTitle }) {
+// Paths a SchoolGate school can still reach even before it has paid its
+// device fee and this term's subscription - /attendance is where the
+// billing panel and its Pay buttons live (see SchoolGateBillingPanel in
+// components/Attendance.jsx), so it can never itself be paywalled without
+// creating a dead end; /dashboard stays open as a home/landing page.
+const SCHOOLGATE_PAYMENT_EXEMPT_PATHS = new Set(["/dashboard", "/attendance"]);
+
+function SchoolGateLocked({ pageTitle, reason = "plan", onActivate }) {
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState("");
+
+  const handleActivate = async () => {
+    if (!onActivate) return;
+    setActivating(true);
+    setActivateError("");
+    try {
+      await onActivate();
+    } catch (err) {
+      setActivateError(err.message || "Unable to activate School Management.");
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  if (reason === "unpaid") {
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-24 px-6 max-w-md mx-auto">
+        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-3xl mb-5" aria-hidden="true">
+          🔒
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 mb-2">{pageTitle || "This feature"} is locked until you pay</h2>
+        <p className="text-sm text-slate-500">
+          Pay your SchoolGate device fee and this term's subscription on the Attendance page to unlock
+          {pageTitle ? ` ${pageTitle.toLowerCase()}` : " this page"}.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col items-center justify-center text-center py-24 px-6 max-w-md mx-auto">
       <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-3xl mb-5" aria-hidden="true">
@@ -3697,12 +3734,26 @@ function SchoolGateLocked({ pageTitle }) {
         Management to unlock {pageTitle ? pageTitle.toLowerCase() : "this page"} and every other
         SchoolDom feature.
       </p>
-      <a
-        className="inline-flex items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-semibold px-5 py-2.5 hover:bg-blue-700 transition-colors"
-        href="mailto:support@schooldom.academy?subject=Activate%20School%20Management"
-      >
-        Activate School Management
-      </a>
+      {onActivate ? (
+        <>
+          <button
+            type="button"
+            onClick={handleActivate}
+            disabled={activating}
+            className="inline-flex items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-semibold px-5 py-2.5 hover:bg-blue-700 transition-colors disabled:opacity-60"
+          >
+            {activating ? "Activating..." : "Activate School Management"}
+          </button>
+          {activateError ? <p className="text-sm text-red-600 mt-3">{activateError}</p> : null}
+        </>
+      ) : (
+        <a
+          className="inline-flex items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-semibold px-5 py-2.5 hover:bg-blue-700 transition-colors"
+          href="mailto:support@schooldom.academy?subject=Activate%20School%20Management"
+        >
+          Activate School Management
+        </a>
+      )}
     </div>
   );
 }
@@ -6139,6 +6190,37 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const adminPollRef = useRef(null);
   const MESSAGES_POLL_MS = 20000;
   const ADMIN_ACTIVE_POLL_MS = 5000;
+  const isSchoolGateSchool = isSchoolGateOnly(session);
+  const [schoolGateBilling, setSchoolGateBilling] = useState(null);
+
+  useEffect(() => {
+    if (!isSchoolGateSchool) return undefined;
+    let cancelled = false;
+    const loadBilling = () => {
+      requestJson(session, "GET", "/api/finance/schoolgate/billing-summary/")
+        .then((result) => {
+          if (!cancelled) setSchoolGateBilling(result);
+        })
+        .catch(() => {});
+    };
+    loadBilling();
+    const intervalId = window.setInterval(loadBilling, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isSchoolGateSchool, session]);
+
+  const handleSchoolGateActivate = useCallback(async () => {
+    const result = await requestJson(session, "POST", "/api/finance/schoolgate/activate/", {});
+    const nextSession = {
+      ...session,
+      school: { ...(session?.school || {}), product: "full", schoolgate_plan: null },
+    };
+    writeStoredSession(nextSession);
+    onSessionUpdate?.(nextSession);
+    return result;
+  }, [onSessionUpdate, session]);
 
   useEffect(() => {
     if (currentPath !== activePath) {
@@ -8464,8 +8546,17 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
   // SchoolGate gating - overrides whatever screen the chain above picked,
   // regardless of which branch matched, so every current and future route
   // is covered by this one check rather than needing its own guard.
-  if (isSchoolGateOnly(session) && !SCHOOLGATE_ALLOWED_PATHS.has(activePath)) {
-    content = <SchoolGateLocked pageTitle={currentPageTitle} />;
+  if (isSchoolGateSchool && !SCHOOLGATE_ALLOWED_PATHS.has(activePath)) {
+    content = <SchoolGateLocked pageTitle={currentPageTitle} onActivate={handleSchoolGateActivate} />;
+  } else if (
+    isSchoolGateSchool &&
+    !SCHOOLGATE_PAYMENT_EXEMPT_PATHS.has(activePath) &&
+    schoolGateBilling &&
+    !schoolGateBilling.is_unlocked
+  ) {
+    // Hard block until paid - device fee + this term's subscription both
+    // clear - even for the four modules the plan itself allows.
+    content = <SchoolGateLocked pageTitle={currentPageTitle} reason="unpaid" />;
   }
 
   const routeByPath = useMemo(() => {

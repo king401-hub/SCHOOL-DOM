@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from academic.models import AttendanceRecord, Class
 from attendance.models import TeacherAttendance
 from attendance.views import _apply_clock_out, get_client_ip
+from core.schoolgate import require_full_product
 from finance.services import fee_totals_by_student, send_ebulksms
 from users.models import StudentProfile, User
 from users.app_views import (
@@ -346,6 +347,10 @@ def attendance_scan_create(request):
     toggling clock_in -> clock_out a second time."""
     if request.user.role not in SCAN_OPERATOR_ROLES:
         return _forbidden('Only school staff can record RFID attendance.')
+
+    locked = require_full_product(request.user)
+    if locked:
+        return locked
 
     school, error = _require_school(request.user, _school_code_from_request(request))
     if error:

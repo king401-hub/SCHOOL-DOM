@@ -107,6 +107,11 @@ from finance.services import (
     send_whatsapp_message,
     update_student_activation_alerts,
     verify_activation_credit_purchase,
+    schoolgate_pricing,
+    schoolgate_activate_full,
+    initialize_schoolgate_device_payment,
+    initialize_schoolgate_termly_payment,
+    verify_schoolgate_payment,
     # Paystack split payment + fee reminders
     send_parent_virtual_account_fee_reminder,
     send_bulk_message_to_parents,
@@ -1932,6 +1937,160 @@ def admin_activation_credit_verify(request):
     )
 
     return Response({"success": True, "pool": ActivationCreditPoolSerializer(pool).data})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def schoolgate_billing_summary(request):
+    """Everything the Attendance page's billing panel needs: device-fee
+    status, this term's per-student subscription status, and the current
+    totals - device fee is flat/one-time, the recurring total is
+    per_student_price x today's active student count."""
+    from core.schoolgate import (
+        SchoolGatePayment,
+        schoolgate_current_term,
+        schoolgate_device_paid,
+        schoolgate_term_paid,
+        schoolgate_is_unlocked,
+    )
+
+    user = request.user
+    tenant = user.tenant
+    if not tenant or not getattr(tenant, "is_schoolgate", False):
+        return Response({"success": False, "message": "Not a SchoolGate school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    pricing = schoolgate_pricing(tenant)
+    term = schoolgate_current_term(tenant)
+    device_paid = schoolgate_device_paid(tenant)
+    term_paid = schoolgate_term_paid(tenant, term)
+    last_termly = (
+        SchoolGatePayment.objects.filter(tenant=tenant, payment_type=SchoolGatePayment.TYPE_TERMLY, term=term)
+        .order_by("-created_at")
+        .first()
+    )
+
+    return Response(
+        {
+            "success": True,
+            "plan": pricing["plan"],
+            "student_count": pricing["student_count"],
+            "per_student_price": pricing["per_student_price"],
+            "recurring_total": pricing["recurring_total"],
+            "device_fee": pricing["device_fee"],
+            "device_paid": device_paid,
+            "term": {"id": term.id, "name": term.name} if term else None,
+            "term_paid": term_paid,
+            "term_payment_pending": bool(last_termly and last_termly.status == SchoolGatePayment.STATUS_PENDING),
+            "is_unlocked": schoolgate_is_unlocked(tenant),
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def schoolgate_pay_device(request):
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant or not getattr(user.tenant, "is_schoolgate", False):
+        return Response({"success": False, "message": "Not a SchoolGate school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        init_payload = initialize_schoolgate_device_payment(user.tenant, actor=user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {
+            "success": True,
+            "authorization_url": init_payload.get("authorization_url") or init_payload.get("link"),
+            "link": init_payload.get("link") or init_payload.get("authorization_url"),
+            "access_code": init_payload.get("access_code"),
+            "reference": init_payload.get("reference"),
+            "amount": init_payload.get("amount"),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def schoolgate_pay_termly(request):
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+    if not user.tenant or not getattr(user.tenant, "is_schoolgate", False):
+        return Response({"success": False, "message": "Not a SchoolGate school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        init_payload = initialize_schoolgate_termly_payment(user.tenant, actor=user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {
+            "success": True,
+            "authorization_url": init_payload.get("authorization_url") or init_payload.get("link"),
+            "link": init_payload.get("link") or init_payload.get("authorization_url"),
+            "access_code": init_payload.get("access_code"),
+            "reference": init_payload.get("reference"),
+            "amount": init_payload.get("amount"),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def schoolgate_payment_verify(request):
+    """Called by the frontend right after the Paystack redirect returns,
+    same never-trust-the-redirect-params pattern as
+    admin_activation_credit_verify - the real status always comes from
+    verify_schoolgate_payment's provider API call, not the query string."""
+    from core.schoolgate import SchoolGatePayment
+
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    reference = str(request.data.get("reference") or "").strip()
+    if not reference:
+        return Response({"success": False, "message": "reference is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        SchoolGatePayment.objects.get(reference=reference, tenant=user.tenant)
+        payment = verify_schoolgate_payment(reference, actor=user)
+    except SchoolGatePayment.DoesNotExist:
+        return Response({"success": False, "message": "Payment not found."}, status=status.HTTP_404_NOT_FOUND)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {
+            "success": True,
+            "payment_type": payment.payment_type,
+            "status": payment.status,
+            "amount": payment.amount,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def schoolgate_activate(request):
+    """Self-serve "Activate School Management" - upgrades a SchoolGate
+    school to full SchoolDom and grants the 50 registration credits a full
+    sign-up would have gotten, retroactively (see schoolgate_activate_full)."""
+    user = request.user
+    if user.role not in ADMIN_ROLES:
+        return Response({"success": False, "message": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        pool = schoolgate_activate_full(user.tenant, actor=user)
+    except ValueError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({"success": True, "message": "School Management activated.", "free_credits": pool.balance})
 
 
 @api_view(["POST"])

@@ -581,9 +581,14 @@ def create_school(request):
         if existing:
             domain = existing.domains.filter(is_primary=True).first()
             credit_pool = get_or_create_activation_credit_pool(existing)
+            existing_is_schoolgate = existing.product == SchoolTenant.PRODUCT_SCHOOLGATE
             return Response({
                 'success': True,
-                'message': 'School created successfully with 50 free activation credits.',
+                'message': (
+                    f'School created on the SchoolGate {existing.subscription_tier.title()} plan.'
+                    if existing_is_schoolgate
+                    else 'School created successfully with 50 free activation credits.'
+                ),
                 'school': {
                     'id': existing.id,
                     'name': existing.name,
@@ -591,6 +596,8 @@ def create_school(request):
                     'domain': domain.domain if domain else '',
                     'free_credits': credit_pool.balance,
                     'school_type': existing.school_type,
+                    'product': existing.product,
+                    'schoolgate_plan': existing.subscription_tier if existing_is_schoolgate else None,
                 },
                 'requested_code': requested_code,
                 'conflict_resolved': existing.schema_name != requested_code,
@@ -631,7 +638,40 @@ def create_school(request):
                     domain=domain_name,
                     is_primary=True,
                 )
-                credit_pool = grant_school_registration_credits(tenant, credits=50)
+                # SchoolGate schools don't get the free-registration credits -
+                # those only apply to full SchoolDom accounts. A SchoolGate
+                # school gets them retroactively if/when it later activates
+                # full School Management (see schoolgate_activate_full).
+                if product == SchoolTenant.PRODUCT_SCHOOLGATE:
+                    credit_pool = get_or_create_activation_credit_pool(tenant)
+                    # The Academics module (where a full-product admin would
+                    # normally set this up) is locked for SchoolGate - without
+                    # a Term to bill against, a SchoolGate school could never
+                    # pay its termly subscription. Seed one implicit term,
+                    # mirroring academic.models.sync_implicit_term_for_non_k12_year's
+                    # "one term stands in for a period the school doesn't
+                    # manage directly" pattern.
+                    from academic.models import AcademicYear, Term
+
+                    legacy_tenant = Tenant.objects.get(slug=schema_name)
+                    today = timezone.localdate()
+                    academic_year = AcademicYear.objects.create(
+                        tenant=legacy_tenant,
+                        name=f"{today.year}/{today.year + 1}",
+                        start_date=today,
+                        end_date=today + timedelta(days=365),
+                        is_active=True,
+                    )
+                    Term.objects.create(
+                        tenant=legacy_tenant,
+                        academic_year=academic_year,
+                        name="Term 1",
+                        start_date=today,
+                        end_date=today + timedelta(days=120),
+                        is_active=True,
+                    )
+                else:
+                    credit_pool = grant_school_registration_credits(tenant, credits=50)
 
             try:
                 support_email = getattr(settings, "SCHOOLDOM_SUPPORT_EMAIL", None) or "support@schooldom.academy"

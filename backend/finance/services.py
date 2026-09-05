@@ -2073,6 +2073,152 @@ def grant_school_registration_credits(tenant, credits=50, actor=None):
     return pool
 
 
+def schoolgate_activate_full(tenant, actor=None):
+    """Self-serve upgrade from SchoolGate to full School Management. The 50
+    free registration credits a full sign-up gets were deliberately skipped
+    at SchoolGate sign-up time (see users.views.create_school) - granted
+    retroactively here, at the moment of activation, instead."""
+    from core.tenant import SchoolTenant
+
+    if tenant.product != SchoolTenant.PRODUCT_SCHOOLGATE:
+        raise ValueError("This school is already on full School Management.")
+    tenant.product = SchoolTenant.PRODUCT_FULL
+    tenant.save(update_fields=["product"])
+    return grant_school_registration_credits(tenant, credits=50, actor=actor)
+
+
+def schoolgate_pricing(tenant):
+    """Current SchoolGate billing figures for `tenant`: the flat one-time
+    device fee, and the recurring per-student total for the plan on record
+    (SchoolTenant.subscription_tier), based on today's active student
+    count - not a term snapshot, since this is what the Attendance page
+    shows before any payment for the term has been made."""
+    from core.schoolgate import SCHOOLGATE_DEVICE_FEE, SCHOOLGATE_PLAN_PRICES
+    from users.models import StudentProfile
+
+    plan = tenant.subscription_tier if tenant.subscription_tier in SCHOOLGATE_PLAN_PRICES else "basic"
+    student_count = StudentProfile.objects.filter(user__tenant=tenant, user__is_active=True).count()
+    per_student_price = SCHOOLGATE_PLAN_PRICES[plan]
+    return {
+        "plan": plan,
+        "student_count": student_count,
+        "per_student_price": per_student_price,
+        "recurring_total": Decimal(per_student_price * student_count),
+        "device_fee": Decimal(SCHOOLGATE_DEVICE_FEE),
+    }
+
+
+def initialize_schoolgate_device_payment(tenant, actor):
+    """One-time device fee - same amount on both plans, payable once ever."""
+    from core.schoolgate import SchoolGatePayment, schoolgate_device_paid
+
+    if schoolgate_device_paid(tenant):
+        raise ValueError("The device fee has already been paid.")
+
+    pricing = schoolgate_pricing(tenant)
+    amount = pricing["device_fee"]
+    reference = generate_reference("SGD")
+    SchoolGatePayment.objects.create(
+        tenant=tenant,
+        payment_type=SchoolGatePayment.TYPE_DEVICE,
+        amount=amount,
+        reference=reference,
+    )
+    init_payload = initialize_payment_transaction(
+        user=actor,
+        amount=amount,
+        reference=reference,
+        metadata={"purpose": "schoolgate_device", "tenant_id": str(tenant.id)},
+    )
+    return {"reference": reference, "amount": amount, "provider": active_payment_provider(), **init_payload}
+
+
+def initialize_schoolgate_termly_payment(tenant, actor):
+    """Recurring per-student subscription for the school's CURRENT term -
+    amount is a snapshot of today's plan price x active student count, so a
+    later enrolment change never rewrites what this specific payment covers."""
+    from core.schoolgate import SchoolGatePayment, schoolgate_current_term, schoolgate_term_paid
+
+    term = schoolgate_current_term(tenant)
+    if not term:
+        raise ValueError("No active term found for this school yet.")
+    if schoolgate_term_paid(tenant, term):
+        raise ValueError("This term's subscription has already been paid.")
+
+    pricing = schoolgate_pricing(tenant)
+    if pricing["student_count"] <= 0:
+        raise ValueError("Add students before paying the termly subscription.")
+
+    amount = pricing["recurring_total"]
+    reference = generate_reference("SGT")
+    SchoolGatePayment.objects.create(
+        tenant=tenant,
+        payment_type=SchoolGatePayment.TYPE_TERMLY,
+        term=term,
+        plan=pricing["plan"],
+        student_count=pricing["student_count"],
+        per_student_price=pricing["per_student_price"],
+        amount=amount,
+        reference=reference,
+    )
+    init_payload = initialize_payment_transaction(
+        user=actor,
+        amount=amount,
+        reference=reference,
+        metadata={
+            "purpose": "schoolgate_termly",
+            "tenant_id": str(tenant.id),
+            "term_id": term.id,
+            "student_count": pricing["student_count"],
+            "plan": pricing["plan"],
+        },
+    )
+    return {"reference": reference, "amount": amount, "provider": active_payment_provider(), **init_payload}
+
+
+def _bundle_kids_monitor_for_schoolgate_premium(tenant):
+    """Premium SchoolGate includes Child Monitor for every parent at the
+    school for free, bundled into the termly per-student price rather than
+    billed to parents separately - activated the moment the termly payment
+    for a premium school clears."""
+    from users.models import ParentProfile
+
+    parents = ParentProfile.objects.filter(children__user__tenant=tenant).distinct()
+    for parent in parents:
+        activate_kids_monitor_subscription(parent, tenant)
+
+
+def verify_schoolgate_payment(reference, actor=None, verification: Optional[dict] = None):
+    from core.schoolgate import SchoolGatePayment
+
+    payment = SchoolGatePayment.objects.select_related("tenant", "term").get(reference=reference)
+    if payment.status == SchoolGatePayment.STATUS_SUCCESSFUL:
+        return payment
+
+    verification = verification or verify_payment_transaction(reference)
+    status_value = str(verification.get("status") or "").lower()
+    amount_major = Decimal(str(verification.get("amount") or 0))
+    if status_value != "successful":
+        payment.status = SchoolGatePayment.STATUS_FAILED
+        payment.save(update_fields=["status"])
+        raise ValueError("Payment not successful.")
+    if amount_major < payment.amount:
+        payment.status = SchoolGatePayment.STATUS_FAILED
+        payment.save(update_fields=["status"])
+        raise ValueError("Payment amount mismatch.")
+
+    with transaction.atomic():
+        locked = SchoolGatePayment.objects.select_for_update().get(pk=payment.pk)
+        if locked.status != SchoolGatePayment.STATUS_SUCCESSFUL:
+            locked.status = SchoolGatePayment.STATUS_SUCCESSFUL
+            locked.paid_at = timezone.now()
+            locked.save(update_fields=["status", "paid_at"])
+            if locked.payment_type == SchoolGatePayment.TYPE_TERMLY and locked.plan == "premium":
+                _bundle_kids_monitor_for_schoolgate_premium(locked.tenant)
+        payment = locked
+    return payment
+
+
 def get_or_create_student_activation_credit(student_profile) -> StudentActivationCredit:
     credit, _ = StudentActivationCredit.objects.get_or_create(student=student_profile)
     return credit
@@ -2997,6 +3143,10 @@ def complete_payment_reference(reference: str, verification: Optional[dict] = No
     if ActivationCreditTransaction.objects.filter(reference=reference).exists():
         pool = verify_activation_credit_purchase(reference, verification=verification)
         return {"kind": "activation_credits", "pool_id": str(pool.id)}
+    from core.schoolgate import SchoolGatePayment
+    if SchoolGatePayment.objects.filter(reference=reference).exists():
+        payment = verify_schoolgate_payment(reference, verification=verification)
+        return {"kind": "schoolgate", "payment_id": str(payment.id), "payment_type": payment.payment_type}
     raise ValueError("Unknown payment reference.")
 
 

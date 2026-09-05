@@ -1175,6 +1175,111 @@ export function ScannerAppDownloadBanner() {
   );
 }
 
+function formatNaira(amount) {
+  const value = Number(amount || 0);
+  return `₦${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+/** Device fee (one-time) + this term's per-student subscription - shown only
+ * to SchoolGate schools, who are hard-blocked from every other page until
+ * both are paid (see App.jsx's SchoolGateLocked gating). */
+function SchoolGateBillingPanel({ session }) {
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+  const [payingType, setPayingType] = useState("");
+  const pendingReferenceRef = useRef({ device: "", termly: "" });
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const result = await requestJson(session, "GET", "/api/finance/schoolgate/billing-summary/");
+      setSummary(result);
+      setError("");
+    } catch (err) {
+      setError(err.message || "Unable to load SchoolGate billing.");
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  const verifyPending = useCallback(
+    async (kind) => {
+      const reference = pendingReferenceRef.current[kind];
+      if (!reference) return;
+      try {
+        await requestJson(session, "POST", "/api/finance/schoolgate/verify-payment/", { reference });
+        pendingReferenceRef.current[kind] = "";
+        await loadSummary();
+      } catch {
+        // Not confirmed yet - the poll below will try again.
+      }
+    },
+    [loadSummary, session]
+  );
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      verifyPending("device");
+      verifyPending("termly");
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [verifyPending]);
+
+  const startPayment = async (kind, endpoint) => {
+    setPayingType(kind);
+    setError("");
+    try {
+      const result = await requestJson(session, "POST", endpoint, {});
+      const checkoutUrl = result?.authorization_url || result?.link || "";
+      if (result?.reference) pendingReferenceRef.current[kind] = result.reference;
+      if (checkoutUrl) window.open(checkoutUrl, "_blank", "noopener");
+    } catch (err) {
+      setError(err.message || "Unable to start payment.");
+    } finally {
+      setPayingType("");
+    }
+  };
+
+  if (!summary) return null;
+
+  return (
+    <article className="app-panel" style={{ display: "grid", gap: "0.75rem" }}>
+      <h3>SchoolGate Billing</h3>
+      {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
+      <div style={{ display: "grid", gap: "0.5rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+        <div className="stat-tile">
+          <strong>Device fee (one-time)</strong>
+          <p>{formatNaira(summary.device_fee)}</p>
+          {summary.device_paid ? (
+            <span style={{ color: "#15803d" }}>Paid</span>
+          ) : (
+            <button type="button" disabled={payingType === "device"} onClick={() => startPayment("device", "/api/finance/schoolgate/pay-device/")}>
+              {payingType === "device" ? "Starting..." : "Pay device fee"}
+            </button>
+          )}
+        </div>
+        <div className="stat-tile">
+          <strong>
+            {summary.term?.name || "This term"} subscription ({summary.student_count} students x {formatNaira(summary.per_student_price)})
+          </strong>
+          <p>{formatNaira(summary.recurring_total)}</p>
+          {summary.term_paid ? (
+            <span style={{ color: "#15803d" }}>Paid</span>
+          ) : (
+            <button type="button" disabled={payingType === "termly"} onClick={() => startPayment("termly", "/api/finance/schoolgate/pay-termly/")}>
+              {payingType === "termly" ? "Starting..." : "Pay termly subscription"}
+            </button>
+          )}
+        </div>
+      </div>
+      {!summary.is_unlocked ? (
+        <p style={{ color: "#b45309" }}>Attendance, Staff, Finance, and Students stay locked until both are paid.</p>
+      ) : null}
+    </article>
+  );
+}
+
 export function AttendanceModule({ session }) {
   const isAdmin = ADMIN_ROLES.has(session?.user?.role);
   const nonK12 = (session?.school?.school_type || session?.school?.schoolType || "k12") === "non_k12";
@@ -1226,6 +1331,7 @@ export function AttendanceModule({ session }) {
             : `Manage the shared QR code and monitor today's ${audienceLabel.toLowerCase()} check-ins in real time.`}
         </p>
       </div>
+      {session?.school?.product === "schoolgate" ? <SchoolGateBillingPanel session={session} /> : null}
       <ScannerAppDownloadBanner />
       <div className="segmented-control" style={{ justifyContent: "flex-start" }}>
         {tabs.map((tab) => (
