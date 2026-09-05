@@ -798,8 +798,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
           value={product}
           onChange={(event) => setProduct(event.target.value)}
         >
-          <option value="full">Full SchoolDom (complete school management)</option>
-          <option value="schoolgate">SchoolGate only (attendance gate terminal)</option>
+          <option value="full">Full SchoolDom</option>
+          <option value="schoolgate">SchoolGate only</option>
         </select>
       </div>
 
@@ -813,8 +813,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
               value={schoolgatePlan}
               onChange={(event) => setSchoolgatePlan(event.target.value)}
             >
-              <option value="basic">Basic - ₦700 / student / term (weekly SMS report, no daily clock-in/out SMS)</option>
-              <option value="premium">Premium - ₦1,500 / student / term (daily clock-in/out SMS + weekly report, with Child Monitor)</option>
+              <option value="basic">Basic - ₦700 / student / term</option>
+              <option value="premium">Premium - ₦1,500 / student / term</option>
             </select>
           </div>
           <p className="help-text">
