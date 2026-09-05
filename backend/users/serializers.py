@@ -253,6 +253,19 @@ class CreateSchoolSerializer(serializers.Serializer):
         required=False,
         default="k12",
     )
+    # SchoolGate is orthogonal to school_type - offered under both K-12 and
+    # Non-K-12 signup. schoolgate_plan is only meaningful when
+    # product='schoolgate'; ignored otherwise.
+    product = serializers.ChoiceField(
+        choices=(("full", "Full SchoolDom"), ("schoolgate", "SchoolGate")),
+        required=False,
+        default="full",
+    )
+    schoolgate_plan = serializers.ChoiceField(
+        choices=(("basic", "Basic"), ("premium", "Premium")),
+        required=False,
+        default="basic",
+    )
 
     def validate_school_name(self, value):
         cleaned = value.strip()

@@ -121,6 +121,29 @@ class SchoolTenant(models.Model):
         ],
         default='free'
     )
+
+    # SchoolGate signup tier - a school that only wants the attendance-gate
+    # terminal, not full school management. Orthogonal to school_type
+    # (K-12/Non-K-12 both offer this at signup): PRODUCT_FULL schools use
+    # subscription_tier only decoratively (unused elsewhere today, see
+    # superadmin_dashboard/services.py); PRODUCT_SCHOOLGATE schools instead
+    # use subscription_tier's existing 'basic'/'premium' values as their
+    # actual plan (Basic ₦500/student/term without Child Monitor, Premium
+    # ₦1500/student/term with it - see finance/services.py
+    # SCHOOLGATE_PLAN_PRICES). Gating logic keys off `product`, not
+    # subscription_tier, so a full SchoolDom school's own unrelated
+    # 'basic'/'premium' labelling is never accidentally treated as SchoolGate.
+    PRODUCT_FULL = 'full'
+    PRODUCT_SCHOOLGATE = 'schoolgate'
+    PRODUCT_CHOICES = [
+        (PRODUCT_FULL, 'Full SchoolDom'),
+        (PRODUCT_SCHOOLGATE, 'SchoolGate'),
+    ]
+    product = models.CharField(max_length=20, choices=PRODUCT_CHOICES, default=PRODUCT_FULL)
+
+    @property
+    def is_schoolgate(self):
+        return self.product == self.PRODUCT_SCHOOLGATE
     
     # Relationships to new configurations (will be created by related apps)
     # These are auto-created OneToOneFields from the related apps:

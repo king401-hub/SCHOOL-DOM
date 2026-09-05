@@ -221,6 +221,10 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [preferredSchoolCode, setPreferredSchoolCode] = useState("");
   const [schoolEmail, setSchoolEmail] = useState("");
   const [schoolType, setSchoolType] = useState("k12");
+  // SchoolGate is orthogonal to schoolType - offered under both K-12 and
+  // Non-K-12. schoolgatePlan only matters when product === "schoolgate".
+  const [product, setProduct] = useState("full");
+  const [schoolgatePlan, setSchoolgatePlan] = useState("basic");
   const [isCreatingSchool, setIsCreatingSchool] = useState(false);
   const [schoolError, setSchoolError] = useState("");
   const [schoolSuccess, setSchoolSuccess] = useState("");
@@ -374,6 +378,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
         school_code: preferredSchoolCode.trim(),
         email: schoolEmail.trim(),
         school_type: schoolType,
+        product,
+        schoolgate_plan: schoolgatePlan,
       });
 
       if (!data.success || !data.school) {
@@ -391,6 +397,8 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
       setPreferredSchoolCode("");
       setSchoolEmail("");
       setSchoolType("k12");
+      setProduct("full");
+      setSchoolgatePlan("basic");
       setShowCreateSchool(false);
     } catch (requestError: any) {
       setSchoolError(requestError.message || "School creation failed.");
@@ -781,6 +789,41 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
           <option value="non_k12">Non K-12 school (tutorials, colleges, polytechnics)</option>
         </select>
       </div>
+
+      <label htmlFor="school-product">What do you need?</label>
+      <div className="input-wrap">
+        <span className="input-icon">P</span>
+        <select
+          id="school-product"
+          value={product}
+          onChange={(event) => setProduct(event.target.value)}
+        >
+          <option value="full">Full SchoolDom (complete school management)</option>
+          <option value="schoolgate">SchoolGate only (attendance gate terminal)</option>
+        </select>
+      </div>
+
+      {product === "schoolgate" ? (
+        <>
+          <label htmlFor="schoolgate-plan">SchoolGate plan</label>
+          <div className="input-wrap">
+            <span className="input-icon">₦</span>
+            <select
+              id="schoolgate-plan"
+              value={schoolgatePlan}
+              onChange={(event) => setSchoolgatePlan(event.target.value)}
+            >
+              <option value="basic">Basic - ₦500 / student / term (no Child Monitor)</option>
+              <option value="premium">Premium - ₦1,500 / student / term (with Child Monitor)</option>
+            </select>
+          </div>
+          <p className="help-text">
+            SchoolGate gives you Attendance, Staff, Finance, and Students only - billed per
+            student each term, no activation credits needed. You can activate full School
+            Management later at any time.
+          </p>
+        </>
+      ) : null}
 
       {schoolError ? <p className="error-text">{schoolError}</p> : null}
 

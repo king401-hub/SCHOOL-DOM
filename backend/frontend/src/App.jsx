@@ -3657,6 +3657,56 @@ function isNonK12School(session, data = {}) {
   return schoolTypeFromSession(session, data) === "non_k12";
 }
 
+// SchoolGate: a school that only signed up for the attendance-gate terminal,
+// not full school management (see core.SchoolTenant.product on the backend).
+// Orthogonal to school_type - a SchoolGate school can be either K-12 or
+// Non-K-12. Every route outside this set renders <SchoolGateLocked/> instead
+// of its real screen - see the override right before AdminShell's final
+// `content` is used, below.
+function isSchoolGateOnly(session) {
+  return (session?.school?.product || session?.school?.productType) === "schoolgate";
+}
+
+const SCHOOLGATE_ALLOWED_PATHS = new Set([
+  "/dashboard",
+  "/students",
+  "/teachers",
+  "/non-teaching-staff",
+  "/attendance",
+  "/finance",
+  "/expenses",
+  "/sms-wallet",
+  "/hr",
+  "/hr/activity",
+  "/hr-self-service",
+  "/payroll",
+  "/loan-application",
+]);
+
+function SchoolGateLocked({ pageTitle }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-24 px-6 max-w-md mx-auto">
+      <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-3xl mb-5" aria-hidden="true">
+        🔒
+      </div>
+      <h2 className="text-lg font-bold text-slate-900 mb-2">
+        {pageTitle || "This feature"} isn't part of your SchoolGate plan
+      </h2>
+      <p className="text-sm text-slate-500 mb-6">
+        SchoolGate covers Attendance, Staff, Finance, and Students only. Activate School
+        Management to unlock {pageTitle ? pageTitle.toLowerCase() : "this page"} and every other
+        SchoolDom feature.
+      </p>
+      <a
+        className="inline-flex items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-semibold px-5 py-2.5 hover:bg-blue-700 transition-colors"
+        href="mailto:support@schooldom.academy?subject=Activate%20School%20Management"
+      >
+        Activate School Management
+      </a>
+    </div>
+  );
+}
+
 const TIMETABLE_DAY_FALLBACK = [
   { value: 0, label: "Monday" },
   { value: 1, label: "Tuesday" },
@@ -8410,6 +8460,13 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
     }
     return "Dashboard";
   })();
+
+  // SchoolGate gating - overrides whatever screen the chain above picked,
+  // regardless of which branch matched, so every current and future route
+  // is covered by this one check rather than needing its own guard.
+  if (isSchoolGateOnly(session) && !SCHOOLGATE_ALLOWED_PATHS.has(activePath)) {
+    content = <SchoolGateLocked pageTitle={currentPageTitle} />;
+  }
 
   const routeByPath = useMemo(() => {
     const map = {};

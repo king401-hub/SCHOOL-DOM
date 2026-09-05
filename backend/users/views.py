@@ -456,6 +456,15 @@ def auth_school_payload(user):
         "tagline": getattr(school, "motto", "") or "",
         "student_rules": getattr(school, "student_rules", "") or "",
         "staff_rules": getattr(school, "staff_rules", "") or "",
+        # SchoolGate gating (see core/schoolgate.py) - the frontend uses
+        # these to padlock every page outside Attendance/Staff/Finance/
+        # Students for a SchoolGate-tier school.
+        "product": getattr(school, "product", "full") or "full",
+        "schoolgate_plan": (
+            getattr(school, "subscription_tier", "basic") or "basic"
+            if getattr(school, "product", "full") == "schoolgate"
+            else None
+        ),
     }
 
 
@@ -594,6 +603,7 @@ def create_school(request):
 
         try:
             with transaction.atomic():
+                product = payload.get('product') or SchoolTenant.PRODUCT_FULL
                 tenant = SchoolTenant.objects.create(
                     name=payload['school_name'],
                     schema_name=schema_name,
@@ -603,6 +613,11 @@ def create_school(request):
                     address=payload.get('address') or None,
                     is_active=True,
                     compliance_deadline_reference_at=timezone.now(),
+                    product=product,
+                    # subscription_tier is otherwise decorative (see
+                    # superadmin_dashboard/services.py) - for a SchoolGate
+                    # tenant it's the actual billing plan (basic/premium).
+                    subscription_tier=(payload.get('schoolgate_plan') or 'basic') if product == SchoolTenant.PRODUCT_SCHOOLGATE else 'free',
                 )
 
                 # Keep legacy tenant model in sync for modules still using tenants.Tenant.
@@ -637,9 +652,14 @@ def create_school(request):
             except Exception:
                 logger.warning("Signup notification email failed for school %s.", tenant.schema_name, exc_info=True)
 
+            is_schoolgate = tenant.product == SchoolTenant.PRODUCT_SCHOOLGATE
             return Response({
                 'success': True,
-                'message': 'School created successfully with 50 free activation credits.',
+                'message': (
+                    f'School created on the SchoolGate {tenant.subscription_tier.title()} plan.'
+                    if is_schoolgate
+                    else 'School created successfully with 50 free activation credits.'
+                ),
                 'school': {
                     'id': tenant.id,
                     'name': tenant.name,
@@ -647,6 +667,8 @@ def create_school(request):
                     'domain': domain_name,
                     'free_credits': credit_pool.balance,
                     'school_type': tenant.school_type,
+                    'product': tenant.product,
+                    'schoolgate_plan': tenant.subscription_tier if is_schoolgate else None,
                 },
                 'requested_code': requested_code,
                 'conflict_resolved': tenant.schema_name != requested_code,
