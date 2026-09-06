@@ -18,6 +18,7 @@ const FAQS = [
       { q: 'How much does Schooldom cost?', a: 'K-12 schools pay ₦500 per term (3 months 15 days). Non-K12 institutions pay ₦200 per month. Both plans are flat rates — no per-student charges, no hidden fees.' },
       { q: 'What is the Child Monitor add-on?', a: 'Child Monitor is an optional add-on for K-12 schools at ₦1,000 per term. It provides real-time location tracking, screen activity monitoring, and safety alerts for students.' },
       { q: 'Are there setup fees or per-student charges?', a: 'No. Our pricing is completely flat. You pay one rate for the entire school regardless of how many students or staff members you add.' },
+      { q: 'What is SchoolGate, and how is it priced?', a: 'SchoolGate is a lighter, standalone plan for schools that only want the attendance gate terminal - covering Attendance, Staff, Finance, and Students, not the full platform. It\'s billed per student per term: ₦700 on Basic (weekly SMS attendance report) or ₦1,500 on Premium (daily clock-in/out SMS plus the weekly report, with Child Monitor included free). Both plans also have a one-time ₦50,000 device fee. You can activate full Schooldom later at any time.' },
     ]
   },
   {

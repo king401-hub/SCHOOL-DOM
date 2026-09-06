@@ -89,6 +89,8 @@ function Stepper({ step }: { step: number }) {
 export default function SignUpPage() {
   const [searchParams] = useSearchParams();
   const initialTier = searchParams.get('tier') === 'non_k12' ? 'non_k12' : 'k12';
+  const initialProduct = searchParams.get('product') === 'schoolgate' ? 'schoolgate' : 'full';
+  const initialPlan = searchParams.get('plan') === 'premium' ? 'premium' : 'basic';
 
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -109,17 +111,28 @@ export default function SignUpPage() {
   const [certified, setCertified] = useState(false);
   // Orthogonal to schoolType - SchoolGate is offered under both K-12 and
   // Non-K12. schoolgatePlan only matters when product === 'schoolgate'.
-  const [product, setProduct] = useState<Product>('full');
-  const [schoolgatePlan, setSchoolgatePlan] = useState<SchoolGatePlan>('basic');
+  const [product, setProduct] = useState<Product>(initialProduct as Product);
+  const [schoolgatePlan, setSchoolgatePlan] = useState<SchoolGatePlan>(initialPlan as SchoolGatePlan);
 
   // useState's initializer only runs on mount, so if this page is ever reached
   // twice without a full remount (e.g. browser back/forward between
   // ?tier=k12 and ?tier=non_k12), the dropdown could silently keep showing
-  // the stale tier. Resync whenever the URL's tier param actually changes.
+  // the stale tier. Resync whenever the URL's tier/product/plan params
+  // actually change - lets the Pricing section's SchoolGate card deep-link
+  // straight into the right product/plan the same way the K-12/Non-K12
+  // buttons deep-link into schoolType.
   useEffect(() => {
     const tierParam = searchParams.get('tier');
     if (tierParam === 'k12' || tierParam === 'non_k12') {
       setSchoolType(tierParam);
+    }
+    const productParam = searchParams.get('product');
+    if (productParam === 'full' || productParam === 'schoolgate') {
+      setProduct(productParam);
+    }
+    const planParam = searchParams.get('plan');
+    if (planParam === 'basic' || planParam === 'premium') {
+      setSchoolgatePlan(planParam);
     }
   }, [searchParams]);
 

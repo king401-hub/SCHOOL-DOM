@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye } from 'lucide-react';
+import { CheckCircle, ArrowRight, Star, Zap, Shield, Users, Eye, ScanLine } from 'lucide-react';
 
 function useVisible(threshold = 0.15) {
   const ref = useRef<HTMLDivElement>(null);
@@ -37,9 +37,24 @@ const NON_K12_FEATURES = [
   'NDPA compliant storage',
 ];
 
+const SCHOOLGATE_FEATURES: Record<'basic' | 'premium', string[]> = {
+  basic: [
+    'Attendance, Staff, Finance & Students only',
+    'Weekly SMS attendance report to parents',
+    'One-time ₦50,000 gate device fee',
+  ],
+  premium: [
+    'Attendance, Staff, Finance & Students only',
+    'Daily clock-in/clock-out SMS + weekly report',
+    'Child Monitor included at no extra cost',
+    'One-time ₦50,000 gate device fee',
+  ],
+};
+
 export default function Pricing() {
   const { ref, visible } = useVisible(0.1);
   const [kidMonitor, setKidMonitor] = useState(false);
+  const [gatePlan, setGatePlan] = useState<'basic' | 'premium'>('basic');
 
   return (
     <section id="pricing" ref={ref} className="py-28 px-4 relative overflow-hidden">
@@ -56,7 +71,7 @@ export default function Pricing() {
           <p className="text-slate-400 max-w-lg mx-auto">No setup fees. No per-student charges. No surprises. Just a flat rate that keeps every school covered.</p>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6">
+        <div className="grid lg:grid-cols-3 gap-6">
           {/* K-12 Card */}
           <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
             style={{
@@ -202,6 +217,78 @@ export default function Pricing() {
                 className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
                 style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)' }}>
                 Start with Non-K12 <ArrowRight className="h-4 w-4 inline ml-2" />
+              </a>
+            </div>
+          </div>
+
+          {/* SchoolGate Card */}
+          <div className="relative rounded-3xl p-8 overflow-hidden sd-card"
+            style={{
+              border: '1px solid rgba(139,92,246,0.25)',
+              boxShadow: '0 0 40px rgba(139,92,246,0.06)',
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'none' : 'translateY(30px)',
+              transition: 'all 0.7s ease 0.4s',
+            }}>
+            <div className="absolute top-4 right-4">
+              <span className="badge text-[9px]" style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: '#c4b5fd' }}>
+                New
+              </span>
+            </div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse, rgba(139,92,246,0.1) 0%, transparent 70%)', filter: 'blur(20px)' }} />
+
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-11 w-11 rounded-2xl flex items-center justify-center"
+                  style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)' }}>
+                  <ScanLine className="h-5 w-5" style={{ color: '#8b5cf6' }} />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-white text-xl">SchoolGate</h3>
+                  <p className="text-slate-500 text-xs">Attendance gate terminal only</p>
+                </div>
+              </div>
+
+              {/* Basic / Premium toggle */}
+              <div className="flex rounded-xl p-1 mb-6 sd-card" style={{ gap: 4 }}>
+                {(['basic', 'premium'] as const).map(plan => (
+                  <button key={plan} onClick={() => setGatePlan(plan)}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer"
+                    style={{
+                      background: gatePlan === plan ? 'rgba(139,92,246,0.18)' : 'transparent',
+                      color: gatePlan === plan ? '#c4b5fd' : '#64748b',
+                    }}>
+                    {plan}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mb-6">
+                <div className="flex items-end gap-2">
+                  <span className="font-display font-black text-5xl" style={{ color: '#8b5cf6' }}>
+                    ₦{gatePlan === 'premium' ? '1,500' : '700'}
+                  </span>
+                  <div className="mb-2">
+                    <p className="text-white text-sm font-semibold">/ student / term</p>
+                  </div>
+                </div>
+                <p className="text-slate-500 text-xs mt-2">+ ₦50,000 one-time device fee</p>
+              </div>
+
+              <ul className="space-y-2.5 mb-8">
+                {SCHOOLGATE_FEATURES[gatePlan].map(f => (
+                  <li key={f} className="flex items-center gap-3 text-slate-300 text-sm">
+                    <CheckCircle className="h-4 w-4 shrink-0" style={{ color: '#8b5cf6' }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <a href={`/#/signup?product=schoolgate&plan=${gatePlan}`}
+                className="w-full py-4 rounded-2xl font-bold text-base text-white cursor-pointer hover:opacity-90 transition-all flex items-center justify-center"
+                style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)' }}>
+                Start with SchoolGate <ArrowRight className="h-4 w-4 inline ml-2" />
               </a>
             </div>
           </div>
