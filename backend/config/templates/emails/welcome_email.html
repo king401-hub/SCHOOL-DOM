@@ -1,111 +1,160 @@
 <!doctype html>
 <html>
-  <body style="margin:0;background:#f6f8fb;font-family:Arial,Helvetica,sans-serif;color:#172033;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px;">
+  <body style="margin:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#172033;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e5eaf2;border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5eaf2;">
 
-            <!-- Header -->
+            <!-- Top bar -->
             <tr>
-              <td style="background:#0f172a;padding:28px 30px;text-align:center;">
-                <img src="{{ logo_url }}" width="52" height="52" alt="Schooldom" style="display:inline-block;border-radius:12px;border:2px solid #ffffff;" />
-                <div style="margin-top:10px;font-size:19px;font-weight:800;color:#ffffff;letter-spacing:0.3px;">Schooldom</div>
-                <div style="margin-top:2px;font-size:12px;color:#93a3bd;">The Complete Operating System for Schools</div>
+              <td style="padding:22px 28px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td valign="middle">
+                      <table role="presentation" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td style="padding-right:10px;">
+                            <img src="{{ logo_url }}" width="40" height="40" alt="SchoolDom" style="display:block;border-radius:10px;" />
+                          </td>
+                          <td valign="middle">
+                            <div style="font-size:20px;font-weight:800;color:#0f172a;line-height:1.1;">School<span style="color:#0ea5a3;">Dom</span></div>
+                            <div style="font-size:11px;color:#64748b;letter-spacing:0.3px;">Learn &middot; Manage &middot; Grow</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                    <td align="right" valign="middle" style="font-size:11.5px;color:#475569;line-height:1.5;">
+                      All-in-One Education Platform<br />For K-12 and Non-K12 Institutions
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
 
-            <!-- Banner -->
+            <!-- Hero -->
             <tr>
-              <td style="background:#0ea5a3;padding:14px 30px;text-align:center;">
-                <span style="font-size:14px;font-weight:700;color:#ffffff;">🎉 Welcome aboard, {{ school_name }}!</span>
+              <td style="padding:8px 28px 30px;background:linear-gradient(135deg,#f0fdfa 0%,#eff6ff 100%);background-color:#eff6ff;">
+                <p style="margin:0 0 6px;font-size:13px;color:#64748b;">Hello {{ school_name }},</p>
+                <h1 style="margin:0 0 14px;font-size:28px;line-height:1.25;font-weight:800;color:#0f172a;">
+                  Welcome to<br /><span style="color:#0f172a;">School</span><span style="color:#0ea5a3;">Dom</span><span style="color:#0f172a;">!</span>
+                </h1>
+                <p style="margin:0 0 10px;font-size:14.5px;line-height:1.7;color:#334155;">
+                  We're excited to have you on board! Your school is now part of the SchoolDom family &mdash;
+                  an all-in-one education platform designed to make school management simpler, smarter, and more efficient.
+                </p>
+                <p style="margin:0 0 18px;font-size:14.5px;line-height:1.7;color:#334155;">
+                  Let's build a better learning experience together!
+                </p>
+                <div style="width:56px;height:4px;border-radius:4px;background:#0ea5a3;background:linear-gradient(90deg,#2563eb,#22c55e);"></div>
               </td>
             </tr>
 
-            <!-- Body -->
+            <!-- What you can do -->
             <tr>
-              <td style="padding:30px;">
-                <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#334155;">
-                  Dear {{ school_name }} Team,
-                </p>
-                <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#334155;">
-                  Welcome to Schooldom! We're delighted to have you join our growing community of forward-thinking schools.
-                </p>
-                <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#334155;">
-                  Your Schooldom account has been successfully created, and you're now ready to begin transforming how your school operates.
-                </p>
+              <td style="padding:30px 28px;background:#f8fafc;">
+                <h2 style="margin:0 0 4px;font-size:19px;font-weight:800;color:#0f172a;">What You Can Do with SchoolDom</h2>
+                <p style="margin:0 0 20px;font-size:13.5px;color:#64748b;">Everything you need to manage your institution, in one powerful platform.</p>
 
-                <!-- What you can do -->
-                <p style="margin:0 0 12px;font-size:13px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">With Schooldom, you can</p>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 26px;">
-                  {% for item in features %}
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
-                    <td style="padding:6px 0;vertical-align:top;width:26px;">
-                      <span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:999px;background:#e6fbf9;color:#0ea5a3;font-size:12px;font-weight:900;">✓</span>
+                    <td width="50%" valign="top" style="padding:0 8px 20px 0;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#dbeafe;font-size:18px;margin-bottom:8px;">🏫</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">School Management</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Handle student records, classes, timetables and more.</div>
                     </td>
-                    <td style="padding:6px 0;font-size:14.5px;line-height:1.6;color:#334155;">{{ item }}</td>
-                  </tr>
-                  {% endfor %}
-                </table>
-
-                <!-- CTA -->
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 28px;">
-                  <tr>
-                    <td align="center">
-                      <a href="{{ dashboard_url }}" style="display:inline-block;background:#0ea5a3;color:#ffffff;text-decoration:none;font-size:14.5px;font-weight:800;padding:13px 34px;border-radius:8px;">
-                        Log In To Your Dashboard
-                      </a>
+                    <td width="50%" valign="top" style="padding:0 0 20px 8px;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#d1fae5;font-size:18px;margin-bottom:8px;">🖥️</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">CBT &amp; Examinations</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Create and manage exams with ease, online or offline.</div>
                     </td>
                   </tr>
-                </table>
-
-                <!-- Getting started -->
-                <p style="margin:0 0 12px;font-size:13px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Getting Started</p>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 26px;">
-                  {% for step in getting_started %}
                   <tr>
-                    <td style="padding:6px 0;vertical-align:top;width:28px;">
-                      <span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:999px;background:#0f172a;color:#ffffff;font-size:11px;font-weight:800;">{{ forloop.counter }}</span>
+                    <td width="50%" valign="top" style="padding:0 8px 20px 0;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#ede9fe;font-size:18px;margin-bottom:8px;">👛</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">Finance &amp; Payments</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Track fees, generate receipts and handle payments securely.</div>
                     </td>
-                    <td style="padding:6px 0;font-size:14.5px;line-height:1.6;color:#334155;">{{ step }}</td>
+                    <td width="50%" valign="top" style="padding:0 0 20px 8px;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#fef3c7;font-size:18px;margin-bottom:8px;">💬</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">Parent Communication</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Keep parents informed and engaged.</div>
+                    </td>
                   </tr>
-                  {% endfor %}
-                </table>
-
-                <!-- Support -->
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;margin:0 0 24px;">
                   <tr>
-                    <td style="padding:16px 18px;">
-                      <p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">
-                        If you need assistance at any stage, our support team is here to help. Contact us at
-                        <strong style="color:#0f172a;">{{ support_phone }}</strong> or reply to this email, and we'll be happy to assist you.
-                      </p>
+                    <td width="50%" valign="top" style="padding:0 8px 20px 0;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#dbeafe;font-size:18px;margin-bottom:8px;">📈</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">Analytics &amp; Reporting</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Make data-driven decisions with real-time insights.</div>
+                    </td>
+                    <td width="50%" valign="top" style="padding:0 0 20px 8px;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#fce7f3;font-size:18px;margin-bottom:8px;">👥</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">HR &amp; Payroll</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Manage staff, attendance, leave and salaries.</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td width="50%" valign="top" style="padding:0 8px 0 0;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#ede9fe;font-size:18px;margin-bottom:8px;">📄</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">Academic Documents</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">Generate transcripts, report cards and more.</div>
+                    </td>
+                    <td width="50%" valign="top" style="padding:0 0 0 8px;">
+                      <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#dbeafe;font-size:18px;margin-bottom:8px;">☁️</div>
+                      <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:3px;">And More&hellip;</div>
+                      <div style="font-size:12.5px;color:#64748b;line-height:1.5;">SchoolGate, offline examinations and much more!</div>
                     </td>
                   </tr>
                 </table>
+              </td>
+            </tr>
 
-                <p style="margin:0 0 4px;font-size:15px;line-height:1.7;color:#334155;">
-                  Thank you for choosing Schooldom. We're excited to partner with you in building a more efficient, transparent, and future-ready school.
-                </p>
-                <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#334155;">
-                  Warm regards,<br />
-                  <strong style="color:#0f172a;">The Schooldom Team</strong><br />
-                  <span style="font-size:13px;color:#64748b;">The Complete Operating System for Schools</span>
-                </p>
+            <!-- CTA -->
+            <tr>
+              <td align="center" style="padding:30px 28px 8px;">
+                <a href="{{ dashboard_url }}" style="display:inline-block;background-color:#0ea5a3;background:linear-gradient(90deg,#2563eb,#22c55e);color:#ffffff;text-decoration:none;font-size:14.5px;font-weight:800;padding:14px 34px;border-radius:10px;">
+                  Go to Your Dashboard &rarr;
+                </a>
+                <p style="margin:14px 0 0;font-size:12.5px;color:#64748b;">Log in now and start exploring all the features available to you.</p>
+              </td>
+            </tr>
+
+            <!-- Account details -->
+            <tr>
+              <td style="padding:24px 28px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0fdfa;border:1px solid #d7f4f1;border-radius:12px;">
+                  <tr>
+                    <td style="padding:18px 20px;">
+                      <p style="margin:0 0 10px;font-size:14px;font-weight:800;color:#0f172a;">Your Account Details</p>
+                      <p style="margin:0 0 4px;font-size:13.5px;color:#334155;"><strong>School Name</strong>&nbsp;&nbsp;:&nbsp;&nbsp;{{ school_name }}</p>
+                      <p style="margin:0 0 10px;font-size:13.5px;color:#334155;"><strong>Username</strong>&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;{{ username }}</p>
+                      <p style="margin:0;font-size:12px;color:#64748b;">If you didn't request this account, you can safely ignore this email or contact our support team.</p>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
 
             <!-- Footer -->
             <tr>
-              <td style="background:#f8fafc;padding:18px 30px;text-align:center;border-top:1px solid #eef2f7;">
-                <p style="margin:0;font-size:12.5px;line-height:1.8;color:#64748b;">
-                  <a href="{{ website_url }}" style="color:#0ea5a3;text-decoration:none;font-weight:700;">{{ website_url_label }}</a>
-                  &nbsp;&bull;&nbsp;
-                  <a href="mailto:{{ support_email }}" style="color:#0ea5a3;text-decoration:none;">{{ support_email }}</a>
-                  &nbsp;&bull;&nbsp;
-                  {{ support_phone }}
-                </p>
+              <td style="padding:22px 28px;border-top:1px solid #eef2f7;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td valign="top">
+                      <div style="font-size:15px;font-weight:800;color:#0f172a;">School<span style="color:#0ea5a3;">Dom</span></div>
+                      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:12px;">Learn &middot; Manage &middot; Grow</div>
+                    </td>
+                    <td valign="top" align="right" style="font-size:12.5px;color:#475569;line-height:1.8;">
+                      <strong style="color:#0f172a;">Need Help?</strong><br />
+                      <a href="mailto:{{ support_email }}" style="color:#0ea5a3;text-decoration:none;">{{ support_email }}</a><br />
+                      {{ support_phone }}
+                    </td>
+                  </tr>
+                </table>
               </td>
+            </tr>
+            <tr>
+              <td style="height:6px;background:linear-gradient(90deg,#22c55e,#2563eb);background-color:#0ea5a3;font-size:0;line-height:0;">&nbsp;</td>
             </tr>
 
           </table>

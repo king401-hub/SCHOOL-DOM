@@ -326,26 +326,13 @@ def send_school_welcome_email(tenant, user):
 
     context = {
         "school_name": tenant.name,
+        "username": (getattr(user, "email", "") or "").strip() or recipient,
         "logo_url": f"{frontend_base}/schooldom-favicon.jpeg",
         "dashboard_url": frontend_base,
         "website_url": "https://www.schooldom.academy",
         "website_url_label": "www.schooldom.academy",
         "support_email": support_email,
         "support_phone": SCHOOLDOM_SUPPORT_PHONE,
-        "features": [
-            "Eliminate revenue leakage through centralized fee management.",
-            "Improve financial transparency with real-time reporting.",
-            "Conduct reliable offline CBT without internet or power interruptions.",
-            "Streamline administration with integrated school management tools.",
-            "Enhance child safety and accountability through Child Monitor.",
-        ],
-        "getting_started": [
-            "Log in to your dashboard.",
-            "Complete your school profile.",
-            "Import your students and staff.",
-            "Configure your academic session and fee structure.",
-            "Onboard your teachers and staff.",
-        ],
     }
     html_message = render_to_string("emails/welcome_email.html", context)
     plain_message = (
