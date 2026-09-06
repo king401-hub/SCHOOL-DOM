@@ -30,7 +30,7 @@ class KioskHomeScreen extends StatefulWidget {
   State<KioskHomeScreen> createState() => _KioskHomeScreenState();
 }
 
-class _KioskHomeScreenState extends State<KioskHomeScreen> {
+class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProviderStateMixin {
   // A card held near the reader too long can be discovered repeatedly in a
   // single tap - same reasoning as the RFID Win7 desktop app's cooldown.
   // Default of 8s until gate settings load; then server-configurable
@@ -54,6 +54,11 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   final Map<String, DateTime> _recentScans = {};
   Timer? _resultTimer;
   Timer? _heartbeatTimer;
+
+  // Slow breathing glow behind the scan circle on the idle screen - purely
+  // decorative, gives the "Ready to Scan" state some life instead of a
+  // static ring sitting on a flat background.
+  late final AnimationController _pulseController;
 
   // ------------------------------------------------------ External USB HID reader
   // A plugged-in USB HID keyboard-emulation card reader (the common/cheap type -
@@ -93,6 +98,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   void initState() {
     super.initState();
     WakelockPlus.enable();
+    _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _tts.setLanguage('en-US');
     _tts.setSpeechRate(0.46);
     _tts.setVolume(1.0);
@@ -114,6 +120,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   void dispose() {
     _resultTimer?.cancel();
     _heartbeatTimer?.cancel();
+    _pulseController.dispose();
     NfcManager.instance.stopSession();
     _hidFocusNode.dispose();
     WakelockPlus.disable();
@@ -459,16 +466,25 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0B1220),
-      body: KeyboardListener(
-        focusNode: _hidFocusNode,
-        autofocus: true,
-        onKeyEvent: _handleHidKeyEvent,
-        child: SafeArea(
-          child: Stack(
-            children: [
-              Center(child: _outcome == null ? _buildReadyState() : _buildResultState()),
-              Positioned(top: 12, left: 0, right: 0, child: _buildStatusBar()),
-            ],
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.35),
+            radius: 1.1,
+            colors: [Color(0xFF152238), Color(0xFF0B1220)],
+          ),
+        ),
+        child: KeyboardListener(
+          focusNode: _hidFocusNode,
+          autofocus: true,
+          onKeyEvent: _handleHidKeyEvent,
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Center(child: _outcome == null ? _buildReadyState() : _buildResultState()),
+                Positioned(top: 12, left: 0, right: 0, child: _buildStatusBar()),
+              ],
+            ),
           ),
         ),
       ),
@@ -477,11 +493,22 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
 
   Widget _buildStatusBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+        child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(_schoolName ?? 'SchoolDom', style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
+          Row(children: [
+            const Icon(Icons.school_outlined, size: 14, color: Colors.white38),
+            const SizedBox(width: 6),
+            Text(_schoolName ?? 'SchoolDom', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+          ]),
           Row(children: [
             if (_pendingCount > 0) ...[
               Icon(Icons.cloud_upload_outlined, size: 14, color: Colors.amber.shade300),
@@ -512,6 +539,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
             ),
           ]),
         ],
+        ),
       ),
     );
   }
@@ -550,16 +578,48 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('School', style: TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900, height: 1)),
-        const Text('Dom', style: TextStyle(color: AppColors.primary, fontSize: 34, fontWeight: FontWeight.w900, height: 1)),
-        const SizedBox(height: 56),
-        Container(
-          width: 190,
-          height: 190,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.primary.withValues(alpha: 0.5), width: 2),
+        // The school's own identity leads - this is their kiosk, standing
+        // in their reception/gate, not a "SchoolDom" branded device from a
+        // visitor's point of view. Product branding is now the small
+        // "Powered by" line underneath instead of the headline.
+        Text(
+          _schoolName ?? 'Welcome',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.15),
+        ),
+        const SizedBox(height: 8),
+        RichText(
+          text: const TextSpan(
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.3),
+            children: [
+              TextSpan(text: 'Powered by ', style: TextStyle(color: Colors.white38)),
+              TextSpan(text: 'School', style: TextStyle(color: Colors.white54)),
+              TextSpan(text: 'Dom', style: TextStyle(color: AppColors.primary)),
+            ],
           ),
+        ),
+        const SizedBox(height: 48),
+        AnimatedBuilder(
+          animation: _pulseController,
+          builder: (context, child) {
+            final t = _pulseController.value; // 0 -> 1 -> 0
+            return Container(
+              width: 190,
+              height: 190,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.18 + (0.12 * t)),
+                    blurRadius: 30 + (20 * t),
+                    spreadRadius: 2 + (4 * t),
+                  ),
+                ],
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.4 + (0.2 * t)), width: 2),
+              ),
+              child: child,
+            );
+          },
           child: Center(
             child: Container(
               width: 130,
@@ -576,16 +636,27 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 40),
-        const Text('Ready to Scan', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 36),
         Text(
-          // The connected USB reader path works regardless of _nfcAvailable
-          // (it doesn't touch the device's own NFC antenna at all), so this
-          // no longer claims scanning is unavailable just because the
-          // device's built-in NFC is missing/off.
-          _nfcAvailable ? 'Tap your card, or scan it on the connected reader' : 'Scan your card on the connected reader',
-          style: const TextStyle(color: Colors.white54, fontSize: 14),
+          _busy ? 'Reading card...' : 'Ready to Scan',
+          style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            // The connected USB reader path works regardless of _nfcAvailable
+            // (it doesn't touch the device's own NFC antenna at all), so this
+            // no longer claims scanning is unavailable just because the
+            // device's built-in NFC is missing/off.
+            _nfcAvailable ? 'Tap your card, or scan it on the connected reader' : 'Scan your card on the connected reader',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
