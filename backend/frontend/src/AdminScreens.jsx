@@ -10904,15 +10904,12 @@ onClick={() => handleThemeSelect("light")}
   );
 }
 
-function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete, onChildMonitorInitiate, onChildMonitorVerify, onChildMonitorDeactivate, session, countries = [], defaultCountryCode = "NG" }) {
+function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, onDelete, session, countries = [], defaultCountryCode = "NG" }) {
   const parents = data?.parents || [];
   const groupLabels = academicGroupLabels(data?.school, school);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedParentId, setSelectedParentId] = useState("");
   const [selectedParentUserId, setSelectedParentUserId] = useState("");
-  const [cmPaying, setCmPaying] = useState(null);
-  const [cmConfirmParent, setCmConfirmParent] = useState(null);
-  const [cmDeactivating, setCmDeactivating] = useState(false);
   const [editForm, setEditForm] = useState({
     first_name: "",
     last_name: "",
@@ -10943,76 +10940,6 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   // Fee reminder state
   const [sendingReminder, setSendingReminder] = useState("");
   const [reminderFeedback, setReminderFeedback] = useState("");
-
-  // Preload Paystack inline SDK so it's ready before the user clicks
-  useEffect(() => {
-    if (window.PaystackPop || !data?.paystack_public_key) return;
-    const existing = document.querySelector('script[src*="paystack.co"]');
-    if (existing) return;
-    const s = document.createElement("script");
-    s.src = "https://js.paystack.co/v1/inline.js";
-    document.head.appendChild(s);
-  }, [data?.paystack_public_key]);
-
-  const handleChildMonitorEnable = async (parent) => {
-    if (!window.PaystackPop) {
-      await new Promise((resolve, reject) => {
-        const existing = document.querySelector('script[src*="paystack.co"]');
-        if (existing) { existing.addEventListener("load", resolve, { once: true }); return; }
-        const s = document.createElement("script");
-        s.src = "https://js.paystack.co/v1/inline.js";
-        s.onload = resolve;
-        s.onerror = () => reject(new Error("Could not load payment system. Check your internet connection."));
-        document.head.appendChild(s);
-      }).catch((err) => { alert(err.message); });
-    }
-    if (!window.PaystackPop) { alert("Payment system unavailable. Try again."); return; }
-    setCmPaying(parent.id);
-    try {
-      const result = await onChildMonitorInitiate(parent.id);
-      if (!result?.success) { alert(result?.message || "Failed to initiate payment."); return; }
-      if (result.already_paid && result.monitor_active) {
-        // A previous payment went through — backend activated without charging again.
-        alert(result.message || "Child Monitor activated from your previous payment.");
-        await onChildMonitorVerify(parent.id, result.reference);
-        return;
-      }
-      const verifyPayment = (tx) => {
-        const ref = tx?.reference || result.reference;
-        onChildMonitorVerify(parent.id, ref).then((verifyResult) => {
-          if (!verifyResult?.success) alert(verifyResult?.message || "Payment verification failed. Contact support.");
-        });
-      };
-      const handler = window.PaystackPop.setup({
-        key: data.paystack_public_key,
-        email: parent.email,
-        amount: result.amount * 100,
-        ref: result.reference,
-        // Paystack inline v1 fires `callback`; keep onSuccess for v2 compatibility.
-        callback: verifyPayment,
-        onSuccess: verifyPayment,
-        onClose: () => {},
-        onCancel: () => {},
-      });
-      handler.openIframe();
-    } catch {
-      alert("An error occurred. Please try again.");
-    } finally {
-      setCmPaying(null);
-    }
-  };
-
-  const confirmChildMonitorDeactivate = async () => {
-    const parent = cmConfirmParent;
-    setCmDeactivating(true);
-    try {
-      const result = await onChildMonitorDeactivate(parent.id);
-      if (!result?.success) alert(result?.message || "Failed to deactivate.");
-    } finally {
-      setCmDeactivating(false);
-      setCmConfirmParent(null);
-    }
-  };
 
   const buildEditForm = (parent) => ({
     first_name: parent?.first_name || "",
@@ -11229,64 +11156,12 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
             <MetricCard label="Without Children" value={data.summary?.without_children || 0} helper="No linked student yet" />
           </div>
 
-          {/* Child Monitor Pricing Card */}
-          {data.paystack_public_key ? (
-            <article className="app-panel cm-pricing-card">
-              <div className="cm-pricing-body">
-                <div className="cm-pricing-icon">🔔</div>
-                <div className="cm-pricing-info">
-                  <h3 className="cm-pricing-title">Child Monitor</h3>
-                  <p className="cm-pricing-desc">
-                    Enable instant SMS alerts for a parent whenever their child&apos;s attendance is marked — present, absent, or late.
-                    Toggle on per parent in the table below.
-                  </p>
-                </div>
-                <div className="cm-pricing-tag">
-                  ₦{(data.child_monitor_price || 1000).toLocaleString()}<span>/child</span>
-                </div>
-              </div>
-              <div className="cm-pricing-meta">
-                <span className="km-badge km-badge--active">{parents.filter((p) => p.child_monitor_active).length} active</span>
-                <span className="cm-pricing-total">{parents.length} total parents</span>
-              </div>
-            </article>
-          ) : null}
-
           <ParentDirectoryTable
             parents={filteredParents}
             groupLabels={groupLabels}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             emptyMessage={searchTerm ? "No parents match your filter." : "No parents found yet. Creating a student with a guardian phone will add one here."}
-            renderChildMonitorCell={(parent) => (
-              <div className="km-toggle-cell">
-                {parent.child_monitor_active ? (
-                  <>
-                    <span className="km-badge km-badge--active">Active</span>
-                    {parent.child_monitor_expires_at ? (
-                      <small style={{ color: "#94a3b8" }}>
-                        Renews {new Date(parent.child_monitor_expires_at).toLocaleDateString()}
-                      </small>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-danger"
-                      onClick={() => setCmConfirmParent(parent)}
-                    >Off</button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className={`btn btn-sm btn-primary km-enable-btn${cmPaying === parent.id ? " loading" : ""}`}
-                    onClick={() => handleChildMonitorEnable(parent)}
-                    disabled={cmPaying === parent.id || !parent.phone || !data.paystack_public_key}
-                    title={!parent.phone ? "Parent has no phone number on file" : ""}
-                  >
-                    {cmPaying === parent.id ? <><Spinner size={12} /> Processing...</> : `Enable — ₦${((parent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()}`}
-                  </button>
-                )}
-              </div>
-            )}
             actionsColumn={(parent) => (
               <div className="table-actions-inline">
                 <button type="button" className="table-action" onClick={() => handleStartEdit(parent)}>Edit</button>
@@ -11341,23 +11216,6 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                   <button type="button" className="table-action" onClick={() => setPendingDeleteParent(null)} disabled={deletingParentId === pendingDeleteParent.id}>Cancel</button>
                   <button type="button" className="table-action danger student-delete-confirm" onClick={confirmDeleteParent} disabled={deletingParentId === pendingDeleteParent.id}>
                     {deletingParentId === pendingDeleteParent.id ? <><Spinner size={12} /> Deleting...</> : "Delete parent"}
-                  </button>
-                </div>
-              </article>
-            </div>
-          ) : null}
-
-          {cmConfirmParent ? (
-            <div className="student-delete-dialog" role="dialog" aria-modal="true">
-              <article className="student-delete-card">
-                <div className="student-delete-icon" aria-hidden="true">🔔</div>
-                <p className="student-delete-kicker">Child Monitor</p>
-                <h3>Deactivate for {cmConfirmParent.name}?</h3>
-                <p>SMS attendance alerts will stop immediately. You&apos;ll need to pay ₦{((cmConfirmParent.children_count || 1) * (data.child_monitor_price || 1000)).toLocaleString()} to re-enable.</p>
-                <div className="student-delete-actions">
-                  <button type="button" className="table-action" onClick={() => setCmConfirmParent(null)} disabled={cmDeactivating}>Cancel</button>
-                  <button type="button" className="table-action danger student-delete-confirm" onClick={confirmChildMonitorDeactivate} disabled={cmDeactivating}>
-                    {cmDeactivating ? <><Spinner size={12} /> Deactivating...</> : "Deactivate"}
                   </button>
                 </div>
               </article>

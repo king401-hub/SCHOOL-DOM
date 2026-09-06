@@ -7442,32 +7442,6 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
-  const handleKidsMonitorInitiate = useCallback(
-    async (parentId) => {
-      const result = await requestJson(session, "POST", `/api/app/kids-monitor/${parentId}/initiate/`);
-      return result;
-    },
-    [session]
-  );
-
-  const handleKidsMonitorVerify = useCallback(
-    async (parentId, reference) => {
-      const result = await requestJson(session, "POST", `/api/app/kids-monitor/${parentId}/verify/`, { reference });
-      await loadScreen("/parents", true);
-      return result;
-    },
-    [loadScreen, session]
-  );
-
-  const handleKidsMonitorDeactivate = useCallback(
-    async (parentId) => {
-      const result = await requestJson(session, "DELETE", `/api/app/kids-monitor/${parentId}/`);
-      await loadScreen("/parents", true);
-      return result;
-    },
-    [loadScreen, session]
-  );
-
   const handleSmsBundlePurchase = useCallback(
     async (units) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/sms-wallet/purchase/", { units });
@@ -8292,9 +8266,6 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onRetry={handleRetry}
         onUpdate={handleUpdateParent}
         onDelete={handleDeleteParent}
-        onChildMonitorInitiate={handleKidsMonitorInitiate}
-        onChildMonitorVerify={handleKidsMonitorVerify}
-        onChildMonitorDeactivate={handleKidsMonitorDeactivate}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         session={session}
         countries={countriesList}
