@@ -40,7 +40,7 @@ def _extract_class_name(text: str):
         cleaned = str(item).strip()
         if cleaned.lower() in {"the", "for", "all", "of", "and", "school", "students", "class", "page"}:
             continue
-        if any(keyword in cleaned.lower() for keyword in ["ss", "jss", "primary", "nursery"]):
+        if any(keyword in cleaned.lower() for keyword in ["ss", "jss", "primary", "nursery", "grade", "year", "level"]):
             return cleaned
     return None
 
