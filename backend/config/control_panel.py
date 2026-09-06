@@ -16,7 +16,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
 from django.urls import NoReverseMatch, path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.utils.text import capfirst
 
 from ops.models import OpsUser, Region
@@ -88,6 +88,10 @@ MODEL_NAV_LABELS = {
     ("finance", "activationcredittransaction"): ("schools", "Token Transactions"),
     ("finance", "studentactivationcredit"): ("schools", "Student Activation Credits"),
     ("superadmin_dashboard", "schooltokenpaymentsetting"): ("schools", "Token Payment Settings"),
+    ("core", "schoolgatepayment"): ("schools", "SchoolGate Payments"),
+    ("device_fleet", "device"): ("schools", "Scanner Devices"),
+    ("device_fleet", "provisioningkey"): ("schools", "Device Provisioning Keys"),
+    ("device_fleet", "deviceauditlog"): ("schools", "Device Audit Logs"),
 
     # Academics - curriculum, calendar, attendance
     ("academic", "academicyear"): ("academics", "Academic Years"),
@@ -769,15 +773,20 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
     @admin.display(description="Quick actions")
     def row_actions(self, obj):
         ns = self.admin_site.name
-        delete_url = reverse(f"{ns}:core_schooltenant_delete", args=[obj.pk])
+        buttons = []
         if obj.is_active:
             toggle_url = reverse(f"{ns}:core_schooltenant_suspend", args=[obj.pk])
-            toggle = format_html('<a class="cp-row-btn cp-row-btn-warn" href="{}">Suspend</a>', toggle_url)
+            buttons.append(("cp-row-btn cp-row-btn-warn", toggle_url, "Suspend"))
         else:
             toggle_url = reverse(f"{ns}:core_schooltenant_activate", args=[obj.pk])
-            toggle = format_html('<a class="cp-row-btn cp-row-btn-ok" href="{}">Activate</a>', toggle_url)
-        delete_btn = format_html('<a class="cp-row-btn cp-row-btn-danger" href="{}">Delete</a>', delete_url)
-        return format_html('<div class="cp-row-actions">{}{}</div>', toggle, delete_btn)
+            buttons.append(("cp-row-btn cp-row-btn-ok", toggle_url, "Activate"))
+        if getattr(obj, "is_schoolgate", False):
+            sg_url = reverse(f"{ns}:core_schooltenant_schoolgate_activate", args=[obj.pk])
+            buttons.append(("cp-row-btn cp-row-btn-ok", sg_url, "Activate SchoolGate"))
+        delete_url = reverse(f"{ns}:core_schooltenant_delete", args=[obj.pk])
+        buttons.append(("cp-row-btn cp-row-btn-danger", delete_url, "Delete"))
+        links = format_html_join("", '<a class="{}" href="{}">{}</a>', buttons)
+        return format_html('<div class="cp-row-actions">{}</div>', links)
 
     @admin.action(description="Suspend selected schools")
     def suspend_schools(self, request, queryset):
@@ -793,8 +802,52 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
         custom = [
             path("<path:object_id>/suspend/", self.admin_site.admin_view(self._toggle_view(False)), name="core_schooltenant_suspend"),
             path("<path:object_id>/activate/", self.admin_site.admin_view(self._toggle_view(True)), name="core_schooltenant_activate"),
+            path(
+                "<path:object_id>/activate-schoolgate/",
+                self.admin_site.admin_view(self.schoolgate_activate_view),
+                name="core_schooltenant_schoolgate_activate",
+            ),
         ]
         return custom + super().get_urls()
+
+    def schoolgate_activate_view(self, request, object_id):
+        """Manual override for a SchoolGate school that paid offline (bank
+        transfer, cash) instead of through the Paystack flow - marks both
+        the device fee and this term's subscription paid in one click,
+        clearing the hard-block gate (see core.schoolgate.schoolgate_is_unlocked)
+        without needing a Paystack reference at all."""
+        from core.schoolgate import SchoolGatePayment
+        from finance.services import schoolgate_admin_activate
+
+        obj = self.get_object(request, object_id)
+        if obj is None or not getattr(obj, "is_schoolgate", False):
+            raise Http404
+        if not self.has_change_permission(request, obj):
+            raise PermissionDenied
+
+        if request.method == "POST":
+            outcomes = []
+            for payment_type, label in ((SchoolGatePayment.TYPE_DEVICE, "device fee"), (SchoolGatePayment.TYPE_TERMLY, "termly subscription")):
+                try:
+                    schoolgate_admin_activate(obj, payment_type, actor=request.user)
+                    outcomes.append(f"{label} marked paid")
+                except ValueError as exc:
+                    outcomes.append(f"{label}: {exc}")
+            self.message_user(request, f"{obj} - {'; '.join(outcomes)}.", messages.SUCCESS)
+            return redirect(f"{self.admin_site.name}:core_schooltenant_changelist")
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Activate SchoolGate for {obj}?",
+            "body": (
+                f"This marks {obj}'s device fee AND this term's subscription as paid, "
+                "unlocking Attendance/Staff/Finance/Students without needing a Paystack payment. "
+                "Use this for schools that paid offline."
+            ),
+            "submit_label": "Yes, activate SchoolGate",
+            "submit_class": "cp-btn-ok",
+        }
+        return render(request, "admin/generic_confirm.html", context)
 
     def _toggle_view(self, make_active):
         def view(request, object_id):
@@ -888,6 +941,200 @@ class ControlPanelTokenAllocationAdmin(admin.ModelAdmin):
             "opts": self.model._meta,
         }
         return render(request, "admin/finance/tokenallocation/extend.html", context)
+
+
+class ControlPanelSchoolGatePaymentAdmin(admin.ModelAdmin):
+    """SchoolGate's device-fee/termly-subscription ledger, with a one-click
+    "Mark Paid" for a pending row a school paid offline (bank transfer,
+    cash) instead of through Paystack - the SchoolTenant admin's "Activate
+    SchoolGate" button (get-or-creates + marks both types paid at once) is
+    the faster path for the common case; this list is for granular control
+    (e.g. only the device fee, or backfilling a past term)."""
+
+    list_display = ("tenant", "payment_type", "plan", "amount", "status_badge", "term", "created_at", "paid_at", "row_actions")
+    list_filter = ("payment_type", "status", "plan")
+    search_fields = ("tenant__name", "reference")
+    readonly_fields = ("reference", "created_at", "paid_at")
+
+    @admin.display(description="Status")
+    def status_badge(self, obj):
+        css = {"pending": "cp-pill-warn", "successful": "cp-pill-ok", "failed": "cp-pill-danger"}.get(obj.status, "cp-pill-warn")
+        return format_html('<span class="cp-pill {}">{}</span>', css, obj.get_status_display())
+
+    @admin.display(description="Actions")
+    def row_actions(self, obj):
+        from core.schoolgate import SchoolGatePayment
+
+        if obj.status != SchoolGatePayment.STATUS_PENDING:
+            return "—"
+        url = reverse(f"{self.admin_site.name}:core_schoolgatepayment_mark_paid", args=[obj.pk])
+        return format_html('<a class="cp-row-btn cp-row-btn-ok" href="{}">Mark Paid</a>', url)
+
+    def get_urls(self):
+        custom = [
+            path("<path:object_id>/mark-paid/", self.admin_site.admin_view(self.mark_paid_view), name="core_schoolgatepayment_mark_paid"),
+        ]
+        return custom + super().get_urls()
+
+    def mark_paid_view(self, request, object_id):
+        from finance.services import mark_schoolgate_payment_paid
+
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404
+        if not self.has_change_permission(request, obj):
+            raise PermissionDenied
+
+        if request.method == "POST":
+            mark_schoolgate_payment_paid(obj, actor=request.user)
+            self.message_user(request, f"{obj} marked paid.", messages.SUCCESS)
+            return redirect(f"{self.admin_site.name}:core_schoolgatepayment_changelist")
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Mark {obj} paid?",
+            "body": f"This marks this {obj.get_payment_type_display().lower()} payment for {obj.tenant} as paid, without a Paystack reference.",
+            "submit_label": "Yes, mark paid",
+            "submit_class": "cp-btn-ok",
+        }
+        return render(request, "admin/generic_confirm.html", context)
+
+
+class ControlPanelDeviceAdmin(admin.ModelAdmin):
+    """Scanner kiosk fleet management - the same assign/suspend/reactivate/
+    revoke actions device_fleet/views.py exposes as a DRF API (built for a
+    future dedicated fleet UI that was never wired up), reimplemented here
+    as Control Panel admin actions so staff have a working UI today."""
+
+    list_display = ("device_id", "name", "tenant", "status_badge", "online_badge", "battery_percentage", "last_seen_at", "row_actions")
+    list_filter = ("status", "tenant")
+    search_fields = ("device_id", "name", "tenant__name")
+    readonly_fields = (
+        "device_id", "auth_token", "scanner_user", "revoked_at", "revoked_by",
+        "last_seen_at", "last_sync_at", "created_at", "updated_at",
+    )
+
+    @admin.display(description="Status")
+    def status_badge(self, obj):
+        css = {
+            "active": "cp-pill-ok", "provisioning": "cp-pill-warn", "unregistered": "cp-pill-warn",
+            "suspended": "cp-pill-danger", "revoked": "cp-pill-danger", "maintenance": "cp-pill-warn",
+        }.get(obj.status, "cp-pill-warn")
+        return format_html('<span class="cp-pill {}">{}</span>', css, obj.get_status_display())
+
+    @admin.display(description="Online")
+    def online_badge(self, obj):
+        if obj.is_online:
+            return format_html('<span class="cp-pill cp-pill-ok">Online</span>')
+        return format_html('<span class="cp-pill cp-pill-danger">Offline</span>')
+
+    @admin.display(description="Actions")
+    def row_actions(self, obj):
+        ns = self.admin_site.name
+        buttons = [("cp-row-btn cp-row-btn-ok", reverse(f"{ns}:device_fleet_device_assign", args=[obj.pk]), "Assign school")]
+        if obj.status == "suspended":
+            buttons.append(("cp-row-btn cp-row-btn-ok", reverse(f"{ns}:device_fleet_device_reactivate", args=[obj.pk]), "Reactivate"))
+        elif obj.status not in ("revoked",):
+            buttons.append(("cp-row-btn cp-row-btn-warn", reverse(f"{ns}:device_fleet_device_suspend", args=[obj.pk]), "Suspend"))
+        if obj.status != "revoked":
+            buttons.append(("cp-row-btn cp-row-btn-danger", reverse(f"{ns}:device_fleet_device_revoke", args=[obj.pk]), "Revoke"))
+        links = format_html_join("", '<a class="{}" href="{}">{}</a>', buttons)
+        return format_html('<div class="cp-row-actions">{}</div>', links)
+
+    def get_urls(self):
+        custom = [
+            path("<path:object_id>/assign/", self.admin_site.admin_view(self.assign_view), name="device_fleet_device_assign"),
+            path("<path:object_id>/suspend/", self.admin_site.admin_view(self._simple_action(self._do_suspend)), name="device_fleet_device_suspend"),
+            path("<path:object_id>/reactivate/", self.admin_site.admin_view(self._simple_action(self._do_reactivate)), name="device_fleet_device_reactivate"),
+            path("<path:object_id>/revoke/", self.admin_site.admin_view(self._simple_action(self._do_revoke)), name="device_fleet_device_revoke"),
+        ]
+        return custom + super().get_urls()
+
+    def _set_scanner_user_active(self, device, is_active):
+        # is_active=False makes SimpleJWT reject this user's access AND
+        # refresh tokens on the next request - mirrors
+        # device_fleet.views._set_scanner_user_active exactly.
+        if device.scanner_user_id:
+            device.scanner_user.is_active = is_active
+            device.scanner_user.save(update_fields=["is_active"])
+
+    def _do_suspend(self, request, device):
+        device.status = "suspended"
+        device.save(update_fields=["status", "updated_at"])
+        self._set_scanner_user_active(device, False)
+        return f"{device} suspended."
+
+    def _do_reactivate(self, request, device):
+        device.status = "active" if device.tenant_id else "unregistered"
+        device.save(update_fields=["status", "updated_at"])
+        self._set_scanner_user_active(device, True)
+        return f"{device} reactivated."
+
+    def _do_revoke(self, request, device):
+        from django.utils import timezone as tz
+
+        device.authorized = False
+        device.auth_token = ""
+        device.status = "revoked"
+        device.revoked_at = tz.now()
+        device.revoked_by = request.user
+        device.save(update_fields=["authorized", "auth_token", "status", "revoked_at", "revoked_by", "updated_at"])
+        self._set_scanner_user_active(device, False)
+        return f"{device} revoked."
+
+    def _simple_action(self, handler):
+        def view(request, object_id):
+            device = self.get_object(request, object_id)
+            if device is None:
+                raise Http404
+            if not self.has_change_permission(request, device):
+                raise PermissionDenied
+            if request.method == "POST":
+                message = handler(request, device)
+                self.message_user(request, message, messages.SUCCESS)
+                return redirect(f"{self.admin_site.name}:device_fleet_device_changelist")
+            context = {
+                **self.admin_site.each_context(request),
+                "title": f"{handler.__name__.replace('_do_', '').capitalize()} {device}?",
+                "body": f"This will change {device}'s status.",
+                "submit_label": "Confirm",
+                "submit_class": "cp-btn-ok",
+            }
+            return render(request, "admin/generic_confirm.html", context)
+
+        return view
+
+    def assign_view(self, request, object_id):
+        from core.tenant import SchoolTenant
+
+        device = self.get_object(request, object_id)
+        if device is None:
+            raise Http404
+        if not self.has_change_permission(request, device):
+            raise PermissionDenied
+
+        if request.method == "POST":
+            school = SchoolTenant.objects.filter(pk=request.POST.get("school_id"), is_active=True).first()
+            if not school:
+                messages.error(request, "Select a school.")
+                return redirect(f"{self.admin_site.name}:device_fleet_device_assign", object_id)
+            device.tenant = school
+            if device.status in ("unregistered", "provisioning"):
+                device.status = "active"
+            device.save(update_fields=["tenant", "status", "updated_at"])
+            if device.scanner_user_id:
+                device.scanner_user.tenant = school
+                device.scanner_user.save(update_fields=["tenant"])
+            self.message_user(request, f"{device} assigned to {school.name}.", messages.SUCCESS)
+            return redirect(f"{self.admin_site.name}:device_fleet_device_changelist")
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Assign {device} to a school",
+            "device": device,
+            "schools": SchoolTenant.objects.filter(is_active=True).order_by("name"),
+        }
+        return render(request, "admin/device_fleet/device/assign_school.html", context)
 
 
 class ControlPanelOpsUserAdmin(admin.ModelAdmin):
@@ -1217,6 +1464,18 @@ def register_all():
         control_panel.register(TokenAllocation, _wrap_with_ops_gate(ControlPanelTokenAllocationAdmin, "token_assignment"))
     except Exception:
         logger.warning("control_panel: could not register custom TokenAllocation admin", exc_info=True)
+
+    try:
+        from core.schoolgate import SchoolGatePayment
+        control_panel.register(SchoolGatePayment, ControlPanelSchoolGatePaymentAdmin)
+    except Exception:
+        logger.warning("control_panel: could not register custom SchoolGatePayment admin", exc_info=True)
+
+    try:
+        from device_fleet.models import Device
+        control_panel.register(Device, ControlPanelDeviceAdmin)
+    except Exception:
+        logger.warning("control_panel: could not register custom Device admin", exc_info=True)
 
     try:
         User, ControlPanelUserAdmin = _build_user_admin()

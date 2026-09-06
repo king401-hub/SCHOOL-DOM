@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  <p class="cp-confirm-copy">{{ body }}</p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="{{ submit_label|default:'Confirm' }}" class="{{ submit_class|default:'cp-btn-ok' }}">
+      <a class="button cp-btn-cancel" href="{{ cancel_url|default:'../../' }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

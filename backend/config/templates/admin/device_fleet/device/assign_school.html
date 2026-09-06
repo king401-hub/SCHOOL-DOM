@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-row">
+      <label for="id_school">School</label>
+      <select name="school_id" id="id_school" required>
+        <option value="">Select a school…</option>
+        {% for school in schools %}
+          <option value="{{ school.pk }}" {% if school.pk == device.tenant_id %}selected{% endif %}>{{ school.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="submit-row cp-confirm-actions">
+      <input type="submit" value="Assign device" class="cp-btn-ok">
+      <a class="button cp-btn-cancel" href="../../">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

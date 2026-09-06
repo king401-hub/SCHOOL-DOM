@@ -2219,6 +2219,82 @@ def verify_schoolgate_payment(reference, actor=None, verification: Optional[dict
     return payment
 
 
+def mark_schoolgate_payment_paid(payment, actor=None):
+    """Superadmin manual override for a SchoolGatePayment paid outside
+    Paystack (bank transfer, cash) - skips provider verification entirely,
+    unlike verify_schoolgate_payment, but applies the same completion
+    side-effect (a premium termly payment still bundles Child Monitor)."""
+    from core.schoolgate import SchoolGatePayment
+
+    if payment.status == SchoolGatePayment.STATUS_SUCCESSFUL:
+        return payment
+    with transaction.atomic():
+        locked = SchoolGatePayment.objects.select_for_update().get(pk=payment.pk)
+        if locked.status != SchoolGatePayment.STATUS_SUCCESSFUL:
+            locked.status = SchoolGatePayment.STATUS_SUCCESSFUL
+            locked.paid_at = timezone.now()
+            locked.save(update_fields=["status", "paid_at"])
+            if locked.payment_type == SchoolGatePayment.TYPE_TERMLY and locked.plan == "premium":
+                _bundle_kids_monitor_for_schoolgate_premium(locked.tenant)
+        payment = locked
+    return payment
+
+
+def schoolgate_admin_activate(tenant, payment_type, actor=None):
+    """Get-or-create the relevant SchoolGatePayment row and mark it paid -
+    for staff activating a school that paid offline and never went through
+    the Paystack init flow at all (so there may be no existing row yet)."""
+    from core.schoolgate import SchoolGatePayment, schoolgate_current_term, schoolgate_device_paid, schoolgate_term_paid
+
+    if payment_type == SchoolGatePayment.TYPE_DEVICE:
+        if schoolgate_device_paid(tenant):
+            raise ValueError("The device fee is already marked paid.")
+        pricing = schoolgate_pricing(tenant)
+        payment = (
+            SchoolGatePayment.objects.filter(
+                tenant=tenant, payment_type=SchoolGatePayment.TYPE_DEVICE, status=SchoolGatePayment.STATUS_PENDING,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if not payment:
+            payment = SchoolGatePayment.objects.create(
+                tenant=tenant,
+                payment_type=SchoolGatePayment.TYPE_DEVICE,
+                amount=pricing["device_fee"],
+                reference=generate_reference("SGD-ADM"),
+            )
+    elif payment_type == SchoolGatePayment.TYPE_TERMLY:
+        term = schoolgate_current_term(tenant)
+        if not term:
+            raise ValueError("No active term found for this school yet.")
+        if schoolgate_term_paid(tenant, term):
+            raise ValueError("This term's subscription is already marked paid.")
+        pricing = schoolgate_pricing(tenant)
+        payment = (
+            SchoolGatePayment.objects.filter(
+                tenant=tenant, payment_type=SchoolGatePayment.TYPE_TERMLY, term=term, status=SchoolGatePayment.STATUS_PENDING,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if not payment:
+            payment = SchoolGatePayment.objects.create(
+                tenant=tenant,
+                payment_type=SchoolGatePayment.TYPE_TERMLY,
+                term=term,
+                plan=pricing["plan"],
+                student_count=pricing["student_count"],
+                per_student_price=pricing["per_student_price"],
+                amount=pricing["recurring_total"],
+                reference=generate_reference("SGT-ADM"),
+            )
+    else:
+        raise ValueError("Unknown SchoolGate payment type.")
+
+    return mark_schoolgate_payment_paid(payment, actor=actor)
+
+
 def get_or_create_student_activation_credit(student_profile) -> StudentActivationCredit:
     credit, _ = StudentActivationCredit.objects.get_or_create(student=student_profile)
     return credit
