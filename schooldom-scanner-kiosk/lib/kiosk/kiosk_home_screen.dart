@@ -93,7 +93,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
   void initState() {
     super.initState();
     WakelockPlus.enable();
+    _tts.setLanguage('en-US');
     _tts.setSpeechRate(0.46);
+    _tts.setVolume(1.0);
     _loadSchoolName();
     _loadGateSettings();
     _startNfcSession();
@@ -353,15 +355,21 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> {
       _resultMessage = message;
     });
 
-    final name = data?['name'] as String?;
+    // Deliberately generic, never the student's name - a shared kiosk
+    // announcing names aloud is a privacy concern the school flagged.
     final line = switch (outcome) {
-      _ScanOutcome.welcome => name != null ? 'Welcome, $name.' : 'Welcome.',
-      _ScanOutcome.goodbye => name != null ? 'Goodbye, $name.' : 'Goodbye.',
+      _ScanOutcome.welcome => 'Welcome.',
+      _ScanOutcome.goodbye => 'Goodbye.',
       _ScanOutcome.invalid => 'This card is not registered.',
       _ScanOutcome.duplicate => 'Attendance has already been recorded.',
       _ScanOutcome.error => 'Unable to record attendance. Please try again.',
     };
-    unawaited(_tts.speak(line));
+    unawaited(_tts.speak(line).catchError((Object error) {
+      // flutter_tts fails silently on a device with no TTS engine installed
+      // (common on locked-down Android POS terminal firmware) - logging it
+      // at least makes that diagnosable instead of a mysterious "no sound".
+      debugPrint('TTS speak failed: $error');
+    }));
 
     // Fee Tracker's result (with Print/Send SMS buttons to act on) needs
     // real time to read and tap, unlike the plain welcome/goodbye flash -
