@@ -19,11 +19,11 @@ from .tools import TOOL_SCHEMAS, SecretaryTools, resolve_navigation_page
 logger = logging.getLogger(__name__)
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-SECRETARY_MODEL = getattr(settings, "SECRETARY_OLLAMA_MODEL", "llama3.2:3b")
+SECRETARY_MODEL = getattr(settings, "SECRETARY_OLLAMA_MODEL", "llama3.2:1b")
 MAX_ITERATIONS = 6      # safety cap — prevents infinite tool-call loops
 MAX_HISTORY = 20        # messages kept in context
 MAX_MESSAGE_CHARS = 2000
-OLLAMA_TIMEOUT = (5, 120)  # (connect, read) seconds
+OLLAMA_TIMEOUT = (5, 300)  # (connect, read) seconds - CPU inference can be slow
 ADMIN_ROLES = {"school_admin", "principal", "accountant", "school_superadmin", "super_admin"}
 
 
@@ -89,6 +89,24 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
     if match:
         question_count = int(match.group(1))
 
+    if any(phrase in lowered for phrase in ["how many student", "student count", "number of student", "count student", "total student"]):
+        result = {
+            "tool": "count_students",
+            "params": {"class_name": class_name},
+            "confidence": 0.95,
+        }
+        cache.set(cache_key, result, timeout=300)
+        return result
+
+    if any(phrase in lowered for phrase in ["how many class", "class count", "number of class", "count class", "total class"]):
+        result = {
+            "tool": "count_classes",
+            "params": {},
+            "confidence": 0.95,
+        }
+        cache.set(cache_key, result, timeout=300)
+        return result
+
     if "timetable" in lowered:
         result = {
             "tool": "generate_timetable",
@@ -145,7 +163,7 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
     return result
 
 
-def _call_ollama(messages: list, stream: bool = False) -> dict | requests.Response:
+def _call_ollama(messages: list, stream: bool = False, use_tools: bool = True) -> dict | requests.Response:
     """
     POST to Ollama. Returns parsed JSON dict (stream=False) or raw Response (stream=True).
     Raises requests.RequestException on network errors.
@@ -153,14 +171,15 @@ def _call_ollama(messages: list, stream: bool = False) -> dict | requests.Respon
     payload = {
         "model": SECRETARY_MODEL,
         "messages": messages,
-        "tools": TOOL_SCHEMAS,
         "stream": stream,
         "options": {
             "temperature": 0.3,
-            "num_predict": 400,
-            "num_ctx": 2048,   # prompt ~1200 tokens; smaller KV cache = faster CPU inference
+            "num_predict": 100,
+            "num_ctx": 512,   # smaller KV cache = faster CPU-only inference
         },
     }
+    if use_tools:
+        payload["tools"] = TOOL_SCHEMAS
     response = requests.post(
         OLLAMA_CHAT_URL,
         json=payload,

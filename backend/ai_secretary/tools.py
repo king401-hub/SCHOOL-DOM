@@ -317,6 +317,74 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "count_students",
+            "description": "Get the total number of students in the school, or count by specific class.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "class_name": {"type": "string", "description": "Optional: specific class name like SS2A. If omitted, counts all students."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "count_classes",
+            "description": "Get the total number of classes in the school.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_student_details",
+            "description": "Get complete student profile including personal info, class, and contact details.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "student_id": {"type": "string", "description": "Student ID or name to search"}
+                },
+                "required": ["student_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_class_roster",
+            "description": "Get complete class roster with student names, IDs, and contact info.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "class_name": {"type": "string", "description": "Class name like SS2A"}
+                },
+                "required": ["class_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_student_fee_balance",
+            "description": "Get fee balance for a student, including total due, paid, and outstanding amount.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "student_id": {"type": "string", "description": "Student ID or name"}
+                },
+                "required": ["student_id"]
+            }
+        }
+    },
 ]
 
 
@@ -822,6 +890,11 @@ class SecretaryTools:
         "get_api_access_status": "get_api_access_status",
         "get_integration_status": "get_integration_status",
         "sync_third_party_integration": "sync_third_party_integration",
+        "count_students": "count_students",
+        "count_classes": "count_classes",
+        "get_student_details": "get_student_details",
+        "get_class_roster": "get_class_roster",
+        "get_student_fee_balance": "get_student_fee_balance",
     }
 
     def get_predictive_insights(self, metric: str, class_name: str = "") -> dict:
@@ -969,3 +1042,160 @@ class SecretaryTools:
             return method(**arguments)
         except TypeError as exc:
             return {"status": "error", "error_code": "BAD_ARGS", "message": f"Invalid arguments: {exc}"}
+
+    def count_students(self, class_name: str = None) -> dict:
+        """Count students in the school, optionally filtered by class."""
+        try:
+            qs = self.User.objects.filter(tenant=self.tenant, role="student", is_active=True)
+            if class_name:
+                class_obj = self._get_class(class_name)
+                if class_obj is None:
+                    return {
+                        "status": "error",
+                        "error_code": "NOT_FOUND",
+                        "message": f"Class '{class_name}' not found.",
+                    }
+                count = qs.filter(current_class=class_obj).count()
+                return {
+                    "status": "success",
+                    "class_name": class_name,
+                    "total": count,
+                    "message": f"There are {count} active students in {class_name}.",
+                }
+            count = qs.count()
+            return {
+                "status": "success",
+                "total": count,
+                "message": f"There are {count} active students in the school.",
+            }
+        except Exception as exc:
+            logger.exception("count_students failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def count_classes(self) -> dict:
+        """Count classes in the school."""
+        try:
+            legacy_tenant = self._get_legacy_tenant()
+            count = self.Class.objects.filter(tenant=legacy_tenant).count() if legacy_tenant else self.Class.objects.count()
+            return {
+                "status": "success",
+                "total": count,
+                "message": f"There are {count} classes in the school.",
+            }
+        except Exception as exc:
+            logger.exception("count_classes failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def get_student_details(self, student_id: str) -> dict:
+        """Get a student's full profile - by id first, falling back to a name search.
+        Searches email rather than username: this User model has no username
+        field at all (USERNAME_FIELD is email), so a username__icontains
+        lookup would raise FieldError on every call - a bug in an earlier
+        draft of this tool, fixed here rather than reintroduced."""
+        try:
+            from django.db.models import Q
+
+            user = self.User.objects.filter(id=student_id, tenant=self.tenant, role="student").first()
+            if not user:
+                user = self.User.objects.filter(
+                    Q(first_name__icontains=student_id) | Q(last_name__icontains=student_id) | Q(email__icontains=student_id),
+                    tenant=self.tenant,
+                    role="student",
+                ).first()
+            if not user:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Student '{student_id}' not found."}
+            return {
+                "status": "success",
+                "student_id": str(user.id),
+                "name": user.get_full_name(),
+                "email": user.email or "N/A",
+                "phone": user.phone or "N/A",
+                "class": str(user.current_class) if user.current_class else "Not assigned",
+                "is_active": user.is_active,
+                "date_joined": user.date_joined.strftime("%Y-%m-%d") if user.date_joined else "N/A",
+                "message": f"Found student: {user.get_full_name()}",
+            }
+        except Exception as exc:
+            logger.exception("get_student_details failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def get_class_roster(self, class_name: str) -> dict:
+        """Get the full class roster - names, ids, and contact info."""
+        try:
+            class_obj = self._get_class(class_name)
+            if not class_obj:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_name}' not found."}
+            students = self.User.objects.filter(
+                tenant=self.tenant,
+                role="student",
+                current_class=class_obj,
+                is_active=True,
+            ).order_by("last_name", "first_name")
+            roster = [
+                {
+                    "student_id": str(s.id),
+                    "name": s.get_full_name(),
+                    "email": s.email or "N/A",
+                    "phone": s.phone or "N/A",
+                }
+                for s in students
+            ]
+            return {
+                "status": "success",
+                "class_name": class_name,
+                "total_students": len(roster),
+                "roster": roster,
+                "message": f"Found {len(roster)} students in {class_name}.",
+            }
+        except Exception as exc:
+            logger.exception("get_class_roster failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def get_student_fee_balance(self, student_id: str) -> dict:
+        """Get a student's real fee balance from SchoolFee records - an
+        earlier draft of this tool returned hardcoded mock numbers
+        (₦75,000 due / ₦50,000 paid for every student); this queries the
+        actual finance.SchoolFee ledger instead, same total/paid pattern
+        finance.services._student_paid_ratio already uses elsewhere."""
+        try:
+            from django.db.models import Q, Sum
+
+            from finance.models import SchoolFee
+            from users.models import StudentProfile
+
+            user = self.User.objects.filter(id=student_id, tenant=self.tenant, role="student").first()
+            if not user:
+                user = self.User.objects.filter(
+                    Q(first_name__icontains=student_id) | Q(last_name__icontains=student_id) | Q(email__icontains=student_id),
+                    tenant=self.tenant,
+                    role="student",
+                ).first()
+            if not user:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Student '{student_id}' not found."}
+
+            student_profile = StudentProfile.objects.filter(user=user).first()
+            if not student_profile:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"No student profile found for {user.get_full_name()}."}
+
+            fees = SchoolFee.objects.filter(student=student_profile)
+            total_due = fees.aggregate(total=Sum("amount"))["total"] or 0
+            total_paid = fees.filter(status=SchoolFee.STATUS_PAID).aggregate(total=Sum("amount"))["total"] or 0
+            outstanding = total_due - total_paid
+
+            return {
+                "status": "success",
+                "student_id": str(user.id),
+                "name": user.get_full_name(),
+                "class": str(user.current_class) if user.current_class else "Not assigned",
+                "total_due": float(total_due),
+                "total_paid": float(total_paid),
+                "outstanding_balance": float(outstanding),
+                "message": (
+                    f"Fee balance for {user.get_full_name()}: ₦{outstanding:,.0f} outstanding"
+                    if outstanding > 0
+                    else f"{user.get_full_name()} has no outstanding fees."
+                ),
+            }
+        except Exception as exc:
+            logger.exception("get_student_fee_balance failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
