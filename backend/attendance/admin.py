@@ -20,7 +20,7 @@ class AttendanceQRCodeAdmin(admin.ModelAdmin):
         }),
     )
     
-    def has_delete_permission(self, request):
+    def has_delete_permission(self, request, obj=None):
         # Prevent accidental deletion
         return request.user.is_superuser
 
@@ -80,7 +80,7 @@ class TeacherAttendanceAdmin(admin.ModelAdmin):
         # Attendance should only be created via QR code scanning
         return request.user.is_superuser
     
-    def has_delete_permission(self, request):
+    def has_delete_permission(self, request, obj=None):
         # Restrict deletion
         return request.user.is_superuser
 
