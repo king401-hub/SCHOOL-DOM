@@ -133,6 +133,11 @@ class Device(models.Model):
     # Telemetry - never invented client-side; "Not Supported" is a real,
     # distinct value from "unknown/not yet reported" (null).
     app_version = models.CharField(max_length=20, blank=True, default='')
+    # Android versionCode (packageInfo.buildNumber) - an integer that only
+    # ever increases, unlike app_version's semver string, so comparing it
+    # against AppRelease.version_code to decide "is a newer build
+    # available" never has to parse/compare semver strings.
+    app_version_code = models.PositiveIntegerField(null=True, blank=True)
     device_model = models.CharField(max_length=120, blank=True, default='')
     os_version = models.CharField(max_length=60, blank=True, default='')
     battery_percentage = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -206,6 +211,44 @@ class DeviceAuditLog(models.Model):
         verbose_name_plural = 'Device Audit Logs'
         ordering = ['-created_at']
         indexes = [models.Index(fields=['device', '-created_at'])]
+
+
+class AppRelease(models.Model):
+    """A published build of a fleet app (currently only the scanner kiosk),
+    checked against Device.app_version_code on every heartbeat
+    (device_heartbeat) to tell a device "there's a newer build" and hand it
+    a download URL - no code deploy needed to ship a new kiosk build, just
+    upload the APK here and bump version_code (staff does this from the
+    Control Panel, which auto-registers this model with a real add/change
+    form and file upload, same as every other unregistered model)."""
+
+    APP_SCANNER_KIOSK = 'scanner_kiosk'
+    APP_CHOICES = [(APP_SCANNER_KIOSK, 'Scanner Kiosk')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    app = models.CharField(max_length=30, choices=APP_CHOICES, default=APP_SCANNER_KIOSK)
+    # Must match the Android versionCode this build was compiled with
+    # (pubspec.yaml's version: X.Y.Z+<version_code>) - the app compares
+    # this against its own buildNumber, not version_name.
+    version_code = models.PositiveIntegerField()
+    version_name = models.CharField(max_length=20, help_text='e.g. 1.2.0 - shown to staff, not compared by the app')
+    apk_file = models.FileField(upload_to='app_releases/%Y/%m/')
+    release_notes = models.TextField(blank=True)
+    # Only one active release per app is ever served as "latest" - lets
+    # staff stage/upload a build without it going live, and instantly roll
+    # back by flipping is_active on an older row instead of deleting the
+    # bad one.
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'App Release'
+        verbose_name_plural = 'App Releases'
+        ordering = ['-version_code']
+
+    def __str__(self):
+        return f'{self.get_app_display()} {self.version_name} ({self.version_code})'
 
     def __str__(self):
         who = self.actor.get_full_name() if self.actor else 'System'

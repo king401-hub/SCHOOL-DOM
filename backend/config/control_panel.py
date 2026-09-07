@@ -92,6 +92,7 @@ MODEL_NAV_LABELS = {
     ("device_fleet", "device"): ("schools", "Scanner Devices"),
     ("device_fleet", "provisioningkey"): ("schools", "Device Provisioning Keys"),
     ("device_fleet", "deviceauditlog"): ("schools", "Device Audit Logs"),
+    ("device_fleet", "apprelease"): ("administration", "App Releases"),
 
     # Academics - curriculum, calendar, attendance
     ("academic", "academicyear"): ("academics", "Academic Years"),

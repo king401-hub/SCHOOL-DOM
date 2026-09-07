@@ -24,7 +24,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from core.models import SchoolTenant
 from users.models import User
 
-from .models import Device, DeviceAuditLog, ProvisioningKey
+from .models import AppRelease, Device, DeviceAuditLog, ProvisioningKey
 from .serializers import DeviceAuditLogSerializer, DeviceSerializer, ProvisioningKeySerializer
 
 SUPERADMIN_ROLE = 'super_admin'
@@ -399,6 +399,12 @@ def device_heartbeat(request):
     if 'app_version' in data:
         device.app_version = str(data.get('app_version') or '')[:20]
         update_fields.append('app_version')
+    if 'app_version_code' in data and data.get('app_version_code') is not None:
+        try:
+            device.app_version_code = int(data.get('app_version_code'))
+            update_fields.append('app_version_code')
+        except (TypeError, ValueError):
+            pass
     if 'battery_percentage' in data and data.get('battery_percentage') is not None:
         try:
             device.battery_percentage = max(0, min(100, int(data.get('battery_percentage'))))
@@ -425,10 +431,30 @@ def device_heartbeat(request):
 
     device.save(update_fields=update_fields)
 
-    return Response({
+    payload = {
         'success': True,
         'authorized': device.authorized and device.status not in ('suspended', 'revoked'),
         'status': device.status,
         'school_id': str(device.tenant_id) if device.tenant_id else None,
         'school_name': device.tenant.name if device.tenant else None,
-    })
+    }
+
+    # A device that has never reported its version code (older builds
+    # predating this field) has nothing safe to compare against - skip the
+    # check rather than falsely claiming an update is available.
+    if device.app_version_code is not None:
+        latest = (
+            AppRelease.objects.filter(app=AppRelease.APP_SCANNER_KIOSK, is_active=True)
+            .order_by('-version_code')
+            .first()
+        )
+        if latest and latest.version_code > device.app_version_code:
+            payload.update({
+                'update_available': True,
+                'latest_version_code': latest.version_code,
+                'latest_version_name': latest.version_name,
+                'apk_url': request.build_absolute_uri(latest.apk_file.url),
+                'release_notes': latest.release_notes,
+            })
+
+    return Response(payload)
