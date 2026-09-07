@@ -55,6 +55,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   int _pendingCount = 0;
   Map<String, dynamic>? _updateInfo;
   bool _downloadingUpdate = false;
+  String? _pairedSchoolId;
+  String? _pairedSchoolName;
+  bool _switchingSchool = false;
 
   final Map<String, DateTime> _recentScans = {};
   Timer? _resultTimer;
@@ -217,7 +220,15 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
 
   Future<void> _loadSchoolName() async {
     final name = await KioskStore.schoolName;
-    if (mounted) setState(() => _schoolName = name);
+    final pairedId = await KioskStore.pairedSchoolId;
+    final pairedName = await KioskStore.pairedSchoolName;
+    if (mounted) {
+      setState(() {
+        _schoolName = name;
+        _pairedSchoolId = pairedId;
+        _pairedSchoolName = pairedName;
+      });
+    }
   }
 
   Future<void> _loadGateSettings() async {
@@ -432,9 +443,20 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           await _handleRemoteRevocation();
           return;
         }
+        final schoolId = data['school_id'] as String?;
         final schoolName = data['school_name'] as String?;
-        if (schoolName != null && schoolName != _schoolName) {
+        if (schoolId != null && schoolName != null && schoolName != _schoolName) {
           setState(() => _schoolName = schoolName);
+          await KioskStore.setActiveSchool(id: schoolId, name: schoolName);
+        }
+        final pairedId = data['paired_school_id'] as String?;
+        final pairedName = data['paired_school_name'] as String?;
+        if (pairedId != _pairedSchoolId || pairedName != _pairedSchoolName) {
+          setState(() {
+            _pairedSchoolId = pairedId;
+            _pairedSchoolName = pairedName;
+          });
+          await KioskStore.setPairedSchool(id: pairedId, name: pairedName);
         }
         if (data['update_available'] == true) {
           setState(() => _updateInfo = data);
@@ -513,11 +535,24 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(children: [
-            const Icon(Icons.school_outlined, size: 14, color: Colors.white38),
-            const SizedBox(width: 6),
-            Text(_schoolName ?? 'SchoolDom', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
-          ]),
+          // Expanded + Flexible/ellipsis so a long school name shrinks
+          // instead of pushing the status icons (wifi/settings/key/update)
+          // off-screen - the icon row keeps its natural width always.
+          Expanded(
+            child: Row(children: [
+              const Icon(Icons.school_outlined, size: 14, color: Colors.white38),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  _schoolName ?? 'SchoolDom',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 8),
           Row(children: [
             if (_pendingCount > 0) ...[
               Icon(Icons.cloud_upload_outlined, size: 14, color: Colors.amber.shade300),
@@ -529,6 +564,19 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
               GestureDetector(
                 onTap: _showUpdateDialog,
                 child: Icon(Icons.system_update_outlined, size: 14, color: Colors.amber.shade300),
+              ),
+              const SizedBox(width: 12),
+            ],
+            if (_pairedSchoolName != null) ...[
+              GestureDetector(
+                onTap: _switchingSchool ? null : _confirmSwitchSchool,
+                child: _switchingSchool
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white38),
+                      )
+                    : const Icon(Icons.sync_alt, size: 14, color: Colors.white38),
               ),
               const SizedBox(width: 12),
             ],
@@ -657,6 +705,110 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     }
   }
 
+  // ---------------------------------------------------------------- Dual-school switching
+
+  Future<Map<String, dynamic>?> _switchActiveSchool(String schoolId) async {
+    final deviceAuthToken = await KioskStore.deviceAuthToken;
+    if (deviceAuthToken == null) return null;
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/api/device-fleet/device/switch-active-school/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'auth_token': deviceAuthToken, 'school_id': schoolId}),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Switch failed (HTTP ${response.statusCode}).');
+    }
+    return data;
+  }
+
+  Future<void> _confirmSwitchSchool() async {
+    final pairedId = _pairedSchoolId;
+    final pairedName = _pairedSchoolName;
+    if (pairedId == null || pairedName == null || _switchingSchool) return;
+
+    _pauseHidCapture();
+    NfcManager.instance.stopSession();
+    setState(() => _switchingSchool = true);
+    try {
+      // Force a real flush and check what actually remains - a queued scan
+      // that syncs after the switch would otherwise be attributed to the
+      // newly active school instead of the one it was captured for.
+      final flush = await replayOfflineQueue();
+      if (flush.remaining > 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not sync ${flush.remaining} pending scan(s) - check connection and try again.'),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+        }
+        return;
+      }
+      setState(() => _pendingCount = 0);
+
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: const Color(0xFF15213A),
+          title: const Text('Switch active school?', style: TextStyle(color: Colors.white)),
+          content: Text(
+            'This terminal will now record attendance for $pairedName instead of $_schoolName, until switched back.',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Switch', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
+      final result = await _switchActiveSchool(pairedId);
+      if (result == null) return;
+
+      final newSchoolId = result['school_id'] as String?;
+      final newSchoolName = result['school_name'] as String?;
+      final newPairedId = result['paired_school_id'] as String?;
+      final newPairedName = result['paired_school_name'] as String?;
+      if (newSchoolId != null && newSchoolName != null) {
+        await KioskStore.setActiveSchool(id: newSchoolId, name: newSchoolName);
+      }
+      await KioskStore.setPairedSchool(id: newPairedId, name: newPairedName);
+
+      // The duplicate-tap cache is keyed on card UID alone, which is only
+      // unique per school - it must not carry across a school boundary.
+      _recentScans.clear();
+
+      if (mounted) {
+        setState(() {
+          _schoolName = newSchoolName;
+          _pairedSchoolId = newPairedId;
+          _pairedSchoolName = newPairedName;
+        });
+      }
+      await _loadGateSettings();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not switch school: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _switchingSchool = false);
+      _startNfcSession();
+      _resumeHidCapture();
+    }
+  }
+
   Widget _buildReadyState() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -665,10 +817,15 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         // in their reception/gate, not a "SchoolDom" branded device from a
         // visitor's point of view. Product branding is now the small
         // "Powered by" line underneath instead of the headline.
-        Text(
-          _schoolName ?? 'Welcome',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.15),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            _schoolName ?? 'Welcome',
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.15),
+          ),
         ),
         const SizedBox(height: 8),
         RichText(
