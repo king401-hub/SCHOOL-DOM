@@ -28,6 +28,10 @@ dependencies:
   package_info_plus: ^8.1.2
   device_info_plus: ^11.2.2
 
+  # Self-update: download a new build's APK and hand it to the OS installer
+  path_provider: ^2.1.5
+  open_filex: ^4.7.0
+
   # Fee Reminder receipt printing - targets the built-in printer on
   # Sunmi-family Android POS terminals (the common "normal POS terminal
   # with a printer" hardware this app is meant to run on). See

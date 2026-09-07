@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
@@ -7,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../api/client.dart';
 import '../api/config.dart';
@@ -50,6 +53,8 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   String? _schoolName;
   bool _online = true;
   int _pendingCount = 0;
+  Map<String, dynamic>? _updateInfo;
+  bool _downloadingUpdate = false;
 
   final Map<String, DateTime> _recentScans = {};
   Timer? _resultTimer;
@@ -412,6 +417,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         body: jsonEncode({
           'auth_token': deviceAuthToken,
           'app_version': packageInfo.version,
+          'app_version_code': int.tryParse(packageInfo.buildNumber),
           if (battery >= 0) 'battery_percentage': battery,
           'battery_charging': state == BatteryState.charging || state == BatteryState.full,
           'synced': _pendingCount == 0,
@@ -429,6 +435,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         final schoolName = data['school_name'] as String?;
         if (schoolName != null && schoolName != _schoolName) {
           setState(() => _schoolName = schoolName);
+        }
+        if (data['update_available'] == true) {
+          setState(() => _updateInfo = data);
         }
       }
     } catch (_) {
@@ -516,6 +525,13 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
               Text('$_pendingCount pending', style: TextStyle(color: Colors.amber.shade300, fontSize: 11, fontWeight: FontWeight.w700)),
               const SizedBox(width: 12),
             ],
+            if (_updateInfo != null) ...[
+              GestureDetector(
+                onTap: _showUpdateDialog,
+                child: Icon(Icons.system_update_outlined, size: 14, color: Colors.amber.shade300),
+              ),
+              const SizedBox(width: 12),
+            ],
             Icon(_online ? Icons.wifi : Icons.wifi_off, size: 14, color: _online ? Colors.white38 : Colors.redAccent),
             const SizedBox(width: 12),
             // Re-opens the license-key entry screen - for recovering from a
@@ -572,6 +588,73 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     await KioskStore.deactivate();
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+  }
+
+  Future<void> _showUpdateDialog() async {
+    final info = _updateInfo;
+    if (info == null || _downloadingUpdate) return;
+    final versionName = info['latest_version_name'] as String? ?? '';
+    final notes = (info['release_notes'] as String? ?? '').trim();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF15213A),
+          title: Text('Update available - $versionName', style: const TextStyle(color: Colors.white)),
+          content: Text(
+            notes.isNotEmpty ? notes : 'A newer version of this app is available.',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Later', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Install Now', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    await _installUpdate(info);
+  }
+
+  Future<void> _installUpdate(Map<String, dynamic> info) async {
+    final apkUrl = info['apk_url'] as String?;
+    if (apkUrl == null || apkUrl.isEmpty) return;
+    setState(() => _downloadingUpdate = true);
+    try {
+      final response = await http.get(Uri.parse(apkUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Download failed (HTTP ${response.statusCode}).');
+      }
+      final dir = await getTemporaryDirectory();
+      final versionCode = info['latest_version_code'] ?? DateTime.now().millisecondsSinceEpoch;
+      final file = File('${dir.path}/schoolgate-kiosk-$versionCode.apk');
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+      // Hands the APK to Android's own package installer - the OS shows its
+      // standard "install this app?" prompt (and, the very first time, an
+      // "allow installs from this app" permission screen). This app never
+      // installs anything silently.
+      final result = await OpenFilex.open(file.path);
+      if (result.type != ResultType.done && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open installer: ${result.message}'), backgroundColor: AppColors.danger),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Update download failed: $e'), backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingUpdate = false);
+    }
   }
 
   Widget _buildReadyState() {
