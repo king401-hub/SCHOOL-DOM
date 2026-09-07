@@ -99,18 +99,21 @@ def _fees_payload_for_student(student_profile):
 
 def _student_dva_payload(student_profile):
     """The spec's "Student DVA" - there's no per-student virtual account in
-    the system, only a per-parent one (finance.ParentVirtualAccount), so
-    this looks up the student's first parent's account and returns None if
-    that parent has never been assigned one."""
-    parent = student_profile.parents.select_related('user__virtual_account').first()
-    account = getattr(getattr(parent, 'user', None), 'virtual_account', None)
-    if not account:
-        return None
-    return {
-        'account_number': account.account_number,
-        'bank_name': account.bank_name,
-        'account_name': account.account_name,
-    }
+    the system, only a per-parent one (finance.ParentVirtualAccount). A
+    student can have two linked parents with only one of them assigned a
+    virtual account - checks every linked parent (not just .first(), which
+    could silently pick the parent without one) and returns the first
+    active account found, or None if none of them has one."""
+    parents = student_profile.parents.select_related('user__virtual_account').all()
+    for parent in parents:
+        account = getattr(getattr(parent, 'user', None), 'virtual_account', None)
+        if account and account.is_active:
+            return {
+                'account_number': account.account_number,
+                'bank_name': account.bank_name,
+                'account_name': account.account_name,
+            }
+    return None
 
 
 def _gate_sms_text(student, action, event):
