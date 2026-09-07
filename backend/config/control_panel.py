@@ -1007,13 +1007,17 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
     future dedicated fleet UI that was never wired up), reimplemented here
     as Control Panel admin actions so staff have a working UI today."""
 
-    list_display = ("device_id", "name", "tenant", "status_badge", "online_badge", "battery_percentage", "last_seen_at", "row_actions")
+    list_display = ("device_id", "name", "tenant", "paired_school", "status_badge", "online_badge", "battery_percentage", "last_seen_at", "row_actions")
     list_filter = ("status", "tenant")
-    search_fields = ("device_id", "name", "tenant__name")
+    search_fields = ("device_id", "name", "tenant__name", "paired_tenant__name")
     readonly_fields = (
         "device_id", "auth_token", "scanner_user", "revoked_at", "revoked_by",
         "last_seen_at", "last_sync_at", "created_at", "updated_at",
     )
+
+    @admin.display(description="Paired school")
+    def paired_school(self, obj):
+        return obj.paired_tenant.name if obj.paired_tenant else "—"
 
     @admin.display(description="Status")
     def status_badge(self, obj):
@@ -1033,6 +1037,11 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
     def row_actions(self, obj):
         ns = self.admin_site.name
         buttons = [("cp-row-btn cp-row-btn-ok", reverse(f"{ns}:device_fleet_device_assign", args=[obj.pk]), "Assign school")]
+        if obj.tenant_id:
+            if obj.paired_tenant_id:
+                buttons.append(("cp-row-btn cp-row-btn-warn", reverse(f"{ns}:device_fleet_device_unpair", args=[obj.pk]), "Unpair"))
+            else:
+                buttons.append(("cp-row-btn cp-row-btn-ok", reverse(f"{ns}:device_fleet_device_pair", args=[obj.pk]), "Pair school"))
         if obj.status == "suspended":
             buttons.append(("cp-row-btn cp-row-btn-ok", reverse(f"{ns}:device_fleet_device_reactivate", args=[obj.pk]), "Reactivate"))
         elif obj.status not in ("revoked",):
@@ -1045,6 +1054,8 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
     def get_urls(self):
         custom = [
             path("<path:object_id>/assign/", self.admin_site.admin_view(self.assign_view), name="device_fleet_device_assign"),
+            path("<path:object_id>/pair/", self.admin_site.admin_view(self.pair_view), name="device_fleet_device_pair"),
+            path("<path:object_id>/unpair/", self.admin_site.admin_view(self._simple_action(self._do_unpair)), name="device_fleet_device_unpair"),
             path("<path:object_id>/suspend/", self.admin_site.admin_view(self._simple_action(self._do_suspend)), name="device_fleet_device_suspend"),
             path("<path:object_id>/reactivate/", self.admin_site.admin_view(self._simple_action(self._do_reactivate)), name="device_fleet_device_reactivate"),
             path("<path:object_id>/revoke/", self.admin_site.admin_view(self._simple_action(self._do_revoke)), name="device_fleet_device_revoke"),
@@ -1120,9 +1131,13 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
                 messages.error(request, "Select a school.")
                 return redirect(f"{self.admin_site.name}:device_fleet_device_assign", object_id)
             device.tenant = school
+            # A stale pairing from before this (re)assignment may not even
+            # share a school_group with the new primary school - clear it
+            # rather than leave an invisible, possibly-invalid pairing.
+            device.paired_tenant = None
             if device.status in ("unregistered", "provisioning"):
                 device.status = "active"
-            device.save(update_fields=["tenant", "status", "updated_at"])
+            device.save(update_fields=["tenant", "paired_tenant", "status", "updated_at"])
             if device.scanner_user_id:
                 device.scanner_user.tenant = school
                 device.scanner_user.save(update_fields=["tenant"])
@@ -1136,6 +1151,57 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
             "schools": SchoolTenant.objects.filter(is_active=True).order_by("name"),
         }
         return render(request, "admin/device_fleet/device/assign_school.html", context)
+
+    def _do_unpair(self, request, device):
+        old_name = device.paired_tenant.name if device.paired_tenant else None
+        device.paired_tenant = None
+        device.save(update_fields=["paired_tenant", "updated_at"])
+        return f"{device} unpaired from {old_name}." if old_name else f"{device} has no pairing to remove."
+
+    def pair_view(self, request, object_id):
+        from core.tenant import SchoolTenant
+
+        device = self.get_object(request, object_id)
+        if device is None:
+            raise Http404
+        if not self.has_change_permission(request, device):
+            raise PermissionDenied
+        if not device.tenant_id:
+            messages.error(request, "Assign a primary school to this device before pairing a second one.")
+            return redirect(f"{self.admin_site.name}:device_fleet_device_changelist")
+
+        group_id = device.tenant.school_group_id
+        if not group_id:
+            context = {
+                **self.admin_site.each_context(request),
+                "title": f"Pair a second school for {device}",
+                "device": device,
+                "no_group": True,
+            }
+            return render(request, "admin/device_fleet/device/pair_school.html", context)
+
+        eligible = SchoolTenant.objects.filter(is_active=True, school_group_id=group_id).exclude(pk=device.tenant_id).order_by("name")
+
+        if request.method == "POST":
+            # Re-validate server-side against the same eligible set - never
+            # trust the rendered dropdown, since a cross-group school id
+            # could be posted directly regardless of what the form showed.
+            school = eligible.filter(pk=request.POST.get("school_id")).first()
+            if not school:
+                messages.error(request, "Select a school from the same School Group.")
+                return redirect(f"{self.admin_site.name}:device_fleet_device_pair", object_id)
+            device.paired_tenant = school
+            device.save(update_fields=["paired_tenant", "updated_at"])
+            self.message_user(request, f"{device} paired with {school.name}.", messages.SUCCESS)
+            return redirect(f"{self.admin_site.name}:device_fleet_device_changelist")
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Pair a second school for {device}",
+            "device": device,
+            "schools": eligible,
+        }
+        return render(request, "admin/device_fleet/device/pair_school.html", context)
 
 
 class ControlPanelOpsUserAdmin(admin.ModelAdmin):

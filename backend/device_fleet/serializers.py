@@ -5,6 +5,8 @@ from .models import Device, DeviceAuditLog, ProvisioningKey
 
 class DeviceSerializer(serializers.ModelSerializer):
     school_name = serializers.SerializerMethodField()
+    paired_school_id = serializers.SerializerMethodField()
+    paired_school_name = serializers.SerializerMethodField()
     is_online = serializers.BooleanField(read_only=True)
     is_low_battery = serializers.BooleanField(read_only=True)
     needs_attention = serializers.SerializerMethodField()
@@ -13,6 +15,7 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = [
             'id', 'device_id', 'name', 'license_key', 'status', 'school_name', 'authorized',
+            'paired_school_id', 'paired_school_name',
             'is_online', 'is_low_battery', 'needs_attention',
             'app_version', 'device_model', 'os_version',
             'battery_percentage', 'battery_charging', 'battery_health', 'battery_temperature_c',
@@ -21,6 +24,12 @@ class DeviceSerializer(serializers.ModelSerializer):
 
     def get_school_name(self, obj):
         return obj.tenant.name if obj.tenant else None
+
+    def get_paired_school_id(self, obj):
+        return str(obj.paired_tenant_id) if obj.paired_tenant_id else None
+
+    def get_paired_school_name(self, obj):
+        return obj.paired_tenant.name if obj.paired_tenant else None
 
     def get_needs_attention(self, obj):
         return obj.needs_attention()

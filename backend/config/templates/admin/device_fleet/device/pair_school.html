@@ -1,0 +1,32 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="module cp-confirm-card">
+  <h1>{{ title }}</h1>
+  {% if no_group %}
+    <p class="cp-confirm-copy">{{ device.tenant }} isn't part of a School Group, so there's no sibling school to pair this device with.</p>
+    <div class="submit-row cp-confirm-actions">
+      <a class="button cp-btn-cancel" href="../../">Back</a>
+    </div>
+  {% else %}
+    <p class="cp-confirm-copy">Only schools in the same School Group as {{ device.tenant }} are eligible.</p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-row">
+        <label for="id_school">School</label>
+        <select name="school_id" id="id_school" required>
+          <option value="">Select a school…</option>
+          {% for school in schools %}
+            <option value="{{ school.pk }}" {% if school.pk == device.paired_tenant_id %}selected{% endif %}>{{ school.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="submit-row cp-confirm-actions">
+        <input type="submit" value="Pair school" class="cp-btn-ok">
+        <a class="button cp-btn-cancel" href="../../">Cancel</a>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

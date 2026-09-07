@@ -20,4 +20,5 @@ urlpatterns = [
     # Device-facing (AllowAny + own credential, not a user JWT)
     path('device/provision/', views.device_provision, name='device_provision'),
     path('device/heartbeat/', views.device_heartbeat, name='device_heartbeat'),
+    path('device/switch-active-school/', views.device_switch_active_school, name='device_switch_active_school'),
 ]

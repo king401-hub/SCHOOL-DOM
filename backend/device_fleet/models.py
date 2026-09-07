@@ -98,9 +98,26 @@ class Device(models.Model):
     license_key = models.CharField(max_length=64, blank=True, default='')
 
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='unregistered')
+    # The CURRENTLY ACTIVE school once a second school is paired below - a
+    # school-group can share one physical kiosk between two of its schools,
+    # switching which one is "active" (device_switch_active_school in
+    # views.py). Every existing read of this field elsewhere (serializer,
+    # Control Panel, assign/unassign, reactivate_device's status logic)
+    # keeps working unchanged, since it's still always "the one school this
+    # device is currently scanning for."
     tenant = models.ForeignKey(
         'core.SchoolTenant', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='scanner_devices',
+    )
+    # The device's second authorized school, if any - swapped with `tenant`
+    # on every active-school switch rather than modeled as a real M2M, since
+    # this is capped at exactly two schools by design (never N), and a
+    # proper M2M would require touching every one of the ~8 places above
+    # that already read `tenant` directly. Set via the Control Panel's
+    # "Pair school" action, restricted to a school in the same SchoolGroup.
+    paired_tenant = models.ForeignKey(
+        'core.SchoolTenant', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='paired_scanner_devices',
     )
 
     # Permanent-session authorization (spec section 9/19) - independent of
@@ -159,6 +176,12 @@ class Device(models.Model):
         verbose_name = 'Scanner Device'
         verbose_name_plural = 'Scanner Devices'
         ordering = ['device_id']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(paired_tenant__isnull=True) | ~models.Q(tenant=models.F('paired_tenant')),
+                name='device_tenant_not_equal_paired_tenant',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.device_id} ({self.status})'

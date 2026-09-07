@@ -5,9 +5,9 @@ from .models import Device, DeviceAuditLog, ProvisioningKey
 
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
-    list_display = ['device_id', 'name', 'status', 'tenant', 'authorized', 'battery_percentage', 'last_seen_at']
+    list_display = ['device_id', 'name', 'status', 'tenant', 'paired_tenant', 'authorized', 'battery_percentage', 'last_seen_at']
     list_filter = ['status', 'authorized', 'battery_health']
-    search_fields = ['device_id', 'name', 'tenant__name']
+    search_fields = ['device_id', 'name', 'tenant__name', 'paired_tenant__name']
     readonly_fields = ['id', 'device_id', 'auth_token', 'created_at', 'updated_at']
 
 

@@ -182,9 +182,13 @@ def assign_school(request, device_pk):
     old_school_name = device.tenant.name if was_reassignment else None
 
     device.tenant = school
+    # A stale pairing from before this (re)assignment may not even share a
+    # school_group with the new primary school - clear it rather than leave
+    # an invisible, possibly-invalid pairing. Staff can re-pair afterward.
+    device.paired_tenant = None
     if device.status in ('unregistered', 'provisioning'):
         device.status = 'active'
-    device.save(update_fields=['tenant', 'status', 'updated_at'])
+    device.save(update_fields=['tenant', 'paired_tenant', 'status', 'updated_at'])
 
     if device.scanner_user_id:
         # Scans this device posts (via its own JWT, not this admin's) resolve
@@ -211,8 +215,9 @@ def unassign_school(request, device_pk):
 
     old_school_name = device.tenant.name if device.tenant else None
     device.tenant = None
+    device.paired_tenant = None
     device.status = 'unregistered' if not device.authorized else device.status
-    device.save(update_fields=['tenant', 'status', 'updated_at'])
+    device.save(update_fields=['tenant', 'paired_tenant', 'status', 'updated_at'])
     _log(device, request.user, 'device_unassigned', details=old_school_name or '')
     return Response({'success': True, 'data': DeviceSerializer(device).data})
 
@@ -382,7 +387,7 @@ def _device_from_token(request):
     token = str(request.data.get('auth_token') or request.headers.get('X-Device-Token') or '').strip()
     if not token:
         return None
-    return Device.objects.select_related('tenant').filter(auth_token=token).first()
+    return Device.objects.select_related('tenant', 'paired_tenant', 'scanner_user').filter(auth_token=token).first()
 
 
 @api_view(['POST'])
@@ -438,6 +443,9 @@ def device_heartbeat(request):
         'school_id': str(device.tenant_id) if device.tenant_id else None,
         'school_name': device.tenant.name if device.tenant else None,
     }
+    if device.paired_tenant_id:
+        payload['paired_school_id'] = str(device.paired_tenant_id)
+        payload['paired_school_name'] = device.paired_tenant.name
 
     # A device that has never reported its version code (older builds
     # predating this field) has nothing safe to compare against - skip the
@@ -458,3 +466,60 @@ def device_heartbeat(request):
             })
 
     return Response(payload)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def device_switch_active_school(request):
+    """Lets a paired device flip which of its two schools is "active" -
+    device-token-authed like device_heartbeat/device_provision, not the
+    scanner_user's own JWT, since this changes what that JWT resolves to.
+
+    Swaps `tenant`/`paired_tenant` rather than picking one, so the pair is
+    never lost - switching back later is just calling this again with the
+    other school's id. Mirrors the swap onto scanner_user.tenant exactly
+    like assign_school does, so every existing endpoint that resolves
+    school from request.user.tenant (attendance scan, card lookup, gate
+    settings, fee reminder - see rfid_attendance.views._require_school)
+    re-scopes to the new active school with no changes of its own."""
+    device = _device_from_token(request)
+    if not device:
+        return Response({'success': False, 'message': 'Unknown or revoked device token.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    # device_heartbeat reports `authorized` in its response but doesn't
+    # block anything itself - this endpoint changes where attendance data
+    # lands, so a suspended/revoked device's still-valid raw auth_token
+    # must not be able to use it even though its scanner_user JWT would
+    # already be rejected by other endpoints.
+    if not (device.authorized and device.status not in ('suspended', 'revoked')):
+        return Response({'success': False, 'message': 'This device is not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+
+    school_id = str(request.data.get('school_id') or '').strip()
+    if not school_id:
+        return Response({'success': False, 'message': 'school_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if device.tenant_id and school_id == str(device.tenant_id):
+        # Already active - no-op success rather than an error, so the
+        # client can call this unconditionally without pre-checking state.
+        pass
+    elif device.paired_tenant_id and school_id == str(device.paired_tenant_id):
+        old_name = device.tenant.name if device.tenant else None
+        device.tenant, device.paired_tenant = device.paired_tenant, device.tenant
+        device.save(update_fields=['tenant', 'paired_tenant', 'updated_at'])
+        if device.scanner_user_id:
+            device.scanner_user.tenant = device.tenant
+            device.scanner_user.save(update_fields=['tenant'])
+        _log(device, None, 'device_active_school_switched', details=f'{old_name} -> {device.tenant.name}')
+    else:
+        return Response(
+            {'success': False, 'message': "Not one of this device's paired schools."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({
+        'success': True,
+        'school_id': str(device.tenant_id) if device.tenant_id else None,
+        'school_name': device.tenant.name if device.tenant else None,
+        'paired_school_id': str(device.paired_tenant_id) if device.paired_tenant_id else None,
+        'paired_school_name': device.paired_tenant.name if device.paired_tenant else None,
+    })
