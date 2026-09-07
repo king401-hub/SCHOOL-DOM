@@ -12,8 +12,9 @@ User = get_user_model()
 
 class DevicePairingTestCase(TestCase):
     def setUp(self):
-        self.group = SchoolGroup.objects.create(name="Test Group")
-        self.other_group = SchoolGroup.objects.create(name="Other Group")
+        owner = User.objects.create_user(email="owner@test.com", password="testpass123", role="school_superadmin")
+        self.group = SchoolGroup.objects.create(name="Test Group", owner=owner)
+        self.other_group = SchoolGroup.objects.create(name="Other Group", owner=owner)
 
         self.school_a = SchoolTenant.objects.create(name="School A", schema_name="school_a", school_group=self.group)
         self.school_b = SchoolTenant.objects.create(name="School B", schema_name="school_b", school_group=self.group)

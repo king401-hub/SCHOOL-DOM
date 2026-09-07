@@ -21,7 +21,8 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
     device_switch_active_school does under the hood."""
 
     def setUp(self):
-        self.group = SchoolGroup.objects.create(name="Shared Kiosk Group")
+        owner = User.objects.create_user(email="owner@test.com", password="testpass123", role="school_superadmin")
+        self.group = SchoolGroup.objects.create(name="Shared Kiosk Group", owner=owner)
         self.school_a = SchoolTenant.objects.create(name="School A", schema_name="school_a", school_group=self.group)
         self.school_b = SchoolTenant.objects.create(name="School B", schema_name="school_b", school_group=self.group)
 
