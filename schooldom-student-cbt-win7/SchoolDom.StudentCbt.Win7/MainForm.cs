@@ -207,9 +207,9 @@ namespace SchoolDom.StudentCbt.Win7
             retry.Click += (s, e) => BeginDiscovery();
             card.Controls.Add(retry);
 
-            // Only screen where the Settings button is ever visible - students never see it
+            // Only screen where the Settings icon is ever visible - students never see it
             // once the app is connected, but an administrator needs a way in when it isn't.
-            var settings = SecondaryButton("Settings", 0, 20, 130);
+            var settings = IconButton("⚙", 0, 20, 42, "Settings");
             Action positionSettings = () => { settings.Left = Math.Max(24, content.ClientSize.Width - 24 - settings.Width); };
             content.Resize += (s, e) => positionSettings();
             settings.Click += (s, e) => { _settingsCameFromLogin = false; ShowSettingsGate(); };
@@ -1916,6 +1916,33 @@ namespace SchoolDom.StudentCbt.Win7
         private Font ReadableExamFont(float size, bool bold) { return new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular); }
         private Button PrimaryButton(string text, int left, int top, int width) { var b = new Button { Text = text, Left = left, Top = top, Width = width, Height = 42, BackColor = Palette.Blue, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold) }; b.FlatAppearance.BorderColor = Palette.Blue; return b; }
         private Button SecondaryButton(string text, int left, int top, int width) { var b = PrimaryButton(text, left, top, width); b.BackColor = Palette.LightButton; b.ForeColor = Palette.Text; b.FlatAppearance.BorderColor = Palette.Border; return b; }
+
+        // A small circular glyph button (e.g. the Settings gear) rather than a labeled
+        // button - it should read as a quiet app affordance, not invite students to press
+        // it out of curiosity. The tooltip carries the label instead of on-screen text.
+        private Button IconButton(string glyph, int left, int top, int size, string tooltipText)
+        {
+            var b = new Button
+            {
+                Text = glyph,
+                Left = left,
+                Top = top,
+                Width = size,
+                Height = size,
+                BackColor = Palette.LightButton,
+                ForeColor = Palette.Muted,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI Symbol", size * 0.42f, FontStyle.Regular),
+                Cursor = Cursors.Hand,
+                TabStop = false,
+                UseCompatibleTextRendering = true
+            };
+            b.FlatAppearance.BorderColor = Palette.Border;
+            MakeCircle(b);
+            var tip = new ToolTip();
+            tip.SetToolTip(b, tooltipText);
+            return b;
+        }
     }
 
     internal static class Palette
