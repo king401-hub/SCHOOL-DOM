@@ -468,48 +468,93 @@ namespace SchoolDom.Cbt.Win7
             };
         }
 
-        // Login never starts a session by itself, even when exactly one exam matches the
-        // PIN - the student always sees the Available Exams screen first and explicitly
-        // picks "Start Exam" (POST /api/start-session), which is what actually creates or
+        // Login never starts a session by itself, even when exactly one exam matches -
+        // the student always sees the Available Exams screen first and explicitly picks
+        // "Start Exam" (POST /api/start-session), which is what actually creates or
         // resumes the session. This used to auto-call StartSession here for the
         // single-match case, silently creating exam state before the student had chosen
         // anything.
+        //
+        // Exam visibility is by CLASS, not PIN - a blank/unset exam.ClassName means "all
+        // classes" (mirrors the cloud's ExamListView: Q(class_group__isnull=True)), same
+        // convention as everywhere else in this codebase. There is no PIN in this request
+        // at all anymore; a student only ever needs their Student ID.
         private Dictionary<string, object> Login(string bodyText)
         {
             var body = JsonUtil.DeserializeObject(bodyText);
             var studentId = JsonUtil.Text(body.ContainsKey("studentId") ? body["studentId"] : body.ContainsKey("student_id") ? body["student_id"] : "").Trim();
-            var pin = JsonUtil.Text(body.ContainsKey("pin") ? body["pin"] : "").Trim();
-            var pinHash = JsonUtil.Sha256(pin);
             var student = _store.State.Students.FirstOrDefault(item => string.Equals(item.StudentId, studentId, StringComparison.OrdinalIgnoreCase));
             if (student == null) return new Dictionary<string, object> { { "success", false }, { "message", "Student ID was not found on the admin LAN server." } };
             if (!student.IsActive) return new Dictionary<string, object> { { "success", false }, { "message", "Your student account is inactive. Please contact your school administrator to renew your activation token." } };
-            var matchingExams = _store.State.Exams.Where(item => string.Equals(item.PinHash, pinHash, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (!matchingExams.Any()) return new Dictionary<string, object> { { "success", false }, { "message", "Invalid exam PIN." } };
 
-            var availableExams = matchingExams.Where(exam => IsExamAvailableToStudent(student, exam)).ToList();
-            if (!availableExams.Any())
-            {
-                return new Dictionary<string, object> { { "success", false }, { "message", "No available exam matches this PIN - it may have expired or already been submitted." } };
-            }
+            var studentClass = (student.ClassName ?? "").Trim();
+            var classExams = _store.State.Exams.Where(exam =>
+                string.IsNullOrWhiteSpace(exam.ClassName) || string.Equals(exam.ClassName.Trim(), studentClass, StringComparison.OrdinalIgnoreCase)
+            );
+            var visibleExams = classExams
+                .Select(exam => new { exam, session = FindSessionFor(student, exam) })
+                .Where(row => IsExamVisibleInList(ComputeAvailability(row.exam, row.session)))
+                .ToList();
+
+            // Zero exams (no assignment yet, or all submitted/ended) is a normal state, not
+            // an error - the student screen already renders "no exams" for an empty list.
             return new Dictionary<string, object>
             {
                 { "success", true },
                 { "student", student },
-                { "exams", availableExams.Select(exam => ExamChoicePayload(student, exam)).ToList() }
+                { "exams", visibleExams.Select(row => ExamChoicePayload(student, row.exam, row.session)).ToList() }
             };
         }
 
-        // Already-submitted exams are never offered again (retaking requires an admin to
-        // delete the result first, same rule StartSession already enforces). An exam whose
-        // window has closed is still offered if the student already has an in-progress
-        // session for it, so they can get back in and finish/submit; it's only hidden from
-        // students who never started it.
-        private bool IsExamAvailableToStudent(StudentRecord student, ExamRecord exam)
+        // Single source of truth for exam availability, shared by the exam list
+        // (ExamChoicePayload, via Login) AND the actual session-creation gate
+        // (StartSession) - those two used to disagree (StartSession had no date check at
+        // all), which is exactly what let a stale/direct POST bypass whatever the list
+        // said. InProgress is checked before any date logic so an already-started session
+        // stays resumable even past the exam's end date - unchanged, deliberate behavior.
+        private enum ExamAvailability { Submitted, InProgress, Scheduled, Ended, Open }
+
+        private static ExamAvailability ComputeAvailability(ExamRecord exam, SessionRecord session)
         {
-            var session = FindSessionFor(student, exam);
-            if (session != null && session.Status == "submitted") return false;
-            if (session != null) return true;
-            return !IsExamExpired(exam);
+            if (session != null && session.Status == "submitted") return ExamAvailability.Submitted;
+            if (session != null) return ExamAvailability.InProgress;
+            if (IsExamNotYetOpen(exam)) return ExamAvailability.Scheduled;
+            if (IsExamExpired(exam)) return ExamAvailability.Ended;
+            return ExamAvailability.Open;
+        }
+
+        private static bool IsExamStartable(ExamAvailability state)
+        {
+            return state == ExamAvailability.Open || state == ExamAvailability.InProgress;
+        }
+
+        // Already-submitted exams are never offered again (retaking requires an admin to
+        // delete the result first). An exam whose window has closed stays hidden from
+        // students who never started it - same as before this change; only "not yet open"
+        // is new, and that one stays VISIBLE (as Scheduled) rather than hidden, so the
+        // student can see what's coming instead of it just not existing.
+        private static bool IsExamVisibleInList(ExamAvailability state)
+        {
+            return state != ExamAvailability.Submitted && state != ExamAvailability.Ended;
+        }
+
+        private static string AvailabilityLabel(ExamAvailability state)
+        {
+            switch (state)
+            {
+                case ExamAvailability.InProgress: return "In Progress";
+                case ExamAvailability.Scheduled: return "Scheduled";
+                case ExamAvailability.Ended: return "Ended";
+                default: return "Not Started";
+            }
+        }
+
+        private static bool IsExamNotYetOpen(ExamRecord exam)
+        {
+            if (string.IsNullOrWhiteSpace(exam.StartsAt)) return false;
+            DateTime starts;
+            return DateTime.TryParse(exam.StartsAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out starts)
+                && DateTime.UtcNow < starts.ToUniversalTime();
         }
 
         private static bool IsExamExpired(ExamRecord exam)
@@ -525,11 +570,15 @@ namespace SchoolDom.Cbt.Win7
             return _store.State.Sessions.FirstOrDefault(item => item.ExamId == exam.Id && string.Equals(item.StudentId, student.StudentId, StringComparison.OrdinalIgnoreCase));
         }
 
-        private Dictionary<string, object> ExamChoicePayload(StudentRecord student, ExamRecord exam)
+        private Dictionary<string, object> ExamChoicePayload(StudentRecord student, ExamRecord exam, SessionRecord session = null)
         {
             var payload = PublicExam(exam);
-            var session = FindSessionFor(student, exam);
-            payload["status"] = session != null && session.Status != "submitted" ? "In Progress" : "Not Started";
+            var state = ComputeAvailability(exam, session ?? FindSessionFor(student, exam));
+            payload["status"] = AvailabilityLabel(state);
+            // Authoritative - the client must gate its Start/Resume button off this flag
+            // alone, never by recomputing from start_date/end_date itself (same
+            // never-trust-the-station-clock principle used throughout this offline app).
+            payload["can_start"] = IsExamStartable(state);
             return payload;
         }
 
@@ -554,6 +603,19 @@ namespace SchoolDom.Cbt.Win7
             }
             if (session == null)
             {
+                // The actual enforcement point: closes the gap where a direct POST to
+                // /api/start-session with a stale/future exam id could start a session
+                // outside its window regardless of what the Available Exams list showed.
+                // An already-existing (in-progress) session always resumes unconditionally,
+                // matching ComputeAvailability's InProgress-first rule - unaffected here.
+                var state = ComputeAvailability(exam, null);
+                if (!IsExamStartable(state))
+                {
+                    var message = state == ExamAvailability.Scheduled
+                        ? "This exam is not yet available. It opens at " + FormatLocalDateTime(exam.StartsAt) + "."
+                        : "This exam window has closed.";
+                    return new Dictionary<string, object> { { "success", false }, { "message", message } };
+                }
                 var started = DateTime.UtcNow;
                 session = new SessionRecord
                 {
@@ -680,6 +742,19 @@ namespace SchoolDom.Cbt.Win7
             return raw ?? new Dictionary<string, object>();
         }
 
+        // Display only - the client renders "Opens at ..." from this, but the actual
+        // start/resume gate is always the server-computed can_start flag, never a
+        // client-side comparison against these dates (this offline app's PCs can't be
+        // trusted to have an accurate/untampered clock, same reasoning as the exam
+        // countdown timer elsewhere in this codebase).
+        private static string FormatLocalDateTime(string isoValue)
+        {
+            if (string.IsNullOrWhiteSpace(isoValue)) return "an unknown time";
+            DateTime parsed;
+            if (!DateTime.TryParse(isoValue, null, System.Globalization.DateTimeStyles.RoundtripKind, out parsed)) return isoValue;
+            return parsed.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
+        }
+
         private static Dictionary<string, object> PublicExam(ExamRecord exam)
         {
             var questions = exam.Questions ?? new List<QuestionRecord>();
@@ -693,6 +768,8 @@ namespace SchoolDom.Cbt.Win7
                 { "instructions", exam.Instructions },
                 { "question_count", questions.Count },
                 { "exam_type", ExamTypeLabel(questions) },
+                { "start_date", exam.StartsAt ?? "" },
+                { "end_date", exam.EndsAt ?? "" },
             };
         }
 
