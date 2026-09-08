@@ -1087,13 +1087,25 @@ class ControlPanelDeviceAdmin(admin.ModelAdmin):
     future dedicated fleet UI that was never wired up), reimplemented here
     as Control Panel admin actions so staff have a working UI today."""
 
-    list_display = ("device_id", "name", "tenant", "paired_school", "status_badge", "online_badge", "battery_percentage", "last_seen_at", "row_actions")
+    list_display = ("device_id", "name", "tenant", "paired_school", "status_badge", "online_badge", "battery_percentage", "location_link", "last_seen_at", "row_actions")
     list_filter = ("status", "tenant")
     search_fields = ("device_id", "name", "tenant__name", "paired_tenant__name")
     readonly_fields = (
         "device_id", "auth_token", "scanner_user", "revoked_at", "revoked_by",
         "last_seen_at", "last_sync_at", "created_at", "updated_at",
     )
+
+    @admin.display(description="Location")
+    def location_link(self, obj):
+        from django.utils import timezone
+
+        if obj.last_latitude is None or obj.last_longitude is None:
+            return "—"
+        age = timezone.now() - obj.location_updated_at if obj.location_updated_at else None
+        stale = age is not None and age.total_seconds() > 3600
+        url = f"https://www.google.com/maps?q={obj.last_latitude},{obj.last_longitude}"
+        label = "View on map" + (" (stale)" if stale else "")
+        return format_html('<a href="{}" target="_blank" rel="noopener">{}</a>', url, label)
 
     @admin.display(description="Paired school")
     def paired_school(self, obj):

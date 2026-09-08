@@ -19,6 +19,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             'is_online', 'is_low_battery', 'needs_attention',
             'app_version', 'device_model', 'os_version',
             'battery_percentage', 'battery_charging', 'battery_health', 'battery_temperature_c',
+            'last_latitude', 'last_longitude', 'location_updated_at',
             'last_seen_at', 'last_sync_at', 'first_activated_at', 'created_at',
         ]
 

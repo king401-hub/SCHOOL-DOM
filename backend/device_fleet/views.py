@@ -433,6 +433,15 @@ def device_heartbeat(request):
     if data.get('synced'):
         device.last_sync_at = timezone.now()
         update_fields.append('last_sync_at')
+    lat, lng = data.get('latitude'), data.get('longitude')
+    if lat is not None and lng is not None:
+        try:
+            device.last_latitude = round(float(lat), 6)
+            device.last_longitude = round(float(lng), 6)
+            device.location_updated_at = timezone.now()
+            update_fields += ['last_latitude', 'last_longitude', 'location_updated_at']
+        except (TypeError, ValueError):
+            pass
 
     device.save(update_fields=update_fields)
 

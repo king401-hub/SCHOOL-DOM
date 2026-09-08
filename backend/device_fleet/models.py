@@ -169,6 +169,14 @@ class Device(models.Model):
     battery_charging = models.BooleanField(null=True, blank=True)
     battery_health = models.CharField(max_length=15, choices=BATTERY_HEALTH_CHOICES, blank=True, default='')
     battery_temperature_c = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
+    # Anti-theft/asset tracking - reported with every heartbeat (roughly
+    # every 2 minutes, matching the kiosk's existing heartbeat cadence)
+    # rather than a slower occasional check, per product decision: these
+    # are meant to be fixed-location terminals, so live tracking is what
+    # actually catches one going missing quickly, not a daily snapshot.
+    last_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    last_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    location_updated_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_sync_at = models.DateTimeField(null=True, blank=True)
 
