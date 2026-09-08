@@ -6,6 +6,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:open_filex/open_filex.dart';
@@ -113,6 +114,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     _loadSchoolName();
     _loadGateSettings();
     _startNfcSession();
+    _ensureLocationPermission();
     _sendHeartbeat();
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) => _sendHeartbeat());
     _hidFocusNode.addListener(() {
@@ -412,6 +414,43 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     if (mounted) setState(() => _pendingCount = result.remaining);
   }
 
+  // ---------------------------------------------------------------- Location
+
+  /// Requested once at startup rather than lazily on first heartbeat -
+  /// whoever is physically setting up the kiosk is present to tap "Allow"
+  /// on the system dialog; nobody will be there to grant it later once the
+  /// terminal is unattended at reception.
+  Future<void> _ensureLocationPermission() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+    } catch (_) {
+      // Never blocks kiosk operation - location is a nice-to-have, not a
+      // required capability like NFC/attendance recording.
+    }
+  }
+
+  /// Null on any failure (denied, disabled, no fix within the timeout) -
+  /// never guessed - a fixed indoor kiosk can genuinely fail to get a fix,
+  /// and a stale/wrong coordinate would be worse than reporting none.
+  Future<Position?> _getCurrentLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return null;
+      }
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 12)),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------------- Heartbeat
 
   Future<void> _sendHeartbeat() async {
@@ -421,6 +460,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       final packageInfo = await PackageInfo.fromPlatform();
       final deviceAuthToken = await KioskStore.deviceAuthToken;
       if (deviceAuthToken == null) return;
+      final position = await _getCurrentLocation();
 
       final response = await http.post(
         Uri.parse('$apiBaseUrl/api/device-fleet/device/heartbeat/'),
@@ -432,6 +472,8 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           if (battery >= 0) 'battery_percentage': battery,
           'battery_charging': state == BatteryState.charging || state == BatteryState.full,
           'synced': _pendingCount == 0,
+          if (position != null) 'latitude': position.latitude,
+          if (position != null) 'longitude': position.longitude,
         }),
       );
       if (!mounted) return;

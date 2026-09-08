@@ -10,6 +10,11 @@
          user once per device to allow this app as an install source - this
          permission just makes that flow reachable at all. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Live location reporting (anti-theft/asset tracking) - granted once
+         during setup, sent with every heartbeat. COARSE is requested as a
+         fallback since a fixed indoor kiosk may not always get a GPS fix. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
     <application
         android:label="SchoolDom Attendance Scanner"
@@ -36,6 +41,17 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Registers this app as a selectable Home app, so the device
+                 can boot straight into SchoolDom instead of Android's own
+                 launcher/home screen. Doesn't require root or a factory
+                 reset - just needs setting as the default once per device
+                 (see the deploy notes for the one-time adb command, or the
+                 user can pick "Always" the first time they press Home). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

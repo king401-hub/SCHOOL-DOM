@@ -1,7 +1,7 @@
 name: schooldom_scanner_kiosk
 description: "SchoolDom Attendance Scanner - locked-down NFC kiosk terminal app. Provisioned via a device license key from the Superadmin Control Panel; never installed by, or shown to, students/teachers/parents."
 publish_to: 'none'
-version: 1.2.0+3
+version: 1.3.0+4
 
 environment:
   sdk: ^3.12.1
@@ -31,6 +31,10 @@ dependencies:
   # Self-update: download a new build's APK and hand it to the OS installer
   path_provider: ^2.1.5
   open_filex: ^4.7.0
+
+  # Live location reporting (anti-theft/asset tracking) - sent with every
+  # heartbeat, see kiosk_home_screen.dart's _sendHeartbeat.
+  geolocator: ^13.0.2
 
   # Fee Reminder receipt printing - targets the built-in printer on
   # Sunmi-family Android POS terminals (the common "normal POS terminal
