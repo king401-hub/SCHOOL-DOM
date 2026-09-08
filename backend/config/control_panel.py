@@ -786,6 +786,12 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
             buttons.append(("cp-row-btn cp-row-btn-ok", sg_url, "Activate SchoolGate"))
         delete_url = reverse(f"{ns}:core_schooltenant_delete", args=[obj.pk])
         buttons.append(("cp-row-btn cp-row-btn-danger", delete_url, "Delete"))
+        # Not permission-gated here (list_display callables don't receive
+        # request) - force_delete_view itself rejects non-superusers, same
+        # as the plain "Delete" link already relies on has_delete_permission
+        # to block the ordinary case.
+        force_delete_url = reverse(f"{ns}:core_schooltenant_force_delete", args=[obj.pk])
+        buttons.append(("cp-row-btn cp-row-btn-danger", force_delete_url, "Force Delete"))
         links = format_html_join("", '<a class="{}" href="{}">{}</a>', buttons)
         return format_html('<div class="cp-row-actions">{}</div>', links)
 
@@ -808,8 +814,82 @@ class ControlPanelSchoolTenantAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.schoolgate_activate_view),
                 name="core_schooltenant_schoolgate_activate",
             ),
+            path(
+                "<path:object_id>/force-delete/",
+                self.admin_site.admin_view(self.force_delete_view),
+                name="core_schooltenant_force_delete",
+            ),
         ]
         return custom + super().get_urls()
+
+    def force_delete_view(self, request, object_id):
+        """The plain "Delete" link (Django's stock delete_view) correctly
+        refuses to remove a school with real financial history -
+        FinanceLedgerLog, FeePayment, SchoolSettlement, and
+        CollectionAuditLog all PROTECT against it, by design, since they're
+        the platform's financial audit trail. This is the deliberate,
+        superuser-only escape hatch for when a school genuinely needs to be
+        gone including that history (e.g. recreating it under the same name
+        needs schema_name to be free again, which only happens once the old
+        row is truly deleted, not merely suspended). Every other relation
+        on SchoolTenant (User, StudentProfile, Device, GateSettings, ...) is
+        already CASCADE, so clearing just these four unblocks the rest -
+        students/staff/admins are removed automatically as part of the same
+        transaction, with no separate manual cleanup step."""
+        from django.db import transaction
+
+        from fee_collections.models import CollectionAuditLog, FeePayment, SchoolSettlement
+        from finance.models import FinanceLedgerLog
+
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404
+        if not (request.user.is_superuser or getattr(request.user, "role", "") == "super_admin"):
+            raise PermissionDenied
+
+        if request.method == "POST":
+            with transaction.atomic():
+                counts = {
+                    "Finance ledger entries": FinanceLedgerLog.objects.filter(tenant=obj).delete()[0],
+                    "Fee payments": FeePayment.objects.filter(school=obj).delete()[0],
+                    "Settlements": SchoolSettlement.objects.filter(school=obj).delete()[0],
+                    "Collection audit logs": CollectionAuditLog.objects.filter(school=obj).delete()[0],
+                }
+                school_name = obj.name
+                obj.delete()
+            summary = ", ".join(f"{v} {k.lower()}" for k, v in counts.items() if v)
+            logger.warning(
+                "control_panel: %s force-deleted school %r (id=%s) - purged %s",
+                request.user, school_name, object_id, summary or "no financial records",
+            )
+            self.message_user(
+                request,
+                f"{school_name} and all related records permanently deleted"
+                + (f" (also purged: {summary})" if summary else "") + ".",
+                messages.SUCCESS,
+            )
+            return redirect(f"{self.admin_site.name}:core_schooltenant_changelist")
+
+        pending = {
+            "Finance ledger entries": FinanceLedgerLog.objects.filter(tenant=obj).count(),
+            "Fee payments": FeePayment.objects.filter(school=obj).count(),
+            "Settlements": SchoolSettlement.objects.filter(school=obj).count(),
+            "Collection audit logs": CollectionAuditLog.objects.filter(school=obj).count(),
+        }
+        pending_summary = ", ".join(f"{v} {k.lower()}" for k, v in pending.items() if v) or "none"
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Permanently delete {obj} and ALL related records?",
+            "body": (
+                f"This deletes {obj} completely, including financial records that a normal delete refuses to touch "
+                f"(pending: {pending_summary}), and every student/staff/admin account under it. "
+                "This cannot be undone - there is no audit trail left behind for this school afterward. "
+                "For anything short of this, use Suspend instead."
+            ),
+            "submit_label": "Yes, permanently delete everything",
+            "submit_class": "cp-btn-danger",
+        }
+        return render(request, "admin/generic_confirm.html", context)
 
     def schoolgate_activate_view(self, request, object_id):
         """Manual override for a SchoolGate school that paid offline (bank
