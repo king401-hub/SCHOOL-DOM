@@ -16,12 +16,20 @@ from django.db import models
 from django.utils import timezone
 
 
+# Excludes 0/O and 1/I/L - characters easy to mistype or misread on a small
+# kiosk touchscreen keyboard. 32 symbols x 8 chars = 32**8 (~1.1 trillion)
+# combinations - far more than this single-use, uniqueness-checked,
+# short-lived credential needs; the old 32-hex-char format (39 chars with
+# dashes) was sized for a long-lived secret, not a one-time typed code.
+_KEY_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+
+
 def generate_provisioning_key():
-    # Not a normal user password - a device-registration credential. 32 bytes
-    # of URL-safe randomness, formatted in groups for easier manual entry on
-    # a device that doesn't have a camera/QR scanner for it yet.
-    raw = secrets.token_hex(16).upper()
-    return '-'.join(raw[i:i + 4] for i in range(0, len(raw), 4))
+    # Not a normal user password - a device-registration credential, typed
+    # once by hand on the kiosk during setup. Short and grouped for easy
+    # manual entry on a device that doesn't have a camera/QR scanner for it.
+    raw = ''.join(secrets.choice(_KEY_ALPHABET) for _ in range(8))
+    return f'{raw[:4]}-{raw[4:]}'
 
 
 class ProvisioningKey(models.Model):
