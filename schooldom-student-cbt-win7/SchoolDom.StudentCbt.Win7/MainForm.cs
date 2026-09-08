@@ -34,6 +34,13 @@ namespace SchoolDom.StudentCbt.Win7
         private bool _submitting;
         private bool _calculatorOpen;
         private bool _dialogOpen;
+        private LocalSettingsData _localSettings;
+        // Only true while the Student ID login screen is showing - gates the hidden
+        // Ctrl+Shift+S safety-valve hotkey so it can't fire mid-exam or on any other screen.
+        private bool _onStudentLoginScreen;
+        // Tracks which screen invoked the Settings PIN gate, so Cancel returns there
+        // instead of always re-running discovery (which would be wrong once already connected).
+        private bool _settingsCameFromLogin;
 
         // Path for local answer backup — survives LAN disconnects
         private static readonly string _backupDir = Path.Combine(
@@ -97,14 +104,34 @@ namespace SchoolDom.StudentCbt.Win7
             FormClosing += MainFormClosing;
             Deactivate += MainFormDeactivate;
             KeyDown += MainFormKeyDown;
+            Load += MainFormLoad;
 
+            _localSettings = LocalSettingsStore.Load();
             _root = new Panel { Dock = DockStyle.Fill };
             Controls.Add(_root);
-            ShowConnect();
+            ShowConnecting();
         }
 
-        private void ShowConnect()
+        private void MainFormLoad(object sender, EventArgs e)
         {
+            // TaskScheduler.FromCurrentSynchronizationContext() (used by BeginDiscovery below,
+            // same idiom as PrefetchQuestionImages) needs a live WinForms sync context, which
+            // isn't installed yet inside the constructor - Load is the earliest safe place.
+            BeginDiscovery();
+        }
+
+        private Panel BuildHeroPanel(string tagline)
+        {
+            var hero = new Panel { Dock = DockStyle.Left, Width = 390, BackColor = Palette.Navy };
+            hero.Controls.Add(Label("SchoolDom", 38, 44, 22, true, 280, Color.White));
+            hero.Controls.Add(Label("Student CBT", 40, 88, 12, false, 240, Palette.SoftText));
+            hero.Controls.Add(Label(tagline, 40, 180, 15, false, 290, Color.White));
+            return hero;
+        }
+
+        private void ShowConnecting()
+        {
+            _onStudentLoginScreen = false;
             _examMode = false;
             _submitting = false;
             TopMost = false;
@@ -113,72 +140,375 @@ namespace SchoolDom.StudentCbt.Win7
             _timer.Stop();
             _root.Controls.Clear();
 
-            var hero = new Panel { Dock = DockStyle.Left, Width = 390, BackColor = Palette.Navy };
-            hero.Controls.Add(Label("SchoolDom", 38, 44, 22, true, 280, Color.White));
-            hero.Controls.Add(Label("Student CBT", 40, 88, 12, false, 240, Palette.SoftText));
-            hero.Controls.Add(Label("Connect to the exam room LAN and start with your Student ID and PIN.", 40, 180, 15, false, 290, Color.White));
+            var hero = BuildHeroPanel("Connecting to the exam room network...");
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(80, 60, 560, 200);
+            content.Controls.Add(card);
+            card.Controls.Add(Label("Connecting...", 34, 30, 20, true, 420, Palette.Text));
+            card.Controls.Add(Label("Looking for the SchoolDom admin server on this network. This is automatic - no setup is needed.", 36, 76, 10, false, 480, Palette.Muted));
 
+            _root.Controls.Add(content);
+            _root.Controls.Add(hero);
+        }
+
+        // Runs LAN discovery on a background thread and returns to the UI thread via the
+        // same Task.Factory.StartNew(...).ContinueWith(..., TaskScheduler.FromCurrentSynchronizationContext())
+        // idiom already used by PrefetchQuestionImages - kept identical rather than
+        // introducing a second threading pattern into this codebase.
+        private void BeginDiscovery()
+        {
+            ShowConnecting();
+
+            Task.Factory.StartNew(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(_localSettings.LastLanServerUrl))
+                {
+                    try
+                    {
+                        _client.BaseUrl = _localSettings.LastLanServerUrl;
+                        _client.Health();
+                        return;
+                    }
+                    catch
+                    {
+                        // Last-known server didn't answer - fall through to a full broadcast.
+                    }
+                }
+                _client.Discover();
+            })
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    var message = t.Exception != null ? t.Exception.GetBaseException().Message : "No LAN server found.";
+                    ShowDiscoveryFailed(message);
+                    return;
+                }
+                _localSettings.LastLanServerUrl = _client.BaseUrl;
+                LocalSettingsStore.Save(_localSettings);
+                ShowStudentIdLogin();
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private void ShowDiscoveryFailed(string message)
+        {
+            _onStudentLoginScreen = false;
+            _root.Controls.Clear();
+
+            var hero = BuildHeroPanel("Could not reach the admin server automatically.");
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(80, 60, 560, 260);
+            content.Controls.Add(card);
+            card.Controls.Add(Label("Connection Problem", 34, 30, 20, true, 420, Palette.Text));
+            card.Controls.Add(Label(string.IsNullOrWhiteSpace(message) ? "No LAN server was found on this network." : message, 36, 76, 10, false, 480, Palette.Coral));
+            card.Controls.Add(Label("Ask your school administrator for help.", 36, 130, 10, false, 480, Palette.Muted));
+
+            var retry = PrimaryButton("Retry", 36, 180, 150);
+            retry.Click += (s, e) => BeginDiscovery();
+            card.Controls.Add(retry);
+
+            // Only screen where the Settings button is ever visible - students never see it
+            // once the app is connected, but an administrator needs a way in when it isn't.
+            var settings = SecondaryButton("Settings", 0, 20, 130);
+            Action positionSettings = () => { settings.Left = Math.Max(24, content.ClientSize.Width - 24 - settings.Width); };
+            content.Resize += (s, e) => positionSettings();
+            settings.Click += (s, e) => { _settingsCameFromLogin = false; ShowSettingsGate(); };
+            content.Controls.Add(settings);
+            positionSettings();
+
+            _root.Controls.Add(content);
+            _root.Controls.Add(hero);
+        }
+
+        private void CancelSettings()
+        {
+            if (_settingsCameFromLogin) ShowStudentIdLogin(); else BeginDiscovery();
+        }
+
+        private void ShowSettingsGate()
+        {
+            if (string.IsNullOrWhiteSpace(_localSettings.SettingsPinHash))
+                ShowSettingsSetupFirstTime();
+            else
+                ShowSettingsPinEntry();
+        }
+
+        private void ShowSettingsSetupFirstTime()
+        {
+            _onStudentLoginScreen = false;
+            _root.Controls.Clear();
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(0, 0, 460, 360);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
+            content.Controls.Add(card);
+
+            card.Controls.Add(Label("Set Up Settings PIN", 32, 28, 16, true, 380, Palette.Text));
+            card.Controls.Add(Label("This PIN protects the connection settings on this PC. Only your school administrator should know it.", 34, 62, 9, false, 400, Palette.Muted));
+
+            var pin = Field(card, "New PIN", "", 34, 150, true);
+            ApplyNumbersOnly(pin);
+            var confirm = Field(card, "Confirm PIN", "", 34, 230, true);
+            ApplyNumbersOnly(confirm);
+            var status = Label("", 34, 274, 9, false, 380, Palette.Coral);
+            card.Controls.Add(status);
+
+            var cancel = SecondaryButton("Cancel", 34, 300, 130);
+            cancel.Click += (s, e) => CancelSettings();
+            card.Controls.Add(cancel);
+
+            var save = PrimaryButton("Save PIN", 174, 300, 170);
+            save.Click += (s, e) =>
+            {
+                var newPin = pin.Text.Trim();
+                if (newPin.Length < 4) { status.Text = "PIN must be at least 4 digits."; return; }
+                if (newPin != confirm.Text.Trim()) { status.Text = "PINs do not match."; return; }
+                _localSettings.SettingsPinHash = LocalSettingsStore.HashPin(newPin);
+                LocalSettingsStore.Save(_localSettings);
+                ShowSettingsScreen();
+            };
+            card.Controls.Add(save);
+
+            _root.Controls.Add(content);
+            centerCard();
+        }
+
+        private void ShowSettingsPinEntry()
+        {
+            _onStudentLoginScreen = false;
+            _root.Controls.Clear();
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(0, 0, 420, 270);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
+            content.Controls.Add(card);
+
+            card.Controls.Add(Label("Admin Settings", 32, 26, 16, true, 340, Palette.Text));
+            card.Controls.Add(Label("Enter the settings PIN to continue.", 34, 58, 9, false, 340, Palette.Muted));
+
+            var pin = Field(card, "Settings PIN", "", 34, 130, true);
+            ApplyNumbersOnly(pin);
+            var status = Label("", 34, 178, 9, false, 340, Palette.Coral);
+            card.Controls.Add(status);
+
+            var cancel = SecondaryButton("Cancel", 34, 206, 130);
+            cancel.Click += (s, e) => CancelSettings();
+            card.Controls.Add(cancel);
+
+            var unlock = PrimaryButton("Unlock", 174, 206, 170);
+            Action tryUnlock = () =>
+            {
+                if (LocalSettingsStore.HashPin(pin.Text.Trim()) == _localSettings.SettingsPinHash)
+                {
+                    ShowSettingsScreen();
+                }
+                else
+                {
+                    status.Text = "Incorrect PIN.";
+                    pin.Text = "";
+                    pin.Focus();
+                }
+            };
+            unlock.Click += (s, e) => tryUnlock();
+            pin.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; tryUnlock(); } };
+            card.Controls.Add(unlock);
+
+            _root.Controls.Add(content);
+            centerCard();
+            pin.Focus();
+        }
+
+        private void ShowSettingsScreen()
+        {
+            _onStudentLoginScreen = false;
+            _root.Controls.Clear();
+
+            var hero = BuildHeroPanel("Admin settings - not visible to students.");
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
             var card = Card(80, 60, 560, 460);
             content.Controls.Add(card);
-            card.Controls.Add(Label("Exam Login", 34, 30, 20, true, 420, Palette.Text));
-            card.Controls.Add(Label("The app connects to the admin LAN server automatically. No internet login is needed.", 36, 76, 10, false, 480, Palette.Muted));
+            card.Controls.Add(Label("Connection Settings", 34, 30, 20, true, 420, Palette.Text));
+            card.Controls.Add(Label("Configure the LAN server manually if automatic discovery did not work.", 36, 76, 10, false, 480, Palette.Muted));
 
-            var server = Field(card, "LAN Server", "", 36, 150, false);
+            var server = Field(card, "LAN Server", _client.BaseUrl ?? "", 36, 150, false);
             server.Width = 500;
-            var token = Field(card, "Network Token (optional)", "", 36, 230, false);
+            var token = Field(card, "Network Token (optional)", _client.DiscoveryToken ?? "", 36, 230, false);
             token.Width = 500;
-            var studentId = Field(card, "Student ID", "", 36, 310, false);
-            var pin = Field(card, "Exam PIN", "", 306, 310, true);
-            ApplyNumbersOnly(pin);
-            _status = Label("", 36, 426, 10, false, 490, Palette.Muted);
-            card.Controls.Add(_status);
+            var status = Label("", 36, 426, 10, false, 490, Palette.Muted);
+            card.Controls.Add(status);
 
-            var discover = SecondaryButton("Find LAN", 36, 374, 130);
-            discover.Click += (s, e) =>
+            var findLan = SecondaryButton("Find LAN", 36, 310, 150);
+            findLan.Click += (s, e) =>
             {
                 try
                 {
                     _client.DiscoveryToken = token.Text.Trim();
-                    SetStatus("Searching for admin LAN server...", Palette.Muted);
+                    status.Text = "Searching for admin LAN server...";
+                    status.ForeColor = Palette.Muted;
+                    status.Refresh();
                     server.Text = _client.Discover();
-                    SetStatus("Connected to " + server.Text, Palette.Green);
+                    status.Text = "Found: " + server.Text;
+                    status.ForeColor = Palette.Green;
                 }
                 catch (Exception ex)
                 {
-                    SetStatus("Could not find LAN server. Ask admin for the Network Token.", Palette.Coral);
+                    status.Text = "Could not find LAN server automatically.";
+                    status.ForeColor = Palette.Coral;
                     MessageBox.Show(ex.Message, "LAN discovery failed");
                 }
             };
-            card.Controls.Add(discover);
+            card.Controls.Add(findLan);
 
-            var start = PrimaryButton("Log In", 180, 374, 150);
-            start.Click += (s, e) =>
+            var changePin = SecondaryButton("Change Settings PIN", 200, 310, 190);
+            changePin.Click += (s, e) => ShowChangeSettingsPin();
+            card.Controls.Add(changePin);
+
+            var saveAndContinue = PrimaryButton("Save & Continue", 36, 370, 190);
+            saveAndContinue.Click += (s, e) =>
             {
                 try
                 {
+                    if (string.IsNullOrWhiteSpace(server.Text))
+                    {
+                        status.Text = "Enter a LAN server address, or use Find LAN.";
+                        status.ForeColor = Palette.Coral;
+                        return;
+                    }
                     _client.DiscoveryToken = token.Text.Trim();
-                    if (!string.IsNullOrWhiteSpace(server.Text)) _client.BaseUrl = server.Text.Trim().TrimEnd('/');
-                    if (string.IsNullOrWhiteSpace(_client.BaseUrl)) _client.Discover();
-                    SetStatus("Checking Student ID and PIN...", Palette.Muted);
-                    var login = _client.Login(studentId.Text, pin.Text);
+                    _client.BaseUrl = server.Text.Trim().TrimEnd('/');
+                    status.Text = "Checking connection...";
+                    status.ForeColor = Palette.Muted;
+                    status.Refresh();
+                    _client.Health();
+                    _localSettings.LastLanServerUrl = _client.BaseUrl;
+                    LocalSettingsStore.Save(_localSettings);
+                    ShowStudentIdLogin();
+                }
+                catch (Exception ex)
+                {
+                    status.Text = "Could not connect to that server.";
+                    status.ForeColor = Palette.Coral;
+                    MessageBox.Show(ex.Message, "Connection failed");
+                }
+            };
+            card.Controls.Add(saveAndContinue);
+
+            var back = SecondaryButton("Back", 236, 370, 130);
+            back.Click += (s, e) => CancelSettings();
+            card.Controls.Add(back);
+
+            _root.Controls.Add(content);
+            _root.Controls.Add(hero);
+        }
+
+        private void ShowChangeSettingsPin()
+        {
+            _onStudentLoginScreen = false;
+            _root.Controls.Clear();
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(0, 0, 460, 440);
+            Action centerCard = () =>
+            {
+                card.Left = Math.Max(24, (content.ClientSize.Width - card.Width) / 2);
+                card.Top = Math.Max(24, (content.ClientSize.Height - card.Height) / 2);
+            };
+            content.Resize += (s, e) => centerCard();
+            content.Controls.Add(card);
+
+            card.Controls.Add(Label("Change Settings PIN", 32, 28, 16, true, 380, Palette.Text));
+            card.Controls.Add(Label("Enter the current PIN, then choose a new one.", 34, 62, 9, false, 400, Palette.Muted));
+
+            var current = Field(card, "Current PIN", "", 34, 130, true);
+            ApplyNumbersOnly(current);
+            var pin = Field(card, "New PIN", "", 34, 210, true);
+            ApplyNumbersOnly(pin);
+            var confirm = Field(card, "Confirm New PIN", "", 34, 290, true);
+            ApplyNumbersOnly(confirm);
+            var status = Label("", 34, 334, 9, false, 380, Palette.Coral);
+            card.Controls.Add(status);
+
+            var cancel = SecondaryButton("Cancel", 34, 380, 130);
+            cancel.Click += (s, e) => ShowSettingsScreen();
+            card.Controls.Add(cancel);
+
+            var save = PrimaryButton("Save", 174, 380, 170);
+            save.Click += (s, e) =>
+            {
+                if (LocalSettingsStore.HashPin(current.Text.Trim()) != _localSettings.SettingsPinHash)
+                {
+                    status.Text = "Current PIN is incorrect.";
+                    return;
+                }
+                var newPin = pin.Text.Trim();
+                if (newPin.Length < 4) { status.Text = "New PIN must be at least 4 digits."; return; }
+                if (newPin != confirm.Text.Trim()) { status.Text = "New PINs do not match."; return; }
+                _localSettings.SettingsPinHash = LocalSettingsStore.HashPin(newPin);
+                LocalSettingsStore.Save(_localSettings);
+                MessageBox.Show("Settings PIN updated.", "Saved");
+                ShowSettingsScreen();
+            };
+            card.Controls.Add(save);
+
+            _root.Controls.Add(content);
+            centerCard();
+        }
+
+        private void ShowStudentIdLogin()
+        {
+            _examMode = false;
+            _submitting = false;
+            TopMost = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            WindowState = FormWindowState.Normal;
+            _timer.Stop();
+            _root.Controls.Clear();
+            _onStudentLoginScreen = true;
+
+            var hero = BuildHeroPanel("Enter your Student ID to see the exams assigned to your class.");
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Background };
+            var card = Card(80, 60, 560, 300);
+            content.Controls.Add(card);
+            card.Controls.Add(Label("Exam Login", 34, 30, 20, true, 420, Palette.Text));
+            card.Controls.Add(Label("Connected. No PIN is needed - just enter your Student ID.", 36, 76, 10, false, 480, Palette.Muted));
+
+            var studentId = Field(card, "Student ID", "", 36, 150, false);
+            studentId.Width = 300;
+            _status = Label("", 36, 266, 10, false, 490, Palette.Muted);
+            card.Controls.Add(_status);
+
+            var start = PrimaryButton("Log In", 36, 210, 150);
+            Action doLogin = () =>
+            {
+                try
+                {
+                    SetStatus("Checking Student ID...", Palette.Muted);
+                    var login = _client.Login(studentId.Text);
                     if (!Convert.ToBoolean(login.ContainsKey("success") ? login["success"] : false))
                     {
+                        SetStatus("", Palette.Muted);
                         MessageBox.Show(JsonUtil.Text(login.ContainsKey("message") ? login["message"] : "Login failed."), "Login failed");
                         return;
                     }
                     _student = login["student"] as Dictionary<string, object>;
                     _studentId = studentId.Text.Trim();
-                    // The admin LAN server never auto-starts a session on login (even when
-                    // only one exam matches the PIN) - the student always sees the Available
-                    // Exams screen first and explicitly picks one.
+                    // The admin LAN server never auto-starts a session on login - the student
+                    // always sees the Available Exams screen first and explicitly picks one.
                     var choices = JsonUtil.List(login.ContainsKey("exams") ? login["exams"] : null)
                         .Select(item => item as Dictionary<string, object>)
                         .Where(item => item != null)
                         .ToList();
                     if (!choices.Any())
                     {
-                        MessageBox.Show("No exam was returned for this Student ID and PIN.", "No exam");
+                        SetStatus("", Palette.Muted);
+                        MessageBox.Show("No exams are currently assigned to your class.", "No exams");
                         return;
                     }
                     ShowExamSelection(choices);
@@ -189,14 +519,18 @@ namespace SchoolDom.StudentCbt.Win7
                     MessageBox.Show(ex.Message, "Login failed");
                 }
             };
+            start.Click += (s, e) => doLogin();
+            studentId.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; doLogin(); } };
             card.Controls.Add(start);
 
             _root.Controls.Add(content);
             _root.Controls.Add(hero);
+            studentId.Focus();
         }
 
         private void ShowExamSelection(List<Dictionary<string, object>> exams)
         {
+            _onStudentLoginScreen = false;
             _examChoices = exams;
             _examMode = false;
             _timer.Stop();
@@ -206,7 +540,7 @@ namespace SchoolDom.StudentCbt.Win7
             header.Controls.Add(Label("Available Exams", 28, 18, 18, true, 420, Color.White));
             header.Controls.Add(Label(exams.Count + " exam(s) available for you to take.", 30, 52, 10, false, 520, Palette.SoftText));
             var signOut = SecondaryButton("Sign Out", Math.Max(700, Math.Max(960, ClientSize.Width) - 160), 22, 130);
-            signOut.Click += (s, e) => ShowConnect();
+            signOut.Click += (s, e) => ShowStudentIdLogin();
             header.Controls.Add(signOut);
             _root.Controls.Add(header);
 
@@ -242,14 +576,23 @@ namespace SchoolDom.StudentCbt.Win7
             foreach (var exam in exams)
             {
                 var status = Value(exam, "status", "Status");
+                // The server (LanServerService.ComputeAvailability) is the sole authority on
+                // whether an exam can be started - the client never recomputes this from
+                // start_date/end_date itself, consistent with this app's server-anchored-clock
+                // philosophy (see the _serverRemainingSeconds field comments below).
+                var canStart = Convert.ToBoolean(Raw(exam, "can_start", "CanStart") ?? false);
                 var isInProgress = string.Equals(status, "In Progress", StringComparison.OrdinalIgnoreCase);
+                var isScheduled = string.Equals(status, "Scheduled", StringComparison.OrdinalIgnoreCase);
+                var isEnded = string.Equals(status, "Ended", StringComparison.OrdinalIgnoreCase);
 
                 var card = Card(0, y, columnWidth, 148);
                 card.Controls.Add(Label(Value(exam, "title", "Title"), 24, 16, 14, true, 480, Palette.Text));
 
-                var statusPill = Label(string.IsNullOrWhiteSpace(status) ? "Not Started" : status, 0, 20, 9, true, 160,
-                    isInProgress ? Palette.Green : Palette.Muted);
-                statusPill.BackColor = isInProgress ? Palette.GreenSoft : Palette.LightButton;
+                var pillText = isScheduled ? "Not Yet Available" : isEnded ? "Closed" : string.IsNullOrWhiteSpace(status) ? "Not Started" : status;
+                var pillColor = isInProgress ? Palette.Green : isScheduled ? Palette.Amber : isEnded ? Palette.Coral : Palette.Muted;
+                var pillBackColor = isInProgress ? Palette.GreenSoft : isScheduled ? Palette.AmberSoft : isEnded ? Palette.CoralSoft : Palette.LightButton;
+                var statusPill = Label(pillText, 0, 20, 9, true, 160, pillColor);
+                statusPill.BackColor = pillBackColor;
                 statusPill.Padding = new Padding(10, 4, 10, 4);
                 statusPill.Left = columnWidth - 24 - statusPill.PreferredSize.Width;
                 card.Controls.Add(statusPill);
@@ -264,9 +607,15 @@ namespace SchoolDom.StudentCbt.Win7
                 var minutes = Math.Max(1, JsonUtil.Int(Raw(exam, "duration_seconds", "DurationSeconds"), 3600) / 60);
                 var questionCount = JsonUtil.Int(Raw(exam, "question_count", "QuestionCount"), 0);
                 var metaLine2 = "Duration: " + minutes + " minute(s)   ·   Questions: " + questionCount;
+                if (isScheduled)
+                {
+                    var startDate = Value(exam, "start_date", "StartDate");
+                    if (!string.IsNullOrWhiteSpace(startDate)) metaLine2 += "   ·   Opens " + FormatLocalDateTime(startDate);
+                }
                 card.Controls.Add(Label(metaLine2, 24, 78, 10, false, columnWidth - 48, Palette.Muted));
 
                 var startBtn = PrimaryButton(isInProgress ? "Resume Exam" : "Start Exam", columnWidth - 24 - 170, 96, 170);
+                startBtn.Enabled = canStart;
                 var selected = exam;
                 startBtn.Click += (s, e) => StartSelectedExam(selected);
                 card.Controls.Add(startBtn);
@@ -289,7 +638,7 @@ namespace SchoolDom.StudentCbt.Win7
             if (!Convert.ToBoolean(started.ContainsKey("success") ? started["success"] : false))
             {
                 MessageBox.Show(JsonUtil.Text(started.ContainsKey("message") ? started["message"] : "Could not start exam."), "Start failed");
-                if (_examChoices.Any()) ShowExamSelection(_examChoices); else ShowConnect();
+                if (_examChoices.Any()) ShowExamSelection(_examChoices); else ShowStudentIdLogin();
                 return;
             }
             _exam = started["exam"] as Dictionary<string, object>;
@@ -300,6 +649,7 @@ namespace SchoolDom.StudentCbt.Win7
 
         private void ShowInstructions()
         {
+            _onStudentLoginScreen = false;
             LoadExamDetail();
             _root.Controls.Clear();
             var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Palette.Navy };
@@ -379,7 +729,7 @@ namespace SchoolDom.StudentCbt.Win7
             y += warning.Height + 24;
 
             var back = SecondaryButton("Back", 28, y, 140);
-            back.Click += (s, e) => { if (_examChoices.Any()) ShowExamSelection(_examChoices); else ShowConnect(); };
+            back.Click += (s, e) => { if (_examChoices.Any()) ShowExamSelection(_examChoices); else ShowStudentIdLogin(); };
             card.Controls.Add(back);
             var startExamBtn = PrimaryButton("Start Exam", cardWidth - 28 - 170, y, 170);
             startExamBtn.Click += (s, e) => EnterExamMode();
@@ -1022,7 +1372,7 @@ namespace SchoolDom.StudentCbt.Win7
             _dialogOpen = true;
             MessageBox.Show(this, message, title);
             _dialogOpen = false;
-            ShowConnect();
+            ShowStudentIdLogin();
         }
 
         private void MarkLanConnected()
@@ -1064,6 +1414,17 @@ namespace SchoolDom.StudentCbt.Win7
 
         private void MainFormKeyDown(object sender, KeyEventArgs e)
         {
+            // Hidden safety valve: reach the PIN-gated Settings screen even after a successful
+            // (possibly wrong-network) auto-connect. Never shown as a button - only works on
+            // the Student ID screen, and never during an exam, so it can't be used to escape one.
+            if (_onStudentLoginScreen && e.Control && e.Shift && e.KeyCode == Keys.S)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                _settingsCameFromLogin = true;
+                ShowSettingsGate();
+                return;
+            }
             if (!_examMode) return;
             if (e.Alt || e.KeyCode == Keys.Escape || e.KeyCode == Keys.LWin || e.KeyCode == Keys.RWin)
             {
@@ -1468,6 +1829,17 @@ namespace SchoolDom.StudentCbt.Win7
             return null;
         }
 
+        // Display only - the client never uses this to decide whether an exam can be started,
+        // only the server's can_start flag does that (see ShowExamSelection).
+        private static string FormatLocalDateTime(string isoValue)
+        {
+            if (string.IsNullOrWhiteSpace(isoValue)) return "soon";
+            DateTime parsed;
+            if (DateTime.TryParse(isoValue, null, System.Globalization.DateTimeStyles.RoundtripKind, out parsed))
+                return parsed.ToLocalTime().ToString("MMM d, yyyy h:mm tt");
+            return isoValue;
+        }
+
         private string QuestionId(Dictionary<string, object> q, int index)
         {
             var id = Value(q, "id", "Id");
@@ -1559,5 +1931,8 @@ namespace SchoolDom.StudentCbt.Win7
         public static readonly Color Green = Color.FromArgb(37, 137, 92);
         public static readonly Color GreenSoft = Color.FromArgb(198, 232, 215);
         public static readonly Color Coral = Color.FromArgb(196, 74, 62);
+        public static readonly Color CoralSoft = Color.FromArgb(250, 224, 221);
+        public static readonly Color Amber = Color.FromArgb(150, 84, 0);
+        public static readonly Color AmberSoft = Color.FromArgb(255, 243, 224);
     }
 }

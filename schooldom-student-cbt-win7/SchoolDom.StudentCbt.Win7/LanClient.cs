@@ -46,7 +46,7 @@ namespace SchoolDom.StudentCbt.Win7
                 }
             }
 
-            throw new InvalidOperationException("No LAN server found. Ask your admin for the network token and enter it below.");
+            throw new InvalidOperationException("No LAN server found on this network.");
         }
 
         private List<IPAddress> GetLocalIPs()
@@ -199,12 +199,11 @@ namespace SchoolDom.StudentCbt.Win7
             }
         }
 
-        public Dictionary<string, object> Login(string studentId, string pin)
+        public Dictionary<string, object> Login(string studentId)
         {
             return PostWithRetry("/api/login", new Dictionary<string, object>
             {
-                { "studentId", studentId?.Trim() ?? "" },
-                { "pin", pin?.Trim() ?? "" }
+                { "studentId", studentId?.Trim() ?? "" }
             });
         }
 

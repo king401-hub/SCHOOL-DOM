@@ -55,6 +55,7 @@
     <Compile Include="AppModels.cs" />
     <Compile Include="JsonUtil.cs" />
     <Compile Include="LanClient.cs" />
+    <Compile Include="LocalSettings.cs" />
     <Compile Include="MainForm.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
