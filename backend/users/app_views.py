@@ -681,7 +681,7 @@ def _activity_calendar_items_from_request(request):
     return normalized
 
 
-def _lesson_plan_payload(plan):
+def _lesson_plan_payload(plan, request=None):
     return {
         "id": plan.id,
         "week_number": plan.week_number,
@@ -696,6 +696,8 @@ def _lesson_plan_payload(plan):
         "resources": plan.resources,
         "assessment": plan.assessment,
         "notes": plan.notes,
+        "attachment_url": _media_url(request, plan.attachment),
+        "attachment_name": os.path.basename(plan.attachment.name) if plan.attachment else "",
         "status": plan.status,
         "term": plan.term.name if plan.term_id else "",
         "academic_year": plan.academic_year.name if plan.academic_year_id else "",
@@ -2313,6 +2315,52 @@ def _teacher_assigned_classes(user):
     if not teacher_profile:
         return Class.objects.none()
     return _scope_to_user_tenant(teacher_profile.assigned_classes.all(), user)
+
+
+def _teacher_eligible_classes(user):
+    """Classes a teacher can plan lessons or grade for: assigned to the
+    teacher AND taking at least one subject the teacher teaches. A class an
+    admin created without picking any subjects yet (Class.subjects empty) is
+    treated as eligible by assignment alone rather than hidden - a strict AND
+    would otherwise vanish it from every teacher until an admin backfills
+    that class's subject list."""
+    teacher_profile = TeacherProfile.objects.filter(user=user).prefetch_related("subjects", "assigned_classes").first()
+    if not teacher_profile:
+        return Class.objects.none()
+    assigned = _scope_to_user_tenant(teacher_profile.assigned_classes.all(), user)
+    subject_ids = list(teacher_profile.subjects.values_list("id", flat=True))
+    if not subject_ids:
+        return assigned
+    return assigned.filter(Q(subjects__id__in=subject_ids) | Q(subjects__isnull=True)).distinct()
+
+
+def _teacher_eligible_subjects(user, class_obj=None):
+    """Subjects a teacher teaches, optionally narrowed to one class's own
+    subject list (same empty-Class.subjects fallback as
+    _teacher_eligible_classes)."""
+    teacher_profile = TeacherProfile.objects.filter(user=user).prefetch_related("subjects").first()
+    if not teacher_profile:
+        return Subject.objects.none()
+    subjects_qs = _scope_to_user_tenant(teacher_profile.subjects.all(), user)
+    if class_obj is not None and class_obj.subjects.exists():
+        subjects_qs = subjects_qs.filter(id__in=class_obj.subjects.values_list("id", flat=True))
+    return subjects_qs
+
+
+def _teacher_is_eligible_for_class_subject(user, class_obj, subject):
+    """Authorization check for one (teacher, class, subject) combination -
+    assigned to the class, teaches the subject, and (only when the class has
+    any subjects configured at all) the subject is actually one of them."""
+    teacher_profile = TeacherProfile.objects.filter(user=user).prefetch_related("subjects", "assigned_classes").first()
+    if not teacher_profile:
+        return False
+    if not teacher_profile.assigned_classes.filter(id=class_obj.id).exists():
+        return False
+    if not teacher_profile.subjects.filter(id=subject.id).exists():
+        return False
+    if class_obj.subjects.exists() and not class_obj.subjects.filter(id=subject.id).exists():
+        return False
+    return True
 
 
 def _class_scope_for_attendance_marking(user):
@@ -8784,6 +8832,25 @@ def lesson_planning(request):
         if not title:
             return Response({"success": False, "message": "Lesson title is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        defaults = {
+            "title": title,
+            "objectives": str(request.data.get("objectives") or "").strip(),
+            "activities": str(request.data.get("activities") or "").strip(),
+            "resources": str(request.data.get("resources") or "").strip(),
+            "assessment": str(request.data.get("assessment") or "").strip(),
+            "notes": str(request.data.get("notes") or "").strip(),
+            "status": str(request.data.get("status") or LessonPlan.PLANNED).strip() or LessonPlan.PLANNED,
+        }
+        # Only touch the attachment when the request actually carries a change
+        # for it - update_or_create also runs when a teacher is just editing
+        # this week's text sections, and that must never wipe out a file
+        # already attached to the plan.
+        new_attachment = request.FILES.get("attachment")
+        if new_attachment:
+            defaults["attachment"] = new_attachment
+        elif _to_bool(request.data.get("remove_attachment"), default=False):
+            defaults["attachment"] = None
+
         plan, _ = LessonPlan.objects.update_or_create(
             tenant=tenant_obj,
             teacher=user,
@@ -8792,17 +8859,9 @@ def lesson_planning(request):
             class_group=class_group,
             subject=subject,
             week_number=week_number,
-            defaults={
-                "title": title,
-                "objectives": str(request.data.get("objectives") or "").strip(),
-                "activities": str(request.data.get("activities") or "").strip(),
-                "resources": str(request.data.get("resources") or "").strip(),
-                "assessment": str(request.data.get("assessment") or "").strip(),
-                "notes": str(request.data.get("notes") or "").strip(),
-                "status": str(request.data.get("status") or LessonPlan.PLANNED).strip() or LessonPlan.PLANNED,
-            },
+            defaults=defaults,
         )
-        return Response({"success": True, "message": "Lesson plan saved.", "lesson_plan": _lesson_plan_payload(plan)}, status=status.HTTP_201_CREATED)
+        return Response({"success": True, "message": "Lesson plan saved.", "lesson_plan": _lesson_plan_payload(plan, request)}, status=status.HTTP_201_CREATED)
 
     plans_qs = _scope_to_user_tenant(
         LessonPlan.objects.select_related("teacher", "subject", "class_group", "term", "academic_year"),
@@ -8813,11 +8872,33 @@ def lesson_planning(request):
     if active_term:
         plans_qs = plans_qs.filter(term=active_term)
 
+    students = []
     if user.role == "teacher":
         plans_qs = plans_qs.filter(teacher=user)
-        teacher_profile = TeacherProfile.objects.filter(user=user).prefetch_related("subjects", "assigned_classes").first()
-        class_options = teacher_profile.assigned_classes.all() if teacher_profile and teacher_profile.assigned_classes.exists() else _scope_to_user_tenant(Class.objects.all(), user)
-        subject_options = teacher_profile.subjects.all() if teacher_profile and teacher_profile.subjects.exists() else _scope_to_user_tenant(Subject.objects.all(), user)
+        # Classes/subjects offered here must actually match each other -
+        # assigned_classes and subjects used to be shown as two unrelated
+        # dropdowns, so a teacher could plan a lesson for a class that
+        # doesn't even take that subject.
+        class_options = _teacher_eligible_classes(user)
+        subject_options = _teacher_eligible_subjects(user)
+
+        class_id = request.query_params.get("class_id")
+        subject_id = request.query_params.get("subject_id")
+        if class_id and subject_id:
+            class_obj = _scope_to_user_tenant(Class.objects.all(), user).filter(id=class_id).first()
+            subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=subject_id).first()
+            if class_obj and subject_obj and _teacher_is_eligible_for_class_subject(user, class_obj, subject_obj):
+                students = [
+                    {
+                        "id": str(item.id),
+                        "student_id": item.student_id,
+                        "name": item.user.get_full_name(),
+                        "profile_picture": _profile_picture_url(request, item.user),
+                    }
+                    for item in StudentProfile.objects.select_related("user")
+                    .filter(user__tenant=user.tenant, current_class=class_obj)
+                    .order_by("user__first_name", "user__last_name")[:200]
+                ]
     elif user.role == "student":
         student_class = _current_student_class(user)
         plans_qs = plans_qs.filter(class_group=student_class) if student_class else plans_qs.none()
@@ -8842,11 +8923,12 @@ def lesson_planning(request):
                 "latest_week": latest_week,
                 "completion_percent": round((completed / total) * 100, 1) if total else 0,
             },
-            "lesson_plans": [_lesson_plan_payload(plan) for plan in plans_qs[:100]],
+            "lesson_plans": [_lesson_plan_payload(plan, request) for plan in plans_qs[:100]],
             "options": {
                 "classes": [{"id": item.id, "label": _class_label(item)} for item in class_options[:100]],
                 "subjects": [{"id": item.id, "name": item.name, "code": item.code} for item in subject_options[:100]],
             },
+            "students": students,
         }
     )
 
@@ -11824,12 +11906,28 @@ def teacher_class_students(request):
     results_mode = False
     if context == "results" and subject_id:
         subject = get_object_or_404(_scope_to_user_tenant(Subject.objects.all(), user), id=subject_id)
-        results_mode = _teacher_can_score_subject(user, subject)
-        if not results_mode:
-            return Response(
-                {"success": False, "message": "You are not assigned to this subject."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        if class_id and user.role not in ADMIN_ROLES:
+            # Teaching a subject somewhere never authorizes every class in
+            # the school - this used to check the subject alone, which let a
+            # teacher request any class's full roster by subject_id as long
+            # as they taught that subject anywhere, without actually being
+            # assigned to the requested class.
+            class_obj = _scope_to_user_tenant(Class.objects.all(), user).filter(id=class_id).first()
+            if not class_obj:
+                return Response({"success": False, "message": "Select a valid class."}, status=status.HTTP_400_BAD_REQUEST)
+            results_mode = _teacher_is_eligible_for_class_subject(user, class_obj, subject)
+            if not results_mode:
+                return Response(
+                    {"success": False, "message": "You are not assigned to teach this subject for this class."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        else:
+            results_mode = user.role in ADMIN_ROLES or _teacher_can_score_subject(user, subject)
+            if not results_mode:
+                return Response(
+                    {"success": False, "message": "You are not assigned to this subject."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
     if class_id:
         if not results_mode and not classes_qs.filter(id=class_id).exists():
             return Response(
@@ -12425,12 +12523,6 @@ def submit_subject_score(request):
 
     subject = get_object_or_404(_scope_to_user_tenant(Subject.objects.all(), user), id=subject_id)
 
-    if not _teacher_can_score_subject(user, subject):
-        return Response(
-            {"success": False, "message": "You are not assigned to this subject."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
     class_group = None
     if class_id not in (None, ""):
         class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=class_id)
@@ -12471,6 +12563,17 @@ def submit_subject_score(request):
         return Response(
             {"success": False, "message": "Student does not have a class assigned."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Checked here rather than right after resolving `subject`, above -
+    # class_group may only be known once the student is resolved (a request
+    # can omit class_id and let it fall back to the student's own class), and
+    # authorization has to be against the class actually being written to,
+    # not just "does this teacher teach the subject somewhere".
+    if not _teacher_is_eligible_for_class_subject(user, class_group, subject):
+        return Response(
+            {"success": False, "message": "You are not assigned to teach this subject for this class."},
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     term = None

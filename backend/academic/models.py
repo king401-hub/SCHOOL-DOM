@@ -585,6 +585,7 @@ class LessonPlan(TenantAwareModel):
     resources = models.TextField(blank=True)
     assessment = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    attachment = models.FileField(upload_to="lesson_plans/%Y/%m/", null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PLANNED)
 
     class Meta:

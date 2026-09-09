@@ -542,6 +542,11 @@ function LessonPlanDetailDialog({ plan, onClose, itemLabel = "Lesson plan", titl
           <span>{plan.teacher ? `Teacher: ${plan.teacher}` : resolvedTitle}</span>
           {plan.updated_at ? <span>Updated: {formatDate(plan.updated_at)}</span> : null}
         </div>
+        {plan.attachment_url ? (
+          <a className="table-action" href={plan.attachment_url} target="_blank" rel="noreferrer">
+            📎 {plan.attachment_name || "Attached file"}
+          </a>
+        ) : null}
         {sections.length ? (
           <div className="lesson-plan-dialog-sections">
             {sections.map(([label, content]) => (
@@ -3869,7 +3874,7 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
 function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [planning, setPlanning] = useState(null);
   const [notes, setNotes] = useState([]);
-  const [form, setForm] = useState({ class_id: "", subject_id: "", week_number: 1, title: "", objectives: "", activities: "", resources: "", assessment: "", notes: "", status: "planned" });
+  const [form, setForm] = useState({ class_id: "", subject_id: "", week_number: 1, title: "", objectives: "", activities: "", resources: "", assessment: "", notes: "", status: "planned", attachment: null });
   const [noteForm, setNoteForm] = useState({ title: "Quick note", body: "", pinned: false });
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -3878,11 +3883,17 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const planningTitle = nonK12 ? "Course Outline & Notepad" : "Lesson Plans & Notepad";
   const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
 
-  const loadPlanning = useCallback(async () => {
+  const loadPlanning = useCallback(async (classId, subjectId) => {
     setError("");
     try {
+      // Passing the currently-selected class+subject also brings back the
+      // roster of students taking that subject in that class, so the form
+      // can show who this week's plan is actually for.
+      const query = classId && subjectId
+        ? `?class_id=${encodeURIComponent(classId)}&subject_id=${encodeURIComponent(subjectId)}`
+        : "";
       const [planResponse, noteResponse] = await Promise.all([
-        requestJson(session, "GET", "/api/app/academic/planning/"),
+        requestJson(session, "GET", `/api/app/academic/planning/${query}`),
         requestJson(session, "GET", "/api/app/academic/notes/"),
       ]);
       setPlanning(planResponse || {});
@@ -3905,6 +3916,12 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     }
   }, [loadPlanning, session]);
 
+  const handleClassOrSubjectChange = (nextClassId, nextSubjectId) => {
+    if (nextClassId && nextSubjectId) {
+      loadPlanning(nextClassId, nextSubjectId);
+    }
+  };
+
   const handlePlanSubmit = async (event) => {
     event.preventDefault();
     setFeedback("");
@@ -3917,8 +3934,8 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         week_number: Number(form.week_number || 1),
       });
       setFeedback(`${planningItemLabel} saved and aligned with the active term.`);
-      setForm((prev) => ({ ...prev, title: "", objectives: "", activities: "", resources: "", assessment: "", notes: "" }));
-      await loadPlanning();
+      setForm((prev) => ({ ...prev, title: "", objectives: "", activities: "", resources: "", assessment: "", notes: "", attachment: null }));
+      await loadPlanning(form.class_id, form.subject_id);
     } catch (saveError) {
       setError(saveError.message || `Could not save ${planningItemLabel.toLowerCase()}.`);
     }
@@ -3971,13 +3988,29 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
           <div className="panel-form-grid">
             <label className="panel-field">
               Class
-              <select value={form.class_id} onChange={(event) => setForm((prev) => ({ ...prev, class_id: event.target.value }))} required>
+              <select
+                value={form.class_id}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setForm((prev) => ({ ...prev, class_id: value }));
+                  handleClassOrSubjectChange(value, form.subject_id);
+                }}
+                required
+              >
                 {classes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
             </label>
             <label className="panel-field">
               Subject
-              <select value={form.subject_id} onChange={(event) => setForm((prev) => ({ ...prev, subject_id: event.target.value }))} required>
+              <select
+                value={form.subject_id}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setForm((prev) => ({ ...prev, subject_id: value }));
+                  handleClassOrSubjectChange(form.class_id, value);
+                }}
+                required
+              >
                 {subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
@@ -4005,7 +4038,27 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
               Activities
               <FormattedTextarea value={form.activities} onChange={(event) => setForm((prev) => ({ ...prev, activities: event.target.value }))} rows={2} />
             </label>
+            <label className="panel-field full">
+              Import a file (optional)
+              <input
+                type="file"
+                onChange={(event) => setForm((prev) => ({ ...prev, attachment: event.target.files?.[0] || null }))}
+              />
+              <span className="field-note">
+                {form.attachment ? `Selected: ${form.attachment.name}` : `Attach a document (e.g. a scheme-of-work PDF or Word file) for this week's ${planningItemLabel.toLowerCase()}.`}
+              </span>
+            </label>
           </div>
+          {planning?.students?.length ? (
+            <div className="scheme-plan-section">
+              <h5>Students taking this subject ({planning.students.length})</h5>
+              <div className="academic-planning-roster">
+                {planning.students.map((student) => (
+                  <span key={student.id} className="pill">{student.name}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="panel-form-actions"><button type="submit">Save {planningItemLabel.toLowerCase()}</button></div>
         </form>
         <form className="notepad-shell" onSubmit={handleNoteSubmit}>
@@ -4080,7 +4133,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         {plans.map((plan) => (
           <article key={plan.id} className="scheme-subject-card">
             <button type="button" className="scheme-plan-card-button" onClick={() => setSelectedPlan(plan)}>
-              <h4>Week {plan.week_number}: {plan.title}</h4>
+              <h4>Week {plan.week_number}: {plan.title}{plan.attachment_url ? " 📎" : ""}</h4>
               <p>{plan.subject} - {plan.class_name}</p>
               <small>{plan.status}</small>
             </button>

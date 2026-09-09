@@ -15,6 +15,7 @@ from academic.models import (
     Class,
     ClassResultSnapshot,
     GradeScale,
+    LessonPlan,
     QuestionPrompt,
     QuestionResponse,
     ResultBatch,
@@ -1910,7 +1911,11 @@ class TeacherDashboardAPITests(TestCase):
         )
         self.assertEqual(post_response.status_code, 403)
 
-    def test_teacher_can_submit_score_for_subject_student_outside_assigned_class(self):
+    def test_teacher_cannot_submit_score_for_subject_student_outside_assigned_class(self):
+        """Teaching a subject somewhere does not authorize grading it for
+        every class in the school - the teacher here is assigned to
+        self.classroom only, not other_class, so this must be rejected even
+        though self.subject is one they teach."""
         other_class = Class.objects.create(
             name="Grade 9",
             section="A",
@@ -1950,11 +1955,8 @@ class TeacherDashboardAPITests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(response.data["success"])
-        score = StudentSubjectScore.objects.get(student=student, subject=self.subject)
-        self.assertEqual(score.class_group, other_class)
-        self.assertEqual(score.teacher, self.teacher_user)
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(StudentSubjectScore.objects.filter(student=student, subject=self.subject).exists())
 
     def test_admin_can_delete_result_batch_and_scores(self):
         self.client.force_authenticate(user=self.teacher_user)
@@ -3793,6 +3795,159 @@ class AttendanceAndPromptTests(TestCase):
         self.assertTrue(
             InAppMessage.objects.filter(sender=self.teacher_user, recipient=self.student_user).exists()
         )
+
+
+class TeacherClassSubjectEligibilityTests(TestCase):
+    """Lesson planning and grading must agree on which (class, subject)
+    pairs a teacher can actually touch - assigned to the class AND teaching
+    the subject, not either alone. Covers the fix for two real gaps: lesson
+    planning used to offer classes/subjects as two unrelated dropdowns, and
+    grading's eligibility check skipped the class-assignment check entirely
+    once a teacher taught the subject anywhere in the school."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Eligibility School", schema_name="eligibility_school_20260909", is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(slug=self.school.schema_name, name=self.school.name)
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        self.english = Subject.objects.create(tenant=self.legacy_tenant, name="English", code="ENG")
+
+        # class_a: teacher is assigned and it takes Math - fully eligible.
+        self.class_a = Class.objects.create(name="Grade 8", section="A", tenant=self.legacy_tenant)
+        self.class_a.subjects.set([self.math, self.english])
+        # class_b: teacher teaches Math (elsewhere) but is NOT assigned here -
+        # this is exactly the case the old grading check let through.
+        self.class_b = Class.objects.create(name="Grade 9", section="A", tenant=self.legacy_tenant)
+        self.class_b.subjects.set([self.math])
+        # class_c: teacher IS assigned, but it only takes English, not Math.
+        self.class_c = Class.objects.create(name="Grade 10", section="A", tenant=self.legacy_tenant)
+        self.class_c.subjects.set([self.english])
+        # class_d: teacher IS assigned, but no subjects configured on it yet -
+        # must still be treated as eligible (the empty-Class.subjects fallback).
+        self.class_d = Class.objects.create(name="Grade 11", section="A", tenant=self.legacy_tenant)
+
+        self.teacher_user = User.objects.create_user(
+            email="teacher@eligibility.edu", password="TeacherPass123", first_name="Tea", last_name="Cher",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher_profile = TeacherProfile.objects.create(
+            user=self.teacher_user, employee_id="TCH-ELIG-1", qualification="B.Ed", specialization="Mathematics",
+            years_of_experience=4, hire_date=timezone.now().date(),
+            emergency_contact_name="Contact", emergency_contact_phone="+15550001111", emergency_contact_relation="Sibling",
+        )
+        self.teacher_profile.subjects.set([self.math])
+        self.teacher_profile.assigned_classes.set([self.class_a, self.class_c, self.class_d])
+
+        self.student_user = User.objects.create_user(
+            email="student@eligibility.edu", password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=self.student_user, student_id="STU-ELIG-1", admission_number="ADM-ELIG-1",
+            admission_date=timezone.now().date(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.class_a,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.teacher_user)
+
+    # --- lesson planning: options are now a real intersection, not two lists ---
+
+    def test_lesson_planning_class_options_exclude_class_missing_the_subject(self):
+        response = self.client.get("/api/app/academic/planning/")
+        self.assertEqual(response.status_code, 200)
+        class_ids = {item["id"] for item in response.data["options"]["classes"]}
+        # class_a (has Math) and class_d (no subjects configured yet, so
+        # assignment alone is enough) should show; class_c (assigned but
+        # English-only) should not, since the teacher only teaches Math.
+        self.assertIn(self.class_a.id, class_ids)
+        self.assertIn(self.class_d.id, class_ids)
+        self.assertNotIn(self.class_c.id, class_ids)
+        self.assertNotIn(self.class_b.id, class_ids)  # not assigned at all
+
+    def test_lesson_planning_returns_students_for_a_valid_class_subject_pair(self):
+        response = self.client.get(
+            f"/api/app/academic/planning/?class_id={self.class_a.id}&subject_id={self.math.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([s["student_id"] for s in response.data["students"]], ["STU-ELIG-1"])
+
+    def test_lesson_planning_returns_no_students_for_an_ineligible_pair(self):
+        # Assigned to class_c, but doesn't teach Math there (class_c has no Math).
+        response = self.client.get(
+            f"/api/app/academic/planning/?class_id={self.class_c.id}&subject_id={self.math.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["students"], [])
+
+    def test_lesson_plan_file_upload_and_preserved_on_text_only_resave(self):
+        upload = SimpleUploadedFile("scheme.pdf", b"%PDF-1.4 fake content", content_type="application/pdf")
+        create_response = self.client.post(
+            "/api/app/academic/planning/",
+            {
+                "class_id": self.class_a.id, "subject_id": self.math.id, "week_number": 1,
+                "title": "Fractions", "attachment": upload,
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        self.assertTrue(create_response.data["lesson_plan"]["attachment_url"])
+        # Django's storage backend appends a random suffix when a same-named
+        # file already exists (e.g. left over from an earlier test run) -
+        # assert the shape rather than an exact name.
+        attachment_name = create_response.data["lesson_plan"]["attachment_name"]
+        self.assertTrue(attachment_name.startswith("scheme") and attachment_name.endswith(".pdf"), attachment_name)
+
+        # Re-saving the same week with no new file must not wipe it out.
+        update_response = self.client.post(
+            "/api/app/academic/planning/",
+            {"class_id": self.class_a.id, "subject_id": self.math.id, "week_number": 1, "title": "Fractions (updated)"},
+        )
+        self.assertEqual(update_response.status_code, 201)
+        self.assertTrue(update_response.data["lesson_plan"]["attachment_url"])
+
+        plan = LessonPlan.objects.get(class_group=self.class_a, subject=self.math, week_number=1)
+        self.assertTrue(plan.attachment)
+
+    # --- grading: closing the "teaches subject somewhere -> any class" bypass ---
+
+    def test_teacher_cannot_pull_roster_for_a_class_they_are_not_assigned_to(self):
+        response = self.client.get(
+            f"/api/app/attendance/class-students/?context=results&class_id={self.class_b.id}&subject_id={self.math.id}"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_can_pull_roster_for_an_assigned_class_they_teach(self):
+        response = self.client.get(
+            f"/api/app/attendance/class-students/?context=results&class_id={self.class_a.id}&subject_id={self.math.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([s["student_id"] for s in response.data["students"]], ["STU-ELIG-1"])
+
+    def test_teacher_cannot_submit_a_score_for_a_class_they_are_not_assigned_to(self):
+        other_student_user = User.objects.create_user(
+            email="other@eligibility.edu", password="StudentPass123", first_name="Other", last_name="Student",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=other_student_user, student_id="STU-ELIG-2", admission_number="ADM-ELIG-2",
+            admission_date=timezone.now().date(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.class_b,
+        )
+        response = self.client.post(
+            "/api/app/results/submit/",
+            {"student_id": "STU-ELIG-2", "subject_id": self.math.id, "class_id": self.class_b.id, "score": 80, "max_score": 100},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(StudentSubjectScore.objects.filter(student__student_id="STU-ELIG-2").exists())
+
+    def test_teacher_can_submit_a_score_for_an_assigned_class_they_teach(self):
+        response = self.client.post(
+            "/api/app/results/submit/",
+            {"student_id": "STU-ELIG-1", "subject_id": self.math.id, "class_id": self.class_a.id, "score": 80, "max_score": 100},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(StudentSubjectScore.objects.filter(student=self.student, subject=self.math).exists())
 
 
 class TeachersAPITests(TestCase):

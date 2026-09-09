@@ -19634,6 +19634,12 @@ body[data-theme="dark"] .multi-select-option.checked {
   font-weight: 700;
 }
 
+.academic-planning-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .note-pad-form textarea {
   min-height: 180px;
 }
