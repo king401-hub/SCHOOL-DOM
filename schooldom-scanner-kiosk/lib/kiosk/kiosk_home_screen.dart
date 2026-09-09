@@ -16,6 +16,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../api/client.dart';
 import '../api/config.dart';
 import '../api/gate_endpoints.dart';
+import '../services/kiosk_lock.dart';
 import '../services/receipt_printer.dart';
 import '../storage/session_store.dart';
 import '../theme/app_theme.dart';
@@ -115,6 +116,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     _loadGateSettings();
     _startNfcSession();
     _ensureLocationPermission();
+    KioskLock.start();
     _sendHeartbeat();
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) => _sendHeartbeat());
     _hidFocusNode.addListener(() {
@@ -511,6 +513,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   }
 
   Future<void> _handleRemoteRevocation() async {
+    await KioskLock.stop();
     await clearSession();
     await KioskStore.deactivate();
     if (!mounted) return;
@@ -674,6 +677,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       ),
     );
     if (confirmed != true) return;
+    await KioskLock.stop();
     await clearSession();
     await KioskStore.deactivate();
     if (!mounted) return;

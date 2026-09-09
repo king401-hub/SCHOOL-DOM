@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'kiosk/kiosk_home_screen.dart';
 import 'kiosk/kiosk_provisioning_screen.dart';
 import 'kiosk/kiosk_store.dart';
+import 'kiosk/splash_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -44,17 +45,21 @@ class _KioskRootState extends State<_KioskRoot> {
   @override
   void initState() {
     super.initState();
-    KioskStore.isEnabled().then((enabled) {
-      if (mounted) setState(() => _provisioned = enabled);
+    // Held for a minimum visible duration alongside the real check, so the
+    // branded splash always gets to play its entrance animation instead of
+    // flashing by instantly when the storage read happens to be fast.
+    Future.wait([
+      KioskStore.isEnabled(),
+      Future.delayed(const Duration(milliseconds: 1400)),
+    ]).then((results) {
+      if (mounted) setState(() => _provisioned = results[0] as bool);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     if (_provisioned == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const SplashScreen();
     }
     return _provisioned!
         ? const KioskHomeScreen()

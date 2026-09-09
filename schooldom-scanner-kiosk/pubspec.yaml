@@ -1,7 +1,7 @@
 name: schooldom_scanner_kiosk
 description: "SchoolDom Attendance Scanner - locked-down NFC kiosk terminal app. Provisioned via a device license key from the Superadmin Control Panel; never installed by, or shown to, students/teachers/parents."
 publish_to: 'none'
-version: 1.3.0+4
+version: 1.4.0+5
 
 environment:
   sdk: ^3.12.1
