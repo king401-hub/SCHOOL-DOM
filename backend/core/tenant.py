@@ -207,18 +207,30 @@ class SchoolTenant(models.Model):
         return max(30 - elapsed, 0)
 
     def is_feature_enabled(self, feature_code):
-        """Check if a feature is enabled for this school"""
+        """Check if a feature is enabled for this school.
+
+        A school-specific FeatureFlag row (matched via the direct FK, not
+        the enabled_features M2M - the two aren't kept in sync, and the FK
+        + unique_together('school_tenant', 'code') is the one relationship
+        that can only ever have zero-or-one row per feature) always wins,
+        whether it enables or explicitly disables the feature. Only when
+        this school has no row at all for this feature does it fall back
+        to the platform-wide default (a FeatureFlag with school_tenant=
+        None). This lets a feature default to on for everyone, with
+        specific schools opted out - not just opted in - which the old
+        M2M-only check couldn't express (a school-specific is_enabled=
+        False row was silently ignored once a global enabled row existed).
+        """
         from settings_app.models import FeatureFlag
-        
-        # Check school-specific feature flag
-        if self.enabled_features.filter(code=feature_code, is_enabled=True).exists():
-            return True
-        
-        # Check global feature flag
+
+        school_flag = self.features.filter(code=feature_code).first()
+        if school_flag is not None:
+            return school_flag.is_enabled
+
         return FeatureFlag.objects.filter(
             school_tenant=None,
             code=feature_code,
-            is_enabled=True
+            is_enabled=True,
         ).exists()
 
 class Domain(models.Model):

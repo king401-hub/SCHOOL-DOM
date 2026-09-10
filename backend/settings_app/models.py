@@ -87,6 +87,7 @@ class FeatureFlag(TimeStampedModel):
         ('discussion_forum', 'Discussion Forum'),
         ('video_conferencing', 'Video Conferencing'),
         ('advance_payments', 'Advance Payments'),
+        ('personal_quiz', 'Personal Quiz'),
     ]
     
     school_tenant = models.ForeignKey(

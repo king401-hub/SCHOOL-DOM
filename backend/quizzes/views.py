@@ -135,6 +135,21 @@ def _student_profile(user):
     return getattr(user, "student_profile", None)
 
 
+def _personal_quiz_disabled_response(user):
+    """None if Personal Quiz is enabled for this student's school, else the
+    403 to return. Checked in every PersonalQuiz* view (not just Options)
+    since a student could otherwise still generate/submit/view history
+    directly even with the nav item hidden - the same defense-in-depth
+    pattern used elsewhere in this app (frontend hides, backend enforces)."""
+    tenant = getattr(user, "tenant", None)
+    if tenant is not None and not tenant.is_feature_enabled("personal_quiz"):
+        return Response(
+            {"detail": "Personal quiz isn't available for your school.", "success": False},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 def _class_label(class_group):
     if not class_group:
         return "your class"
@@ -1053,6 +1068,9 @@ class PersonalQuizOptions(APIView):
     def get(self, request):
         if getattr(request.user, "role", "") != "student":
             return Response({"detail": "Only students can use personal quizzes."}, status=status.HTTP_403_FORBIDDEN)
+        disabled = _personal_quiz_disabled_response(request.user)
+        if disabled:
+            return disabled
 
         profile = _student_profile(request.user)
         subjects = list(_subject_queryset_for_student(request.user, profile))
@@ -1136,6 +1154,9 @@ class PersonalQuizGenerate(APIView):
     def post(self, request):
         if getattr(request.user, "role", "") != "student":
             return Response({"detail": "Only students can generate personal quizzes."}, status=status.HTTP_403_FORBIDDEN)
+        disabled = _personal_quiz_disabled_response(request.user)
+        if disabled:
+            return disabled
 
         profile = _student_profile(request.user)
         if not profile or not profile.current_class_id:
@@ -1217,6 +1238,9 @@ class PersonalQuizSubmit(APIView):
     def post(self, request, attempt_id):
         if getattr(request.user, "role", "") != "student":
             return Response({"detail": "Only students can submit personal quizzes."}, status=status.HTTP_403_FORBIDDEN)
+        disabled = _personal_quiz_disabled_response(request.user)
+        if disabled:
+            return disabled
         attempt = get_object_or_404(
             PersonalQuizAttempt.objects.select_related("subject", "class_group").prefetch_related("questions", "answers"),
             id=attempt_id,
@@ -1238,6 +1262,9 @@ class PersonalQuizFlagQuestion(APIView):
     def post(self, request, attempt_id):
         if getattr(request.user, "role", "") != "student":
             return Response({"detail": "Only students can report personal quiz questions."}, status=status.HTTP_403_FORBIDDEN)
+        disabled = _personal_quiz_disabled_response(request.user)
+        if disabled:
+            return disabled
         attempt = get_object_or_404(
             PersonalQuizAttempt.objects.select_related("subject", "class_group").prefetch_related("questions"),
             id=attempt_id,
@@ -1267,6 +1294,9 @@ class PersonalQuizHistory(APIView):
     def get(self, request):
         if getattr(request.user, "role", "") != "student":
             return Response({"detail": "Only students can view personal quiz history."}, status=status.HTTP_403_FORBIDDEN)
+        disabled = _personal_quiz_disabled_response(request.user)
+        if disabled:
+            return disabled
         attempts = (
             PersonalQuizAttempt.objects.filter(student=request.user)
             .select_related("subject", "class_group", "term", "academic_year")

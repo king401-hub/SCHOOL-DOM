@@ -677,13 +677,15 @@ function StudentAvatar({ src, name, initials, className = "student-avatar" }) {
 // Shared by both StudentDashboard's sidebar and StudentPageShell's sidebar so
 // the two independently-rendered student nav lists (and page search) can't
 // drift out of sync with each other.
-function buildStudentSearchItems(nonK12School) {
+function buildStudentSearchItems(nonK12School, personalQuizEnabled = true) {
   const items = [{ id: "/dashboard", label: "Dashboard", icon: LayoutDashboard }];
   if (nonK12School) items.push({ id: "/attendance", label: "Attendance", icon: CalendarCheck });
   items.push(
     { id: "/fees", label: "School Fees", icon: DollarSign },
-    { id: "/id-card", label: "ID Card", icon: CreditCard },
-    { id: "/quizzes", label: "Assessment", icon: FileCheck },
+    { id: "/id-card", label: "ID Card", icon: CreditCard }
+  );
+  if (personalQuizEnabled) items.push({ id: "/quizzes", label: "Assessment", icon: FileCheck });
+  items.push(
     { id: "/exams", label: "Exams", icon: FileText },
     { id: "/academic-planning", label: "Scheme", icon: BookOpen },
     { id: "/timetable", label: "Timetable", icon: CalendarClock },
@@ -907,7 +909,11 @@ function StudentDashboard({
       onNavigate(path);
     }
   };
-  const studentSearchItems = useMemo(() => buildStudentSearchItems(nonK12School), [nonK12School]);
+  const personalQuizEnabled = session?.school?.personal_quiz_enabled !== false;
+  const studentSearchItems = useMemo(
+    () => buildStudentSearchItems(nonK12School, personalQuizEnabled),
+    [nonK12School, personalQuizEnabled]
+  );
   const handleStudentSearchSelect = (item) => {
     go(item.id);
     setNavOpen(false);
@@ -1429,7 +1435,11 @@ function StudentPageShell({ session, student, currentPath, onNavigate, pageKicke
   const nonK12Shell = session?.school?.school_type === "non_k12" || session?.school?.schoolType === "non_k12";
   const initials = userInitials({ full_name: studentName });
   const go = (path) => { onNavigate?.(path); setNavOpen(false); };
-  const studentSearchItems = useMemo(() => buildStudentSearchItems(nonK12Shell), [nonK12Shell]);
+  const personalQuizEnabled = session?.school?.personal_quiz_enabled !== false;
+  const studentSearchItems = useMemo(
+    () => buildStudentSearchItems(nonK12Shell, personalQuizEnabled),
+    [nonK12Shell, personalQuizEnabled]
+  );
 
   return (
     <div className="student-page">

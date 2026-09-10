@@ -452,6 +452,7 @@ def auth_school_payload(user):
             if getattr(school, "product", "full") == "schoolgate"
             else None
         ),
+        "personal_quiz_enabled": school.is_feature_enabled("personal_quiz"),
     }
 
 
