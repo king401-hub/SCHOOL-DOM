@@ -5316,6 +5316,16 @@ def apply_bank_payment_to_student(payment, student_profile, actor=None):
         raise ValueError("Payment amount must be greater than zero.")
 
     sync_student_class_fees(student_profile, actor=actor)
+    # Defense-in-depth: a student can still reach this with zero SchoolFee
+    # rows if they were added to a class after its Bill was published (the
+    # real fix is backfilling this at student-creation/class-assignment
+    # time - see users.app_views._sync_student_finance_for_class) - without
+    # this, a payment for such a student has nothing to apply against and
+    # silently becomes 100% "overpayment" wallet credit instead of paying
+    # the invoice it was actually for.
+    if student_profile.current_class_id:
+        for bill in Bill.objects.filter(classes=student_profile.current_class_id, status=Bill.STATUS_PUBLISHED).distinct():
+            sync_bill_invoices(bill, actor=actor)
     admin_wallet = get_or_create_admin_wallet(student_profile.user.tenant)
     applied = Decimal("0.00")
 

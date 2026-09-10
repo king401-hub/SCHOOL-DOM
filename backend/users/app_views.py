@@ -1291,6 +1291,29 @@ def _sync_guardian_parent(student_profile, name, phone, email="", relation="Guar
     return parent_profile
 
 
+def _sync_student_finance_for_class(student_profile, actor=None):
+    """Backfill this student's fee/bill records for their current class -
+    call this every time a student is created or moved into a class.
+    Neither create_student nor student_detail used to do this at all, so a
+    student added to a class after its ClassFee/Bill already existed simply
+    never got a SchoolFee row (invisible on every finance screen, and any
+    payment recorded for them silently became "overpayment" wallet credit
+    instead of paying an invoice - see apply_bank_payment_to_student). Both
+    sync functions are explicitly safe/idempotent to re-run and never touch
+    an already-paid row."""
+    if not student_profile or not student_profile.current_class_id:
+        return
+    from finance.models import Bill
+    from finance.services import sync_bill_invoices, sync_student_class_fees
+
+    sync_student_class_fees(student_profile, actor=actor)
+    published_bills = Bill.objects.filter(
+        classes=student_profile.current_class_id, status=Bill.STATUS_PUBLISHED
+    ).distinct()
+    for bill in published_bills:
+        sync_bill_invoices(bill, actor=actor)
+
+
 def _sync_student_guardians_to_parent_directory(student_profile):
     primary = _sync_guardian_parent(
         student_profile,
@@ -5543,8 +5566,17 @@ def students_snapshot(request):
                     for title in activity_titles_qs[:100]
                 ],
                 "subjects": [
-                    {"id": subject.id, "name": subject.name, "code": subject.code}
-                    for subject in _scope_to_user_tenant(Subject.objects.all(), user).order_by("name")[:200]
+                    {
+                        "id": subject.id,
+                        "name": subject.name,
+                        "code": subject.code,
+                        # Which department(s)/class(es) already offer this subject by
+                        # default - lets the elective picker group subjects instead of
+                        # showing one flat list. A subject on no class's list yet
+                        # (newly created, not assigned anywhere) falls under "Unassigned".
+                        "group_label": ", ".join(_class_label(c) for c in subject.classes.all()) or "Unassigned",
+                    }
+                    for subject in _scope_to_user_tenant(Subject.objects.all(), user).prefetch_related("classes").order_by("name")[:200]
                 ],
             },
         }
@@ -6227,6 +6259,7 @@ def create_student(request):
         elective_subjects = _scope_to_user_tenant(Subject.objects.all(), user).filter(id__in=elective_subject_ids)
         student_profile.elective_subjects.set(elective_subjects)
 
+    _sync_student_finance_for_class(student_profile, actor=user)
     student_profile.refresh_from_db()
     _sync_student_guardians_to_parent_directory(student_profile)
 
@@ -6460,6 +6493,9 @@ def student_detail(request, student_id):
         student_user.save(update_fields=sorted(set(user_update_fields)))
     if profile_update_fields:
         student_profile.save(update_fields=sorted(set(profile_update_fields)))
+
+    if "current_class" in profile_update_fields:
+        _sync_student_finance_for_class(student_profile, actor=user)
 
     student_profile.refresh_from_db()
     _sync_student_guardians_to_parent_directory(student_profile)
