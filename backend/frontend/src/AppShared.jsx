@@ -85,7 +85,12 @@ export function Popup({
   );
 }
 
-export function MultiSelectBox({ options = [], selected = [], onChange, labelForOption, emptyText = "No options available." }) {
+/** groupBy (optional): (option) => group label string. When given, options
+ * render under labeled sections (e.g. subjects grouped by department)
+ * instead of one flat grid - every other prop/behavior is unchanged, so
+ * existing callers that don't pass it are unaffected. An option whose
+ * groupBy call returns falsy lands in a trailing "Other" section. */
+export function MultiSelectBox({ options = [], selected = [], onChange, labelForOption, emptyText = "No options available.", groupBy }) {
   const selectedSet = new Set((selected || []).map((item) => String(item)));
   const toggleOption = (value) => {
     const normalized = String(value);
@@ -102,22 +107,45 @@ export function MultiSelectBox({ options = [], selected = [], onChange, labelFor
     return <p className="panel-empty compact">{emptyText}</p>;
   }
 
+  const renderOption = (item) => {
+    const value = String(item.id);
+    const checked = selectedSet.has(value);
+    return (
+      <label key={value} className={`multi-select-option ${checked ? "checked" : ""}`}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={() => toggleOption(value)}
+        />
+        <span>{labelForOption ? labelForOption(item) : item.label || item.name}</span>
+      </label>
+    );
+  };
+
+  if (!groupBy) {
+    return <div className="multi-select-box">{options.map(renderOption)}</div>;
+  }
+
+  const groups = [];
+  const groupsByLabel = new Map();
+  options.forEach((item) => {
+    const label = groupBy(item) || "Other";
+    if (!groupsByLabel.has(label)) {
+      const group = { label, items: [] };
+      groupsByLabel.set(label, group);
+      groups.push(group);
+    }
+    groupsByLabel.get(label).items.push(item);
+  });
+
   return (
-    <div className="multi-select-box">
-      {options.map((item) => {
-        const value = String(item.id);
-        const checked = selectedSet.has(value);
-        return (
-          <label key={value} className={`multi-select-option ${checked ? "checked" : ""}`}>
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => toggleOption(value)}
-            />
-            <span>{labelForOption ? labelForOption(item) : item.label || item.name}</span>
-          </label>
-        );
-      })}
+    <div className="multi-select-box-grouped">
+      {groups.map((group) => (
+        <div className="multi-select-group" key={group.label}>
+          <div className="multi-select-group-label">{group.label}</div>
+          <div className="multi-select-group-options">{group.items.map(renderOption)}</div>
+        </div>
+      ))}
     </div>
   );
 }

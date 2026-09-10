@@ -19434,6 +19434,42 @@ body[data-theme="light"] .quiz-choice {
   padding: 10px;
 }
 
+.multi-select-box-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border, #dbe3ef);
+  border-radius: 12px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.multi-select-group-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.multi-select-group-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+body[data-theme="dark"] .multi-select-box-grouped {
+  background: #081a36;
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
+body[data-theme="dark"] .multi-select-group-label {
+  color: #93c5fd;
+}
+
 body[data-theme="dark"] .subject-stream-card {
   background: #0b1f44;
   border-color: rgba(147, 197, 253, 0.22);

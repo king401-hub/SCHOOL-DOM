@@ -12144,7 +12144,6 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     student_type: "",
     extra_curricular_activity_title_id: "",
     home_address: "",
-    elective_subject_ids: [],
   });
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -12310,7 +12309,6 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
         student_type: "",
         extra_curricular_activity_title_id: "",
         home_address: "",
-        elective_subject_ids: [],
       });
       setShowCreatePassword(false);
       setShowCreateConfirmPassword(false);
@@ -12633,20 +12631,6 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       </option>
                     ))}
                   </select>
-            </label>
-            <label className="panel-field full">
-              Elective Subjects (optional)
-              <MultiSelectBox
-                options={subjectOptions}
-                selected={form.elective_subject_ids}
-                onChange={(values) => setForm((prev) => ({ ...prev, elective_subject_ids: values }))}
-                labelForOption={(subject) => `${subject.name} (${subject.code})`}
-                emptyText="No subjects available yet."
-              />
-              <small className="field-note">
-                Subjects this student takes in addition to {groupLabels.singular.toLowerCase()}-wide subjects - e.g.
-                two students in the same {groupLabels.singular.toLowerCase()} taking different electives.
-              </small>
             </label>
             <label className="panel-field">
               Admission Date
@@ -13082,6 +13066,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                           selected={editForm.elective_subject_ids}
                           onChange={(values) => setEditForm((p) => ({ ...p, elective_subject_ids: values }))}
                           labelForOption={(subject) => `${subject.name} (${subject.code})`}
+                          groupBy={(subject) => subject.group_label}
                           emptyText="No subjects available yet."
                         />
                         <small className="field-note">
