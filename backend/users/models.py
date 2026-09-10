@@ -284,11 +284,21 @@ class StudentProfile(models.Model):
     admission_date = models.DateField()
     
     # Academic
-    current_class = models.ForeignKey('academic.Class', on_delete=models.SET_NULL, 
+    current_class = models.ForeignKey('academic.Class', on_delete=models.SET_NULL,
                                        null=True, blank=True)
-    current_term = models.ForeignKey('academic.Term', on_delete=models.SET_NULL, 
+    current_term = models.ForeignKey('academic.Term', on_delete=models.SET_NULL,
                                       null=True, blank=True)
-    
+    # Subjects this student takes in addition to current_class.subjects (the
+    # department/class's shared subject list) - e.g. two students in the same
+    # "SS2 Science" department both take Physics/Chemistry/Biology from the
+    # class list, but one also takes Further Maths and the other Geography.
+    # Never removes a class subject, only adds to it - see effective_subjects().
+    elective_subjects = models.ManyToManyField(
+        'academic.Subject',
+        blank=True,
+        related_name='elective_students',
+    )
+
     # Guardian information
     state_of_origin = models.CharField(max_length=120, blank=True)
     local_government = models.CharField(max_length=120, blank=True)
@@ -331,6 +341,18 @@ class StudentProfile(models.Model):
     
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.student_id}"
+
+    def effective_subjects(self):
+        """This student's real subject list: their department/class's shared
+        subjects, plus their own electives. Use this (not
+        current_class.subjects directly) anywhere that needs "what does THIS
+        student actually take" - e.g. a teacher's score-entry roster for one
+        subject, or a student's own subject dropdown."""
+        from academic.models import Subject
+
+        class_subject_ids = list(self.current_class.subjects.values_list("id", flat=True)) if self.current_class_id else []
+        elective_ids = list(self.elective_subjects.values_list("id", flat=True))
+        return Subject.objects.filter(id__in=set(class_subject_ids) | set(elective_ids))
 
 
 def school_code_letters(school):

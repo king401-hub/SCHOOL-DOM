@@ -1143,6 +1143,7 @@ def _student_payload(student_profile, request=None):
         "class_name": _class_label(student_profile.current_class) if student_profile.current_class else "Unassigned",
         "admission_date": student_profile.admission_date,
         "created_at": student_profile.created_at,
+        "elective_subject_ids": [subject.id for subject in student_profile.elective_subjects.all()],
     }
 
 
@@ -1949,6 +1950,18 @@ def _ensure_teacher_user_for_tenant(
         teacher_user.save(update_fields=update_fields)
 
     return teacher_user
+
+
+def _request_multi_value(request, field_name):
+    """Read a repeated-key field from request.data. A multipart body (any
+    request with a file attached, e.g. profile_picture) is backed by a
+    QueryDict, whose plain .get() silently returns only the LAST of several
+    same-named fields - .getlist() is needed to get all of them. A JSON body
+    is already a real list/string under .get(), so this is a no-op there."""
+    data = request.data
+    if hasattr(data, "getlist"):
+        return data.getlist(field_name)
+    return data.get(field_name)
 
 
 def _parse_id_list(raw_value):
@@ -4473,6 +4486,8 @@ def student_dashboard(request):
     )
     if student_class:
         subject_ids.update(student_class.subjects.values_list("id", flat=True))
+    if student_profile:
+        subject_ids.update(student_profile.elective_subjects.values_list("id", flat=True))
     if not subject_ids and student_class:
         subject_ids.update(
             _scope_to_user_tenant(Exam.objects.filter(subject__isnull=False), user)
@@ -5474,6 +5489,7 @@ def students_snapshot(request):
     user = request.user
     students = (
         StudentProfile.objects.select_related("user", "current_class", "extra_curricular_activity_title")
+        .prefetch_related("elective_subjects")
         .filter(user__tenant=user.tenant)
         .order_by("-created_at")
     )
@@ -5525,6 +5541,10 @@ def students_snapshot(request):
                 "student_activity_titles": [
                     _student_activity_title_payload(title)
                     for title in activity_titles_qs[:100]
+                ],
+                "subjects": [
+                    {"id": subject.id, "name": subject.name, "code": subject.code}
+                    for subject in _scope_to_user_tenant(Subject.objects.all(), user).order_by("name")[:200]
                 ],
             },
         }
@@ -6202,6 +6222,11 @@ def create_student(request):
     if profile_update_fields:
         student_profile.save(update_fields=profile_update_fields)
 
+    if "elective_subject_ids" in request.data:
+        elective_subject_ids = _parse_id_list(_request_multi_value(request, "elective_subject_ids"))
+        elective_subjects = _scope_to_user_tenant(Subject.objects.all(), user).filter(id__in=elective_subject_ids)
+        student_profile.elective_subjects.set(elective_subjects)
+
     student_profile.refresh_from_db()
     _sync_student_guardians_to_parent_directory(student_profile)
 
@@ -6425,6 +6450,11 @@ def student_detail(request, student_id):
         if student_profile.admission_date != admission_date:
             student_profile.admission_date = admission_date
             profile_update_fields.append("admission_date")
+
+    if "elective_subject_ids" in request.data:
+        elective_subject_ids = _parse_id_list(_request_multi_value(request, "elective_subject_ids"))
+        elective_subjects = _scope_to_user_tenant(Subject.objects.all(), user).filter(id__in=elective_subject_ids)
+        student_profile.elective_subjects.set(elective_subjects)
 
     if user_update_fields:
         student_user.save(update_fields=sorted(set(user_update_fields)))
@@ -8903,7 +8933,8 @@ def lesson_planning(request):
         student_class = _current_student_class(user)
         plans_qs = plans_qs.filter(class_group=student_class) if student_class else plans_qs.none()
         class_options = Class.objects.filter(id=student_class.id) if student_class else Class.objects.none()
-        subject_options = student_class.subjects.all() if student_class else Subject.objects.none()
+        student_profile_for_subjects = StudentProfile.objects.filter(user=user).first()
+        subject_options = student_profile_for_subjects.effective_subjects() if student_profile_for_subjects else Subject.objects.none()
     else:
         class_options = _scope_to_user_tenant(Class.objects.all(), user)
         subject_options = _scope_to_user_tenant(Subject.objects.all(), user)
@@ -11942,6 +11973,15 @@ def teacher_class_students(request):
         students_qs = students_qs.filter(current_class_id__in=assigned_class_ids) if assigned_class_ids else students_qs.none()
     if class_id:
         students_qs = students_qs.filter(current_class_id=class_id)
+    if results_mode and subject_id and class_id:
+        # A subject on the class's own shared list is taken by everyone in
+        # it (today's behavior, unchanged). A subject that ISN'T - a pure
+        # elective - is only taken by whichever students were individually
+        # given it, so entering scores for one doesn't show (and risk
+        # scoring) the whole class.
+        class_has_subject_by_default = Class.objects.filter(id=class_id, subjects__id=subject_id).exists()
+        if not class_has_subject_by_default:
+            students_qs = students_qs.filter(elective_subjects__id=subject_id)
     attendance_qs = (
         AttendanceRecord.objects.select_related("student", "class_group", "noted_by")
         .filter(student__tenant=user.tenant, date=attendance_date, class_group_id__in=assigned_class_ids)

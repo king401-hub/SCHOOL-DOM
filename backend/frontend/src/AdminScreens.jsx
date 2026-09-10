@@ -12111,6 +12111,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
 function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
+  const subjectOptions = data?.options?.subjects || [];
   const groupLabels = academicGroupLabels(data?.school, school);
   // Student activity titles (leadership/extracurricular roles) are a K-12-only feature.
   const nonK12 = (school?.school_type || school?.schoolType || data?.school?.school_type || data?.school?.schoolType || "k12") === "non_k12";
@@ -12143,6 +12144,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     student_type: "",
     extra_curricular_activity_title_id: "",
     home_address: "",
+    elective_subject_ids: [],
   });
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -12176,6 +12178,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     student_type: "",
     extra_curricular_activity_title_id: "",
     home_address: "",
+    elective_subject_ids: [],
     is_active: true,
     student_password: "",
     confirm_student_password: "",
@@ -12232,6 +12235,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     student_type: student?.student_type || "",
     extra_curricular_activity_title_id: student?.extra_curricular_activity_title_id || "",
     home_address: student?.home_address || "",
+    elective_subject_ids: (student?.elective_subject_ids || []).map(String),
     is_active: Boolean(student?.is_active),
     student_password: "",
     confirm_student_password: "",
@@ -12306,6 +12310,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
         student_type: "",
         extra_curricular_activity_title_id: "",
         home_address: "",
+        elective_subject_ids: [],
       });
       setShowCreatePassword(false);
       setShowCreateConfirmPassword(false);
@@ -12370,6 +12375,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
         student_type: editForm.student_type.trim(),
         extra_curricular_activity_title_id: editForm.extra_curricular_activity_title_id,
         home_address: editForm.home_address.trim(),
+        elective_subject_ids: editForm.elective_subject_ids,
         is_active: editForm.is_active,
       };
       if (editForm.admission_date) {
@@ -12627,6 +12633,20 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       </option>
                     ))}
                   </select>
+            </label>
+            <label className="panel-field full">
+              Elective Subjects (optional)
+              <MultiSelectBox
+                options={subjectOptions}
+                selected={form.elective_subject_ids}
+                onChange={(values) => setForm((prev) => ({ ...prev, elective_subject_ids: values }))}
+                labelForOption={(subject) => `${subject.name} (${subject.code})`}
+                emptyText="No subjects available yet."
+              />
+              <small className="field-note">
+                Subjects this student takes in addition to {groupLabels.singular.toLowerCase()}-wide subjects - e.g.
+                two students in the same {groupLabels.singular.toLowerCase()} taking different electives.
+              </small>
             </label>
             <label className="panel-field">
               Admission Date
@@ -13054,6 +13074,19 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                             <option key={item.id} value={item.id}>{item.label}</option>
                           ))}
                         </select>
+                      </label>
+                      <label className="panel-field full">
+                        Elective Subjects (optional)
+                        <MultiSelectBox
+                          options={subjectOptions}
+                          selected={editForm.elective_subject_ids}
+                          onChange={(values) => setEditForm((p) => ({ ...p, elective_subject_ids: values }))}
+                          labelForOption={(subject) => `${subject.name} (${subject.code})`}
+                          emptyText="No subjects available yet."
+                        />
+                        <small className="field-note">
+                          Subjects this student takes in addition to {groupLabels.singular.toLowerCase()}-wide subjects.
+                        </small>
                       </label>
                       <label className="panel-field">
                         Admission Date
