@@ -8938,6 +8938,25 @@ def lesson_planning(request):
     if active_term:
         plans_qs = plans_qs.filter(term=active_term)
 
+    # Narrows the actual scheme-of-work list itself, not just the students
+    # roster below - the frontend already sends these whenever a class+
+    # subject is selected (expecting exactly this), but until now they were
+    # only ever used for the roster, so a teacher handling more than one
+    # class/subject saw every one of their own schemes mixed together
+    # regardless of which class/subject was selected.
+    class_id = request.query_params.get("class_id")
+    subject_id = request.query_params.get("subject_id")
+    if class_id:
+        plans_qs = plans_qs.filter(class_group_id=class_id)
+    if subject_id:
+        plans_qs = plans_qs.filter(subject_id=subject_id)
+    # Admin-only: browse a specific teacher's schemes. A teacher's own
+    # request is already hard-locked to teacher=user below regardless of
+    # this param, so this can never be used to see another teacher's work.
+    teacher_id = request.query_params.get("teacher_id")
+    if teacher_id and user.role in ADMIN_ROLES:
+        plans_qs = plans_qs.filter(teacher_id=teacher_id)
+
     students = []
     if user.role == "teacher":
         plans_qs = plans_qs.filter(teacher=user)
@@ -8948,8 +8967,6 @@ def lesson_planning(request):
         class_options = _teacher_eligible_classes(user)
         subject_options = _teacher_eligible_subjects(user)
 
-        class_id = request.query_params.get("class_id")
-        subject_id = request.query_params.get("subject_id")
         if class_id and subject_id:
             class_obj = _scope_to_user_tenant(Class.objects.all(), user).filter(id=class_id).first()
             subject_obj = _scope_to_user_tenant(Subject.objects.all(), user).filter(id=subject_id).first()
