@@ -718,6 +718,7 @@ function StudentDashboard({
   const school = resolveSchoolBrand(dashboardData.school, session?.school, session);
   const documentTheme = resolveDocumentTheme(dashboardData.school, session?.school);
   const nonK12School = isNonK12School(session, dashboardData);
+  const personalQuizEnabled = session?.school?.personal_quiz_enabled !== false;
   const groupLabels = academicGroupLabels(school);
   const prompts = dashboardData.question_prompts || [];
   const results = dashboardData.recent_results || [];
@@ -888,13 +889,13 @@ function StudentDashboard({
       detail: activityStars || "No stars assigned",
       tone: "gold",
     }]),
-    {
+    ...(personalQuizEnabled ? [{
       key: "daily-quiz",
       label: "Daily Assessment",
       value: `${dailyQuiz.completed_today ?? 0}/${dailyQuiz.total_subjects ?? subjects.length}`,
       detail: `Streak: ${dailyQuiz.streak_days || 0} day${Number(dailyQuiz.streak_days || 0) === 1 ? "" : "s"}`,
       tone: "indigo",
-    },
+    }] : []),
     {
       key: "fees",
       label: "Fees Left",
@@ -909,7 +910,6 @@ function StudentDashboard({
       onNavigate(path);
     }
   };
-  const personalQuizEnabled = session?.school?.personal_quiz_enabled !== false;
   const studentSearchItems = useMemo(
     () => buildStudentSearchItems(nonK12School, personalQuizEnabled),
     [nonK12School, personalQuizEnabled]
@@ -2599,6 +2599,16 @@ function StudentQuizPage({ session, onNavigate }) {
     () => `schooldom.assessment.notepad.${session?.user?.id || session?.user?.email || "student"}`,
     [session?.user?.email, session?.user?.id]
   );
+
+  // The nav item is already hidden when this school has Personal Quiz
+  // turned off, so the only way to land here is a stale bookmark/URL - in
+  // that case, leave quietly instead of surfacing the backend's 403
+  // message as an on-page error.
+  useEffect(() => {
+    if (session?.school?.personal_quiz_enabled === false) {
+      onNavigate?.("/dashboard");
+    }
+  }, [session?.school?.personal_quiz_enabled, onNavigate]);
 
   useEffect(() => {
     try {
