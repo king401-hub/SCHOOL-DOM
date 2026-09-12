@@ -8476,12 +8476,14 @@ function transcriptRowsFromDetail(transcript) {
   );
 }
 
-function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTranscript, onLoadTestimonial, onSaveTranscript, onSaveTestimonial }) {
+function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTranscript, onLoadTestimonial, onSaveTranscript, onSaveTestimonial, onStudentSearch }) {
   const students = data?.students || [];
   const summary = data?.summary || {};
   const creditBalance = data?.credit_balance || 0;
   const [mode, setMode] = useState("transcript");
-  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [studentQuery, setStudentQuery] = useState("");
+  const [studentSearchResults, setStudentSearchResults] = useState([]);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -8491,14 +8493,48 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
   const [testimonialForm, setTestimonialForm] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const selectedStudent = students.find((student) => student.id === selectedStudentId) || students[0] || null;
   const documentTheme = resolveDocumentTheme(data?.school, school);
 
+  // Defaults to the first student on load so the screen isn't empty - search
+  // (below) is how an admin reaches any OTHER student, replacing the old
+  // full-roster dropdown that got unwieldy for schools with many students.
   useEffect(() => {
-    if (!selectedStudentId && students[0]) {
-      setSelectedStudentId(students[0].id);
+    if (!selectedStudent && students[0]) {
+      setSelectedStudent(students[0]);
     }
-  }, [selectedStudentId, students]);
+  }, [selectedStudent, students]);
+
+  useEffect(() => {
+    const query = studentQuery.trim();
+    if (query.length < 2 || !onStudentSearch) {
+      setStudentSearchResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await onStudentSearch(query);
+        if (!cancelled) setStudentSearchResults(result?.results || []);
+      } catch {
+        if (!cancelled) setStudentSearchResults([]);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [studentQuery, onStudentSearch]);
+
+  const handlePickStudent = (candidate) => {
+    setSelectedStudent({
+      id: candidate.id,
+      name: candidate.name,
+      student_id: candidate.student_id,
+      class_name: candidate.class_name,
+    });
+    setStudentQuery("");
+    setStudentSearchResults([]);
+  };
 
   useEffect(() => {
     let active = true;
@@ -8650,22 +8686,29 @@ function AdminDocumentsScreen({ data, loading, error, onRetry, school, onLoadTra
                 <button type="button" className={mode === "transcript" ? "active" : ""} onClick={() => setMode("transcript")}>Transcript</button>
                 <button type="button" className={mode === "testimonial" ? "active" : ""} onClick={() => setMode("testimonial")}>Testimonial</button>
               </div>
-              <label className="panel-field">
+              <label className="panel-field" style={{ position: "relative" }}>
                 Student
-                <select value={selectedStudent?.id || ""} onChange={(event) => setSelectedStudentId(event.target.value)}>
-                  {students.map((student) => (
-                    <option
-                      key={student.id}
-                      value={student.id}
-                      title={`${student.name} - ${student.class_name || "Class not set"} - ${student.student_id || student.admission_number || ""}`}
-                    >
-                      {student.name} - {student.student_id || student.admission_number || "No ID"}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  value={studentQuery}
+                  onChange={(event) => setStudentQuery(event.target.value)}
+                  placeholder="Search by name or student ID"
+                  autoComplete="off"
+                />
+                {studentSearchResults.length ? (
+                  <ul className="search-typeahead">
+                    {studentSearchResults.map((candidate) => (
+                      <li key={candidate.id}>
+                        <button type="button" onClick={() => handlePickStudent(candidate)}>
+                          <strong>{candidate.name}</strong>
+                          <small>{candidate.student_id} · {candidate.class_name}</small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {selectedStudent ? (
                   <small className="field-note">
-                    {selectedStudent.class_name || "Class not set"} - {selectedStudent.student_id || selectedStudent.admission_number || "No ID"}
+                    Selected: {selectedStudent.name} - {selectedStudent.class_name || "Class not set"} - {selectedStudent.student_id || selectedStudent.admission_number || "No ID"}
                   </small>
                 ) : null}
               </label>

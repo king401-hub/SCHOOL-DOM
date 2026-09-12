@@ -8386,6 +8386,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onLoadTestimonial={handleLoadTestimonial}
         onSaveTranscript={handleSaveTranscript}
         onSaveTestimonial={handleSaveTestimonial}
+        onStudentSearch={handleStudentSearch}
       />
     );
   } else if (activePath === "/document-customization") {
