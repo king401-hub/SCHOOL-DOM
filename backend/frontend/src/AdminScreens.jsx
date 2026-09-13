@@ -12788,7 +12788,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
           {activityTitleSuccess ? <p className="form-feedback success">{activityTitleSuccess}</p> : null}
           <div className="panel-form-actions">
             <button type="submit" disabled={Boolean(activityTitleBusyId)}>
-              {activityTitleBusyId === "new" || activityTitleBusyId === editingActivityTitleId ? <><Spinner /> Saving...</> : editingActivityTitleId ? "Rename Title" : "Add Title"}
+              {activityTitleBusyId === (editingActivityTitleId || "new") ? <><Spinner /> Saving...</> : editingActivityTitleId ? "Rename Title" : "Add Title"}
             </button>
             {editingActivityTitleId ? (
               <button type="button" className="table-action" onClick={() => {
