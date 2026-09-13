@@ -294,6 +294,12 @@ elif USE_DJANGO_TENANTS:
             'HOST': os.getenv('DB_HOST', 'localhost'),
             'PORT': os.getenv('DB_PORT', '5432'),
             'ATOMIC_REQUESTS': True,
+            # Without this, every single request opens and tears down a brand-new
+            # Postgres connection (Django's default is 0 = never persist). TenantMainMiddleware
+            # resets connection.schema_name/search_path at the start of every request regardless
+            # of what a reused connection was left set to, so persistent connections are safe -
+            # and are django-tenants' own documented production recommendation.
+            'CONN_MAX_AGE': 60,
         }
     }
     DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
