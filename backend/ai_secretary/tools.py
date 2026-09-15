@@ -246,80 +246,6 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "get_predictive_insights",
-            "description": "Return predictive analytics for key operational risks such as fees, attendance, or exam risk.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "metric": {"type": "string", "description": "Metric name such as fee_default_risk"},
-                    "class_name": {"type": "string", "description": "Optional class target like SS2"},
-                },
-                "required": ["metric"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_custom_tool",
-            "description": "Create a custom automation rule or action for the school assistant.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "tool_name": {"type": "string", "description": "Unique custom tool name"},
-                    "description": {"type": "string", "description": "What the custom tool does"},
-                    "trigger": {"type": "string", "description": "Event or condition that triggers the automation"},
-                },
-                "required": ["tool_name", "description", "trigger"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_api_access_status",
-            "description": "Check whether a SchoolDom API or connected service is enabled and healthy.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "service": {"type": "string", "description": "Service name such as schooldom_core"},
-                },
-                "required": ["service"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_integration_status",
-            "description": "Return the current status of a connected third-party integration provider.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "provider": {"type": "string", "description": "Provider name like google_classroom"},
-                },
-                "required": ["provider"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "sync_third_party_integration",
-            "description": "Trigger a sync or refresh for a connected third-party integration provider.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "provider": {"type": "string", "description": "Provider name to sync"},
-                    "mode": {"type": "string", "description": "Sync mode such as sync or refresh"},
-                },
-                "required": ["provider", "mode"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "count_students",
             "description": "Get the total number of students in the school, or count by specific class.",
             "parameters": {
@@ -577,16 +503,31 @@ class SecretaryTools:
     # ── Phase 1 tool 1: generate_timetable ───────────────────────────────────
 
     def generate_timetable(self, class_name: str, term: str = "First Term") -> dict:
+        """Delegates to the same slot-filling core the admin "Generate"
+        button uses (users/app_views.py::_generate_timetable_core) - one
+        implementation, not a second guess at what "generated" means. An
+        earlier draft of this tool always claimed "10 entries created"
+        without touching the database."""
         try:
-            class_label = (class_name or "SS2A").strip()
+            class_label = (class_name or "").strip()
             if not class_label:
                 return {"status": "error", "error_code": "BAD_ARGS", "message": "A class name is required to generate a timetable."}
+            class_obj = self._get_class(class_label)
+            if class_obj is None:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_label}' not found."}
+
+            from users.app_views import _generate_timetable_core
+            result = _generate_timetable_core(self.requesting_user, class_ids=[class_obj.id])
+            if not result.get("success"):
+                return {"status": "error", "error_code": "NOT_CONFIGURED", "message": result.get("message") or "Could not generate a timetable."}
+
             return {
                 "status": "success",
-                "message": f"Timetable draft generated for {class_label} for {term}.",
+                "message": result.get("message", ""),
                 "class_name": class_label,
                 "term": term,
-                "entries_created": 10,
+                "entries_created": result.get("created_count", 0),
+                "skipped_existing_count": result.get("skipped_existing_count", 0),
                 "route": "/timetables",
             }
         except Exception as exc:
@@ -596,14 +537,52 @@ class SecretaryTools:
     # ── Phase 1 tool 2: generate_report_cards ────────────────────────────────
 
     def generate_report_cards(self, class_name: str = "all", term: str = "First Term") -> dict:
+        """There is no batch "report card pack" feature to trigger, so the
+        honest version of this tool is a readiness check: how many students
+        in the class already have published results for the active term,
+        reusing the same _class_broadsheet the Results page's broadsheet
+        export already relies on - not a fabricated "1 record ready"."""
         try:
-            target = (class_name or "all").strip() or "all"
+            target = (class_name or "").strip()
+            if not target or target.lower() == "all":
+                return {
+                    "status": "error",
+                    "error_code": "BAD_ARGS",
+                    "message": "A specific class name is required to check report card readiness, e.g. 'SS2A'.",
+                }
+            class_obj = self._get_class(target)
+            if class_obj is None:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{target}' not found."}
+
+            active_term, _active_year = self._active_term_and_year()
+            if active_term is None:
+                return {"status": "error", "error_code": "NOT_CONFIGURED", "message": "No active term is configured yet."}
+
+            from users.app_views import _class_broadsheet
+            broadsheet = _class_broadsheet(class_obj, active_term, self.requesting_user)
+            rows = broadsheet.get("rows", [])
+            class_size = broadsheet.get("class_size", 0)
+            ready_count = sum(1 for row in rows if row.get("scores"))
+            pending_count = class_size - ready_count
+
+            if class_size == 0:
+                message = f"{target} has no students yet, so there is nothing to report on."
+            elif ready_count == class_size:
+                message = f"All {class_size} students in {target} have published results for {active_term.name} - report cards are ready."
+            else:
+                message = (
+                    f"{ready_count} of {class_size} students in {target} have published results for "
+                    f"{active_term.name}; {pending_count} still need results published first."
+                )
+
             return {
                 "status": "success",
-                "message": f"Report cards are being prepared for {target} for {term}.",
+                "message": message,
                 "class_name": target,
-                "term": term,
-                "records_ready": 1,
+                "term": active_term.name,
+                "class_size": class_size,
+                "ready_count": ready_count,
+                "pending_count": pending_count,
                 "route": "/results",
             }
         except Exception as exc:
@@ -613,19 +592,46 @@ class SecretaryTools:
     # ── Phase 1 tool 3: get_fee_status ────────────────────────────────────────
 
     def get_fee_status(self, class_name: str = None, scope: str = "school") -> dict:
+        """Real fee collection numbers from finance.SchoolFee - an earlier
+        draft of this tool always reported "82% collected, 18% pending"
+        regardless of scope or actual data, same shape of bug
+        get_student_fee_balance was already fixed for."""
         try:
+            from django.db.models import Sum
+
+            from finance.models import SchoolFee
+            from users.models import StudentProfile
+
+            qs = StudentProfile.objects.filter(user__tenant=self.tenant, user__role="student", user__is_active=True)
+            class_label = (class_name or "").strip()
+            if class_label:
+                class_obj = self._get_class(class_label)
+                if class_obj is None:
+                    return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_label}' not found."}
+                qs = qs.filter(current_class=class_obj)
+
+            fees = SchoolFee.objects.filter(student__in=qs)
+            total_due = fees.aggregate(total=Sum("amount"))["total"] or 0
+            total_paid = fees.filter(status=SchoolFee.STATUS_PAID).aggregate(total=Sum("amount"))["total"] or 0
+            collected_percent = round(float(total_paid) / float(total_due) * 100, 1) if total_due else 0.0
+            pending_percent = round(100 - collected_percent, 1) if total_due else 0.0
+            target = class_label or "the school"
+
             summary = (
-                "School fee collection is healthy: 82% collected, 18% still pending, and 3 classes need follow-up."
-                if scope.lower() != "class"
-                else f"Fee status for {class_name or 'selected class'} is healthy with collection above target."
+                f"{target.title()} fee collection: {collected_percent}% collected "
+                f"(₦{float(total_paid):,.0f} of ₦{float(total_due):,.0f})."
+                if total_due
+                else f"No fee records found for {target} yet."
             )
             return {
                 "status": "success",
                 "summary": summary,
-                "scope": scope or "school",
-                "class_name": class_name,
-                "collected_percent": 82,
-                "pending_percent": 18,
+                "scope": "class" if class_label else "school",
+                "class_name": class_label or None,
+                "collected_percent": collected_percent,
+                "pending_percent": pending_percent,
+                "total_due": float(total_due),
+                "total_paid": float(total_paid),
                 "route": "/finance",
             }
         except Exception as exc:
@@ -891,140 +897,13 @@ class SecretaryTools:
         "send_sms": "send_sms",
         "get_student_list": "get_student_list",
         "publish_cbt_exam": "publish_cbt_exam",
-        "run_workflow": "run_workflow",
-        "get_monitoring_alerts": "get_monitoring_alerts",
         "send_bulk_parent_message": "send_bulk_parent_message",
-        "get_predictive_insights": "get_predictive_insights",
-        "create_custom_tool": "create_custom_tool",
-        "get_api_access_status": "get_api_access_status",
-        "get_integration_status": "get_integration_status",
-        "sync_third_party_integration": "sync_third_party_integration",
         "count_students": "count_students",
         "count_classes": "count_classes",
         "get_student_details": "get_student_details",
         "get_class_roster": "get_class_roster",
         "get_student_fee_balance": "get_student_fee_balance",
     }
-
-    def get_predictive_insights(self, metric: str, class_name: str = "") -> dict:
-        try:
-            metric_key = (metric or "fee_default_risk").strip().lower()
-            class_label = (class_name or "SS2").strip() or "SS2"
-            risk_score = {
-                "fee_default_risk": 0.72,
-                "attendance_dropoff": 0.41,
-                "exam_risk": 0.36,
-            }.get(metric_key, 0.54)
-            summary_map = {
-                "fee_default_risk": f"Fee default risk is elevated for {class_label}; 18% of students are likely to miss the next payment window.",
-                "attendance_dropoff": f"Attendance drop-off is trending upward in {class_label}; a 6% reduction is projected if patterns continue.",
-                "exam_risk": f"Exam risk remains moderate for {class_label}; targeted revision support would improve pass probability.",
-            }
-            summary = summary_map.get(metric_key, f"Predictive insight for {class_label} shows moderate operational risk across the selected metric.")
-            return {
-                "status": "success",
-                "metric": metric_key,
-                "class_name": class_label,
-                "summary": summary,
-                "risk_score": risk_score,
-                "recommendation": "Review the affected cohort and trigger a targeted intervention before the next reporting window.",
-            }
-        except Exception as exc:
-            logger.exception("get_predictive_insights failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
-
-    def create_custom_tool(self, tool_name: str, description: str, trigger: str) -> dict:
-        try:
-            name = (tool_name or "custom_alert").strip()
-            if not name:
-                return {"status": "error", "error_code": "BAD_ARGS", "message": "tool_name is required."}
-            return {
-                "status": "success",
-                "tool_name": name,
-                "description": (description or "Custom rule").strip(),
-                "trigger": (trigger or "manual").strip(),
-                "message": f"Custom tool '{name}' is now available to the school assistant.",
-            }
-        except Exception as exc:
-            logger.exception("create_custom_tool failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
-
-    def get_api_access_status(self, service: str) -> dict:
-        try:
-            service_name = (service or "schooldom_core").strip() or "schooldom_core"
-            return {
-                "status": "success",
-                "service": service_name,
-                "status_text": "API access enabled",
-                "enabled": True,
-                "last_checked": "now",
-                "message": f"{service_name} is enabled and responding normally.",
-            }
-        except Exception as exc:
-            logger.exception("get_api_access_status failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
-
-    def get_integration_status(self, provider: str) -> dict:
-        try:
-            provider_name = (provider or "google_classroom").strip() or "google_classroom"
-            return {
-                "status": "success",
-                "provider": provider_name,
-                "status_text": "Connected and healthy",
-                "enabled": True,
-                "message": f"{provider_name} is connected and syncing normally.",
-            }
-        except Exception as exc:
-            logger.exception("get_integration_status failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
-
-    def sync_third_party_integration(self, provider: str, mode: str = "sync") -> dict:
-        try:
-            provider_name = (provider or "google_classroom").strip() or "google_classroom"
-            action = (mode or "sync").strip().lower()
-            return {
-                "status": "success",
-                "provider": provider_name,
-                "action": action,
-                "message": f"{action.title()} for {provider_name} has been queued successfully.",
-                "synced_at": "now",
-            }
-        except Exception as exc:
-            logger.exception("sync_third_party_integration failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
-
-    def run_workflow(self, workflow_name: str = "new_term_launch") -> dict:
-        try:
-            workflow_map = {
-                "new_term_launch": [
-                    {"task": "Generate timetable for all classes", "status": "completed"},
-                    {"task": "Assign teachers to classes", "status": "completed"},
-                    {"task": "Prepare fee structures for the term", "status": "in_progress"},
-                    {"task": "Create initial attendance sheets", "status": "pending"},
-                ]
-            }
-            steps = workflow_map.get(workflow_name, workflow_map["new_term_launch"])
-            return {
-                "status": "success",
-                "workflow_name": workflow_name,
-                "tasks": steps,
-                "message": f"Workflow '{workflow_name}' is running. Timetable generation is complete.",
-            }
-        except Exception as exc:
-            logger.exception("run_workflow failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
-
-    def get_monitoring_alerts(self) -> dict:
-        try:
-            alerts = [
-                {"level": "warning", "title": "Fee follow-up needed", "detail": "12 students have outstanding fees above ₦50,000."},
-                {"level": "info", "title": "Report cards ready", "detail": "All grades for JSS3 are submitted and ready for review."},
-                {"level": "warning", "title": "Timetable check", "detail": "Teacher availability conflict detected for one SS2 class."},
-            ]
-            return {"status": "success", "alerts": alerts, "message": "Monitoring has identified 3 priority items."}
-        except Exception as exc:
-            logger.exception("get_monitoring_alerts failed: %s", exc)
-            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     def send_bulk_parent_message(self, class_name: str, message_type: str, message: str) -> dict:
         """Actually sends the message (WhatsApp first, SMS fallback per

@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
-from academic.models import Class
+from academic.models import AcademicYear, Class, ResultBatch, StudentSubjectScore, Subject, Term, TimetableEntry
 from core.models import SchoolTenant
-from finance.models import SmsMessageLog
+from finance.models import SchoolFee, SmsMessageLog
 from finance.services import get_or_create_sms_wallet
 from tenants.models import Tenant
 from users.models import StudentProfile, User
@@ -93,17 +93,13 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertEqual(parse_phase_one_command("Who is in SS2A?")["tool"], "get_class_roster")
 
     def test_core_tools_execute_with_auto_execute_permissions(self):
-        timetable = self.tools.dispatch("generate_timetable", {"class_name": "SS2A", "term": "First Term"})
-        self.assertEqual(timetable["status"], "success")
-        self.assertIn("SS2A", timetable["message"])
-
+        # generate_timetable/generate_report_cards now touch real Class/term
+        # data and are covered with proper fixtures in PhaseCRealToolsTests
+        # below - this class has no seeded Class, so only the tools that
+        # don't require one are exercised here.
         fees = self.tools.dispatch("get_fee_status", {})
         self.assertEqual(fees["status"], "success")
         self.assertIn("school", fees["summary"].lower())
-
-        report = self.tools.dispatch("generate_report_cards", {"class_name": "JSS3", "term": "First Term"})
-        self.assertEqual(report["status"], "success")
-        self.assertIn("report", report["message"].lower())
 
         cbt = self.tools.dispatch("create_cbt_exam", {"subject": "Biology", "class_name": "SS2", "question_count": 50, "time_limit_minutes": 60})
         self.assertEqual(cbt["status"], "success")
@@ -216,15 +212,6 @@ class PhaseTwoAdminAgentTests(TestCase):
         self.assertEqual(result["tool"], "generate_report_cards")
         self.assertEqual(result["params"]["class_name"], "SS2A")
 
-    def test_workflow_and_monitoring_tools_are_available(self):
-        workflow = self.tools.dispatch("run_workflow", {"workflow_name": "new_term_launch"})
-        self.assertEqual(workflow["status"], "success")
-        self.assertIn("timetable", workflow["tasks"][0]["task"].lower())
-
-        alerts = self.tools.dispatch("get_monitoring_alerts", {})
-        self.assertEqual(alerts["status"], "success")
-        self.assertTrue(alerts["alerts"])
-
     def test_bulk_actions_require_explicit_confirmation(self):
         from ai_secretary.agent import run_agent
 
@@ -272,14 +259,22 @@ class PhaseTwoAdminAgentTests(TestCase):
         self.assertNotEqual(kwargs["message"], "PTA meeting reminder")
 
 
-class PhaseFourAdvancedFeaturesTests(TestCase):
+class PhaseCRealToolsTests(TestCase):
+    """generate_timetable, generate_report_cards, and get_fee_status (class
+    scope) all used to fabricate success ("10 entries created", "82%
+    collected") regardless of what data existed. These fixtures seed a real
+    legacy Tenant, Class, Subject, active Term/AcademicYear, and fee/score
+    rows so the assertions below check genuine computed numbers instead of
+    passing by coincidence against an empty test DB."""
+
     def setUp(self):
-        self.school = SchoolTenant.objects.create(name="Phase Four School", schema_name="phase_four_school", is_active=True)
+        self.school = SchoolTenant.objects.create(name="Phase C School", schema_name="phase_c_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name="Phase C School (legacy)", slug="phase_c_school")
         self.admin = User.objects.create_user(
-            email="admin@phasefour.test",
+            email="admin@phasec.test",
             password="AdminPass123",
             first_name="Phase",
-            last_name="Four",
+            last_name="C",
             role="school_admin",
             tenant=self.school,
             is_active=True,
@@ -287,30 +282,73 @@ class PhaseFourAdvancedFeaturesTests(TestCase):
         )
         self.tools = SecretaryTools(self.school, self.admin)
 
-    def test_predictive_analytics_tool_identifies_risk(self):
-        result = self.tools.dispatch("get_predictive_insights", {"metric": "fee_default_risk", "class_name": "SS2"})
+        self.academic_year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2025/2026", start_date="2025-09-01", end_date="2026-07-31", is_active=True,
+        )
+        self.term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", start_date="2025-09-01", end_date="2025-12-15",
+            is_active=True, academic_year=self.academic_year,
+        )
+        self.subject = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MTH")
+        self.class_obj = Class.objects.create(tenant=self.legacy_tenant, name="SS2A")
+        self.class_obj.subjects.set([self.subject])
+
+    def _make_student(self, email, guardian_phone="08010000000"):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", first_name="Student", last_name=email.split("@")[0],
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=f"STU-{email}", admission_number=f"ADM-{email}",
+            admission_date="2026-01-01", current_class=self.class_obj,
+            guardian_name="Guardian", guardian_phone=guardian_phone, guardian_relation="Parent",
+        )
+
+    def test_generate_timetable_creates_real_entries(self):
+        result = self.tools.dispatch("generate_timetable", {"class_name": "SS2A", "term": "First Term"})
         self.assertEqual(result["status"], "success")
-        self.assertIn("risk", result["summary"].lower())
-        self.assertEqual(result["class_name"], "SS2")
+        self.assertGreater(result["entries_created"], 0)
+        self.assertEqual(TimetableEntry.objects.filter(class_group=self.class_obj).count(), result["entries_created"])
 
-    def test_custom_tool_and_api_access_tools_are_available(self):
-        custom_tool = self.tools.dispatch("create_custom_tool", {
-            "tool_name": "fee_alerts",
-            "description": "Alert when fees are overdue",
-            "trigger": "overdue_balance",
-        })
-        self.assertEqual(custom_tool["status"], "success")
-        self.assertIn("fee_alerts", custom_tool["tool_name"])
+    def test_generate_timetable_is_idempotent(self):
+        first = self.tools.dispatch("generate_timetable", {"class_name": "SS2A"})
+        second = self.tools.dispatch("generate_timetable", {"class_name": "SS2A"})
+        self.assertGreater(first["entries_created"], 0)
+        self.assertEqual(second["entries_created"], 0)
+        self.assertGreater(second["skipped_existing_count"], 0)
 
-        api_access = self.tools.dispatch("get_api_access_status", {"service": "schooldom_core"})
-        self.assertEqual(api_access["status"], "success")
-        self.assertIn("enabled", api_access["status_text"].lower())
+    def test_generate_timetable_unknown_class_reports_not_found(self):
+        result = self.tools.dispatch("generate_timetable", {"class_name": "GhostClass"})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "NOT_FOUND")
 
-    def test_third_party_integrations_have_status_and_sync_actions(self):
-        status = self.tools.dispatch("get_integration_status", {"provider": "google_classroom"})
-        self.assertEqual(status["status"], "success")
-        self.assertIn("google", status["provider"].lower())
+    def test_generate_report_cards_reports_real_readiness(self):
+        published = self._make_student("ready@ssa.test")
+        self._make_student("pending@ssa.test")
+        StudentSubjectScore.objects.create(
+            student=published, subject=self.subject, class_group=self.class_obj, term=self.term,
+            score=80, max_score=100, approval_status=ResultBatch.PUBLISHED,
+        )
 
-        sync = self.tools.dispatch("sync_third_party_integration", {"provider": "google_classroom", "mode": "sync"})
-        self.assertEqual(sync["status"], "success")
-        self.assertIn("sync", sync["action"].lower())
+        result = self.tools.dispatch("generate_report_cards", {"class_name": "SS2A"})
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["class_size"], 2)
+        self.assertEqual(result["ready_count"], 1)
+        self.assertEqual(result["pending_count"], 1)
+        self.assertIn("1 of 2", result["message"])
+
+    def test_generate_report_cards_unknown_class_reports_not_found(self):
+        result = self.tools.dispatch("generate_report_cards", {"class_name": "GhostClass"})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "NOT_FOUND")
+
+    def test_get_fee_status_reports_real_percentages_for_a_class(self):
+        student = self._make_student("feestudent@ssa.test")
+        SchoolFee.objects.create(student=student, title="Tuition", amount=10000, due_date="2026-01-01", status=SchoolFee.STATUS_PAID)
+        SchoolFee.objects.create(student=student, title="Books", amount=5000, due_date="2026-01-01", status=SchoolFee.STATUS_PENDING)
+
+        result = self.tools.dispatch("get_fee_status", {"class_name": "SS2A"})
+        self.assertEqual(result["status"], "success")
+        self.assertAlmostEqual(result["collected_percent"], 66.7, places=1)
+        self.assertEqual(result["total_due"], 15000.0)
+        self.assertEqual(result["total_paid"], 10000.0)

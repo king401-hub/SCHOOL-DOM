@@ -10904,6 +10904,17 @@ def generate_timetable(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    result = _generate_timetable_core(user, class_ids=request.data.get("class_ids"))
+    status_code = status.HTTP_200_OK if result.get("success") else status.HTTP_400_BAD_REQUEST
+    return Response(result, status=status_code)
+
+
+def _generate_timetable_core(user, class_ids=None):
+    """The actual slot-filling logic, split out of the generate_timetable
+    view so the AI Secretary's generate_timetable tool can call the exact
+    same implementation instead of re-guessing what "generated" means -
+    see ai_secretary/tools.py::generate_timetable. Never touches a slot
+    that already has an entry (see the view's docstring for why)."""
     settings_obj = _get_timetable_settings(user)
     break_period_indexes = set(settings_obj.break_periods or [])
     periods = [period for period in settings_obj.compute_periods() if period["index"] not in break_period_indexes]
@@ -10912,15 +10923,14 @@ def generate_timetable(request):
     # anyway in case a row was ever hand-edited to an empty list.
     school_days = settings_obj.school_days or [value for value, _label in TimetableEntry.DAY_CHOICES]
     if not periods or not school_days:
-        return Response({"success": False, "message": "Configure timetable settings first."}, status=status.HTTP_400_BAD_REQUEST)
+        return {"success": False, "message": "Configure timetable settings first."}
 
     classes_qs = _scope_to_user_tenant(Class.objects.prefetch_related("subjects"), user)
-    class_ids = request.data.get("class_ids")
     if class_ids:
         classes_qs = classes_qs.filter(id__in=class_ids)
     classes = list(classes_qs.order_by("name", "section"))
     if not classes:
-        return Response({"success": False, "message": "No classes to generate a timetable for."}, status=status.HTTP_400_BAD_REQUEST)
+        return {"success": False, "message": "No classes to generate a timetable for."}
 
     tenant_obj = _tenant_for_model(TimetableEntry, user)
     active_year = _active_academic_year(user)
@@ -11002,13 +11012,13 @@ def generate_timetable(request):
         if created_count
         else "Every configured slot already has a timetable entry - nothing new to generate."
     )
-    return Response({
+    return {
         "success": True,
         "message": message,
         "created_count": created_count,
         "skipped_existing_count": skipped_existing,
         "entries": [_timetable_entry_payload(entry) for entry in created_entries],
-    })
+    }
 
 
 @api_view(["POST"])
