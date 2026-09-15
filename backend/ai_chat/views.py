@@ -7,6 +7,16 @@ from django.http import JsonResponse, StreamingHttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
+# Shared with ai_secretary's admin agent (see ai_secretary/code_guard.py) so
+# both AI personas cut a reply the moment it looks like code, from one
+# implementation - re-exported under these names so existing imports/tests
+# (ai_chat/tests.py) keep working unchanged.
+from ai_secretary.code_guard import CODE_REFUSAL_MESSAGE, CODE_SIGNALS, looks_like_code as _looks_like_code
+# Platform how-to knowledge (roles/navigation, common workflows, what
+# Schooldom doesn't have) - shared with ai_secretary's admin agent so both
+# personas answer platform questions from one source of truth.
+from ai_secretary.prompts import PLATFORM_KNOWLEDGE_PROMPT
+
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 
 # Same model as ai_secretary's Secretary mode by default (both read
@@ -43,86 +53,7 @@ those exactly like any other assistant would. "3x3", "what is the square root of
 "solve for x", and similar are ordinary math questions, not code, and must never
 trigger the refusal above.
 
-## Roles and their navigation menus
-
-**Admin** sees these pages in the sidebar:
-Dashboard · Performance Analytics · Finance · Expenses · Attendance · HR Management · Students · Parent Directory · ID Cards · Transcripts & Testimonials · Staff (Teachers / Non-Teaching Staff) · Classes · Exams · Results · Database Import · Messages · Loan Application · Settings
-
-**Accountant** sees: Finance · Expenses · Payroll & Leave · Messages
-
-**Teacher** sees: Dashboard · Attendance (scan flow) · Exams · Quizzes · Academic Planning · Messages · Results
-
-**Student** sees: Dashboard · Attendance · ID Card · School Fees · Exams · Quizzes · Academic Planning · Messages · Results
-
-**Parent** sees: Dashboard · School Fees · Payment History
-
----
-
-## Exact workflows for common tasks
-
-### Add a student (Admin only)
-1. Go to **Students** in the sidebar.
-2. Click **Add Student** (top-right of the page).
-3. Fill in: Student Email, First Name, Last Name, Gender, Admission Date, Class, Guardian Name, Guardian Phone, Guardian Email, Guardian Relation (e.g. Father/Mother/Uncle), and optionally a Second Guardian.
-4. Click **Create Student**.
-The student is added immediately. No documents are uploaded here.
-
-### Add a class (Admin only)
-1. Go to **Classes**.
-2. Click **Add Class**, enter the class name and arm (e.g. JSS 1, Arm A), then save.
-You can also add subjects to a class and do bulk promotions from this page.
-
-### Set up school fees (Admin only)
-1. Go to **Finance**.
-2. Under **Class Fees**, click **Add Fee**, pick the class, enter the fee title and amount, then save.
-3. To generate individual fee bills for students, click **Generate Bills** for that class fee.
-Parents pay via a Paystack virtual bank account (bank transfer) assigned to them — no cash handling in the app.
-
-### Provision a parent virtual account (Admin only)
-1. Go to **Finance** → scroll to **Virtual Accounts** section.
-2. Find the parent row and click **Provision via Paystack**.
-The parent is given a unique bank account number. When they transfer money to it, the payment is automatically recorded and split to the school wallet.
-
-### Record or view attendance (Teacher)
-1. Go to **Attendance**.
-2. Click **Start Scan** to begin marking attendance for a class.
-Students can view their own attendance history from their **Attendance** page.
-
-### Create an exam (Admin / Teacher)
-1. Go to **Exams**.
-2. Click **Create Exam**, fill in the exam details and add questions.
-For Computer-Based Testing (CBT), the Admin downloads the Windows CBT Admin App from **Settings → Downloads**, packages the exam, and students sit it on the offline Student CBT app.
-
-### Upload results (Teacher)
-1. Go to **Results**.
-2. Select the class and upload/enter scores. Admins can then export broadsheets or individual report cards.
-
-### Send a message or broadcast (Admin)
-1. Go to **Messages**.
-2. Compose and send to individual users or broadcast to all parents/students via SMS.
-
-### Add a teacher or staff member (Admin)
-1. Go to **Staff → Teachers** or **Staff → Non-Teaching Staff**.
-2. Click **Add**, fill in their details, and save.
-
-### Generate ID cards (Admin)
-1. Go to **ID Cards**.
-2. Select students and click **Generate** to produce digital ID cards.
-
-### Import students in bulk (Admin)
-1. Go to **Database Import**.
-2. Upload a CSV file following the required template.
-
-### School settings (Admin)
-Go to **Settings** to update school name, logo, contact info, academic session, grading system, SMS configuration, and to download the CBT apps.
-
----
-
-## What Schooldom does NOT have
-- No document uploads during student registration (passport photos, birth certificates are not part of the add-student form).
-- No "New Student" button at the top of the dashboard — it is inside the Students page.
-- No separate "parent portal" login — parents log in through the same sign-in page and see their own restricted dashboard.
-- No built-in video conferencing or timetable builder.
+""" + PLATFORM_KNOWLEDGE_PROMPT + """
 
 ---
 
@@ -167,37 +98,6 @@ def _clean_messages(raw_messages):
                 msg["images"] = cleaned_imgs
         cleaned.append(msg)
     return cleaned
-
-
-# llama3.2:1b is small and does not reliably follow the "never write code"
-# system prompt rule on its own - this is a hard server-side backstop that
-# cuts the stream the moment the model's own output looks like code, rather
-# than trusting the model to police itself.
-CODE_SIGNALS = (
-    "```",
-    "<?php",
-    "#!/usr/bin/env",
-    "def __init__",
-    "console.log(",
-    "select * from",
-    "insert into",
-    "create table",
-    "import numpy",
-    "import pandas",
-    "</html>",
-    "<script",
-)
-
-CODE_REFUSAL_MESSAGE = (
-    "\n\nI can't help with writing or explaining code — I'm here for Schooldom "
-    "admin tasks like lesson plans, letters, and messages. What can I help you "
-    "with on the platform?"
-)
-
-
-def _looks_like_code(text):
-    lowered = text.lower()
-    return any(signal in lowered for signal in CODE_SIGNALS)
 
 
 def _stream_ollama_reply(upstream):

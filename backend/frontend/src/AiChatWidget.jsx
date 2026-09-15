@@ -6,11 +6,9 @@ const AI_NAME = "Phoenix AI";
 const HISTORY_KEY = "phoenix_ai_history";
 const LIMIT_KEY = "phoenix_ai_daily_limit";
 const TASKS_KEY = "phoenix_ai_tasks";
-const SEC_HISTORY_KEY = "secretary_chat_history";
 const DAILY_LIMIT = 30;
 const MAX_SAVED_CONVOS = 50;
-const SEC_MAX_SAVED = 30;
-const SEC_MAX_HISTORY_TURNS = 20;
+const MAX_HISTORY_TURNS = 20;
 
 const POS_KEY = "phoenix_ai_pos";
 
@@ -37,7 +35,9 @@ const ADMIN_ROLES = new Set([
   "school_superadmin", "super_admin",
 ]);
 
-const SEC_QUICK_PROMPTS = [
+// Admins get task-oriented prompts - the same Phoenix AI can execute these
+// directly (via /api/secretary/chat/) instead of just explaining them.
+const ADMIN_QUICK_PROMPTS = [
   "Add a new student",
   "Mark attendance for a class",
   "Schedule an exam",
@@ -91,13 +91,6 @@ function persistTasks(tasks) {
   localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
 }
 
-function loadSecHistory() {
-  try { return JSON.parse(localStorage.getItem(SEC_HISTORY_KEY) || "[]"); } catch { return []; }
-}
-function saveSecHistory(chats) {
-  localStorage.setItem(SEC_HISTORY_KEY, JSON.stringify(chats.slice(0, SEC_MAX_SAVED)));
-}
-
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -113,17 +106,27 @@ function appendChunk(prev, chunk) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-
+//
+// One continuous conversation for every role - admins used to see a separate
+// "Schooldom Secretary" tab inside this same widget that they had to switch
+// into manually to get task execution instead of chat. Now there is a single
+// send action: for admins it calls /api/secretary/chat/ (tool-calling,
+// non-streaming), for everyone else /api/ai/chat/ (plain chat, streaming).
+// Both share one message list, one input, one history panel - the backend
+// routing is invisible. The admin-only tool-execution boundary is unchanged
+// server-side (ai_secretary/agent.py's role check); isAdmin here is only UX
+// routing, never the security boundary.
 export default function AiChatWidget({ session }) {
   const isAdmin = ADMIN_ROLES.has(session?.user?.role || "");
 
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState("chat"); // "chat" | "history" | "tasks" | "secretary"
+  const [mode, setMode] = useState("chat"); // "chat" | "history" | "tasks"
   const [conversations, setConversations] = useState([]);
   const [currentId, setCurrentId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busySeconds, setBusySeconds] = useState(0);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(null);
   const [dailyUsed, setDailyUsed] = useState(0);
@@ -134,31 +137,17 @@ export default function AiChatWidget({ session }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef(null);
 
-  // Secretary state
-  const [secMessages, setSecMessages] = useState([]);
-  const [secInput, setSecInput] = useState("");
-  const [secBusy, setSecBusy] = useState(false);
-  const [secBusySeconds, setSecBusySeconds] = useState(0);
-  const [secError, setSecError] = useState(null);
-  const [secSavedChats, setSecSavedChats] = useState([]);
-  const [secCurrentId, setSecCurrentId] = useState(() => makeId());
-  const [secShowHistory, setSecShowHistory] = useState(false);
-  const secTimerRef = useRef(null);
-  const secTextareaRef = useRef(null);
-  const secListRef = useRef(null);
-
   const listRef = useRef(null);
   const textareaRef = useRef(null);
   const taskInputRef = useRef(null);
   const abortRef = useRef(null);
-  const secAbortRef = useRef(null);
+  const busyTimerRef = useRef(null);
 
   useEffect(() => {
     setConversations(loadHistory());
     setDailyUsed(getDailyUsage());
     setCurrentId(makeId());
     setTasks(loadTasks());
-    if (isAdmin) setSecSavedChats(loadSecHistory());
   }, []);
 
   useEffect(() => {
@@ -167,14 +156,9 @@ export default function AiChatWidget({ session }) {
   }, [messages, open]);
 
   useEffect(() => {
-    if (secListRef.current) secListRef.current.scrollTop = secListRef.current.scrollHeight;
-  }, [secMessages, open]);
-
-  useEffect(() => {
     if (!open) return;
     if (mode === "chat") window.requestAnimationFrame(() => textareaRef.current?.focus());
     if (mode === "tasks") window.requestAnimationFrame(() => taskInputRef.current?.focus());
-    if (mode === "secretary") window.requestAnimationFrame(() => secTextareaRef.current?.focus());
   }, [open, mode]);
 
   function handleInputChange(e) {
@@ -273,69 +257,16 @@ export default function AiChatWidget({ session }) {
     });
   }
 
-  // ── Secretary ─────────────────────────────────────────────────────────────────
+  // ── Admin turn (tool-calling, non-streaming) ────────────────────────────────
 
-  function startNewSecChat() {
-    setSecCurrentId(makeId());
-    setSecMessages([]);
-    setSecInput("");
-    setSecError(null);
-    setSecShowHistory(false);
-  }
-
-  function persistSecChat(msgs) {
-    if (!msgs.length) return;
-    const title = msgs.find((m) => m.role === "user")?.content?.slice(0, 55) || "Chat";
-    setSecSavedChats((prev) => {
-      const updated = [
-        { id: secCurrentId, title, messages: msgs, createdAt: Date.now() },
-        ...prev.filter((c) => c.id !== secCurrentId),
-      ].slice(0, SEC_MAX_SAVED);
-      saveSecHistory(updated);
-      return updated;
-    });
-  }
-
-  function loadSecChat(chat) {
-    setSecCurrentId(chat.id);
-    setSecMessages(chat.messages);
-    setSecInput("");
-    setSecError(null);
-    setSecShowHistory(false);
-  }
-
-  function deleteSecChat(id, e) {
-    e.stopPropagation();
-    setSecSavedChats((prev) => {
-      const updated = prev.filter((c) => c.id !== id);
-      saveSecHistory(updated);
-      return updated;
-    });
-    if (id === secCurrentId) startNewSecChat();
-  }
-
-  function buildSecHistory(msgs) {
+  function buildHistoryForApi(msgs) {
     return msgs
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .slice(-SEC_MAX_HISTORY_TURNS * 2)
+      .slice(-MAX_HISTORY_TURNS * 2)
       .map(({ role, content }) => ({ role, content }));
   }
 
-  async function handleSecSend(quickText, retried = false) {
-    const text = (quickText ?? secInput).trim();
-    if (!text || secBusy) return;
-
-    const userMsg = { id: makeId(), role: "user", content: text };
-    const thinkingMsg = { id: makeId(), role: "assistant", content: "", thinking: true };
-
-    setSecMessages((prev) => [...prev, userMsg, thinkingMsg]);
-    setSecInput("");
-    setSecError(null);
-    setSecBusy(true);
-    setSecBusySeconds(0);
-    secTimerRef.current = setInterval(() => setSecBusySeconds((s) => s + 1), 1000);
-    secAbortRef.current = new AbortController();
-
+  async function sendAdminTurn(text, savedId, priorMessages, retried = false) {
     const headers = { "Content-Type": "application/json" };
     if (session?.access) headers.Authorization = `Bearer ${session.access}`;
 
@@ -343,22 +274,21 @@ export default function AiChatWidget({ session }) {
       const res = await fetch(`${API_BASE_URL}/api/secretary/chat/`, {
         method: "POST",
         headers,
-        signal: secAbortRef.current?.signal,
+        signal: abortRef.current?.signal,
         body: JSON.stringify({
           message: text,
-          history: buildSecHistory(secMessages),
+          history: buildHistoryForApi(priorMessages),
         }),
       });
 
       if (res.status === 401 && !retried) {
         await refreshAccessToken(session);
-        setSecMessages((prev) => prev.filter((m) => !m.thinking));
-        return handleSecSend(quickText, true);
+        return sendAdminTurn(text, savedId, priorMessages, true);
       }
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Secretary could not respond.");
+        throw new Error(data?.detail || "Phoenix AI could not respond.");
       }
 
       const data = await res.json();
@@ -375,40 +305,24 @@ export default function AiChatWidget({ session }) {
         try {
           window.dispatchEvent(new CustomEvent("schooldom:assistant-navigate", { detail: { route: normalizedRoute } }));
         } catch (err) {
-          console.warn("Secretary navigation dispatch failed", err);
+          console.warn("Assistant navigation dispatch failed", err);
         }
       }
 
-      setSecMessages((prev) => {
+      setMessages((prev) => {
         const updated = [...prev.filter((m) => !m.thinking), assistantMsg];
-        persistSecChat(updated);
+        saveConversation(updated, savedId);
         return updated;
       });
     } catch (err) {
-      setSecMessages((prev) => prev.filter((m) => !m.thinking));
+      setMessages((prev) => prev.filter((m) => !m.thinking));
       if (err?.name !== "AbortError") {
-        setSecError(err.message || "Something went wrong.");
+        setError(err.message || "Something went wrong.");
       }
-    } finally {
-      setSecBusy(false);
-      setSecBusySeconds(0);
-      clearInterval(secTimerRef.current);
-      secAbortRef.current = null;
     }
   }
 
-  function stopSecResponse() {
-    secAbortRef.current?.abort();
-  }
-
-  function handleSecKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSecSend();
-    }
-  }
-
-  // ── AI chat ───────────────────────────────────────────────────────────────────
+  // ── Phoenix turn (plain chat, streaming) ────────────────────────────────────
 
   async function streamChat(history, retried = false) {
     const headers = { "Content-Type": "application/json" };
@@ -455,27 +369,48 @@ export default function AiChatWidget({ session }) {
     }
   }
 
+  // ── Unified send ─────────────────────────────────────────────────────────────
+
   async function handleSend(quickText) {
     const trimmed = (quickText ?? input).trim();
     if (!trimmed || busy) return;
 
-    const remaining = DAILY_LIMIT - dailyUsed;
-    if (remaining <= 0) {
-      setError(`You've reached today's limit of ${DAILY_LIMIT} messages. Come back tomorrow!`);
-      return;
+    if (!isAdmin) {
+      const remaining = DAILY_LIMIT - dailyUsed;
+      if (remaining <= 0) {
+        setError(`You've reached today's limit of ${DAILY_LIMIT} messages. Come back tomorrow!`);
+        return;
+      }
     }
 
-    const userMsg = { role: "user", content: trimmed };
-    const history = [...messages, userMsg];
-    setMessages([...history, { role: "assistant", content: "" }]);
+    const priorMessages = messages;
+    const userMsg = { id: makeId(), role: "user", content: trimmed };
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
     setBusy(true);
-    setDailyUsed(incrementDailyUsage());
     abortRef.current = new AbortController();
-
     const savedId = currentId;
+
+    if (isAdmin) {
+      const thinkingMsg = { id: makeId(), role: "assistant", content: "", thinking: true };
+      setMessages((prev) => [...prev, userMsg, thinkingMsg]);
+      setBusySeconds(0);
+      busyTimerRef.current = setInterval(() => setBusySeconds((s) => s + 1), 1000);
+      try {
+        await sendAdminTurn(trimmed, savedId, priorMessages);
+      } finally {
+        setBusy(false);
+        setBusySeconds(0);
+        clearInterval(busyTimerRef.current);
+        abortRef.current = null;
+      }
+      return;
+    }
+
+    const history = [...priorMessages, userMsg];
+    setMessages([...history, { id: makeId(), role: "assistant", content: "" }]);
+    setDailyUsed(incrementDailyUsage());
     try {
       await streamChat(history);
       setMessages((prev) => {
@@ -517,21 +452,6 @@ export default function AiChatWidget({ session }) {
       e.preventDefault();
       addTask();
     }
-  }
-
-  // ── Header action helpers ─────────────────────────────────────────────────────
-
-  function handleHistoryToggle() {
-    if (mode === "secretary") {
-      setSecShowHistory((v) => !v);
-    } else {
-      setMode((m) => (m === "history" ? "chat" : "history"));
-    }
-  }
-
-  function handleNewChat() {
-    if (mode === "secretary") startNewSecChat();
-    else startNewChat();
   }
 
   // ── Drag-to-move ─────────────────────────────────────────────────────────────
@@ -582,7 +502,7 @@ export default function AiChatWidget({ session }) {
 
   const remaining = DAILY_LIMIT - dailyUsed;
   const userInitial = (session?.user?.first_name?.[0] || "U").toUpperCase();
-  const canSend = input.trim() && !busy && remaining > 0;
+  const canSend = input.trim() && !busy && (isAdmin || remaining > 0);
 
   const activeTasks = tasks.filter((t) => !t.done);
   const doneTasks = tasks.filter((t) => t.done);
@@ -592,7 +512,7 @@ export default function AiChatWidget({ session }) {
     return true;
   });
 
-  const historyActive = mode === "secretary" ? secShowHistory : mode === "history";
+  const historyActive = mode === "history";
 
   // If the toggle button has been dragged too close to the top for the panel to fit
   // above it, open the panel downward instead so it stays fully on-screen. The button
@@ -611,25 +531,15 @@ export default function AiChatWidget({ session }) {
           {/* Header */}
           <header className="ai-chat-header">
             <div className="ai-chat-header-left">
-              <div className="ai-chat-logo">{mode === "secretary" ? "🗂️" : <img className="ai-header-logo-img" src="/phoenix-ai.png" alt="Phoenix AI" />}</div>
+              <div className="ai-chat-logo">
+                <img className="ai-header-logo-img" src="/phoenix-ai.png" alt="Phoenix AI" />
+              </div>
               <div>
-                <strong>{mode === "secretary" ? "Schooldom Secretary" : AI_NAME}</strong>
-                <span className="ai-chat-subtitle">
-                  {mode === "secretary" ? "Admin assistant" : "Your personal assistant"}
-                </span>
+                <strong>{AI_NAME}</strong>
+                <span className="ai-chat-subtitle">Your personal assistant</span>
               </div>
             </div>
             <div className="ai-chat-header-actions">
-              {isAdmin && (
-                <button
-                  type="button"
-                  className={`ai-chat-icon-btn sec-tab-btn ${mode === "secretary" ? "active" : ""}`}
-                  onClick={() => setMode((m) => (m === "secretary" ? "chat" : "secretary"))}
-                  title="Schooldom Secretary (Admin)"
-                >
-                  🗂️
-                </button>
-              )}
               <button
                 type="button"
                 className={`ai-chat-icon-btn ${mode === "tasks" ? "active" : ""}`}
@@ -644,7 +554,7 @@ export default function AiChatWidget({ session }) {
               <button
                 type="button"
                 className={`ai-chat-icon-btn ${historyActive ? "active" : ""}`}
-                onClick={handleHistoryToggle}
+                onClick={() => setMode((m) => (m === "history" ? "chat" : "history"))}
                 title="Chat history"
               >
                 <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -655,7 +565,7 @@ export default function AiChatWidget({ session }) {
               <button
                 type="button"
                 className="ai-chat-icon-btn"
-                onClick={handleNewChat}
+                onClick={startNewChat}
                 title="New chat"
               >
                 <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -677,148 +587,8 @@ export default function AiChatWidget({ session }) {
             </div>
           </header>
 
-          {/* ── Secretary mode ─────────────────────────────────────────────── */}
-          {mode === "secretary" ? (
-            secShowHistory ? (
-              <div className="sec-history">
-                <div className="sec-history-head">
-                  <span>Recent sessions</span>
-                  <span>{new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                </div>
-                {secSavedChats.length === 0 ? (
-                  <p className="sec-history-empty">No previous sessions yet.</p>
-                ) : (
-                  <ul className="sec-history-list">
-                    {secSavedChats.map((c) => (
-                      <li
-                        key={c.id}
-                        className={`sec-history-item ${c.id === secCurrentId ? "active" : ""}`}
-                        onClick={() => loadSecChat(c)}
-                      >
-                        <div className="sec-history-title">{c.title}</div>
-                        <div className="sec-history-meta">
-                          {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                          {" · "}{c.messages.length} msgs
-                        </div>
-                        <button
-                          type="button"
-                          className="sec-history-delete"
-                          onClick={(e) => deleteSecChat(c.id, e)}
-                          title="Delete"
-                        >×</button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="sec-messages" ref={secListRef}>
-                  {secMessages.length === 0 && (
-                    <div className="sec-welcome">
-                      <div className="sec-welcome-icon">🗂️</div>
-                      <h3>Hello! How can I assist?</h3>
-                      <p>I manage students, attendance, exams &amp; parent messages. Responses take 15–30s on first use.</p>
-                      <div className="sec-quick-prompts">
-                        {SEC_QUICK_PROMPTS.map((q) => (
-                          <button
-                            key={q}
-                            type="button"
-                            className="sec-quick-btn"
-                            onClick={() => handleSecSend(q)}
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {secMessages.map((msg) => (
-                    <div key={msg.id} className={`sec-message sec-message-${msg.role}`}>
-                      {msg.role === "assistant" && (
-                        <div className="sec-avatar sec-avatar-ai">🗂️</div>
-                      )}
-                      <div className="sec-msg-wrap">
-                        <div className="sec-bubble">
-                          {msg.thinking ? (
-                            <span className="sec-thinking">
-                              <span /><span /><span />
-                            </span>
-                          ) : (
-                            <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
-                          )}
-                          {msg.tools?.length > 0 && (
-                            <div className="sec-tools-badge">
-                              {msg.tools.map((t) => (
-                                <span key={t} className="sec-tool-chip">{t.replace(/_/g, " ")}</span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {msg.thinking && (
-                          <span className="sec-thinking-label">
-                            {secBusySeconds < 5
-                              ? "Thinking…"
-                              : secBusySeconds < 20
-                              ? `Working on it… (${secBusySeconds}s)`
-                              : `Almost there… (${secBusySeconds}s)`}
-                          </span>
-                        )}
-                      </div>
-                      {msg.role === "user" && (
-                        <div className="sec-avatar sec-avatar-user">{userInitial}</div>
-                      )}
-                    </div>
-                  ))}
-
-                  {secError && <div className="sec-error">{secError}</div>}
-                </div>
-
-                <div className="sec-input-area">
-                  <div className="sec-input-row">
-                    <textarea
-                      ref={secTextareaRef}
-                      value={secInput}
-                      onChange={(e) => setSecInput(e.target.value)}
-                      onKeyDown={handleSecKeyDown}
-                      placeholder="Tell me what you need…"
-                      rows={1}
-                      disabled={secBusy}
-                    />
-                    {secBusy ? (
-                      <button
-                        type="button"
-                        className="sec-send ai-chat-stop"
-                        onClick={stopSecResponse}
-                        title="Stop response"
-                        aria-label="Stop response"
-                      >
-                        <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24">
-                          <rect x="6" y="6" width="12" height="12" rx="2.5" />
-                        </svg>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="sec-send"
-                        onClick={() => handleSecSend()}
-                        disabled={!secInput.trim()}
-                        title="Send (Enter)"
-                      >
-                        <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                          <line x1="22" y1="2" x2="11" y2="13" />
-                          <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </>
-            )
-
-          /* ── History panel (chat mode) ─────────────────────────────────── */
-          ) : mode === "history" ? (
+          {/* ── History panel ──────────────────────────────────────────────── */}
+          {mode === "history" ? (
             <div className="ai-chat-history">
               <div className="ai-chat-history-head">
                 <span>Recent chats</span>
@@ -948,9 +718,13 @@ export default function AiChatWidget({ session }) {
                   <div className="ai-chat-welcome">
                     <div className="ai-chat-welcome-icon">AI</div>
                     <h3>Hello! How can I help you?</h3>
-                    <p>Ask me anything about Schooldom or school management.</p>
+                    <p>
+                      {isAdmin
+                        ? "Ask me anything, or ask me to do something — add a student, mark attendance, send a reminder."
+                        : "Ask me anything about Schooldom or school management."}
+                    </p>
                     <div className="ai-chat-quick-prompts">
-                      {QUICK_PROMPTS.map((q) => (
+                      {(isAdmin ? ADMIN_QUICK_PROMPTS : QUICK_PROMPTS).map((q) => (
                         <button
                           key={q}
                           type="button"
@@ -965,25 +739,43 @@ export default function AiChatWidget({ session }) {
                 )}
 
                 {messages.map((msg, i) => (
-                  <div key={i} className={`ai-chat-message ai-chat-message-${msg.role}`}>
+                  <div key={msg.id ?? i} className={`ai-chat-message ai-chat-message-${msg.role}`}>
                     {msg.role === "assistant" && (
                       <div className="ai-chat-avatar ai-chat-avatar-ai">AI</div>
                     )}
-                    <div className="ai-chat-bubble">
-                      {msg.content ? (
-                        <span>{msg.content}</span>
-                      ) : busy && i === messages.length - 1 ? (
-                        <span className="ai-typing"><span /><span /><span /></span>
-                      ) : null}
-                      {msg.role === "assistant" && msg.content && (
-                        <button
-                          type="button"
-                          className="ai-chat-copy"
-                          onClick={() => copyMessage(msg.content, i)}
-                          title={copied === i ? "Copied!" : "Copy"}
-                        >
-                          {copied === i ? "✓" : "⧉"}
-                        </button>
+                    <div className="sec-msg-wrap">
+                      <div className="ai-chat-bubble">
+                        {msg.thinking || (!msg.content && busy && i === messages.length - 1) ? (
+                          <span className="ai-typing"><span /><span /><span /></span>
+                        ) : (
+                          <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+                        )}
+                        {msg.tools?.length > 0 && (
+                          <div className="sec-tools-badge">
+                            {msg.tools.map((t) => (
+                              <span key={t} className="sec-tool-chip">{t.replace(/_/g, " ")}</span>
+                            ))}
+                          </div>
+                        )}
+                        {msg.role === "assistant" && msg.content && !msg.thinking && (
+                          <button
+                            type="button"
+                            className="ai-chat-copy"
+                            onClick={() => copyMessage(msg.content, i)}
+                            title={copied === i ? "Copied!" : "Copy"}
+                          >
+                            {copied === i ? "✓" : "⧉"}
+                          </button>
+                        )}
+                      </div>
+                      {msg.thinking && (
+                        <span className="sec-thinking-label">
+                          {busySeconds < 5
+                            ? "Thinking…"
+                            : busySeconds < 20
+                            ? `Working on it… (${busySeconds}s)`
+                            : `Almost there… (${busySeconds}s)`}
+                        </span>
                       )}
                     </div>
                     {msg.role === "user" && (
@@ -996,7 +788,7 @@ export default function AiChatWidget({ session }) {
               </div>
 
               <div className="ai-chat-input-area">
-                {remaining <= 5 && remaining > 0 && (
+                {!isAdmin && remaining <= 5 && remaining > 0 && (
                   <div className="ai-chat-limit-warn">
                     {remaining} message{remaining !== 1 ? "s" : ""} left today
                   </div>
@@ -1007,9 +799,9 @@ export default function AiChatWidget({ session }) {
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder="Ask Phoenix AI anything…"
+                    placeholder={isAdmin ? "Ask or tell Phoenix AI what to do…" : "Ask Phoenix AI anything…"}
                     rows={1}
-                    disabled={busy || remaining <= 0}
+                    disabled={busy || (!isAdmin && remaining <= 0)}
                   />
                   {busy ? (
                     <button

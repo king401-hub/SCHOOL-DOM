@@ -14,6 +14,7 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
+from .code_guard import CODE_REFUSAL_MESSAGE, looks_like_code
 from .prompts import SECRETARY_SYSTEM_PROMPT
 from .tools import TOOL_SCHEMAS, SecretaryTools, resolve_navigation_page
 
@@ -387,10 +388,20 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         tool_calls = message.get("tool_calls") or []
 
         if not tool_calls:
-            # No more tool calls — return the final answer
+            # No more tool calls — return the final answer. This is raw model
+            # text (unlike every other return point in run_agent, which is
+            # built from deterministic tool results), so it's the one place
+            # Secretary needs the same code-signal backstop Phoenix already
+            # has - the model has zero guardrail of its own otherwise.
             reply = message.get("content", "").strip()
             if not reply:
                 reply = "Done ✅"
+            elif looks_like_code(reply):
+                # Nothing has been sent to the client yet (unlike Phoenix's
+                # streaming path, which can only append a refusal after
+                # whatever already left the server) - replace outright rather
+                # than show the leaked code plus a refusal after it.
+                reply = CODE_REFUSAL_MESSAGE.strip()
             return {"reply": reply, "tools_called": tools_called, "error": None}
 
         # ── Execute each requested tool call ─────────────────────────────
@@ -435,5 +446,8 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         reply = data.get("message", {}).get("content", "").strip()
     except Exception:
         reply = "Something went wrong. Let's try again — or I can note it for your IT team."
+
+    if reply and looks_like_code(reply):
+        reply = CODE_REFUSAL_MESSAGE.strip()
 
     return {"reply": reply or "Task completed.", "tools_called": tools_called, "error": None}

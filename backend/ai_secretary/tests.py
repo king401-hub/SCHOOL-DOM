@@ -116,6 +116,22 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertEqual(result["tools_called"], ["navigate_to_page"])
         self.assertEqual(result["route"], "/finance")
 
+    def test_code_signal_backstop_applies_to_the_admin_agent_path(self):
+        """Regression test for the Phase D unification: the code-signal
+        kill-switch used to exist only in ai_chat's Phoenix persona - the
+        Secretary agent ran the same local model with zero backstop of its
+        own. A free-text request (not routed to any Phase 1 tool) that gets a
+        code-shaped reply back from Ollama must be refused, not shown as-is."""
+        from ai_secretary.agent import run_agent
+        from ai_secretary.code_guard import CODE_REFUSAL_MESSAGE
+
+        fake_response = {"message": {"content": "Sure:\n```python\nprint('hi')\n```", "tool_calls": []}}
+        with patch("ai_secretary.agent._call_ollama", return_value=fake_response):
+            result = run_agent("Can you write me a Python script for attendance?", [], self.school, self.admin)
+
+        self.assertIn(CODE_REFUSAL_MESSAGE.strip(), result["reply"])
+        self.assertNotIn("```", result["reply"])
+
     def test_navigation_supports_every_admin_section(self):
         routes = {
             "Open the students page": "/students",
