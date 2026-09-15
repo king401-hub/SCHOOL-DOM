@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 
 import requests
 from django.conf import settings
@@ -19,11 +20,24 @@ from .tools import TOOL_SCHEMAS, SecretaryTools, resolve_navigation_page
 logger = logging.getLogger(__name__)
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
-SECRETARY_MODEL = getattr(settings, "SECRETARY_OLLAMA_MODEL", "llama3.2:1b")
+SECRETARY_MODEL = getattr(settings, "SECRETARY_OLLAMA_MODEL", "llama3.2:3b")
 MAX_ITERATIONS = 6      # safety cap — prevents infinite tool-call loops
 MAX_HISTORY = 20        # messages kept in context
 MAX_MESSAGE_CHARS = 2000
-OLLAMA_TIMEOUT = (5, 300)  # (connect, read) seconds - CPU inference can be slow
+# (connect, read) seconds for ONE Ollama call. Tightened from (5, 300): a
+# single iteration legitimately taking longer than 90s is itself a sign
+# something's wrong, and the old 300s read timeout didn't actually bound
+# anything - run_agent can call this up to MAX_ITERATIONS times per request,
+# so the real request-wide bound is AGENT_DEADLINE_SECONDS below.
+OLLAMA_TIMEOUT = (10, 90)
+# Wall-clock budget for the WHOLE run_agent() loop, independent of
+# per-call/iteration limits - without this, a pathological run could take up
+# to MAX_ITERATIONS x OLLAMA_TIMEOUT[1] before Django even returns. Must stay
+# comfortably below gunicorn's --timeout, which must stay below nginx's
+# proxy_read_timeout for /api/ - the same chain documented in
+# ai_chat/views.py, which already caused one production incident when
+# mismatched (a mid-reply 500 instead of a clean timeout response).
+AGENT_DEADLINE_SECONDS = 50
 ADMIN_ROLES = {"school_admin", "principal", "accountant", "school_superadmin", "super_admin"}
 
 
@@ -120,6 +134,15 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
         cache.set(cache_key, result, timeout=300)
         return result
 
+    if class_name and any(phrase in lowered for phrase in ["roster", "list of student", "students in", "who is in", "who's in"]):
+        result = {
+            "tool": "get_class_roster",
+            "params": {"class_name": class_name},
+            "confidence": 0.92,
+        }
+        cache.set(cache_key, result, timeout=300)
+        return result
+
     if "timetable" in lowered:
         result = {
             "tool": "generate_timetable",
@@ -187,8 +210,20 @@ def _call_ollama(messages: list, stream: bool = False, use_tools: bool = True) -
         "stream": stream,
         "options": {
             "temperature": 0.3,
-            "num_predict": 100,
-            "num_ctx": 512,   # smaller KV cache = faster CPU-only inference
+            # 400, not 100: a tool-call JSON payload or a warm multi-sentence
+            # reply needs more than ~75 words - still well short of Phoenix's
+            # 1024, since tool-call payloads are compact and the system
+            # prompt already asks for concise replies.
+            "num_predict": 400,
+            # 8192, not 512: the system prompt + all 22 TOOL_SCHEMAS alone are
+            # already ~3k tokens - at 512 the model's own tool definitions
+            # were being truncated out of context on every call, before a
+            # single history message or tool-result round-trip was even
+            # added. This was almost certainly the dominant cause of
+            # unreliable tool selection. KV-cache memory scales with this
+            # value - watch actual RAM usage after raising it, don't assume
+            # it's free.
+            "num_ctx": 8192,
         },
     }
     if use_tools:
@@ -311,8 +346,12 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
     messages.append({"role": "user", "content": user_message})
 
     tools_called = []
+    deadline = time.monotonic() + AGENT_DEADLINE_SECONDS
 
     for iteration in range(MAX_ITERATIONS):
+        if time.monotonic() > deadline:
+            logger.warning("Secretary agent hit its %ds wall-clock deadline before MAX_ITERATIONS", AGENT_DEADLINE_SECONDS)
+            break
         try:
             data = _call_ollama(messages, stream=False)
         except requests.exceptions.ConnectionError as exc:

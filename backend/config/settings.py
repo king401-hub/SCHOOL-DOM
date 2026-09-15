@@ -95,6 +95,13 @@ FCM_SERVICE_ACCOUNT_PATH = os.getenv('FCM_SERVICE_ACCOUNT_PATH', '')
 # Ollama model for the admin secretary (must support tool calling).
 # Recommended: llama3.2:3b (fast), llama3.1:8b (smarter), gemma3:4b
 SECRETARY_OLLAMA_MODEL = os.getenv('SECRETARY_OLLAMA_MODEL', 'llama3.2:3b')
+# Ollama model for Phoenix (ai_chat - plain chat, no tool calling). Same
+# default as SECRETARY_OLLAMA_MODEL so Ollama never has to evict/reload a
+# model just because one admin switched between chatting and asking the
+# assistant to do something - kept as a SEPARATE env var (not one shared
+# constant) so Phoenix can be dialed back to a smaller/faster model under
+# real load without touching Secretary or redeploying code.
+PHOENIX_OLLAMA_MODEL = os.getenv('PHOENIX_OLLAMA_MODEL', 'llama3.2:3b')
 
 DEBUG = env_bool('DEBUG', True)
 # Keep local setup zero-config unless PostgreSQL is explicitly requested.

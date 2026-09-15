@@ -89,6 +89,8 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertEqual(parse_phase_one_command("What's the fee status of the school?")["tool"], "get_fee_status")
         self.assertEqual(parse_phase_one_command("Create a CBT for Biology with 50 questions")["tool"], "create_cbt_exam")
         self.assertEqual(parse_phase_one_command("Take me to the fee management page")["tool"], "navigate_to_page")
+        self.assertEqual(parse_phase_one_command("Show me the roster for JSS2")["tool"], "get_class_roster")
+        self.assertEqual(parse_phase_one_command("Who is in SS2A?")["tool"], "get_class_roster")
 
     def test_core_tools_execute_with_auto_execute_permissions(self):
         timetable = self.tools.dispatch("generate_timetable", {"class_name": "SS2A", "term": "First Term"})

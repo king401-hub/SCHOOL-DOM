@@ -2,15 +2,21 @@
 import json
 
 import requests
+from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 
-# Speed: llama3.2:1b is 2-3× faster than 3b with similar quality for school tasks.
-# Pull it with:  ollama pull llama3.2:1b
-OLLAMA_MODEL = "llama3.2:1b"
+# Same model as ai_secretary's Secretary mode by default (both read
+# PHOENIX_OLLAMA_MODEL/SECRETARY_OLLAMA_MODEL, settings.py defaults both to
+# llama3.2:3b) - Ollama only keeps one model warm at a time, so an admin
+# switching between plain chat and asking the assistant to do something used
+# to force an evict+reload every time. PHOENIX_OLLAMA_MODEL stays a separate
+# env var so this can be dialed back to something smaller/faster under real
+# load without touching Secretary or redeploying.
+OLLAMA_MODEL = getattr(settings, "PHOENIX_OLLAMA_MODEL", "llama3.2:3b")
 
 # Vision: required only when user attaches an image.
 # Pull it with:  ollama pull llava
@@ -247,8 +253,8 @@ def chat(request):
         },
     }
 
-    # This VPS runs Ollama on CPU only (no GPU), so even the small 1b model
-    # can take well over a minute per reply under load - this timeout must
+    # This VPS runs Ollama on CPU only (no GPU), so even a small model like
+    # OLLAMA_MODEL can take well over a minute per reply under load - this timeout must
     # stay comfortably BELOW gunicorn's --timeout (see schooldom.service),
     # which must in turn stay below nginx's proxy_read_timeout on /api/ (see
     # sites-enabled/schooldom). Whichever of the three is shortest silently
