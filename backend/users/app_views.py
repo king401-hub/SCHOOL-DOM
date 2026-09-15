@@ -14019,14 +14019,18 @@ def kids_monitor_deactivate(request, parent_id):
     })
 
 
-def _send_attendance_sms_batch(phones_and_messages):
+def _send_attendance_sms_batch(phones_and_messages, provider="ebulksms"):
     """Runs in a background thread — sends SMS without blocking the attendance request/response.
-    Kids Monitor alerts are funded by the parent's own paid subscription, not the school's
-    SMS wallet, so this intentionally calls send_ebulksms directly rather than send_wallet_sms."""
-    from finance.services import send_ebulksms
+    Kids Monitor alerts (the default, unconfigured call site below) are funded by the parent's
+    own paid subscription, not the school's SMS wallet, so this intentionally calls send_ebulksms
+    directly rather than send_wallet_sms. rfid_attendance's SchoolGate-only call sites pass
+    provider="kudisms" instead - see finance.services.send_kudisms for why SchoolGate uses a
+    separate provider from the rest of the platform."""
+    from finance.services import send_ebulksms, send_kudisms
+    sender_fn = send_kudisms if provider == "kudisms" else send_ebulksms
     for phone, message in phones_and_messages:
         try:
-            send_ebulksms(phone, message, sender="SchoolDom")
+            sender_fn(phone, message, sender="SchoolDom")
         except Exception:
             logger.exception("Attendance SMS to %s failed", phone)
 

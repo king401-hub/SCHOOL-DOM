@@ -49,6 +49,7 @@ from finance.services import (
     credit_sms_wallet_from_purchase,
     mark_sms_wallet_purchase_failed,
     normalize_phone_number,
+    send_kudisms,
     credit_wallet,
     deduct_document_generation_credit,
     ensure_student_wallet,
@@ -907,6 +908,59 @@ class PhoneNumberNormalizationTests(TestCase):
         showing "sent"."""
         self.assertEqual(normalize_phone_number("+23408147446317"), "2348147446317")
         self.assertEqual(normalize_phone_number("23408147446317"), "2348147446317")
+
+
+class KudiSmsServiceTests(TestCase):
+    """send_kudisms is used only by the SchoolGate product's own SMS (gate
+    clock-in/out, fee reminder, weekly digest) - every other SMS in the
+    platform (receipts, fee reminders, bulk messages) stays on
+    send_ebulksms. These test the provider call directly, same level as
+    send_ebulksms has no dedicated low-level test for either."""
+
+    @override_settings(KUDISMS_API_KEY="test-token")
+    @patch("finance.services.requests.post")
+    def test_sends_the_documented_payload_shape(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: {
+            "status": "success", "error_code": "000", "cost": "5.60",
+            "data": ["2348012345678|abc-123"], "msg": "Message received Successfully",
+            "length": 8, "page": 1, "balance": "15,585.41",
+        })
+
+        result = send_kudisms("08012345678", "Chidi arrived at school at 7:45 AM. -SchoolDom")
+
+        mock_post.assert_called_once()
+        call_args, call_kwargs = mock_post.call_args
+        self.assertEqual(call_args[0], "https://my.kudisms.net/api/sms")
+        payload = call_kwargs["json"]
+        self.assertEqual(payload["token"], "test-token")
+        self.assertEqual(payload["senderID"], "SchoolDom")
+        self.assertEqual(payload["recipients"], "2348012345678")
+        self.assertEqual(payload["message"], "Chidi arrived at school at 7:45 AM. -SchoolDom")
+        self.assertEqual(payload["gateway"], "2")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["error_code"], "000")
+
+    @override_settings(KUDISMS_API_KEY="")
+    @patch("finance.services.requests.post")
+    def test_missing_credentials_skips_without_calling_the_provider(self, mock_post):
+        result = send_kudisms("08012345678", "Test message")
+        mock_post.assert_not_called()
+        self.assertEqual(result["status"], "skipped")
+
+    @override_settings(KUDISMS_API_KEY="test-token")
+    @patch("finance.services.requests.post")
+    def test_unnormalizable_phone_is_rejected_without_calling_the_provider(self, mock_post):
+        result = send_kudisms("not-a-phone-number", "Test message")
+        mock_post.assert_not_called()
+        self.assertEqual(result["status"], "error")
+
+    @override_settings(KUDISMS_API_KEY="test-token")
+    @patch("finance.services.requests.post")
+    def test_long_message_is_truncated_to_the_sms_char_limit(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: {"status": "success", "error_code": "000"})
+        send_kudisms("08012345678", "x" * 300)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertLessEqual(len(payload["message"]), 160)
 
 
 class SmsWalletTests(TestCase):

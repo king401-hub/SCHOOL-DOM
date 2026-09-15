@@ -40,7 +40,44 @@ from hr.models import StaffProfile
 from notifications.models import Announcement, InAppMessage, MessageGroup, Notification
 from tenants.models import Tenant
 from users.models import KidsMonitorSubscription, ParentProfile, ServiceAgreement, StudentActivityTitle, StudentEnrollment, StudentProfile, SupportTicket, TeacherProfile, User
-from users.app_views import ID_CARD_SIGNING_SALT, _class_broadsheet, _resolve_school_signature_url, _transcript_payload
+from users.app_views import (
+    ID_CARD_SIGNING_SALT,
+    _class_broadsheet,
+    _resolve_school_signature_url,
+    _send_attendance_sms_batch,
+    _transcript_payload,
+)
+
+
+class AttendanceSmsBatchProviderTests(TestCase):
+    """_send_attendance_sms_batch is shared by two call sites with different
+    SMS providers: the Kids Monitor path below (default, eBulkSMS - funded
+    by the parent's own paid subscription) and rfid_attendance's SchoolGate-
+    only gate/fee-reminder/weekly-digest SMS (provider="kudisms", funded
+    outside the school's SMS wallet). Getting this dispatch wrong would
+    either bill SchoolGate SMS through the wrong provider or silently start
+    charging the school's SMS wallet for what's supposed to be free."""
+
+    @patch("finance.services.send_kudisms")
+    @patch("finance.services.send_ebulksms")
+    def test_default_provider_is_ebulksms(self, mock_ebulksms, mock_kudisms):
+        _send_attendance_sms_batch([("08012345678", "Test message")])
+        mock_ebulksms.assert_called_once_with("08012345678", "Test message", sender="SchoolDom")
+        mock_kudisms.assert_not_called()
+
+    @patch("finance.services.send_kudisms")
+    @patch("finance.services.send_ebulksms")
+    def test_kudisms_provider_is_used_when_requested(self, mock_ebulksms, mock_kudisms):
+        _send_attendance_sms_batch([("08012345678", "Test message")], provider="kudisms")
+        mock_kudisms.assert_called_once_with("08012345678", "Test message", sender="SchoolDom")
+        mock_ebulksms.assert_not_called()
+
+    @patch("finance.services.send_kudisms")
+    @patch("finance.services.send_ebulksms")
+    def test_a_failed_send_does_not_stop_the_rest_of_the_batch(self, mock_ebulksms, mock_kudisms):
+        mock_ebulksms.side_effect = [Exception("boom"), {"status": "success"}]
+        _send_attendance_sms_batch([("08010000001", "First"), ("08010000002", "Second")])
+        self.assertEqual(mock_ebulksms.call_count, 2)
 
 
 class SchoolRegistrationCreditTests(TestCase):

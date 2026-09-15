@@ -1,7 +1,9 @@
 """Weekly SchoolGate SMS digest - both plans get this (Basic's only SMS,
 since it has no daily clock-in/out notifications; Premium gets this in
 addition to those - see the gate in rfid_attendance/views.py's
-_record_student_scan)."""
+_record_student_scan). Sent via KudiSMS, same as SchoolGate's other SMS -
+see finance.services.send_kudisms for why SchoolGate uses a separate
+provider from the rest of the platform's eBulkSMS."""
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
@@ -34,7 +36,7 @@ def send_schoolgate_weekly_reports():
 
     from academic.models import AttendanceRecord
     from core.tenant import SchoolTenant
-    from finance.services import guardian_contacts_for_student, send_ebulksms
+    from finance.services import guardian_contacts_for_student, send_kudisms
     from users.models import StudentProfile, resolve_legacy_tenant_for_school
 
     today = timezone.localdate()
@@ -74,7 +76,7 @@ def send_schoolgate_weekly_reports():
                 counts.get("late_days", 0),
             )
             try:
-                send_ebulksms(phone, message, sender="SchoolDom")
+                send_kudisms(phone, message, sender="SchoolDom")
                 sent += 1
             except Exception:
                 logger.exception("Weekly SchoolGate SMS to %s failed", phone)

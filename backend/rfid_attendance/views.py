@@ -29,7 +29,7 @@ from academic.models import AttendanceRecord, Class
 from attendance.models import TeacherAttendance
 from attendance.views import _apply_clock_out, get_client_ip
 from core.schoolgate import require_full_product
-from finance.services import fee_totals_by_student, send_ebulksms
+from finance.services import fee_totals_by_student
 from users.models import StudentProfile, User
 from users.app_views import (
     AttendanceClockError,
@@ -140,8 +140,9 @@ def _gate_sms_text(student, action, event):
     that one is gated behind a parent's paid Kids Monitor subscription
     (see _notify_parents_on_attendance); SchoolGate's parent SMS is
     unconditional and funded outside the school's SMS wallet (per product
-    decision), so it reuses the same send_ebulksms plumbing but not that
-    gated call site."""
+    decision), and goes out via KudiSMS rather than the eBulkSMS that
+    gated call site (and every other SMS in the platform) uses - see
+    finance.services.send_kudisms."""
     now_str = timezone.localtime(timezone.now()).strftime('%I:%M %p').lstrip('0')
     name = student.get_full_name() or student.email
     if action == 'clock_out':
@@ -156,7 +157,7 @@ def _send_gate_sms(student_user, student_profile, action, event):
     if not phone:
         return
     message = _gate_sms_text(student_user, action, event)
-    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)],), daemon=True).start()
+    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)], "kudisms"), daemon=True).start()
 
 
 def _person_summary(request, user_obj):
@@ -647,7 +648,7 @@ def gate_pin_set(request):
 def fee_reminder_send(request):
     """SchoolGate spec section 2B's "Send Fee Reminder" button - an
     on-demand SMS, distinct from the automatic per-scan attendance SMS
-    (_send_gate_sms), sent the same unconditional, non-wallet way."""
+    (_send_gate_sms), sent the same unconditional, non-wallet, KudiSMS way."""
     school, error = _require_school(request.user, _school_code_from_request(request))
     if error:
         return error
@@ -669,7 +670,7 @@ def fee_reminder_send(request):
     fees = _fees_payload_for_student(student_profile)
     name = student_profile.user.get_full_name() or student_profile.user.email
     message = f'Reminder: {name} has an outstanding fee balance of ₦{fees["outstanding"]}. Please make payment at your earliest convenience. -SchoolDom'
-    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)],), daemon=True).start()
+    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)], "kudisms"), daemon=True).start()
     return Response({'success': True, 'message': 'Fee reminder sent.'})
 
 

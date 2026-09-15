@@ -1,6 +1,7 @@
 """Tests proving a shared dual-school kiosk device never leaks an
 attendance record from one paired school into the other."""
 import datetime
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -111,3 +112,68 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
         self.scanner_user.save(update_fields=["tenant"])
         settings_b = get_or_create_gate_settings(self.school_b)
         self.assertEqual(settings_b.mode, GateSettings.MODE_FEE_TRACKER)
+
+
+class SchoolGateSmsProviderTests(TestCase):
+    """SchoolGate's own SMS (gate clock-in/out, on-demand fee reminder) must
+    go out via KudiSMS - every other SMS in the platform (payment receipts,
+    fee reminders, bulk messages) stays on eBulkSMS. Verified by inspecting
+    what's handed to threading.Thread rather than letting a real background
+    thread run, so the assertion isn't racing the SMS send."""
+
+    def setUp(self):
+        # _send_gate_sms fires for any tenant scanning at the gate (it's
+        # only skipped for SchoolGate-Basic - see _record_student_scan) -
+        # a plain full-product tenant exercises the same KudiSMS dispatch
+        # without also needing SchoolGate's device/term payment fixtures.
+        self.school = SchoolTenant.objects.create(
+            name="Gate SMS School", schema_name="gate_sms_school", is_active=True,
+        )
+        self.scanner_user = User.objects.create_user(
+            email="scanner@gatesms.test", password="testpass123", role="staff", tenant=self.school,
+        )
+        self.student_user = User.objects.create_user(
+            email="student@gatesms.test", password="testpass123", role="student",
+            tenant=self.school, first_name="Gate", last_name="Student",
+        )
+        from users.models import StudentProfile
+
+        self.student_profile = StudentProfile.objects.create(
+            user=self.student_user, student_id="GATESMS001", admission_number="ADM-GATESMS-001",
+            admission_date=datetime.date(2024, 9, 1), guardian_name="Test Guardian",
+            guardian_phone="08010000099", guardian_relation="Parent",
+        )
+        CardAssignment.objects.create(tenant=self.school, holder=self.student_profile.user, card_uid="9999")
+        GateSettings.objects.create(tenant=self.school, mode=GateSettings.MODE_ATTENDANCE_ONLY)
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.scanner_user)
+
+    def test_gate_clock_in_scan_dispatches_via_kudisms(self):
+        with patch("rfid_attendance.views.threading.Thread") as mock_thread:
+            resp = self.client.post(
+                "/api/rfid/attendance/scan/",
+                {"card_uid": "9999", "idempotency_key": "gate-kudisms-1"},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201)
+        mock_thread.assert_called_once()
+        _call_args, call_kwargs = mock_thread.call_args
+        self.assertEqual(call_kwargs["args"][1], "kudisms")
+
+    def test_fee_reminder_button_dispatches_via_kudisms(self):
+        admin = User.objects.create_user(
+            email="admin@gatesms.test", password="testpass123", role="school_admin", tenant=self.school,
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        with patch("rfid_attendance.views.threading.Thread") as mock_thread:
+            resp = client.post(
+                "/api/rfid/fee-reminder/send/",
+                {"student_id": str(self.student_user.id)},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        mock_thread.assert_called_once()
+        _call_args, call_kwargs = mock_thread.call_args
+        self.assertEqual(call_kwargs["args"][1], "kudisms")

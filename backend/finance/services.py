@@ -860,6 +860,74 @@ def _ebulksms_accepted(result: dict):
     return False, "SMS provider did not confirm delivery."
 
 
+def send_kudisms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
+    """Send SMS via KudiSMS's JSON API. Used ONLY for the SchoolGate product's
+    own SMS (gate clock-in/out, on-demand fee reminder, weekly digest - see
+    rfid_attendance/views.py and rfid_attendance/tasks.py), which is
+    unconditional and funded outside the school's SMS wallet. Every other SMS
+    in the platform (payment receipts, fee reminders, bulk parent messages)
+    stays on send_ebulksms - this is a deliberate product split between two
+    providers, not a migration off eBulkSMS.
+
+    API docs: https://documenter.getpostman.com/view/44181644/2sB2cd3HUd
+    error_code "000" = sent; anything else is a provider-side rejection
+    (invalid token, unapproved sender ID, insufficient balance, etc - see the
+    code table in the docs)."""
+    message = _sms_safe_text(message)
+    if len(message) > SMS_CHAR_LIMIT:
+        logger.warning("KudiSMS message truncated from %d to %d chars", len(message), SMS_CHAR_LIMIT)
+        message = message[: SMS_CHAR_LIMIT - 3].rstrip() + "..."
+
+    token = getattr(settings, "KUDISMS_API_KEY", "")
+    if not token:
+        logger.error("KudiSMS credentials not configured.")
+        return {"status": "skipped", "reason": "KudiSMS credentials not configured."}
+
+    normalized = normalize_phone_number(to_phone)
+    if not normalized.startswith("234"):
+        logger.error("KudiSMS: phone %s could not be normalized to Nigerian format (got %s)", to_phone, normalized)
+        return {"status": "error", "reason": f"Invalid phone format: {normalized}"}
+
+    payload = {
+        "token": token,
+        "senderID": sender[:11],
+        "recipients": normalized,
+        "message": message,
+        # 2 = refunds the charge for a DND-blocked number rather than
+        # pretending it delivered - matches the documented sample requests.
+        "gateway": "2",
+    }
+    logger.info("KudiSMS → to=%s sender=%s chars=%d", normalized, sender, len(message))
+    try:
+        response = requests.post(
+            "https://my.kudisms.net/api/sms",
+            json=payload,
+            timeout=15,
+        )
+        data = response.json()
+        logger.info("KudiSMS response [HTTP %s]: %s", response.status_code, data)
+        if response.status_code != 200:
+            logger.error("KudiSMS non-200 HTTP status %s: %s", response.status_code, data)
+        return data
+    except Exception as exc:
+        logger.error("KudiSMS request failed: %s", exc)
+        return {"status": "error", "reason": str(exc)}
+
+
+def _kudisms_accepted(result: dict):
+    """Parses KudiSMS's response shape - {"status": "success", "error_code":
+    "000", ...} - deliberately an allowlist like _ebulksms_accepted above:
+    only status=="success" with error_code=="000" counts as accepted.
+    Returns (accepted: bool, reason: str)."""
+    if not isinstance(result, dict):
+        return False, "SMS provider returned an unexpected response."
+    if result.get("status") in ("error", "skipped"):
+        return False, str(result.get("reason") or "SMS provider request failed.")
+    if result.get("status") == "success" and str(result.get("error_code")) == "000":
+        return True, ""
+    return False, str(result.get("msg") or f"KudiSMS error code {result.get('error_code')}.")
+
+
 def sms_failure_reason(log: "SmsMessageLog") -> str:
     """Human-readable reason an SmsMessageLog failed, re-derived from its stored
     provider_response using the same logic send_wallet_sms used to decide not to

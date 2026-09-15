@@ -526,9 +526,16 @@ TERMII_API_KEY = os.getenv('TERMII_API_KEY', '')
 TERMII_WHATSAPP_FROM = os.getenv('TERMII_WHATSAPP_FROM', '')
 TERMII_BASE_URL = os.getenv('TERMII_BASE_URL', 'https://api.ng.termii.com')
 
-# eBulkSMS
+# eBulkSMS - payment receipts, fee reminders, and every other SMS in the
+# platform except SchoolGate's own gate/weekly-digest SMS (see finance.
+# services.send_kudisms below for why SchoolGate uses a separate provider).
 EBULKSMS_USERNAME = os.getenv('EBULKSMS_USERNAME', '')
 EBULKSMS_APIKEY = os.getenv('EBULKSMS_APIKEY', '')
+
+# KudiSMS - SchoolGate product only (rfid_attendance app's gate clock-in/out
+# SMS, on-demand fee reminder, and weekly digest). Docs:
+# https://documenter.getpostman.com/view/44181644/2sB2cd3HUd
+KUDISMS_API_KEY = os.getenv('KUDISMS_API_KEY', '')
 
 if PAYMENT_PROVIDER == 'flutterwave' and not FLUTTERWAVE_SECRET_KEY:
     missing = [
