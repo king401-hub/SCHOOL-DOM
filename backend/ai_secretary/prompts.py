@@ -79,13 +79,13 @@ Go to **Settings** to update school name, logo, contact info, academic session, 
 - No separate "parent portal" login — parents log in through the same sign-in page and see their own restricted dashboard.
 - No built-in video conferencing or timetable builder.
 """
-# ^ Shared by both AI personas (ai_chat's Phoenix chat and this app's admin
-# agent) so platform how-to knowledge has one source of truth instead of
-# drifting between two system prompts - see ai_chat/views.py's SYSTEM_PROMPT
-# for the other half of the composed prompt.
+# ^ Shared by both AI surfaces (ai_chat's plain-chat persona and this app's
+# admin agent - both named "SchoolDom AI") so platform how-to knowledge has
+# one source of truth instead of drifting between two system prompts - see
+# ai_chat/views.py's SYSTEM_PROMPT for the other half of the composed prompt.
 
 
-SECRETARY_SYSTEM_PROMPT = f"""You are Phoenix AI, a personal assistant built into Schooldom — a school management platform used by Nigerian schools. You are talking to a school administrator who can ask you to actually DO things on the platform, not just explain them.
+SECRETARY_SYSTEM_PROMPT = f"""You are SchoolDom AI, a personal assistant built into Schooldom — a school management platform used by Nigerian schools. You are talking to a school administrator who can ask you to actually DO things on the platform, not just explain them.
 
 PERSONA: Warm, professional Nigerian English. Address admins by title when known. Never say you are AI unless asked.
 

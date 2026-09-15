@@ -1,6 +1,7 @@
 """
 Server-side backstop that cuts a reply the moment it looks like programming
-code, shared by ai_chat's Phoenix persona and ai_secretary's admin agent.
+code, shared by ai_chat's plain-chat persona and ai_secretary's admin agent
+(both surfaces are branded "SchoolDom AI").
 
 Small local models (1B-3B) don't reliably follow a "never write code"
 system-prompt rule on their own - this is a hard check on the model's own

@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive, Palette, KeyRound, Wallet,
+  Package, Archive, Palette, KeyRound, Wallet, Bot,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -106,6 +106,7 @@ import {
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
+const AdminAiAssistantScreen = lazy(() => import("./AiAssistantScreen"));
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const AdminInventoryScreen = lazy(() => import("./components/Inventory/InventoryScreen"));
 const AdminAlumniScreen = lazy(() => import("./components/Alumni/AlumniScreen"));
@@ -6206,6 +6207,7 @@ function AdminNotificationsCenter({ session, data = {}, activityRecords = [], lo
 
 const ADMIN_ROUTE_ICONS = {
   "/dashboard": LayoutDashboard,
+  "/ai-assistant": Bot,
   "/performance-heatmap": TrendingUp,
   "/finance": DollarSign,
   "/expenses": Receipt,
@@ -6242,7 +6244,7 @@ const ADMIN_ROUTE_ICONS = {
 };
 
 const ADMIN_NAV_SECTIONS = [
-  { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
+  { label: "Overview", paths: ["/dashboard", "/ai-assistant", "/performance-heatmap"] },
   { label: "People", paths: ["/people-group"] },
   { label: "Academics", paths: ["/academics-group"] },
   { label: "Finance & HR", paths: ["/finance-group"] },
@@ -6250,6 +6252,7 @@ const ADMIN_NAV_SECTIONS = [
 ];
 
 const ACCOUNTANT_NAV_SECTIONS = [
+  { label: "Overview", paths: ["/ai-assistant"] },
   { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr-self-service"] },
   { label: "Administration", paths: ["/messages"] },
 ];
@@ -8164,6 +8167,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onNavigate={onNavigate}
       />
     );
+  } else if (activePath === "/ai-assistant") {
+    content = <AdminAiAssistantScreen session={session} />;
   } else if (activePath === "/performance-heatmap") {
     content = (
       <AdminPerformanceHeatmapScreen

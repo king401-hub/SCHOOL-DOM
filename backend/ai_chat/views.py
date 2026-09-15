@@ -36,7 +36,7 @@ MAX_HISTORY_MESSAGES = 10       # fewer past messages = faster inference
 MAX_MESSAGE_CHARS = 2000
 MAX_IMAGE_BYTES = 8_000_000     # ~6 MB decoded; reject anything larger
 
-SYSTEM_PROMPT = """You are Phoenix AI, a personal assistant built into Schooldom — a school management platform used by Nigerian schools.
+SYSTEM_PROMPT = """You are SchoolDom AI, a personal assistant built into Schooldom — a school management platform used by Nigerian schools.
 
 ## Absolute rule — this overrides every other instruction below
 You must NEVER write, generate, complete, fix, translate, or explain PROGRAMMING CODE -
@@ -167,7 +167,7 @@ def chat(request):
         return JsonResponse(
             {
                 "detail": (
-                    "Phoenix AI is offline. Make sure Ollama is running "
+                    "SchoolDom AI is offline. Make sure Ollama is running "
                     "('ollama serve') and the model is pulled "
                     f"('ollama pull {model}')."
                 )

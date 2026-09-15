@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "./appConstants";
 import { refreshAccessToken } from "./AppShared";
 
-const AI_NAME = "Phoenix AI";
+const AI_NAME = "SchoolDom AI";
 const HISTORY_KEY = "phoenix_ai_history";
 const LIMIT_KEY = "phoenix_ai_daily_limit";
 const TASKS_KEY = "phoenix_ai_tasks";
@@ -35,7 +35,7 @@ const ADMIN_ROLES = new Set([
   "school_superadmin", "super_admin",
 ]);
 
-// Admins get task-oriented prompts - the same Phoenix AI can execute these
+// Admins get task-oriented prompts - the same SchoolDom AI can execute these
 // directly (via /api/secretary/chat/) instead of just explaining them.
 const ADMIN_QUICK_PROMPTS = [
   "Add a new student",
@@ -288,7 +288,7 @@ export default function AiChatWidget({ session }) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Phoenix AI could not respond.");
+        throw new Error(data?.detail || "SchoolDom AI could not respond.");
       }
 
       const data = await res.json();
@@ -322,7 +322,7 @@ export default function AiChatWidget({ session }) {
     }
   }
 
-  // ── Phoenix turn (plain chat, streaming) ────────────────────────────────────
+  // ── SchoolDom AI turn (plain chat, streaming) ───────────────────────────────
 
   async function streamChat(history, retried = false) {
     const headers = { "Content-Type": "application/json" };
@@ -350,7 +350,7 @@ export default function AiChatWidget({ session }) {
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      throw new Error(data?.detail || "Phoenix AI could not respond.");
+      throw new Error(data?.detail || "SchoolDom AI could not respond.");
     }
 
     const reader = response.body?.getReader();
@@ -526,13 +526,13 @@ export default function AiChatWidget({ session }) {
   return (
     <div className="ai-chat-shell" style={{ right: pos.right, bottom: pos.bottom }}>
       {open && (
-        <div className={`ai-chat-panel${openBelow ? " ai-chat-panel--below" : ""}`} role="dialog" aria-label="Phoenix AI">
+        <div className={`ai-chat-panel${openBelow ? " ai-chat-panel--below" : ""}`} role="dialog" aria-label="SchoolDom AI">
 
           {/* Header */}
           <header className="ai-chat-header">
             <div className="ai-chat-header-left">
               <div className="ai-chat-logo">
-                <img className="ai-header-logo-img" src="/phoenix-ai.png" alt="Phoenix AI" />
+                <img className="ai-header-logo-img" src="/phoenix-ai.png" alt="SchoolDom AI" />
               </div>
               <div>
                 <strong>{AI_NAME}</strong>
@@ -799,7 +799,7 @@ export default function AiChatWidget({ session }) {
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder={isAdmin ? "Ask or tell Phoenix AI what to do…" : "Ask Phoenix AI anything…"}
+                    placeholder={isAdmin ? "Ask or tell SchoolDom AI what to do…" : "Ask SchoolDom AI anything…"}
                     rows={1}
                     disabled={busy || (!isAdmin && remaining <= 0)}
                   />
@@ -844,8 +844,8 @@ export default function AiChatWidget({ session }) {
         onPointerMove={handleTogglePointerMove}
         onPointerUp={handleTogglePointerUp}
         onPointerCancel={() => { dragRef.current = null; setIsDragging(false); }}
-        aria-label={open ? "Close Phoenix AI" : "Open Phoenix AI"}
-        title="Phoenix AI — drag to move"
+        aria-label={open ? "Close SchoolDom AI" : "Open SchoolDom AI"}
+        title="SchoolDom AI — drag to move"
       >
         {open ? (
           <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -853,7 +853,7 @@ export default function AiChatWidget({ session }) {
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         ) : (
-          <img className="ai-toggle-icon-img" src="/phoenix-ai.png" alt="Phoenix AI" />
+          <img className="ai-toggle-icon-img" src="/phoenix-ai.png" alt="SchoolDom AI" />
         )}
       </button>
     </div>

@@ -2538,7 +2538,7 @@ body[data-dashboard-role="student"] .global-notification-button {
   white-space: nowrap;
 }
 
-/* ── Phoenix AI Chat Widget ──────────────────────────────────────────────── */
+/* ── SchoolDom AI Chat Widget ────────────────────────────────────────────── */
 
 @keyframes ai-panel-in {
   from { opacity: 0; transform: translateY(18px) scale(0.96); }
@@ -3334,8 +3334,272 @@ body[data-theme="dark"] .ai-chat-error {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   AI ASSISTANT PAGE — full-page sidebar destination (admin-tier only)
+   Colors: SchoolDom teal/emerald brand family, matching the chat widget
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ai-assistant-page {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px);
+}
+
+.ai-assistant-scroll {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1.25rem 0.5rem;
+}
+
+/* Welcome hero (shown until the first message is sent) */
+.ai-assistant-hero {
+  margin: auto;
+  max-width: 640px;
+  width: 100%;
+  text-align: center;
+  padding: 1.5rem 0.5rem;
+}
+.ai-assistant-hero-icon {
+  width: 108px;
+  height: 108px;
+  margin: 0 auto 1.25rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.18) 0%, rgba(16, 185, 129, 0) 72%);
+}
+.ai-assistant-hero-icon img {
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 18px rgba(5, 150, 105, 0.35));
+}
+.ai-assistant-hero h1 {
+  margin: 0 0 0.6rem;
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.ai-assistant-brand-text {
+  background: linear-gradient(135deg, #059669, #0891b2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ai-assistant-hero p {
+  margin: 0 0 1.75rem;
+  color: #64748b;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.ai-assistant-quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  text-align: left;
+}
+@media (max-width: 640px) {
+  .ai-assistant-quick-grid { grid-template-columns: 1fr; }
+}
+.ai-assistant-quick-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 140ms, transform 140ms, box-shadow 140ms;
+}
+.ai-assistant-quick-card:hover {
+  transform: translateY(-1px);
+  border-color: #a7f3d0;
+  box-shadow: 0 6px 18px rgba(5, 150, 105, 0.1);
+}
+.ai-assistant-quick-icon {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+.ai-assistant-quick-label {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #1e293b;
+}
+.ai-assistant-quick-chevron { color: #94a3b8; flex-shrink: 0; }
+
+.ai-assistant-quick-card.tone-teal .ai-assistant-quick-icon { background: rgba(5, 150, 105, 0.12); color: #059669; }
+.ai-assistant-quick-card.tone-cyan .ai-assistant-quick-icon { background: rgba(8, 145, 178, 0.12); color: #0891b2; }
+.ai-assistant-quick-card.tone-emerald .ai-assistant-quick-icon { background: rgba(16, 185, 129, 0.14); color: #10b981; }
+.ai-assistant-quick-card.tone-indigo .ai-assistant-quick-icon { background: rgba(99, 102, 241, 0.13); color: #6366f1; }
+.ai-assistant-quick-card.tone-amber .ai-assistant-quick-icon { background: rgba(217, 119, 6, 0.13); color: #d97706; }
+.ai-assistant-quick-card.tone-orange .ai-assistant-quick-icon { background: rgba(234, 88, 12, 0.13); color: #ea580c; }
+
+/* Conversation view (shown after the first message) */
+.ai-assistant-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding-bottom: 0.5rem;
+}
+.ai-assistant-message {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.55rem;
+  animation: ai-msg-in 200ms ease both;
+}
+.ai-assistant-message-user { flex-direction: row-reverse; }
+.ai-assistant-avatar {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ai-assistant-avatar-ai { background: linear-gradient(135deg, #059669, #0891b2); }
+.ai-assistant-avatar-ai img { width: 70%; height: 70%; object-fit: contain; }
+.ai-assistant-avatar-user { background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; }
+.ai-assistant-bubble {
+  position: relative;
+  max-width: 100%;
+  padding: 0.65rem 0.9rem;
+  border-radius: 14px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.ai-assistant-message-user .ai-assistant-bubble {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.ai-assistant-message-assistant .ai-assistant-bubble {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
+  border-bottom-left-radius: 4px;
+}
+
+/* Input bar */
+.ai-assistant-input-area {
+  padding: 0.75rem 1.25rem;
+}
+.ai-assistant-input-row {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+.ai-assistant-input-icon { color: #059669; flex-shrink: 0; }
+.ai-assistant-input-row textarea {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  color: #1e293b;
+  min-height: 24px;
+  max-height: 140px;
+  padding: 0.3rem 0;
+}
+.ai-assistant-input-row textarea::placeholder { color: #94a3b8; }
+.ai-assistant-input-btn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  cursor: not-allowed;
+  flex-shrink: 0;
+}
+.ai-assistant-send {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 140ms, opacity 140ms;
+}
+.ai-assistant-send:disabled { opacity: 0.45; cursor: not-allowed; }
+.ai-assistant-send:not(:disabled):hover { transform: scale(1.06); }
+.ai-assistant-send.is-stop { background: #dc2626; animation: ai-stop-pulse 1.6s ease-in-out infinite; }
+
+.ai-assistant-footer {
+  margin: 0;
+  padding: 0 0 0.9rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+/* ── Dark mode ─────────────────────────────────────────────────────────────── */
+body[data-theme="dark"] .ai-assistant-hero h1 { color: #f1f5f9; }
+body[data-theme="dark"] .ai-assistant-hero p { color: #94a3b8; }
+body[data-theme="dark"] .ai-assistant-quick-card {
+  background: #111b2e;
+  border-color: #1e293b;
+}
+body[data-theme="dark"] .ai-assistant-quick-card:hover {
+  border-color: #065f46;
+  box-shadow: 0 6px 18px rgba(5, 150, 105, 0.18);
+}
+body[data-theme="dark"] .ai-assistant-quick-label { color: #e2e8f0; }
+body[data-theme="dark"] .ai-assistant-message-assistant .ai-assistant-bubble {
+  background: #111b2e;
+  border-color: #1e293b;
+  color: #e2e8f0;
+}
+body[data-theme="dark"] .ai-assistant-input-row {
+  background: #111b2e;
+  border-color: #1e293b;
+  box-shadow: none;
+}
+body[data-theme="dark"] .ai-assistant-input-row textarea { color: #e2e8f0; }
+body[data-theme="dark"] .ai-assistant-input-row textarea::placeholder { color: #64748b; }
+body[data-theme="dark"] .ai-assistant-footer { color: #64748b; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
    ACCENT CHARACTER PICKER — Yorùbá & French input helper
-   Position: bottom-left (mirrors Phoenix AI's bottom-right default)
+   Position: bottom-left (mirrors SchoolDom AI's bottom-right default)
    Colors: indigo gradient
    ═══════════════════════════════════════════════════════════════════════════ */
 
