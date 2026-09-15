@@ -3,10 +3,12 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
+from academic.models import Class
 from core.models import SchoolTenant
 from finance.models import SmsMessageLog
 from finance.services import get_or_create_sms_wallet
-from users.models import User
+from tenants.models import Tenant
+from users.models import StudentProfile, User
 
 from ai_secretary.tools import SecretaryTools
 
@@ -139,9 +141,43 @@ class PhaseOneAdminAgentTests(TestCase):
                 self.assertEqual(result["route"], expected_route)
 
 
+class LegacyTenantResolutionTests(TestCase):
+    """_get_class() (and everything built on it) has to bridge from
+    core.SchoolTenant to the legacy tenants.Tenant that academic.Class is
+    actually keyed to - filtering Class.objects on self.tenant directly
+    compares two unrelated ID spaces and silently finds nothing. Uses a
+    deliberately mismatched PK between the two tenant rows so this test can
+    only pass if the bridge (_get_legacy_tenant) is actually used."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Legacy Bridge School", schema_name="legacy_bridge_school", is_active=True)
+        # Deliberately NOT the same PK as self.school, to prove a naive
+        # `tenant=self.tenant` filter (comparing SchoolTenant PKs against
+        # tenants.Tenant PKs) could never have matched this row by accident.
+        self.legacy_tenant = Tenant.objects.create(name="Legacy Bridge School (legacy)", slug="legacy_bridge_school")
+        self.admin = User.objects.create_user(
+            email="admin@legacybridge.test",
+            password="AdminPass123",
+            first_name="Legacy",
+            last_name="Admin",
+            role="school_admin",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.class_obj = Class.objects.create(tenant=self.legacy_tenant, name="SS2A")
+        self.tools = SecretaryTools(self.school, self.admin)
+
+    def test_get_class_resolves_via_legacy_tenant_bridge(self):
+        found = self.tools._get_class("SS2A")
+        self.assertIsNotNone(found)
+        self.assertEqual(found.id, self.class_obj.id)
+
+
 class PhaseTwoAdminAgentTests(TestCase):
     def setUp(self):
         self.school = SchoolTenant.objects.create(name="Phase Two School", schema_name="phase_two_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name="Phase Two School (legacy)", slug="phase_two_school")
         self.admin = User.objects.create_user(
             email="admin@phasetwo.test",
             password="AdminPass123",
@@ -153,6 +189,18 @@ class PhaseTwoAdminAgentTests(TestCase):
             is_verified=True,
         )
         self.tools = SecretaryTools(self.school, self.admin)
+        self.class_obj = Class.objects.create(tenant=self.legacy_tenant, name="JSS2")
+
+    def _make_student(self, email, guardian_phone, guardian_name="Guardian"):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", first_name="Student", last_name=email.split("@")[0],
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=f"STU-{email}", admission_number=f"ADM-{email}",
+            admission_date="2026-01-01", current_class=self.class_obj,
+            guardian_name=guardian_name, guardian_phone=guardian_phone, guardian_relation="Parent",
+        )
 
     def test_context_management_uses_recent_class_reference(self):
         from ai_secretary.agent import parse_phase_one_command
@@ -178,12 +226,48 @@ class PhaseTwoAdminAgentTests(TestCase):
     def test_bulk_actions_require_explicit_confirmation(self):
         from ai_secretary.agent import run_agent
 
-        blocked = run_agent("Send a reminder to all SS2 parents about the PTA meeting.", [], self.school, self.admin)
+        self._make_student("parent1@jss2.test", "08010000010")
+
+        blocked = run_agent("Send a reminder to all JSS2 parents about the PTA meeting.", [], self.school, self.admin)
         self.assertIn("Please confirm", blocked["reply"])
         self.assertEqual(blocked["tools_called"], [])
 
-        confirmed = run_agent("I confirm the bulk parent reminder for SS2.", [], self.school, self.admin)
-        self.assertIn("confirmed", confirmed["reply"].lower())
+        history = [
+            {"role": "user", "content": "Send a reminder to all JSS2 parents about the PTA meeting."},
+            {"role": "assistant", "content": blocked["reply"]},
+        ]
+        with patch("finance.services.send_termii_whatsapp", return_value={"status": "success", "data": {"id": "wa-1"}}):
+            confirmed = run_agent("I confirm the bulk parent message for JSS2.", history, self.school, self.admin)
+        self.assertEqual(confirmed["tools_called"], ["send_bulk_parent_message"])
+        self.assertIn("jss2", confirmed["reply"].lower())
+
+    def test_bulk_confirm_uses_the_original_request_not_a_hardcoded_default(self):
+        """Regression test: the confirmed-send branch used to always dispatch
+        class_name="SS2" and a canned "PTA meeting reminder" message
+        regardless of what was actually typed - assert the real class and
+        message content from the ORIGINAL request survive the confirmation
+        round-trip."""
+        from ai_secretary.agent import run_agent
+
+        self._make_student("parent2@jss2.test", "08010000011")
+
+        original_text = "Send a bulk message to all JSS2 parents: School closes early on Friday for staff training."
+        blocked = run_agent(original_text, [], self.school, self.admin)
+        history = [
+            {"role": "user", "content": original_text},
+            {"role": "assistant", "content": blocked["reply"]},
+        ]
+
+        with patch("ai_secretary.tools.SecretaryTools.send_bulk_parent_message") as mock_send:
+            mock_send.return_value = {"status": "success", "message": "sent", "delivered_count": 1, "failed_count": 0}
+            run_agent("I confirm the bulk parent message for JSS2.", history, self.school, self.admin)
+
+        mock_send.assert_called_once()
+        _args, kwargs = mock_send.call_args
+        self.assertEqual(kwargs["class_name"], "JSS2")
+        self.assertNotEqual(kwargs["class_name"], "SS2")
+        self.assertIn("staff training", kwargs["message"].lower())
+        self.assertNotEqual(kwargs["message"], "PTA meeting reminder")
 
 
 class PhaseFourAdvancedFeaturesTests(TestCase):

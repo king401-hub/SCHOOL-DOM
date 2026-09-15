@@ -56,6 +56,19 @@ def _extract_context_class(history: list | None):
     return None
 
 
+def _find_prior_user_request(history: list | None) -> str | None:
+    """Recover the original ask that preceded an 'I confirm...' reply - the
+    confirmation turn itself carries no class/content information, so a bulk
+    action must look back here instead of guessing or hardcoding a default."""
+    for item in reversed(history or []):
+        if item.get("role") != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if content and "confirm" not in content.lower():
+            return content
+    return None
+
+
 def _extract_term(text: str):
     lowered = text.lower()
     if "first term" in lowered or "term 1" in lowered:
@@ -236,8 +249,11 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         ("reminder" in lowered and "parents" in lowered) or
         ("all " in lowered and "students" in lowered and "message" in lowered)
     ):
+        pending_class = _extract_class_name(normalized_message) or _extract_context_class(history)
+        target = pending_class or "your class"
         return {
-            "reply": "I’m about to send a bulk parent reminder. Please confirm by replying: 'I confirm the bulk parent reminder for SS2.'",
+            "reply": f"I’m about to send a bulk parent message for {target}. Please confirm by replying: "
+                     f"'I confirm the bulk parent message for {target}.'",
             "tools_called": [],
             "error": None,
         }
@@ -245,9 +261,33 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
     if "confirm" in lowered and (
         ("parent reminder" in lowered or "bulk parent" in lowered or "bulk message" in lowered)
     ):
-        result = tools.dispatch("send_bulk_parent_message", {"class_name": "SS2", "message_type": "reminder", "message": "PTA meeting reminder"})
+        # The confirmation turn itself ("I confirm...") carries no class/content
+        # information - it was previously hardcoded to class_name="SS2" and a
+        # canned "PTA meeting reminder" message regardless of what was actually
+        # requested. Recover the real request (and its class) from the message
+        # that triggered the confirmation prompt above, via history.
+        original_request = _find_prior_user_request(history) or normalized_message
+        class_name = _extract_class_name(original_request) or _extract_context_class(history)
+        if not class_name:
+            return {
+                "reply": "Which class should this go out to? Please confirm again with the class name included.",
+                "tools_called": [],
+                "error": "Missing class",
+            }
+        original_lower = original_request.lower()
+        if "fee" in original_lower or "payment" in original_lower:
+            message_type = "fee_reminder"
+        elif any(word in original_lower for word in ("pta", "meeting", "event")):
+            message_type = "event"
+        else:
+            message_type = "reminder"
+        result = tools.dispatch("send_bulk_parent_message", {
+            "class_name": class_name,
+            "message_type": message_type,
+            "message": original_request,
+        })
         return {
-            "reply": result.get("message") or "Bulk reminder confirmed and sent.",
+            "reply": result.get("message") or "Bulk message confirmed and sent.",
             "tools_called": ["send_bulk_parent_message"],
             "error": None if result.get("status") == "success" else result.get("message"),
         }

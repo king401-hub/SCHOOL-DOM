@@ -450,10 +450,19 @@ class SecretaryTools:
         return getattr(self.tenant, "name", "Schooldom School")
 
     def _get_class(self, class_name: str):
-        """Return Class object or None; tenant-aware."""
+        """Return Class object or None; tenant-aware.
+
+        academic.Class is keyed to the LEGACY tenants.Tenant, not
+        core.SchoolTenant (self.tenant) - filtering on self.tenant directly
+        compares two different ID spaces and silently returns nothing for
+        real production data. Must resolve via _get_legacy_tenant() first,
+        same bridge create_cbt_exam already uses correctly."""
         try:
+            legacy_tenant = self._get_legacy_tenant()
+            if legacy_tenant is None:
+                return None
             return self.Class.objects.filter(
-                tenant=self.tenant,
+                tenant=legacy_tenant,
                 name__iexact=class_name.strip(),
             ).first()
         except Exception:
@@ -705,7 +714,7 @@ class SecretaryTools:
             active_term, active_academic_year = self._active_term_and_year()
 
             exam = self.Exam.objects.create(
-                tenant=self.tenant,
+                tenant=self._get_legacy_tenant(),
                 title=exam_name.strip(),
                 class_group=class_obj,
                 start_date=start_dt,
@@ -839,7 +848,7 @@ class SecretaryTools:
     def publish_cbt_exam(self, exam_id: str, access_window_hours: int = 24) -> dict:
         try:
             try:
-                exam = self.Exam.objects.get(id=exam_id, tenant=self.tenant)
+                exam = self.Exam.objects.get(id=exam_id, tenant=self._get_legacy_tenant())
             except self.Exam.DoesNotExist:
                 return {
                     "status": "error",
@@ -1018,15 +1027,68 @@ class SecretaryTools:
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     def send_bulk_parent_message(self, class_name: str, message_type: str, message: str) -> dict:
+        """Actually sends the message (WhatsApp first, SMS fallback per
+        SECRETARY_SYSTEM_PROMPT's rule) to every guardian in the class - an
+        earlier draft of this tool sent nothing at all and returned a
+        hardcoded delivered_count regardless of what was asked, which is why
+        this is deliberately kept OUT of TOOL_SCHEMAS (see agent.py's bulk
+        confirm-gate, the only path that can reach this)."""
         try:
-            class_label = class_name or "SS2"
-            confirmed_message = (message or "General school reminder").strip()
+            class_label = (class_name or "").strip()
+            if not class_label:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "A class name is required."}
+            body = (message or "").strip()
+            if not body:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "Message content is required."}
+
+            from users.models import StudentProfile
+
+            class_obj = self._get_class(class_label)
+            if class_obj is None:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_label}' not found."}
+
+            roster = (
+                StudentProfile.objects.select_related("user")
+                .filter(user__tenant=self.tenant, user__is_active=True, current_class=class_obj)
+                .exclude(guardian_phone="")
+            )
+            if not roster.exists():
+                return {
+                    "status": "error",
+                    "error_code": "NO_RECIPIENTS",
+                    "message": f"No parent phone numbers on file for {class_label}.",
+                }
+
+            sent, failed, errors = 0, 0, []
+            for student in roster:
+                guardian_label = student.guardian_name or student.user.get_full_name()
+                wa_result = self.send_whatsapp_message(student.guardian_phone, body[:1000])
+                if wa_result.get("status") == "success":
+                    sent += 1
+                    continue
+                if len(body) > 160:
+                    failed += 1
+                    errors.append(f"{guardian_label}: message too long for SMS fallback")
+                    continue
+                sms_result = self.send_sms(student.guardian_phone, body)
+                if sms_result.get("status") == "success":
+                    sent += 1
+                else:
+                    failed += 1
+                    errors.append(f"{guardian_label}: {sms_result.get('message', 'delivery failed')}")
+
+            total = sent + failed
             return {
-                "status": "success",
+                "status": "success" if sent else "error",
                 "class_name": class_label,
                 "message_type": message_type,
-                "message": f"Bulk {message_type} for {class_label} confirmed and queued for delivery.",
-                "delivered_count": 35,
+                "delivered_count": sent,
+                "failed_count": failed,
+                "message": (
+                    f"Bulk {message_type} sent to {sent} of {total} {class_label} parent(s)."
+                    + (f" {failed} failed." if failed else "")
+                ),
+                "errors": errors[:10],
             }
         except Exception as exc:
             logger.exception("send_bulk_parent_message failed: %s", exc)
