@@ -1183,6 +1183,17 @@ function StudentDashboard({
                   </strong>
                   <span className="student-card-detail">{paymentInstructions.parent_virtual_account.bank_name}</span>
                 </article>
+              ) : paymentInstructions.bank_account_number ? (
+                <article className="student-card tone-gold">
+                  <span className="student-card-label">School Payment Account</span>
+                  <strong className="student-card-value" style={{ letterSpacing: "0.08em" }}>
+                    {paymentInstructions.bank_account_number}
+                  </strong>
+                  <span className="student-card-detail">
+                    {paymentInstructions.bank_account_name}
+                    {paymentInstructions.reference_code ? ` — use reference ${paymentInstructions.reference_code}` : ""}
+                  </span>
+                </article>
               ) : paymentInstructions.reference_code ? (
                 <article className="student-card tone-gold">
                   <span className="student-card-label">Transfer Reference</span>
@@ -1196,11 +1207,18 @@ function StudentDashboard({
                 <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.parent_virtual_account.account_number)}>Copy Account No.</button>
                 <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.parent_virtual_account.bank_name)}>Copy Bank</button>
               </div>
+            ) : paymentInstructions.bank_account_number ? (
+              <div className="table-actions-inline">
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_number)}>Copy Account No.</button>
+                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_name)}>Copy Account Name</button>
+                {paymentInstructions.reference_code ? (
+                  <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.reference_code)}>Copy reference</button>
+                ) : null}
+              </div>
             ) : paymentInstructions.reference_code ? (
               <div className="table-actions-inline">
                 <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.reference_code)}>Copy code</button>
                 <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.narration)}>Copy narration</button>
-                <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_number)}>Copy account</button>
               </div>
             ) : null}
             {paymentFeedback ? <p className="form-feedback success">{paymentFeedback}</p> : null}
@@ -9469,11 +9487,19 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
           <>
             {/* Virtual Account Card */}
             <article className="app-panel" style={{ borderLeft: virtualAccount ? "4px solid #14b8a6" : "4px solid #f59e0b" }}>
-              <h3>{virtualAccount ? "Your Payment Account" : "Payment Account Not Assigned"}</h3>
+              <h3>
+                {virtualAccount
+                  ? virtualAccount.provider === "school_account"
+                    ? "School Payment Account"
+                    : "Your Payment Account"
+                  : "Payment Account Not Assigned"}
+              </h3>
               {virtualAccount ? (
                 <>
                   <p className="field-note" style={{ marginBottom: "1rem" }}>
-                    Transfer your school fees to this account. Payments are matched to your children automatically.
+                    {virtualAccount.provider === "school_account"
+                      ? "You don't have a dedicated account yet - transfer your school fees to the school's account below and include your child's name/ID as the payment narration."
+                      : "Transfer your school fees to this account. Payments are matched to your children automatically."}
                   </p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
                     <div>

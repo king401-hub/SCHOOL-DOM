@@ -3485,7 +3485,9 @@ def parent_dashboard(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # Virtual account
+    # Virtual account - fall back to the school's own account when this
+    # parent has no dedicated one assigned yet, so the panel always has an
+    # actual account number to show rather than "not assigned".
     virtual_account = None
     try:
         vac = ParentVirtualAccount.objects.get(parent=user, is_active=True)
@@ -3497,7 +3499,23 @@ def parent_dashboard(request):
             "paystack_reference": vac.paystack_reference,
         }
     except ParentVirtualAccount.DoesNotExist:
-        pass
+        admin_wallet = AdminWallet.objects.filter(tenant=user.tenant).first()
+        if admin_wallet and admin_wallet.kuda_virtual_account_number:
+            virtual_account = {
+                "account_number": admin_wallet.kuda_virtual_account_number,
+                "bank_name": admin_wallet.kuda_virtual_account_bank_name,
+                "account_name": admin_wallet.kuda_virtual_account_name,
+                "provider": "school_account",
+                "paystack_reference": "",
+            }
+        elif admin_wallet and admin_wallet.bank_account_number:
+            virtual_account = {
+                "account_number": admin_wallet.bank_account_number,
+                "bank_name": admin_wallet.bank_code,
+                "account_name": admin_wallet.bank_account_name,
+                "provider": "school_account",
+                "paystack_reference": "",
+            }
 
     # Build per-child fee summary
     children_data = []
