@@ -2286,6 +2286,104 @@ class BillDeleteTests(TestCase):
         self.assertTrue(Bill.objects.filter(id=bill.id).exists())
 
 
+class BillItemEditAfterPublishTests(TestCase):
+    """Items used to be locked the moment a bill was published - the same
+    "Regenerate invoices" resync button already existed for exactly this
+    workflow (sync_bill_invoices is explicitly idempotent and skips any
+    invoice already paid against), so the lock only blocked admins from
+    ever reaching it. Items (add/amend/remove) are editable post-publish;
+    title/classes/discount/tax stay locked, matching Bill's own docstring."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Bill Item Edit School", schema_name="bill_item_edit_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@billitemedit.edu", password="AdminPass123", first_name="Ada", last_name="Min",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 2", section="A")
+        self.paid_student = self._make_student("paid@billitemedit.edu", "BIEP001")
+        self.unpaid_student = self._make_student("unpaid@billitemedit.edu", "BIEP002")
+        self.bill = Bill.objects.create(
+            tenant=self.school, title="Term Fees", status=Bill.STATUS_PUBLISHED,
+            created_by=self.admin_user, published_at=timezone.now(),
+        )
+        self.bill.classes.set([self.school_class])
+        BillItem.objects.create(bill=self.bill, description="Tuition", amount=Decimal("10000.00"))
+        self.paid_fee = SchoolFee.objects.create(
+            student=self.paid_student, bill=self.bill, title="Term Fees", amount=Decimal("10000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+        record_cash_payment(self.paid_student, Decimal("10000.00"), actor=self.admin_user)
+        self.unpaid_fee = SchoolFee.objects.create(
+            student=self.unpaid_student, bill=self.bill, title="Term Fees", amount=Decimal("10000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+    def _make_student(self, email, student_id):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", first_name="Stu", last_name="Dent",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=student_id, admission_number=f"ADM-{student_id}",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+
+    def test_a_new_item_can_be_added_to_a_published_bill(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.patch(
+            f"/api/finance/admin/bills/{self.bill.id}/",
+            {"items": [
+                {"description": "Tuition", "amount": "10000.00"},
+                {"description": "Excursion Fee", "amount": "2000.00"},
+            ]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.items.count(), 2)
+        self.assertEqual(self.bill.total, Decimal("12000.00"))
+
+    def test_title_and_classes_stay_locked_on_a_published_bill(self):
+        other_class = Class.objects.create(tenant=self.legacy_tenant, name="Basic 3", section="A")
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.patch(
+            f"/api/finance/admin/bills/{self.bill.id}/",
+            {"title": "Renamed", "class_ids": [str(other_class.id)]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.title, "Term Fees")
+        self.assertEqual(list(self.bill.classes.values_list("id", flat=True)), [self.school_class.id])
+
+    def test_regenerating_after_an_item_add_updates_unpaid_but_not_paid_invoices(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        client.patch(
+            f"/api/finance/admin/bills/{self.bill.id}/",
+            {"items": [
+                {"description": "Tuition", "amount": "10000.00"},
+                {"description": "Excursion Fee", "amount": "2000.00"},
+            ]},
+            format="json",
+        )
+        response = client.post(f"/api/finance/admin/bills/{self.bill.id}/publish/")
+        self.assertEqual(response.status_code, 200)
+
+        self.unpaid_fee.refresh_from_db()
+        self.assertEqual(self.unpaid_fee.amount, Decimal("12000.00"))
+
+        self.paid_fee.refresh_from_db()
+        self.assertEqual(self.paid_fee.amount, Decimal("10000.00"))
+
+
 class CashPaymentReceiptNotificationTests(TestCase):
     """A recorded cash payment must reach the parent by itself.
 

@@ -1437,9 +1437,12 @@ def admin_bills(request):
 @permission_classes([IsAuthenticated])
 def admin_bill_detail(request, bill_id):
     """View, edit, or permanently delete a bill. Once a bill is Published,
-    only due_date/payment_instructions/footer_note stay editable - title,
-    items, classes, and discount/tax are locked to protect already-generated
-    invoices; use Duplicate for a real change.
+    title, classes, and discount/tax are locked to protect already-generated
+    invoices - use Duplicate for a real change there. Items stay editable
+    (add/amend/remove) even after publish: sync_bill_invoices is idempotent
+    and safe to re-run (skips any invoice already paid against), which is
+    exactly what the "Regenerate invoices" publish button does after an
+    items edit - see sync_bill_invoices's docstring in finance/services.py.
 
     Deleting removes the Bill/BillItem rows outright rather than soft-
     cancelling - safe to do even for a published bill, since SchoolFee.bill
@@ -1512,7 +1515,7 @@ def admin_bill_detail(request, bill_id):
         if not classes:
             return Response({"success": False, "message": "Select at least one class."}, status=status.HTTP_400_BAD_REQUEST)
         bill.classes.set(classes)
-    if editable_core and "items" in request.data:
+    if "items" in request.data:
         items_data = request.data.get("items") or []
         bill_items = []
         for idx, item in enumerate(items_data):

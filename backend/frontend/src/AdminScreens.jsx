@@ -1184,16 +1184,21 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
 
             <div className="bill-designer-items">
               <div className="panel-head"><h4>Description of Charges</h4></div>
+              {isPublished ? (
+                <p className="panel-sub">
+                  This bill is published — changes here won't reach parents until you click "Regenerate invoices" below. Students who already paid in full are left untouched.
+                </p>
+              ) : null}
               {items.map((item, index) => (
                 <div className="bill-designer-item-row" key={index}>
-                  <input value={item.description} onChange={(e) => updateItem(index, "description", e.target.value)} placeholder="e.g. Tuition Fee" disabled={isPublished} />
-                  <input type="number" min="0" step="0.01" value={item.amount} onChange={(e) => updateItem(index, "amount", e.target.value)} placeholder="0.00" disabled={isPublished} />
-                  {items.length > 1 && !isPublished ? (
+                  <input value={item.description} onChange={(e) => updateItem(index, "description", e.target.value)} placeholder="e.g. Tuition Fee" />
+                  <input type="number" min="0" step="0.01" value={item.amount} onChange={(e) => updateItem(index, "amount", e.target.value)} placeholder="0.00" />
+                  {items.length > 1 ? (
                     <button type="button" className="table-action danger" onClick={() => removeItem(index)}>Remove</button>
                   ) : null}
                 </div>
               ))}
-              {!isPublished ? <button type="button" className="btn-secondary" onClick={addItem}>+ Add fee item</button> : null}
+              <button type="button" className="btn-secondary" onClick={addItem}>+ Add fee item</button>
             </div>
 
             <label className="panel-field full">
