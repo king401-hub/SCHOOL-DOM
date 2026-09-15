@@ -29,12 +29,12 @@ function buildHistoryForApi(msgs) {
     .map(({ role, content }) => ({ role, content }));
 }
 
-// Full-page AI Assistant destination (sidebar nav, admin-tier only - see
-// App.jsx's isAdmin gate around AdminShell, so this never mounts for a
-// non-admin role). Talks to the same /api/secretary/chat/ endpoint
+// Renders as the admin home page ("/dashboard" in App.jsx, admin-tier only
+// - see App.jsx's isAdmin gate around AdminShell, so this never mounts for
+// a non-admin role). Talks to the same /api/secretary/chat/ endpoint
 // AiChatWidget's admin turn uses - a deliberately separate, simpler
 // implementation (no streaming path, since only admin roles ever reach
-// this route) rather than a shared hook, to avoid touching the already-
+// this screen) rather than a shared hook, to avoid touching the already-
 // shipped floating widget for this page's sake.
 export default function AiAssistantScreen({ session }) {
   const [messages, setMessages] = useState([]);

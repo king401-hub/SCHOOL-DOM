@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive, Palette, KeyRound, Wallet, Bot,
+  Package, Archive, Palette, KeyRound, Wallet,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -116,7 +116,6 @@ const ProprietorShell = lazy(() => import("./ProprietorScreens").then((module) =
 
 const IdCardVerificationPage = lazyAdminScreen("IdCardVerificationPage");
 const StudentIdCardPreview = lazyAdminScreen("IdCardPreview");
-const AdminDashboardScreen = lazyAdminScreen("AdminDashboardScreen");
 const AdminPerformanceHeatmapScreen = lazyAdminScreen("AdminPerformanceHeatmapScreen");
 const AdminFinanceScreen = lazyAdminScreen("AdminFinanceScreen");
 const AdminExamResultsScreen = lazyAdminScreen("AdminExamResultsScreen");
@@ -6207,7 +6206,6 @@ function AdminNotificationsCenter({ session, data = {}, activityRecords = [], lo
 
 const ADMIN_ROUTE_ICONS = {
   "/dashboard": LayoutDashboard,
-  "/ai-assistant": Bot,
   "/performance-heatmap": TrendingUp,
   "/finance": DollarSign,
   "/expenses": Receipt,
@@ -6244,7 +6242,7 @@ const ADMIN_ROUTE_ICONS = {
 };
 
 const ADMIN_NAV_SECTIONS = [
-  { label: "Overview", paths: ["/dashboard", "/ai-assistant", "/performance-heatmap"] },
+  { label: "Overview", paths: ["/dashboard", "/performance-heatmap"] },
   { label: "People", paths: ["/people-group"] },
   { label: "Academics", paths: ["/academics-group"] },
   { label: "Finance & HR", paths: ["/finance-group"] },
@@ -6252,7 +6250,6 @@ const ADMIN_NAV_SECTIONS = [
 ];
 
 const ACCOUNTANT_NAV_SECTIONS = [
-  { label: "Overview", paths: ["/ai-assistant"] },
   { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr-self-service"] },
   { label: "Administration", paths: ["/messages"] },
 ];
@@ -8156,18 +8153,10 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
 
   let content = null;
   if (activePath === "/dashboard") {
-        content = (
-      <AdminDashboardScreen
-        user={session?.user}
-        data={data}
-        loading={loading}
-        error={error}
-        onRetry={handleRetry}
-        onBroadcastMessage={handleSendMessage}
-        onNavigate={onNavigate}
-      />
-    );
-  } else if (activePath === "/ai-assistant") {
+    // The admin home page is now the AI-first assistant screen (product
+    // decision) rather than the metrics/announcements view. That older
+    // view still exists as AdminScreens.jsx's AdminDashboardScreen if it's
+    // ever needed again - just swap the component below.
     content = <AdminAiAssistantScreen session={session} />;
   } else if (activePath === "/performance-heatmap") {
     content = (

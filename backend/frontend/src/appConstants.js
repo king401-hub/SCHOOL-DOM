@@ -24,7 +24,6 @@ export const MESSAGE_POLL_INTERVAL_MS = 10 * 1000;
 export const TEACHER_ATTENDANCE_PREFIX = "/attendance/scan/";
 export const ADMIN_ROUTES = [
   { path: "/dashboard", label: "Dashboard" },
-  { path: "/ai-assistant", label: "AI Assistant" },
   { path: "/performance-heatmap", label: "Performance Analytics" },
   {
     path: "/people-group",
@@ -84,7 +83,6 @@ export const ADMIN_ROUTES = [
   },
 ];
 export const ACCOUNTANT_ROUTES = [
-  { path: "/ai-assistant", label: "AI Assistant" },
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
   { path: "/hr-self-service", label: "Payroll & Leave" },
