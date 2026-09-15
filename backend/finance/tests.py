@@ -2287,12 +2287,14 @@ class BillDeleteTests(TestCase):
 
 
 class BillItemEditAfterPublishTests(TestCase):
-    """Items used to be locked the moment a bill was published - the same
-    "Regenerate invoices" resync button already existed for exactly this
-    workflow (sync_bill_invoices is explicitly idempotent and skips any
-    invoice already paid against), so the lock only blocked admins from
-    ever reaching it. Items (add/amend/remove) are editable post-publish;
-    title/classes/discount/tax stay locked, matching Bill's own docstring."""
+    """Items used to be locked the moment a bill was published, and even
+    after that lock was lifted, an edit still required a separate manual
+    "Regenerate invoices" click before it reached already-generated
+    invoices - an admin who didn't know to press it saw their edit silently
+    not take effect. Items (add/amend/remove) are editable post-publish and
+    the PATCH itself resyncs invoices inline (sync_bill_invoices is
+    idempotent and skips any invoice already paid against); title/classes/
+    discount/tax stay locked, matching Bill's own docstring."""
 
     def setUp(self):
         self.school = SchoolTenant.objects.create(
@@ -2363,10 +2365,12 @@ class BillItemEditAfterPublishTests(TestCase):
         self.assertEqual(self.bill.title, "Term Fees")
         self.assertEqual(list(self.bill.classes.values_list("id", flat=True)), [self.school_class.id])
 
-    def test_regenerating_after_an_item_add_updates_unpaid_but_not_paid_invoices(self):
+    def test_saving_an_item_add_auto_syncs_unpaid_but_not_paid_invoices(self):
+        """No separate "Regenerate invoices" click - the PATCH that adds the
+        item is the only request made here."""
         client = APIClient()
         client.force_authenticate(user=self.admin_user)
-        client.patch(
+        response = client.patch(
             f"/api/finance/admin/bills/{self.bill.id}/",
             {"items": [
                 {"description": "Tuition", "amount": "10000.00"},
@@ -2374,14 +2378,33 @@ class BillItemEditAfterPublishTests(TestCase):
             ]},
             format="json",
         )
-        response = client.post(f"/api/finance/admin/bills/{self.bill.id}/publish/")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["synced_count"], 1)
 
         self.unpaid_fee.refresh_from_db()
         self.assertEqual(self.unpaid_fee.amount, Decimal("12000.00"))
 
         self.paid_fee.refresh_from_db()
         self.assertEqual(self.paid_fee.amount, Decimal("10000.00"))
+
+    def test_saving_a_draft_bill_does_not_auto_sync(self):
+        """sync_bill_invoices only makes sense once a bill has invoices to
+        sync - a draft has none yet, and Publish is still the action that
+        creates the first batch."""
+        draft = Bill.objects.create(tenant=self.school, title="Draft Fees", created_by=self.admin_user)
+        draft.classes.set([self.school_class])
+        BillItem.objects.create(bill=draft, description="Tuition", amount=Decimal("5000.00"))
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.patch(
+            f"/api/finance/admin/bills/{draft.id}/",
+            {"items": [{"description": "Tuition", "amount": "6000.00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["synced_count"])
+        self.assertFalse(SchoolFee.objects.filter(bill=draft).exists())
 
 
 class CashPaymentReceiptNotificationTests(TestCase):

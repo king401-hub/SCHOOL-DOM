@@ -1439,10 +1439,10 @@ def admin_bill_detail(request, bill_id):
     """View, edit, or permanently delete a bill. Once a bill is Published,
     title, classes, and discount/tax are locked to protect already-generated
     invoices - use Duplicate for a real change there. Items stay editable
-    (add/amend/remove) even after publish: sync_bill_invoices is idempotent
-    and safe to re-run (skips any invoice already paid against), which is
-    exactly what the "Regenerate invoices" publish button does after an
-    items edit - see sync_bill_invoices's docstring in finance/services.py.
+    (add/amend/remove) even after publish, and the edit resyncs invoices
+    inline (see the sync_bill_invoices call below) - no separate "Regenerate
+    invoices" step needed. sync_bill_invoices is idempotent and skips any
+    invoice already paid against, so this can never clobber a payment.
 
     Deleting removes the Bill/BillItem rows outright rather than soft-
     cancelling - safe to do even for a published bill, since SchoolFee.bill
@@ -1536,12 +1536,28 @@ def admin_bill_detail(request, bill_id):
         update_fields.append("updated_at")
         bill.save(update_fields=sorted(set(update_fields)))
 
+    # Editing a published bill (adding an item, changing the due date) used
+    # to require a separate "Regenerate invoices" click before it reached
+    # students - resync happens inline instead, in the same request, so
+    # there is no manual step left. sync_bill_invoices is idempotent and
+    # skips any invoice already paid against.
+    synced_count = None
+    if bill.status == Bill.STATUS_PUBLISHED:
+        synced_count = sync_bill_invoices(bill, actor=user)
+
+    activity_message = f"Updated bill '{bill.title}'."
+    if synced_count:
+        activity_message = f"Updated bill '{bill.title}' ({synced_count} invoice(s) synced)."
     record_finance_activity(
-        user.tenant, user, "bill_updated", f"Updated bill '{bill.title}'.",
+        user.tenant, user, "bill_updated", activity_message,
         amount=bill.total, currency="NGN", reference=str(bill.id),
     )
     rollups = bulk_bill_status_counts([bill])
-    return Response({"success": True, "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data})
+    return Response({
+        "success": True,
+        "bill": BillSerializer(bill, context={"bill_status_rollups": rollups}).data,
+        "synced_count": synced_count,
+    })
 
 
 @api_view(["GET"])

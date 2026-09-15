@@ -1186,7 +1186,7 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
               <div className="panel-head"><h4>Description of Charges</h4></div>
               {isPublished ? (
                 <p className="panel-sub">
-                  This bill is published — changes here won't reach parents until you click "Regenerate invoices" below. Students who already paid in full are left untouched.
+                  This bill is published — saving will update every unpaid invoice immediately. Students who already paid in full are left untouched.
                 </p>
               ) : null}
               {items.map((item, index) => (
