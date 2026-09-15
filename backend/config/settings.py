@@ -559,7 +559,12 @@ STATICFILES_DIRS = [BASE_DIR / 'backend' / 'config' / 'static']
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+# The school platform's users are in Nigeria (WAT, UTC+1). Everything is
+# still stored internally as UTC-aware (USE_TZ=True); this only controls
+# what timezone.localtime() converts to for display (SMS text, admin,
+# templates) - was wrongly 'UTC', showing every local time exactly 1 hour
+# behind actual Nigerian wall-clock time (e.g. gate attendance SMS).
+TIME_ZONE = 'Africa/Lagos'
 USE_I18N = True
 USE_TZ = True
 

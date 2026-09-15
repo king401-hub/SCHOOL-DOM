@@ -103,7 +103,10 @@ def _student_dva_payload(student_profile):
     student can have two linked parents with only one of them assigned a
     virtual account - checks every linked parent (not just .first(), which
     could silently pick the parent without one) and returns the first
-    active account found, or None if none of them has one."""
+    active account found. Falls back to the school's own account (from
+    finance.AdminWallet) when no parent has one, so the gate/kiosk screen
+    and printed receipt always have a real account to show rather than
+    nothing at all."""
     parents = student_profile.parents.select_related('user__virtual_account').all()
     for parent in parents:
         account = getattr(getattr(parent, 'user', None), 'virtual_account', None)
@@ -112,6 +115,22 @@ def _student_dva_payload(student_profile):
                 'account_number': account.account_number,
                 'bank_name': account.bank_name,
                 'account_name': account.account_name,
+            }
+
+    from finance.models import AdminWallet
+    admin_wallet = AdminWallet.objects.filter(tenant=student_profile.user.tenant).first()
+    if admin_wallet:
+        if admin_wallet.kuda_virtual_account_number:
+            return {
+                'account_number': admin_wallet.kuda_virtual_account_number,
+                'bank_name': admin_wallet.kuda_virtual_account_bank_name,
+                'account_name': admin_wallet.kuda_virtual_account_name,
+            }
+        if admin_wallet.bank_account_number:
+            return {
+                'account_number': admin_wallet.bank_account_number,
+                'bank_name': admin_wallet.bank_code,
+                'account_name': admin_wallet.bank_account_name,
             }
     return None
 

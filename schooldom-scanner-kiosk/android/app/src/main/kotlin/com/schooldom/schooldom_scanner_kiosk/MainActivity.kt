@@ -1,40 +1,53 @@
 package com.schooldom.schooldom_scanner_kiosk
 
+import android.os.Handler
+import android.os.Looper
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-/**
- * Screen Pinning (Lock Task Mode without Device Owner) - startLockTask()/
- * stopLockTask() are plain Activity methods, no extra permission or plugin
- * needed. This is the "no factory reset required" kiosk lock level: the
- * first call shows Android's own screen-pinning explainer once, then the
- * app is pinned - exiting needs a deliberate back+recents hold, which pops
- * an "unpin" prompt rather than just returning to the launcher.
- */
 class MainActivity : FlutterActivity() {
-    private val channel = "com.schooldom.scanner_kiosk/lock_task"
+    private val channelName = "schooldom/topwise_printer"
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var printerBridge: TopwisePrinterBridge
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel).setMethodCallHandler { call, result ->
+        printerBridge = TopwisePrinterBridge(applicationContext)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
-                "startLockTask" -> {
-                    try {
-                        startLockTask()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.success(false)
+                "isAvailable" -> printerBridge.isAvailable { available ->
+                    mainHandler.post { result.success(available) }
+                }
+
+                "printFeeReminder" -> {
+                    val args = call.arguments as? Map<*, *>
+                    if (args == null) {
+                        result.error("bad_args", "Missing arguments", null)
+                        return@setMethodCallHandler
+                    }
+                    printerBridge.printFeeReminder(
+                        schoolName = args["schoolName"] as? String ?: "",
+                        studentName = args["studentName"] as? String ?: "",
+                        studentClass = args["studentClass"] as? String ?: "",
+                        studentId = args["studentId"] as? String ?: "",
+                        paid = args["paid"] as? String ?: "",
+                        outstanding = args["outstanding"] as? String ?: "",
+                        accountNumber = args["accountNumber"] as? String ?: "",
+                        bankName = args["bankName"] as? String ?: "",
+                        dateText = args["dateText"] as? String ?: "",
+                    ) { success, error ->
+                        mainHandler.post {
+                            if (success) {
+                                result.success(true)
+                            } else {
+                                result.error("print_failed", error ?: "Unknown printer error", null)
+                            }
+                        }
                     }
                 }
-                "stopLockTask" -> {
-                    try {
-                        stopLockTask()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.success(false)
-                    }
-                }
+
                 else -> result.notImplemented()
             }
         }

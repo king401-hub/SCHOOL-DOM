@@ -1,21 +1,21 @@
-import 'package:sunmi_printer_plus/sunmi_printer_plus.dart';
+import 'package:flutter/services.dart';
 
-/// Fee Reminder receipt printing (spec section 2B). Targets the built-in
-/// printer on Sunmi-family Android POS terminals - the most common
-/// "normal POS terminal with a printer" hardware for this kind of gate
-/// device. If the actual terminal turns out to be a different vendor,
-/// this is the one place to swap the implementation; nothing else in the
-/// app talks to the printer directly.
-///
-/// No explicit "bind"/"init"/transaction step is needed with this package
-/// version - SunmiPrinter.printText etc. talk to the native printer
-/// service directly, and SunmiTextStyle carries alignment per call rather
-/// than a separate global setAlignment().
+/// Fee Reminder receipt printing (spec section 2B). Talks to the Topwise
+/// CloudPOS thermal printer via a native MethodChannel bridge
+/// (TopwisePrinterBridge.kt) that binds directly to the vendor's system
+/// service - there is no public SDK for this hardware. This used to go
+/// through the sunmi_printer_plus plugin, but that targets Sunmi hardware
+/// specifically and throws on this Topwise device
+/// (`lateinit property configPrinter has not been initialized`), so it can
+/// never work here. This is the one place in the app that talks to the
+/// printer directly; nothing else needs to change if the bridge changes.
 class ReceiptPrinter {
+  static const MethodChannel _channel = MethodChannel('schooldom/topwise_printer');
+
   static Future<bool> isAvailable() async {
     try {
-      final status = await SunmiConfig.getStatus();
-      return status != null;
+      final result = await _channel.invokeMethod<bool>('isAvailable');
+      return result ?? false;
     } catch (_) {
       return false;
     }
@@ -28,28 +28,19 @@ class ReceiptPrinter {
     required String studentId,
     required String paid,
     required String outstanding,
+    String? accountNumber,
+    String? bankName,
   }) async {
-    await SunmiPrinter.printText(
-      schoolName,
-      style: SunmiTextStyle(bold: true, fontSize: 32, align: SunmiPrintAlign.CENTER),
-    );
-    await SunmiPrinter.printText(
-      'Fee Reminder',
-      style: SunmiTextStyle(bold: true, align: SunmiPrintAlign.CENTER),
-    );
-    await SunmiPrinter.lineWrap(1);
-    await SunmiPrinter.printText('Name: $studentName', style: SunmiTextStyle(align: SunmiPrintAlign.LEFT));
-    await SunmiPrinter.printText('Class: $studentClass', style: SunmiTextStyle(align: SunmiPrintAlign.LEFT));
-    await SunmiPrinter.printText('Student ID: $studentId', style: SunmiTextStyle(align: SunmiPrintAlign.LEFT));
-    await SunmiPrinter.lineWrap(1);
-    await SunmiPrinter.printText('Fees Paid: $paid', style: SunmiTextStyle(align: SunmiPrintAlign.LEFT));
-    await SunmiPrinter.printText('Outstanding: $outstanding', style: SunmiTextStyle(align: SunmiPrintAlign.LEFT));
-    await SunmiPrinter.lineWrap(1);
-    await SunmiPrinter.printText(
-      DateTime.now().toString().substring(0, 16),
-      style: SunmiTextStyle(fontSize: 20, align: SunmiPrintAlign.CENTER),
-    );
-    await SunmiPrinter.lineWrap(3);
-    await SunmiPrinter.cutPaper();
+    await _channel.invokeMethod('printFeeReminder', {
+      'schoolName': schoolName,
+      'studentName': studentName,
+      'studentClass': studentClass,
+      'studentId': studentId,
+      'paid': paid,
+      'outstanding': outstanding,
+      'accountNumber': accountNumber ?? '',
+      'bankName': bankName ?? '',
+      'dateText': DateTime.now().toString().substring(0, 16),
+    });
   }
 }
