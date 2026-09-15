@@ -48,6 +48,7 @@ from finance.services import (
     complete_wallet_funding,
     credit_sms_wallet_from_purchase,
     mark_sms_wallet_purchase_failed,
+    normalize_phone_number,
     credit_wallet,
     deduct_document_generation_credit,
     ensure_student_wallet,
@@ -883,6 +884,29 @@ class ManualFeeEditingTests(TestCase):
         self.assertNotEqual(fee.status, SchoolFee.STATUS_PAID)
         self.assertEqual(fee_paid_amount(fee), Decimal("1000.00"))
         self.assertEqual(Decimal(str(response.data["fee"]["remaining_balance"])), Decimal("500.00"))
+
+
+class PhoneNumberNormalizationTests(TestCase):
+    def test_local_format_with_leading_zero_gets_234_prefix(self):
+        self.assertEqual(normalize_phone_number("08012345678"), "2348012345678")
+
+    def test_ten_digit_number_without_leading_zero_gets_234_prefix(self):
+        self.assertEqual(normalize_phone_number("8012345678"), "2348012345678")
+
+    def test_already_normalized_number_is_left_alone(self):
+        self.assertEqual(normalize_phone_number("+2348012345678"), "2348012345678")
+        self.assertEqual(normalize_phone_number("2348012345678"), "2348012345678")
+
+    def test_double_prefixed_number_has_the_stray_leading_zero_stripped(self):
+        """Regression test: a guardian phone saved as "+234" plus a local
+        number that still carried its own leading 0 (e.g. "+23408147446317")
+        used to pass straight through unnormalized - 14 digits instead of 13
+        - and still cleared send_ebulksms's "starts with 234" check, so it
+        was marked "sent" without ever reaching a real subscriber. Found via
+        a live guardian phone that received no SMS despite receipt_sms_status
+        showing "sent"."""
+        self.assertEqual(normalize_phone_number("+23408147446317"), "2348147446317")
+        self.assertEqual(normalize_phone_number("23408147446317"), "2348147446317")
 
 
 class SmsWalletTests(TestCase):

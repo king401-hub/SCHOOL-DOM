@@ -86,6 +86,15 @@ def normalize_phone_number(value: object) -> str:
         return "234" + digits[1:]
     if len(digits) == 10:
         return "234" + digits
+    # A guardian phone typed as "0801..." into a field that already had "+234"
+    # prepended (or vice versa) stores as e.g. "2340801234567" (234 + a local
+    # number that still has its leading 0) - 14 digits, always invalid, since
+    # a real 234-prefixed MSISDN is exactly 13. Left alone, this used to pass
+    # the "234" prefix check in send_ebulksms and get "sent" to a number that
+    # was never a real subscriber - a silent non-delivery the caller has no
+    # way to detect. Strip the stray 0 rather than reject it outright.
+    if len(digits) == 14 and digits.startswith("2340"):
+        return "234" + digits[4:]
     return digits
 
 
