@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive, Palette, KeyRound, Wallet,
+  Package, Archive, Palette, KeyRound, Wallet, Trophy, Search,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -5238,6 +5238,28 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
   );
 }
 
+// Small dedicated helper - "Position" in the Rankings table needs an
+// ordinal (1st/2nd/3rd/4th...), which nothing else in this codebase
+// produces, and top-3 get a gold/silver/bronze badge matching the design
+// reference rather than reusing the .pill-* status colors (those are
+// semantically tied to payment/approval status, not rank).
+function ordinalRank(n) {
+  const rank = Number(n) || 0;
+  const mod100 = rank % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${rank}th`;
+  switch (rank % 10) {
+    case 1: return `${rank}st`;
+    case 2: return `${rank}nd`;
+    case 3: return `${rank}rd`;
+    default: return `${rank}th`;
+  }
+}
+
+function RankBadge({ rank }) {
+  const tone = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "plain";
+  return <span className={`rank-badge rank-badge-${tone}`}>{ordinalRank(rank)}</span>;
+}
+
 function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults }) {
   const [form, setForm] = useState({
     student_id: "",
@@ -5260,6 +5282,7 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
   const [studentOptions, setStudentOptions] = useState([]);
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  const [resultsTab, setResultsTab] = useState("rankings");
   const subjectIdSet = useMemo(() => new Set(subjects.map((subject) => String(subject.id))), [subjects]);
   const subjectCbtResults = useMemo(
     () => cbtResults.filter((row) => !row.subject_id || subjectIdSet.has(String(row.subject_id))),
@@ -5279,7 +5302,6 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
     try {
       const snapshot = await onLoadResults();
       setRecent(snapshot?.leaderboard || []);
-      setGradeScales(snapshot?.grade_scales || []);
     } catch (loadError) {
       // No-op; teacher can still submit scores.
     }
@@ -5385,62 +5407,66 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
     }
   };
 
+  const selectedClass = classOptions.find((item) => String(item.id) === String(form.class_id));
+  const selectedSubject = subjects.find((subject) => String(subject.id) === String(form.subject_id));
+  const scopeLabel = selectedClass ? (selectedClass.label || selectedClass.name) : selectedSubject?.name;
+  const topRanked = recent[0];
+
   return (
-    <section className="screen-grid teacher-results">
-      <div className="screen-hero">
+    <section className="screen-grid teacher-results teacher-dashboard">
+      <div className="screen-hero teacher-results-hero">
+        <span className="teacher-results-hero-icon" aria-hidden="true">
+          <Trophy size={22} strokeWidth={1.8} />
+        </span>
         <div>
           <p className="topbar-kicker">Results Workspace</p>
           <h2>Grade &amp; Rankings</h2>
-          <p>Submit marks and view standings with the same dashboard styling.</p>
+          <p>Submit marks and view standings for your classes.</p>
         </div>
       </div>
 
-      <div className="panel-grid">
-        <article className="app-panel frosted-card">
+      <div className="metric-grid teacher-results-stats">
+        <MetricCard
+          label="Students"
+          value={studentOptions.length || "—"}
+          trend={scopeLabel ? `in ${scopeLabel}` : "select a subject"}
+          icon="overview"
+          tone="emerald"
+        />
+        <MetricCard
+          label="Subjects"
+          value={subjects.length}
+          trend="assigned to you"
+          icon="planning"
+          tone="blue"
+        />
+        <MetricCard
+          label="CBT Results"
+          value={subjectCbtResults.length}
+          trend="for your subjects"
+          icon="results"
+          tone="teal"
+        />
+        <MetricCard
+          label="Class Ranking"
+          value={topRanked ? topRanked.student_name : "—"}
+          trend={topRanked ? `${topRanked.total_score} pts · ${ordinalRank(topRanked.rank)}` : "awaiting results"}
+          icon="exam"
+          tone="amber"
+        />
+      </div>
+
+      <div className="panel-grid teacher-results-grid">
+        <article className="app-panel frosted-card teacher-results-form-card">
           <div className="panel-head">
             <div>
-              <h3>Submit subject score</h3>
+              <h3>Submit Subject Score</h3>
               <small>Only subjects assigned to you are listed.</small>
             </div>
             <span className="pill">{subjects.length || 0} subjects</span>
           </div>
           <form className="panel-form" onSubmit={handleSubmit}>
             <div className="panel-form-grid">
-              <label className="panel-field student-picker-field">
-                <span className="student-picker-label">Find student</span>
-                <input
-                  className="student-picker-search"
-                  value={studentSearch}
-                  onChange={(event) => setStudentSearch(event.target.value)}
-                  placeholder="Search ID, name, or email"
-                />
-                <select
-                  className="student-picker-select"
-                  value={form.student_id}
-                  onChange={(event) => setForm((prev) => ({ ...prev, student_id: event.target.value }))}
-                  disabled={studentLoading || studentOptions.length === 0}
-                >
-                  <option value="">{studentLoading ? "Loading students..." : studentSearch ? "Select matching student" : "Select student"}</option>
-                  {filteredStudentOptions.map((student) => (
-                    <option
-                      key={student.id || student.student_id}
-                      value={student.student_id}
-                      title={`${student.name} - ${student.student_id} - ${student.email || "No email"} - ${student.class_name || ""}`}
-                    >
-                      {student.name} - {student.student_id}
-                    </option>
-                  ))}
-                  {!studentLoading && studentSearch && filteredStudentOptions.length === 0 ? <option value="" disabled>No matching students</option> : null}
-                </select>
-                <small className="field-note">
-                  {form.student_id
-                    ? (() => {
-                        const selected = studentOptions.find((student) => student.student_id === form.student_id);
-                        return selected ? `${selected.class_name || "Class not set"} - ${selected.email || "No email"}` : "Selected student";
-                      })()
-                    : "Students are available when you teach the selected subject."}
-                </small>
-              </label>
               <label className="panel-field compact-subject-field">
                 Subject
                 <select
@@ -5472,6 +5498,44 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                   ))}
                 </select>
               </label>
+              <label className="panel-field full student-picker-field">
+                <span className="student-picker-label">Find student</span>
+                <span className="student-picker-search-wrap">
+                  <Search size={14} className="student-picker-search-icon" aria-hidden="true" />
+                  <input
+                    className="student-picker-search"
+                    value={studentSearch}
+                    onChange={(event) => setStudentSearch(event.target.value)}
+                    placeholder="Search by name or exam number..."
+                  />
+                </span>
+                <select
+                  className="student-picker-select"
+                  value={form.student_id}
+                  onChange={(event) => setForm((prev) => ({ ...prev, student_id: event.target.value }))}
+                  disabled={studentLoading || studentOptions.length === 0}
+                >
+                  <option value="">{studentLoading ? "Loading students..." : studentSearch ? "Select matching student" : "Select student"}</option>
+                  {filteredStudentOptions.map((student) => (
+                    <option
+                      key={student.id || student.student_id}
+                      value={student.student_id}
+                      title={`${student.name} - ${student.student_id} - ${student.email || "No email"} - ${student.class_name || ""}`}
+                    >
+                      {student.name} - {student.student_id}
+                    </option>
+                  ))}
+                  {!studentLoading && studentSearch && filteredStudentOptions.length === 0 ? <option value="" disabled>No matching students</option> : null}
+                </select>
+                <small className="field-note">
+                  {form.student_id
+                    ? (() => {
+                        const selected = studentOptions.find((student) => student.student_id === form.student_id);
+                        return selected ? `${selected.class_name || "Class not set"} - ${selected.email || "No email"}` : "Selected student";
+                      })()
+                    : "Students are available when you teach the selected subject."}
+                </small>
+              </label>
               <label className="panel-field">
                 Max score
                 <input
@@ -5496,15 +5560,15 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                 </label>
               ))}
               <label className="panel-field full">
-                Remarks
+                Remarks (optional)
                 <FormattedTextarea value={form.remarks} onChange={(event) => setForm((prev) => ({ ...prev, remarks: event.target.value }))} />
               </label>
             </div>
             {error ? <p className="form-feedback error">{error}</p> : null}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}
-            <div className="panel-form-actions">
-              <button type="submit" disabled={busy || subjects.length === 0}>
-                {busy ? <><Spinner size={12} /> Saving...</> : "Save draft score"}
+            <div className="panel-form-actions teacher-results-form-actions">
+              <button type="submit" className="teacher-results-submit-btn" disabled={busy || subjects.length === 0}>
+                {busy ? <><Spinner size={12} /> Saving...</> : "Submit Score"}
               </button>
               <button type="button" className="table-action" onClick={handlePushResults} disabled={pushBusy}>
                 {pushBusy ? <><Spinner size={12} /> Pushing...</> : "Push Result to Admin"}
@@ -5513,15 +5577,53 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
           </form>
         </article>
 
-        <article className="app-panel frosted-card">
+        <article className="app-panel frosted-card teacher-results-rankings-card">
           <div className="panel-head">
             <div>
-              <h3>CBT results by subject</h3>
-              <small>Use online CBT scores when compiling final subject results.</small>
+              <h3>Results &amp; Rankings</h3>
+              <small>View recent CBT results and class standings.</small>
             </div>
-            <span className="pill muted">{subjectCbtResults.length || 0} rows</span>
           </div>
-          {subjectCbtResults.length ? (
+          <div className="segmented-control teacher-results-tabs">
+            <button type="button" className={resultsTab === "rankings" ? "active" : ""} onClick={() => setResultsTab("rankings")}>
+              Rankings
+            </button>
+            <button type="button" className={resultsTab === "cbt" ? "active" : ""} onClick={() => setResultsTab("cbt")}>
+              CBT Results
+            </button>
+          </div>
+
+          {resultsTab === "rankings" ? (
+            recent.length ? (
+              <table className="data-table teacher-rankings-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Student</th>
+                    <th>Class</th>
+                    <th>Total Score</th>
+                    <th>Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.map((row) => (
+                    <tr key={row.student_id}>
+                      <td>{row.rank}</td>
+                      <td>{row.student_name}</td>
+                      <td>{row.class_name || "-"}</td>
+                      <td>
+                        {row.total_score}
+                        <small>avg {row.average_score}</small>
+                      </td>
+                      <td><RankBadge rank={row.rank} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="panel-empty">Submit a score to see rankings.</p>
+            )
+          ) : subjectCbtResults.length ? (
             <table className="data-table">
               <thead>
                 <tr>
@@ -5563,40 +5665,6 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
             </table>
           ) : (
             <p className="panel-empty">No submitted CBT results for your assigned subjects yet.</p>
-          )}
-        </article>
-
-        <article className="app-panel frosted-card">
-          <div className="panel-head">
-            <div>
-              <h3>Recent rankings</h3>
-              <small>Descending order by total score.</small>
-            </div>
-            <span className="pill muted">{recent.length || 0} rows</span>
-          </div>
-          {recent.length ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Student</th>
-                  <th>Total</th>
-                  <th>Average</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((row) => (
-                  <tr key={row.student_id}>
-                    <td>#{row.rank}</td>
-                    <td>{row.student_name}</td>
-                    <td>{row.total_score}</td>
-                    <td>{row.average_score}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="panel-empty">Submit a score to see rankings.</p>
           )}
         </article>
       </div>
