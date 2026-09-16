@@ -4882,9 +4882,15 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
       />
 
       <section className="screen-grid teacher-dashboard">
-        <div className="screen-hero teacher-overview-hero">
-          <h2>Teacher Dashboard</h2>
-          <p>Professional snapshot of your assessments, teaching activity, and exam results.</p>
+        <div className="screen-hero teacher-overview-hero teacher-results-hero">
+          <span className="teacher-results-hero-icon" aria-hidden="true">
+            <LayoutDashboard size={22} strokeWidth={1.8} />
+          </span>
+          <div>
+            <p className="topbar-kicker">Teacher Workspace</p>
+            <h2>Teacher Dashboard</h2>
+            <p>Professional snapshot of your assessments, teaching activity, and exam results.</p>
+          </div>
         </div>
 
         <div className="metric-grid">
@@ -5120,7 +5126,10 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
 
   return (
     <section className="screen-grid swipe-attendance-page">
-      <div className="screen-hero">
+      <div className="screen-hero teacher-results-hero">
+        <span className="teacher-results-hero-icon" aria-hidden="true">
+          <CalendarCheck size={22} strokeWidth={1.8} />
+        </span>
         <div>
           <p className="topbar-kicker">Tap Attendance</p>
           <h2>Student Attendance</h2>
@@ -5411,6 +5420,12 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
   const selectedSubject = subjects.find((subject) => String(subject.id) === String(form.subject_id));
   const scopeLabel = selectedClass ? (selectedClass.label || selectedClass.name) : selectedSubject?.name;
   const topRanked = recent[0];
+  // Live running total so a teacher can see what they're about to submit
+  // before pressing the button, instead of adding six numbers in their
+  // head - directly answers "reduce the complexity, users don't know how
+  // to operate it well".
+  const scoreBreakdownKeys = ["theory_score", "cbt_score", "assessment_score", "assignment_score", "attendance_score", "other_score"];
+  const scoreTotal = scoreBreakdownKeys.reduce((sum, key) => sum + (Number(form[key]) || 0), 0);
 
   return (
     <section className="screen-grid teacher-results teacher-dashboard">
@@ -5546,6 +5561,7 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                   step="0.01"
                 />
               </label>
+              <div className="panel-field full teacher-results-score-section-label">Score breakdown</div>
               {[
                 ["theory_score", "Theory exam"],
                 ["cbt_score", "CBT exam"],
@@ -5563,6 +5579,10 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                 Remarks (optional)
                 <FormattedTextarea value={form.remarks} onChange={(event) => setForm((prev) => ({ ...prev, remarks: event.target.value }))} />
               </label>
+            </div>
+            <div className="teacher-results-total-preview">
+              <span>Running total</span>
+              <strong>{scoreTotal} / {form.max_score || 100}</strong>
             </div>
             {error ? <p className="form-feedback error">{error}</p> : null}
             {feedback ? <p className="form-feedback success">{feedback}</p> : null}

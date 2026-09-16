@@ -8151,6 +8151,35 @@ body[data-theme="dark"] .token-usage-toast {
   .teacher-results-grid { grid-template-columns: 1fr; }
 }
 
+.teacher-results-score-section-label {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #059669;
+}
+
+.teacher-results-total-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(5, 150, 105, 0.08);
+  border: 1px solid rgba(5, 150, 105, 0.18);
+  font-size: 0.82rem;
+  color: #047857;
+  font-weight: 600;
+}
+.teacher-results-total-preview strong { font-size: 0.95rem; }
+body[data-theme="dark"] .teacher-results-total-preview {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+
 .teacher-results-form-actions { flex-wrap: wrap; }
 .panel-form-actions .teacher-results-submit-btn {
   flex: 1;
