@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
                         outstanding = args["outstanding"] as? String ?: "",
                         accountNumber = args["accountNumber"] as? String ?: "",
                         bankName = args["bankName"] as? String ?: "",
+                        accountName = args["accountName"] as? String ?: "",
                         dateText = args["dateText"] as? String ?: "",
                     ) { success, error ->
                         mainHandler.post {

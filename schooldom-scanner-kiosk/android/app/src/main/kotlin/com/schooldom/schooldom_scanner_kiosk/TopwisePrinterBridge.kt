@@ -120,6 +120,7 @@ class TopwisePrinterBridge(context: Context) {
         outstanding: String,
         accountNumber: String,
         bankName: String,
+        accountName: String,
         dateText: String,
         callback: (Boolean, String?) -> Unit,
     ) {
@@ -149,6 +150,9 @@ class TopwisePrinterBridge(context: Context) {
                     items.add(PrintItemObj(" ", fontSize = 14))
                     items.add(PrintItemObj("Pay to:", fontSize = 14, isBold = true))
                     items.add(PrintItemObj(accountNumber, fontSize = 14))
+                    if (accountName.isNotBlank()) {
+                        items.add(PrintItemObj(accountName, fontSize = 14))
+                    }
                     if (bankName.isNotBlank()) {
                         items.add(PrintItemObj(bankName, fontSize = 14))
                     }
@@ -171,7 +175,7 @@ class TopwisePrinterBridge(context: Context) {
 
                 p.printText(items, listener)
                 printLatch.await(15, TimeUnit.SECONDS)
-                p.addLineFeed(3)
+                p.addLineFeed(20)
                 p.cuttingPaper(PrintCuttingMode.CUTTING_MODE_FULL)
                 callback(printError == null, printError)
             } catch (e: Throwable) {

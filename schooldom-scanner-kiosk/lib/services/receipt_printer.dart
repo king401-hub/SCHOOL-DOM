@@ -30,6 +30,7 @@ class ReceiptPrinter {
     required String outstanding,
     String? accountNumber,
     String? bankName,
+    String? accountName,
   }) async {
     await _channel.invokeMethod('printFeeReminder', {
       'schoolName': schoolName,
@@ -40,6 +41,7 @@ class ReceiptPrinter {
       'outstanding': outstanding,
       'accountNumber': accountNumber ?? '',
       'bankName': bankName ?? '',
+      'accountName': accountName ?? '',
       'dateText': DateTime.now().toString().substring(0, 16),
     });
   }

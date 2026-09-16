@@ -1070,6 +1070,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
             Text('Student DVA', style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w700)),
             Text('${studentDva['bank_name']} · ${studentDva['account_number']}',
                 style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+            if ((studentDva['account_name'] ?? '').toString().isNotEmpty)
+              Text(studentDva['account_name'].toString(),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500)),
           ],
           const SizedBox(height: 14),
           Row(
@@ -1127,6 +1130,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         outstanding: '₦$outstanding',
         accountNumber: studentDva?['account_number']?.toString(),
         bankName: studentDva?['bank_name']?.toString(),
+        accountName: studentDva?['account_name']?.toString(),
       );
     } catch (e) {
       if (mounted) {
