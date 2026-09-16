@@ -8124,6 +8124,13 @@ body[data-theme="dark"] .token-usage-toast {
   align-items: center;
   gap: 0.9rem;
 }
+/* StaffSelfServicePanel (HR System tab) renders its own .screen-grid
+   internally instead of expecting to be wrapped in one, so this hero sits
+   as its sibling rather than inside a second nested grid - give it the
+   same side/vertical spacing a .screen-grid child would have gotten. */
+.teacher-tab-standalone-hero {
+  margin: 0.75rem 0.85rem 0.75rem;
+}
 .teacher-results-hero-icon {
   width: 46px;
   height: 46px;

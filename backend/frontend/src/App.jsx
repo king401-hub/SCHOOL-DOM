@@ -5910,12 +5910,24 @@ function TeacherWorkspace({
     }
     if (activeTab === "past-exams") {
       return (
-        <TeacherPastExamsPanel
-          session={session}
-          onEditExam={handleEditExam}
-          loadingExamId={loadingExamId}
-          editError={examEditError}
-        />
+        <section className="screen-grid teacher-dashboard">
+          <div className="screen-hero teacher-results-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <FileCheck size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">Exam History</p>
+              <h2>My Exams</h2>
+              <p>View exams you have set, including past exams, and edit their setup when needed.</p>
+            </div>
+          </div>
+          <TeacherPastExamsPanel
+            session={session}
+            onEditExam={handleEditExam}
+            loadingExamId={loadingExamId}
+            editError={examEditError}
+          />
+        </section>
       );
     }
     if (activeTab === "attendance") {
@@ -5929,7 +5941,17 @@ function TeacherWorkspace({
     }
     if (activeTab === "attendance-info") {
       return (
-        <section className="screen-grid">
+        <section className="screen-grid teacher-dashboard">
+          <div className="screen-hero teacher-results-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <CalendarCheck size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">Attendance</p>
+              <h2>Student Attendance</h2>
+              <p>How attendance works for your school.</p>
+            </div>
+          </div>
           <article className="app-panel state-panel">
             <h3>Student Self Attendance</h3>
             <p>For non K-12 schools, students can mark attendance themselves from their Attendance page using the student QR scanner.</p>
@@ -5940,34 +5962,72 @@ function TeacherWorkspace({
       );
     }
     if (activeTab === "planning") {
-      return <TeacherPlanningPanel session={session} onNavigate={onNavigate} />;
+      return (
+        <section className="screen-grid teacher-dashboard">
+          <div className="screen-hero teacher-results-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <BookOpen size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">Academic Planning</p>
+              <h2>{nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad"}</h2>
+              <p>{nonK12 ? "Create course outlines and keep quick academic notes." : "Create weekly scheme-of-work plans and keep quick academic notes."}</p>
+            </div>
+          </div>
+          <TeacherPlanningPanel session={session} onNavigate={onNavigate} />
+        </section>
+      );
     }
     if (activeTab === "timetable") {
       return (
-        <TimetableWeekView
-          session={session}
-          title="My Timetable"
-          subtitle="Your weekly teaching schedule across all assigned classes."
-          emptyMessage="No timetable entries have been assigned to you yet."
-          showClassColumn
-        />
+        <section className="screen-grid teacher-dashboard">
+          <div className="screen-hero teacher-results-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <CalendarClock size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">Weekly Schedule</p>
+              <h2>My Timetable</h2>
+              <p>Your weekly teaching schedule across all assigned classes.</p>
+            </div>
+          </div>
+          <TimetableWeekView
+            session={session}
+            title="Schedule"
+            subtitle=""
+            emptyMessage="No timetable entries have been assigned to you yet."
+            showClassColumn
+          />
+        </section>
       );
     }
     if (activeTab === "class-messages") {
       return (
-        <div className="workspace-inbox">
-          <ClassMessageComposer classOptions={classOptions} onSend={onClassMessageSend} />
-          <MessageInboxPanel
-            title="Messages & Notifications"
-            messages={inbox}
-            recipientOptions={recipientOptions}
-            sessionScope={`${session?.school?.id || session?.school?.school_code || data?.school?.id || data?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
-            onComposeSubmit={handleCompose}
-            onMarkRead={onMarkMessageRead}
-            onDelete={onDeleteMessage}
-            onRefresh={onRefresh}
-          />
-        </div>
+        <section className="screen-grid teacher-dashboard">
+          <div className="screen-hero teacher-results-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <MessageCircle size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">Communication</p>
+              <h2>Messages &amp; Notifications</h2>
+              <p>Message your classes and keep up with what admin has sent you.</p>
+            </div>
+          </div>
+          <div className="workspace-inbox">
+            <ClassMessageComposer classOptions={classOptions} onSend={onClassMessageSend} />
+            <MessageInboxPanel
+              title="Messages & Notifications"
+              messages={inbox}
+              recipientOptions={recipientOptions}
+              sessionScope={`${session?.school?.id || session?.school?.school_code || data?.school?.id || data?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
+              onComposeSubmit={handleCompose}
+              onMarkRead={onMarkMessageRead}
+              onDelete={onDeleteMessage}
+              onRefresh={onRefresh}
+            />
+          </div>
+        </section>
       );
     }
     if (activeTab === "results") {
@@ -5984,10 +6044,38 @@ function TeacherWorkspace({
       );
     }
     if (activeTab === "theory-grading") {
-      return <TheoryGradingPanel session={session} />;
+      return (
+        <section className="screen-grid teacher-dashboard">
+          <div className="screen-hero teacher-results-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <FileSignature size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">Marking Queue</p>
+              <h2>Theory Grading</h2>
+              <p>Score written answers waiting for a grade.</p>
+            </div>
+          </div>
+          <TheoryGradingPanel session={session} />
+        </section>
+      );
     }
     if (activeTab === "requests") {
-      return <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />;
+      return (
+        <>
+          <div className="screen-hero teacher-results-hero teacher-tab-standalone-hero">
+            <span className="teacher-results-hero-icon" aria-hidden="true">
+              <Briefcase size={22} strokeWidth={1.8} />
+            </span>
+            <div>
+              <p className="topbar-kicker">HR</p>
+              <h2>HR System</h2>
+              <p>Request leave, request salary advances, and review your HR activity.</p>
+            </div>
+          </div>
+          <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />
+        </>
+      );
     }
     return null;
   };
