@@ -8,12 +8,30 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val channelName = "schooldom/topwise_printer"
+    private val smsChannelName = "schooldom/local_sms"
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var printerBridge: TopwisePrinterBridge
+    private lateinit var smsBridge: LocalSmsBridge
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         printerBridge = TopwisePrinterBridge(applicationContext)
+        smsBridge = LocalSmsBridge(this)
+        // Requested up front (not lazily on first offline scan) so the
+        // permission is already granted by the time it's actually needed.
+        smsBridge.requestPermission()
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, smsChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "sendSms" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val phone = args?.get("phone") as? String ?: ""
+                    val message = args?.get("message") as? String ?: ""
+                    result.success(smsBridge.sendSms(phone, message))
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {

@@ -15,6 +15,10 @@
          fallback since a fixed indoor kiosk may not always get a GPS fix. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Offline gate-SMS fallback: text a parent directly over the
+         terminal's own SIM when a scan can't reach the backend at all
+         (see TopwiseSmsBridge.kt / GuardianContactsCache). -->
+    <uses-permission android:name="android.permission.SEND_SMS"/>
 
     <application
         android:label="SchoolDom Attendance Scanner"

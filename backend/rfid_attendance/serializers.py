@@ -12,12 +12,17 @@ class CardAssignmentSerializer(serializers.ModelSerializer):
     # Student ID, not the raw card UID) - null for non-students (staff/admin
     # holders have no StudentProfile).
     student_id = serializers.SerializerMethodField()
+    # Only populated for students - lets the kiosk cache this snapshot
+    # locally and text a parent directly (via the terminal's own SIM) when
+    # it can't reach the backend to have the server send the gate SMS.
+    guardian_phone = serializers.SerializerMethodField()
 
     class Meta:
         model = CardAssignment
         fields = [
             'id', 'person_id', 'person_name', 'role', 'card_uid', 'status',
             'assigned_at', 'revoked_at', 'assigned_by_name', 'student_id',
+            'guardian_phone',
         ]
 
     def get_person_name(self, obj):
@@ -29,3 +34,11 @@ class CardAssignmentSerializer(serializers.ModelSerializer):
     def get_student_id(self, obj):
         profile = getattr(obj.holder, 'student_profile', None)
         return profile.student_id if profile else None
+
+    def get_guardian_phone(self, obj):
+        profile = getattr(obj.holder, 'student_profile', None)
+        if not profile:
+            return ''
+        from finance.services import guardian_contacts_for_student
+        phone, _email = guardian_contacts_for_student(profile)
+        return phone

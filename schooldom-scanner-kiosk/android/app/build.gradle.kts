@@ -31,6 +31,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // v3/v4 signing blocks confuse the cert-collection step on at
+            // least one older (2019 security patch) Topwise terminal
+            // (INSTALL_PARSE_FAILED_NO_CERTIFICATES: "... using APK
+            // Signature Scheme v2 ... using topwise verity") - forcing
+            // v1+v2-only for maximum compatibility with old firmware.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = false
+            enableV4Signing = false
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

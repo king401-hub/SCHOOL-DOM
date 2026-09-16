@@ -16,7 +16,10 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../api/client.dart';
 import '../api/config.dart';
 import '../api/gate_endpoints.dart';
+import '../services/local_sms.dart';
 import '../services/receipt_printer.dart';
+import '../storage/guardian_contacts_cache.dart';
+import '../storage/offline_queue.dart';
 import '../storage/session_store.dart';
 import '../theme/app_theme.dart';
 import 'gate_settings_screen.dart';
@@ -302,20 +305,42 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     _recentScans.removeWhere((_, t) => DateTime.now().difference(t).inMinutes > 10);
 
     setState(() => _busy = true);
+    final idempotencyKey = _uuid();
 
     try {
       final result = await postJson(
         '/api/rfid/attendance/scan/',
         {
           'card_uid': uid,
-          'idempotency_key': _uuid(),
+          'idempotency_key': idempotencyKey,
           'device_id': await KioskStore.deviceId,
         },
         queueWhenOffline: true,
       );
 
       if (result['offline'] == true) {
-        await _showResult(_ScanOutcome.welcome, message: 'Saved - will sync when back online.');
+        var message = 'Saved - will sync when back online.';
+        // No network at all to reach the backend - fall back to texting
+        // the parent directly over this terminal's own SIM (SMS travels
+        // over the cellular signaling channel, not data/internet), using
+        // the last-synced snapshot from GuardianContactsCache. The queued
+        // scan still replays and persists the attendance record once back
+        // online; sms_sent_locally on that payload tells the server not
+        // to send its own copy of the same SMS.
+        final contact = await GuardianContactsCache.lookup(uid);
+        final phone = contact?['phone'] ?? '';
+        if (phone.isNotEmpty) {
+          final name = contact?['name'] ?? 'Student';
+          final sent = await LocalSms.send(
+            phone,
+            '$name was scanned at the school gate at ${_formatTime(DateTime.now())}. -SchoolDom',
+          );
+          if (sent) {
+            await _markQueuedScanSmsSent(idempotencyKey);
+            message = 'Saved - parent texted directly (offline).';
+          }
+        }
+        await _showResult(_ScanOutcome.welcome, message: message);
         await _refreshPendingCount();
         return;
       }
@@ -404,6 +429,20 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     _resultTimer = Timer(Duration(seconds: hasFees ? 15 : _resultDisplaySeconds), () {
       if (mounted) setState(() => _outcome = null);
     });
+  }
+
+  /// Flags the just-enqueued offline scan so its eventual replay tells the
+  /// server not to send its own gate SMS (we already texted the parent
+  /// directly, see _handleScan's offline branch).
+  Future<void> _markQueuedScanSmsSent(String idempotencyKey) async {
+    final queue = await readQueue();
+    for (final item in queue) {
+      final payload = item['payload'];
+      if (payload is Map && payload['idempotency_key'] == idempotencyKey) {
+        payload['sms_sent_locally'] = true;
+      }
+    }
+    await writeQueue(queue);
   }
 
   Future<void> _refreshPendingCount() async {
@@ -503,6 +542,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         if (data['update_available'] == true) {
           setState(() => _updateInfo = data);
         }
+        // Piggyback on a confirmed-online heartbeat to keep the offline
+        // guardian-phone cache fresh (see _handleScan's offline branch).
+        unawaited(GuardianContactsCache.refresh());
       }
     } catch (_) {
       if (mounted) setState(() => _online = false);

@@ -484,7 +484,12 @@ def _record_student_scan(request, school, student, card_uid, idempotency_key):
     # SMS (Basic still gets the weekly summary, see
     # rfid_attendance.tasks.send_schoolgate_weekly_reports). Full-product
     # schools are unaffected either way.
-    if not (school.is_schoolgate and school.subscription_tier == "basic"):
+    # sms_sent_locally: the kiosk sends this text itself via the terminal's
+    # own SIM when it couldn't reach us live, then replays the queued scan
+    # once back online purely to persist the attendance record - skip
+    # re-sending here or the parent gets the same SMS twice.
+    sms_sent_locally = str(request.data.get('sms_sent_locally') or '').strip().lower() in ('1', 'true', 'yes')
+    if not sms_sent_locally and not (school.is_schoolgate and school.subscription_tier == "basic"):
         _send_gate_sms(student, student_profile, action, event)
 
     return Response({
