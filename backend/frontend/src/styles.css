@@ -3352,6 +3352,15 @@ body[data-theme="dark"] .ai-chat-error {
   padding: 1.5rem 1.25rem 0.5rem;
 }
 
+/* Live school numbers - same /api/app/dashboard/ metrics the old dashboard
+   showed, kept visible above the hero/chat regardless of conversation
+   state rather than only on the empty-chat welcome view. */
+.ai-assistant-stats {
+  max-width: 1040px;
+  width: 100%;
+  margin: 0 auto 1.5rem;
+}
+
 /* Welcome hero (shown until the first message is sent) */
 .ai-assistant-hero {
   margin: auto;

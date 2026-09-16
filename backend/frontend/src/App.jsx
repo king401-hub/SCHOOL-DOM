@@ -8156,8 +8156,18 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
     // The admin home page is now the AI-first assistant screen (product
     // decision) rather than the metrics/announcements view. That older
     // view still exists as AdminScreens.jsx's AdminDashboardScreen if it's
-    // ever needed again - just swap the component below.
-    content = <AdminAiAssistantScreen session={session} />;
+    // ever needed again - just swap the component below. It still reads
+    // the same /api/app/dashboard/ payload (data/loading/error below) for
+    // the stat cards at the top of the page.
+    content = (
+      <AdminAiAssistantScreen
+        session={session}
+        data={data}
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+      />
+    );
   } else if (activePath === "/performance-heatmap") {
     content = (
       <AdminPerformanceHeatmapScreen

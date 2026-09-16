@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, BarChart2, CalendarCheck, ChevronRight, DollarSign, FileCheck, Mic, Paperclip, School, Sparkles, MessageSquare } from "lucide-react";
 import { API_BASE_URL } from "./appConstants";
-import { refreshAccessToken } from "./AppShared";
+import { DashboardIcon, formatDate, MetricCard, refreshAccessToken } from "./AppShared";
 
 const MAX_HISTORY_TURNS = 20;
 
@@ -36,12 +36,14 @@ function buildHistoryForApi(msgs) {
 // implementation (no streaming path, since only admin roles ever reach
 // this screen) rather than a shared hook, to avoid touching the already-
 // shipped floating widget for this page's sake.
-export default function AiAssistantScreen({ session }) {
+export default function AiAssistantScreen({ session, data, loading, error: dashboardError, onRetry }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [busySeconds, setBusySeconds] = useState(0);
   const [error, setError] = useState(null);
+  const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
+  const [recentStudentWindow, setRecentStudentWindow] = useState("7d");
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
@@ -49,6 +51,28 @@ export default function AiAssistantScreen({ session }) {
 
   const firstName = session?.user?.first_name || "there";
   const userInitial = (session?.user?.first_name?.[0] || "U").toUpperCase();
+
+  // Same /api/app/dashboard/ payload the old metrics dashboard read -
+  // ported over on request, so the numbers are the exact fields already
+  // proven correct there rather than a new computation.
+  const metrics = data?.metrics || {};
+  const recentStudents = data?.recent_students || [];
+  const recentStudentFilters = [
+    ["24h", "Last 24 hrs"],
+    ["7d", "Last 7 days"],
+    ["30d", "Last 30 days"],
+  ];
+  const filterRecentStudents = (windowKey) => {
+    const now = Date.now();
+    const days = windowKey === "24h" ? 1 : windowKey === "30d" ? 30 : 7;
+    const threshold = now - days * 24 * 60 * 60 * 1000;
+    return recentStudents.filter((student) => {
+      const createdTime = new Date(student.created_at || student.createdAt || 0).getTime();
+      return !Number.isNaN(createdTime) && createdTime >= threshold;
+    });
+  };
+  const selectedRecentStudents = filterRecentStudents(recentStudentWindow);
+  const recentStudentsCount = recentStudents.length || metrics.new_students_7d || 0;
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -161,6 +185,71 @@ export default function AiAssistantScreen({ session }) {
   return (
     <section className="ai-assistant-page">
       <div className="ai-assistant-scroll" ref={scrollRef}>
+        <div className="ai-assistant-stats">
+          {loading && !data ? (
+            <div className="metric-grid">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="skeleton-card skeleton-metric" aria-hidden="true">
+                  <div className="skeleton-line skeleton-line-short" />
+                  <div className="skeleton-line skeleton-line-value" />
+                </div>
+              ))}
+            </div>
+          ) : dashboardError ? (
+            <div className="ai-chat-error">
+              {dashboardError}{" "}
+              {onRetry ? (
+                <button type="button" className="table-action" onClick={onRetry}>Retry</button>
+              ) : null}
+            </div>
+          ) : data ? (
+            <div className="metric-grid">
+              <MetricCard
+                label="Total Students"
+                value={metrics.active_students ?? 0}
+                trend={`${metrics.new_students_7d ?? 0} new in last 7 days`}
+                icon="overview"
+                tone="emerald"
+              />
+              <MetricCard
+                label="Total Classes"
+                value={metrics.classes ?? 0}
+                trend={`${metrics.upcoming_exams ?? 0} upcoming exams`}
+                icon="planning"
+                tone="teal"
+              />
+              <MetricCard
+                label="Pending Submissions"
+                value={metrics.pending_submissions ?? 0}
+                trend="Exam attempts awaiting submission"
+                icon="exam"
+                tone="amber"
+              />
+              <MetricCard
+                label="Unread Notices"
+                value={metrics.unread_notifications ?? 0}
+                trend="Notifications still unread"
+                icon="message"
+                tone="indigo"
+              />
+              <button
+                type="button"
+                className="metric-card tone-emerald dashboard-click-card"
+                onClick={() => setRecentStudentsOpen(true)}
+              >
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-emerald">
+                    <DashboardIcon name="overview" className="inline-icon" />
+                  </span>
+                  <p className="metric-label">Recently Registered Students</p>
+                </div>
+                <p className="metric-value">{recentStudentsCount}</p>
+                <p className="metric-trend">Click to filter by registration date</p>
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         {!hasMessages ? (
           <div className="ai-assistant-hero">
             <div className="ai-assistant-hero-icon">
@@ -277,6 +366,51 @@ export default function AiAssistantScreen({ session }) {
       <p className="ai-assistant-footer">
         <Sparkles size={12} /> Powered by SchoolDom AI &middot; Always here to help
       </p>
+
+      {recentStudentsOpen ? (
+        <div className="notification-drawer-overlay" role="presentation" onClick={() => setRecentStudentsOpen(false)}>
+          <aside className="notification-drawer" role="dialog" aria-modal="true" aria-label="Recently registered students" onClick={(event) => event.stopPropagation()}>
+            <section className="screen-grid notification-popup-center">
+              <header className="notification-center-hero">
+                <div>
+                  <p className="topbar-kicker">Student registrations</p>
+                  <h2>Recently Registered Students</h2>
+                </div>
+                <button type="button" className="notification-close-button" onClick={() => setRecentStudentsOpen(false)}>
+                  Close
+                </button>
+              </header>
+              <article className="app-panel">
+                <div className="segmented-control">
+                  {recentStudentFilters.map(([key, label]) => (
+                    <button key={key} type="button" className={recentStudentWindow === key ? "active" : ""} onClick={() => setRecentStudentWindow(key)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="field-note">{selectedRecentStudents.length} student(s) found.</p>
+                {selectedRecentStudents.length > 0 ? (
+                  <div className="person-list">
+                    {selectedRecentStudents.map((student) => (
+                      <div key={student.id} className="person-row">
+                        <div className="person-details">
+                          <p>{student.name}</p>
+                          <span>
+                            {student.student_id} - {student.class_name}
+                          </span>
+                        </div>
+                        <small>{formatDate(student.created_at)}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="panel-empty">No student registrations found for this period.</p>
+                )}
+              </article>
+            </section>
+          </aside>
+        </div>
+      ) : null}
     </section>
   );
 }
