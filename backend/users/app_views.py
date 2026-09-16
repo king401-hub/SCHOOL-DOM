@@ -4420,9 +4420,26 @@ def student_dashboard(request):
         except Exception:
             pass
 
+        # Prefer the school's Kuda dedicated virtual account (has a real
+        # bank name string) over the manually-entered bank account (which
+        # only stores a routing bank_code, not a human-readable bank name).
+        settlement_account_number = ""
+        settlement_account_name = ""
+        settlement_bank_name = ""
+        if admin_wallet:
+            if admin_wallet.kuda_virtual_account_number:
+                settlement_account_number = admin_wallet.kuda_virtual_account_number
+                settlement_account_name = admin_wallet.kuda_virtual_account_name
+                settlement_bank_name = admin_wallet.kuda_virtual_account_bank_name
+            elif admin_wallet.bank_account_number:
+                settlement_account_number = admin_wallet.bank_account_number
+                settlement_account_name = admin_wallet.bank_account_name
+                settlement_bank_name = admin_wallet.bank_code
+
         payment_instructions = {
-            "bank_account_name": admin_wallet.bank_account_name if admin_wallet else "",
-            "bank_account_number": admin_wallet.bank_account_number if admin_wallet else "",
+            "bank_account_name": settlement_account_name,
+            "bank_account_number": settlement_account_number,
+            "bank_name": settlement_bank_name,
             "bank_code": admin_wallet.bank_code if admin_wallet else "",
             "reference_code": payment_reference.code,
             "narration": f"School fees {payment_reference.code}",

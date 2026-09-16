@@ -1191,8 +1191,11 @@ function StudentDashboard({
                   </strong>
                   <span className="student-card-detail">
                     {paymentInstructions.bank_account_name}
-                    {paymentInstructions.reference_code ? ` — use reference ${paymentInstructions.reference_code}` : ""}
+                    {paymentInstructions.bank_name ? ` · ${paymentInstructions.bank_name}` : ""}
                   </span>
+                  {paymentInstructions.reference_code ? (
+                    <span className="student-card-detail">Use reference {paymentInstructions.reference_code}</span>
+                  ) : null}
                 </article>
               ) : paymentInstructions.reference_code ? (
                 <article className="student-card tone-gold">
@@ -1211,6 +1214,9 @@ function StudentDashboard({
               <div className="table-actions-inline">
                 <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_number)}>Copy Account No.</button>
                 <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_account_name)}>Copy Account Name</button>
+                {paymentInstructions.bank_name ? (
+                  <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.bank_name)}>Copy Bank</button>
+                ) : null}
                 {paymentInstructions.reference_code ? (
                   <button type="button" className="table-action" onClick={() => copyPaymentText(paymentInstructions.reference_code)}>Copy reference</button>
                 ) : null}
@@ -1872,9 +1878,13 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
                 <span>Bank Transfer Reference</span>
               </div>
               <p className="fee-payment-sub">Include this code in your bank transfer narration</p>
-              <div className="fee-account-number">{paymentInstructions.reference_code || "—"}</div>
+              <div className="fee-account-number">{paymentInstructions.bank_account_number || "Contact school office"}</div>
               <p className="fee-account-details">
-                {paymentInstructions.bank_account_name || "—"} · {paymentInstructions.bank_account_number || "Contact school office"}
+                {paymentInstructions.bank_account_name || "—"}
+                {paymentInstructions.bank_name ? ` · ${paymentInstructions.bank_name}` : ""}
+              </p>
+              <p className="fee-account-details">
+                Reference: {paymentInstructions.reference_code || "—"}
               </p>
               <div className="fee-copy-row">
                 <button type="button" className={`fee-copy-btn${copiedField === "ref" ? " fee-copy-btn--copied" : ""}`} onClick={() => copyText(paymentInstructions.reference_code, "ref")}>
