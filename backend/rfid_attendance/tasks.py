@@ -76,7 +76,7 @@ def send_schoolgate_weekly_reports():
                 counts.get("late_days", 0),
             )
             try:
-                send_kudisms(phone, message, sender="SchoolDom")
+                send_kudisms(phone, message, sender="XCEL")
                 sent += 1
             except Exception:
                 logger.exception("Weekly SchoolGate SMS to %s failed", phone)

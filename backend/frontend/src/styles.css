@@ -3356,9 +3356,17 @@ body[data-theme="dark"] .ai-chat-error {
    showed, kept visible above the hero/chat regardless of conversation
    state rather than only on the empty-chat welcome view. */
 .ai-assistant-stats {
-  max-width: 1040px;
+  max-width: 1180px;
   width: 100%;
   margin: 0 auto 1.5rem;
+}
+/* This page always has exactly 5 cards (4 metrics + the recently-registered
+   card) - .metric-grid's shared rule locks to 4 columns at this width,
+   which left the 5th card alone on its own row. Five columns keeps them in
+   one straight line instead; still falls back to the shared auto-fit
+   wrapping below 900px. */
+@media (min-width: 900px) {
+  .ai-assistant-stats .metric-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
 /* Welcome hero (shown until the first message is sent) */

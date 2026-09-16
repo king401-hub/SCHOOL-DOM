@@ -513,7 +513,7 @@ SCHOOLDOM_PAY_BASE_URL = os.getenv('SCHOOLDOM_PAY_BASE_URL', 'https://pay.school
 # KudiSMS bulk SMS configuration. Schools may also set a Custom SMSConfiguration
 # in admin; that tenant-level configuration takes priority over these defaults.
 KUDISMS_TOKEN = os.getenv('KUDISMS_TOKEN', '')
-KUDISMS_SENDER_ID = os.getenv('KUDISMS_SENDER_ID', 'neo')
+KUDISMS_SENDER_ID = os.getenv('KUDISMS_SENDER_ID', 'XCEL')
 KUDISMS_GATEWAY = os.getenv('KUDISMS_GATEWAY', '2')
 
 # Sendchamp (SMS only — WhatsApp is handled by Twilio)

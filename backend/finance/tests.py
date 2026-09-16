@@ -933,7 +933,7 @@ class KudiSmsServiceTests(TestCase):
         self.assertEqual(call_args[0], "https://my.kudisms.net/api/sms")
         payload = call_kwargs["json"]
         self.assertEqual(payload["token"], "test-token")
-        self.assertEqual(payload["senderID"], "SchoolDom")
+        self.assertEqual(payload["senderID"], "XCEL")
         self.assertEqual(payload["recipients"], "2348012345678")
         self.assertEqual(payload["message"], "Chidi arrived at school at 7:45 AM. -SchoolDom")
         self.assertEqual(payload["gateway"], "2")

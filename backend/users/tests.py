@@ -62,14 +62,14 @@ class AttendanceSmsBatchProviderTests(TestCase):
     @patch("finance.services.send_ebulksms")
     def test_default_provider_is_ebulksms(self, mock_ebulksms, mock_kudisms):
         _send_attendance_sms_batch([("08012345678", "Test message")])
-        mock_ebulksms.assert_called_once_with("08012345678", "Test message", sender="SchoolDom")
+        mock_ebulksms.assert_called_once_with("08012345678", "Test message", sender="XCEL")
         mock_kudisms.assert_not_called()
 
     @patch("finance.services.send_kudisms")
     @patch("finance.services.send_ebulksms")
     def test_kudisms_provider_is_used_when_requested(self, mock_ebulksms, mock_kudisms):
         _send_attendance_sms_batch([("08012345678", "Test message")], provider="kudisms")
-        mock_kudisms.assert_called_once_with("08012345678", "Test message", sender="SchoolDom")
+        mock_kudisms.assert_called_once_with("08012345678", "Test message", sender="XCEL")
         mock_ebulksms.assert_not_called()
 
     @patch("finance.services.send_kudisms")

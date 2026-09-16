@@ -783,7 +783,7 @@ def _sms_safe_text(text: str) -> str:
 SMS_CHAR_LIMIT = 160
 
 
-def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
+def send_ebulksms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
     """Send SMS via eBulkSMS JSON API. Hard-caps every message at SMS_CHAR_LIMIT
     chars (single-segment SMS) regardless of which caller composed it."""
     message = _sms_safe_text(message)
@@ -860,7 +860,7 @@ def _ebulksms_accepted(result: dict):
     return False, "SMS provider did not confirm delivery."
 
 
-def send_kudisms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
+def send_kudisms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
     """Send SMS via KudiSMS's JSON API. Used ONLY for the SchoolGate product's
     own SMS (gate clock-in/out, on-demand fee reminder, weekly digest - see
     rfid_attendance/views.py and rfid_attendance/tasks.py), which is
@@ -944,7 +944,7 @@ def send_wallet_sms(
     actor=None,
     narration: str = "",
     metadata=None,
-    sender: str = "SchoolDom",
+    sender: str = "XCEL",
     charge_wallet: bool = True,
 ) -> "SmsMessageLog":
     """

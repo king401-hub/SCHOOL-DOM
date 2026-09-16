@@ -2524,7 +2524,7 @@ def _kudisms_config_for_school(school):
     sender_id = (
         str(getattr(config, "sender_id", "") or "").strip()
         or str(getattr(settings, "KUDISMS_SENDER_ID", "") or os.environ.get("KUDISMS_SENDER_ID", "")).strip()
-        or "neo"
+        or "XCEL"
     )
     gateway = str(getattr(settings, "KUDISMS_GATEWAY", "") or os.environ.get("KUDISMS_GATEWAY", "") or "2").strip()
     is_active = bool(getattr(config, "is_active", False)) if config else bool(token)
@@ -14030,7 +14030,7 @@ def _send_attendance_sms_batch(phones_and_messages, provider="ebulksms"):
     sender_fn = send_kudisms if provider == "kudisms" else send_ebulksms
     for phone, message in phones_and_messages:
         try:
-            sender_fn(phone, message, sender="SchoolDom")
+            sender_fn(phone, message, sender="XCEL")
         except Exception:
             logger.exception("Attendance SMS to %s failed", phone)
 
