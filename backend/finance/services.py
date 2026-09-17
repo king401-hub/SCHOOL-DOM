@@ -783,7 +783,7 @@ def _sms_safe_text(text: str) -> str:
 SMS_CHAR_LIMIT = 160
 
 
-def send_ebulksms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
+def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dict:
     """Send SMS via eBulkSMS JSON API. Hard-caps every message at SMS_CHAR_LIMIT
     chars (single-segment SMS) regardless of which caller composed it."""
     message = _sms_safe_text(message)
@@ -944,7 +944,7 @@ def send_wallet_sms(
     actor=None,
     narration: str = "",
     metadata=None,
-    sender: str = "XCEL",
+    sender: str = "SchoolDom",
     charge_wallet: bool = True,
 ) -> "SmsMessageLog":
     """

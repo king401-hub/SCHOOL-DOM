@@ -62,7 +62,9 @@ class AttendanceSmsBatchProviderTests(TestCase):
     @patch("finance.services.send_ebulksms")
     def test_default_provider_is_ebulksms(self, mock_ebulksms, mock_kudisms):
         _send_attendance_sms_batch([("08012345678", "Test message")])
-        mock_ebulksms.assert_called_once_with("08012345678", "Test message", sender="XCEL")
+        # No sender override for eBulkSMS - "XCEL" is KudiSMS's approved
+        # sender ID, not eBulkSMS's; it uses its own ("SchoolDom") default.
+        mock_ebulksms.assert_called_once_with("08012345678", "Test message")
         mock_kudisms.assert_not_called()
 
     @patch("finance.services.send_kudisms")
