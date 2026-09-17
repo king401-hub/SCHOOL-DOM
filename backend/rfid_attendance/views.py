@@ -15,6 +15,7 @@ originally built for).
 """
 import threading
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.db.models import Q
@@ -157,7 +158,11 @@ def _send_gate_sms(student_user, student_profile, action, event):
     if not phone:
         return
     message = _gate_sms_text(student_user, action, event)
-    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)], "kudisms"), daemon=True).start()
+    threading.Thread(
+        target=_send_attendance_sms_batch,
+        args=([(phone, message)], settings.SCHOOLGATE_SMS_PROVIDER),
+        daemon=True,
+    ).start()
 
 
 def _person_summary(request, user_obj):
@@ -675,7 +680,11 @@ def fee_reminder_send(request):
     fees = _fees_payload_for_student(student_profile)
     name = student_profile.user.get_full_name() or student_profile.user.email
     message = f'Reminder: {name} has an outstanding fee balance of ₦{fees["outstanding"]}. Please make payment at your earliest convenience. -SchoolDom'
-    threading.Thread(target=_send_attendance_sms_batch, args=([(phone, message)], "kudisms"), daemon=True).start()
+    threading.Thread(
+        target=_send_attendance_sms_batch,
+        args=([(phone, message)], settings.SCHOOLGATE_SMS_PROVIDER),
+        daemon=True,
+    ).start()
     return Response({'success': True, 'message': 'Fee reminder sent.'})
 
 

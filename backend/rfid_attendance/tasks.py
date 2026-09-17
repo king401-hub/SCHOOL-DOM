@@ -1,9 +1,12 @@
 """Weekly SchoolGate SMS digest - both plans get this (Basic's only SMS,
 since it has no daily clock-in/out notifications; Premium gets this in
 addition to those - see the gate in rfid_attendance/views.py's
-_record_student_scan). Sent via KudiSMS, same as SchoolGate's other SMS -
-see finance.services.send_kudisms for why SchoolGate uses a separate
-provider from the rest of the platform's eBulkSMS."""
+_record_student_scan). Normally sent via KudiSMS, same as SchoolGate's
+other SMS - see finance.services.send_kudisms for why SchoolGate uses a
+separate provider from the rest of the platform's eBulkSMS - but actually
+follows settings.SCHOOLGATE_SMS_PROVIDER like the other SchoolGate SMS
+call sites, so the whole product can be rotated onto eBulkSMS at once
+(e.g. while KudiSMS's sender ID is still pending approval)."""
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
@@ -31,13 +34,16 @@ def send_schoolgate_weekly_reports():
     enrolled student (not just ones with a scan this week), since a student
     who never showed up all week is exactly the case this report should
     surface as "Absent: 5"."""
+    from django.conf import settings
     from django.db.models import Count, Q
     from django.utils import timezone
 
     from academic.models import AttendanceRecord
     from core.tenant import SchoolTenant
-    from finance.services import guardian_contacts_for_student, send_kudisms
+    from finance.services import guardian_contacts_for_student, send_ebulksms, send_kudisms
     from users.models import StudentProfile, resolve_legacy_tenant_for_school
+
+    send_sms = send_kudisms if settings.SCHOOLGATE_SMS_PROVIDER == "kudisms" else send_ebulksms
 
     today = timezone.localdate()
     week_start = today - timezone.timedelta(days=today.weekday())
@@ -76,7 +82,10 @@ def send_schoolgate_weekly_reports():
                 counts.get("late_days", 0),
             )
             try:
-                send_kudisms(phone, message, sender="XCEL")
+                if send_sms is send_kudisms:
+                    send_sms(phone, message, sender="XCEL")
+                else:
+                    send_sms(phone, message)
                 sent += 1
             except Exception:
                 logger.exception("Weekly SchoolGate SMS to %s failed", phone)
