@@ -18,6 +18,7 @@ import '../api/config.dart';
 import '../api/gate_endpoints.dart';
 import '../services/local_sms.dart';
 import '../services/receipt_printer.dart';
+import '../storage/gate_settings_cache.dart';
 import '../storage/guardian_contacts_cache.dart';
 import '../storage/offline_queue.dart';
 import '../storage/session_store.dart';
@@ -242,8 +243,10 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       final data = res['data'] as Map<String, dynamic>;
       final seconds = (data['duplicate_protection_seconds'] as num?)?.toInt();
       if (mounted && seconds != null) setState(() => _cooldownSeconds = seconds);
+      await GateSettingsCache.save(data);
     } catch (_) {
-      // Keep the 8s default - a settings-fetch failure shouldn't block scanning.
+      // Keep the 8s default (and whatever was cached last time) - a
+      // settings-fetch failure shouldn't block scanning.
     }
   }
 
@@ -319,28 +322,47 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       );
 
       if (result['offline'] == true) {
-        var message = 'Saved - will sync when back online.';
-        // No network at all to reach the backend - fall back to texting
-        // the parent directly over this terminal's own SIM (SMS travels
-        // over the cellular signaling channel, not data/internet), using
-        // the last-synced snapshot from GuardianContactsCache. The queued
-        // scan still replays and persists the attendance record once back
-        // online; sms_sent_locally on that payload tells the server not
-        // to send its own copy of the same SMS.
+        // No network at all to reach the backend - the queue mechanism
+        // above blindly stores ANY scan, so check the last-synced
+        // assignment snapshot ourselves before claiming success for a card
+        // that was never actually registered. An unknown card can never
+        // succeed once replayed either, so drop it from the queue instead
+        // of leaving it stuck retrying forever.
         final contact = await GuardianContactsCache.lookup(uid);
-        final phone = contact?['phone'] ?? '';
+        if (contact == null) {
+          await _removeQueuedScan(idempotencyKey);
+          await _showResult(_ScanOutcome.invalid, message: 'Card not recognized (offline).');
+          await _refreshPendingCount();
+          return;
+        }
+
+        // Best-effort label from the admin-configured early/late/clock-out
+        // time windows (GateSettingsCache mirrors GateSettings.classify_event)
+        // - the actual clock-in/clock-out DIRECTION still can't be known
+        // offline (that depends on whether this student already clocked in
+        // today, which needs server-side attendance history this client
+        // doesn't keep), but at least the wording matches what admin
+        // settings say about the current time of day, rather than a
+        // schedule-blind generic message.
+        var message = 'Saved - will sync when back online.';
+        final phone = contact['phone'] ?? '';
+        final event = await GateSettingsCache.classifyEvent(DateTime.now());
         if (phone.isNotEmpty) {
-          final name = contact?['name'] ?? 'Student';
-          final sent = await LocalSms.send(
-            phone,
-            '$name was scanned at the school gate at ${_formatTime(DateTime.now())}. -SchoolDom',
-          );
+          final name = contact['name'] ?? 'Student';
+          final timeText = _formatTime(DateTime.now());
+          final text = switch (event) {
+            'clockout' => '$name left school at $timeText. -SchoolDom',
+            'early' => '$name arrived (early) at $timeText. -SchoolDom',
+            'late' => '$name arrived (late) at $timeText. -SchoolDom',
+            _ => '$name was scanned at the school gate at $timeText. -SchoolDom',
+          };
+          final sent = await LocalSms.send(phone, text);
           if (sent) {
             await _markQueuedScanSmsSent(idempotencyKey);
             message = 'Saved - parent texted directly (offline).';
           }
         }
-        await _showResult(_ScanOutcome.welcome, message: message);
+        await _showResult(event == 'clockout' ? _ScanOutcome.goodbye : _ScanOutcome.welcome, message: message);
         await _refreshPendingCount();
         return;
       }
@@ -442,6 +464,18 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         payload['sms_sent_locally'] = true;
       }
     }
+    await writeQueue(queue);
+  }
+
+  /// Drops the just-enqueued scan for a card GuardianContactsCache doesn't
+  /// recognize - it would just fail the same way (404) on every replay
+  /// attempt forever, keeping _pendingCount permanently stuck above zero.
+  Future<void> _removeQueuedScan(String idempotencyKey) async {
+    final queue = await readQueue();
+    queue.removeWhere((item) {
+      final payload = item['payload'];
+      return payload is Map && payload['idempotency_key'] == idempotencyKey;
+    });
     await writeQueue(queue);
   }
 
