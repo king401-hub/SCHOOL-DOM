@@ -4849,28 +4849,6 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
 
   return (
     <section className="teacher-workspace">
-      <div className="teacher-header">
-        <SchoolBrand school={school} subtitle="Teacher" compact />
-        <div className="teacher-header-copy">
-          <p className="topbar-kicker">Welcome back</p>
-          <h2>{teacherName}</h2>
-          <p>{teacherProfile.specialization || "Teacher workspace"}</p>
-          {schoolMotto ? <p className="dashboard-school-motto">{schoolMotto}</p> : null}
-          <small>
-            {teacherProfile.email || ""} {teacherProfile.employee_id ? `- ${teacherProfile.employee_id}` : ""}{" "}
-            {assignedSubjects.length ? `- ${assignedSubjects.map((s) => s.name).join(", ")}` : ""}
-          </small>
-        </div>
-        <div className="teacher-header-actions">
-          <button type="button" className="teacher-profile-button" onClick={() => setProfileOpen(true)} aria-label="Edit teacher profile" title="Edit profile">
-            {teacherAvatar ? <img src={teacherAvatar} alt={`${teacherName} avatar`} /> : <span>{teacherInitials}</span>}
-            <span className="teacher-profile-edit-indicator" aria-hidden="true">
-              <PaintbrushIcon className="inline-icon" />
-            </span>
-          </button>
-        </div>
-      </div>
-
       <EditableStaffBioProfile
         session={session}
         open={profileOpen}
@@ -4882,15 +4860,31 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
       />
 
       <section className="screen-grid teacher-dashboard">
-        <div className="screen-hero teacher-overview-hero teacher-results-hero">
+        <div className="screen-hero teacher-results-hero">
           <span className="teacher-results-hero-icon" aria-hidden="true">
             <LayoutDashboard size={22} strokeWidth={1.8} />
           </span>
           <div>
-            <p className="topbar-kicker">Teacher Workspace</p>
+            <p className="topbar-kicker">Welcome back, {teacherName}</p>
             <h2>Teacher Dashboard</h2>
-            <p>Professional snapshot of your assessments, teaching activity, and exam results.</p>
+            <p>
+              {teacherProfile.specialization || "Teacher workspace"}
+              {assignedSubjects.length ? ` · ${assignedSubjects.map((s) => s.name).join(", ")}` : ""}
+              {schoolMotto ? ` · ${schoolMotto}` : ""}
+            </p>
           </div>
+          <button
+            type="button"
+            className="teacher-profile-button teacher-hero-profile-btn"
+            onClick={() => setProfileOpen(true)}
+            aria-label="Edit teacher profile"
+            title="Edit profile"
+          >
+            {teacherAvatar ? <img src={teacherAvatar} alt={`${teacherName} avatar`} /> : <span>{teacherInitials}</span>}
+            <span className="teacher-profile-edit-indicator" aria-hidden="true">
+              <PaintbrushIcon className="inline-icon" />
+            </span>
+          </button>
         </div>
 
         <div className="metric-grid">
