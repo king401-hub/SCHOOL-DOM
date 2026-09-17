@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { formatDate, requestJson, Spinner } from "../AppShared";
+import { downloadPrintablePdf, downloadPrintablePng, ExamScriptSheet, formatDate, requestJson, Spinner } from "../AppShared";
 import RichText from "./RichText";
+
+const SCRIPT_ELEMENT_ID = "exam-script-printable";
+
+const slugForFilename = (value) =>
+  String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "exam";
 
 /* One student's whole submitted paper, question by question.
 
@@ -29,7 +34,7 @@ const tidyMarks = (value) => {
   return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, "");
 };
 
-export default function ExamSubmissionModal({ session, attemptId, studentName, onClose, onPublishedChange }) {
+export default function ExamSubmissionModal({ session, attemptId, studentName, school, documentTheme, onClose, onPublishedChange }) {
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,6 +42,8 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
   const [publishing, setPublishing] = useState(false);
   const [publishNote, setPublishNote] = useState("");
   const [confirmPublish, setConfirmPublish] = useState(false);
+  const [downloading, setDownloading] = useState("");
+  const [downloadError, setDownloadError] = useState("");
 
   const load = useCallback(async () => {
     if (!session || !attemptId) return;
@@ -87,6 +94,28 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  // The printable script (off-screen, see render below) always lists every
+  // question - it isn't affected by the on-screen "Wrong only"/"Pending"
+  // filter above, so there's nothing to reset before exporting it.
+  const handleDownload = useCallback(async (kind) => {
+    if (!review) return;
+    setDownloading(kind);
+    setDownloadError("");
+    try {
+      const filenameBase = `exam-script-${slugForFilename(review.student_name)}-${slugForFilename(review.exam_title)}`;
+      const title = `${review.student_name || "Student"} - ${review.exam_title || "Exam"} - Exam Script`;
+      if (kind === "pdf") {
+        await downloadPrintablePdf(SCRIPT_ELEMENT_ID, `${filenameBase}.pdf`, title, documentTheme);
+      } else {
+        await downloadPrintablePng(SCRIPT_ELEMENT_ID, `${filenameBase}.png`, title, documentTheme);
+      }
+    } catch (downloadErr) {
+      setDownloadError(downloadErr.message || "Could not download the exam script.");
+    } finally {
+      setDownloading("");
+    }
+  }, [review, documentTheme]);
+
   const questions = review?.questions || [];
   const visible = questions.filter((row) => {
     if (filter === "all") return true;
@@ -123,6 +152,19 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
 
         {review ? (
           <>
+            <div className="submission-download-bar">
+              <small>Download the full exam script - every question, answer, and mark.</small>
+              <div className="submission-download-actions">
+                <button type="button" className="btn-secondary" onClick={() => handleDownload("pdf")} disabled={!!downloading}>
+                  {downloading === "pdf" ? <><Spinner size={14} /> Preparing...</> : "Download PDF"}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => handleDownload("png")} disabled={!!downloading}>
+                  {downloading === "png" ? <><Spinner size={14} /> Preparing...</> : "Download Image"}
+                </button>
+              </div>
+            </div>
+            {downloadError ? <div className="form-feedback error">{downloadError}</div> : null}
+
             <div className="submission-score-hero">
               <div className="submission-score-main">
                 <small>Score</small>
@@ -271,6 +313,16 @@ export default function ExamSubmissionModal({ session, attemptId, studentName, o
                   </section>
                 );
               }) : <p className="panel-empty">No questions match this filter.</p>}
+            </div>
+
+            {/* Off-screen (never shown to the reviewer): the printable
+                document downloadPrintablePdf/Png rasterizes. Kept out of
+                view rather than not rendered at all - display:none would
+                give it zero layout size, and the canvas render needs real
+                dimensions to draw into. Always the full question set,
+                independent of the "Wrong only"/"Pending" filter above. */}
+            <div style={{ position: "absolute", left: "-9999px", top: 0, width: "860px" }} aria-hidden="true">
+              <ExamScriptSheet review={review} school={school} elementId={SCRIPT_ELEMENT_ID} />
             </div>
           </>
         ) : null}

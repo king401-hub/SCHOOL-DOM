@@ -8244,6 +8244,12 @@ body[data-theme="dark"] .rank-badge-plain { background: rgba(148, 163, 184, 0.12
   cursor: pointer;
 }
 
+.table-action-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 .table-action.active {
   background: #d2f15a;
   border-color: #8cab2f;
@@ -16589,6 +16595,38 @@ body[data-theme="dark"] .eg-pin-display {
 .submission-open {
   font-weight: 700;
   text-align: left;
+}
+
+.submission-download-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.submission-download-bar small {
+  color: #475569;
+}
+
+.submission-download-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+body[data-theme="dark"] .submission-download-bar {
+  background: #0b1220;
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .submission-download-bar small {
+  color: #cbd5e1;
 }
 
 .submission-score-hero {

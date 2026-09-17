@@ -24,6 +24,7 @@ import ExamsList from "./components/ExamCBT/ExamsList";
 import ExamResult from "./components/ExamCBT/ExamResult";
 import ExamGroupPicker from "./components/ExamCBT/ExamGroupPicker";
 import FormattedTextarea from "./components/FormattedTextarea";
+import ExamSubmissionModal from "./components/ExamSubmissionModal";
 import SidebarSearch from "./components/SidebarSearch";
 import SignaturePad from "./components/SignaturePad";
 import NotepadEditor from "./components/NotepadEditor";
@@ -5263,7 +5264,9 @@ function RankBadge({ rank }) {
   return <span className={`rank-badge rank-badge-${tone}`}>{ordinalRank(rank)}</span>;
 }
 
-function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults }) {
+function TeacherResultsPanel({ session, school, subjects = [], classOptions = [], cbtResults = [], onSubmitScore, onLoadResults, onLoadClassStudents, onPushResults }) {
+  const documentTheme = resolveDocumentTheme(school, session?.school);
+  const [reviewingAttempt, setReviewingAttempt] = useState(null);
   const [form, setForm] = useState({
     student_id: "",
     subject_id: subjects[0]?.id || "",
@@ -5645,7 +5648,7 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                   <th>Subject</th>
                   <th>Class</th>
                   <th>CBT Score</th>
-                  <th>Use</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -5655,7 +5658,14 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
                     <td>{row.subject || "General"}</td>
                     <td>{row.class_name || "-"}</td>
                     <td>{row.score ?? 0}/{row.total_points ?? "-"}</td>
-                    <td>
+                    <td className="table-action-cell">
+                      <button
+                        type="button"
+                        className="table-action"
+                        onClick={() => setReviewingAttempt({ id: row.attempt_id || row.id, name: row.student_name })}
+                      >
+                        View script
+                      </button>
                       <button
                         type="button"
                         className="table-action"
@@ -5682,6 +5692,17 @@ function TeacherResultsPanel({ subjects = [], classOptions = [], cbtResults = []
           )}
         </article>
       </div>
+
+      {reviewingAttempt ? (
+        <ExamSubmissionModal
+          session={session}
+          attemptId={reviewingAttempt.id}
+          studentName={reviewingAttempt.name}
+          school={school}
+          documentTheme={documentTheme}
+          onClose={() => setReviewingAttempt(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -6027,6 +6048,8 @@ function TeacherWorkspace({
     if (activeTab === "results") {
       return (
         <TeacherResultsPanel
+          session={session}
+          school={data?.school}
           subjects={teacherSubjects}
           classOptions={classOptions}
           cbtResults={cbtResults}

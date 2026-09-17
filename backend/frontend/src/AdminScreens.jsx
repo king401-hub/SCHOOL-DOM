@@ -4672,6 +4672,8 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           session={session}
           attemptId={reviewingAttempt.id}
           studentName={reviewingAttempt.name}
+          school={data?.school}
+          documentTheme={documentTheme}
           onClose={() => setReviewingAttempt(null)}
           onPublishedChange={onRetry}
         />

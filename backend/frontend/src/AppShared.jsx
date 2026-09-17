@@ -9,6 +9,7 @@ import {
   TEACHER_ATTENDANCE_PREFIX,
   UI_THEME_KEY,
 } from "./appConstants";
+import RichText from "./components/RichText";
 
 // Shared popup/modal animation primitive used app-wide: a slow slide-up +
 // fade-in on open, a matching slide-down + fade-out on close (real exit
@@ -802,6 +803,42 @@ export function documentStylesForExport(theme) {
     .report-signature-line span,.report-date-line span{font-size:.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
     .report-sheet-footer{text-align:center;font-size:.78rem;font-style:italic;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:.85rem}
     @media(max-width:720px){.report-key-remarks-grid{grid-template-columns:1fr}}
+    .exam-script-sheet{width:min(100%,860px);margin:0 auto}
+    .exam-script-inner{border:1px solid #d6dbe4;border-radius:16px;background:#ffffff;padding:2rem 2.25rem 1.75rem}
+    .exam-script-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1.25rem;border-bottom:2px double #cbd5e1;padding-bottom:1.1rem;margin-bottom:1.1rem;flex-wrap:wrap}
+    .exam-script-brand{display:flex;align-items:center;gap:.85rem}
+    .exam-script-logo{width:56px;height:56px;border-radius:12px;border:2px solid var(--doc-primary,#1d4ed8);overflow:hidden;display:flex;align-items:center;justify-content:center;background:#eef2ff;color:var(--doc-primary,#1d4ed8);font-weight:800;flex-shrink:0}
+    .exam-script-logo img{width:100%;height:100%;object-fit:cover}
+    .exam-script-brand h1{margin:0;font-size:1.15rem;color:#111827;font-weight:800}
+    .exam-script-brand p{margin:.15rem 0 0;font-size:.75rem;color:#64748b}
+    .exam-script-title-block{text-align:right}
+    .exam-script-title-block h2{margin:0;font-size:1.3rem;letter-spacing:.03em;text-transform:uppercase;color:var(--doc-primary,#1d4ed8)}
+    .exam-script-title-block p{margin:.2rem 0 0;font-size:.85rem;color:#475569}
+    .exam-script-meta-grid{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:.6rem 1.5rem;margin-bottom:1rem}
+    .exam-script-meta-grid div{display:flex;flex-direction:column;gap:.1rem}
+    .exam-script-meta-grid span{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700}
+    .exam-script-meta-grid strong{font-size:.92rem;color:#0f172a}
+    .exam-script-score-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin-bottom:1.4rem}
+    .exam-script-score-strip div{border:1px solid #e2e8f0;border-radius:10px;padding:.6rem .8rem;background:#f8fafc;display:flex;flex-direction:column;gap:.15rem}
+    .exam-script-score-strip span{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700}
+    .exam-script-score-strip strong{font-size:1.1rem;color:var(--doc-primary,#1d4ed8)}
+    .exam-script-questions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1rem}
+    .exam-script-question{border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:10px;padding:.85rem 1rem;page-break-inside:avoid}
+    .exam-script-question.tone-correct{border-left-color:#16a34a}
+    .exam-script-question.tone-incorrect{border-left-color:#dc2626;background:#fef7f7}
+    .exam-script-question.tone-partial{border-left-color:#0284c7}
+    .exam-script-question.tone-unanswered{border-left-color:#94a3b8;background:#f8fafc}
+    .exam-script-question.tone-pending{border-left-color:#d97706;background:#fffbeb}
+    .exam-script-question-head{display:flex;justify-content:space-between;align-items:center;font-size:.78rem;font-weight:800;color:#475569;margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.03em}
+    .exam-script-question-text{font-size:.92rem;color:#0f172a;margin-bottom:.5rem;line-height:1.5}
+    .exam-script-question-image{max-width:280px;display:block;margin:.4rem 0;border-radius:8px;border:1px solid #e2e8f0}
+    .exam-script-passage{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem;margin-bottom:.6rem;font-size:.85rem;color:#334155}
+    .exam-script-answer-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.4rem;font-size:.85rem}
+    .exam-script-answer-row div{border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .65rem}
+    .exam-script-answer-row span{display:block;font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;margin-bottom:.2rem}
+    .exam-script-feedback{margin-top:.5rem;font-size:.82rem;color:#475569;font-style:italic}
+    .exam-script-footer{text-align:center;font-size:.75rem;color:#94a3b8;margin-top:1.4rem;padding-top:.8rem;border-top:1px dashed #cbd5e1}
+    @media(max-width:640px){.exam-script-meta-grid{grid-template-columns:1fr 1fr}.exam-script-answer-row{grid-template-columns:1fr}.exam-script-head{flex-direction:column}.exam-script-title-block{text-align:left}}
     ${tableStyleCss}
     ${watermarkCss}
   `;
@@ -999,6 +1036,116 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
 
         <footer className="report-sheet-footer">
           {brand.motto || `${brand.name} · Excellence in Education`}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+const EXAM_SCRIPT_TONE = {
+  correct: "correct",
+  incorrect: "incorrect",
+  partial: "partial",
+  unanswered: "unanswered",
+  pending: "pending",
+};
+
+const tidyScriptMark = (value) => {
+  const number = Number(value || 0);
+  return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, "");
+};
+
+/** The printable, letterhead version of a single student's CBT exam script -
+ * every question, their answer, the correct answer, and marks awarded, laid
+ * out as a standalone document rather than the compact review list
+ * ExamSubmissionModal shows on screen. `review` is the payload from
+ * GET /api/exams/attempt/<id>/review/ (attempt_review) - same shape that
+ * modal already renders, so this is just a second, exportable presentation
+ * of the same data, always covering every question regardless of any
+ * on-screen filter the reviewer had active. `school` drives the letterhead
+ * via resolveSchoolBrand, same as ReportCardSheet. */
+export function ExamScriptSheet({ review, school, elementId }) {
+  const brand = resolveSchoolBrand(school);
+  const questions = review?.questions || [];
+
+  return (
+    <div className="exam-script-sheet" id={elementId}>
+      <div className="exam-script-inner">
+        <header className="exam-script-head">
+          <div className="exam-script-brand">
+            <div className="exam-script-logo">
+              {brand.logo ? <img src={brand.logo} alt={`${brand.name} logo`} /> : <span>{brand.initials}</span>}
+            </div>
+            <div>
+              <h1>{brand.name}</h1>
+              {brand.address ? <p>{brand.address}</p> : null}
+            </div>
+          </div>
+          <div className="exam-script-title-block">
+            <h2>Exam Script</h2>
+            <p>{review?.exam_title || "Exam"}{review?.subject ? ` · ${review.subject}` : ""}</p>
+          </div>
+        </header>
+
+        <div className="exam-script-meta-grid">
+          <div><span>Student</span><strong>{review?.student_name || "-"}</strong></div>
+          <div><span>Student ID</span><strong>{review?.student_id || "-"}</strong></div>
+          <div><span>Class</span><strong>{review?.class_name || "-"}</strong></div>
+          <div><span>Exam Type</span><strong>{review?.exam_type || "-"}</strong></div>
+          <div><span>Submitted</span><strong>{formatDate(review?.submitted_at)}</strong></div>
+          <div><span>Questions</span><strong>{review?.answered_questions ?? 0} of {review?.total_questions ?? 0} answered</strong></div>
+        </div>
+
+        <div className="exam-script-score-strip">
+          <div><span>Score</span><strong>{tidyScriptMark(review?.score)} / {tidyScriptMark(review?.total_marks)}</strong></div>
+          <div><span>Percentage</span><strong>{review?.percentage ?? 0}%</strong></div>
+          {review?.grade ? <div><span>Grade</span><strong>{review.grade}{review.grade_remark ? ` (${review.grade_remark})` : ""}</strong></div> : null}
+          <div><span>Status</span><strong>{review?.is_published ? "Published" : "Not published"}</strong></div>
+        </div>
+
+        <ol className="exam-script-questions">
+          {questions.map((row) => (
+            <li key={row.question_id} className={`exam-script-question tone-${EXAM_SCRIPT_TONE[row.status] || "unanswered"}`}>
+              <div className="exam-script-question-head">
+                <span>Question {row.number}</span>
+                <span>
+                  {row.status === "pending" ? "— " : `${tidyScriptMark(row.marks_awarded)} `}
+                  / {tidyScriptMark(row.marks_possible)} marks
+                </span>
+              </div>
+
+              {row.passage?.passage_text ? (
+                <div className="exam-script-passage">
+                  {row.passage.title ? <strong>{row.passage.title}</strong> : null}
+                  <RichText value={row.passage.passage_text} />
+                </div>
+              ) : null}
+
+              <RichText className="exam-script-question-text" value={row.question_text} placeholder={<em>(No question text)</em>} />
+              {row.image ? <img className="exam-script-question-image" src={row.image} alt="" /> : null}
+
+              <div className="exam-script-answer-row">
+                <div>
+                  <span>Student&apos;s answer</span>
+                  {row.student_answer ? <RichText value={row.student_answer} /> : <em>No answer submitted</em>}
+                </div>
+                {row.status !== "pending" && row.correct_answer ? (
+                  <div>
+                    <span>Correct answer</span>
+                    <RichText value={row.correct_answer} />
+                  </div>
+                ) : null}
+              </div>
+
+              {row.teacher_feedback ? (
+                <p className="exam-script-feedback">Teacher feedback: {row.teacher_feedback}</p>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+
+        <footer className="exam-script-footer">
+          Generated by {brand.name} via SchoolDom on {formatDate(new Date())}
         </footer>
       </div>
     </div>
