@@ -5333,7 +5333,7 @@ def teacher_dashboard(request):
         .annotate(needs_theory_grading=Exists(pending_theory_answers))
         .order_by("-end_time")
     )
-    submitted_attempts = list(submitted_attempts_qs[:20])
+    submitted_attempts = list(submitted_attempts_qs[:500])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
     announcements = _visible_announcements_for_user(user, now=now)
     # Pre-fetch grade scale once to avoid N+1 in the cbt_results loop below
@@ -9216,7 +9216,7 @@ def exams_snapshot(request):
         .annotate(needs_theory_grading=Exists(pending_theory_answers))
         .order_by("-end_time")
     )
-    submitted_attempts = list(submitted_attempts_qs[:30])
+    submitted_attempts = list(submitted_attempts_qs[:500])
     auto_submitted_attempts_qs = monitor_attempts.filter(auto_submitted=True, is_submitted=True).order_by("-end_time")
     auto_submitted_attempts = list(auto_submitted_attempts_qs[:50])
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0

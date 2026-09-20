@@ -94,4 +94,9 @@ media.bak/
 staticfiles/
 backend/frontend/static/
 
+# Celery beat's runtime schedule file, and hand-made backups of source files
+backend/celerybeat-schedule*
+backend/**/*.backup*
+backend/**/*.broken
+
 *.timestamp-*.mjs
