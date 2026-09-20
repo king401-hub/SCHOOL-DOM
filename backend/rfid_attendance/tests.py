@@ -4,7 +4,7 @@ import datetime
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from academic.models import AttendanceRecord
@@ -96,7 +96,10 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
     def test_card_only_assigned_in_inactive_school_is_not_recognized(self):
         # A UID that's only ever been assigned inside School B must not be
         # reachable while School A is active - no cross-tenant fallback.
-        CardAssignment.objects.create(tenant=self.school_b, holder=self.student_b, card_uid="2222")
+        # A different School B student: a person can only hold one active card,
+        # and self.student_b already holds "1111".
+        another_student_b = self._make_student(self.school_b, "Carl B", "STU-B-002", "ADM-B-002")
+        CardAssignment.objects.create(tenant=self.school_b, holder=another_student_b, card_uid="2222")
 
         resp = self._scan("2222", "key-2222")
         self.assertEqual(resp.status_code, 404)
@@ -114,12 +117,16 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
         self.assertEqual(settings_b.mode, GateSettings.MODE_FEE_TRACKER)
 
 
+@override_settings(SCHOOLGATE_SMS_PROVIDER="kudisms")
 class SchoolGateSmsProviderTests(TestCase):
     """SchoolGate's own SMS (gate clock-in/out, on-demand fee reminder) must
     go out via KudiSMS - every other SMS in the platform (payment receipts,
     fee reminders, bulk messages) stays on eBulkSMS. Verified by inspecting
     what's handed to threading.Thread rather than letting a real background
-    thread run, so the assertion isn't racing the SMS send."""
+    thread run, so the assertion isn't racing the SMS send.
+
+    The setting is pinned so an environment override (SCHOOLGATE_SMS_PROVIDER=
+    ebulksms, the emergency fallback) can't change what these tests check."""
 
     def setUp(self):
         # _send_gate_sms fires for any tenant scanning at the gate (it's

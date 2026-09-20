@@ -527,10 +527,9 @@ TERMII_WHATSAPP_FROM = os.getenv('TERMII_WHATSAPP_FROM', '')
 TERMII_BASE_URL = os.getenv('TERMII_BASE_URL', 'https://api.ng.termii.com')
 
 # eBulkSMS - payment receipts, fee reminders, and every other SMS in the
-# platform except SchoolGate's own gate/weekly-digest SMS, which normally
-# goes via KudiSMS instead (see SCHOOLGATE_SMS_PROVIDER above and finance.
-# services.send_kudisms for why) - though right now that's also forced
-# through eBulkSMS via that same setting.
+# platform except SchoolGate's own gate/weekly-digest SMS, which goes via
+# KudiSMS instead (see SCHOOLGATE_SMS_PROVIDER below and finance.services.
+# send_kudisms for why).
 EBULKSMS_USERNAME = os.getenv('EBULKSMS_USERNAME', '')
 EBULKSMS_APIKEY = os.getenv('EBULKSMS_APIKEY', '')
 
@@ -540,11 +539,13 @@ EBULKSMS_APIKEY = os.getenv('EBULKSMS_APIKEY', '')
 KUDISMS_API_KEY = os.getenv('KUDISMS_API_KEY', '')
 
 # Which provider SchoolGate's own SMS (gate clock-in/out, on-demand fee
-# reminder, weekly digest) actually goes out through - normally 'kudisms',
-# temporarily forced to 'ebulksms' because KudiSMS's "XCEL" sender ID isn't
-# approved yet and was silently rejecting every SchoolGate SMS. Flip back
-# to 'kudisms' (no code change needed) once KudiSMS confirms approval.
-SCHOOLGATE_SMS_PROVIDER = os.getenv('SCHOOLGATE_SMS_PROVIDER', 'ebulksms')
+# reminder, weekly digest) goes out through - 'kudisms' with the "XCEL" sender
+# ID. It was temporarily forced to 'ebulksms' while KudiSMS had not yet
+# approved that sender ID (it silently rejected every SchoolGate SMS); set
+# SCHOOLGATE_SMS_PROVIDER=ebulksms in the environment to fall back again
+# without a code change. Needs KUDISMS_API_KEY - without it every SchoolGate
+# SMS is skipped (see finance.services.send_kudisms).
+SCHOOLGATE_SMS_PROVIDER = os.getenv('SCHOOLGATE_SMS_PROVIDER', 'kudisms')
 
 if PAYMENT_PROVIDER == 'flutterwave' and not FLUTTERWAVE_SECRET_KEY:
     missing = [
