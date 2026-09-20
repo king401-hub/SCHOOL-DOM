@@ -20,13 +20,17 @@ class TeacherShellScreen extends StatefulWidget {
 }
 
 class _TeacherShellScreenState extends State<TeacherShellScreen> {
+  static const _messagesTab = 2;
+
   int _index = 0;
 
-  static const _pages = [
-    TeacherHomeScreen(),
-    ScannerDashboardScreen(),
-    MessagesScreen(),
-    MoreScreen(),
+  // Built per-state (not a static const) so Home can be handed a callback
+  // that flips this shell to the Messages tab.
+  late final List<Widget> _pages = [
+    TeacherHomeScreen(onOpenMessages: () => setState(() => _index = _messagesTab)),
+    const ScannerDashboardScreen(),
+    const MessagesScreen(),
+    const MoreScreen(),
   ];
 
   @override

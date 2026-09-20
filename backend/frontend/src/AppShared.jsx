@@ -1520,9 +1520,25 @@ export function DashboardIcon({ name = "overview", className = "" }) {
   );
 }
 
-export function MetricCard({ label, value, trend, trendUp, icon = "overview", tone = "blue" }) {
+// `onClick` is optional: when given, the card becomes a keyboard-reachable
+// button (role/tabIndex/Enter+Space) and picks up the "clickable" styling.
+// Cards without it stay plain, non-interactive articles.
+export function MetricCard({ label, value, trend, trendUp, icon = "overview", tone = "blue", onClick }) {
+  const interactiveProps = onClick
+    ? {
+        role: "button",
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick(event);
+          }
+        },
+      }
+    : {};
   return (
-    <article className={`metric-card tone-${tone}`}>
+    <article className={`metric-card tone-${tone}${onClick ? " metric-card-clickable" : ""}`} {...interactiveProps}>
       <div className="metric-card-head">
         <span className={`metric-icon metric-icon-${tone}`}>
           <DashboardIcon name={icon} className="inline-icon" />

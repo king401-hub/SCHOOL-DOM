@@ -17,7 +17,11 @@ import 'timetable_screen.dart';
 /// overview: key metrics, upcoming assessments, and announcements. Pulled
 /// from the same /api/app/teacher/dashboard/ endpoint the web app uses.
 class TeacherHomeScreen extends StatefulWidget {
-  const TeacherHomeScreen({super.key});
+  /// Switches the surrounding shell to its Messages tab (used by the "Unread
+  /// messages" card). Optional so the screen still works on its own.
+  final VoidCallback? onOpenMessages;
+
+  const TeacherHomeScreen({super.key, this.onOpenMessages});
 
   @override
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
@@ -69,8 +73,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with TickerProvid
       final results = await Future.wait([loadDashboard('teacher'), loadTimetable()]);
       final data = results[0];
       final timetable = results[1];
-      final weekday = DateTime.now().weekday;
-      final todayValue = weekday <= 6 ? weekday - 1 : 0;
+      // DateTime.weekday runs 1 (Mon) .. 7 (Sun), while timetable days are
+      // 0 (Mon) .. 5 (Sat) with no Sunday. Sunday therefore has to match
+      // nothing; it used to wrap back to 0 and show Monday's classes as
+      // "Today's Schedule".
+      final todayValue = DateTime.now().weekday - 1;
       final entries = ((timetable['entries'] ?? []) as List<dynamic>)
           .cast<Map<String, dynamic>>()
           .where((e) => e['day_of_week'] == todayValue)
@@ -262,8 +269,24 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with TickerProvid
                               child: ListView(
                             padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
                             children: [
+              // A failed pull-to-refresh keeps the last data on screen; say so
+              // in plain words rather than printing the raw exception text.
               if (_error != null)
-                Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.danger),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Couldn't refresh. Showing your last loaded data.",
+                          style: TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (_data != null) ...[
                 _TeachingCard(
                   monthlySalary: monthlySalary,
@@ -305,6 +328,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with TickerProvid
                         value: (metrics['unread_inbox'] ?? 0).toString(),
                         icon: Icons.mail_outline,
                         accent: AppColors.secondary,
+                        onTap: widget.onOpenMessages,
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -378,7 +402,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with TickerProvid
                     const SizedBox(height: 10),
                   ],
                 const SizedBox(height: 24),
-                Text('Needs Your Attention',
+                Text('Upcoming Assessments',
                     style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 12),
                 if (upcoming.isEmpty)
@@ -396,7 +420,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with TickerProvid
                   Text('No announcements.', style: TextStyle(color: AppColors.muted))
                 else
                   for (final raw in announcements) ...[
-                    _AnnouncementCard(item: raw as Map<String, dynamic>),
+                    _AnnouncementCard(item: raw as Map<String, dynamic>, formatDate: _formatDate),
                     const SizedBox(height: 10),
                   ],
               ],
@@ -420,44 +444,50 @@ class _NotificationBell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: AppColors.surfaceSoft,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.border),
-          boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 10, offset: Offset(0, 3))],
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Icon(
-              unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
-              color: unreadCount > 0 ? AppColors.primary : AppColors.muted,
-            ),
-            // The badge is the part that "disappears" once notifications are
-            // opened and marked read - the bell icon itself always stays.
-            if (unreadCount > 0)
-              Positioned(
-                top: -2,
-                right: -2,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                  decoration: const BoxDecoration(color: AppColors.danger, shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: Text(
-                    unreadCount > 9 ? '9+' : unreadCount.toString(),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+    return Semantics(
+      button: true,
+      label: unreadCount > 0 ? 'Notifications, $unreadCount unread' : 'Notifications',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceSoft,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.border),
+            boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 10, offset: Offset(0, 3))],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                unreadCount > 0 ? Icons.notifications : Icons.notifications_outlined,
+                color: unreadCount > 0 ? AppColors.primary : AppColors.muted,
+              ),
+              // The badge is the part that "disappears" once notifications are
+              // opened and marked read - the bell icon itself always stays.
+              if (unreadCount > 0)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    decoration: const BoxDecoration(color: AppColors.danger, shape: BoxShape.circle),
+                    alignment: Alignment.center,
+                    child: Text(
+                      unreadCount > 9 ? '9+' : unreadCount.toString(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -593,16 +623,24 @@ class _StatCard extends StatelessWidget {
         colors: [AppColors.card, accent.withValues(alpha: 0.07)],
       ),
       children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.22), blurRadius: 8, offset: const Offset(0, 3))],
-          ),
-          alignment: Alignment.center,
-          child: Icon(icon, size: 15, color: accent),
+        Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.22), blurRadius: 8, offset: const Offset(0, 3))],
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 15, color: accent),
+            ),
+            const Spacer(),
+            // Only cards that open something get the arrow, so it reads as
+            // "this one is tappable".
+            if (onTap != null) Icon(Icons.chevron_right, size: 20, color: accent),
+          ],
         ),
         const SizedBox(height: 6),
         Text(label, style: const TextStyle(color: AppColors.mutedDark, fontWeight: FontWeight.w800, fontSize: 12)),
@@ -626,7 +664,24 @@ class _StatCard extends StatelessWidget {
       ],
     );
     if (onTap == null) return card;
-    return GestureDetector(onTap: onTap, child: card);
+    // The ink layer sits above the card (not around it) because AppCard paints
+    // its own background, which would hide a ripple drawn underneath.
+    return Stack(
+      children: [
+        card,
+        Positioned.fill(
+          child: Semantics(
+            button: true,
+            label: '$label, $value',
+            excludeSemantics: true,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -701,12 +756,16 @@ class _AssessmentCard extends StatelessWidget {
 
 class _AnnouncementCard extends StatelessWidget {
   final Map<String, dynamic> item;
-  const _AnnouncementCard({required this.item});
+  final String Function(dynamic) formatDate;
+  const _AnnouncementCard({required this.item, required this.formatDate});
 
   @override
   Widget build(BuildContext context) {
     final priority = (item['priority'] ?? '').toString().toLowerCase();
     final tagColor = priority == 'high' ? AppColors.danger : priority == 'medium' ? AppColors.warning : AppColors.muted;
+    // The dashboard payload only carries id/title/priority/published_at (no
+    // body), so the date is the one extra detail there is to show.
+    final published = formatDate(item['published_at']);
     return AppCard(
       children: [
         Row(
@@ -731,6 +790,8 @@ class _AnnouncementCard extends StatelessWidget {
               ),
           ],
         ),
+        if (published.isNotEmpty)
+          Text(published, style: const TextStyle(color: AppColors.mutedDark, fontSize: 12)),
       ],
     );
   }

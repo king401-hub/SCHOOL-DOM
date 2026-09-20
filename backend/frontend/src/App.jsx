@@ -5,7 +5,7 @@ import {
   BookOpen, School, FileCheck, BarChart2, Upload, MessageSquare,
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
-  Package, Archive, Palette, KeyRound, Wallet, Trophy, Search,
+  Package, Archive, Palette, KeyRound, Wallet, Trophy, Search, Pencil,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -81,7 +81,6 @@ import {
   roleLabel,
   BellIcon,
   FilterIcon,
-  PaintbrushIcon,
   ThemeModeIcon,
   DashboardIcon,
   MetricCard,
@@ -4809,6 +4808,10 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
   const teacherInitials = userInitials({ full_name: teacherName });
   const planningItemLabel = isNonK12School(session, data) ? "Course Outlines" : "Lesson Plans";
   const [profileOpen, setProfileOpen] = useState(false);
+  // Remember which URL failed (rather than a boolean) so uploading a new
+  // picture gets a fresh attempt instead of staying stuck on initials.
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
+  const showAvatarImage = Boolean(teacherAvatar) && failedAvatarUrl !== teacherAvatar;
   const school = resolveSchoolBrand(data.school, session?.school, session);
   const schoolMotto = school.motto || school.tagline || "";
   const examResults =
@@ -4881,20 +4884,26 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             aria-label="Edit teacher profile"
             title="Edit profile"
           >
-            {teacherAvatar ? <img src={teacherAvatar} alt={`${teacherName} avatar`} /> : <span>{teacherInitials}</span>}
+            {showAvatarImage ? (
+              <img src={teacherAvatar} alt="" onError={() => setFailedAvatarUrl(teacherAvatar)} />
+            ) : (
+              <span>{teacherInitials}</span>
+            )}
             <span className="teacher-profile-edit-indicator" aria-hidden="true">
-              <PaintbrushIcon className="inline-icon" />
+              <Pencil strokeWidth={2.4} />
             </span>
           </button>
         </div>
 
         <div className="metric-grid">
+          {/* Every card opens the tab where its number comes from. */}
           <MetricCard
             label="Total Assessments"
             value={metrics.total_assessments ?? 0}
             trend={`${metrics.published_assessments ?? 0} published`}
             icon="exam"
             tone="blue"
+            onClick={() => onTabChange?.("past-exams")}
           />
           <MetricCard
             label="Upcoming"
@@ -4902,6 +4911,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             trend="Scheduled ahead"
             icon="calendar"
             tone="violet"
+            onClick={() => onTabChange?.("past-exams")}
           />
           <MetricCard
             label="Pending Submissions"
@@ -4909,6 +4919,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             trend="Awaiting grading"
             icon="requests"
             tone="amber"
+            onClick={() => onTabChange?.("theory-grading")}
           />
           <MetricCard
             label="CBT Results"
@@ -4916,6 +4927,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             trend={`${cbtAverage}% average`}
             icon="results"
             tone="emerald"
+            onClick={() => onTabChange?.("results")}
           />
           <MetricCard
             label="Pending Advances"
@@ -4925,8 +4937,9 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
                 ? `Balance: ${NAIRA_SYMBOL}${Number(teacherProfile.salary_balance).toLocaleString()}`
                 : "Request via HR System"
             }
-            icon="requests"
+            icon="money"
             tone="rose"
+            onClick={() => onTabChange?.("requests")}
           />
           {teacherProfile.advances_received != null && Number(teacherProfile.advances_received) > 0 ? (
             <MetricCard
@@ -4939,6 +4952,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
               }
               icon="money"
               tone="violet"
+              onClick={() => onTabChange?.("requests")}
             />
           ) : null}
           {teacherProfile.monthly_salary != null && Number(teacherProfile.monthly_salary) > 0 ? (
@@ -4948,6 +4962,7 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
               trend="Set by school admin"
               icon="money"
               tone="emerald"
+              onClick={() => onTabChange?.("requests")}
             />
           ) : null}
         </div>
@@ -4989,8 +5004,19 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
             >
               <div className="quick-action-icon"><DashboardIcon name="results" className="inline-icon" /></div>
               <div className="quick-action-content">
-                <h4>Grade Results</h4>
-                <p>Review and score student submissions</p>
+                <h4>Grade &amp; Rankings</h4>
+                <p>Submit marks and view class standings</p>
+              </div>
+            </button>
+            <button
+              className="quick-action-card"
+              type="button"
+              onClick={() => onTabChange?.("theory-grading")}
+            >
+              <div className="quick-action-icon"><DashboardIcon name="exam" className="inline-icon" /></div>
+              <div className="quick-action-content">
+                <h4>Theory Grading</h4>
+                <p>Score written answers waiting for a grade</p>
               </div>
             </button>
             <button
@@ -5009,20 +5035,29 @@ function TeacherDashboard({ session, data = {}, onCreatePrompt, onNotifyExam, is
 
         <div className="panel-grid">
           <article className="app-panel">
-            <h3>Upcoming Exams</h3>
+            <div className="teacher-panel-head">
+              <h3>Upcoming Exams</h3>
+              <button type="button" className="teacher-panel-link" onClick={() => onTabChange?.("past-exams")}>
+                View all
+              </button>
+            </div>
             {exams.length === 0 ? (
               <p className="panel-empty">No upcoming assessments.</p>
             ) : (
-              <ul className="panel-list">
+              <ul className="teacher-upcoming-list">
                 {exams.map((exam) => (
-                  <li key={exam.id}>
-                    {exam.title} - {exam.class_name} - {formatDate(exam.start_date)}
+                  <li key={exam.id} className="teacher-upcoming-item">
+                    <div className="teacher-upcoming-main">
+                      <strong>{exam.title || "Untitled exam"}</strong>
+                      {exam.class_name ? <span>{exam.class_name}</span> : null}
+                    </div>
+                    {exam.start_date ? <span className="teacher-upcoming-when">{formatDate(exam.start_date)}</span> : null}
                   </li>
                 ))}
               </ul>
             )}
           </article>
-          </div>
+        </div>
         {isRefreshing ? <p className="field-note">Auto-refreshing...</p> : null}
       </section>
     </section>
@@ -5120,7 +5155,10 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
   };
 
   return (
-    <section className="screen-grid swipe-attendance-page">
+    // .teacher-dashboard is what gives the hero (and panels) the same styling
+    // as every other teacher tab; without it this hero rendered as a plain
+    // white card next to the blue ones.
+    <section className="screen-grid swipe-attendance-page teacher-dashboard">
       <div className="screen-hero teacher-results-hero">
         <span className="teacher-results-hero-icon" aria-hidden="true">
           <CalendarCheck size={22} strokeWidth={1.8} />
@@ -5767,9 +5805,13 @@ function TeacherWorkspace({
   const nonK12 = isNonK12School(session, data);
   const teacherTabs = [
     ["overview", "Home", "overview"],
-    ["exam-builder", "Exams", "exam"],
-    ["past-exams", "Exam History", "calendar"],
-    nonK12 ? ["attendance-info", "Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
+    // Labels match the page each tab opens: "Exam Builder" (the builder) and
+    // "My Exams" (the page titled "My Exams") - the sidebar used to say
+    // "Exams" / "Exam History" - and "Student Attendance" for both attendance
+    // variants (the non-K-12 one used to say just "Attendance").
+    ["exam-builder", "Exam Builder", "exam"],
+    ["past-exams", "My Exams", "calendar"],
+    nonK12 ? ["attendance-info", "Student Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
     ["planning", nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad", "planning"],
     ["timetable", "Timetable", "calendar"],
     ["class-messages", "Messages & Notifications", "message"],
@@ -5811,6 +5853,16 @@ function TeacherWorkspace({
     },
     [onNavigate, selectTeacherTab]
   );
+
+  // Escape closes the phone drawer, matching a click on the overlay.
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setNavOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [navOpen]);
 
   useEffect(() => {
     if (!teacherTabs.some(([key]) => key === activeTab)) {
@@ -6080,14 +6132,20 @@ function TeacherWorkspace({
     if (activeTab === "requests") {
       return (
         <>
-          <div className="screen-hero teacher-results-hero teacher-tab-standalone-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <Briefcase size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">HR</p>
-              <h2>HR System</h2>
-              <p>Request leave, request salary advances, and review your HR activity.</p>
+          {/* StaffSelfServicePanel is shared with non-teacher roles and can't be
+              wrapped in .teacher-dashboard itself, so only the hero is wrapped
+              - otherwise it rendered as a plain white card unlike every other
+              teacher tab. */}
+          <div className="teacher-dashboard">
+            <div className="screen-hero teacher-results-hero teacher-tab-standalone-hero">
+              <span className="teacher-results-hero-icon" aria-hidden="true">
+                <Briefcase size={22} strokeWidth={1.8} />
+              </span>
+              <div>
+                <p className="topbar-kicker">HR</p>
+                <h2>HR System</h2>
+                <p>Request leave, request salary advances, and review your HR activity.</p>
+              </div>
             </div>
           </div>
           <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />
@@ -6099,15 +6157,22 @@ function TeacherWorkspace({
 
   return (
     <section className={`teacher-workspace-shell ${navOpen ? "nav-open" : ""}`}>
-      <button type="button" className="teacher-sidebar-toggle" onClick={() => setNavOpen((current) => !current)}>
+      <button
+        type="button"
+        className="teacher-sidebar-toggle"
+        aria-expanded={navOpen}
+        aria-controls="teacher-sidebar"
+        aria-label={`${navOpen ? "Close" : "Open"} navigation menu, current page ${tabTitle}`}
+        onClick={() => setNavOpen((current) => !current)}
+      >
         <span className="menu-bars" aria-hidden="true">
           <span />
           <span />
           <span />
         </span>
-        <span>{tabTitle}</span>
+        <span aria-hidden="true">{tabTitle}</span>
       </button>
-      <aside className="teacher-sidebar">
+      <aside className="teacher-sidebar" id="teacher-sidebar">
         <div className="teacher-sidebar-head">
           <span>Teacher Workspace</span>
           <strong>{teacherName}</strong>
@@ -6125,6 +6190,7 @@ function TeacherWorkspace({
               key={key}
               type="button"
               className={activeTab === key ? "active" : ""}
+              aria-current={activeTab === key ? "page" : undefined}
               onClick={() => selectTeacherTab(key)}
             >
               <DashboardIcon name={icon} className="inline-icon" />

@@ -5928,8 +5928,11 @@ body[data-theme="dark"] .modal-form-wrap .panel-form-actions { border-top-color:
   color: #2563eb;
 }
 
+/* The gradient's light end used to be #0ea5e9, which left white/pale text at
+   ~2.5:1 and the slate kicker at ~1.7:1. These two stops keep every hero text
+   colour below at >= 5:1 (white on #0369a1 is 5.9:1). */
 .teacher-dashboard .screen-hero {
-  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  background: linear-gradient(135deg, #0369a1, #4f46e5);
   color: #f8fafc;
   border-radius: 18px;
   padding: 1.1rem 1.4rem;
@@ -5937,42 +5940,52 @@ body[data-theme="dark"] .modal-form-wrap .panel-form-actions { border-top-color:
   box-shadow: 0 30px 70px -40px rgba(37, 99, 235, 0.55);
 }
 
+.teacher-dashboard .screen-hero h2 {
+  color: #ffffff;
+}
+
+.teacher-dashboard .screen-hero .topbar-kicker {
+  color: #e0f2fe;
+}
+
 .teacher-dashboard .screen-hero p {
   color: #e0f2fe;
 }
 
-.teacher-dashboard .metric-grid {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-}
-
+/* Metric card: one rule for what actually renders. This used to be a dark
+   gradient card with pale text that two later blocks (the "premium refresh"
+   further down and the shared .metric-card contrast pass near the end of this
+   file) turned back into a white card, leaving three layers of overrides. The
+   grid columns live in the "premium refresh" block below. */
 .teacher-dashboard .metric-card {
   position: relative;
   border: none;
-  background: linear-gradient(135deg, #0f172a, #111827);
-  color: #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
   box-shadow: 0 18px 40px -28px rgba(15, 23, 42, 0.7);
   overflow: hidden;
 }
 
 .teacher-dashboard .metric-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.24), transparent 40%),
-    radial-gradient(circle at 80% 80%, rgba(14, 165, 233, 0.2), transparent 38%);
-  pointer-events: none;
+  display: none;
 }
 
-.teacher-dashboard .metric-label {
-  color: #cbd5e1;
+/* Only cards that actually go somewhere get the hover lift / pointer. */
+.teacher-dashboard .metric-card:not(.metric-card-clickable):hover {
+  transform: none;
 }
 
-.teacher-dashboard .metric-value {
-  color: #f8fafc;
+.teacher-dashboard .metric-card-clickable {
+  cursor: pointer;
 }
 
-.teacher-dashboard .metric-trend {
-  color: #a5b4fc;
+.teacher-dashboard .metric-card-clickable:hover {
+  box-shadow: 0 18px 40px -24px rgba(37, 99, 235, 0.45);
+}
+
+.teacher-dashboard .metric-card-clickable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .teacher-dashboard .app-panel {
@@ -6010,9 +6023,20 @@ body[data-theme="dark"] .teacher-dashboard .screen-hero {
   box-shadow: none;
 }
 
+/* The generic dark ".screen-hero p" rule (#64748b, ~4:1 on this background)
+   outranks the teacher one above, so it has to be beaten explicitly. */
+body[data-theme="dark"] .teacher-dashboard .screen-hero p {
+  color: #cbd5e1;
+}
+
 body[data-theme="dark"] .teacher-dashboard .metric-card {
-  background: linear-gradient(135deg, #111827, #0b1220);
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
   box-shadow: none;
+}
+
+body[data-theme="dark"] .teacher-dashboard .metric-card-clickable:hover {
+  box-shadow: 0 0 0 1px #3157b7;
 }
 
 body[data-theme="dark"] .teacher-dashboard .app-panel {
@@ -6095,40 +6119,6 @@ body[data-theme="dark"] .teacher-dashboard .quick-action-content p {
   min-width: 0;
 }
 
-.teacher-workspace .workspace-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  border: 1px solid #dbe3ef;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-}
-
-.teacher-workspace .theme-icon-toggle {
-  min-width: 42px;
-  height: 42px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid #dbe3ef;
-  border-radius: 12px;
-  background: #ffffff;
-  color: #0f172a;
-  cursor: pointer;
-}
-
-body[data-theme="dark"] .teacher-workspace .workspace-tabs {
-  background: rgba(15, 23, 42, 0.94);
-  border-color: #1e293b;
-  box-shadow: none;
-}
-
-body[data-theme="dark"] .teacher-workspace .theme-icon-toggle {
-  background: #0b1f44;
-  border-color: rgba(147, 197, 253, 0.24);
-  color: #ffffff;
-}
-
 body[data-theme="dark"] .teacher-dashboard .app-panel h3,
 body[data-theme="dark"] .teacher-dashboard .data-table th {
   color: #f8fafc;
@@ -6139,7 +6129,6 @@ body[data-theme="dark"] .teacher-dashboard .panel-empty {
   color: #cbd5e1;
 }
 
-body[data-theme="light"] .teacher-workspace .workspace-tabs,
 body[data-theme="light"] .teacher-dashboard .app-panel,
 body[data-theme="light"] .academic-planning-panel {
   background: #ffffff;
@@ -6149,41 +6138,6 @@ body[data-theme="light"] .academic-planning-panel {
 @media (max-width: 768px) {
   .teacher-workspace {
     gap: 0.75rem;
-  }
-
-  .teacher-workspace .workspace-tabs {
-    position: static;
-    display: grid !important;
-    grid-template-columns: auto 1fr;
-    gap: 0.65rem !important;
-    justify-content: stretch !important;
-    padding: 0.75rem;
-    border-radius: 14px;
-  }
-
-  .teacher-workspace .workspace-tabs > div:first-of-type {
-    grid-column: 1 / -1;
-    justify-content: stretch !important;
-  }
-
-  .teacher-workspace .workspace-tabs > div:first-of-type button {
-    flex: 1 1 140px;
-    min-height: 42px;
-  }
-
-  .teacher-workspace .workspace-tabs > div:last-of-type {
-    grid-column: 1 / -1;
-    width: 100%;
-    margin-left: 0 !important;
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-  }
-
-  .teacher-workspace .workspace-tabs .pill-button {
-    width: 100%;
-    min-width: 0;
-    white-space: normal;
   }
 
   .teacher-dashboard .screen-hero {
@@ -6225,30 +6179,12 @@ body[data-theme="light"] .academic-planning-panel {
   }
 }
 
-@media (max-width: 420px) {
-  .teacher-workspace .workspace-tabs {
-    padding: 0.55rem;
-  }
-
-  .teacher-workspace .workspace-tabs > div:last-of-type {
-    grid-template-columns: 1fr;
-  }
-
-  .teacher-workspace .theme-icon-toggle {
-    width: 100%;
-  }
-}
-
 /* Premium teacher workspace refresh */
 .teacher-workspace {
-  --teacher-surface: #ffffff;
-  --teacher-soft: #f5f7fb;
-  --teacher-border: #e1e8f3;
-  --teacher-text: #102033;
-  --teacher-muted: #66758a;
-  --teacher-accent: #2563eb;
   gap: 0.85rem;
-  padding-bottom: 5.75rem;
+  /* Used to reserve 5.75rem (6.5rem on phones) for a bottom tab bar that no
+     longer exists, which left a ~100px blank strip under the Home tab. */
+  padding-bottom: 1rem;
 }
 
 /* .dashboard-page/.dashboard-shell (below, ~line 11381) are shared by
@@ -6294,13 +6230,20 @@ body[data-theme="dark"] .teacher-dashboard-page .dashboard-shell {
   min-height: calc(100vh - 1.5rem);
 }
 
+/* Four children: head, search, nav, footer. The rows used to be
+   "auto 1fr auto" (written before the search box existed), which put the 1fr
+   on the search row - a blank gap under the input on tall screens, and a
+   footer that floated under the nav instead of being pinned. The nav row now
+   takes the leftover space and scrolls on its own, so a short screen (or a
+   phone) can always reach the theme toggle and Sign out. */
 .teacher-sidebar {
   position: sticky;
   top: 0.75rem;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 1rem;
-  min-height: calc(100vh - 1.5rem);
+  height: calc(100vh - 1.5rem);
+  height: calc(100dvh - 1.5rem);
   border: 1px solid #dbe3ef;
   border-radius: 20px;
   background: #172238;
@@ -6335,6 +6278,20 @@ body[data-theme="dark"] .teacher-dashboard-page .dashboard-shell {
   display: grid;
   align-content: start;
   gap: 0.4rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the focus ring / hover border that overflow would clip. */
+  padding: 0.15rem;
+  margin: -0.15rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.teacher-sidebar-nav button:focus-visible,
+.teacher-sidebar-footer button:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
 }
 
 .teacher-sidebar-nav button,
@@ -6891,166 +6848,58 @@ body[data-dashboard-role="student"] .student-main-topbar {
   display: none;
 }
 
+/* Avatar button in the Home hero. Clipping moved from the button to its <img>
+   (border-radius: inherit) so the edit badge below can sit half outside the
+   button instead of being cut into a quarter-circle by overflow: hidden. */
 .teacher-profile-button {
   position: relative;
+  width: 48px;
+  height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
   box-shadow: 0 12px 26px -18px rgba(0, 0, 0, 0.5);
-}
-
-.teacher-profile-button {
-    width: 48px;
-    height: 48px;
-    border-radius: 16px;
-    overflow: hidden;
   display: inline-grid;
-    place-items: center;
-    font-weight: 800;
-  }
-
-  .teacher-profile-edit-indicator {
-    position: absolute;
-    right: -0.28rem;
-    bottom: -0.28rem;
-    width: 22px;
-    height: 22px;
-    display: grid;
-    place-items: center;
-    border-radius: 999px;
-    border: 2px solid #ffffff;
-    background: #2563eb;
-    color: #ffffff;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.28);
-  }
-
-  .teacher-profile-edit-indicator .inline-icon {
-    width: 13px;
-    height: 13px;
-    fill: currentColor;
-    stroke: none;
-  }
-  
-  .teacher-profile-button img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.teacher-command-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.85rem;
-  padding: 0.7rem;
-  border: 1px solid var(--teacher-border);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 14px 32px -26px rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(12px);
-}
-
-.teacher-command-text {
-  display: grid;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.teacher-command-text span {
-  color: var(--teacher-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.teacher-command-text strong {
-  color: var(--teacher-text);
-  font-size: 1rem;
-}
-
-.teacher-command-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.teacher-action-button,
-.teacher-workspace .theme-icon-toggle {
-  min-height: 40px;
-  border-radius: 13px;
-  border: 1px solid #d7e2f0;
-  background: #ffffff;
-  color: #102033;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.75rem;
-  font-size: 0.82rem;
+  place-items: center;
   font-weight: 800;
   cursor: pointer;
 }
 
-.teacher-action-button:hover,
-.teacher-workspace .theme-icon-toggle:hover {
-  background: #f5f8fd;
-  border-color: #bfdbfe;
+.teacher-profile-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
-.teacher-mobile-tabs {
-  position: sticky;
-  top: 0.6rem;
-  z-index: 25;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(74px, 1fr);
-  gap: 0.45rem;
-  overflow-x: auto;
-  padding: 0.45rem;
-  border: 1px solid var(--teacher-border);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 16px 36px -28px rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(12px);
-  scrollbar-width: none;
+.teacher-profile-button:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
 }
 
-.teacher-mobile-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.teacher-mobile-tabs button {
-  position: relative;
-  min-height: 50px;
-  border: 0;
-  border-radius: 14px;
-  background: transparent;
-  color: #64748b;
+.teacher-profile-edit-indicator {
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.35rem;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
-  gap: 0.16rem;
-  padding: 0.4rem 0.55rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  cursor: pointer;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.28);
 }
 
-.teacher-mobile-tabs button .notification-badge {
-  position: absolute;
-  top: 0.22rem;
-  right: 0.22rem;
-}
-
-.teacher-mobile-tabs button.active {
-  background: linear-gradient(135deg, #eef6ff, #e0e7ff);
-  color: #1d4ed8;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.14);
-}
-
-.teacher-mobile-tabs .inline-icon {
-  width: 18px;
-  height: 18px;
+/* The badge now holds a stroked pencil (lucide) rather than the old filled
+   paintbrush glyph. */
+.teacher-profile-edit-indicator svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
 }
 
 .teacher-dashboard {
@@ -7100,14 +6949,6 @@ body[data-dashboard-role="student"] .student-main-topbar {
   padding: 4px;
 }
 
-.teacher-dashboard .metric-card {
-  background: #ffffff;
-  color: #0f172a;
-  border-color: #e2e8f0;
-}
-
-.teacher-dashboard .metric-card::before { display: none; }
-
 .metric-card.tone-emerald .metric-icon { color: #047857; background: #ecfdf5; }
 .metric-card.tone-amber .metric-icon   { color: #b45309; background: #fffbeb; }
 .metric-card.tone-rose .metric-icon    { color: #be123c; background: #fff1f2; }
@@ -7145,34 +6986,134 @@ body[data-dashboard-role="student"] .student-main-topbar {
   line-height: 1.35;
 }
 
-body[data-theme="dark"] .teacher-command-bar,
-body[data-theme="dark"] .teacher-mobile-tabs,
-body[data-theme="dark"] .teacher-dashboard .metric-card,
+/* Home > Upcoming Exams (was a bare bulleted "Title - Class - Date" line). */
+.teacher-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.teacher-panel-head h3 {
+  margin: 0;
+}
+
+.teacher-panel-link {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #1d4ed8;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+}
+
+.teacher-panel-link:hover {
+  background: #eff6ff;
+}
+
+.teacher-panel-link:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.teacher-upcoming-list {
+  list-style: none;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.teacher-upcoming-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.teacher-upcoming-main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.teacher-upcoming-main strong {
+  color: #0f172a;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.teacher-upcoming-main span {
+  color: #475569;
+  font-size: 0.8rem;
+}
+
+.teacher-upcoming-when {
+  flex-shrink: 0;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+body[data-theme="dark"] .teacher-panel-link {
+  color: #93c5fd;
+}
+
+body[data-theme="dark"] .teacher-panel-link:hover {
+  background: rgba(147, 197, 253, 0.12);
+}
+
+body[data-theme="dark"] .teacher-upcoming-item {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: #334155;
+}
+
+body[data-theme="dark"] .teacher-upcoming-main strong {
+  color: #f8fafc;
+}
+
+body[data-theme="dark"] .teacher-upcoming-main span {
+  color: #cbd5e1;
+}
+
+body[data-theme="dark"] .teacher-upcoming-when {
+  color: #93c5fd;
+}
+
+@media (max-width: 480px) {
+  .teacher-upcoming-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .teacher-upcoming-when {
+    text-align: left;
+  }
+}
+
 body[data-theme="dark"] .metric-card {
   background: rgba(15, 23, 42, 0.94);
   border-color: #1e293b;
   color: #e2e8f0;
 }
 
-body[data-theme="dark"] .teacher-command-text strong,
-body[data-theme="dark"] .metric-value,
-body[data-theme="dark"] .teacher-dashboard .metric-value {
+body[data-theme="dark"] .metric-value {
   color: #f8fafc;
 }
 
-body[data-theme="dark"] .teacher-command-text span,
 body[data-theme="dark"] .metric-label,
-body[data-theme="dark"] .metric-trend,
-body[data-theme="dark"] .teacher-dashboard .metric-label,
-body[data-theme="dark"] .teacher-dashboard .metric-trend {
+body[data-theme="dark"] .metric-trend {
   color: #cbd5e1;
-}
-
-body[data-theme="dark"] .teacher-action-button,
-body[data-theme="dark"] .teacher-workspace .theme-icon-toggle {
-  background: #111b2e;
-  border-color: #334155;
-  color: #e2e8f0;
 }
 
 @media (max-width: 768px) {
@@ -7296,6 +7237,9 @@ body[data-theme="dark"] .teacher-workspace .theme-icon-toggle {
     white-space: nowrap;
   }
 
+  /* height comes from top/bottom: 0 - the old min-height: 100vh was taller
+     than the visible area on phones with a collapsing browser toolbar and
+     pushed the footer buttons off-screen. */
   .teacher-sidebar {
     position: fixed;
     top: 0;
@@ -7303,14 +7247,21 @@ body[data-theme="dark"] .teacher-workspace .theme-icon-toggle {
     bottom: 0;
     z-index: 1005;
     width: min(82vw, 310px);
-    min-height: 100vh;
+    height: auto;
     border-radius: 0 20px 20px 0;
     transform: translateX(-105%);
-    transition: transform 180ms ease;
+    /* visibility keeps the closed drawer's links out of the tab order; it
+       flips after the slide-out finishes so the animation still plays. The
+       min-width: 560px block near the end of this file un-hides it where the
+       sidebar is pinned. */
+    visibility: hidden;
+    transition: transform 180ms ease, visibility 0s linear 180ms;
   }
 
   .teacher-workspace-shell.nav-open .teacher-sidebar {
     transform: translateX(0);
+    visibility: visible;
+    transition-delay: 0s;
   }
 
   .teacher-sidebar-overlay {
@@ -7327,43 +7278,17 @@ body[data-theme="dark"] .teacher-workspace .theme-icon-toggle {
 
   .teacher-workspace {
     gap: 0.65rem;
-    padding-bottom: 6.5rem;
-  }
-
-  .teacher-command-bar {
-    border-radius: 16px;
-  }
-
-  .teacher-command-actions {
-    overflow-x: auto;
-    justify-content: flex-end;
-  }
-
-  .teacher-action-button {
-    padding-inline: 0.6rem;
-    white-space: nowrap;
-  }
-
-  .teacher-mobile-tabs {
-    position: fixed;
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: 0.75rem;
-    top: auto;
-    grid-auto-columns: minmax(64px, 1fr);
-    border-radius: 22px;
-    padding: 0.4rem;
-  }
-
-  .teacher-mobile-tabs button {
-    min-height: 54px;
-    font-size: 0.68rem;
-    border-radius: 17px;
   }
 
   .teacher-dashboard .metric-grid,
   .staff-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* An odd number of cards (the teacher Home grid has 5-7) would strand the
+     last one in a half-empty row on the forced 2-column grid. */
+  .teacher-dashboard .metric-grid > .metric-card:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .metric-card {
@@ -7389,14 +7314,6 @@ body[data-theme="dark"] .teacher-workspace .theme-icon-toggle {
 
   .metric-trend {
     font-size: 0.72rem;
-  }
-
-  .teacher-command-text {
-    display: none;
-  }
-
-  .teacher-command-bar {
-    justify-content: flex-end;
   }
 }
 
@@ -27508,6 +27425,16 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
     top: 0.75rem !important;
     transform: none !important;
     transition: none !important;
+    /* Undo the phone drawer's sizing. Without this the drawer's
+       width: min(82vw, 310px) leaked in at 560-768px, making the sidebar
+       310px wide inside a 250px grid column - it overlapped the first ~45px
+       of the page content. */
+    visibility: visible !important;
+    width: auto;
+    z-index: auto;
+    border-radius: 20px;
+    height: calc(100vh - 1.5rem);
+    height: calc(100dvh - 1.5rem);
   }
   .teacher-sidebar-overlay,
   .teacher-workspace-shell.nav-open .teacher-sidebar-overlay {
@@ -27546,6 +27473,38 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
     right: auto !important;
     z-index: auto !important;
     box-shadow: none !important;
+  }
+}
+
+/* Teacher sidebar on small tablets / large phones in landscape: keep the
+   pinned layout (above) but slim the column so the page content isn't left
+   with ~280px at 560px wide. */
+@media (min-width: 560px) and (max-width: 768px) {
+  .teacher-workspace-shell {
+    grid-template-columns: 208px minmax(0, 1fr) !important;
+    gap: 0.6rem;
+  }
+  .teacher-sidebar {
+    padding: 0.75rem;
+  }
+  .teacher-sidebar-nav button,
+  .teacher-sidebar-footer button {
+    font-size: 0.86rem;
+    padding-inline: 0.6rem;
+  }
+}
+
+/* Teacher mobile menu bar in dark mode. The mobile block above forces a
+   translucent white bar with !important, which left a bright strip on an
+   otherwise dark page; these have to be !important as well and carry an extra
+   attribute selector to outrank it. */
+@media (max-width: 559px) {
+  body[data-theme="dark"][data-dashboard-role="teacher"] .teacher-sidebar-toggle,
+  body[data-theme="dark"][data-dashboard-role="teacher"] .teacher-workspace-shell.nav-open .teacher-sidebar-toggle {
+    background: rgba(15, 23, 42, 0.78) !important;
+    border-color: rgba(51, 65, 85, 0.9) !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4) !important;
+    color: #e2e8f0;
   }
 }
 
