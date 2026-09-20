@@ -309,13 +309,13 @@ class LoginSerializer(serializers.Serializer):
         if email and password:
             try:
                 user = User.objects.get(email__iexact=email)
-                
-                # Check if account is locked
-                if user.is_locked:
-                    raise serializers.ValidationError({
-                        'error': 'Account is locked due to too many failed attempts. Please reset your password or contact support.'
-                    })
-                
+
+                # No account lockout: repeated wrong passwords used to lock the
+                # account, and the lock was checked before the password, so a
+                # student who mistyped five times could not get back in even
+                # with the right (or an admin-reset) password. Brute force is
+                # limited per IP by AuthRateThrottle on the login endpoint.
+
                 # Check if account is active
                 if not user.is_active:
                     raise serializers.ValidationError({

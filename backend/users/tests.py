@@ -941,11 +941,14 @@ class EnrollmentsAPITests(TestCase):
         self.assertIn("2349036425748", phones)
         self.assertIn("2348153197053", phones)
 
-    @override_settings(KUDISMS_TOKEN="test-token", KUDISMS_SENDER_ID="neo", KUDISMS_GATEWAY="2")
-    @patch("users.app_views.requests.get")
-    def test_admin_can_send_guardian_bulk_sms(self, mock_get):
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.text = "OK"
+    @patch("finance.services.send_ebulksms")
+    def test_admin_can_send_guardian_bulk_sms(self, mock_send):
+        # Guardian SMS is billed to the school's SMS wallet and sent one number
+        # at a time through eBulkSMS (it used to go out via a school's own
+        # KudiSMS token in a single bulk request).
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        wallet = get_or_create_sms_wallet(self.school)
+        starting_balance = wallet.balance
 
         response = self.client.post(
             "/api/app/messages/send/",
@@ -959,12 +962,15 @@ class EnrollmentsAPITests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["success"])
-        self.assertEqual(response.data["sms_data"]["recipient_count"], 2)
-        _, kwargs = mock_get.call_args
-        self.assertEqual(kwargs["params"]["token"], "test-token")
-        self.assertEqual(kwargs["params"]["senderID"], "neo")
-        self.assertEqual(kwargs["params"]["recipients"], "2349036425748,2348153197053")
-        self.assertEqual(kwargs["params"]["gateway"], "2")
+        # The repeated number is only sent to once.
+        self.assertEqual(response.data["sms_data"], {"sent": 2, "failed": 0})
+        self.assertEqual(mock_send.call_count, 2)
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, starting_balance - 2)
+        self.assertEqual(
+            SmsMessageLog.objects.filter(category=SmsMessageLog.BULK, delivery_status=SmsMessageLog.SENT).count(),
+            2,
+        )
 
     @patch("finance.services.send_ebulksms")
     def test_report_card_sms_is_billed_to_school_wallet_and_creates_secure_link(self, mock_send):
@@ -2743,6 +2749,7 @@ class SchoolSettingsAPITests(TestCase):
         self.assertTrue(ticket.attachment.name)
         send_mail_mock.assert_called_once()
 
+    @override_settings(SCHOOLDOM_SUPPORT_EMAIL="support@schooldom.academy")
     @patch("users.app_views.send_mail", return_value=1)
     def test_public_contact_form_sends_email_to_support_inbox(self, send_mail_mock):
         response = self.client.post(
@@ -2761,7 +2768,7 @@ class SchoolSettingsAPITests(TestCase):
         args, kwargs = send_mail_mock.call_args
         self.assertIn("Schooldom contact from Jordan Smith", args[0])
         self.assertIn("jordan@example.com", args[1])
-        self.assertIn("enquiry@schooldom.academy", args[3])
+        self.assertIn("support@schooldom.academy", args[3])
 
     def test_school_settings_includes_support_tickets(self):
         SupportTicket.objects.create(
@@ -4429,6 +4436,109 @@ class AuthSchoolScopeTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.data["success"])
         self.assertIn("school code is required", str(response.data["errors"]).lower())
+
+    def _student_with_login_token(self, email):
+        student = User.objects.create_user(
+            email=email,
+            password="StudentPass123",
+            first_name="Token",
+            last_name="Student",
+            role="student",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        profile = StudentProfile.objects.create(
+            user=student,
+            student_id=f"STU-{email.split('@')[0][:8].upper()}",
+            admission_number=f"ADM-{email.split('@')[0][:8].upper()}",
+            admission_date=timezone.now().date(),
+            guardian_name="Guardian",
+            guardian_phone="+15550003333",
+            guardian_relation="Parent",
+        )
+        credit = get_or_create_student_activation_credit(profile)
+        credit.active_until = timezone.localdate() + timedelta(days=30)
+        credit.save(update_fields=["active_until", "updated_at"])
+        return student
+
+    def _login(self, email, password):
+        return self.client.post(
+            "/api/auth/login/",
+            data={"email": email, "password": password, "school_code": self.school.schema_name},
+            format="json",
+        )
+
+    def test_repeated_wrong_passwords_never_lock_a_student_out(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        student = self._student_with_login_token("many.wrong@school.edu")
+
+        for _ in range(6):
+            response = self._login(student.email, "WrongPass999")
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("invalid credentials", str(response.data["errors"]).lower())
+
+        student.refresh_from_db()
+        self.assertFalse(student.is_locked)
+
+        response = self._login(student.email, "StudentPass123")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["success"])
+
+    def test_student_left_locked_by_the_old_lockout_can_now_log_in(self):
+        # Accounts locked before lockout was removed must not need a data fix.
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+        student = self._student_with_login_token("legacy.locked@school.edu")
+        student.is_locked = True
+        student.login_attempts = 5
+        student.save(update_fields=["is_locked", "login_attempts"])
+
+        response = self._login(student.email, "StudentPass123")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["success"])
+        student.refresh_from_db()
+        self.assertFalse(student.is_locked)
+        self.assertEqual(student.login_attempts, 0)
+
+    @patch("users.views.ADMIN_OTP_ENABLED", True)
+    def test_admin_otp_limits_guesses_per_code_without_locking_the_account(self):
+        from django.core.cache import cache as django_cache
+        from users.views import ADMIN_OTP_MAX_ATTEMPTS, send_admin_otp
+        django_cache.clear()
+        admin = User.objects.create_user(
+            email="otp.limit@school.edu", password="AdminPass123", first_name="Otp", last_name="Limit",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        challenge = send_admin_otp(admin)
+        code = admin._admin_otp_debug_code
+        wrong = "111111" if code != "111111" else "222222"
+
+        def verify(candidate, chal):
+            return self.client.post(
+                "/api/auth/admin/verify-otp/",
+                data={"email": admin.email, "code": candidate, "challenge": chal},
+                format="json",
+            )
+
+        for attempt in range(1, ADMIN_OTP_MAX_ATTEMPTS):
+            response = verify(wrong, challenge)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("attempt", response.data["message"].lower())
+        # The last allowed guess is refused as "too many"...
+        self.assertEqual(verify(wrong, challenge).status_code, 429)
+        # ...and the code is then dead for good, even with the right digits.
+        self.assertEqual(verify(code, challenge).status_code, 429)
+
+        admin.refresh_from_db()
+        self.assertFalse(admin.is_locked)
+
+        # Signing in again issues a fresh code, which works.
+        new_challenge = send_admin_otp(admin)
+        response = verify(admin._admin_otp_debug_code, new_challenge)
+        self.assertEqual(response.status_code, 200, response.data)
 
     def test_teacher_login_requires_matching_school_code(self):
         teacher = User.objects.create_user(

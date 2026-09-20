@@ -220,14 +220,14 @@ class User(AbstractBaseUser, PermissionsMixin):
         return False
     
     def increment_login_attempts(self):
-        """Increment failed login attempts"""
+        """Count a failed login. This is only a counter - it no longer locks
+        the account (see LoginSerializer)."""
         self.login_attempts += 1
-        if self.login_attempts >= 5:
-            self.is_locked = True
-        self.save(update_fields=['login_attempts', 'is_locked'])
-    
+        self.save(update_fields=['login_attempts'])
+
     def reset_login_attempts(self):
-        """Reset failed login attempts"""
+        """Reset failed login attempts (and clear any lock left from before
+        account locking was removed)."""
         self.login_attempts = 0
         self.is_locked = False
         self.save(update_fields=['login_attempts', 'is_locked'])

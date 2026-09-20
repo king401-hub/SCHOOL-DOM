@@ -37,6 +37,7 @@ from finance.services import get_or_create_activation_credit_pool, grant_school_
 ADMIN_OTP_ROLES = {"school_admin", "principal", "school_superadmin"}
 ADMIN_OTP_ENABLED = getattr(settings, "ADMIN_OTP_ENABLED", False)
 ADMIN_OTP_EXPIRY_MINUTES = 10
+ADMIN_OTP_MAX_ATTEMPTS = 5  # wrong guesses allowed per emailed code
 PASSWORD_RESET_OTP_EXPIRY_MINUTES = 10
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5
 # Accounts that never require login/signup OTP, regardless of role.
@@ -953,23 +954,29 @@ def admin_verify_otp(request):
         return Response({'success': False, 'message': 'Invalid OTP challenge.'}, status=status.HTTP_404_NOT_FOUND)
     if not is_admin_otp_user(user):
         return Response({'success': False, 'message': 'OTP verification is only required for admin accounts.'}, status=status.HTTP_400_BAD_REQUEST)
-    if user.is_locked:
-        create_login_history(user, request, status='locked')
-        return Response({'success': False, 'message': 'Account is locked. Contact support.'}, status=status.HTTP_423_LOCKED)
     otp_user = get_admin_email_device(user, challenge=challenge)
     if not otp_user:
         create_login_history(user, request, status='failed')
         return Response({'success': False, 'message': 'Invalid OTP challenge.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # A 6-digit code is guessable, and this endpoint has no per-IP throttle, so
+    # each code only allows ADMIN_OTP_MAX_ATTEMPTS guesses. That limit is on the
+    # code, not the account: signing in again issues a fresh code and resets it.
+    too_many_response = Response(
+        {'success': False, 'message': 'Too many incorrect codes. Please sign in again to get a new code.'},
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+    if user.admin_otp_attempts >= ADMIN_OTP_MAX_ATTEMPTS:
+        create_login_history(user, request, status='failed')
+        return too_many_response
+
     if not user.admin_otp_hash or not check_password(code, user.admin_otp_hash):
         user.admin_otp_attempts += 1
         user.save(update_fields=['admin_otp_attempts'])
-        if user.admin_otp_attempts >= 5:
-            user.increment_login_attempts()
         create_login_history(user, request, status='failed')
-        if user.is_locked or user.admin_otp_attempts >= 5:
-            return Response({'success': False, 'message': 'Too many failed OTP attempts. Account locked.'}, status=status.HTTP_423_LOCKED)
-        remaining = max(5 - user.admin_otp_attempts, 0)
+        remaining = max(ADMIN_OTP_MAX_ATTEMPTS - user.admin_otp_attempts, 0)
+        if remaining == 0:
+            return too_many_response
         return Response({
             'success': False,
             'message': f'Invalid OTP code. {remaining} attempt{"s" if remaining != 1 else ""} remaining.'

@@ -27,6 +27,7 @@ from django.http import FileResponse, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.crypto import get_random_string
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.text import slugify
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -1944,7 +1945,11 @@ def _ensure_teacher_user_for_tenant(
         if profile_picture:
             teacher_user.profile_picture = profile_picture
         if teacher_password is None or confirm_teacher_password is None:
-            teacher_user.set_password(User.objects.make_random_password())
+            # Django removed BaseUserManager.make_random_password() in 5.1; this
+            # mirrors its former default length and unambiguous alphabet.
+            teacher_user.set_password(
+                get_random_string(10, "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+            )
         else:
             validated_password = _validate_teacher_password(teacher_password, confirm_teacher_password)
             teacher_user.set_password(validated_password)
