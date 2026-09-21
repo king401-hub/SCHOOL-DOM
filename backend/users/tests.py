@@ -2603,6 +2603,183 @@ class GradingToggleTests(TestCase):
         self.assertTrue(passed)
 
 
+class ClassReportCardSmsTests(TestCase):
+    """SMS Wallet -> "Send to a whole class": report cards go to guardians in
+    one action, built server-side from *published* results and billed one wallet
+    credit per confirmed message."""
+
+    OK = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        from finance.models import SmsWallet
+        django_cache.clear()  # IdempotencyMiddleware replays identical POST bodies
+
+        self.school = SchoolTenant.objects.create(name="Report SMS School", schema_name="report_sms_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@report-sms.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@report-sms.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS 1", section="A")
+        self.other_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS 2", section="A")
+        self.term = Term.objects.create(tenant=self.legacy_tenant, name="First Term", start_date=timezone.localdate(), end_date=timezone.localdate())
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+
+        self.ada = self._student("ada", "Ada", "Ready", "08010000001")
+        self.bola = self._student("bola", "Bola", "NoPhone", "")
+        self.chi = self._student("chi", "Chi", "NoResults", "08010000003")
+        self.dayo = self._student("dayo", "Dayo", "Draft", "08010000004")
+        self.femi = self._student("femi", "Femi", "SecondPhone", "", second_phone="08010000006")
+        self.other = self._student("other", "Other", "ClassKid", "08010000007", school_class=self.other_class)
+
+        for student, published in ((self.ada, True), (self.bola, True), (self.dayo, False), (self.femi, True), (self.other, True)):
+            StudentSubjectScore.objects.create(
+                student=student, subject=self.math, class_group=student.current_class, term=self.term,
+                score=Decimal("75.00"), max_score=Decimal("100.00"),
+                approval_status=ResultBatch.PUBLISHED if published else ResultBatch.DRAFT,
+            )
+
+        self.wallet = get_or_create_sms_wallet(self.school)
+        SmsWallet.objects.filter(pk=self.wallet.pk).update(balance=10)
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _student(self, key, first, last, phone, second_phone="", school_class=None):
+        user = User.objects.create_user(
+            email=f"{key}@report-sms.edu", password="StudentPass123", first_name=first, last_name=last,
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=f"RSMS-{key.upper()}", admission_number=f"ADM-RSMS-{key.upper()}",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            guardian_phone=phone, second_guardian_phone=second_phone,
+            current_class=school_class or self.school_class,
+        )
+
+    def _recipients(self, **params):
+        return self.client.get("/api/app/results/report-cards/recipients/", params)
+
+    def _send(self, students, **overrides):
+        payload = {
+            "class_id": self.school_class.id, "term_id": self.term.id,
+            "student_ids": [str(student.id) for student in students],
+        }
+        payload.update(overrides)
+        return self.client.post("/api/app/results/report-cards/send/", data=payload, format="json")
+
+    def _balance(self):
+        from finance.models import SmsWallet
+        return SmsWallet.objects.get(pk=self.wallet.pk).balance
+
+    def test_options_come_back_without_choosing_a_class(self):
+        response = self._recipients()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["wallet"]["balance"], 10)
+        self.assertEqual(response.data["students"], [])
+        self.assertIn(self.school_class.id, [item["id"] for item in response.data["options"]["classes"]])
+        self.assertIn(self.term.id, [item["id"] for item in response.data["options"]["terms"]])
+
+    def test_class_list_says_who_can_be_sent_a_report_card(self):
+        response = self._recipients(class_id=self.school_class.id, term_id=self.term.id)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        states = {item["name"]: item["state"] for item in response.data["students"]}
+        self.assertEqual(states, {
+            "Ada Ready": "ready",
+            "Bola NoPhone": "no_phone",
+            "Chi NoResults": "no_results",     # no scores at all
+            "Dayo Draft": "no_results",        # scores exist but are not published
+            "Femi SecondPhone": "ready",       # falls back to the second guardian
+        })
+        femi = next(item for item in response.data["students"] if item["name"] == "Femi SecondPhone")
+        self.assertEqual(femi["phone"], "08010000006")
+
+    @patch("finance.services.send_ebulksms")
+    def test_sends_to_ready_students_only_and_bills_one_credit_each(self, mock_send):
+        mock_send.return_value = self.OK
+
+        response = self._send([self.ada, self.bola, self.chi, self.dayo, self.femi])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual((response.data["sent"], response.data["skipped"], response.data["failed"]), (2, 3, 0))
+        self.assertEqual(response.data["balance"], 8)
+        self.assertEqual(self._balance(), 8)
+        self.assertEqual(mock_send.call_count, 2)
+        # Each parent gets their own secure link, built from the database.
+        links = PaymentReceiptLink.objects.filter(receipt_type="report_card")
+        self.assertEqual(sorted(links.values_list("phone", flat=True)), ["08010000001", "08010000006"])
+        self.assertEqual(SmsMessageLog.objects.filter(category=SmsMessageLog.RESULTS, delivery_status=SmsMessageLog.SENT).count(), 2)
+        sent_bodies = " ".join(call.args[1] for call in mock_send.call_args_list)
+        self.assertIn("Report Card: Ada Ready", sent_bodies)
+        self.assertIn("Report Card: Femi SecondPhone", sent_bodies)
+        self.assertNotIn("Dayo Draft", sent_bodies)  # unpublished results are never sent
+        reasons = {item["name"]: item["reason"] for item in response.data["problems"]}
+        self.assertIn("No guardian phone", reasons["Bola NoPhone"])
+        self.assertIn("No published results", reasons["Dayo Draft"])
+
+    @patch("finance.services.send_ebulksms")
+    def test_stops_when_the_wallet_runs_out_of_credits(self, mock_send):
+        from finance.models import SmsWallet
+        mock_send.return_value = self.OK
+        SmsWallet.objects.filter(pk=self.wallet.pk).update(balance=1)
+
+        response = self._send([self.ada, self.femi])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual((response.data["sent"], response.data["not_sent"]), (1, 1))
+        self.assertTrue(response.data["out_of_credits"])
+        self.assertEqual(response.data["balance"], 0)
+        self.assertEqual(mock_send.call_count, 1)  # the second send never reached the provider
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_message_the_provider_rejects_is_not_billed(self, mock_send):
+        mock_send.return_value = {"response": {"status": "FAILED", "totalsent": 0}}
+
+        response = self._send([self.ada, self.femi])
+
+        self.assertEqual((response.data["sent"], response.data["failed"]), (0, 2))
+        self.assertEqual(self._balance(), 10)
+
+    @patch("finance.services.send_ebulksms")
+    def test_students_outside_the_class_or_school_are_unreachable(self, mock_send):
+        mock_send.return_value = self.OK
+        other_school = SchoolTenant.objects.create(name="Elsewhere School", schema_name="elsewhere_report_sms", is_active=True)
+        stranger_user = User.objects.create_user(
+            email="stranger@elsewhere.edu", password="StudentPass123", role="student",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+        stranger = StudentProfile.objects.create(
+            user=stranger_user, student_id="ELSE-1", admission_number="ADM-ELSE-1", admission_date=timezone.localdate(),
+            guardian_name="G", guardian_relation="Parent", guardian_phone="08010000099", current_class=self.school_class,
+        )
+
+        response = self._send([self.other, stranger])   # another class, another school
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual((response.data["sent"], response.data["skipped"], response.data["failed"]), (0, 0, 0))
+        mock_send.assert_not_called()
+        self.assertEqual(self._balance(), 10)
+
+    def test_a_request_may_carry_only_a_small_batch(self):
+        response = self._send([self.ada] * 21)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("at most 20", response.data["message"])
+
+    def test_nothing_selected_is_refused(self):
+        self.assertEqual(self._send([]).status_code, 400)
+
+    def test_only_administrators_can_use_it(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.assertEqual(self._recipients().status_code, 403)
+        self.assertEqual(self._send([self.ada]).status_code, 403)
+
+
 class DocumentSignatureResolutionTests(TestCase):
     """The signature shown on report cards/transcripts/testimonials/ID cards
     must resolve to whichever admin actually uploaded one - even when other

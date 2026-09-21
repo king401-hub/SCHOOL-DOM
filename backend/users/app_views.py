@@ -13281,6 +13281,243 @@ def send_class_broadsheet(request):
     return Response({"success": True, "sent": sent, "failed": failed, "skipped": skipped, "errors": errors[:10]})
 
 
+def _send_report_card_sms(user, report, phone):
+    """Create the parent's secure report-card link and SMS it, billed to the
+    school's SMS wallet. `report` has the shape of _student_result_report().
+
+    Shared by the single "Send a Report Card" form and the whole-class send so
+    both use the same wording, link and billing. Raises
+    InsufficientSmsCreditsError / SmsWalletLockedError *before* the provider is
+    called (see send_wallet_sms) - callers decide what that means for them."""
+    from finance.models import SmsMessageLog
+    from finance.services import create_receipt_link, send_wallet_sms, sms_compact_url
+
+    school = getattr(user, "tenant", None)
+    student = report.get("student") or {}
+    student_name = str(student.get("name") or "").strip()
+    school_name = str((report.get("school") or {}).get("name") or "").strip() or (school.name if school else "")
+    class_name = str(student.get("class_name") or "").strip()
+    average_score = report.get("average_score") or 0
+    class_position = report.get("class_position")
+    class_size = report.get("class_size") or 0
+    link_data = {
+        "school_name": school_name,
+        "student_name": student_name,
+        "class_name": class_name,
+        "total_score": report.get("total_score") or 0,
+        "average_score": average_score,
+        "class_position": class_position,
+        "class_size": class_size,
+        "generated_at": timezone.now().strftime("%d %b %Y"),
+        "scores": [
+            {
+                "subject": s.get("subject", ""),
+                "score": s.get("score", 0),
+                "max_score": s.get("max_score", 100),
+                "percentage": s.get("percentage"),
+                "grade": s.get("grade", ""),
+                "remark": s.get("performance_remark", ""),
+            }
+            for s in (report.get("scores") or [])[:30]
+        ],
+    }
+    report_url = create_receipt_link(link_data, tenant=school, phone=phone, receipt_type="report_card")
+
+    sms_parts = [f"{school_name} Report Card: {student_name}."]
+    if class_name:
+        sms_parts.append(f"Class: {class_name}.")
+    sms_parts.append(f"Avg: {average_score}.")
+    if class_position:
+        sms_parts.append(f"Position: {class_position}/{class_size}.")
+    sms_parts.append(f"View: {sms_compact_url(report_url)}")
+    return send_wallet_sms(
+        school,
+        phone,
+        " ".join(sms_parts),
+        category=SmsMessageLog.RESULTS,
+        actor=user,
+        narration="Report card",
+    )
+
+
+def _report_card_sms_phone(student_profile):
+    """The number a report card SMS goes to: the primary guardian, else the second."""
+    return (student_profile.guardian_phone or student_profile.second_guardian_phone or "").strip()
+
+
+# Each SMS is a live request to the SMS provider, so one request only carries a
+# small batch (the page sends a class in chunks) - a whole class in a single
+# request could outlast the web server's timeout.
+REPORT_CARD_SMS_MAX_BATCH = 20
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def report_card_sms_recipients(request):
+    """Feeds the SMS Wallet's "Send to a whole class" panel. Without class_id
+    and term_id it returns just the class/term pickers and the wallet balance;
+    with both, the class's students and whether each can be sent a report card
+    (published results for that term + a guardian phone number)."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can send report cards."}, status=status.HTTP_403_FORBIDDEN)
+    if not getattr(user, "tenant_id", None):
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from finance.services import get_or_create_sms_wallet
+
+    wallet = get_or_create_sms_wallet(user.tenant)
+    payload = {
+        "success": True,
+        "wallet": {"balance": wallet.balance, "is_locked": wallet.is_locked},
+        "max_batch": REPORT_CARD_SMS_MAX_BATCH,
+        "options": {
+            "classes": [
+                {"id": item.id, "label": _class_label(item)}
+                for item in _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")[:200]
+            ],
+            "terms": [
+                {"id": item.id, "name": f"{item.name} ({item.academic_year.name})" if item.academic_year_id else item.name}
+                for item in _scope_to_user_tenant(Term.objects.select_related("academic_year"), user).order_by("-start_date", "name")[:50]
+            ],
+        },
+        "students": [],
+    }
+
+    class_id = request.query_params.get("class_id")
+    term_id = request.query_params.get("term_id")
+    if class_id and term_id:
+        class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=class_id)
+        term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=term_id)
+        with_results = set(
+            StudentSubjectScore.objects.filter(
+                class_group=class_group,
+                term=term,
+                approval_status=ResultBatch.PUBLISHED,
+                student__user__tenant=user.tenant,
+            ).values_list("student_id", flat=True)
+        )
+        students = (
+            StudentProfile.objects.filter(current_class=class_group, user__tenant=user.tenant)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name")
+        )
+        for student in students:
+            phone = _report_card_sms_phone(student)
+            if student.id not in with_results:
+                state = "no_results"
+            elif not phone:
+                state = "no_phone"
+            else:
+                state = "ready"
+            payload["students"].append({
+                "id": str(student.id),
+                "student_id": student.student_id,
+                "name": student.user.get_full_name(),
+                "phone": phone,
+                "state": state,
+            })
+    return Response(payload)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def send_class_report_cards(request):
+    """SMS report cards to the chosen students' guardians, billed to the school's
+    SMS wallet (one credit each, only for messages the provider confirms).
+
+    Every report is built here from the database - never taken from the request
+    - and only from *published* results, so a parent is never sent marks the
+    school hasn't released. Students are re-filtered to this class and school
+    server-side, so a manipulated request can't reach anyone else."""
+    user = request.user
+    if not _can_manage_school_settings(user):
+        return Response({"success": False, "message": "Only administrators can send report cards."}, status=status.HTTP_403_FORBIDDEN)
+    if not getattr(user, "tenant_id", None):
+        return Response({"success": False, "message": "Your account is not linked to a school."}, status=status.HTTP_400_BAD_REQUEST)
+
+    class_group = get_object_or_404(_scope_to_user_tenant(Class.objects.all(), user), id=request.data.get("class_id"))
+    term = get_object_or_404(_scope_to_user_tenant(Term.objects.all(), user), id=request.data.get("term_id"))
+
+    raw_ids = request.data.get("student_ids") or []
+    if not isinstance(raw_ids, (list, tuple)) or not raw_ids:
+        return Response({"success": False, "message": "Select at least one student."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(raw_ids) > REPORT_CARD_SMS_MAX_BATCH:
+        return Response(
+            {"success": False, "message": f"Send at most {REPORT_CARD_SMS_MAX_BATCH} report cards per request."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    student_ids = []
+    for raw_id in raw_ids:
+        try:
+            student_ids.append(uuid.UUID(str(raw_id)))
+        except (ValueError, AttributeError):
+            continue
+
+    from finance.models import SmsMessageLog
+    from finance.services import (
+        InsufficientSmsCreditsError,
+        SmsWalletLockedError,
+        get_or_create_sms_wallet,
+        sms_failure_reason,
+    )
+
+    students = (
+        StudentProfile.objects.filter(id__in=student_ids, current_class=class_group, user__tenant=user.tenant)
+        .select_related("user", "current_class")
+        .order_by("user__first_name", "user__last_name")
+    )
+
+    sent = failed = skipped = not_sent = 0
+    problems = []
+    out_of_credits = False
+    for student in students:
+        name = student.user.get_full_name()
+        if out_of_credits:
+            not_sent += 1
+            problems.append({"student_id": student.student_id, "name": name, "reason": "Not sent - the SMS wallet ran out of credits."})
+            continue
+
+        report = _student_result_report(student, class_group=class_group, term=term, request=request, include_unpublished=False)
+        if not report.get("scores"):
+            skipped += 1
+            problems.append({"student_id": student.student_id, "name": name, "reason": "No published results for this term."})
+            continue
+        phone = _report_card_sms_phone(student)
+        if not phone:
+            skipped += 1
+            problems.append({"student_id": student.student_id, "name": name, "reason": "No guardian phone number on record."})
+            continue
+
+        try:
+            log = _send_report_card_sms(user, report, phone)
+        except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+            # The wallet can't cover any further message, so stop rather than
+            # attempting (and failing) every remaining student.
+            out_of_credits = True
+            not_sent += 1
+            problems.append({"student_id": student.student_id, "name": name, "reason": str(exc)})
+            continue
+
+        if log.delivery_status in (SmsMessageLog.SENT, SmsMessageLog.DELIVERED):
+            sent += 1
+        else:
+            failed += 1
+            problems.append({"student_id": student.student_id, "name": name, "reason": sms_failure_reason(log)})
+
+    wallet = get_or_create_sms_wallet(user.tenant)
+    return Response({
+        "success": True,
+        "sent": sent,
+        "failed": failed,
+        "skipped": skipped,
+        "not_sent": not_sent,
+        "out_of_credits": out_of_credits,
+        "balance": wallet.balance,
+        "problems": problems[:50],
+    })
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def student_my_results(request):
@@ -13455,70 +13692,12 @@ def send_message(request):
             )
 
         report_data = request.data.get("report_data") or {}
-        student_name = str((report_data.get("student") or {}).get("name") or "").strip()
-        school_name = str((report_data.get("school") or {}).get("name") or "").strip() or getattr(request.user, "tenant", None) and request.user.tenant.name or ""
-        total_score = report_data.get("total_score") or 0
-        average_score = report_data.get("average_score") or 0
-        class_name = str((report_data.get("student") or {}).get("class_name") or "").strip()
-        class_position = report_data.get("class_position")
-        class_size = report_data.get("class_size") or 0
-        scores = report_data.get("scores") or []
 
         from finance.models import SmsMessageLog
-        from finance.services import (
-            InsufficientSmsCreditsError,
-            SmsWalletLockedError,
-            create_receipt_link,
-            send_wallet_sms,
-            sms_compact_url,
-            sms_failure_reason,
-        )
-        link_data = {
-            "school_name": school_name,
-            "student_name": student_name,
-            "class_name": class_name,
-            "total_score": total_score,
-            "average_score": average_score,
-            "class_position": class_position,
-            "class_size": class_size,
-            "generated_at": timezone.now().strftime("%d %b %Y"),
-            "scores": [
-                {
-                    "subject": s.get("subject", ""),
-                    "score": s.get("score", 0),
-                    "max_score": s.get("max_score", 100),
-                    "percentage": s.get("percentage"),
-                    "grade": s.get("grade", ""),
-                    "remark": s.get("performance_remark", ""),
-                }
-                for s in scores[:30]
-            ],
-        }
-        report_url = create_receipt_link(
-            link_data,
-            tenant=getattr(request.user, "tenant", None),
-            phone=phone,
-            receipt_type="report_card",
-        )
-
-        sms_parts = [f"{school_name} Report Card: {student_name}."]
-        if class_name:
-            sms_parts.append(f"Class: {class_name}.")
-        sms_parts.append(f"Avg: {average_score}.")
-        if class_position:
-            sms_parts.append(f"Position: {class_position}/{class_size}.")
-        sms_parts.append(f"View: {sms_compact_url(report_url)}")
-        sms_body = " ".join(sms_parts)
+        from finance.services import InsufficientSmsCreditsError, SmsWalletLockedError, sms_failure_reason
 
         try:
-            log = send_wallet_sms(
-                getattr(request.user, "tenant", None),
-                phone,
-                sms_body,
-                category=SmsMessageLog.RESULTS,
-                actor=request.user,
-                narration="Report card",
-            )
+            log = _send_report_card_sms(request.user, report_data, phone)
         except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
             return Response({"success": False, "message": str(exc)}, status=status.HTTP_402_PAYMENT_REQUIRED)
 

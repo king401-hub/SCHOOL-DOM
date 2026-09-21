@@ -8393,6 +8393,45 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [session]
   );
 
+  // SMS Wallet -> "Send report cards to a whole class". With no ids it returns
+  // just the class/term pickers and the wallet balance.
+  const handleLoadReportCardRecipients = useCallback(
+    async (classId, termId) => {
+      const params = new URLSearchParams();
+      if (classId) params.set("class_id", classId);
+      if (termId) params.set("term_id", termId);
+      const query = params.toString();
+      return requestJson(session, "GET", `/api/app/results/report-cards/recipients/${query ? `?${query}` : ""}`);
+    },
+    [session]
+  );
+
+  const handleSendReportCardBatch = useCallback(
+    async ({ classId, termId, studentIds }) =>
+      requestJson(session, "POST", "/api/app/results/report-cards/send/", {
+        class_id: classId,
+        term_id: termId,
+        student_ids: studentIds,
+      }),
+    [session]
+  );
+
+  const handleReportCardsSent = useCallback(
+    async (totals) => {
+      addAdminNotification({
+        category: "Results",
+        module: "SMS Wallet",
+        action: `Sent report cards to ${totals?.sent || 0} guardian(s) by SMS.`,
+        status: totals?.failed || totals?.not_sent ? "Partial" : "Success",
+        priority: "Medium",
+        tone: totals?.failed || totals?.not_sent ? "warning" : "success",
+      });
+      // The wallet balance and the recent-transactions list just changed.
+      await loadScreen("/sms-wallet", true);
+    },
+    [addAdminNotification, loadScreen]
+  );
+
   const handleLoadBroadsheet = useCallback(
     async (classId, termId) => {
       const result = await requestJson(
@@ -8759,6 +8798,9 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onStudentSearch={handleStudentSearch}
         onSearchReport={handleSearchReport}
         onSendReportSms={handleSendReportSms}
+        onLoadReportCardRecipients={handleLoadReportCardRecipients}
+        onSendReportCardBatch={handleSendReportCardBatch}
+        onReportCardsSent={handleReportCardsSent}
       />
     );
   } else if (activePath === "/id-cards") {

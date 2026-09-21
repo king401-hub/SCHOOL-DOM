@@ -11843,6 +11843,247 @@ function BulkMessagingPanel({ session, school, schoolData, parents }) {
   );
 }
 
+const REPORT_CARD_SMS_STATE_LABELS = {
+  ready: "Ready to send",
+  no_phone: "No guardian phone number",
+  no_results: "No published results",
+};
+
+/** SMS Wallet -> send report cards to a whole class in one go. Ready students
+ * (published results + a guardian phone) are pre-selected; the page sends them
+ * in small chunks (the server caps each request) and shows progress. */
+function ClassReportCardSmsPanel({ onLoadRecipients, onSendBatch, onFinished }) {
+  const [options, setOptions] = useState({ classes: [], terms: [] });
+  const [balance, setBalance] = useState(null);
+  const [maxBatch, setMaxBatch] = useState(20);
+  const [classId, setClassId] = useState("");
+  const [termId, setTermId] = useState("");
+  const [students, setStudents] = useState([]);
+  const [selected, setSelected] = useState(() => new Set());
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [progress, setProgress] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const sending = progress !== null;
+
+  useEffect(() => {
+    if (!onLoadRecipients) return undefined;
+    let cancelled = false;
+    onLoadRecipients()
+      .then((result) => {
+        if (cancelled || !result) return;
+        setOptions(result.options || { classes: [], terms: [] });
+        setBalance(result.wallet?.balance ?? null);
+        setMaxBatch(result.max_batch || 20);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message || "Could not load classes.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoadRecipients]);
+
+  useEffect(() => {
+    if (!onLoadRecipients || !classId || !termId) {
+      setStudents([]);
+      setSelected(new Set());
+      return undefined;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError("");
+    setSummary(null);
+    onLoadRecipients(classId, termId)
+      .then((result) => {
+        if (cancelled) return;
+        const list = result?.students || [];
+        setStudents(list);
+        setBalance(result?.wallet?.balance ?? null);
+        setSelected(new Set(list.filter((student) => student.state === "ready").map((student) => student.id)));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message || "Could not load students.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [classId, termId, onLoadRecipients]);
+
+  const readyStudents = students.filter((student) => student.state === "ready");
+  const selectedIds = readyStudents.filter((student) => selected.has(student.id)).map((student) => student.id);
+  const allReadySelected = readyStudents.length > 0 && selectedIds.length === readyStudents.length;
+  const notEnoughCredits = balance !== null && selectedIds.length > balance;
+
+  const toggleStudent = (id) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllReady = () => {
+    setSelected(allReadySelected ? new Set() : new Set(readyStudents.map((student) => student.id)));
+  };
+
+  const handleSend = async () => {
+    if (!selectedIds.length || sending) return;
+    const question = `Send ${selectedIds.length} report card SMS to guardians? This uses ${selectedIds.length} SMS credit${selectedIds.length === 1 ? "" : "s"}.`;
+    if (!window.confirm(question)) return;
+
+    setSummary(null);
+    setLoadError("");
+    const totals = { sent: 0, failed: 0, skipped: 0, not_sent: 0, problems: [], error: "" };
+    try {
+      for (let start = 0; start < selectedIds.length; start += maxBatch) {
+        setProgress({ done: start, total: selectedIds.length });
+        const chunk = selectedIds.slice(start, start + maxBatch);
+        const result = await onSendBatch({ classId, termId, studentIds: chunk });
+        totals.sent += result?.sent || 0;
+        totals.failed += result?.failed || 0;
+        totals.skipped += result?.skipped || 0;
+        totals.not_sent += result?.not_sent || 0;
+        totals.problems.push(...(result?.problems || []));
+        if (typeof result?.balance === "number") setBalance(result.balance);
+        if (result?.out_of_credits) {
+          // The wallet is empty - the chunks after this one are never attempted.
+          totals.not_sent += selectedIds.length - (start + chunk.length);
+          break;
+        }
+      }
+    } catch (err) {
+      totals.error = err.message || "Sending stopped unexpectedly.";
+    } finally {
+      setProgress(null);
+      setSummary(totals);
+      await onFinished?.(totals);
+    }
+  };
+
+  return (
+    <article className="app-panel">
+      <div className="bulk-panel-header">
+        <h3>Send Report Cards to a Whole Class</h3>
+      </div>
+      <div className="bulk-panel-body">
+        <div className="panel-form-grid">
+          <label className="panel-field">
+            Class
+            <select value={classId} onChange={(event) => setClassId(event.target.value)} disabled={sending}>
+              <option value="">Select a class</option>
+              {options.classes.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="panel-field">
+            Term
+            <select value={termId} onChange={(event) => setTermId(event.target.value)} disabled={sending}>
+              <option value="">Select a term</option>
+              {options.terms.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <small className="field-note">
+          Each guardian gets an SMS with a link to the report card. Only published results are sent, one SMS credit each.
+        </small>
+
+        {loadError ? <p className="form-feedback error">{loadError}</p> : null}
+        {loading ? <p className="panel-empty compact"><Spinner size={12} /> Loading students...</p> : null}
+
+        {classId && termId && !loading && !students.length && !loadError ? (
+          <p className="panel-empty compact">No students found in this class.</p>
+        ) : null}
+
+        {students.length ? (
+          <>
+            <div className="table-scroll" style={{ marginTop: "0.75rem" }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        checked={allReadySelected}
+                        onChange={toggleAllReady}
+                        disabled={!readyStudents.length || sending}
+                        aria-label="Select all students who are ready"
+                      />
+                    </th>
+                    <th>Student</th>
+                    <th>Guardian phone</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((student) => (
+                    <tr key={student.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={student.state === "ready" && selected.has(student.id)}
+                          onChange={() => toggleStudent(student.id)}
+                          disabled={student.state !== "ready" || sending}
+                          aria-label={`Select ${student.name}`}
+                        />
+                      </td>
+                      <td>{student.name}<br /><small>{student.student_id}</small></td>
+                      <td>{student.phone || "-"}</td>
+                      <td>{REPORT_CARD_SMS_STATE_LABELS[student.state] || student.state}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="field-note" style={{ marginTop: "0.6rem" }}>
+              {selectedIds.length} of {readyStudents.length} ready student{readyStudents.length === 1 ? "" : "s"} selected
+              {" "}· uses {selectedIds.length} SMS credit{selectedIds.length === 1 ? "" : "s"}
+              {balance !== null ? ` · balance ${balance}` : ""}
+            </p>
+            {notEnoughCredits ? (
+              <p className="form-feedback error">
+                You have {balance} credit{balance === 1 ? "" : "s"} but selected {selectedIds.length}. Buy more credits above, or select fewer students - the rest would not be sent.
+              </p>
+            ) : null}
+            <div className="panel-form-actions">
+              <button type="button" onClick={handleSend} disabled={!selectedIds.length || sending}>
+                {sending
+                  ? <><Spinner size={12} /> Sending {progress.done} of {progress.total}...</>
+                  : `Send ${selectedIds.length} report card${selectedIds.length === 1 ? "" : "s"}`}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {summary ? (
+          <div className={`bulk-result ${summary.failed || summary.not_sent || summary.error ? "error" : "success"}`} role="status" style={{ marginTop: "0.75rem" }}>
+            <strong>{summary.sent} report card{summary.sent === 1 ? "" : "s"} sent.</strong>
+            {summary.skipped ? ` ${summary.skipped} skipped.` : ""}
+            {summary.failed ? ` ${summary.failed} failed.` : ""}
+            {summary.not_sent ? ` ${summary.not_sent} not sent - the SMS wallet ran out of credits.` : ""}
+            {summary.error ? ` ${summary.error}` : ""}
+            {summary.problems.length ? (
+              <ul style={{ margin: "0.4rem 0 0", paddingLeft: "1.1rem" }}>
+                {summary.problems.slice(0, 10).map((item, index) => (
+                  <li key={`${item.student_id}-${index}`}>{item.name}: {item.reason}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }) {
   const [studentId, setStudentId] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -12001,7 +12242,7 @@ function ReportCardSmsPanel({ onStudentSearch, onSearchReport, onSendReportSms }
   );
 }
 
-function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData, onStudentSearch, onSearchReport, onSendReportSms }) {
+function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVerifyPurchase, onCancelPurchase, session, school, parentsData, onStudentSearch, onSearchReport, onSendReportSms, onLoadReportCardRecipients, onSendReportCardBatch, onReportCardsSent }) {
   const pricing = data?.unit_pricing || { block_size: 100, block_price: "1000.00", minimum_units: 100, currency: "NGN" };
   const blockSize = pricing.block_size || 100;
   const blockPrice = Number(pricing.block_price || 1000);
@@ -12145,6 +12386,12 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
           </article>
 
           <BulkMessagingPanel session={session} school={school} schoolData={data} parents={parentsData?.parents || []} />
+
+          <ClassReportCardSmsPanel
+            onLoadRecipients={onLoadReportCardRecipients}
+            onSendBatch={onSendReportCardBatch}
+            onFinished={onReportCardsSent}
+          />
 
           <ReportCardSmsPanel onStudentSearch={onStudentSearch} onSearchReport={onSearchReport} onSendReportSms={onSendReportSms} />
 
