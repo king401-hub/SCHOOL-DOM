@@ -27,7 +27,8 @@ class MainActivity : FlutterActivity() {
                     val args = call.arguments as? Map<*, *>
                     val phone = args?.get("phone") as? String ?: ""
                     val message = args?.get("message") as? String ?: ""
-                    result.success(smsBridge.sendSms(phone, message))
+                    // Answers only once Android reports the SMS sent (or failed).
+                    smsBridge.sendSms(phone, message) { sent -> result.success(sent) }
                 }
                 else -> result.notImplemented()
             }

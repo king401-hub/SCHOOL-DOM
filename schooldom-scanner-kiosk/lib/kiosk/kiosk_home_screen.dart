@@ -375,6 +375,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           if (sent) {
             await _markQueuedScanSmsSent(idempotencyKey);
             message = 'Saved - parent texted directly (offline).';
+          } else {
+            // The SIM couldn't send it (no airtime, no signal...). The scan is
+            // deliberately NOT flagged sms_sent_locally, so the server texts
+            // the parent itself when the scan syncs - say so the operator can
+            // also fix the SIM.
+            message = 'Saved - SMS failed (check SIM airtime). Parent will be texted once back online.';
           }
         }
         await _showResult(event == 'clockout' ? _ScanOutcome.goodbye : _ScanOutcome.welcome, message: message);
