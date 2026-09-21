@@ -34,9 +34,25 @@ SKIP_SUFFIXES = (
 )
 
 
+# A request body this large is a file upload, not a double-submitted form.
+# `request.body` reads the WHOLE body into memory - and once it exceeds
+# DATA_UPLOAD_MAX_MEMORY_SIZE Django raises RequestDataTooBig, which the user
+# sees as a bare "Bad Request (400)" (an APK upload to the Control Panel hit
+# exactly this) - so slicing it afterwards caps nothing. Such requests are
+# passed straight through without being read.
+MAX_FINGERPRINT_BODY = 1024 * 1024  # 1 MB
+
+
+def _too_big_to_fingerprint(request):
+    try:
+        return int(request.META.get("CONTENT_LENGTH") or 0) > MAX_FINGERPRINT_BODY
+    except (TypeError, ValueError):
+        return False
+
+
 def _fingerprint(request):
     user_id = request.user.pk if request.user and request.user.is_authenticated else "anon"
-    body = request.body[:4096]  # cap at 4 KB to avoid hashing huge file uploads
+    body = request.body[:4096]  # only the first 4 KB is hashed (the caller has ruled out huge bodies)
     raw = f"{user_id}:{request.method}:{request.path}:{body!r}"
     return "idem:" + hashlib.sha256(raw.encode()).hexdigest()
 
@@ -53,6 +69,8 @@ class IdempotencyMiddleware:
         if request.path in SKIP_PATHS:
             return self.get_response(request)
         if request.path.endswith(SKIP_SUFFIXES):
+            return self.get_response(request)
+        if _too_big_to_fingerprint(request):
             return self.get_response(request)
 
         key = _fingerprint(request)
