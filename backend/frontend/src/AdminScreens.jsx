@@ -1547,7 +1547,11 @@ const RECEIPT_CHANNEL_LABELS = {
 /* Whether the parent actually got their receipt, per channel. Receipts go out
    automatically on every recorded payment, so this column exists to answer the
    one question the admin still has afterwards: did it arrive? */
-function ReceiptDeliveryCell({ payment, onResend, busy }) {
+function ReceiptDeliveryCell({ payment, onResend, busy = false, disabled = false }) {
+  // `busy` is only for THIS payment's own send (its spinner). `disabled` is for
+  // every other row while some other action is running: it greys the button
+  // out without pretending that row is sending. (They used to be one flag, so
+  // clicking Resend on one payment showed "Sending..." on all of them.)
   const overall = payment.receipt_notification_status || "pending";
   const sms = payment.receipt_sms_status || "pending";
   const email = payment.receipt_email_status || "pending";
@@ -1576,11 +1580,110 @@ function ReceiptDeliveryCell({ payment, onResend, busy }) {
         </a>
       ) : null}
       {canResend ? (
-        <button type="button" className="table-action" onClick={() => onResend(payment.id)} disabled={busy}>
+        <button type="button" className="table-action" onClick={() => onResend(payment)} disabled={busy || disabled}>
           {busy ? <><Spinner size={12} /> Sending...</> : "Resend"}
         </button>
       ) : null}
     </div>
+  );
+}
+
+function ReceiptChannelPreview({ label, channel, children }) {
+  const willSend = Boolean(channel.will_send);
+  const delivered = channel.status === "sent";
+  return (
+    <section className={`receipt-preview-channel${willSend ? "" : " is-inactive"}`}>
+      <header>
+        <strong>{label}</strong>
+        <span className={`finance-status status-${willSend ? "pending" : delivered ? "sent" : "skipped"}`}>
+          {willSend ? "Will be sent" : delivered ? "Already delivered" : "Can't be sent"}
+        </span>
+      </header>
+      <p className="receipt-preview-to">To: <strong>{channel.to || "-"}</strong></p>
+      {!willSend && channel.reason ? (
+        <p className={`receipt-preview-note${delivered ? " is-info" : ""}`}>{channel.reason}</p>
+      ) : null}
+      {children}
+    </section>
+  );
+}
+
+/* Opens when an admin clicks Resend: the actual SMS and email that would go
+   out, so nothing is sent blind. The preview comes from a read-only endpoint
+   (it sends nothing and creates no receipt link); "Send now" is what sends. */
+function ReceiptPreviewDialog({ state, sending, onSend, onClose }) {
+  // Keep the last content on screen while the dialog animates closed.
+  const lastState = useRef(null);
+  if (state) lastState.current = state;
+  const shown = state || lastState.current;
+  const preview = shown?.data;
+  const summary = shown?.summary;
+  const nothingToSend = Boolean(preview) && !preview.sms.will_send && !preview.email.will_send;
+
+  return (
+    <Popup
+      open={Boolean(state)}
+      onClose={sending ? () => {} : onClose}
+      closeOnBackdrop={!sending}
+      labelledBy="receipt-preview-title"
+      extraCardClassName="receipt-preview-card"
+    >
+      <div className="edit-modal-head">
+        <div>
+          <h3 id="receipt-preview-title">Resend receipt</h3>
+          <p className="panel-sub">
+            {summary
+              ? `${summary.student_name} - ${summary.reference} - ${NAIRA_SYMBOL}${Number(summary.amount || 0).toLocaleString()}`
+              : "Review the message before it is sent."}
+          </p>
+        </div>
+        <button type="button" className="edit-modal-close" onClick={onClose} disabled={sending} aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
+
+      {shown?.loading ? (
+        <p className="panel-empty"><Spinner size={12} /> Preparing the message...</p>
+      ) : shown?.error ? (
+        <p className="form-feedback error">{shown.error}</p>
+      ) : preview ? (
+        <div className="receipt-preview">
+          <ReceiptChannelPreview label="SMS" channel={preview.sms}>
+            <div className="receipt-preview-message" aria-label="SMS text">{preview.sms.message}</div>
+            <small className="receipt-preview-count">
+              {preview.sms.characters} / {preview.sms.character_limit} characters
+            </small>
+          </ReceiptChannelPreview>
+
+          <ReceiptChannelPreview label="Email" channel={preview.email}>
+            <p className="receipt-preview-subject"><span>Subject</span>{preview.email.subject}</p>
+            <div className="receipt-preview-message" aria-label="Email text">{preview.email.body}</div>
+            <small className="receipt-preview-count">The full receipt is attached to the email.</small>
+          </ReceiptChannelPreview>
+
+          {preview.link_pending ? (
+            <p className="receipt-preview-note">
+              The receipt link shown here is a placeholder - the real one is created when the message is sent.
+            </p>
+          ) : null}
+          {nothingToSend ? (
+            <p className="form-feedback">
+              There is nothing to send: every channel has either delivered already or has no phone number or email on file.
+              Add the parent's contact on the student's record, then try again.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="panel-form-actions">
+        <button type="button" onClick={onClose} disabled={sending}>Cancel</button>
+        {preview && !nothingToSend ? (
+          <button type="button" className="primary" onClick={onSend} disabled={sending}>
+            {sending ? <><Spinner size={12} /> Sending...</> : "Send now"}
+          </button>
+        ) : null}
+      </div>
+    </Popup>
   );
 }
 
@@ -1610,6 +1713,7 @@ function AdminFinanceScreen({
   onRunAutoCredits,
   onBankPaymentsIngest,
   onCashPaymentRecord,
+  onPaymentReceiptPreview,
   onPaymentReceiptResend,
   onLiveRefresh,
   session,
@@ -1712,6 +1816,8 @@ function AdminFinanceScreen({
   // does the same for the per-row "Resend" button in the payment tables.
   const [busyAction, setBusyAction] = useState("");
   const [resendBusyId, setResendBusyId] = useState("");
+  // The Resend confirmation: { payment, loading, error, data, summary } or null.
+  const [receiptPreview, setReceiptPreview] = useState(null);
   const [subaccountMessage, setSubaccountMessage] = useState("");
   const [subaccountError, setSubaccountError] = useState("");
   const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
@@ -1797,8 +1903,9 @@ function AdminFinanceScreen({
                       <td>
                         <ReceiptDeliveryCell
                           payment={payment}
-                          onResend={onPaymentReceiptResend ? handleResendReceipt : null}
-                          busy={resendBusyId === payment.id || anyBusy}
+                          onResend={onPaymentReceiptResend ? openReceiptPreview : null}
+                          busy={resendBusyId === payment.id}
+                          disabled={anyBusy && resendBusyId !== payment.id}
                         />
                       </td>
                       <td>{formatDate(payment.matched_at || payment.created_at)}</td>
@@ -2430,6 +2537,38 @@ function AdminFinanceScreen({
     }
   };
 
+  // Clicking Resend shows the message first; "Send now" in the dialog sends it.
+  const openReceiptPreview = async (payment) => {
+    setFeedback("");
+    setFormError("");
+    if (!onPaymentReceiptPreview) {
+      // No preview available (older host screen): keep the direct resend.
+      handleResendReceipt(payment.id);
+      return;
+    }
+    setReceiptPreview({ payment, loading: true, error: "", data: null, summary: null });
+    try {
+      const result = await onPaymentReceiptPreview(payment.id);
+      setReceiptPreview((current) =>
+        current && current.payment.id === payment.id
+          ? { ...current, loading: false, data: result?.preview || null, summary: result?.payment || null }
+          : current
+      );
+    } catch (err) {
+      setReceiptPreview((current) =>
+        current && current.payment.id === payment.id
+          ? { ...current, loading: false, error: err.message || "Could not load the message preview." }
+          : current
+      );
+    }
+  };
+
+  const confirmReceiptResend = async () => {
+    if (!receiptPreview) return;
+    await handleResendReceipt(receiptPreview.payment.id);
+    setReceiptPreview(null);
+  };
+
   const handleResendReceipt = async (paymentId) => {
     if (!onPaymentReceiptResend) return;
     setFeedback("");
@@ -2437,12 +2576,13 @@ function AdminFinanceScreen({
     setResendBusyId(paymentId);
     try {
       const result = await onPaymentReceiptResend(paymentId);
-      const status = result?.notification?.status;
-      setFeedback(
-        status === "sent"
-          ? "Receipt re-sent to the parent."
-          : "Receipt re-send attempted — check the delivery status on the payment row."
-      );
+      // Say what really happened, per channel, rather than a generic "attempted".
+      const receipt = describeReceiptOutcome(result?.payment);
+      if (receipt.ok) {
+        setFeedback(receipt.text);
+      } else {
+        setFormError(receipt.text);
+      }
     } catch (err) {
       setFormError(err.message || "Unable to re-send the receipt.");
     } finally {
@@ -3443,6 +3583,13 @@ function AdminFinanceScreen({
           onClose={() => setHistoryTable("")}
         />
       ) : null}
+
+      <ReceiptPreviewDialog
+        state={receiptPreview}
+        sending={Boolean(resendBusyId)}
+        onSend={confirmReceiptResend}
+        onClose={() => setReceiptPreview(null)}
+      />
 
       {printingBill ? (
         <div style={{ position: "fixed", top: 0, left: "-9999px", zIndex: -1 }}>

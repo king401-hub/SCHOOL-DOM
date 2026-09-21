@@ -28319,3 +28319,160 @@ body[data-theme="dark"] .current-term-chip.is-empty {
     text-overflow: ellipsis;
   }
 }
+
+/* Finance > Resend receipt: the message preview dialog. */
+.receipt-preview-card {
+  width: min(640px, 100%);
+}
+
+/* The card itself has no padding (each modal pads its own parts), so give
+   everything under the header - the two channel cards, any notice, the action
+   buttons - the same side gutters as the header above it. */
+.receipt-preview-card > :not(.edit-modal-head) {
+  margin-left: 1.25rem;
+  margin-right: 1.25rem;
+}
+
+.receipt-preview-card > .panel-form-actions {
+  margin-top: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+/* "Send now" is a type="button" (there is no form), and the generic
+   .panel-form-actions button[type="button"] secondary style ties with
+   button.primary on specificity and comes later, so it would win. */
+.receipt-preview-card .panel-form-actions button.primary {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+}
+
+.receipt-preview-card .panel-form-actions button.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  opacity: 0.9;
+}
+
+.receipt-preview {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.receipt-preview-channel {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: #ffffff;
+}
+
+.receipt-preview-channel.is-inactive {
+  background: #f8fafc;
+}
+
+.receipt-preview-channel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.receipt-preview-to {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: #475569;
+  overflow-wrap: anywhere;
+}
+
+.receipt-preview-to strong {
+  color: #0f172a;
+}
+
+.receipt-preview-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: #b45309;
+}
+
+.receipt-preview-note.is-info {
+  color: #64748b;
+}
+
+.receipt-preview-subject {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.receipt-preview-subject span {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+/* The message itself, shown as it will arrive - line breaks kept, scrollable
+   if the email body is long. */
+.receipt-preview-message {
+  max-height: 11rem;
+  overflow: auto;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.receipt-preview-channel.is-inactive .receipt-preview-message {
+  opacity: 0.65;
+}
+
+.receipt-preview-count {
+  display: block;
+  margin-top: 0.35rem;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+body[data-theme="dark"] .receipt-preview-channel {
+  background: #0f172a;
+  border-color: #1e293b;
+}
+
+body[data-theme="dark"] .receipt-preview-channel.is-inactive {
+  background: #0b1220;
+}
+
+body[data-theme="dark"] .receipt-preview-to,
+body[data-theme="dark"] .receipt-preview-count {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .receipt-preview-to strong,
+body[data-theme="dark"] .receipt-preview-subject {
+  color: #f1f5f9;
+}
+
+body[data-theme="dark"] .receipt-preview-note {
+  color: #fbbf24;
+}
+
+body[data-theme="dark"] .receipt-preview-note.is-info {
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] .receipt-preview-message {
+  background: #111b2e;
+  border-color: #334155;
+  color: #e2e8f0;
+}

@@ -7442,16 +7442,24 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  // The message a Resend would send, fetched for the confirmation dialog. Read
+  // only on the server: nothing is sent, and no receipt link is created.
+  const handlePaymentReceiptPreview = useCallback(
+    async (paymentId) => requestJson(session, "GET", `/api/finance/admin/payments/${paymentId}/receipt-preview/`),
+    [session]
+  );
+
   const handlePaymentReceiptResend = useCallback(
     async (paymentId) => {
       const result = await requestJson(session, "POST", `/api/finance/admin/payments/${paymentId}/resend-receipt/`, {});
+      const receipt = describeReceiptOutcome(result?.payment);
       addAdminNotification({
         category: "Finance",
         module: "Payment Receipts",
-        action: "Re-sent a payment receipt to the parent.",
-        status: result?.notification?.status === "sent" ? "Success" : "Pending",
+        action: `Re-sent a payment receipt. ${receipt.text}`,
+        status: receipt.ok ? "Success" : "Pending",
         priority: "Medium",
-        tone: result?.notification?.status === "sent" ? "success" : "warning",
+        tone: receipt.ok ? "success" : "warning",
       });
       await loadScreen("/finance", true);
       return result;
@@ -8633,6 +8641,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onRunAutoCredits={handleActivationCreditRunAuto}
         onBankPaymentsIngest={handleBankPaymentsIngest}
         onCashPaymentRecord={handleCashPaymentRecord}
+        onPaymentReceiptPreview={handlePaymentReceiptPreview}
         onPaymentReceiptResend={handlePaymentReceiptResend}
         onLiveRefresh={handleFinanceLiveRefresh}
         session={session}

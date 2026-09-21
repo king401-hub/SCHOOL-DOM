@@ -1235,6 +1235,27 @@ def _sms_message_with_receipt_link(message: str, receipt_url: str) -> str:
     return f"{message}{suffix}"
 
 
+def receipt_email_subject(receipt_type: str, data: dict = None) -> str:
+    """Subject line of a receipt / bill / invoice email."""
+    d = data or {}
+    school_name = d.get("school_name") or "School"
+    if receipt_type == "bill":
+        return f"Fee Statement — {school_name}"
+    if receipt_type == "invoice":
+        return f"Invoice {d.get('invoice_number', '')} — {d.get('bill_title', 'School Fees')} — {school_name}"
+    status_label = "Fully Paid" if d.get("payment_status") == "paid" else "Partial Payment"
+    return f"Payment Receipt ({status_label}) — {school_name}"
+
+
+def receipt_email_plain_body(message: str, receipt_url: str = "") -> str:
+    """Plain-text part of a receipt email (the HTML receipt is sent alongside it)."""
+    plain_body = message
+    if receipt_url:
+        plain_body += f"\nView online: {receipt_url}"
+    plain_body += "\n\nPowered by Schooldom — https://schooldom.academy"
+    return plain_body
+
+
 def send_payment_receipt(
     to_email: str,
     message: str,
@@ -1250,14 +1271,7 @@ def send_payment_receipt(
         from django.template.loader import render_to_string
 
         d = data or {}
-        school_name = d.get("school_name") or "School"
-        if receipt_type == "bill":
-            subject = f"Fee Statement — {school_name}"
-        elif receipt_type == "invoice":
-            subject = f"Invoice {d.get('invoice_number', '')} — {d.get('bill_title', 'School Fees')} — {school_name}"
-        else:
-            status_label = "Fully Paid" if d.get("payment_status") == "paid" else "Partial Payment"
-            subject = f"Payment Receipt ({status_label}) — {school_name}"
+        subject = receipt_email_subject(receipt_type, d)
 
         class _Link:
             pass
@@ -1269,10 +1283,7 @@ def send_payment_receipt(
 
         html_body = render_to_string("finance/receipt.html", {"link": link_obj, "data": d})
 
-        plain_body = message
-        if receipt_url:
-            plain_body += f"\nView online: {receipt_url}"
-        plain_body += "\n\nPowered by Schooldom — https://schooldom.academy"
+        plain_body = receipt_email_plain_body(message, receipt_url)
 
         em = EmailMultiAlternatives(
             subject=subject,
@@ -5526,6 +5537,61 @@ def _deliver_payment_receipt(payment, student, force) -> dict:
         "receipt_url": payment.receipt_link_url,
         "sms": sms_result,
         "email": email_result,
+    }
+
+
+def build_payment_receipt_preview(payment) -> dict:
+    """What "Resend" would send for this payment, without sending anything.
+
+    Built from the same helpers the real send uses (the SMS composer, the SMS
+    character clean-up and length cap, the email subject and body builders), so
+    the admin sees the message the parent will get, not an approximation.
+    Read-only: it never mints a receipt link, touches the delivery state, or
+    calls a provider. A payment whose link has not been created yet previews
+    with a placeholder link; the real one is created at send time.
+
+    Each channel also says whether Resend would actually send it: one that
+    already delivered is never sent twice, and one with no phone number or
+    email address on file has nothing to send to.
+    """
+    student = payment.student
+    phone, email = guardian_contacts_for_student(student)
+    receipt_url = payment.receipt_link_url or ""
+    link_pending = not receipt_url
+    base_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
+    shown_url = receipt_url or f"{base_url}/r/{'x' * 8}"  # real codes are 8 hex characters
+
+    message = receipt_message_for_payment(payment)
+    sms_text = _sms_safe_text(_sms_message_with_receipt_link(message, shown_url))
+    if len(sms_text) > SMS_CHAR_LIMIT:
+        sms_text = sms_text[: SMS_CHAR_LIMIT - 3].rstrip() + "..."
+    receipt_data = build_payment_receipt_data(payment)
+
+    def _plan(status, contact, missing_reason):
+        if status == BankPayment.NOTIFY_SENT:
+            return {"will_send": False, "reason": "Already delivered, so it will not be sent again."}
+        if not contact:
+            return {"will_send": False, "reason": missing_reason}
+        return {"will_send": True, "reason": ""}
+
+    return {
+        "receipt_url": receipt_url,
+        "link_pending": link_pending,
+        "sms": {
+            "status": payment.receipt_sms_status,
+            "to": phone,
+            "message": sms_text,
+            "characters": len(sms_text),
+            "character_limit": SMS_CHAR_LIMIT,
+            **_plan(payment.receipt_sms_status, phone, "No guardian phone number on file."),
+        },
+        "email": {
+            "status": payment.receipt_email_status,
+            "to": email,
+            "subject": receipt_email_subject("receipt", receipt_data),
+            "body": receipt_email_plain_body(message, shown_url),
+            **_plan(payment.receipt_email_status, email, "No guardian email address on file."),
+        },
     }
 
 

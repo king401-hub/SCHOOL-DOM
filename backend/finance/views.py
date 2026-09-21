@@ -102,6 +102,7 @@ from finance.services import (
     record_cash_payment,
     provision_kuda_admin_virtual_account,
     record_finance_activity,
+    build_payment_receipt_preview,
     deliver_payment_receipt,
     dispatch_payment_receipt_notifications,
     send_payment_receipt_notifications,
@@ -2461,6 +2462,37 @@ def admin_cash_payment_record(request):
         "payment": BankPaymentSerializer(payment).data,
         "notification": notification,
         "finance": finance,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_payment_receipt_preview(request, payment_id):
+    """The SMS and email that "Resend" would send for a payment - shown to the
+    admin to confirm before anything is sent. Read-only."""
+    user = request.user
+    if user.role not in FINANCE_ROLES:
+        return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    payment = get_object_or_404(
+        BankPayment.objects.select_related("student__user", "tenant").filter(tenant=user.tenant),
+        id=payment_id,
+    )
+    if not payment.student_id:
+        return Response(
+            {"success": False, "message": "This payment is not matched to a student yet."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({
+        "success": True,
+        "payment": {
+            "id": str(payment.id),
+            "reference": payment.receipt_number or payment.bank_reference,
+            "student_name": payment.student.user.get_full_name() or payment.student.user.email,
+            "amount": str(payment.applied_amount or payment.amount),
+        },
+        "preview": build_payment_receipt_preview(payment),
     })
 
 

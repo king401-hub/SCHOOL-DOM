@@ -38,6 +38,7 @@ from finance.services import (
     InsufficientSmsCreditsError,
     SmsWalletLockedError,
     _sms_message_with_receipt_link,
+    _sms_safe_text,
     activation_credit_bonus_for_purchase,
     adjust_sms_wallet,
     allocate_split_payment,
@@ -2982,6 +2983,157 @@ class CashPaymentReceiptNotificationTests(TestCase):
         client.force_authenticate(user=teacher)
         response = client.post(f"/api/finance/admin/payments/{payment.id}/resend-receipt/")
         self.assertEqual(response.status_code, 403)
+
+    # --- Resend preview ------------------------------------------------------
+
+    def _preview(self, payment, user=None):
+        client = APIClient()
+        client.force_authenticate(user=user or self.admin_user)
+        return client.get(f"/api/finance/admin/payments/{payment.id}/receipt-preview/")
+
+    @patch("finance.services.send_ebulksms")
+    def test_the_preview_is_read_only(self, mock_send):
+        """Looking at the message must not send it, mint its link, or change
+        the delivery state - it is only there so the admin can decide."""
+        payment = self._record()
+
+        response = self._preview(payment)
+
+        self.assertEqual(response.status_code, 200)
+        mock_send.assert_not_called()
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(PaymentReceiptLink.objects.count(), 0)
+        self.assertEqual(SmsMessageLog.objects.count(), 0)
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_PENDING)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_PENDING)
+        self.assertEqual(payment.receipt_notification_attempts, 0)
+        self.assertEqual(payment.receipt_link_url, "")
+
+    def test_the_preview_before_a_link_exists_uses_a_placeholder(self):
+        payment = self._record()
+
+        preview = self._preview(payment).data["preview"]
+
+        self.assertTrue(preview["link_pending"])
+        self.assertEqual(preview["receipt_url"], "")
+        self.assertIn("/r/xxxxxxxx", preview["sms"]["message"])
+        self.assertIn("/r/xxxxxxxx", preview["email"]["body"])
+        self.assertTrue(preview["sms"]["will_send"])
+        self.assertTrue(preview["email"]["will_send"])
+        self.assertEqual(preview["sms"]["to"], "2348012345678")
+        self.assertEqual(preview["email"]["to"], "ngozi@example.com")
+
+    def test_the_preview_names_the_payment(self):
+        payment = self._record(amount="20000.00")
+
+        data = self._preview(payment).data
+
+        self.assertEqual(data["payment"]["student_name"], "Chidi Okafor")
+        self.assertEqual(data["payment"]["amount"], "20000.00")
+        self.assertEqual(data["payment"]["reference"], payment.receipt_number or payment.bank_reference)
+        self.assertIn("Chidi Okafor", data["preview"]["sms"]["message"])
+        self.assertIn("Receipt School", data["preview"]["email"]["subject"])
+        self.assertIn("Partial Payment", data["preview"]["email"]["subject"])
+
+    @patch("finance.services.send_ebulksms")
+    def test_the_preview_shows_exactly_what_is_then_sent(self, mock_send):
+        """The previewed SMS and email are built by the same code as the real
+        ones. Once the receipt link exists they match character for character."""
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        payment = self._record()
+        # Fail the first attempt (link minted, nothing delivered) so a preview
+        # can be taken with a real link and then compared with the real send.
+        mock_send.side_effect = RuntimeError("gateway down")
+        send_payment_receipt_notifications(payment)
+        mail.outbox.clear()
+        SmsMessageLog.objects.all().delete()
+        payment.refresh_from_db()
+        payment.receipt_email_status = BankPayment.NOTIFY_PENDING
+        payment.receipt_sms_status = BankPayment.NOTIFY_PENDING
+        payment.save(update_fields=["receipt_email_status", "receipt_sms_status"])
+
+        preview = self._preview(payment).data["preview"]
+        self.assertFalse(preview["link_pending"])
+        self.assertIn(payment.receipt_link_url.split("://", 1)[1], preview["sms"]["message"].replace("www.", ""))
+
+        mock_send.side_effect = None
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        send_payment_receipt_notifications(payment)
+
+        sms_log = SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT)
+        self.assertEqual(preview["sms"]["message"], _sms_safe_text(sms_log.message))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(preview["email"]["subject"], mail.outbox[0].subject)
+        self.assertEqual(preview["email"]["body"], mail.outbox[0].body)
+        self.assertEqual(preview["email"]["to"], mail.outbox[0].to[0])
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_channel_that_already_delivered_will_not_be_sent_again(self, mock_send):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+        send_payment_receipt_notifications(payment)  # email lands, SMS fails
+
+        preview = self._preview(payment).data["preview"]
+
+        self.assertFalse(preview["email"]["will_send"])
+        self.assertIn("Already delivered", preview["email"]["reason"])
+        self.assertTrue(preview["sms"]["will_send"])
+        self.assertEqual(preview["sms"]["status"], BankPayment.NOTIFY_FAILED)
+
+    def test_a_channel_with_no_contact_says_so_and_will_not_be_sent(self):
+        self.student.guardian_phone = ""
+        self.student.guardian_email = ""
+        self.student.save(update_fields=["guardian_phone", "guardian_email"])
+        payment = self._record()
+
+        preview = self._preview(payment).data["preview"]
+
+        self.assertFalse(preview["sms"]["will_send"])
+        self.assertEqual(preview["sms"]["reason"], "No guardian phone number on file.")
+        self.assertFalse(preview["email"]["will_send"])
+        self.assertEqual(preview["email"]["reason"], "No guardian email address on file.")
+
+    def test_the_sms_preview_respects_the_character_limit(self):
+        long_note_school = self.school
+        long_note_school.name = "The Extremely Long Named Academy of Sciences, Arts and Letters"
+        long_note_school.save(update_fields=["name"])
+        payment = self._record()
+
+        sms = self._preview(payment).data["preview"]["sms"]
+
+        self.assertLessEqual(sms["characters"], sms["character_limit"])
+        self.assertEqual(sms["characters"], len(sms["message"]))
+        # The link is what the parent needs, so it survives the trimming.
+        self.assertIn("/r/xxxxxxxx", sms["message"])
+
+    def test_the_preview_requires_a_finance_role(self):
+        payment = self._record()
+        teacher = User.objects.create_user(
+            email="teacher2@receipt.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        self.assertEqual(self._preview(payment, user=teacher).status_code, 403)
+
+    def test_another_schools_admin_cannot_preview_this_payment(self):
+        payment = self._record()
+        other_school = SchoolTenant.objects.create(name="Other School", schema_name="other_receipt_school", is_active=True)
+        outsider = User.objects.create_user(
+            email="admin@other.edu", password="AdminPass123", role="school_admin",
+            tenant=other_school, is_active=True, is_verified=True,
+        )
+
+        self.assertEqual(self._preview(payment, user=outsider).status_code, 404)
+
+    def test_a_payment_not_matched_to_a_student_has_nothing_to_preview(self):
+        unmatched = BankPayment.objects.create(
+            tenant=self.school, amount=Decimal("1000.00"), currency="NGN",
+            bank_reference="UNMATCHED-PREVIEW-1", status=BankPayment.STATUS_UNMATCHED,
+            unapplied_amount=Decimal("1000.00"),
+        )
+
+        self.assertEqual(self._preview(unmatched).status_code, 400)
 
 
 class PaystackReceiptMessageTests(TestCase):
