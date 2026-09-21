@@ -1692,6 +1692,34 @@ export function DashboardIcon({ name = "overview", className = "" }) {
   );
 }
 
+/** What happened to the receipt for a just-recorded payment, in words for the
+ * admin. Reads the payment's per-channel statuses rather than its rolled-up
+ * one: that treats "email sent, SMS failed" as a failure, but the admin needs
+ * to know the parent did get the email. `ok` is true only when nothing failed
+ * and something was actually delivered. */
+export function describeReceiptOutcome(payment) {
+  const sms = payment?.receipt_sms_status;
+  const email = payment?.receipt_email_status;
+  const delivered = [sms === "sent" ? "SMS" : "", email === "sent" ? "email" : ""].filter(Boolean);
+  const failed = [sms === "failed" ? "SMS" : "", email === "failed" ? "email" : ""].filter(Boolean);
+  if (delivered.length && !failed.length) {
+    return { ok: true, text: `Receipt sent to the parent by ${delivered.join(" and ")}.` };
+  }
+  if (delivered.length) {
+    return {
+      ok: false,
+      text: `Receipt sent by ${delivered.join(" and ")}, but ${failed.join(" and ")} failed. It will retry on its own, or use Resend.`,
+    };
+  }
+  if (failed.length) {
+    return { ok: false, text: "The receipt could not be sent yet. It will retry on its own, or use Resend on the payment." };
+  }
+  if (sms === "skipped" && email === "skipped") {
+    return { ok: false, text: "No receipt sent: the parent has no phone number or email on file." };
+  }
+  return { ok: false, text: "The receipt is still being sent." };
+}
+
 // `onClick` is optional: when given, the card becomes a keyboard-reachable
 // button (role/tabIndex/Enter+Space) and picks up the "clickable" styling.
 // Cards without it stay plain, non-interactive articles.

@@ -594,6 +594,11 @@ FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'https://schooldom.academy')
 FRONTEND_DEV_PORT = os.getenv('FRONTEND_DEV_PORT', '5173')
 NGROK_PUBLIC_URL = os.getenv('NGROK_PUBLIC_URL', '')
 
+# core.background runs short best-effort jobs (payment receipts, parent virtual
+# accounts) on in-process threads instead of Celery. Off only under the test
+# runner, where work runs inline so it can see the test's uncommitted rows.
+BACKGROUND_TASKS_ASYNC = env_bool('BACKGROUND_TASKS_ASYNC', 'test' not in sys.argv)
+
 # Celery / Redis
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)

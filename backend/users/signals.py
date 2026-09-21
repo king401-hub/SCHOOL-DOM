@@ -12,28 +12,23 @@ def on_user_created(sender, instance, created, **kwargs):
     user_id = str(instance.id)
 
     def _provision():
-        # Try Celery first (production path — non-blocking).
-        try:
-            from finance.tasks import provision_parent_dva_task
-            provision_parent_dva_task.delay(user_id)
-            return
-        except Exception:
-            pass  # Broker not available — fall through to synchronous path.
+        # A background thread, not Celery. This used to call
+        # provision_parent_dva_task.delay() first; with no broker that blocked
+        # ~110 seconds before raising (so creating a parent - or importing a
+        # class of them - hung), and with a broker but no worker it queued the
+        # task forever and no account was ever made. The pool is small and
+        # dedicated, so a bulk import queues instead of hitting Paystack with
+        # hundreds of calls at once, and a slow Paystack cannot delay receipts.
+        from core.background import run_in_background
+        from finance.services import provision_parent_dva_with_retries
 
-        # Synchronous fallback (development without a Celery worker).
-        try:
-            from finance.models import ParentVirtualAccount
-            from finance.services import provision_parent_virtual_account
-            from users.models import User as UserModel
+        run_in_background(
+            lambda: provision_parent_dva_with_retries(user_id),
+            name=f"parent-dva-{user_id}",
+            pool="provisioning",
+            workers=2,
+        )
 
-            parent = UserModel.objects.select_related("tenant").get(id=user_id, role="parent")
-            if not ParentVirtualAccount.objects.filter(parent=parent, is_active=True).exists():
-                provision_parent_virtual_account(parent, actor=None)
-        except Exception:
-            # School subaccount not configured yet, or Paystack error —
-            # admin can provision manually from the Finance page.
-            pass
-
-    # Run after the current DB transaction commits so the user row is
-    # visible to the Celery worker and Paystack calls don't block the save.
+    # Run after the current DB transaction commits so the user row is visible
+    # to the worker thread and the Paystack calls never delay the save.
     transaction.on_commit(_provision)

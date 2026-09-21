@@ -36,6 +36,7 @@ import {
   OfficialDocHeader,
   ReportCardSheet,
   Popup,
+  describeReceiptOutcome,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
@@ -2415,8 +2416,11 @@ function AdminFinanceScreen({
     setFormError("");
     setBusyAction("cashPayment");
     try {
-      await onCashPaymentRecord(cashPaymentForm);
-      setFeedback(`${PAYMENT_METHOD_LABELS[cashPaymentForm.payment_method] || "Payment"} recorded and applied.`);
+      const result = await onCashPaymentRecord(cashPaymentForm);
+      // The receipt is sent during the request, so the response already knows
+      // whether the parent got it - say so instead of assuming it did.
+      const receipt = describeReceiptOutcome(result?.payment);
+      setFeedback(`${PAYMENT_METHOD_LABELS[cashPaymentForm.payment_method] || "Payment"} recorded and applied. ${receipt.text}`);
       setCashPaymentForm({ student_id: "", amount: "", note: "", payment_method: "cash" });
       setCashPaymentStudentPicked(false);
     } catch (err) {

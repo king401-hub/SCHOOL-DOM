@@ -11,43 +11,19 @@ def provision_parent_dva_task(self, parent_user_id):
     Auto-provision a Paystack dedicated virtual account for a newly created parent.
     Retries up to 5 times (every 2 min) if Paystack is temporarily unavailable.
     Silently skips if the parent already has a DVA or the school has no subaccount yet.
+
+    Not used by users/signals.py any more: creating a parent now provisions the
+    account on a background thread (finance.services.provision_parent_dva_with_retries),
+    because queueing here hangs without a broker and silently stalls without a
+    worker. The work itself lives in finance.services.provision_parent_dva; this
+    is the same job for anyone who does run a Celery worker.
     """
-    from users.models import User
-    from finance.models import ParentVirtualAccount
-    from finance.services import provision_parent_virtual_account
+    from finance.services import provision_parent_dva
 
     try:
-        parent_user = User.objects.select_related("tenant").get(id=parent_user_id, role="parent")
-    except User.DoesNotExist:
-        logger.warning("provision_parent_dva_task: user %s not found or not a parent", parent_user_id)
-        return {"status": "skipped", "reason": "user_not_found"}
-
-    if ParentVirtualAccount.objects.filter(parent=parent_user, is_active=True).exists():
-        return {"status": "skipped", "reason": "already_has_dva"}
-
-    if not getattr(parent_user, "tenant", None):
-        logger.warning("provision_parent_dva_task: parent %s has no tenant", parent_user_id)
-        return {"status": "skipped", "reason": "no_tenant"}
-
-    try:
-        vac, created = provision_parent_virtual_account(parent_user, actor=None)
-        logger.info(
-            "provision_parent_dva_task: %s DVA %s for parent %s",
-            "created" if created else "found",
-            vac.account_number,
-            parent_user.email,
-        )
-        return {"status": "ok", "created": created, "account_number": vac.account_number}
-    except RuntimeError as exc:
-        msg = str(exc)
-        if "no Paystack subaccount" in msg or "PAYSTACK_SECRET_KEY" in msg:
-            # School not configured yet — don't retry, admin must set up subaccount first
-            logger.info("provision_parent_dva_task: skipped for %s — %s", parent_user.email, msg)
-            return {"status": "skipped", "reason": msg}
-        logger.warning("provision_parent_dva_task: retrying for %s — %s", parent_user.email, msg)
-        raise self.retry(exc=exc)
+        return provision_parent_dva(parent_user_id)
     except Exception as exc:
-        logger.error("provision_parent_dva_task: error for %s — %s", parent_user_id, exc)
+        logger.warning("provision_parent_dva_task: retrying for %s - %s", parent_user_id, exc)
         raise self.retry(exc=exc)
 
 

@@ -5,7 +5,6 @@ from typing import Optional
 import uuid
 import re
 import logging
-import threading
 from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
@@ -13,12 +12,12 @@ logger = logging.getLogger(__name__)
 import requests
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError
-from django.db import connection as db_connection
-from django.db import connections as db_connections
 from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
 
+from core.background import run_in_background as _run_in_background
+from core.background import run_in_background_later as _run_in_background_later
 from finance.models import (
     ActivationCreditPool,
     ActivationCreditTransaction,
@@ -526,6 +525,87 @@ def provision_parent_virtual_account(parent_user, actor=None):
         },
     )
     return vac, created
+
+
+# Seconds between automatic attempts to give a new parent a virtual account when
+# Paystack is unavailable - the same cadence as the Celery task this replaces
+# (every couple of minutes, backing off), three more tries.
+PARENT_DVA_RETRY_DELAYS = (120, 240, 480)
+
+
+def provision_parent_dva(parent_user_id):
+    """Give a newly created parent a Paystack dedicated virtual account.
+
+    Returns a status dict when there is nothing to do (the parent is gone, has
+    an account already, has no school, or the school is not set up for Paystack
+    yet - an admin has to do that first, so retrying would be pointless).
+    Raises for anything worth trying again, such as Paystack being unavailable;
+    callers decide how: provision_parent_dva_with_retries in-process,
+    provision_parent_dva_task through Celery.
+    """
+    from users.models import User
+
+    try:
+        parent_user = User.objects.select_related("tenant").get(id=parent_user_id, role="parent")
+    except User.DoesNotExist:
+        logger.warning("provision_parent_dva: user %s not found or not a parent", parent_user_id)
+        return {"status": "skipped", "reason": "user_not_found"}
+
+    if ParentVirtualAccount.objects.filter(parent=parent_user, is_active=True).exists():
+        return {"status": "skipped", "reason": "already_has_dva"}
+
+    if not getattr(parent_user, "tenant", None):
+        logger.warning("provision_parent_dva: parent %s has no tenant", parent_user_id)
+        return {"status": "skipped", "reason": "no_tenant"}
+
+    try:
+        vac, created = provision_parent_virtual_account(parent_user, actor=None)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "no Paystack subaccount" in message or "PAYSTACK_SECRET_KEY" in message:
+            logger.info("provision_parent_dva: skipped for %s - %s", parent_user.email, message)
+            return {"status": "skipped", "reason": message}
+        raise
+
+    logger.info(
+        "provision_parent_dva: %s DVA %s for parent %s",
+        "created" if created else "found",
+        vac.account_number,
+        parent_user.email,
+    )
+    return {"status": "ok", "created": created, "account_number": vac.account_number}
+
+
+def provision_parent_dva_with_retries(parent_user_id, attempt=0):
+    """provision_parent_dva, trying again later in this process if it fails.
+
+    Runs on a background thread (see users/signals.py), so a slow or failing
+    Paystack never holds up creating the parent. After the last attempt it
+    gives up quietly: the parent still has no virtual account, which an admin
+    can fix from the Finance page. Never raises.
+    """
+    try:
+        return provision_parent_dva(parent_user_id)
+    except Exception as exc:
+        if attempt < len(PARENT_DVA_RETRY_DELAYS):
+            delay = PARENT_DVA_RETRY_DELAYS[attempt]
+            logger.warning(
+                "Parent virtual account for %s failed (%s); retrying in %ss (attempt %s of %s)",
+                parent_user_id, exc, delay, attempt + 2, len(PARENT_DVA_RETRY_DELAYS) + 1,
+            )
+            _run_in_background_later(
+                delay,
+                lambda: provision_parent_dva_with_retries(parent_user_id, attempt + 1),
+                name=f"parent-dva-retry-{parent_user_id}",
+                pool="provisioning",
+                workers=2,
+            )
+            return {"status": "retrying", "reason": str(exc)}
+        logger.error(
+            "Parent virtual account for %s failed after %s attempts: %s. An admin can provision it from the Finance page.",
+            parent_user_id, len(PARENT_DVA_RETRY_DELAYS) + 1, exc,
+        )
+        return {"status": "failed", "reason": str(exc)}
 
 
 SCHOOLDOM_RATE = Decimal("0.003")          # 0.3% of each fee's tuition amount
@@ -5288,6 +5368,27 @@ def send_payment_receipt_email_for_payment(payment, receipt_data=None, receipt_u
     }
 
 
+# What one delivery reads and writes on the payment. The lock in
+# send_payment_receipt_notifications re-reads these from the database so a
+# stale copy (a second click, a retry timer) can never re-send a channel that
+# another delivery has just completed.
+_RECEIPT_STATE_FIELDS = (
+    "receipt_sms_status",
+    "receipt_email_status",
+    "receipt_link_url",
+    "receipt_notification_attempts",
+    "receipt_notification_error",
+    "receipt_notified_at",
+)
+
+# A channel that fails (gateway hiccup, mail server busy) is tried again on its
+# own after these many seconds, so a blip costs neither the parent their
+# receipt nor the admin a Resend click - three attempts in all. The timers live
+# in this process; anything they miss stays "failed" on the payment for the
+# retry sweep or the Resend button.
+RECEIPT_AUTO_RETRY_DELAYS = (20, 120)
+
+
 def send_payment_receipt_notifications(payment, force=False) -> dict:
     """Generate the official receipt and deliver it to the parent by SMS and email.
 
@@ -5302,11 +5403,59 @@ def send_payment_receipt_notifications(payment, force=False) -> dict:
     raises: the money is already banked, and a messaging failure must never
     reverse, duplicate, or obscure a payment that succeeded. A channel that
     already succeeded is never re-sent, so retrying can't double-text a parent.
+
+    The payment row is locked for the length of the send (SKIP LOCKED), so two
+    deliveries racing - the automatic one and an admin's Resend click, a retry
+    timer and the sweep - cannot both text the parent. The loser returns at
+    once with ``in_progress`` set and changes nothing.
     """
     student = getattr(payment, "student", None)
     if student is None:
         return {"sent": False, "reason": "Payment is not matched to a student.", "sms": {}, "email": {}}
 
+    with transaction.atomic():
+        claimed = BankPayment.objects.select_for_update(skip_locked=True).filter(id=payment.id).first()
+        if claimed is None:
+            payment.refresh_from_db()
+            return {
+                "sent": payment.receipt_notification_status == BankPayment.NOTIFY_SENT,
+                "status": payment.receipt_notification_status,
+                "receipt_url": payment.receipt_link_url,
+                "reason": "Another delivery of this receipt is already in progress.",
+                "in_progress": True,
+                "sms": {},
+                "email": {},
+            }
+        # The caller's copy may be older than another delivery's result.
+        for field in _RECEIPT_STATE_FIELDS:
+            setattr(payment, field, getattr(claimed, field))
+
+        try:
+            # A savepoint, so a database error part-way through cannot poison the
+            # surrounding transaction and stop the failure being recorded below.
+            with transaction.atomic():
+                return _deliver_payment_receipt(payment, student, force)
+        except Exception as exc:
+            logger.exception("Payment receipt could not be prepared for payment %s", payment.id)
+            reason = f"Receipt could not be prepared: {exc}"[:1000]
+            for field in ("receipt_sms_status", "receipt_email_status"):
+                if getattr(payment, field) != BankPayment.NOTIFY_SENT:
+                    setattr(payment, field, BankPayment.NOTIFY_FAILED)
+            payment.receipt_notification_attempts = (payment.receipt_notification_attempts or 0) + 1
+            payment.receipt_notification_error = reason
+            payment.save(update_fields=[*_RECEIPT_STATE_FIELDS, "updated_at"])
+            return {
+                "sent": False,
+                "status": payment.receipt_notification_status,
+                "receipt_url": payment.receipt_link_url,
+                "reason": reason,
+                "sms": {},
+                "email": {},
+            }
+
+
+def _deliver_payment_receipt(payment, student, force) -> dict:
+    """The send itself; runs with the payment row locked (see the caller)."""
     sms_done = payment.receipt_sms_status == BankPayment.NOTIFY_SENT
     email_done = payment.receipt_email_status == BankPayment.NOTIFY_SENT
     if sms_done and email_done and not force:
@@ -5360,15 +5509,7 @@ def send_payment_receipt_notifications(payment, force=False) -> dict:
     )[:1000]
     if BankPayment.NOTIFY_SENT in (payment.receipt_sms_status, payment.receipt_email_status):
         payment.receipt_notified_at = payment.receipt_notified_at or timezone.now()
-    payment.save(update_fields=[
-        "receipt_sms_status",
-        "receipt_email_status",
-        "receipt_link_url",
-        "receipt_notification_attempts",
-        "receipt_notification_error",
-        "receipt_notified_at",
-        "updated_at",
-    ])
+    payment.save(update_fields=[*_RECEIPT_STATE_FIELDS, "updated_at"])
 
     if payment.receipt_notification_error:
         logger.warning(
@@ -5388,36 +5529,46 @@ def send_payment_receipt_notifications(payment, force=False) -> dict:
     }
 
 
-def _run_in_background(work, name):
-    """Run `work()` on a daemon thread so the caller's request can return.
+def deliver_payment_receipt(payment, retry_attempt=0) -> dict:
+    """Deliver the receipt now, in the calling thread, and follow up on failures.
 
-    Used for slow, best-effort delivery (an SMS gateway call plus an SMTP send)
-    that must not hold up - or be killed along with - the HTTP request that
-    triggered it. It is a seam on purpose: tests patch it to run inline, since
-    a thread opens its own database connection and cannot see a test's
-    uncommitted rows.
-
-    The thread gets its own connection, so the tenant schema the request was
-    using is carried over (a no-op unless django-tenants is active) and every
-    connection is closed when the work ends.
+    This is what makes a receipt go out on the first click: the admin views
+    call it right after the payment commits and show the real outcome, and the
+    background path (webhooks, bulk imports) calls it from a pool thread. If a
+    channel failed it schedules another attempt a little later instead of
+    leaving the parent to wait for a person or a sweep. Never raises.
     """
-    schema_name = getattr(db_connection, "schema_name", None)
+    result = send_payment_receipt_notifications(payment)
+    if not result.get("in_progress"):
+        _schedule_receipt_retry(payment, retry_attempt)
+    return result
 
-    def _runner():
-        try:
-            if schema_name and hasattr(db_connection, "set_schema"):
-                db_connection.set_schema(schema_name)
-            work()
-        except Exception:
-            logger.exception("Background task %s failed", name)
-        finally:
-            db_connections.close_all()
 
-    threading.Thread(target=_runner, name=name, daemon=True).start()
+def _schedule_receipt_retry(payment, retry_attempt):
+    if retry_attempt >= len(RECEIPT_AUTO_RETRY_DELAYS):
+        return
+    if BankPayment.NOTIFY_FAILED not in (payment.receipt_sms_status, payment.receipt_email_status):
+        return
+    payment_id = str(payment.id)
+
+    def _retry():
+        fresh = BankPayment.objects.select_related("student__user", "tenant").get(id=payment_id)
+        deliver_payment_receipt(fresh, retry_attempt + 1)
+
+    _run_in_background_later(
+        RECEIPT_AUTO_RETRY_DELAYS[retry_attempt],
+        _retry,
+        name=f"payment-receipt-retry-{payment_id}",
+        pool="receipts",
+    )
 
 
 def dispatch_payment_receipt_notifications(payment):
-    """Send the receipt once the payment is durably committed - never before.
+    """Send the receipt in the background once the payment is durably committed.
+
+    For payments that arrive without an admin waiting on the screen (bank
+    webhooks, statement imports). The admin's own buttons call
+    deliver_payment_receipt directly instead, so they can show the outcome.
 
     Every finance endpoint runs under ATOMIC_REQUESTS, so at the moment a view
     records a payment the row is not committed yet. Delivering from inside that
@@ -5434,18 +5585,18 @@ def dispatch_payment_receipt_notifications(payment):
         killed the request, and the inline fallback never ran;
       - with a broker but no worker, .delay() succeeded, the task sat in the
         queue forever, and the parent was never told.
-    A thread has neither failure mode and still lets the admin's request
-    return immediately. Whatever it cannot deliver is left "pending"/"failed"
-    on the payment row for the retry sweep (retry_failed_payment_receipts, if
-    Celery beat runs) or the admin's Resend button.
+    A thread has neither failure mode and still lets the request return
+    immediately. Whatever it cannot deliver is retried automatically, and is
+    otherwise left "pending"/"failed" on the payment row for the retry sweep
+    (retry_failed_payment_receipts, if Celery beat runs) or the Resend button.
     """
     payment_id = str(payment.id)
 
     def _deliver():
         fresh = BankPayment.objects.select_related("student__user", "tenant").get(id=payment_id)
-        send_payment_receipt_notifications(fresh)
+        deliver_payment_receipt(fresh)
 
-    transaction.on_commit(lambda: _run_in_background(_deliver, f"payment-receipt-{payment_id}"))
+    transaction.on_commit(lambda: _run_in_background(_deliver, f"payment-receipt-{payment_id}", pool="receipts"))
 
 
 def _match_payment_reference_from_narration(tenant, narration):

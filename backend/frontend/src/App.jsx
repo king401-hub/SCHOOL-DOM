@@ -104,6 +104,7 @@ import {
   downloadPrintablePng,
   downloadPrintablePdf,
   CurrentTermBadge,
+  describeReceiptOutcome,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
@@ -7415,19 +7416,27 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const handleCashPaymentRecord = useCallback(
     async (payload) => {
       const result = await requestJson(session, "POST", "/api/finance/admin/cash-payments/record/", payload);
+      // The receipt goes out during this request, so the response already says
+      // what happened to it - report that rather than assuming it was sent.
+      const receipt = describeReceiptOutcome(result?.payment);
       addAdminNotification({
         category: "Finance",
         module: "Payments",
-        action: `Recorded a ${(payload.payment_method || "cash").replace("_", " ")} payment for a student. Receipt sent to the parent by SMS and email.`,
-        status: "Success",
+        action: `Recorded a ${(payload.payment_method || "cash").replace("_", " ")} payment for a student. ${receipt.text}`,
+        status: receipt.ok ? "Success" : "Pending",
         priority: "High",
-        tone: "success",
+        tone: receipt.ok ? "success" : "warning",
       });
       await Promise.all([loadScreen("/finance", true), loadScreen("/dashboard", true)]);
-      // The receipt is delivered only after the payment commits, so the row
-      // above still reads "Pending" when this response lands. One follow-up
-      // refresh lets the delivery status settle without the admin reloading.
-      setTimeout(() => { loadScreen("/finance", true); }, 6000);
+      // A channel that failed is retried by the server a few seconds later
+      // (20s, then two minutes); one refresh after the first retry lets that
+      // outcome show without the admin reloading.
+      const receiptStillOpen = ["failed", "pending"].some(
+        (state) => result?.payment?.receipt_sms_status === state || result?.payment?.receipt_email_status === state
+      );
+      if (receiptStillOpen) {
+        setTimeout(() => { loadScreen("/finance", true); }, 30000);
+      }
       return result;
     },
     [addAdminNotification, loadScreen, session]

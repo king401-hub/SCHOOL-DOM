@@ -49,6 +49,9 @@ from finance.services import (
     credit_sms_wallet_from_purchase,
     mark_sms_wallet_purchase_failed,
     normalize_phone_number,
+    PARENT_DVA_RETRY_DELAYS,
+    provision_parent_dva,
+    provision_parent_dva_with_retries,
     send_ebulksms,
     send_kudisms,
     credit_wallet,
@@ -69,6 +72,8 @@ from finance.services import (
     send_bulk_message_to_parents,
     send_parent_virtual_account_fee_reminder,
     build_payment_receipt_data,
+    RECEIPT_AUTO_RETRY_DELAYS,
+    deliver_payment_receipt,
     dispatch_payment_receipt_notifications,
     fee_outstanding_amount,
     send_payment_receipt_notifications,
@@ -2570,31 +2575,164 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertIn(link.short_code, payment.receipt_link_url)
         self.assertIn(link.short_code, SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).message)
 
-    @patch("finance.services._run_in_background", side_effect=lambda work, name: work())
     @patch("finance.services.send_ebulksms")
-    def test_recording_a_cash_payment_delivers_the_receipt_without_being_asked(self, mock_send, _mock_background):
+    def test_recording_a_cash_payment_delivers_the_receipt_on_the_first_click(self, mock_send):
+        """The receipt goes out during the very request that records the
+        payment, and the response says what happened to it - no Resend, no
+        waiting for a background job, no callbacks to run."""
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         client = APIClient()
         client.force_authenticate(user=self.admin_user)
 
-        with self.captureOnCommitCallbacks(execute=True):
-            response = client.post(
-                "/api/finance/admin/cash-payments/record/",
-                {"student_id": self.student.student_id, "amount": "50000", "note": "Cash at desk"},
-            )
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "50000", "note": "Cash at desk"},
+        )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["notification"]["status"], BankPayment.NOTIFY_SENT)
+        # The payment in the response already carries the real delivery state...
+        self.assertEqual(response.data["payment"]["receipt_sms_status"], BankPayment.NOTIFY_SENT)
+        self.assertEqual(response.data["payment"]["receipt_email_status"], BankPayment.NOTIFY_SENT)
+        # ...and so does the database.
         payment = BankPayment.objects.get(id=response.data["payment"]["id"])
         self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
         self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mock_send.call_count, 1)
 
-    @patch("finance.services._run_in_background", side_effect=lambda work, name: work())
+    def test_the_record_and_match_views_commit_before_they_notify(self):
+        """Delivering during the request is only safe once the payment is
+        committed, so these views opt out of ATOMIC_REQUESTS and commit
+        explicitly; the webhook and bulk-import paths keep the on_commit route."""
+        from finance.views import admin_bank_payment_recover, admin_cash_payment_record
+
+        self.assertIn("default", admin_cash_payment_record._non_atomic_requests)
+        self.assertIn("default", admin_bank_payment_recover._non_atomic_requests)
+
+    @patch("finance.services._run_in_background_later")
+    @patch("finance.services.send_ebulksms")
+    def test_a_failed_first_attempt_is_reported_and_retried_automatically(self, mock_send, mock_later):
+        mock_send.side_effect = RuntimeError("gateway down")
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "50000", "note": "Cash at desk"},
+        )
+
+        # The payment is recorded and applied; only the SMS did not go.
+        self.assertEqual(response.status_code, 200)
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)
+        self.assertEqual(response.data["payment"]["receipt_sms_status"], BankPayment.NOTIFY_FAILED)
+        self.assertEqual(response.data["payment"]["receipt_email_status"], BankPayment.NOTIFY_SENT)
+        self.assertIn("gateway down", response.data["notification"]["reason"])
+        # ...and another attempt is already scheduled, without anyone clicking.
+        mock_later.assert_called_once()
+        self.assertEqual(mock_later.call_args.args[0], RECEIPT_AUTO_RETRY_DELAYS[0])
+        self.assertEqual(mock_later.call_args.kwargs["pool"], "receipts")
+
+    @patch("finance.services._run_in_background_later")
+    @patch("finance.services.send_ebulksms")
+    def test_the_automatic_retry_sends_only_what_failed_and_stops_once_delivered(self, mock_send, mock_later):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+        deliver_payment_receipt(payment)
+        self.assertEqual(len(mail.outbox), 1)
+        first_retry = mock_later.call_args.args[1]
+
+        # The gateway is back by the time the timer fires.
+        mock_send.side_effect = None
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        mock_later.reset_mock()
+        first_retry()
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_notification_attempts, 2)
+        # The email had already landed, so the parent is not mailed twice.
+        self.assertEqual(len(mail.outbox), 1)
+        # Nothing left to retry.
+        mock_later.assert_not_called()
+
+    @patch("finance.services._run_in_background_later")
+    @patch("finance.services.send_ebulksms")
+    def test_automatic_retries_stop_after_the_last_delay(self, mock_send, mock_later):
+        mock_send.side_effect = RuntimeError("gateway down")
+        payment = self._record()
+
+        deliver_payment_receipt(payment)
+        for expected_delay in RECEIPT_AUTO_RETRY_DELAYS:
+            self.assertEqual(mock_later.call_args.args[0], expected_delay)
+            retry = mock_later.call_args.args[1]
+            mock_later.reset_mock()
+            retry()
+        # First attempt + one retry per delay, then it gives up.
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_notification_attempts, 1 + len(RECEIPT_AUTO_RETRY_DELAYS))
+        mock_later.assert_not_called()
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_stale_copy_of_the_payment_cannot_resend_a_delivered_channel(self, mock_send):
+        """Two deliveries can start from the same stale row (an admin's Resend
+        click while the automatic one is in flight, a timer and the sweep).
+        The delivery re-reads the row under a lock, so the second one sees what
+        the first already sent."""
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        payment = self._record()
+        stale = BankPayment.objects.select_related("student__user", "tenant").get(id=payment.id)
+
+        send_payment_receipt_notifications(payment)
+        self.assertEqual(mock_send.call_count, 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+        result = send_payment_receipt_notifications(stale)
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(mock_send.call_count, 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    @patch("finance.services.send_ebulksms")
+    def test_a_delivery_already_in_progress_is_left_alone(self, mock_send):
+        payment = self._record()
+        # What select_for_update(skip_locked=True) yields when another
+        # delivery holds the row.
+        locked_out = Mock()
+        locked_out.filter.return_value.first.return_value = None
+
+        with patch.object(BankPayment.objects, "select_for_update", return_value=locked_out):
+            result = send_payment_receipt_notifications(payment)
+
+        self.assertTrue(result["in_progress"])
+        self.assertFalse(result["sent"])
+        mock_send.assert_not_called()
+        self.assertEqual(len(mail.outbox), 0)
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_notification_attempts, 0)
+
+    @patch("finance.services._run_in_background_later")
+    @patch("finance.services.build_payment_receipt_data", side_effect=RuntimeError("template exploded"))
+    def test_a_crash_while_preparing_the_receipt_is_recorded_not_lost(self, _mock_build, mock_later):
+        """Before, an unexpected error here escaped, left the row 'pending'
+        with zero attempts and no explanation - invisible to the admin."""
+        payment = self._record()
+
+        result = deliver_payment_receipt(payment)
+
+        self.assertFalse(result["sent"])
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_FAILED)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_FAILED)
+        self.assertEqual(payment.receipt_notification_attempts, 1)
+        self.assertIn("template exploded", payment.receipt_notification_error)
+        mock_later.assert_called_once()
+
     @patch("finance.tasks.send_payment_receipt_task.apply_async")
     @patch("finance.tasks.send_payment_receipt_task.delay")
     @patch("finance.services.send_ebulksms")
-    def test_delivery_does_not_depend_on_celery(self, mock_send, mock_delay, mock_apply_async, _mock_background):
+    def test_delivery_does_not_depend_on_celery(self, mock_send, mock_delay, mock_apply_async):
         """Regression: receipts were handed to Celery first. With no broker,
         .delay() blocked ~110s retrying the connection (recording a payment
         hung until the web server killed the request); with a broker but no
@@ -2611,20 +2749,19 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
         self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
 
-    @patch("finance.services.threading.Thread")
+    @patch("finance.services._run_in_background")
     @patch("finance.services.send_ebulksms")
-    def test_recording_a_payment_does_not_wait_for_the_delivery(self, mock_send, mock_thread_cls):
-        """The admin's request must return without waiting on the SMS gateway
-        and mail server: delivery is handed to a daemon thread after commit."""
+    def test_webhook_payments_are_delivered_in_the_background(self, mock_send, mock_background):
+        """No admin is waiting on a bank webhook, so its receipt is handed to
+        the receipts pool after commit rather than sent inside the request."""
         payment = self._record()
 
         with self.captureOnCommitCallbacks(execute=True):
             dispatch_payment_receipt_notifications(payment)
 
-        mock_thread_cls.assert_called_once()
-        self.assertTrue(mock_thread_cls.call_args.kwargs["daemon"])
-        self.assertIn(str(payment.id), mock_thread_cls.call_args.kwargs["name"])
-        mock_thread_cls.return_value.start.assert_called_once()
+        mock_background.assert_called_once()
+        self.assertEqual(mock_background.call_args.kwargs["pool"], "receipts")
+        self.assertIn(str(payment.id), mock_background.call_args.args[1])
         # Nothing was sent in the request's own thread.
         mock_send.assert_not_called()
         self.assertEqual(len(mail.outbox), 0)
@@ -3444,3 +3581,141 @@ class ReceiptPageTermTests(TestCase):
         link = self._link({"student_name": "Ada Obi", "amount_paid": "5000"}, "receipt")
 
         self.assertNotIn("term_name", link.data)
+
+
+class ParentVirtualAccountProvisioningTests(TestCase):
+    """A new parent gets their virtual account without Celery.
+
+    Creating a parent used to call provision_parent_dva_task.delay(). With no
+    broker that blocked ~110 seconds (creating a parent - or importing a class
+    of them - hung); with a broker but no worker the task queued forever and
+    no account was ever made.
+    """
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="DVA School", schema_name="dva_school", is_active=True)
+
+    def _parent(self, email="parent@dva.edu"):
+        return User.objects.create_user(
+            email=email, password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+
+    @patch("finance.tasks.provision_parent_dva_task.apply_async")
+    @patch("finance.tasks.provision_parent_dva_task.delay")
+    @patch("core.background.run_in_background")
+    def test_creating_a_parent_provisions_in_the_background_not_through_celery(self, mock_background, mock_delay, mock_apply_async):
+        with self.captureOnCommitCallbacks(execute=True):
+            parent = self._parent()
+
+        mock_delay.assert_not_called()
+        mock_apply_async.assert_not_called()
+        mock_background.assert_called_once()
+        self.assertEqual(mock_background.call_args.kwargs["pool"], "provisioning")
+        self.assertEqual(mock_background.call_args.kwargs["workers"], 2)
+        self.assertIn(str(parent.id), mock_background.call_args.kwargs["name"])
+
+    @patch("core.background.run_in_background")
+    def test_only_parents_get_a_virtual_account(self, mock_background):
+        with self.captureOnCommitCallbacks(execute=True):
+            User.objects.create_user(
+                email="pupil@dva.edu", password="StudentPass123", role="student",
+                tenant=self.school, is_active=True, is_verified=True,
+            )
+
+        mock_background.assert_not_called()
+
+    @patch("finance.services.provision_parent_dva")
+    @patch("core.background.run_in_background", side_effect=lambda work, **kwargs: work())
+    def test_the_background_job_provisions_the_new_parent(self, _mock_background, mock_provision):
+        mock_provision.return_value = {"status": "ok"}
+
+        with self.captureOnCommitCallbacks(execute=True):
+            parent = self._parent()
+
+        mock_provision.assert_called_once_with(str(parent.id))
+
+    @patch("finance.services._run_in_background_later")
+    @patch("finance.services.provision_parent_dva", side_effect=RuntimeError("paystack down"))
+    def test_a_failed_attempt_is_retried_later_then_given_up_quietly(self, _mock_provision, mock_later):
+        result = provision_parent_dva_with_retries("parent-id")
+
+        self.assertEqual(result["status"], "retrying")
+        for expected_delay in PARENT_DVA_RETRY_DELAYS:
+            self.assertEqual(mock_later.call_args.args[0], expected_delay)
+            self.assertEqual(mock_later.call_args.kwargs["pool"], "provisioning")
+            retry = mock_later.call_args.args[1]
+            mock_later.reset_mock()
+            result = retry()
+
+        # The last attempt fails too: it reports failure instead of raising or
+        # scheduling forever, leaving an admin to provision it by hand.
+        self.assertEqual(result["status"], "failed")
+        mock_later.assert_not_called()
+
+    @patch("finance.services.provision_parent_virtual_account")
+    def test_a_school_without_a_paystack_subaccount_is_skipped_not_retried(self, mock_provision):
+        parent = self._parent()
+        mock_provision.side_effect = RuntimeError("School has no Paystack subaccount yet.")
+
+        result = provision_parent_dva(str(parent.id))
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("no Paystack subaccount", result["reason"])
+
+    @patch("finance.services.provision_parent_virtual_account", side_effect=RuntimeError("Paystack returned 502"))
+    def test_any_other_failure_is_left_to_the_caller_to_retry(self, _mock_provision):
+        parent = self._parent()
+
+        with self.assertRaises(RuntimeError):
+            provision_parent_dva(str(parent.id))
+
+    @patch("finance.services.provision_parent_virtual_account")
+    def test_a_parent_who_already_has_an_account_is_left_alone(self, mock_provision):
+        parent = self._parent()
+        ParentVirtualAccount.objects.create(
+            parent=parent, tenant=self.school, account_number="0123456789",
+            bank_name="Wema Bank", account_name="Parent", is_active=True,
+        )
+
+        result = provision_parent_dva(str(parent.id))
+
+        self.assertEqual(result, {"status": "skipped", "reason": "already_has_dva"})
+        mock_provision.assert_not_called()
+
+    def test_a_missing_user_is_skipped(self):
+        self.assertEqual(provision_parent_dva(str(uuid.uuid4()))["status"], "skipped")
+
+    @patch("finance.services.provision_parent_dva")
+    def test_the_backfill_command_provisions_directly_without_celery(self, mock_provision):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        first, second = self._parent("one@dva.edu"), self._parent("two@dva.edu")
+        mock_provision.return_value = {"status": "ok"}
+        out = StringIO()
+
+        with patch("finance.tasks.provision_parent_dva_task.delay") as mock_delay:
+            call_command("provision_parent_dva", stdout=out)
+
+        mock_delay.assert_not_called()
+        self.assertEqual({call.args[0] for call in mock_provision.call_args_list}, {str(first.id), str(second.id)})
+        self.assertIn("Provisioned 2, skipped 0, failed 0.", out.getvalue())
+
+    @patch("finance.services.provision_parent_dva")
+    def test_the_backfill_command_reports_failures_and_carries_on(self, mock_provision):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        self._parent("one@dva.edu")
+        self._parent("two@dva.edu")
+        mock_provision.side_effect = [RuntimeError("paystack down"), {"status": "ok"}]
+        out, err = StringIO(), StringIO()
+
+        call_command("provision_parent_dva", stdout=out, stderr=err)
+
+        self.assertEqual(mock_provision.call_count, 2)
+        self.assertIn("paystack down", err.getvalue())
+        self.assertIn("Provisioned 1, skipped 0, failed 1.", out.getvalue())

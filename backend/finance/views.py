@@ -5,6 +5,7 @@ import hmac
 from hmac import compare_digest
 from datetime import datetime
 from html import escape
+import logging
 import re
 
 from django.conf import settings
@@ -19,6 +20,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 from academic.models import AcademicYear, Class, Term
 from core.models import SchoolTenant
@@ -99,6 +102,7 @@ from finance.services import (
     record_cash_payment,
     provision_kuda_admin_virtual_account,
     record_finance_activity,
+    deliver_payment_receipt,
     dispatch_payment_receipt_notifications,
     send_payment_receipt_notifications,
     send_fee_reminders,
@@ -2296,6 +2300,55 @@ def admin_bank_payment_ingest(request):
     return Response({"success": True, "processed": processed, "finance": _admin_finance_snapshot(user)})
 
 
+def _deliver_receipt_after_commit(payment):
+    """Send the parent their receipt for a payment that has just been committed.
+
+    Runs in the admin's own request, so the response can say whether it
+    arrived. Must only be called once the payment is durably saved - never
+    inside a transaction that could still roll it back. Never raises: the money
+    is already banked, so a failed receipt is reported, not propagated.
+    """
+    if not payment.student_id or payment.status not in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
+        return {"status": "skipped", "reason": "No receipt is due for this payment yet."}
+    try:
+        result = deliver_payment_receipt(payment)
+    except Exception as exc:  # deliver_payment_receipt does not raise; belt and braces
+        logger.exception("Receipt delivery crashed for payment %s", payment.id)
+        return {"status": "failed", "reason": f"Receipt could not be sent: {exc}"}
+    return {
+        "status": result.get("status"),
+        "receipt_url": result.get("receipt_url"),
+        "reason": result.get("reason") or payment.receipt_notification_error or "",
+    }
+
+
+def _record_payment_activity_and_snapshot(user, action, description, payment, metadata):
+    """The audit entry and refreshed finance snapshot that follow a payment.
+
+    They run after the payment has committed, so if either fails the payment
+    must not look failed - the admin would record it a second time. They are
+    grouped in one transaction (as they were under ATOMIC_REQUESTS), and a
+    failure is logged and the snapshot left out; the screen reloads its own.
+    """
+    try:
+        with transaction.atomic():
+            record_finance_activity(
+                user.tenant,
+                user,
+                action,
+                description,
+                amount=payment.amount,
+                currency=payment.currency,
+                reference=payment.bank_reference,
+                metadata=metadata,
+            )
+            return _admin_finance_snapshot(user)
+    except Exception:
+        logger.exception("Finance snapshot after payment %s failed", payment.id)
+        return None
+
+
+@transaction.non_atomic_requests
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def admin_bank_payment_recover(request, payment_id):
@@ -2327,25 +2380,31 @@ def admin_bank_payment_recover(request, payment_id):
     if not student:
         return Response({"success": False, "message": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    reference = get_or_create_student_payment_reference(student)
-    payment.payment_reference = reference
-    payment.save(update_fields=["payment_reference", "updated_at"])
-    payment = apply_bank_payment_to_student(payment, student, actor=user)
-    if payment.student_id and payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        dispatch_payment_receipt_notifications(payment)
-    record_finance_activity(
-        user.tenant,
+    # This view opts out of ATOMIC_REQUESTS so the matching can be committed
+    # before the parent is told: the receipt goes out during this request, and
+    # the response shows whether it arrived.
+    with transaction.atomic():
+        reference = get_or_create_student_payment_reference(student)
+        payment.payment_reference = reference
+        payment.save(update_fields=["payment_reference", "updated_at"])
+        payment = apply_bank_payment_to_student(payment, student, actor=user)
+    notification = _deliver_receipt_after_commit(payment)
+    finance = _record_payment_activity_and_snapshot(
         user,
         "bank_payment_recovered",
         f"Matched bank payment to {student.user.get_full_name() or student.user.email}.",
-        amount=payment.amount,
-        currency=payment.currency,
-        reference=payment.bank_reference,
-        metadata={"student_id": str(student.id), "status": payment.status},
+        payment,
+        {"student_id": str(student.id), "status": payment.status},
     )
-    return Response({"success": True, "payment": BankPaymentSerializer(payment).data, "finance": _admin_finance_snapshot(user)})
+    return Response({
+        "success": True,
+        "payment": BankPaymentSerializer(payment).data,
+        "notification": notification,
+        "finance": finance,
+    })
 
 
+@transaction.non_atomic_requests
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def admin_cash_payment_record(request):
@@ -2372,31 +2431,37 @@ def admin_cash_payment_record(request):
     if not student:
         return Response({"success": False, "message": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # This view opts out of ATOMIC_REQUESTS so the payment can be committed
+    # before the parent is told: the receipt goes out during this request (on
+    # the first click, not on a later Resend), and the response shows whether
+    # it arrived. The block below is the same all-or-nothing recording as
+    # before; only the notification moved to after it.
     try:
-        payment = record_cash_payment(
-            student,
-            request.data.get("amount"),
-            note=request.data.get("note"),
-            actor=user,
-            payment_method=request.data.get("payment_method") or "cash",
-        )
+        with transaction.atomic():
+            payment = record_cash_payment(
+                student,
+                request.data.get("amount"),
+                note=request.data.get("note"),
+                actor=user,
+                payment_method=request.data.get("payment_method") or "cash",
+            )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    if payment.status in {BankPayment.STATUS_CONFIRMED, BankPayment.STATUS_PARTIAL}:
-        dispatch_payment_receipt_notifications(payment)
-
-    record_finance_activity(
-        user.tenant,
+    notification = _deliver_receipt_after_commit(payment)
+    finance = _record_payment_activity_and_snapshot(
         user,
         "cash_payment_recorded",
         f"Recorded {(payment.metadata or {}).get('payment_method', 'cash').replace('_', ' ')} payment from {student.user.get_full_name() or student.user.email}.",
-        amount=payment.amount,
-        currency=payment.currency,
-        reference=payment.bank_reference,
-        metadata={"student_id": str(student.id), "status": payment.status},
+        payment,
+        {"student_id": str(student.id), "status": payment.status},
     )
-    return Response({"success": True, "payment": BankPaymentSerializer(payment).data, "finance": _admin_finance_snapshot(user)})
+    return Response({
+        "success": True,
+        "payment": BankPaymentSerializer(payment).data,
+        "notification": notification,
+        "finance": finance,
+    })
 
 
 @api_view(["POST"])
