@@ -385,6 +385,14 @@ SIMPLE_JWT = {
     'USERNAME_FIELD': 'email',
 }
 
+# Admin-side accounts (school admin, principal, proprietor, accountant, super
+# admin) get a longer access token than everyone else (ACCESS_TOKEN_LIFETIME
+# above), two hours by default. The web and mobile apps refresh silently, but
+# the super-admin desktop panel signs out the moment its access token expires,
+# so this is how long an admin stays signed in there. Applied in
+# users.views.apply_access_lifetime, on login and again on every refresh.
+ADMIN_ACCESS_TOKEN_LIFETIME = timedelta(minutes=env_int('ADMIN_ACCESS_TOKEN_MINUTES', 120))
+
 # Email
 # OTP codes are sent only to the recipient email. Configure these env vars with
 # your school's SMTP provider before using admin OTP verification.

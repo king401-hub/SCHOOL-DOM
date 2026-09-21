@@ -474,6 +474,19 @@ def auth_school_group_payload(user):
     }
 
 
+# Roles that sign in to the admin side of the platform. Their access token
+# lasts settings.ADMIN_ACCESS_TOKEN_LIFETIME (two hours) instead of the
+# default hour.
+ADMIN_SESSION_ROLES = {"school_admin", "principal", "school_superadmin", "super_admin", "accountant"}
+
+
+def apply_access_lifetime(access_token, role):
+    """Give admin-side roles the longer access-token lifetime, counted from now."""
+    if role in ADMIN_SESSION_ROLES:
+        access_token.set_exp(lifetime=settings.ADMIN_ACCESS_TOKEN_LIFETIME)
+    return access_token
+
+
 def get_tokens_for_user(user):
     """Generate JWT tokens for user"""
     refresh = RefreshToken.for_user(user)
@@ -484,7 +497,7 @@ def get_tokens_for_user(user):
     
     return {
         'refresh': str(refresh),
-        'access': str(refresh.access_token),
+        'access': str(apply_access_lifetime(refresh.access_token, user.role)),
     }
 
 @api_view(['POST'])
@@ -1300,6 +1313,7 @@ def refresh_token(request):
     try:
         token = RefreshToken(refresh_token)
         user_id = token.get('user_id')
+        user = None
         if user_id:
             user = User.objects.filter(id=user_id).first()
             if user and user.tenant_id and not user.tenant.is_active:
@@ -1319,8 +1333,10 @@ def refresh_token(request):
                         'success': False,
                         'message': 'Account inactive. Contact admin.'
                     }, status=status.HTTP_401_UNAUTHORIZED)
-        # Access access_token to trigger rotation if enabled
-        access_token = str(token.access_token)
+        # Access access_token to trigger rotation if enabled. Use the account's
+        # current role (falling back to the claim) so an admin keeps the longer
+        # lifetime on every refresh.
+        access_token = str(apply_access_lifetime(token.access_token, user.role if user else token.get('role')))
         data = {
             'access': access_token
         }

@@ -3064,6 +3064,90 @@ class MiddleNameTests(TestCase):
         self.assertEqual((data["middle_name"], data["full_name"]), ("Chidi", "Head Chidi Admin"))
 
 
+class AdminSessionLifetimeTests(TestCase):
+    """Admin-side accounts stay signed in for two hours on one access token,
+    everyone else keeps the default hour. The super-admin desktop panel never
+    refreshes a token, so this is how long an admin stays signed in there."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()  # IdempotencyMiddleware replays identical POST bodies
+
+        self.school = SchoolTenant.objects.create(name="Session School", schema_name="session_school", is_active=True)
+        self.client = APIClient()
+
+    def _user(self, role, email=None):
+        return User.objects.create_user(
+            email=email or f"{role}@session.edu", password="SessionPass123", first_name="Sam", last_name=role.title(),
+            role=role, tenant=self.school, is_active=True, is_verified=True,
+        )
+
+    @staticmethod
+    def _lifetime_seconds(access):
+        from rest_framework_simplejwt.tokens import AccessToken
+        token = AccessToken(access)
+        return token["exp"] - token["iat"]
+
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_an_admin_login_gets_a_two_hour_access_token(self):
+        self._user("school_admin")
+
+        response = self.client.post("/api/auth/login/", {"email": "school_admin@session.edu", "password": "SessionPass123"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self._lifetime_seconds(response.data["access"]), 2 * 60 * 60)
+
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_refreshing_an_admin_session_keeps_the_two_hour_lifetime(self):
+        self._user("school_admin")
+        login = self.client.post("/api/auth/login/", {"email": "school_admin@session.edu", "password": "SessionPass123"}, format="json")
+
+        refreshed = self.client.post("/api/auth/refresh/", {"refresh": login.data["refresh"]}, format="json")
+
+        self.assertEqual(refreshed.status_code, 200, refreshed.data)
+        self.assertEqual(self._lifetime_seconds(refreshed.data["access"]), 2 * 60 * 60)
+
+    def test_every_admin_side_role_gets_two_hours(self):
+        from users.views import get_tokens_for_user
+        for role in ("school_admin", "principal", "school_superadmin", "super_admin", "accountant"):
+            with self.subTest(role=role):
+                tokens = get_tokens_for_user(self._user(role))
+                self.assertEqual(self._lifetime_seconds(tokens["access"]), 2 * 60 * 60)
+
+    def test_other_roles_keep_the_default_hour(self):
+        from users.views import get_tokens_for_user
+        for role in ("teacher", "student", "parent"):
+            with self.subTest(role=role):
+                tokens = get_tokens_for_user(self._user(role))
+                self.assertEqual(self._lifetime_seconds(tokens["access"]), 60 * 60)
+
+                refreshed = self.client.post("/api/auth/refresh/", {"refresh": tokens["refresh"]}, format="json")
+                # A student without an activation token cannot refresh at all;
+                # every other role must come back on the default hour.
+                if refreshed.status_code == 200:
+                    self.assertEqual(self._lifetime_seconds(refreshed.data["access"]), 60 * 60)
+
+    @override_settings(ADMIN_ACCESS_TOKEN_LIFETIME=timedelta(minutes=30))
+    def test_the_admin_lifetime_comes_from_settings(self):
+        from users.views import get_tokens_for_user
+        tokens = get_tokens_for_user(self._user("principal"))
+        self.assertEqual(self._lifetime_seconds(tokens["access"]), 30 * 60)
+
+    def test_a_token_lifetime_change_takes_effect_on_the_next_refresh(self):
+        """A demoted admin must not keep the long lifetime: refresh reads the
+        account's current role, not the role baked into the old token."""
+        from users.views import get_tokens_for_user
+        user = self._user("school_admin")
+        tokens = get_tokens_for_user(user)
+        user.role = "teacher"
+        user.save(update_fields=["role"])
+
+        refreshed = self.client.post("/api/auth/refresh/", {"refresh": tokens["refresh"]}, format="json")
+
+        self.assertEqual(refreshed.status_code, 200, refreshed.data)
+        self.assertEqual(self._lifetime_seconds(refreshed.data["access"]), 60 * 60)
+
+
 class DocumentSignatureResolutionTests(TestCase):
     """The signature shown on report cards/transcripts/testimonials/ID cards
     must resolve to whichever admin actually uploaded one - even when other
