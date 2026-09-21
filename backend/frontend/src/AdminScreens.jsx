@@ -10870,7 +10870,7 @@ onClick={() => handleThemeSelect("light")}
                 <input value={schoolState} onChange={(event) => setSchoolState(event.target.value)} placeholder="e.g., Lagos State" disabled={!canEdit || isSaving} />
               </label>
               <label className="panel-field">
-                School Email (printed on documents)
+                School Email
                 <input
                   type="email"
                   value={email}
@@ -10878,9 +10878,6 @@ onClick={() => handleThemeSelect("light")}
                   placeholder="info@yourschool.edu"
                   disabled={!canEdit || isSaving}
                 />
-                <small className="field-note">
-                  Shown on report cards, transcripts, testimonials, invoices, payslips, receipts and ID cards. Leave it empty to hide it.
-                </small>
               </label>
               <label className="panel-field">
                 Phone
@@ -10893,6 +10890,9 @@ onClick={() => handleThemeSelect("light")}
                   placeholder="School phone number"
                 />
               </label>
+              <p className="field-note panel-form-note">
+                The school email and phone are printed on report cards, transcripts, testimonials, invoices, payslips, receipts and ID cards. Leave the email empty to hide it.
+              </p>
                         <label className="panel-field full">
                           Address
                           <textarea value={address} onChange={(event) => setAddress(event.target.value)} disabled={!canEdit || isSaving} />
