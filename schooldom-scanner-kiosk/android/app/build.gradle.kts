@@ -6,8 +6,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Release signing (the Topwise key) lives in android/key.properties, which
-// is gitignored - never commit it or the .jks it points to.
+// Release signing lives in android/key.properties, which is gitignored -
+// never commit it or the keystore it points to.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -54,17 +54,21 @@ android {
             enableV4Signing = false
         }
 
-        // Topwise's own shared SDK-distribution signing key (the same one in
-        // their official TopUsdkTestDemo and EmvDemo sample projects). The
-        // Topwise T1 terminal's "topwise verity" install-time check rejects an
-        // APK signed with any other key, debug key included
-        // (INSTALL_PARSE_FAILED_NO_CERTIFICATES), and Android only accepts an
-        // in-place update signed with the SAME key as the installed app - so
-        // releases must always be signed with this one. v1-only with v2 off
-        // mirrors exactly how Topwise's own demo project signs (their firmware
-        // does not support V2 signing). The keystore and its passwords come
-        // from android/key.properties (gitignored - never commit either).
-        create("topwise") {
+        // The key the fleet's installed terminals are signed with. Android only
+        // accepts an in-place update signed with the SAME key as the installed
+        // app (and uninstalling instead would log the school out), so this must
+        // match what is on the terminals - every one checked so far (three
+        // Topwise T1 and a T2N, Android 7 to 11) runs an app signed with the
+        // old PC's Android debug key, so releases are signed with that key: one
+        // APK then updates every model. The keystore and its passwords come from
+        // android/key.properties (gitignored - never commit either).
+        //
+        // v1 + v2 both on: v2 is required by Android 11+ for this targetSdk and
+        // is understood from Android 7, while v3/v4 blocks confuse the older
+        // Topwise terminals' installer. A key whose terminals' firmware cannot
+        // take v2 (Topwise's own shared SDK key - the T1's "topwise verity"
+        // check is fussy about signatures) can set `v2Signing=false` there.
+        create("fleet") {
             if (keystorePropertiesFile.exists()) {
                 storeFile = file(keystoreProperties.getProperty("storeFile"))
                 storePassword = keystoreProperties.getProperty("storePassword")
@@ -72,7 +76,7 @@ android {
                 keyPassword = keystoreProperties.getProperty("keyPassword")
             }
             enableV1Signing = true
-            enableV2Signing = false
+            enableV2Signing = keystoreProperties.getProperty("v2Signing", "true").toBoolean()
             enableV3Signing = false
             enableV4Signing = false
         }
@@ -80,7 +84,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("topwise")
+            signingConfig = signingConfigs.getByName("fleet")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -98,9 +102,10 @@ gradle.taskGraph.whenReady {
     }
     if (releaseBuild && !keystorePropertiesFile.exists()) {
         throw GradleException(
-            "Release builds must be signed with the Topwise key (the terminals reject " +
-                "anything else), but android/key.properties is missing. Restore it, and the " +
-                "topwise.jks it points to, from the backup before building a release."
+            "Release builds must be signed with the key the terminals already carry (they " +
+                "reject an update signed with any other), but android/key.properties is " +
+                "missing. Restore it, and the keystore it points to, from the backup " +
+                "before building a release."
         )
     }
 }
