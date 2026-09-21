@@ -3651,6 +3651,9 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const termOptions = data?.options?.terms || [];
   const broadsheetSchool = resolveSchoolBrand(data?.school, session?.school, session?.user?.school);
   const documentTheme = resolveDocumentTheme(data?.school, session?.school, session?.user?.school);
+  // A Non K-12 school can switch grading off in School Settings; the session's
+  // school (login + every settings save) carries the flag.
+  const gradingEnabled = session?.school?.grading_enabled !== false;
 
   const [activeView, setActiveView] = useState("desktop");
   const [editingExam, setEditingExam] = useState(null);
@@ -4288,9 +4291,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
         <button type="button" className={`table-action ${activeView === "auto-submissions" ? "active" : ""}`} onClick={() => setActiveView("auto-submissions")}>
           Auto Submissions
         </button>
-        <button type="button" className={`table-action ${activeView === "grading-system" ? "active" : ""}`} onClick={() => setActiveView("grading-system")}>
-          Grading System
-        </button>
+        {gradingEnabled ? (
+          <button type="button" className={`table-action ${activeView === "grading-system" ? "active" : ""}`} onClick={() => setActiveView("grading-system")}>
+            Grading System
+          </button>
+        ) : null}
         <button type="button" className={`table-action ${activeView === "theory-grading" ? "active" : ""}`} onClick={() => setActiveView("theory-grading")}>
           Theory Grading
         </button>
@@ -4780,7 +4785,7 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           )}
         </article>
       ) : null}
-      {activeView === "grading-system" ? (
+      {activeView === "grading-system" && gradingEnabled ? (
         <AdminGradingSystemPanel
           onLoad={onLoadGradingScales}
           onSave={onSaveGradingScale}
@@ -8360,6 +8365,8 @@ function TranscriptPreview({ transcript, school, theme }) {
   const student = transcript?.student || {};
   const termRecords = transcript?.term_records || [];
   const cumulative = transcript?.cumulative || {};
+  // Non K-12 schools can switch grading off: scores only, no Grade/GPA.
+  const gradingOn = transcript?.grading_enabled !== false;
   return (
     <article id="schooldom-transcript-document" className="official-document transcript-document" style={themeToCssVars(docTheme)}>
       <OfficialDocHeader school={selectedSchool} title="Official Student Transcript" />
@@ -8375,13 +8382,13 @@ function TranscriptPreview({ transcript, school, theme }) {
         <div><strong>Total Score</strong><span>{cumulative.total_score ?? 0}</span></div>
         <div><strong>Max Score</strong><span>{cumulative.total_max ?? 0}</span></div>
         <div><strong>Average</strong><span>{cumulative.average ?? 0}%</span></div>
-        <div><strong>Grade</strong><span>{cumulative.grade || "-"}</span></div>
-        <div><strong>GPA</strong><span>{cumulative.gpa ?? 0}</span></div>
+        {gradingOn ? <div><strong>Grade</strong><span>{cumulative.grade || "-"}</span></div> : null}
+        {gradingOn ? <div><strong>GPA</strong><span>{cumulative.gpa ?? 0}</span></div> : null}
       </section>
       {termRecords.length ? (
         termRecords.map((record, index) => (
           <section key={`${record.session}-${record.term}-${index}`} className="term-record">
-            <h3>{record.session} - {record.term} - {record.class_name || "Class Record"} (GPA: {record.gpa ?? 0})</h3>
+            <h3>{record.session} - {record.term} - {record.class_name || "Class Record"}{gradingOn ? ` (GPA: ${record.gpa ?? 0})` : ""}</h3>
             <table className="document-table">
               <thead>
                 <tr>
@@ -8389,7 +8396,7 @@ function TranscriptPreview({ transcript, school, theme }) {
                   <th>Score</th>
                   <th>Max</th>
                   <th>%</th>
-                  <th>Grade</th>
+                  {gradingOn ? <th>Grade</th> : null}
                   <th>Remark</th>
                 </tr>
               </thead>
@@ -8400,7 +8407,7 @@ function TranscriptPreview({ transcript, school, theme }) {
                     <td>{subject.score}</td>
                     <td>{subject.max_score}</td>
                     <td>{subject.percentage ?? "-"}</td>
-                    <td>{subject.grade || "-"}</td>
+                    {gradingOn ? <td>{subject.grade || "-"}</td> : null}
                     <td>{subject.remark || "-"}</td>
                   </tr>
                 ))}
@@ -10294,6 +10301,9 @@ function AdminSettingsScreen({
   const [address, setAddress] = useState("");
   const [studentRules, setStudentRules] = useState("");
   const [staffRules, setStaffRules] = useState("");
+  // Letter grades on/off - only Non K-12 schools can turn them off (the
+  // backend enforces this too); K-12 schools never see the switch.
+  const [gradingEnabled, setGradingEnabled] = useState(true);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState("");
   const [academicYearName, setAcademicYearName] = useState("");
@@ -10338,6 +10348,7 @@ function AdminSettingsScreen({
     setAddress(school.address || "");
     setStudentRules((current) => school.student_rules || school.studentRules || current || "");
     setStaffRules((current) => school.staff_rules || school.staffRules || current || "");
+    setGradingEnabled(school.grading_enabled !== false);
     setLogoPreview(school.logo || "");
     setLogoFile(null);
     setAcademicYearName(data?.academic_year?.name || "");
@@ -10349,7 +10360,7 @@ function AdminSettingsScreen({
   }, [
     data?.academic_year?.id, data?.academic_year?.name, data?.academic_year?.start_date, data?.academic_year?.end_date,
     data?.term?.id, data?.term?.name, data?.term?.start_date, data?.term?.end_date,
-    school.address, school.email, school.logo, school.motto, school.name, school.phone,
+    school.address, school.email, school.grading_enabled, school.logo, school.motto, school.name, school.phone,
     school.staffRules, school.staff_rules, school.studentRules, school.student_rules, school.tagline,
   ]);
 
@@ -10388,6 +10399,7 @@ function AdminSettingsScreen({
       address: address.trim(),
       student_rules: studentRules.trim(),
       staff_rules: staffRules.trim(),
+      ...(nonK12 ? { grading_enabled: gradingEnabled } : {}),
       logo: logoFile,
       academic_year_name: academicYearName.trim(),
       academic_year_start_date: academicYearStart,
@@ -10410,7 +10422,7 @@ function AdminSettingsScreen({
       ),
     }),
     [
-      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, country, email, logoFile, motto, name, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
+      academicYearEnd, academicYearName, academicYearStart, activityCalendar, address, country, email, gradingEnabled, logoFile, motto, name, nonK12, phone, schoolState, staffRules, studentRules, termEnd, termName, termStart,
     ]
   );
 
@@ -10725,6 +10737,22 @@ onClick={() => handleThemeSelect("light")}
                             disabled={!canEdit || isSaving}
                           />
                         </label>
+                        {nonK12 ? (
+                          <label className="panel-field full checkbox-field">
+                            <input
+                              type="checkbox"
+                              checked={gradingEnabled}
+                              onChange={(event) => setGradingEnabled(event.target.checked)}
+                              disabled={!canEdit || isSaving}
+                            />
+                            <span>
+                              Use the grading system (letter grades, remarks and GPA)
+                              <small className="field-note">
+                                Turn this off if your school only records scores. Results then show scores only, and the Grading System tab is hidden. Save settings to apply.
+                              </small>
+                            </span>
+                          </label>
+                        ) : null}
                         <label className="panel-field">
                           Academic Year
                           <input value={academicYearName} onChange={(event) => setAcademicYearName(event.target.value)} placeholder="2026/2027" disabled={!canEdit || isSaving} />

@@ -952,6 +952,7 @@ def _school_payload(school, request=None):
         "tagline": getattr(school, "motto", "") or "",
         "student_rules": getattr(school, "student_rules", "") or "",
         "staff_rules": getattr(school, "staff_rules", "") or "",
+        "grading_enabled": school.is_grading_enabled(),
         "logo": _media_url(request, school.logo),
         "favicon": _media_url(request, school.favicon),
         "currency": school.currency,
@@ -1399,10 +1400,13 @@ def _transcript_payload(student_profile, request=None):
     # Grade points (for GPA) come from the same admin-configured GradeScale
     # every other grade in this payload already resolves through - one
     # lookup per tenant, not per subject.
+    # A Non K-12 school with grading switched off shows scores only: no stored
+    # letters/remarks either, since those were saved while grading was on.
+    grading_on = _grading_enabled_for_user(student_profile.user)
     tenant_obj = _tenant_for_model(GradeScale, student_profile.user)
     grade_points_by_letter = (
         {gs.letter: float(gs.grade_point) for gs in GradeScale.objects.filter(tenant=tenant_obj)}
-        if tenant_obj else {}
+        if tenant_obj and grading_on else {}
     )
 
     history_map = {}
@@ -1415,8 +1419,8 @@ def _transcript_payload(student_profile, request=None):
         total_score += score
         total_max += max_score
         percentage = item.percentage
-        grade = item.grade
-        remark = item.performance_remark or item.remarks
+        grade = item.grade if grading_on else ""
+        remark = (item.performance_remark or item.remarks) if grading_on else (item.remarks or "")
         if percentage is not None and not grade:
             grade, remark = _grade_for_percentage(student_profile.user, percentage)
 
@@ -1484,6 +1488,7 @@ def _transcript_payload(student_profile, request=None):
         "school": _school_payload(student_profile.user.tenant, request),
         "student": _student_document_payload(student_profile, request=request),
         "admission_date": student_profile.admission_date,
+        "grading_enabled": grading_on,
         "class_history": class_history,
         "session_history": sorted({group["session"] for group in history if group["session"]}),
         "term_records": history,
@@ -3116,6 +3121,29 @@ _DEFAULT_GRADE_SCALES = [
 ]
 
 
+GRADING_OFF_MESSAGE = "Grading is turned off for this school. Turn it on in School Settings to use grade scales."
+
+
+def _grading_enabled_for_user(user):
+    """False only for a Non K-12 school that turned grading off in School
+    Settings (K-12 schools always grade)."""
+    school = getattr(user, "tenant", None)
+    return school.is_grading_enabled() if school else True
+
+
+def _grading_enabled_for_legacy_tenant(tenant):
+    """Same check for a tenants.Tenant - the model GradeScale hangs off - which
+    is tied to its core.SchoolTenant only by slug == schema_name."""
+    if not tenant:
+        return True
+    school = (
+        SchoolTenant.objects.filter(schema_name__iexact=tenant.slug)
+        .only("school_type", "grading_enabled")
+        .first()
+    )
+    return school.is_grading_enabled() if school else True
+
+
 def _seed_default_grade_scales(tenant_obj):
     if not tenant_obj:
         return
@@ -3133,6 +3161,8 @@ def _seed_default_grade_scales(tenant_obj):
 
 
 def _ensure_default_grade_scales(user):
+    if not _grading_enabled_for_user(user):
+        return GradeScale.objects.none()
     tenant_obj = _tenant_for_model(GradeScale, user)
     if not tenant_obj:
         return GradeScale.objects.none()
@@ -3151,8 +3181,13 @@ def grade_scale_for_percentage(tenant, percentage):
     `tenant` must be a tenants.Tenant instance (GradeScale's actual FK target,
     via TenantAwareModel) - NOT a core.SchoolTenant / user.tenant. Callers
     that only have a user should call _grade_for_percentage(user, percentage)
-    instead, which does that resolution via _tenant_for_model."""
+    instead, which does that resolution via _tenant_for_model.
+
+    A Non K-12 school that has switched grading off gets no letter and no
+    remark - the same "" callers already handle when no band matches."""
     if not tenant:
+        return "", ""
+    if not _grading_enabled_for_legacy_tenant(tenant):
         return "", ""
     _seed_default_grade_scales(tenant)
     grade = GradeScale.objects.filter(
@@ -5338,7 +5373,11 @@ def teacher_dashboard(request):
     announcements = _visible_announcements_for_user(user, now=now)
     # Pre-fetch grade scale once to avoid N+1 in the cbt_results loop below
     _gs_tenant = _tenant_for_model(GradeScale, user)
-    _grade_scales_teacher = list(GradeScale.objects.filter(tenant=_gs_tenant, is_active=True).order_by("-min_percentage"))
+    _grade_scales_teacher = (
+        list(GradeScale.objects.filter(tenant=_gs_tenant, is_active=True).order_by("-min_percentage"))
+        if _grading_enabled_for_user(user)
+        else []
+    )
 
     def _teacher_grade_label(pct):
         for gs in _grade_scales_teacher:
@@ -5469,6 +5508,11 @@ def teacher_dashboard(request):
                     "title": item.title,
                     "priority": item.priority,
                     "published_at": item.publish_from,
+                    # The mobile home cards show a one-line preview; the full
+                    # text stays on the announcements endpoint, so only send
+                    # a bounded slice of it here.
+                    "summary": item.summary or "",
+                    "content": (item.content or "")[:400],
                 }
                 for item in announcements[:4]
             ],
@@ -5999,7 +6043,7 @@ def transcript_detail(request, student_id):
                     return Response({"success": False, "message": "max_score must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
                 score_obj.max_score = max_score
                 update_fields.append("max_score")
-            if "grade" in record:
+            if "grade" in record and _grading_enabled_for_user(user):
                 score_obj.grade = str(record.get("grade") or "").strip()[:5]
                 update_fields.append("grade")
             if "remark" in record or "remarks" in record:
@@ -7780,6 +7824,20 @@ def school_settings(request):
                     setattr(school, field, new_value)
                     update_fields.append(field)
 
+        # Letter grades on/off. Only Non K-12 schools may turn them off;
+        # K-12 schools always grade (saving "on" is a harmless no-op).
+        if "grading_enabled" in request.data:
+            wants_grading = _to_bool(request.data.get("grading_enabled"), default=school.grading_enabled)
+            if school.school_type != SchoolTenant.NON_K12:
+                if not wants_grading:
+                    return Response(
+                        {"success": False, "message": "Only Non K-12 schools can turn the grading system off."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            elif school.grading_enabled != wants_grading:
+                school.grading_enabled = wants_grading
+                update_fields.append("grading_enabled")
+
         logo_file = request.FILES.get("logo")
         if logo_file:
             school.logo = logo_file
@@ -9222,7 +9280,11 @@ def exams_snapshot(request):
     average_percentage = submitted_attempts_qs.aggregate(value=Avg("percentage")).get("value") or 0
     # Pre-fetch grade scale once to avoid N+1 in the submitted_results loop below
     _gs_tenant_admin = _tenant_for_model(GradeScale, user)
-    _grade_scales_admin = list(GradeScale.objects.filter(tenant=_gs_tenant_admin, is_active=True).order_by("-min_percentage"))
+    _grade_scales_admin = (
+        list(GradeScale.objects.filter(tenant=_gs_tenant_admin, is_active=True).order_by("-min_percentage"))
+        if _grading_enabled_for_user(user)
+        else []
+    )
 
     def _admin_grade_label(pct):
         for gs in _grade_scales_admin:
@@ -11875,6 +11937,7 @@ def _student_result_report(student_profile, class_group=None, term=None, request
     if not include_unpublished:
         scores_qs = scores_qs.filter(approval_status=ResultBatch.PUBLISHED)
 
+    grading_on = _grading_enabled_for_user(student_profile.user)
     scores = []
     total_score = 0.0
     teacher_subject_counts = {}
@@ -11891,8 +11954,8 @@ def _student_result_report(student_profile, class_group=None, term=None, request
                 "score": numeric,
                 "max_score": float(item.max_score or 0),
                 "percentage": item.percentage,
-                "grade": item.grade,
-                "performance_remark": item.performance_remark or item.remarks,
+                "grade": item.grade if grading_on else "",
+                "performance_remark": (item.performance_remark or item.remarks) if grading_on else (item.remarks or ""),
                 "approval_status": item.approval_status,
                 "components": {
                     "theory": float(item.theory_score or 0),
@@ -11961,6 +12024,7 @@ def _student_result_report(student_profile, class_group=None, term=None, request
         # admin's copy of this report does, via the same tenant-configured
         # source of truth every other grade in this payload resolves through.
         "grade_scales": [_grade_scale_payload(item) for item in _ensure_default_grade_scales(student_profile.user)],
+        "grading_enabled": grading_on,
     }
 
 
@@ -12253,6 +12317,10 @@ def grading_scales(request):
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response({"success": False, "message": "Only school administrators can manage grading scales."}, status=status.HTTP_403_FORBIDDEN)
+    if not _grading_enabled_for_user(user):
+        if request.method == "POST":
+            return Response({"success": False, "message": GRADING_OFF_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"success": True, "message": GRADING_OFF_MESSAGE, "grading_enabled": False, "grades": []})
     _ensure_default_grade_scales(user)
     tenant_obj = _tenant_for_model(GradeScale, user)
     if request.method == "POST":
@@ -12291,6 +12359,7 @@ def grading_scales(request):
         {
             "success": True,
             "message": message,
+            "grading_enabled": True,
             "grades": [_grade_scale_payload(item) for item in scales],
         }
     )
@@ -12302,6 +12371,8 @@ def grading_scale_detail(request, scale_id):
     user = request.user
     if user.role not in ADMIN_ROLES:
         return Response({"success": False, "message": "Only school administrators can manage grading scales."}, status=status.HTTP_403_FORBIDDEN)
+    if not _grading_enabled_for_user(user):
+        return Response({"success": False, "message": GRADING_OFF_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
     tenant_obj = _tenant_for_model(GradeScale, user)
     scale = get_object_or_404(GradeScale, id=scale_id, tenant=tenant_obj)
     letter = scale.letter
@@ -12385,6 +12456,7 @@ def _result_batch_detail_payload(batch, requesting_user):
         batch.scores.select_related("student__user", "subject")
         .order_by("student__user__first_name", "student__user__last_name", "subject__name")
     )
+    grading_on = _grading_enabled_for_user(requesting_user)
     students_by_id = {}
     order = []
     for item in scores:
@@ -12413,8 +12485,8 @@ def _result_batch_detail_payload(batch, requesting_user):
                 "score": score,
                 "max_score": max_score,
                 "percentage": item.percentage,
-                "grade": item.grade,
-                "remark": item.performance_remark or item.remarks,
+                "grade": item.grade if grading_on else "",
+                "remark": (item.performance_remark or item.remarks) if grading_on else (item.remarks or ""),
                 "components": {
                     "theory": float(item.theory_score or 0),
                     "cbt": float(item.cbt_score or 0),
@@ -12814,13 +12886,14 @@ def _class_broadsheet(class_group, term, user, include_unpublished=False):
     if not include_unpublished:
         scores_qs = scores_qs.filter(approval_status=ResultBatch.PUBLISHED)
 
+    grading_on = _grading_enabled_for_user(user)
     by_student = {}
     for row in scores_qs:
         entry = by_student.setdefault(row.student_id, {"scores": {}, "total": 0.0})
         entry["scores"][row.subject.name] = {
             "score": float(row.score or 0),
             "max_score": float(row.max_score or 0),
-            "grade": row.grade,
+            "grade": row.grade if grading_on else "",
         }
         entry["total"] += float(row.score or 0)
 
@@ -12975,8 +13048,10 @@ def results_snapshot(request):
     if teacher_only:
         scores_qs = scores_qs.filter(teacher=user)
 
+    grading_on = _grading_enabled_for_user(user)
     response_payload = {
         "success": True,
+        "grading_enabled": grading_on,
         "summary": {
             "total_records": scores_qs.count(),
             "students_with_scores": scores_qs.values("student").distinct().count(),
@@ -12992,8 +13067,8 @@ def results_snapshot(request):
                 "score": float(item.score or 0),
                 "max_score": float(item.max_score or 0),
                 "percentage": item.percentage,
-                "grade": item.grade,
-                "remark": item.performance_remark or item.remarks,
+                "grade": item.grade if grading_on else "",
+                "remark": (item.performance_remark or item.remarks) if grading_on else (item.remarks or ""),
                 "approval_status": item.approval_status,
                 "teacher": item.teacher.get_full_name() if item.teacher else "",
             }

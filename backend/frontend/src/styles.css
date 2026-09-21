@@ -18107,6 +18107,9 @@ body[data-theme="dark"] .report-summary-strip > div { background: #0f172a; borde
   margin-bottom: 1.25rem;
 }
 
+/* Grading switched off: no grading key, so the signatures take the full width. */
+.report-key-remarks-grid.no-grade-key { grid-template-columns: 1fr; }
+
 @media (max-width: 720px) {
   .report-key-remarks-grid { grid-template-columns: 1fr; }
 }

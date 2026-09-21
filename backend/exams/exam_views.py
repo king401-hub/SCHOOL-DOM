@@ -391,6 +391,10 @@ def _validate_exam_pin_for_start(request, exam, active_attempt=None):
     return True, pin, ""
 
 
+# Pass mark (percent) for CBT results when the school has grading switched off,
+# so there is no grade scale to derive pass/fail from - see _calculate_grade.
+GRADING_OFF_PASS_MARK = 40
+
 AUTO_SUBMIT_REASON_LABELS = {
     "timer_expired": "Exam timer expired",
     "tab_switch_limit": "Exceeded tab-switching warnings",
@@ -1286,7 +1290,13 @@ class ExamResultView(APIView):
         scale with a separate hardcoded 40% pass mark, independent of
         whatever grading scale the admin actually configured."""
         from academic.models import GradeScale
-        from users.app_views import _grade_for_percentage, _tenant_for_model
+        from users.app_views import _grade_for_percentage, _grading_enabled_for_user, _tenant_for_model
+
+        if not _grading_enabled_for_user(user):
+            # A Non K-12 school with grading switched off has no letters to
+            # derive a pass from, so use the classic 40% pass mark - the same
+            # cut-off as the default scale's failing band.
+            return "", float(percentage or 0) >= GRADING_OFF_PASS_MARK
 
         # _grade_for_percentage resolves `user`'s core.SchoolTenant into the
         # tenants.Tenant GradeScale actually stores its FK against - reuse

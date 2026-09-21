@@ -902,8 +902,10 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
   const activeComponents = REPORT_COMPONENT_COLUMNS.filter(([key]) =>
     scores.some((row) => Number(row.components?.[key]) > 0)
   );
-  // S/N, Subject, [...components], Total, Max, %, Grade, Teacher, Remark
-  const columnCount = 8 + activeComponents.length;
+  // A Non K-12 school can switch grading off: no Grade column, no grading key.
+  const gradingOn = report?.grading_enabled !== false;
+  // S/N, Subject, [...components], Total, Max, %, [Grade], Teacher, Remark
+  const columnCount = (gradingOn ? 8 : 7) + activeComponents.length;
 
   return (
     <div className="report-sheet" id={elementId}>
@@ -962,7 +964,7 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
                 <th className="report-total-col">{activeComponents.length ? "Total" : "Score"}</th>
                 <th>Max</th>
                 <th>%</th>
-                <th>Grade</th>
+                {gradingOn ? <th>Grade</th> : null}
                 <th>Teacher</th>
                 <th>Remark</th>
               </tr>
@@ -979,9 +981,11 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
                     <td className="report-total-col">{tidyReportMark(row.score)}</td>
                     <td>{tidyReportMark(row.max_score)}</td>
                     <td>{row.percentage != null ? `${row.percentage}%` : "-"}</td>
-                    <td>
-                      <span className={`report-grade-badge tone-${gradeTone(row.grade)}`}>{row.grade || "-"}</span>
-                    </td>
+                    {gradingOn ? (
+                      <td>
+                        <span className={`report-grade-badge tone-${gradeTone(row.grade)}`}>{row.grade || "-"}</span>
+                      </td>
+                    ) : null}
                     <td>{row.teacher || "-"}</td>
                     <td>{row.performance_remark || "-"}</td>
                   </tr>
@@ -1002,25 +1006,27 @@ export function ReportCardSheet({ report, gradeScales = [], elementId }) {
           <div><span>Class Position</span><strong>{report?.class_position ? `${report.class_position} / ${report.class_size}` : "N/A"}</strong></div>
         </div>
 
-        <div className="report-key-remarks-grid">
-          <div className="report-grade-key">
-            <h4>Grading Key</h4>
-            {gradeScales.length ? (
-              <table>
-                <tbody>
-                  {gradeScales.map((scale) => (
-                    <tr key={scale.letter}>
-                      <td><span className={`report-grade-badge tone-${gradeTone(scale.letter)}`}>{scale.letter}</span></td>
-                      <td>{scale.min_percentage}&ndash;{scale.max_percentage}%</td>
-                      <td>{scale.remark || ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="report-grade-key-empty">No grading scale configured.</p>
-            )}
-          </div>
+        <div className={`report-key-remarks-grid${gradingOn ? "" : " no-grade-key"}`}>
+          {gradingOn ? (
+            <div className="report-grade-key">
+              <h4>Grading Key</h4>
+              {gradeScales.length ? (
+                <table>
+                  <tbody>
+                    {gradeScales.map((scale) => (
+                      <tr key={scale.letter}>
+                        <td><span className={`report-grade-badge tone-${gradeTone(scale.letter)}`}>{scale.letter}</span></td>
+                        <td>{scale.min_percentage}&ndash;{scale.max_percentage}%</td>
+                        <td>{scale.remark || ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="report-grade-key-empty">No grading scale configured.</p>
+              )}
+            </div>
+          ) : null}
           <div className="report-signature-block">
             <div className="report-signature-line">
               {report?.class_teacher_signature ? <img src={report.class_teacher_signature} alt="Class Teacher's signature" className="doc-signature-img" /> : null}

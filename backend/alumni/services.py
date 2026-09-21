@@ -210,7 +210,9 @@ def _attendance_section(student_profile):
 
 def _academic_section(student_profile, request=None):
     from academic.models import ResultBatch, StudentClassPromotion, StudentSubjectScore
-    from users.app_views import _class_label, _student_result_report
+    from users.app_views import _class_label, _grading_enabled_for_user, _student_result_report
+
+    grading_on = _grading_enabled_for_user(student_profile.user)
 
     # Every score ever recorded, grouped into per-term report cards. Rejected
     # batches are excluded the same way _transcript_payload excludes them.
@@ -251,8 +253,8 @@ def _academic_section(student_profile, request=None):
                 "score": _float(item.score),
                 "max_score": _float(item.max_score),
                 "percentage": item.percentage,
-                "grade": item.grade,
-                "remark": item.performance_remark or item.remarks,
+                "grade": item.grade if grading_on else "",
+                "remark": (item.performance_remark or item.remarks) if grading_on else (item.remarks or ""),
                 "status": item.approval_status,
                 "teacher": item.teacher.get_full_name() if item.teacher_id else "",
                 "components": {

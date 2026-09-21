@@ -41,6 +41,10 @@ class SchoolTenant(models.Model):
     schema_name = models.CharField(max_length=63, unique=True)
     created_on = models.DateField(auto_now_add=True)
     school_type = models.CharField(max_length=20, choices=SCHOOL_TYPE_CHOICES, default=K12)
+    # Letter grades / the grading scale. Non K-12 schools (vocational and
+    # tutorial colleges, ...) can switch them off in School Settings; always
+    # read it through is_grading_enabled(), which keeps K-12 schools on.
+    grading_enabled = models.BooleanField(default=True)
     school_group = models.ForeignKey(
         SchoolGroup,
         on_delete=models.SET_NULL,
@@ -205,6 +209,11 @@ class SchoolTenant(models.Model):
         compliance_deadline_reference()'s fallback to created_on."""
         elapsed = (django_timezone.now() - self.compliance_deadline_reference()).days
         return max(30 - elapsed, 0)
+
+    def is_grading_enabled(self):
+        """Whether this school uses letter grades. Always True for K-12 -
+        only a Non K-12 school can turn grading off."""
+        return self.school_type != self.NON_K12 or bool(self.grading_enabled)
 
     def is_feature_enabled(self, feature_code):
         """Check if a feature is enabled for this school.

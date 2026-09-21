@@ -1404,6 +1404,26 @@ class TeacherDashboardAPITests(TestCase):
         self.assertTrue(any(item["id"] == self.classroom.id for item in response.data["options"]["classes"]))
         self.assertTrue(any(item["id"] == self.subject.id for item in response.data["options"]["subjects"]))
 
+    def test_teacher_dashboard_announcements_carry_a_bounded_preview(self):
+        Announcement.objects.create(
+            tenant=self.school,
+            title="Staff meeting moved",
+            slug="staff-meeting-moved-20260920",
+            summary="Now on Friday",
+            content="x" * 1000,
+            author=self.admin_user,
+            audience_type="all",
+            is_published=True,
+        )
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get("/api/app/teacher/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        item = next(a for a in response.data["announcements"] if a["title"] == "Staff meeting moved")
+        self.assertEqual(item["summary"], "Now on Friday")
+        # The body is trimmed so a long announcement can't bloat the dashboard payload.
+        self.assertEqual(len(item["content"]), 400)
+
     def test_non_teacher_cannot_access_teacher_dashboard(self):
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.get("/api/app/teacher/dashboard/")
@@ -2422,6 +2442,165 @@ class TranscriptGpaTests(TestCase):
         self.assertEqual(payload["cumulative"]["gpa"], 4.5)
         self.assertEqual(len(payload["term_records"]), 1)
         self.assertEqual(payload["term_records"][0]["gpa"], 4.5)
+
+
+class GradingToggleTests(TestCase):
+    """A Non K-12 school can switch the grading system off in School Settings:
+    no letters/remarks anywhere (even ones saved while it was on), no grade
+    scale to manage, and CBT pass/fail falls back to a 40% pass mark. K-12
+    schools always grade."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()  # IdempotencyMiddleware replays identical PATCH/POST bodies
+
+        self.school = SchoolTenant.objects.create(
+            name="Tutorial College", schema_name="tutorial_college_toggle", is_active=True,
+            school_type=SchoolTenant.NON_K12,
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@tutorial-toggle.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.teacher_user = User.objects.create_user(
+            email="teacher@tutorial-toggle.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="Batch 1", section="A")
+        self.term = Term.objects.create(tenant=self.legacy_tenant, name="First Term", start_date=timezone.localdate(), end_date=timezone.localdate())
+        self.math = Subject.objects.create(tenant=self.legacy_tenant, name="Mathematics", code="MATH")
+        student_user = User.objects.create_user(
+            email="student@tutorial-toggle.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="TOG001", admission_number="ADM-TOG-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        # Saved while grading was on: the letter and remark are already stored.
+        StudentSubjectScore.objects.create(
+            student=self.student, subject=self.math, class_group=self.school_class, term=self.term,
+            score=Decimal("80.00"), max_score=Decimal("100.00"), grade="A", performance_remark="Excellent",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _set_grading(self, enabled):
+        return self.client.patch("/api/app/school/settings/", data={"grading_enabled": enabled}, format="json")
+
+    def test_non_k12_admin_can_turn_grading_off_and_back_on(self):
+        response = self._set_grading(False)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["school"]["grading_enabled"])
+        self.school.refresh_from_db()
+        self.assertFalse(self.school.grading_enabled)
+
+        response = self._set_grading(True)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["school"]["grading_enabled"])
+        self.school.refresh_from_db()
+        self.assertTrue(self.school.grading_enabled)
+
+    def test_k12_school_cannot_turn_grading_off(self):
+        k12 = SchoolTenant.objects.create(name="K12 Toggle School", schema_name="k12_toggle_school", is_active=True)
+        k12_admin = User.objects.create_user(
+            email="admin@k12-toggle.edu", password="AdminPass123", role="school_admin",
+            tenant=k12, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=k12_admin)
+
+        response = self._set_grading(False)
+        self.assertEqual(response.status_code, 400)
+        k12.refresh_from_db()
+        self.assertTrue(k12.grading_enabled)
+
+        # Saving "on" is a harmless no-op, so a settings form can always send it.
+        self.assertEqual(self._set_grading(True).status_code, 200)
+
+    def test_k12_school_keeps_grading_even_if_the_flag_is_somehow_false(self):
+        from users.app_views import grade_scale_for_percentage
+        k12 = SchoolTenant.objects.create(name="K12 Flag School", schema_name="k12_flag_school", is_active=True)
+        k12_legacy = Tenant.objects.create(name=k12.name, slug=k12.schema_name)
+        SchoolTenant.objects.filter(pk=k12.pk).update(grading_enabled=False)
+
+        self.assertEqual(grade_scale_for_percentage(k12_legacy, 85)[0], "A")
+
+    def test_only_school_admins_can_change_the_setting(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        self.assertEqual(self._set_grading(False).status_code, 403)
+        self.school.refresh_from_db()
+        self.assertTrue(self.school.grading_enabled)
+
+    def test_grading_off_gives_no_letters_or_remarks_even_for_saved_scores(self):
+        from users.app_views import grade_scale_for_percentage
+        self.assertEqual(grade_scale_for_percentage(self.legacy_tenant, 85), ("A", "Excellent"))
+        self.assertEqual(_transcript_payload(self.student)["cumulative"]["grade"], "A")
+
+        self.assertEqual(self._set_grading(False).status_code, 200)
+
+        self.assertEqual(grade_scale_for_percentage(self.legacy_tenant, 85), ("", ""))
+        transcript = _transcript_payload(self.student)
+        self.assertFalse(transcript["grading_enabled"])
+        self.assertEqual(transcript["cumulative"]["grade"], "")
+        self.assertEqual(transcript["cumulative"]["gpa"], 0.0)
+        subject = transcript["term_records"][0]["subjects"][0]
+        self.assertEqual((subject["grade"], subject["remark"]), ("", ""))
+        self.assertEqual(subject["score"], 80.0)  # the score itself is untouched
+
+        results = self.client.get("/api/app/results/")
+        self.assertEqual(results.status_code, 200)
+        self.assertFalse(results.data["grading_enabled"])
+        row = results.data["results"][0]
+        self.assertEqual((row["grade"], row["remark"]), ("", ""))
+        self.assertEqual(results.data["grade_scales"], [])
+
+    def test_turning_grading_back_on_brings_the_letters_back(self):
+        from users.app_views import grade_scale_for_percentage
+        self._set_grading(False)
+        self._set_grading(True)
+
+        self.assertEqual(grade_scale_for_percentage(self.legacy_tenant, 85), ("A", "Excellent"))
+        row = self.client.get("/api/app/results/").data["results"][0]
+        self.assertEqual((row["grade"], row["remark"]), ("A", "Excellent"))
+
+    def test_grade_scale_endpoints_refuse_changes_while_grading_is_off(self):
+        existing = GradeScale.objects.create(
+            tenant=self.legacy_tenant, letter="Z", min_percentage=0, max_percentage=1,
+            remark="Existing", grade_point=Decimal("0.00"),
+        )
+        self._set_grading(False)
+
+        listing = self.client.get("/api/app/results/grades/")
+        self.assertEqual(listing.status_code, 200)
+        self.assertFalse(listing.data["grading_enabled"])
+        self.assertEqual(listing.data["grades"], [])
+
+        create = self.client.post(
+            "/api/app/results/grades/",
+            data={"letter": "Q", "min_percentage": "0", "max_percentage": "1", "grade_point": "0"},
+            format="json",
+        )
+        self.assertEqual(create.status_code, 403)
+        self.assertFalse(GradeScale.objects.filter(tenant=self.legacy_tenant, letter="Q").exists())
+
+        self.assertEqual(self.client.delete(f"/api/app/results/grades/{existing.id}/").status_code, 403)
+        self.assertTrue(GradeScale.objects.filter(id=existing.id).exists())
+
+    def test_cbt_pass_mark_falls_back_to_40_percent_while_grading_is_off(self):
+        from exams.exam_views import ExamResultView
+        view = ExamResultView()
+        self._set_grading(False)
+
+        self.assertEqual(view._calculate_grade(self.admin_user, 55), ("", True))
+        self.assertEqual(view._calculate_grade(self.admin_user, 40), ("", True))
+        self.assertEqual(view._calculate_grade(self.admin_user, 39), ("", False))
+
+        self._set_grading(True)
+        letter, passed = view._calculate_grade(self.admin_user, 85)
+        self.assertEqual(letter, "A")
+        self.assertTrue(passed)
 
 
 class DocumentSignatureResolutionTests(TestCase):
