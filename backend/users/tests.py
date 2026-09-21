@@ -2767,9 +2767,9 @@ class ClassReportCardSmsTests(TestCase):
         self.assertEqual(self._balance(), 10)
 
     def test_a_request_may_carry_only_a_small_batch(self):
-        response = self._send([self.ada] * 21)
+        response = self._send([self.ada] * 11)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("at most 20", response.data["message"])
+        self.assertIn("at most 10", response.data["message"])
 
     def test_nothing_selected_is_refused(self):
         self.assertEqual(self._send([]).status_code, 400)

@@ -11855,7 +11855,7 @@ const REPORT_CARD_SMS_STATE_LABELS = {
 function ClassReportCardSmsPanel({ onLoadRecipients, onSendBatch, onFinished }) {
   const [options, setOptions] = useState({ classes: [], terms: [] });
   const [balance, setBalance] = useState(null);
-  const [maxBatch, setMaxBatch] = useState(20);
+  const [maxBatch, setMaxBatch] = useState(10);
   const [classId, setClassId] = useState("");
   const [termId, setTermId] = useState("");
   const [students, setStudents] = useState([]);
@@ -11874,7 +11874,7 @@ function ClassReportCardSmsPanel({ onLoadRecipients, onSendBatch, onFinished }) 
         if (cancelled || !result) return;
         setOptions(result.options || { classes: [], terms: [] });
         setBalance(result.wallet?.balance ?? null);
-        setMaxBatch(result.max_batch || 20);
+        setMaxBatch(result.max_batch || 10);
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err.message || "Could not load classes.");

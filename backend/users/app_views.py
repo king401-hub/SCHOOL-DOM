@@ -13346,9 +13346,10 @@ def _report_card_sms_phone(student_profile):
 
 
 # Each SMS is a live request to the SMS provider, so one request only carries a
-# small batch (the page sends a class in chunks) - a whole class in a single
-# request could outlast the web server's timeout.
-REPORT_CARD_SMS_MAX_BATCH = 20
+# small batch (the page sends a class in chunks) - a bigger one could outlast
+# nginx's ~60s proxy timeout when the provider is slow, leaving messages sent
+# and charged but the page showing an error.
+REPORT_CARD_SMS_MAX_BATCH = 10
 
 
 @api_view(["GET"])
