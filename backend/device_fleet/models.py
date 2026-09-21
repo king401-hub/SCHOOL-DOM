@@ -251,6 +251,10 @@ class DeviceAuditLog(models.Model):
         ordering = ['-created_at']
         indexes = [models.Index(fields=['device', '-created_at'])]
 
+    def __str__(self):
+        who = self.actor.get_full_name() if self.actor else 'System'
+        return f'{self.action} - {who}'
+
 
 class AppRelease(models.Model):
     """A published build of a fleet app (currently only the scanner kiosk),
@@ -288,7 +292,3 @@ class AppRelease(models.Model):
 
     def __str__(self):
         return f'{self.get_app_display()} {self.version_name} ({self.version_code})'
-
-    def __str__(self):
-        who = self.actor.get_full_name() if self.actor else 'System'
-        return f'{self.action} - {who}'
