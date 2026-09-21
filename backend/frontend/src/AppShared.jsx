@@ -1253,6 +1253,9 @@ const CANVAS_UNSAFE_FONT_FALLBACK = {
   "JetBrains Mono": "Consolas",
 };
 
+// Pixel density of the exported canvas (2x keeps text crisp when zoomed).
+const CANVAS_SCALE = 2;
+
 /** Rasterizes the given element (via an SVG foreignObject -> canvas, no
  * external library) into an in-memory <canvas>, styled with the same
  * documentStylesForExport(theme) used by print output. Shared by both the
@@ -1269,8 +1272,25 @@ async function renderPrintableElementToCanvas(elementId, title, theme) {
   const clone = element.cloneNode(true);
   clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
   await inlineImagesAsDataUrls(clone);
+  // A horizontally scrolling container (the report card's subject table when a
+  // school uses every score column) would be rasterized as a clipped box with a
+  // scrollbar drawn into the page and its last columns cut off. Instead let it
+  // show everything and give the whole page the extra width it needs. The
+  // clone has the same structure as the live element, so nodes pair by index.
+  let extraWidth = 0;
+  const liveNodes = Array.from(element.querySelectorAll("*"));
+  const cloneNodes = Array.from(clone.querySelectorAll("*"));
+  liveNodes.forEach((node, index) => {
+    const overflowX = window.getComputedStyle(node).overflowX;
+    if ((overflowX === "auto" || overflowX === "scroll") && node.scrollWidth > node.clientWidth + 1) {
+      extraWidth = Math.max(extraWidth, node.scrollWidth - node.clientWidth);
+      if (cloneNodes[index]) {
+        cloneNodes[index].style.overflow = "visible";
+      }
+    }
+  });
   const rect = element.getBoundingClientRect();
-  const width = Math.max(850, Math.ceil(rect.width || element.scrollWidth || 850));
+  const width = Math.max(850, Math.ceil(rect.width || element.scrollWidth || 850)) + Math.min(extraWidth, 1200);
   const height = Math.max(1100, Math.ceil(element.scrollHeight || rect.height || 1100));
   // clone.outerHTML serializes void elements (<img>, <br>, ...) HTML5-style,
   // with no self-closing slash - invalid XML. Since this markup gets
@@ -1281,33 +1301,39 @@ async function renderPrintableElementToCanvas(elementId, title, theme) {
   const serializedClone = new XMLSerializer().serializeToString(clone);
   const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;background:#ffffff;">${serializedClone}</div>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><style>${documentStylesForExport(canvasSafeTheme)}</style>${html}</foreignObject></svg>`;
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  // Loaded as a data: URL, not a blob: URL. Current Chromium (Chrome / Edge)
+  // marks the canvas as tainted after drawing a foreignObject SVG that came
+  // from a blob: URL, so toDataURL()/toBlob() threw "Tainted canvases may not
+  // be exported" for every document - report cards, invoices, CBT scripts,
+  // even a one-word test page - while the same SVG as a data: URL is fine.
+  const svgUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error(`Could not render ${title || "document"}.`));
+    reader.readAsDataURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  });
   const image = new Image();
-  try {
-    const canvas = await new Promise((resolve, reject) => {
-      image.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          const scale = 2;
-          canvas.width = width * scale;
-          canvas.height = height * scale;
-          const context = canvas.getContext("2d");
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          context.scale(scale, scale);
-          context.drawImage(image, 0, 0);
-          resolve(canvas);
-        } catch (renderError) {
-          reject(renderError);
-        }
-      };
-      image.onerror = () => reject(new Error(`Could not render ${title || "document"}.`));
-      image.src = svgUrl;
-    });
-    return { canvas, width, height };
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
+  const canvas = await new Promise((resolve, reject) => {
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const scale = CANVAS_SCALE;
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.scale(scale, scale);
+        context.drawImage(image, 0, 0);
+        resolve(canvas);
+      } catch (renderError) {
+        reject(renderError);
+      }
+    };
+    image.onerror = () => reject(new Error(`Could not render ${title || "document"}.`));
+    image.src = svgUrl;
+  });
+  return { canvas, width, height };
 }
 
 export async function downloadPrintablePng(elementId, filename, title, theme) {
@@ -1335,15 +1361,64 @@ export async function downloadPrintablePng(elementId, filename, title, theme) {
  * loaded on demand so it never adds weight to the main bundle for the
  * common case where a user never clicks "Download as PDF". */
 export async function downloadPrintablePdf(elementId, filename, title, theme) {
-  const { canvas, width, height } = await renderPrintableElementToCanvas(elementId, title, theme);
+  const { canvas: fullCanvas, width } = await renderPrintableElementToCanvas(elementId, title, theme);
+  // The render enforces a minimum page height, so a short document (a report
+  // card with a couple of subjects) would end with a third of the page blank.
+  // Crop to the last inked row instead - pixel based, so it can never clip
+  // real content.
+  const canvas = trimBottomWhitespace(fullCanvas);
+  const height = canvas.height / CANVAS_SCALE;
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({
     orientation: width > height ? "landscape" : "portrait",
     unit: "pt",
     format: [width, height],
+    compress: true,
   });
-  doc.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, width, height);
+  // The "FAST" flate pass matters: jsPDF stores a PNG's raw pixels when no
+  // compression is asked for, which made a one-page report card ~13 MB.
+  doc.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, width, height, undefined, "FAST");
   doc.save(filename);
+}
+
+/** Returns the canvas cropped to its last non-white row plus a margin (at
+ * least MIN_PDF_HEIGHT css px tall). Returns the original if it is already
+ * tight or unreadable. */
+function trimBottomWhitespace(canvas, marginCssPx = 28) {
+  const MIN_PDF_HEIGHT = 400;
+  try {
+    const context = canvas.getContext("2d");
+    const { width: pixelWidth, height: pixelHeight } = canvas;
+    const rowsPerRead = 32;
+    let lastInkRow = -1;
+    for (let end = pixelHeight; end > 0 && lastInkRow < 0; end -= rowsPerRead) {
+      const start = Math.max(0, end - rowsPerRead);
+      const { data } = context.getImageData(0, start, pixelWidth, end - start);
+      for (let row = end - start - 1; row >= 0 && lastInkRow < 0; row -= 1) {
+        const rowOffset = row * pixelWidth * 4;
+        for (let x = 0; x < pixelWidth; x += 1) {
+          const i = rowOffset + x * 4;
+          if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) {
+            lastInkRow = start + row;
+            break;
+          }
+        }
+      }
+    }
+    if (lastInkRow < 0) return canvas;
+    const targetHeight = Math.min(
+      pixelHeight,
+      Math.max(MIN_PDF_HEIGHT * CANVAS_SCALE, lastInkRow + 1 + marginCssPx * CANVAS_SCALE)
+    );
+    if (targetHeight >= pixelHeight) return canvas;
+    const cropped = document.createElement("canvas");
+    cropped.width = pixelWidth;
+    cropped.height = targetHeight;
+    cropped.getContext("2d").drawImage(canvas, 0, 0, pixelWidth, targetHeight, 0, 0, pixelWidth, targetHeight);
+    return cropped;
+  } catch {
+    return canvas;
+  }
 }
 
 export function academicGroupLabels(...sources) {

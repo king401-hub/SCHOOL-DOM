@@ -736,6 +736,12 @@ function StudentDashboard({
   const [reportError, setReportError] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportPdfBusy, setReportPdfBusy] = useState(false);
+  const [reportPdfError, setReportPdfError] = useState("");
+  // Set by the one-click "Download PDF" button: the PDF is captured from the
+  // rendered report card, so when the report isn't on screen yet the download
+  // has to wait until it has loaded and drawn (see the effect below).
+  const [reportPdfRequested, setReportPdfRequested] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   // Lets CSS hide the floating accent / AI / bell buttons while the phone
   // drawer is open (they otherwise sit on top of it).
@@ -853,6 +859,54 @@ function StudentDashboard({
       setReportLoading(false);
     }
   };
+
+  const reportHasScores = Boolean(reportCard?.scores?.length);
+
+  const handleDownloadReportPdf = async () => {
+    setReportPdfBusy(true);
+    setReportPdfError("");
+    try {
+      await downloadPrintablePdf(
+        "student-dashboard-report-card-image",
+        `report-card-${reportCard?.student?.student_id || student.student_id || "student"}.pdf`,
+        "Report Card",
+        resolveDocumentTheme(reportCard?.school, dashboardData.school, session?.school)
+      );
+    } catch (pdfError) {
+      setReportPdfError(pdfError.message || "Could not generate the report card PDF.");
+    } finally {
+      setReportPdfBusy(false);
+    }
+  };
+
+  // One-click download from the Exams panel: use the report if it is already
+  // loaded, otherwise load it first, then download once it has rendered.
+  const handleResultsPdfClick = () => {
+    if (reportPdfBusy || reportLoading || (!onCheckResults && !reportCard)) {
+      return;
+    }
+    setReportPdfError("");
+    setReportPdfRequested(true);
+    setReportOpen(true);
+    if (!reportCard) {
+      handleResultsClick();
+    }
+  };
+
+  useEffect(() => {
+    if (!reportPdfRequested || reportLoading) {
+      return;
+    }
+    if (reportOpen && reportHasScores) {
+      setReportPdfRequested(false);
+      handleDownloadReportPdf();
+    } else if (reportError || reportCard) {
+      // Loaded, but there is nothing to print - the report panel already says
+      // why ("No subjects have been scored yet" / the load error).
+      setReportPdfRequested(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportPdfRequested, reportLoading, reportOpen, reportHasScores, reportError, reportCard]);
 
   const statCards = [
     {
@@ -1347,6 +1401,15 @@ function StudentDashboard({
             <button className="student-link-btn" type="button" onClick={handleResultsClick} disabled={reportLoading}>
               {reportLoading ? <><Spinner size={12} /> Loading...</> : "Check results"}
             </button>
+            <button
+              className="student-link-btn"
+              type="button"
+              onClick={handleResultsPdfClick}
+              disabled={reportLoading || reportPdfBusy}
+              title="Download your results as a PDF"
+            >
+              {reportPdfBusy ? <><Spinner size={12} /> Preparing PDF...</> : "Download PDF"}
+            </button>
             <button className="student-link-btn" type="button" onClick={() => go("/exams")}>
               View all
             </button>
@@ -1388,6 +1451,11 @@ function StudentDashboard({
                 </p>
               </div>
               <div>
+                {reportHasScores ? (
+                  <button className="student-link-btn" type="button" onClick={handleDownloadReportPdf} disabled={reportPdfBusy || reportLoading}>
+                    {reportPdfBusy ? <><Spinner size={12} /> Preparing PDF...</> : "Download PDF"}
+                  </button>
+                ) : null}
                 <button className="student-link-btn" type="button" onClick={handleResultsClick} disabled={reportLoading}>
                   {reportLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
                 </button>
@@ -1396,6 +1464,7 @@ function StudentDashboard({
                 </button>
               </div>
             </div>
+            {reportPdfError ? <p className="form-feedback error">{reportPdfError}</p> : null}
             {reportLoading ? (
               <p className="panel-empty">Loading your report...</p>
             ) : reportError ? (
