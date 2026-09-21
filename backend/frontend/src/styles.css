@@ -6183,8 +6183,8 @@ body[data-theme="light"] .academic-planning-panel {
 .teacher-workspace {
   gap: 0.85rem;
   /* Used to reserve 5.75rem (6.5rem on phones) for a bottom tab bar that no
-     longer exists, which left a ~100px blank strip under the Home tab. */
-  padding-bottom: 1rem;
+     longer exists, but only on the Home tab. Bottom spacing for the floating
+     buttons now lives on .teacher-workspace-main so every tab gets it. */
 }
 
 /* .dashboard-page/.dashboard-shell (below, ~line 11381) are shared by
@@ -8005,9 +8005,12 @@ body[data-theme="dark"] .rank-badge-silver { background: rgba(148, 163, 184, 0.1
 body[data-theme="dark"] .rank-badge-bronze { background: rgba(234, 88, 12, 0.2); color: #fdba74; }
 body[data-theme="dark"] .rank-badge-plain { background: rgba(148, 163, 184, 0.12); color: #94a3b8; }
 
+/* Search box and select sit side by side only when there is room; the old
+   fixed minmax(180px) + minmax(260px) columns were wider than the form card
+   and pushed the select out past the card's edge. */
 .teacher-results .student-picker-field {
   grid-column: span 2;
-  grid-template-columns: minmax(180px, 0.55fr) minmax(260px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   align-items: end;
 }
 
@@ -8075,9 +8078,14 @@ body[data-theme="dark"] .rank-badge-plain { background: rgba(148, 163, 184, 0.12
   font-weight: 500;
 }
 
+/* One equal-width column per button. This used to be a fixed
+   repeat(2, ...) grid, so a third button (e.g. All / Past / Upcoming on My
+   Exams) wrapped onto a second row inside a tiny box. */
 .segmented-control {
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   border: 1px solid #cbd7e6;
   border-radius: 10px;
   background: #eff6ff;
@@ -8811,7 +8819,8 @@ body[data-theme="dark"] .finance-table-count {
 .chat-thread-preview {
   display: block;
   font-size: 0.72rem;
-  color: #475569;
+  /* was #475569 (about 2.4:1 on the dark thread list) */
+  color: #94a3b8;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -26315,12 +26324,17 @@ body[data-theme="dark"] .cbt-session-list button.active {
     left: 0 !important;
     bottom: 0 !important;
     z-index: 1005 !important;
-    display: grid !important;
-    grid-template-rows: auto 1fr auto !important;
+    /* flex column, not the old "grid-template-rows: auto 1fr auto": the
+       student sidebar has 3 children without the page search and 5 with it,
+       so a fixed 3-row template put the 1fr on the search box and stretched
+       it on tall phones. The footer already has margin-top: auto. */
+    display: flex !important;
+    flex-direction: column !important;
     gap: 1rem !important;
     width: min(82vw, 310px) !important;
     height: 100vh !important;
-    min-height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
     border-radius: 0 20px 20px 0 !important;
     padding: 1rem !important;
     background: #0f172a !important;
@@ -27936,4 +27950,324 @@ body[data-theme="dark"] .document-theme-preview-scroll { background: #0b1220; }
 body[data-theme="dark"] .document-theme-preview-note { color: #94a3b8; }
 @media (max-width: 860px) {
   .document-theme-layout { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TEACHER DASHBOARD - fixes found by reviewing the running app
+   (kept together at the end so the cascade order is obvious)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Metric cards: the base label uses overflow-wrap: anywhere, which lets the
+   label collapse to a single letter and break mid-word ("ASSESSMEN / TS")
+   once six cards share a row. Wider minimum card + break-word fixes both. */
+.teacher-dashboard .metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.teacher-dashboard .metric-label {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* When a card is narrow (six across a laptop, two across a phone) put the icon
+   above the label instead of beside it, so the label gets the card's full
+   width and a long word like "ASSESSMENTS" never has to break. */
+.teacher-dashboard .metric-card {
+  container-type: inline-size;
+}
+
+@container (max-width: 200px) {
+  .teacher-dashboard .metric-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+}
+
+/* ".panel-sub" had no rule, so the subtitle under a panel heading rendered as
+   full-size body text. */
+.teacher-dashboard .panel-sub {
+  margin: 0.2rem 0 0.85rem;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+/* Grid items default to min-width: auto, so one wide child (the timetable's
+   720px table) stretched the whole tab - hero included - past the screen on
+   phones. */
+.teacher-dashboard > *,
+.workspace-timetable {
+  min-width: 0;
+}
+
+/* Room below every tab so the last row of content can scroll clear of the
+   floating AI / accent buttons instead of sitting under them. */
+.teacher-workspace-main {
+  padding-bottom: 4.5rem;
+}
+
+/* Sidebar: scroll cue + a little tighter so all 11 links fit on more screens.
+   The four gradients are the classic "scroll shadow": the two solid ones are
+   attached to the content (they cover the shadows at the ends of the list) and
+   the two radial ones stay put, so a glow only shows on an edge that has more
+   links beyond it. */
+.teacher-sidebar {
+  --teacher-sb-bg: #172238;
+}
+
+body[data-theme="dark"] .teacher-sidebar {
+  --teacher-sb-bg: #0f172a;
+}
+
+.teacher-sidebar-nav {
+  gap: 0.3rem;
+  background-image:
+    linear-gradient(var(--teacher-sb-bg), var(--teacher-sb-bg)),
+    linear-gradient(var(--teacher-sb-bg), var(--teacher-sb-bg)),
+    radial-gradient(farthest-side at 50% 0, rgba(147, 197, 253, 0.32), rgba(147, 197, 253, 0)),
+    radial-gradient(farthest-side at 50% 100%, rgba(147, 197, 253, 0.32), rgba(147, 197, 253, 0));
+  background-position: top, bottom, top, bottom;
+  background-size: 100% 22px, 100% 22px, 100% 12px, 100% 12px;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+.teacher-sidebar-nav button {
+  min-height: 40px;
+}
+
+/* Desktop / tablet: the fixed "Notifications" pill (top-right, above every
+   tab) sat on top of page headers - it cut into the Exam Builder's Save Draft
+   button. Make it a compact icon button and leave a strip for it. */
+@media (min-width: 560px) {
+  .teacher-workspace-main {
+    padding-top: 2.4rem;
+  }
+
+  body[data-dashboard-role="teacher"] .global-notification-shell:not(.has-mobile-position) {
+    top: 0.5rem;
+    right: 0.75rem;
+  }
+
+  body[data-dashboard-role="teacher"] .global-notification-button {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-radius: 999px;
+    justify-content: center;
+  }
+
+  body[data-dashboard-role="teacher"] .global-notification-button > span {
+    display: none;
+  }
+
+  body[data-dashboard-role="teacher"] .global-notification-button .notification-badge {
+    position: absolute;
+    top: -0.35rem;
+    right: -0.35rem;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    font-size: 0.62rem;
+    padding: 0 0.25rem;
+  }
+}
+
+/* Phones. */
+@media (max-width: 559px) {
+  /* The bell used to sit on top of the menu bar's hamburger icon (top-left).
+     Park it at the bar's right end instead, unless the user dragged it. */
+  body[data-dashboard-role="teacher"] .global-notification-shell:not(.has-mobile-position) {
+    top: 0.65rem;
+    left: auto;
+    right: 0.7rem;
+    justify-items: end;
+  }
+
+  body[data-dashboard-role="teacher"] .teacher-sidebar-toggle {
+    padding-right: 3.6rem;
+  }
+
+  /* The bar hides itself 2s after load / when scrolling, and used to vanish
+     completely - leaving no way to open the menu. Collapse it to a round
+     menu button instead. (Extra [data-theme] outranks the !important hide rule
+     in the mobile block earlier in this file.) */
+  body[data-theme][data-dashboard-role="teacher"].mobile-toggle-hidden .teacher-workspace-shell:not(.nav-open) .teacher-sidebar-toggle {
+    transform: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    right: auto !important;
+    width: 44px;
+    min-height: 44px;
+    padding: 0 !important;
+    justify-content: center;
+    gap: 0;
+  }
+
+  body[data-theme][data-dashboard-role="teacher"].mobile-toggle-hidden .teacher-workspace-shell:not(.nav-open) .teacher-sidebar-toggle > span:not(.menu-bars) {
+    display: none;
+  }
+
+  /* The accent / AI / bell buttons float above the drawer (z-index 1200-1300
+     vs the drawer's 1005) and covered its header and Sign out button. */
+  body.teacher-nav-open .accent-picker-shell,
+  body.teacher-nav-open .ai-chat-shell,
+  body.teacher-nav-open .global-notification-shell,
+  body.student-nav-open .accent-picker-shell,
+  body.student-nav-open .ai-chat-shell,
+  body.student-nav-open .global-notification-shell {
+    visibility: hidden;
+  }
+
+  /* Sits under a fixed drawer that already has the .teacher-sidebar rules. */
+  .teacher-sidebar {
+    --teacher-sb-bg: #0f172a;
+  }
+}
+
+/* Tap attendance. */
+.swipe-attendance-page {
+  /* nested inside the tab's own .screen-grid, so its padding doubled up and
+     pushed this block 14px in from the banner and scanner above and below */
+  padding: 0;
+}
+
+.swipe-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+
+/* Present / Late / Excused / Absent used to be one green (Absent red), so
+   Late and Excused looked like Present. */
+.swipe-actions button {
+  background: #15803d;
+}
+
+.swipe-actions button.swipe-late {
+  background: #b45309;
+}
+
+.swipe-actions button.swipe-excused {
+  background: #1d4ed8;
+}
+
+.swipe-actions button.swipe-absent {
+  background: #dc2626;
+}
+
+.swipe-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* My Exams: the stat grid shares .exam-review-grid with the exam builder,
+   whose 24px padding inset these cards from the panel's own edges. */
+.teacher-past-exams-panel .exam-review-grid {
+  padding: 0;
+  margin: 0.25rem 0 1rem;
+}
+
+.teacher-past-exams-panel > .student-panel-head {
+  justify-content: flex-end;
+}
+
+/* Lesson plans + notepad: the notepad's own breakpoint is the viewport's, but
+   it lives in a ~390px column on a laptop, leaving the editor ~150px wide
+   (a placeholder wrapped one word per line). Stack the two columns whenever
+   the panel itself is narrow. */
+.academic-planning-panel {
+  container-type: inline-size;
+  container-name: planning-panel;
+}
+
+@container planning-panel (max-width: 1100px) {
+  .academic-planning-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Exam builder on tablets / phones: the dark left nav and the tab bar under it
+   list the same five sections, so drop the nav and keep the sidebar as a slim
+   brand + user header (it was ~330px of screen before any content). */
+@media (max-width: 900px) {
+  .exam-builder-sidebar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .exam-builder-sidebar nav {
+    display: none;
+  }
+
+  .exam-builder-user {
+    margin-top: 0;
+  }
+}
+
+/* HR profile header: the three action buttons had no wrap, so on phones the
+   third ("Edit biodata") was cut off at the card edge. */
+.panel-head.panel-head-wrap {
+  flex-wrap: wrap;
+}
+
+.panel-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* Dark mode: "body[data-dashboard-role=teacher] .dashboard-page" (light
+   gradient, further up) has the same specificity as the generic dark
+   ".dashboard-page" rule but comes later, so it won - leaving a light page
+   behind dark cards and sidebar. Same recipe as the admin shell's dark
+   background, with the role attribute added so this outranks it. */
+body[data-theme="dark"][data-dashboard-role="teacher"] .dashboard-page,
+body[data-theme="dark"][data-dashboard-role="staff"] .dashboard-page {
+  background:
+    radial-gradient(circle at 10% 10%, rgba(37, 99, 235, 0.2), transparent 32%),
+    radial-gradient(circle at 92% 95%, rgba(16, 185, 129, 0.15), transparent 28%),
+    #0b1220;
+  color: #e2e8f0;
+}
+
+/* Dark mode: the generic dark ".panel-form-actions button" rule (flat dark
+   fill) outranks the primary/submit style, so Save lesson plan, Submit Score
+   and every other primary form action lost their emphasis and looked like the
+   secondary buttons beside them. */
+body[data-theme="dark"] .panel-form-actions button[type="submit"],
+body[data-theme="dark"] .panel-form-actions button.primary {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
+}
+
+body[data-theme="dark"] .panel-form-actions button[type="submit"]:hover:not(:disabled),
+body[data-theme="dark"] .panel-form-actions button.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  opacity: 0.9;
+}
+
+/* Student sidebar: it is dark in both themes, but the profile name was styled
+   for a light sidebar (#0f172a - invisible on the dark drawer in light mode)
+   and Sign out used a slate (#475569, ~2.4:1) label. */
+body[data-dashboard-role="student"] .student-sidebar-profile strong {
+  color: #f1f5f9;
+}
+
+body[data-dashboard-role="student"] .student-sidebar-profile small {
+  color: #94a3b8;
+}
+
+body[data-dashboard-role="student"] .student-sidebar-signout {
+  color: #e2e8f0;
+  border-color: rgba(226, 232, 240, 0.28);
 }

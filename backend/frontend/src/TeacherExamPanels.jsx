@@ -3009,11 +3009,9 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
 
   return (
     <section className="app-panel teacher-past-exams-panel">
+      {/* The tab's hero already says "My Exams" and carries this same
+          description, so the panel only needs its toolbar. */}
       <div className="student-panel-head">
-        <div>
-          <h3>My Exams</h3>
-          <p className="student-panel-sub">View exams you have set, including past exams, and edit their setup when needed.</p>
-        </div>
         <button type="button" className="table-action" onClick={loadExams} disabled={loading}>
           {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
         </button>

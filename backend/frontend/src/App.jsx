@@ -617,7 +617,9 @@ function StudentSchemeOfWorkPanel({ session, onNavigate, standalone = false }) {
             {planning?.active_term?.name || "Active term"} - {planning?.active_year?.name || "Academic year"}
           </p>
         </div>
-        <span className="student-pill">Week {planning?.progress?.latest_week || 0}</span>
+        <span className="student-pill">
+          {planning?.progress?.latest_week ? `Latest plan: Week ${planning.progress.latest_week}` : "No plans yet"}
+        </span>
       </div>
       {error ? <p className="form-feedback error">{error}</p> : null}
       {!planning ? (
@@ -735,6 +737,12 @@ function StudentDashboard({
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  // Lets CSS hide the floating accent / AI / bell buttons while the phone
+  // drawer is open (they otherwise sit on top of it).
+  useEffect(() => {
+    document.body.classList.toggle("student-nav-open", navOpen);
+    return () => document.body.classList.remove("student-nav-open");
+  }, [navOpen]);
   const [profileOpen, setProfileOpen] = useState(false);
   const [paymentFeedback, setPaymentFeedback] = useState("");
 
@@ -1446,6 +1454,11 @@ function StudentDashboard({
 
 function StudentPageShell({ session, student, currentPath, onNavigate, pageKicker, pageTitle, children, themePreference, onThemeChange }) {
   const [navOpen, setNavOpen] = useState(false);
+  // See body.student-nav-open in styles.css.
+  useEffect(() => {
+    document.body.classList.toggle("student-nav-open", navOpen);
+    return () => document.body.classList.remove("student-nav-open");
+  }, [navOpen]);
   const studentName = (
     student?.name ||
     session?.user?.full_name ||
@@ -4027,7 +4040,11 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
           <h3>{planningTitle}</h3>
           <small>{planning?.active_term?.name || "Active term"} - {planning?.active_year?.name || "Academic year"}</small>
         </div>
-        <span className="pill">Week {planning?.progress?.latest_week || 0}</span>
+        {/* latest_week is the newest week that has a saved plan; "Week 0" read
+            like the current week of term when nothing had been planned yet. */}
+        <span className="pill">
+          {planning?.progress?.latest_week ? `Latest plan: Week ${planning.progress.latest_week}` : "No plans yet"}
+        </span>
       </div>
       {error ? <p className="form-feedback error">{error}</p> : null}
       {feedback ? <p className="form-feedback success">{feedback}</p> : null}
@@ -4522,12 +4539,12 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
       ) : null}
 
       <article className="app-panel">
-        <div className="panel-head">
+        <div className="panel-head panel-head-wrap">
           <div>
             <h3>My profile</h3>
             <small>Update biodata, credentials, guarantor's form, and download your employment letter.</small>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div className="panel-head-actions">
             {onNavigate ? (
               <button type="button" className="table-action" onClick={() => onNavigate("/school-activities")}>
                 School Activities
@@ -5253,10 +5270,10 @@ function TeacherSwipeAttendancePanel({ session, classOptions = [] }) {
               <h3>{activeStudent.name}</h3>
               <p>{activeStudent.student_id} - {activeStudent.class_name}</p>
               <div className="swipe-actions">
-                <button type="button" className="danger" onClick={() => mark("absent")} disabled={Boolean(savingStatus)}>{savingStatus === "absent" ? <><Spinner size={12} /> Saving...</> : "Absent"}</button>
-                <button type="button" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? <><Spinner size={12} /> Saving...</> : "Late"}</button>
-                <button type="button" onClick={() => mark("excused")} disabled={Boolean(savingStatus)}>{savingStatus === "excused" ? <><Spinner size={12} /> Saving...</> : "Excused"}</button>
-                <button type="button" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? <><Spinner size={12} /> Saving...</> : "Present"}</button>
+                <button type="button" className="swipe-present" onClick={() => mark("present")} disabled={Boolean(savingStatus)}>{savingStatus === "present" ? <><Spinner size={12} /> Saving...</> : "Present"}</button>
+                <button type="button" className="swipe-late" onClick={() => mark("late")} disabled={Boolean(savingStatus)}>{savingStatus === "late" ? <><Spinner size={12} /> Saving...</> : "Late"}</button>
+                <button type="button" className="swipe-excused" onClick={() => mark("excused")} disabled={Boolean(savingStatus)}>{savingStatus === "excused" ? <><Spinner size={12} /> Saving...</> : "Excused"}</button>
+                <button type="button" className="swipe-absent danger" onClick={() => mark("absent")} disabled={Boolean(savingStatus)}>{savingStatus === "absent" ? <><Spinner size={12} /> Saving...</> : "Absent"}</button>
               </div>
               <small>Tap a status to save and move to the next student. Already-marked students won't reappear, even after a refresh.</small>
             </>
@@ -5864,6 +5881,23 @@ function TeacherWorkspace({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [navOpen]);
 
+  // The floating accent / AI / bell buttons live outside this component and
+  // sit above the phone drawer, so CSS hides them while it is open (see
+  // body.teacher-nav-open near the end of styles.css).
+  useEffect(() => {
+    document.body.classList.toggle("teacher-nav-open", navOpen);
+    return () => document.body.classList.remove("teacher-nav-open");
+  }, [navOpen]);
+
+  // The sidebar list scrolls on short screens, so keep the current page's link
+  // in view - otherwise picking e.g. "HR System" left its highlight hidden
+  // below the fold.
+  useEffect(() => {
+    document
+      .querySelector(".teacher-sidebar-nav button[aria-current='page']")
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [activeTab, navOpen]);
+
   useEffect(() => {
     if (!teacherTabs.some(([key]) => key === activeTab)) {
       setActiveTab("overview");
@@ -6058,13 +6092,17 @@ function TeacherWorkspace({
               <p>Your weekly teaching schedule across all assigned classes.</p>
             </div>
           </div>
-          <TimetableWeekView
-            session={session}
-            title="Schedule"
-            subtitle=""
-            emptyMessage="No timetable entries have been assigned to you yet."
-            showClassColumn
-          />
+          {/* In a card like every other tab; the bare table used to sit
+              straight on the page background with a loose "Schedule" label. */}
+          <article className="app-panel">
+            <TimetableWeekView
+              session={session}
+              title="Schedule"
+              subtitle=""
+              emptyMessage="No timetable entries have been assigned to you yet."
+              showClassColumn
+            />
+          </article>
         </section>
       );
     }

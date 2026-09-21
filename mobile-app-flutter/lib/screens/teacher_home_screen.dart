@@ -763,9 +763,11 @@ class _AnnouncementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final priority = (item['priority'] ?? '').toString().toLowerCase();
     final tagColor = priority == 'high' ? AppColors.danger : priority == 'medium' ? AppColors.warning : AppColors.muted;
-    // The dashboard payload only carries id/title/priority/published_at (no
-    // body), so the date is the one extra detail there is to show.
     final published = formatDate(item['published_at']);
+    // Prefer the author's own summary; fall back to the start of the body
+    // (the dashboard payload trims it to 400 characters).
+    final summary = (item['summary'] ?? '').toString().trim();
+    final preview = summary.isNotEmpty ? summary : (item['content'] ?? '').toString().trim();
     return AppCard(
       children: [
         Row(
@@ -790,6 +792,13 @@ class _AnnouncementCard extends StatelessWidget {
               ),
           ],
         ),
+        if (preview.isNotEmpty)
+          Text(
+            preview,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppColors.mutedDark, fontSize: 13),
+          ),
         if (published.isNotEmpty)
           Text(published, style: const TextStyle(color: AppColors.mutedDark, fontSize: 12)),
       ],

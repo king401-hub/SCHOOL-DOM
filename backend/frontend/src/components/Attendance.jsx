@@ -458,7 +458,10 @@ export function IdCardAttendanceScanner({ session, onMarked, title = "Scan Stude
           </button>
         ))}
       </div>
-      <p className="student-panel-sub" style={{ marginTop: 0 }}>{activeMode.hint}</p>
+      {/* Caption for the mode buttons above. It used to run straight into the
+          scanner's own heading at the same size and weight, reading as one
+          block of three headings. */}
+      <p className="student-panel-sub" style={{ marginTop: 0, marginBottom: 16, fontSize: "0.85rem" }}>{activeMode.hint}</p>
 
       <QrScannerPanel
         title={title}

@@ -6,6 +6,8 @@ import { insertCharacterIntoActiveElement, hasInsertTarget } from "./utils/inser
 const POS_KEY = "accent_picker_pos";
 const LONG_PRESS_MS = 400;
 
+// null until the user has dragged the button somewhere; until then the default
+// position is worked out from the page (see defaultLeftFor below).
 function loadPos() {
   try {
     const raw = localStorage.getItem(POS_KEY);
@@ -14,11 +16,39 @@ function loadPos() {
       if (typeof p.left === "number" && typeof p.bottom === "number") return p;
     }
   } catch {}
-  return { left: 16, bottom: 16 };
+  return null;
+}
+
+// The old fixed default (16px from the left) landed on top of the pinned
+// sidebar's footer - the teacher / student "Sign out" button - on every page
+// that has one. When a sidebar is actually on screen and reaches the bottom of
+// the viewport, start just to the right of it instead. The phone drawer sits
+// off-canvas (right <= 0) until opened, so it doesn't count.
+function defaultLeftFor() {
+  try {
+    const sidebar = document.querySelector(".teacher-sidebar, .student-sidebar, .app-sidebar");
+    if (!sidebar) return 16;
+    const rect = sidebar.getBoundingClientRect();
+    const onScreen = rect.width > 0 && rect.left >= 0 && rect.right > 0;
+    const reachesBottom = rect.bottom > window.innerHeight - 90;
+    return onScreen && reachesBottom ? Math.round(rect.right) + 16 : 16;
+  } catch {
+    return 16;
+  }
 }
 
 export default function AccentPickerWidget({ session }) {
-  const [pos, setPos] = useState(loadPos);
+  const [savedPos, setPos] = useState(loadPos);
+  const [defaultLeft, setDefaultLeft] = useState(16);
+  const pos = savedPos || { left: defaultLeft, bottom: 16 };
+
+  useEffect(() => {
+    // Runs after the whole tree has committed, so the sidebar is in the DOM.
+    const update = () => setDefaultLeft(defaultLeftFor());
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [session]);
   const [isDragging, setIsDragging] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeLangId, setActiveLangId] = useState(ACCENT_LANGUAGES[0].id);
