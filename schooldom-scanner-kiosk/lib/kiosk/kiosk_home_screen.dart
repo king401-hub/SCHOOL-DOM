@@ -16,6 +16,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../api/client.dart';
 import '../api/config.dart';
 import '../api/gate_endpoints.dart';
+import '../services/app_updater.dart';
 import '../services/local_sms.dart';
 import '../services/receipt_printer.dart';
 import '../storage/gate_settings_cache.dart';
@@ -25,6 +26,7 @@ import '../storage/session_store.dart';
 import '../theme/app_theme.dart';
 import 'gate_settings_screen.dart';
 import 'kiosk_store.dart';
+import 'update_progress_dialog.dart';
 
 enum _ScanOutcome { welcome, goodbye, invalid, duplicate, error }
 
@@ -64,6 +66,10 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   int _pendingCount = 0;
   Map<String, dynamic>? _updateInfo;
   bool _downloadingUpdate = false;
+  // The build number we last popped the update dialog up for (once per launch,
+  // and again only if an even newer build appears) - see _maybePromptForUpdate.
+  int? _promptedUpdateCode;
+  bool _updateDialogOpen = false;
   String? _pairedSchoolId;
   String? _pairedSchoolName;
   bool _switchingSchool = false;
@@ -596,6 +602,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         }
         if (data['update_available'] == true) {
           setState(() => _updateInfo = data);
+          _maybePromptForUpdate(data);
         }
         // Piggyback on a confirmed-online heartbeat to keep the offline
         // guardian-phone cache fresh (see _handleScan's offline branch).
@@ -779,11 +786,42 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
 
   Future<void> _showUpdateDialog() async {
     final info = _updateInfo;
-    if (info == null || _downloadingUpdate) return;
+    if (info == null || _downloadingUpdate || _updateDialogOpen) return;
     final versionName = info['latest_version_name'] as String? ?? '';
     final notes = (info['release_notes'] as String? ?? '').trim();
 
-    final confirmed = await showDialog<bool>(
+    _updateDialogOpen = true;
+    final bool? confirmed;
+    try {
+      confirmed = await _askToUpdate(versionName, notes);
+    } finally {
+      _updateDialogOpen = false;
+    }
+    if (confirmed != true || !mounted) return;
+    await _installUpdate(info);
+  }
+
+  /// Pops the "update available" question up on its own the first time a
+  /// heartbeat reports a newer build after launch, instead of leaving it to a
+  /// tiny icon nobody notices. Held back while a card is being read or a scan
+  /// result is showing; the next heartbeat (2 min) tries again.
+  void _maybePromptForUpdate(Map<String, dynamic> info) {
+    final code = (info['latest_version_code'] as num?)?.toInt();
+    final show = shouldPromptForUpdate(
+      latestCode: code,
+      promptedCode: _promptedUpdateCode,
+      busy: _busy || _downloadingUpdate,
+      showingResult: _outcome != null,
+      screenIsCurrent: mounted && (ModalRoute.of(context)?.isCurrent ?? false),
+      dialogOpen: _updateDialogOpen,
+    );
+    if (!show) return;
+    _promptedUpdateCode = code;
+    unawaited(_showUpdateDialog());
+  }
+
+  Future<bool?> _askToUpdate(String versionName, String notes) {
+    return showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
@@ -806,42 +844,89 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         ),
       ),
     );
-    if (confirmed != true) return;
-    await _installUpdate(info);
   }
 
   Future<void> _installUpdate(Map<String, dynamic> info) async {
     final apkUrl = info['apk_url'] as String?;
     if (apkUrl == null || apkUrl.isEmpty) return;
-    setState(() => _downloadingUpdate = true);
-    try {
-      final response = await http.get(Uri.parse(apkUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Download failed (HTTP ${response.statusCode}).');
-      }
-      final dir = await getTemporaryDirectory();
-      final versionCode = info['latest_version_code'] ?? DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/schoolgate-kiosk-$versionCode.apk');
-      await file.writeAsBytes(response.bodyBytes, flush: true);
+    final versionName = info['latest_version_name'] as String? ?? '';
+
+    final progress = ValueNotifier<UpdateProgress>(const UpdateProgress.downloading(0, null));
+    http.Client? client;
+    File? downloaded; // kept so "Open installer again" doesn't download twice
+    var cancelled = false;
+    var closed = false; // once true, nothing may touch `progress` any more
+
+    Future<void> openInstaller(File file) async {
+      progress.value = const UpdateProgress.installing();
       // Hands the APK to Android's own package installer - the OS shows its
       // standard "install this app?" prompt (and, the very first time, an
       // "allow installs from this app" permission screen). This app never
       // installs anything silently.
       final result = await OpenFilex.open(file.path);
-      if (result.type != ResultType.done && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open installer: ${result.message}'), backgroundColor: AppColors.danger),
-        );
+      if (result.type != ResultType.done && !closed) {
+        progress.value = UpdateProgress.failed('Could not open the installer: ${result.message}');
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Update download failed: $e'), backgroundColor: AppColors.danger),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _downloadingUpdate = false);
     }
+
+    Future<void> download() async {
+      cancelled = false;
+      final myClient = client = http.Client();
+      progress.value = const UpdateProgress.downloading(0, null);
+      try {
+        final dir = await getTemporaryDirectory();
+        final versionCode = info['latest_version_code'] ?? DateTime.now().millisecondsSinceEpoch;
+        final file = await AppUpdater.download(
+          client: myClient,
+          url: Uri.parse(apkUrl),
+          destination: File('${dir.path}/schoolgate-kiosk-$versionCode.apk'),
+          onProgress: (received, total) {
+            if (!closed) progress.value = UpdateProgress.downloading(received, total);
+          },
+        );
+        if (closed) return;
+        downloaded = file;
+        await openInstaller(file);
+      } catch (e) {
+        if (cancelled || closed) return;
+        progress.value = UpdateProgress.failed(describeUpdateError(e));
+      } finally {
+        myClient.close();
+      }
+    }
+
+    setState(() => _downloadingUpdate = true);
+    final screen = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => UpdateProgressDialog(
+        versionName: versionName,
+        progress: progress,
+        onCancel: () {
+          cancelled = true;
+          closed = true;
+          client?.close();
+          Navigator.of(dialogContext).pop();
+        },
+        onRetry: () {
+          final file = downloaded;
+          unawaited(file != null ? openInstaller(file) : download());
+        },
+        onOpenInstaller: () {
+          final file = downloaded;
+          if (file != null) unawaited(openInstaller(file));
+        },
+        onClose: () {
+          closed = true;
+          Navigator.of(dialogContext).pop();
+        },
+      ),
+    );
+    unawaited(download());
+    await screen;
+    closed = true;
+    progress.dispose();
+    if (mounted) setState(() => _downloadingUpdate = false);
   }
 
   // ---------------------------------------------------------------- Dual-school switching
