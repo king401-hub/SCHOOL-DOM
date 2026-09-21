@@ -2780,6 +2780,88 @@ class ClassReportCardSmsTests(TestCase):
         self.assertEqual(self._send([self.ada]).status_code, 403)
 
 
+class CurrentTermAPITests(TestCase):
+    """GET /api/app/current-term/ feeds the "Current Term" indicator that every
+    page frame shows. Any signed-in role at the school gets the same answer, and
+    never another school's term."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Term Chip School", schema_name="term_chip_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        today = timezone.localdate()
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy_tenant, name="2026/2027", start_date=today - timedelta(days=60),
+            end_date=today + timedelta(days=300), is_active=True,
+        )
+        self.term = Term.objects.create(
+            tenant=self.legacy_tenant, name="First Term", academic_year=self.year,
+            start_date=today - timedelta(days=30), end_date=today + timedelta(days=45), is_active=True,
+        )
+        self.users = {
+            role: User.objects.create_user(
+                email=f"{role}@term-chip.edu", password="Pass12345", role=role,
+                tenant=self.school, is_active=True, is_verified=True,
+            )
+            for role in ("school_admin", "teacher", "student", "parent")
+        }
+        self.client = APIClient()
+
+    def _get(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client.get("/api/app/current-term/")
+
+    def test_every_role_at_the_school_sees_the_active_term_and_year(self):
+        for role, user in self.users.items():
+            response = self._get(user)
+            self.assertEqual(response.status_code, 200, (role, response.data))
+            self.assertEqual(response.data["term"]["name"], "First Term", role)
+            self.assertEqual(response.data["academic_year"]["name"], "2026/2027", role)
+
+    def test_reports_how_many_days_are_left_in_the_term(self):
+        response = self._get(self.users["student"])
+        self.assertEqual(response.data["term"]["days_left"], 45)
+
+    def test_a_finished_term_reports_zero_days_left_not_a_negative(self):
+        today = timezone.localdate()
+        Term.objects.filter(pk=self.term.pk).update(end_date=today - timedelta(days=3))
+        self.assertEqual(self._get(self.users["teacher"]).data["term"]["days_left"], 0)
+
+    def test_an_inactive_term_is_not_shown(self):
+        Term.objects.filter(pk=self.term.pk).update(is_active=False)
+        response = self._get(self.users["school_admin"])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["term"])
+
+    def test_the_newest_active_term_wins_when_two_are_marked_active(self):
+        today = timezone.localdate()
+        Term.objects.create(
+            tenant=self.legacy_tenant, name="Second Term", academic_year=self.year,
+            start_date=today - timedelta(days=1), end_date=today + timedelta(days=90), is_active=True,
+        )
+        self.assertEqual(self._get(self.users["student"]).data["term"]["name"], "Second Term")
+
+    def test_another_schools_term_is_never_shown(self):
+        other = SchoolTenant.objects.create(name="Other Term School", schema_name="other_term_school", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        Term.objects.create(
+            tenant=other_legacy, name="Their Term", start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timedelta(days=10), is_active=True,
+        )
+        Term.objects.filter(pk=self.term.pk).update(is_active=False)
+        outsider = User.objects.create_user(
+            email="admin@other-term.edu", password="Pass12345", role="school_admin",
+            tenant=other, is_active=True, is_verified=True,
+        )
+
+        self.assertEqual(self._get(outsider).data["term"]["name"], "Their Term")
+        self.assertIsNone(self._get(self.users["school_admin"]).data["term"])
+
+    def test_signing_in_is_required(self):
+        self.client.force_authenticate(user=None)
+        self.assertIn(self.client.get("/api/app/current-term/").status_code, (401, 403))
+
+
 class DocumentSignatureResolutionTests(TestCase):
     """The signature shown on report cards/transcripts/testimonials/ID cards
     must resolve to whichever admin actually uploaded one - even when other

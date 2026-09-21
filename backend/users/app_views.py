@@ -535,6 +535,34 @@ def _active_term(user):
     return _scope_to_user_tenant(Term.objects.select_related("academic_year"), user).filter(is_active=True).order_by("-start_date").first()
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def current_term(request):
+    """The school's active term and academic year, for the "Current Term"
+    indicator every page frame shows (admin, teacher, student and parent alike).
+
+    Deliberately tiny and open to every signed-in role at the school, so the
+    frames can fetch it once and refresh it cheaply - a term is set in School
+    Settings and changes only a few times a year."""
+    user = request.user
+    if not getattr(user, "tenant_id", None):
+        return Response({"success": True, "term": None, "academic_year": None})
+
+    term = _active_term(user)
+    year = (term.academic_year if term and term.academic_year_id else None) or _active_academic_year(user)
+    days_left = None
+    if term and term.end_date:
+        days_left = max((term.end_date - timezone.localdate()).days, 0)
+    payload = _term_payload(term)
+    if payload:
+        payload["days_left"] = days_left
+    return Response({
+        "success": True,
+        "term": payload,
+        "academic_year": _academic_year_payload(year),
+    })
+
+
 def _academic_year_payload(item):
     if not item:
         return None
@@ -13300,10 +13328,14 @@ def _send_report_card_sms(user, report, phone):
     average_score = report.get("average_score") or 0
     class_position = report.get("class_position")
     class_size = report.get("class_size") or 0
+    scores = report.get("scores") or []
+    # The term the *results* belong to - not the current one, which may differ.
+    term_name = next((str(s.get("term") or "").strip() for s in scores if s.get("term")), "")
     link_data = {
         "school_name": school_name,
         "student_name": student_name,
         "class_name": class_name,
+        "term_name": term_name,
         "total_score": report.get("total_score") or 0,
         "average_score": average_score,
         "class_position": class_position,
@@ -13318,7 +13350,7 @@ def _send_report_card_sms(user, report, phone):
                 "grade": s.get("grade", ""),
                 "remark": s.get("performance_remark", ""),
             }
-            for s in (report.get("scores") or [])[:30]
+            for s in scores[:30]
         ],
     }
     report_url = create_receipt_link(link_data, tenant=school, phone=phone, receipt_type="report_card")

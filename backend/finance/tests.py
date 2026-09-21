@@ -3350,3 +3350,97 @@ class WebhookFailClosedTests(TestCase):
             HTTP_X_HUB_SIGNATURE_256=signature,
         )
         self.assertEqual(response.status_code, 200)
+
+
+class ReceiptPageTermTests(TestCase):
+    """The public /r/<code> page says which term a payment receipt, bill or
+    invoice belongs to: the school's current term, unless the document already
+    names its own."""
+
+    def setUp(self):
+        from datetime import timedelta
+        from academic.models import AcademicYear, Term
+
+        self.school = SchoolTenant.objects.create(name="Receipt Term School", schema_name="receipt_term_school", is_active=True)
+        self.legacy = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        today = timezone.localdate()
+        self.year = AcademicYear.objects.create(
+            tenant=self.legacy, name="2026/2027", start_date=today - timedelta(days=60),
+            end_date=today + timedelta(days=300), is_active=True,
+        )
+        self.term = Term.objects.create(
+            tenant=self.legacy, name="First Term", academic_year=self.year,
+            start_date=today - timedelta(days=30), end_date=today + timedelta(days=60), is_active=True,
+        )
+
+    def _link(self, data, receipt_type, tenant=None):
+        from finance.services import create_receipt_link
+        create_receipt_link(data, tenant=tenant or self.school, receipt_type=receipt_type)
+        return PaymentReceiptLink.objects.filter(receipt_type=receipt_type).latest("created_at")
+
+    def test_payment_receipt_page_names_the_current_term(self):
+        link = self._link(
+            {"student_name": "Ada Obi", "class_name": "JSS 1", "amount_paid": "5000", "reference": "REF-TERM-1"}, "receipt",
+        )
+
+        self.assertEqual(link.data["term_name"], "First Term")
+        page = self.client.get(f"/r/{link.short_code}")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "First Term")
+        self.assertContains(page, "2026/2027")
+
+    def test_a_term_the_document_already_names_is_never_overwritten(self):
+        link = self._link({"student_name": "Ada Obi", "term_name": "Second Term", "amount_paid": "5000"}, "receipt")
+
+        self.assertEqual(link.data["term_name"], "Second Term")
+        page = self.client.get(f"/r/{link.short_code}")
+        self.assertContains(page, "Second Term")
+        self.assertNotContains(page, "First Term")
+
+    def test_a_bill_link_is_stamped_and_shows_the_term(self):
+        link = self._link({"student_name": "Ada Obi", "class_name": "JSS 1", "fees": [{"title": "Tuition", "amount": "9000", "balance": "9000"}]}, "bill")
+
+        self.assertEqual(link.data["term_name"], "First Term")
+        self.assertContains(self.client.get(f"/r/{link.short_code}"), "First Term")
+
+    def test_an_invoice_with_no_term_falls_back_to_the_current_one(self):
+        link = self._link({"invoice_number": "INV-1", "student_name": "Ada Obi", "term": "", "academic_year": ""}, "invoice")
+
+        self.assertEqual((link.data["term"], link.data["academic_year"]), ("First Term", "2026/2027"))
+        self.assertContains(self.client.get(f"/r/{link.short_code}"), "2026/2027 First Term")
+
+    def test_an_invoice_keeps_its_own_term(self):
+        link = self._link({"invoice_number": "INV-2", "term": "Third Term", "academic_year": "2025/2026"}, "invoice")
+
+        self.assertEqual((link.data["term"], link.data["academic_year"]), ("Third Term", "2025/2026"))
+        self.assertNotIn("term_name", link.data)
+
+    def test_payslips_and_report_cards_are_not_stamped_with_the_current_term(self):
+        payslip = self._link({"staff_name": "Mr Ade", "net_salary": "150000"}, "payslip")
+        report_card = self._link({"student_name": "Ada Obi", "term_name": ""}, "report_card")
+
+        self.assertNotIn("term_name", payslip.data)
+        self.assertEqual(report_card.data["term_name"], "")  # results' own term (unknown here), not today's
+
+    def test_no_active_term_means_no_term_line_and_no_error(self):
+        from academic.models import Term
+        Term.objects.filter(pk=self.term.pk).update(is_active=False)
+
+        link = self._link({"student_name": "Ada Obi", "amount_paid": "5000"}, "receipt")
+
+        self.assertNotIn("term_name", link.data)
+        self.assertEqual(self.client.get(f"/r/{link.short_code}").status_code, 200)
+
+    def test_another_schools_term_is_never_used(self):
+        from academic.models import Term
+        Term.objects.filter(pk=self.term.pk).update(is_active=False)
+        other = SchoolTenant.objects.create(name="Someone Else School", schema_name="someone_else_receipt", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        Term.objects.create(
+            tenant=other_legacy, name="Their Term", start_date=timezone.localdate(),
+            end_date=timezone.localdate(), is_active=True,
+        )
+
+        link = self._link({"student_name": "Ada Obi", "amount_paid": "5000"}, "receipt")
+
+        self.assertNotIn("term_name", link.data)

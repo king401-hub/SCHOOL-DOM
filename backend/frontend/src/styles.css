@@ -28271,3 +28271,51 @@ body[data-dashboard-role="student"] .student-sidebar-signout {
   color: #e2e8f0;
   border-color: rgba(226, 232, 240, 0.28);
 }
+
+/* Current-term indicator - shown in every page frame (see CurrentTermBadge). */
+.current-term-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.75rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.current-term-chip.is-empty {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 600;
+}
+
+body[data-theme="dark"] .current-term-chip {
+  border-color: rgba(129, 140, 248, 0.45);
+  background: rgba(99, 102, 241, 0.18);
+  color: #c7d2fe;
+}
+
+body[data-theme="dark"] .current-term-chip.is-empty {
+  border-color: #1e293b;
+  background: #0f172a;
+  color: #94a3b8;
+}
+
+.teacher-sidebar-head .current-term-chip {
+  margin-top: 0.6rem;
+  align-self: flex-start;
+}
+
+@media (max-width: 720px) {
+  .current-term-chip > span {
+    max-width: 9.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

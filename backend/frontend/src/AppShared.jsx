@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone, Download } from "lucide-react";
+import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone, Download, CalendarDays } from "lucide-react";
 import {
   API_BASE_URL,
   LEGACY_SESSION_KEY,
@@ -546,6 +546,96 @@ export function formatDate(value) {
   } catch (error) {
     return String(value);
   }
+}
+
+// ---- Current term ----------------------------------------------------------
+// One indicator, rendered in every page frame (admin, teacher, student, parent),
+// so whichever page you are on - bills, receipts, results, exams, attendance -
+// the term is always in view. Fed by GET /api/app/current-term/.
+
+const CURRENT_TERM_REFRESH_MS = 15 * 60 * 1000;
+// Remembered per school so moving between pages (which remount the frame)
+// shows the last known term straight away instead of flashing empty.
+const currentTermCache = new Map();
+
+function formatTermDate(value) {
+  if (!value) return "";
+  // "YYYY-MM-DD" parsed as local midnight - parsed as UTC it can show the day before.
+  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
+
+export function useCurrentTerm(session) {
+  const cacheKey = session?.school?.school_code || session?.school_code || "";
+  const [state, setState] = useState(() => currentTermCache.get(cacheKey) || { loaded: false, term: null, year: null });
+
+  useEffect(() => {
+    if (!session) return undefined;
+    let cancelled = false;
+    let debounce = 0;
+    const load = async () => {
+      try {
+        const result = await requestJson(session, "GET", "/api/app/current-term/");
+        if (cancelled) return;
+        const next = { loaded: true, term: result?.term || null, year: result?.academic_year || null };
+        currentTermCache.set(cacheKey, next);
+        setState(next);
+      } catch {
+        // Keep whatever was last known: a missing indicator beats an error on every page.
+        if (!cancelled) setState((previous) => ({ ...previous, loaded: true }));
+      }
+    };
+    // A save in School Settings (which is where the term is set) or any other
+    // school-data change re-checks it, so the chip updates without a reload.
+    const reloadSoon = () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(load, 400);
+    };
+    load();
+    const timer = window.setInterval(load, CURRENT_TERM_REFRESH_MS);
+    window.addEventListener("focus", reloadSoon);
+    window.addEventListener(SCHOOL_DATA_MUTATED_EVENT, reloadSoon);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(debounce);
+      window.clearInterval(timer);
+      window.removeEventListener("focus", reloadSoon);
+      window.removeEventListener(SCHOOL_DATA_MUTATED_EVENT, reloadSoon);
+    };
+  }, [session, cacheKey]);
+
+  return state;
+}
+
+/** "First Term · 2026/2027" pill. `showWhenEmpty` is for administrators, who are
+ * the ones who can set a term - everyone else just doesn't see a chip when the
+ * school has none active. */
+export function CurrentTermBadge({ session, showWhenEmpty = false, className = "" }) {
+  const { loaded, term, year } = useCurrentTerm(session);
+  if (!loaded || (!term && !showWhenEmpty)) return null;
+
+  const yearName = year?.name || "";
+  const label = term ? [term.name, yearName].filter(Boolean).join(" · ") : "No active term";
+  const daysLeft = term?.days_left;
+  const detail = term
+    ? [
+        `${term.name}${yearName ? ` (${yearName})` : ""}`,
+        term.start_date || term.end_date ? `${formatTermDate(term.start_date)} to ${formatTermDate(term.end_date)}` : "",
+        daysLeft === null || daysLeft === undefined ? "" : `${daysLeft} day${daysLeft === 1 ? "" : "s"} left`,
+      ].filter(Boolean).join(" · ")
+    : "No term is active. An administrator sets the current term in School Settings.";
+
+  return (
+    <span
+      className={`current-term-chip${term ? "" : " is-empty"}${className ? ` ${className}` : ""}`}
+      title={detail}
+      aria-label={`Current term: ${label}`}
+    >
+      <CalendarDays size={14} strokeWidth={2} aria-hidden="true" />
+      <span>{label}</span>
+    </span>
+  );
 }
 
 export function userDisplayName(user) {

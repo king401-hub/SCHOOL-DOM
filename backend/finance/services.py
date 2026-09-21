@@ -1072,6 +1072,44 @@ def send_termii_whatsapp(to_phone: str, message: str) -> dict:
         return {"status": "error", "reason": str(exc)}
 
 
+# Public-page types stamped with the current term. Not stamped: payslips (by pay
+# period), the class broadsheet and the report card (each carries the term its
+# own results belong to, which can differ from the current one).
+_TERM_STAMPED_LINK_TYPES = {"receipt", "bill", "invoice"}
+
+
+def _stamp_current_term(data: dict, tenant, receipt_type: str) -> dict:
+    """Return `data` with the school's active term filled in for the public
+    receipt/bill page, unless the document already names a term (an invoice
+    knows its bill's).
+
+    So a payment receipt says which term it was issued in even though a
+    payment has no term of its own, and an invoice for a bill created before
+    any term was set no longer shows a blank."""
+    if tenant is None or receipt_type not in _TERM_STAMPED_LINK_TYPES:
+        return data
+    if data.get("term_name") or (receipt_type == "invoice" and data.get("term")):
+        return data
+
+    from academic.models import Term
+
+    term = (
+        Term.objects.select_related("academic_year")
+        .filter(tenant__slug__iexact=tenant.schema_name, is_active=True)
+        .order_by("-start_date")
+        .first()
+    )
+    if not term:
+        return data
+    year_name = term.academic_year.name if term.academic_year_id else ""
+    stamped = {**data, "term_name": term.name, "academic_year_name": year_name}
+    if receipt_type == "invoice":
+        # The invoice page reads these two keys rather than term_name.
+        stamped["term"] = term.name
+        stamped["academic_year"] = data.get("academic_year") or year_name
+    return stamped
+
+
 def create_receipt_link(
     data: dict,
     tenant=None,
@@ -1079,6 +1117,7 @@ def create_receipt_link(
     phone: str = "",
 ) -> str:
     """Persist receipt/bill data and return a public URL the parent can open."""
+    data = _stamp_current_term(data, tenant, receipt_type)
     link = PaymentReceiptLink.objects.create(
         data=data,
         tenant=tenant,

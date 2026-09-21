@@ -347,6 +347,12 @@
           <label>Class</label>
           <span>{{ data.class_name|default:"—" }}</span>
         </div>
+        {% if data.term_name %}
+        <div class="info-item">
+          <label>Term</label>
+          <span>{{ data.term_name }}</span>
+        </div>
+        {% endif %}
       </div>
 
       <p class="section-title">Performance Summary</p>
@@ -453,6 +459,12 @@
           <label>Class</label>
           <span>{{ data.class_name|default:"—" }}</span>
         </div>
+        {% if data.term_name %}
+        <div class="info-item">
+          <label>Term</label>
+          <span>{{ data.term_name }}{% if data.academic_year_name %} ({{ data.academic_year_name }}){% endif %}</span>
+        </div>
+        {% endif %}
         {% if data.parent_name %}
         <div class="info-item">
           <label>Parent/Guardian</label>
@@ -628,6 +640,9 @@
     {% else %}
     <!-- ── BILL / FEE STATEMENT VIEW ── -->
 
+      {% if data.term_name %}
+      <p style="margin:0 0 10px;color:#64748b;font-size:13px">Term: {{ data.term_name }}{% if data.academic_year_name %} ({{ data.academic_year_name }}){% endif %}</p>
+      {% endif %}
       <p class="section-title">Student Fees Outstanding</p>
 
       {% if data.students %}

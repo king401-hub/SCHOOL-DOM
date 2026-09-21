@@ -103,6 +103,7 @@ import {
   resolveDocumentTheme,
   downloadPrintablePng,
   downloadPrintablePdf,
+  CurrentTermBadge,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
@@ -1143,6 +1144,7 @@ function StudentDashboard({
               </div>
             </div>
             <div className="student-topbar-actions">
+              <CurrentTermBadge session={session} />
               <span className="student-status-pill">Dashboard</span>
               {onThemeChange ? (
                 <button
@@ -1632,6 +1634,7 @@ function StudentPageShell({ session, student, currentPath, onNavigate, pageKicke
               <p className="topbar-kicker">{pageKicker || "Student Workspace"}</p>
             </div>
             <div className="student-topbar-actions">
+              <CurrentTermBadge session={session} />
               {pageTitle ? <span className="student-status-pill">{pageTitle}</span> : null}
               {onThemeChange ? (
                 <button
@@ -6284,6 +6287,7 @@ function TeacherWorkspace({
           <span>Teacher Workspace</span>
           <strong>{teacherName}</strong>
           <small>{data?.school?.name || session?.school?.name || "SchoolDom"}</small>
+          <CurrentTermBadge session={session} />
         </div>
         <SidebarSearch
           items={teacherSearchItems}
@@ -9232,6 +9236,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
             </div>
           </div>
           <div className="topbar-actions">
+            <CurrentTermBadge session={session} showWhenEmpty />
             <button
               type="button"
               className="topbar-icon-btn theme-toggle-btn"
@@ -9898,6 +9903,7 @@ function ParentDashboard({ session, data, onRefresh, onSignOut, isRefreshing, on
             </small>
           </div>
           <div className="dashboard-actions">
+            <CurrentTermBadge session={session} />
             <button type="button" onClick={onRefresh} disabled={isRefreshing}>
               {isRefreshing ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
             </button>
