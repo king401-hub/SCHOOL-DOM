@@ -19,8 +19,10 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.core import signing
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.storage import default_storage
 from django.core.signing import BadSignature, SignatureExpired
+from django.core.validators import validate_email
 from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Exists, Max, OuterRef, Q, Sum, Prefetch
 from django.http import FileResponse, HttpResponse, HttpResponseRedirect
@@ -7788,6 +7790,24 @@ def school_settings(request):
                 update_fields.append("name")
                 update_fields.append("schema_name")
                 name_changed = True
+
+        # The school email is printed on report cards, transcripts, invoices,
+        # payslips, ID cards and receipts, and used for the school's own
+        # notifications - so refuse something that isn't an email address
+        # (blank is fine: it clears the email and hides it from documents).
+        # Only checked when it changes - the settings form re-sends the current
+        # value on every save, and an old malformed one must not block saving
+        # unrelated settings.
+        raw_school_email = request.data.get("email")
+        new_school_email = str(raw_school_email).strip() if raw_school_email is not None else ""
+        if new_school_email and new_school_email != (school.email or ""):
+            try:
+                validate_email(new_school_email)
+            except DjangoValidationError:
+                return Response(
+                    {"success": False, "message": "Enter a valid school email address, for example info@yourschool.edu."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         for field in ("email", "phone", "address"):
             if field in request.data:

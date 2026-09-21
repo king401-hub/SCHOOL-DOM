@@ -854,6 +854,7 @@ export function OfficialDocHeader({ school, title }) {
       <h1>{brand.name}</h1>
       {brand.motto ? <p className="official-doc-motto">{brand.motto}</p> : null}
       <p>{school?.address || brand.code || "Official School Record"}</p>
+      {brand.email ? <p>{brand.email}</p> : null}
       <h2 className="official-doc-title">{title}</h2>
     </header>
   );

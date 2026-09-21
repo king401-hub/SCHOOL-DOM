@@ -541,6 +541,7 @@ export default function ExpenseTracker({
                 <div>
                   <h1>{schoolBrand.name}</h1>
                   <p>{schoolBrand.address || "School address"}</p>
+                  {schoolBrand.email ? <p>{schoolBrand.email}</p> : null}
                 </div>
               </div>
               <h2>Payslip - {generatedPayslip.period}</h2>

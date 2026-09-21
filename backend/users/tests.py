@@ -2703,6 +2703,60 @@ class SchoolSettingsAPITests(TestCase):
         self.school.refresh_from_db()
         self.assertEqual(self.school.name, "Updated Settings School")
 
+    def test_school_admin_can_set_the_email_printed_on_documents(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(
+            "/api/app/school/settings/", data={"email": "  info@settings-school.edu  "}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["school"]["email"], "info@settings-school.edu")
+        self.school.refresh_from_db()
+        self.assertEqual(self.school.email, "info@settings-school.edu")
+        # The same value feeds every document header (report card, transcript,
+        # invoice, ...) through the school payload.
+        self.assertEqual(
+            self.client.get("/api/app/school/settings/").data["school"]["email"], "info@settings-school.edu",
+        )
+
+    def test_school_email_must_be_a_valid_address(self):
+        self.client.force_authenticate(user=self.admin_user)
+        self.school.email = "old@settings-school.edu"
+        self.school.save(update_fields=["email"])
+
+        response = self.client.patch("/api/app/school/settings/", data={"email": "not-an-email"}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("valid school email", response.data["message"])
+        self.school.refresh_from_db()
+        self.assertEqual(self.school.email, "old@settings-school.edu")
+
+    def test_clearing_the_school_email_hides_it_from_documents(self):
+        self.client.force_authenticate(user=self.admin_user)
+        self.school.email = "info@settings-school.edu"
+        self.school.save(update_fields=["email"])
+
+        response = self.client.patch("/api/app/school/settings/", data={"email": "   "}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["school"]["email"], "")
+        self.school.refresh_from_db()
+        self.assertIsNone(self.school.email)
+
+    def test_an_old_malformed_email_does_not_block_saving_other_settings(self):
+        # The settings form re-sends the stored email on every save.
+        self.client.force_authenticate(user=self.admin_user)
+        self.school.email = "n/a"
+        self.school.save(update_fields=["email"])
+
+        response = self.client.patch(
+            "/api/app/school/settings/", data={"email": "n/a", "motto": "Knowledge first"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.school.refresh_from_db()
+        self.assertEqual(self.school.motto, "Knowledge first")
+
     def test_k12_school_rejects_term_longer_than_three_months_fifteen_days(self):
         # self.school defaults to K12 (SchoolTenant's own model default).
         self.client.force_authenticate(user=self.admin_user)

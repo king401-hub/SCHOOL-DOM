@@ -7970,6 +7970,12 @@ export function IdCardPreview({ person, school, qrDataUrl, theme }) {
           </section>
           <footer className="id-card-back-footer">
             <span>Valid only when the scan page confirms this profile as verified and active.</span>
+            {brand.email ? (
+              <>
+                <br />
+                <span>Contact: {brand.email}</span>
+              </>
+            ) : null}
           </footer>
         </article>
       </div>
@@ -9853,6 +9859,9 @@ function AdminDocumentCustomizationScreen({ data, loading, error, onRetry, schoo
                   <div className="report-letterhead-text">
                     <h1>{brand.name}</h1>
                     <p className="report-letterhead-line">{brand.address || "School address"}</p>
+                    {(brand.phone || brand.email) ? (
+                      <p className="report-letterhead-line">{[brand.phone, brand.email].filter(Boolean).join("  ·  ")}</p>
+                    ) : null}
                     {brand.motto ? <p className="report-letterhead-motto">{brand.motto}</p> : null}
                   </div>
                 </div>
@@ -10699,8 +10708,17 @@ onClick={() => handleThemeSelect("light")}
                 <input value={schoolState} onChange={(event) => setSchoolState(event.target.value)} placeholder="e.g., Lagos State" disabled={!canEdit || isSaving} />
               </label>
               <label className="panel-field">
-                Email
-                <input value={email} onChange={(event) => setEmail(event.target.value)} disabled={!canEdit || isSaving} />
+                School Email (printed on documents)
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="info@yourschool.edu"
+                  disabled={!canEdit || isSaving}
+                />
+                <small className="field-note">
+                  Shown on report cards, transcripts, testimonials, invoices, payslips, receipts and ID cards. Leave it empty to hide it.
+                </small>
               </label>
               <label className="panel-field">
                 Phone
