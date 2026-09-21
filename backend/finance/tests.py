@@ -49,6 +49,7 @@ from finance.services import (
     credit_sms_wallet_from_purchase,
     mark_sms_wallet_purchase_failed,
     normalize_phone_number,
+    send_ebulksms,
     send_kudisms,
     credit_wallet,
     deduct_document_generation_credit,
@@ -68,6 +69,7 @@ from finance.services import (
     send_bulk_message_to_parents,
     send_parent_virtual_account_fee_reminder,
     build_payment_receipt_data,
+    dispatch_payment_receipt_notifications,
     fee_outstanding_amount,
     send_payment_receipt_notifications,
     total_outstanding_for_fees,
@@ -961,6 +963,30 @@ class KudiSmsServiceTests(TestCase):
         send_kudisms("08012345678", "x" * 300)
         payload = mock_post.call_args.kwargs["json"]
         self.assertLessEqual(len(payload["message"]), 160)
+
+
+class EbulksmsLoggingTests(TestCase):
+    """send_ebulksms logs every request for delivery debugging; that line ends
+    up in the journal / log files, so it must never carry the account login."""
+
+    @override_settings(EBULKSMS_USERNAME="login@example.com", EBULKSMS_APIKEY="super-secret-api-key")
+    @patch("finance.services.requests.post")
+    def test_credentials_are_never_written_to_the_log(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: {"response": {"status": "SUCCESS", "totalsent": 1}})
+
+        with self.assertLogs("finance.services", level="INFO") as captured:
+            result = send_ebulksms("08012345678", "Payment confirmed")
+
+        logged = "\n".join(captured.output)
+        self.assertNotIn("super-secret-api-key", logged)
+        self.assertNotIn("login@example.com", logged)
+        # The line is still useful: recipient, sender and the message go through.
+        self.assertIn("2348012345678", logged)
+        self.assertIn("Payment confirmed", logged)
+        # ...and the request that actually goes to the provider is untouched.
+        sent_auth = mock_post.call_args.kwargs["json"]["SMS"]["auth"]
+        self.assertEqual(sent_auth, {"username": "login@example.com", "apikey": "super-secret-api-key"})
+        self.assertEqual(result["response"]["status"], "SUCCESS")
 
 
 class SmsWalletTests(TestCase):
@@ -2544,8 +2570,9 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertIn(link.short_code, payment.receipt_link_url)
         self.assertIn(link.short_code, SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).message)
 
+    @patch("finance.services._run_in_background", side_effect=lambda work, name: work())
     @patch("finance.services.send_ebulksms")
-    def test_recording_a_cash_payment_delivers_the_receipt_without_being_asked(self, mock_send):
+    def test_recording_a_cash_payment_delivers_the_receipt_without_being_asked(self, mock_send, _mock_background):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         client = APIClient()
         client.force_authenticate(user=self.admin_user)
@@ -2562,6 +2589,56 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mock_send.call_count, 1)
+
+    @patch("finance.services._run_in_background", side_effect=lambda work, name: work())
+    @patch("finance.tasks.send_payment_receipt_task.apply_async")
+    @patch("finance.tasks.send_payment_receipt_task.delay")
+    @patch("finance.services.send_ebulksms")
+    def test_delivery_does_not_depend_on_celery(self, mock_send, mock_delay, mock_apply_async, _mock_background):
+        """Regression: receipts were handed to Celery first. With no broker,
+        .delay() blocked ~110s retrying the connection (recording a payment
+        hung until the web server killed the request); with a broker but no
+        worker, it "succeeded" and the receipt sat in the queue forever."""
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+        payment = self._record()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            dispatch_payment_receipt_notifications(payment)
+
+        mock_delay.assert_not_called()
+        mock_apply_async.assert_not_called()
+        payment.refresh_from_db()
+        self.assertEqual(payment.receipt_sms_status, BankPayment.NOTIFY_SENT)
+        self.assertEqual(payment.receipt_email_status, BankPayment.NOTIFY_SENT)
+
+    @patch("finance.services.threading.Thread")
+    @patch("finance.services.send_ebulksms")
+    def test_recording_a_payment_does_not_wait_for_the_delivery(self, mock_send, mock_thread_cls):
+        """The admin's request must return without waiting on the SMS gateway
+        and mail server: delivery is handed to a daemon thread after commit."""
+        payment = self._record()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            dispatch_payment_receipt_notifications(payment)
+
+        mock_thread_cls.assert_called_once()
+        self.assertTrue(mock_thread_cls.call_args.kwargs["daemon"])
+        self.assertIn(str(payment.id), mock_thread_cls.call_args.kwargs["name"])
+        mock_thread_cls.return_value.start.assert_called_once()
+        # Nothing was sent in the request's own thread.
+        mock_send.assert_not_called()
+        self.assertEqual(len(mail.outbox), 0)
+
+    @patch("finance.services._run_in_background")
+    def test_nothing_is_delivered_when_the_payment_is_rolled_back(self, mock_background):
+        """on_commit is what guarantees a parent is never told about a payment
+        that a later error in the same request undid."""
+        payment = self._record()
+
+        dispatch_payment_receipt_notifications(payment)
+
+        # TestCase never commits, so the on_commit hook has not fired.
+        mock_background.assert_not_called()
 
     @patch("finance.services.send_ebulksms")
     def test_a_failing_channel_is_recorded_and_never_touches_the_payment(self, mock_send):

@@ -281,8 +281,10 @@ RECEIPT_RETRY_WINDOW_DAYS = 7
 def send_payment_receipt_task(payment_id):
     """Deliver a recorded payment's receipt to the parent by SMS and email.
 
-    Queued by the finance views on transaction commit, so the payment is
-    already saved and confirmed by the time this runs. Delivery outcome is
+    Not used by the finance views any more: they deliver on a background
+    thread after commit (dispatch_payment_receipt_notifications), because
+    queueing here hangs without a broker and silently stalls without a worker.
+    Kept for anyone who wants to queue a delivery by hand. Delivery outcome is
     written onto the payment per channel; anything that fails is picked up
     later by retry_failed_payment_receipts.
     """

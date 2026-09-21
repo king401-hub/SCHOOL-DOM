@@ -5,6 +5,7 @@ from typing import Optional
 import uuid
 import re
 import logging
+import threading
 from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,8 @@ logger = logging.getLogger(__name__)
 import requests
 from django.conf import settings
 from django.db import OperationalError, ProgrammingError
+from django.db import connection as db_connection
+from django.db import connections as db_connections
 from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
@@ -811,7 +814,10 @@ def send_ebulksms(to_phone: str, message: str, sender: str = "SchoolDom") -> dic
             "dndsender": 1,
         }
     }
-    logger.info("eBulkSMS → to=%s sender=%s chars=%d payload=%s", normalized, sender, len(message), payload)
+    # Logged without the credentials: this line goes to the journal / log files
+    # for every SMS sent, and used to print the account's API key with it.
+    loggable_payload = {"SMS": {**payload["SMS"], "auth": {"username": "***", "apikey": "***"}}}
+    logger.info("eBulkSMS → to=%s sender=%s chars=%d payload=%s", normalized, sender, len(message), loggable_payload)
     try:
         response = requests.post(
             "https://api.ebulksms.com/sendsms.json",
@@ -5343,37 +5349,64 @@ def send_payment_receipt_notifications(payment, force=False) -> dict:
     }
 
 
+def _run_in_background(work, name):
+    """Run `work()` on a daemon thread so the caller's request can return.
+
+    Used for slow, best-effort delivery (an SMS gateway call plus an SMTP send)
+    that must not hold up - or be killed along with - the HTTP request that
+    triggered it. It is a seam on purpose: tests patch it to run inline, since
+    a thread opens its own database connection and cannot see a test's
+    uncommitted rows.
+
+    The thread gets its own connection, so the tenant schema the request was
+    using is carried over (a no-op unless django-tenants is active) and every
+    connection is closed when the work ends.
+    """
+    schema_name = getattr(db_connection, "schema_name", None)
+
+    def _runner():
+        try:
+            if schema_name and hasattr(db_connection, "set_schema"):
+                db_connection.set_schema(schema_name)
+            work()
+        except Exception:
+            logger.exception("Background task %s failed", name)
+        finally:
+            db_connections.close_all()
+
+    threading.Thread(target=_runner, name=name, daemon=True).start()
+
+
 def dispatch_payment_receipt_notifications(payment):
     """Send the receipt once the payment is durably committed - never before.
 
     Every finance endpoint runs under ATOMIC_REQUESTS, so at the moment a view
     records a payment the row is not committed yet. Delivering from inside that
     transaction would mean texting a parent about a payment that a later error
-    could still roll back, and would hand a Celery worker an ID it cannot yet
-    read. on_commit is what makes "only after the payment is confirmed" true.
+    could still roll back. on_commit is what makes "only after the payment is
+    confirmed" true.
 
-    Celery first so the admin's request returns immediately; falls back to
-    sending inline when no broker is reachable, the same shape used for parent
-    virtual-account provisioning.
+    Delivery then runs on a background thread, not through Celery. This used
+    to queue a Celery task and only send inline if that raised, which broke
+    receipts wherever no worker is running - and this codebase has no confirmed
+    Celery worker in production (see send_wallet_sms):
+      - with no broker, .delay() blocked ~110 seconds retrying the connection
+        before it raised, so recording a payment hung until the web server
+        killed the request, and the inline fallback never ran;
+      - with a broker but no worker, .delay() succeeded, the task sat in the
+        queue forever, and the parent was never told.
+    A thread has neither failure mode and still lets the admin's request
+    return immediately. Whatever it cannot deliver is left "pending"/"failed"
+    on the payment row for the retry sweep (retry_failed_payment_receipts, if
+    Celery beat runs) or the admin's Resend button.
     """
     payment_id = str(payment.id)
 
     def _deliver():
-        try:
-            from finance.tasks import send_payment_receipt_task
+        fresh = BankPayment.objects.select_related("student__user", "tenant").get(id=payment_id)
+        send_payment_receipt_notifications(fresh)
 
-            send_payment_receipt_task.delay(payment_id)
-            return
-        except Exception:
-            pass  # No broker - fall through and send inline.
-
-        try:
-            fresh = BankPayment.objects.select_related("student__user", "tenant").get(id=payment_id)
-            send_payment_receipt_notifications(fresh)
-        except Exception:
-            logger.exception("Inline payment receipt delivery failed for payment %s", payment_id)
-
-    transaction.on_commit(_deliver)
+    transaction.on_commit(lambda: _run_in_background(_deliver, f"payment-receipt-{payment_id}"))
 
 
 def _match_payment_reference_from_narration(tenant, narration):
