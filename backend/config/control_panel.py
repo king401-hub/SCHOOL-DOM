@@ -1547,7 +1547,7 @@ def _build_user_admin():
     # allowlist of the fields an admin actually needs to set by hand, the same way
     # Django's own stock UserAdmin keeps its add form to just username+password.
     essential_fields = (
-        "email", "first_name", "last_name", "phone", "role", "admin_title",
+        "email", "first_name", "middle_name", "last_name", "phone", "role", "admin_title",
         "tenant", "school_group", "is_active", "is_staff", "is_superuser",
     )
 

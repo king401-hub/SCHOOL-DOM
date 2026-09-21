@@ -116,6 +116,7 @@ def _self_staff_profile(user, create_teacher_profile=True):
             user=user,
             staff_code=_unique_staff_code(tenant, getattr(teacher_profile, "employee_id", "") or generate_short_teacher_id(user.id.hex, tenant)),
             first_name=user.first_name or user.get_short_name(),
+            middle_name=user.middle_name or "",
             last_name=user.last_name or "",
             email=user.email,
             phone=user.phone,
@@ -140,6 +141,7 @@ def _self_staff_profile(user, create_teacher_profile=True):
             user=user,
             staff_code=_unique_staff_code(tenant, f"AC{school_code_letters(tenant)}{random_code_digits()}"),
             first_name=user.first_name or user.get_short_name(),
+            middle_name=user.middle_name or "",
             last_name=user.last_name or "",
             email=user.email,
             phone=user.phone,
@@ -199,6 +201,7 @@ def _sync_staff_login_user(staff, data):
         linked_user = User(email=email)
 
     linked_user.first_name = staff.first_name
+    linked_user.middle_name = staff.middle_name
     linked_user.last_name = staff.last_name
     linked_user.email = email or linked_user.email
     linked_user.phone = staff.phone
@@ -242,6 +245,7 @@ def _staff_payload(staff, request=None):
         "attendance_token": staff.attendance_token,
         "name": staff.full_name,
         "first_name": staff.first_name,
+        "middle_name": staff.middle_name,
         "last_name": staff.last_name,
         "email": staff.email,
         "phone": staff.phone,
@@ -458,7 +462,10 @@ def hr_payroll_list(request):
     search = str(request.query_params.get("search") or "").strip()
     if search:
         qs = qs.filter(
-            Q(staff__first_name__icontains=search) | Q(staff__last_name__icontains=search) | Q(staff__staff_code__icontains=search)
+            Q(staff__first_name__icontains=search)
+            | Q(staff__middle_name__icontains=search)
+            | Q(staff__last_name__icontains=search)
+            | Q(staff__staff_code__icontains=search)
         )
 
     totals = qs.aggregate(
@@ -865,6 +872,7 @@ def create_staff(request):
         return Response({"success": False, "message": "Could not resolve school tenant."}, status=status.HTTP_400_BAD_REQUEST)
 
     first_name = str(request.data.get("first_name", "")).strip()
+    middle_name = str(request.data.get("middle_name", "")).strip()
     last_name = str(request.data.get("last_name", "")).strip()
     role = str(request.data.get("role", "")).strip()
     gender = str(request.data.get("gender", "")).strip()
@@ -901,6 +909,7 @@ def create_staff(request):
             return Response({"success": False, "message": "A user with this email belongs to another school."}, status=status.HTTP_400_BAD_REQUEST)
         if linked_user:
             linked_user.first_name = first_name
+            linked_user.middle_name = middle_name
             linked_user.last_name = last_name
             linked_user.role = account_role
             linked_user.tenant = tenant
@@ -909,12 +918,13 @@ def create_staff(request):
             linked_user.is_active = True
             linked_user.is_verified = True
             linked_user.set_password(staff_password)
-            linked_user.save(update_fields=["first_name", "last_name", "role", "tenant", "phone", "gender", "is_active", "is_verified", "password"])
+            linked_user.save(update_fields=["first_name", "middle_name", "last_name", "role", "tenant", "phone", "gender", "is_active", "is_verified", "password"])
         else:
             linked_user = User.objects.create_user(
                 email=email,
                 password=staff_password,
                 first_name=first_name,
+                middle_name=middle_name,
                 last_name=last_name,
                 role=account_role,
                 tenant=tenant,
@@ -929,6 +939,7 @@ def create_staff(request):
         user=linked_user,
         staff_code=staff_code,
         first_name=first_name,
+        middle_name=middle_name,
         last_name=last_name,
         email=email,
         phone=str(request.data.get("phone", "")).strip(),
@@ -968,7 +979,7 @@ def staff_detail(request, staff_id):
         return Response({"success": True, "message": "Staff marked as exited."})
 
     fields = [
-        "staff_code", "first_name", "last_name", "email", "phone", "gender", "address", "staff_type", "role",
+        "staff_code", "first_name", "middle_name", "last_name", "email", "phone", "gender", "address", "staff_type", "role",
         "department", "employment_type", "employment_status", "bank_name", "bank_code", "bank_account_name",
         "bank_account_number", "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relation", "notes",
     ]

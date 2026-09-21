@@ -642,7 +642,7 @@ export function userDisplayName(user) {
   if (!user) {
     return "User";
   }
-  return user.full_name || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "User";
+  return user.full_name || [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(" ") || user.email || "User";
 }
 
 export function userInitials(user) {

@@ -2862,6 +2862,208 @@ class CurrentTermAPITests(TestCase):
         self.assertIn(self.client.get("/api/app/current-term/").status_code, (401, 403))
 
 
+class MiddleNameTests(TestCase):
+    """Every kind of user can have an optional middle name. It is folded into
+    get_full_name(), so it appears wherever a name is shown (report cards, ID
+    cards, lists), and it can be set and cleared where names are edited."""
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()  # IdempotencyMiddleware replays identical POST/PATCH bodies
+
+        self.school = SchoolTenant.objects.create(name="Middle Name School", schema_name="middle_name_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@middle-name.edu", password="AdminPass123", first_name="Head", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _student(self, email="ada@middle-name.edu", **extra):
+        response = self.client.post(
+            "/api/app/students/create/",
+            {
+                "student_email": email, "first_name": "Ada", "last_name": "Obi", "guardian_name": "Guardian",
+                "guardian_phone": "08010000001", "student_password": "StudentPass123",
+                "confirm_student_password": "StudentPass123", **extra,
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        return StudentProfile.objects.get(user__email=email)
+
+    # -- the name itself ----------------------------------------------------
+    def test_full_name_puts_the_middle_name_between_first_and_last(self):
+        user = User(email="x@y.edu", first_name="Ada", middle_name="Grace", last_name="Obi")
+        self.assertEqual(user.get_full_name(), "Ada Grace Obi")
+
+    def test_full_name_still_works_without_a_middle_name_and_falls_back_to_email(self):
+        self.assertEqual(User(email="x@y.edu", first_name="Ada", last_name="Obi").get_full_name(), "Ada Obi")
+        self.assertEqual(User(email="x@y.edu", first_name="Ada", middle_name="  ", last_name="Obi").get_full_name(), "Ada Obi")
+        self.assertEqual(User(email="x@y.edu", first_name="Ada", middle_name="Grace").get_full_name(), "Ada Grace")
+        self.assertEqual(User(email="x@y.edu").get_full_name(), "x@y.edu")
+
+    # -- students -----------------------------------------------------------
+    def test_a_student_is_created_with_a_middle_name(self):
+        student = self._student(middle_name="Grace")
+
+        self.assertEqual(student.user.middle_name, "Grace")
+        self.assertEqual(student.user.get_full_name(), "Ada Grace Obi")
+
+    def test_a_student_without_a_middle_name_is_unaffected(self):
+        student = self._student(email="plain@middle-name.edu")
+        self.assertEqual(student.user.middle_name, "")
+        self.assertEqual(student.user.get_full_name(), "Ada Obi")
+
+    def test_a_students_middle_name_can_be_set_and_cleared_when_editing(self):
+        student = self._student()
+
+        response = self.client.patch(f"/api/app/students/{student.id}/", data={"middle_name": "Grace"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        student.user.refresh_from_db()
+        self.assertEqual(student.user.middle_name, "Grace")
+        self.assertEqual(response.data["student"]["middle_name"], "Grace")
+        self.assertEqual(response.data["student"]["name"], "Ada Grace Obi")
+
+        response = self.client.patch(f"/api/app/students/{student.id}/", data={"middle_name": ""}, format="json")
+        student.user.refresh_from_db()
+        self.assertEqual((student.user.middle_name, student.user.get_full_name()), ("", "Ada Obi"))
+
+    def test_the_middle_name_shows_on_the_id_card_and_student_payload(self):
+        from users.app_views import _id_card_student_payload
+        student = self._student(middle_name="Grace")
+
+        self.assertEqual(_id_card_student_payload(student)["name"], "Ada Grace Obi")
+
+    def test_student_search_finds_a_student_by_middle_name(self):
+        student = self._student(middle_name="Grace")
+
+        for query in ("Grace", "Ada Grace", "Grace Obi", "Ada Obi"):
+            response = self.client.get("/api/app/students/search/", {"q": query})
+            self.assertEqual(response.status_code, 200, (query, response.data))
+            self.assertEqual([item["student_id"] for item in response.data["results"]], [student.student_id], query)
+
+    # -- teachers -----------------------------------------------------------
+    def test_a_teacher_is_created_and_edited_with_a_middle_name(self):
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "nora@middle-name.edu", "first_name": "Nora", "middle_name": "Jane", "last_name": "Teacher",
+                "employee_id": "TCH-MID-1", "specialization": "Maths", "qualification": "B.Ed", "employment_type": "full_time",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        profile = TeacherProfile.objects.get(user__email="nora@middle-name.edu")
+        self.assertEqual(profile.user.get_full_name(), "Nora Jane Teacher")
+
+        response = self.client.patch(f"/api/app/teachers/{profile.id}/", data={"middle_name": "Janet"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        profile.user.refresh_from_db()
+        self.assertEqual(profile.user.middle_name, "Janet")
+        self.assertEqual(response.data["teacher"]["name"], "Nora Janet Teacher")
+
+    def test_a_teacher_save_that_does_not_mention_the_middle_name_leaves_it_alone(self):
+        from users.app_views import _ensure_teacher_user_for_tenant
+        teacher = User.objects.create_user(
+            email="keep@middle-name.edu", password="TeacherPass123", first_name="Keep", middle_name="Me", last_name="Safe",
+            role="teacher", tenant=self.school, is_active=True, is_verified=True,
+        )
+
+        _ensure_teacher_user_for_tenant(
+            user=self.admin, email="keep@middle-name.edu", first_name="Keep", last_name="Safe", phone="", middle_name=None,
+        )
+        teacher.refresh_from_db()
+        self.assertEqual(teacher.middle_name, "Me")
+
+        _ensure_teacher_user_for_tenant(
+            user=self.admin, email="keep@middle-name.edu", first_name="Keep", last_name="Safe", phone="", middle_name="",
+        )
+        teacher.refresh_from_db()
+        self.assertEqual(teacher.middle_name, "")   # an explicit empty value clears it
+
+    # -- parents ------------------------------------------------------------
+    def test_a_parents_middle_name_can_be_edited(self):
+        parent_user = User.objects.create_user(
+            email="parent@middle-name.edu", password="ParentPass123", first_name="Pat", last_name="Parent",
+            role="parent", tenant=self.school, is_active=True, is_verified=True,
+        )
+        parent = ParentProfile.objects.create(user=parent_user)
+
+        response = self.client.patch(f"/api/app/parents/{parent.id}/", data={"middle_name": "Ann"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        parent_user.refresh_from_db()
+        self.assertEqual(parent_user.get_full_name(), "Pat Ann Parent")
+
+    # -- staff (HR) -----------------------------------------------------------
+    def test_a_staff_members_middle_name_is_saved_and_reaches_their_login(self):
+        response = self.client.post(
+            "/api/hr/staff/create/",
+            data={
+                "first_name": "Sam", "middle_name": "Tunde", "last_name": "Bello", "staff_type": "non_teaching",
+                "role": "Accountant", "base_salary": "100000", "email": "sam@middle-name.edu",
+                "staff_password": "StaffPass123", "confirm_staff_password": "StaffPass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        staff = StaffProfile.objects.get(email="sam@middle-name.edu")
+        self.assertEqual(staff.full_name, "Sam Tunde Bello")
+        self.assertEqual(response.data["staff"]["middle_name"], "Tunde")
+        self.assertEqual(response.data["staff"]["name"], "Sam Tunde Bello")
+        self.assertEqual(staff.user.middle_name, "Tunde")
+        self.assertEqual(staff.user.get_full_name(), "Sam Tunde Bello")
+
+    def test_a_staff_members_middle_name_can_be_edited_and_searched(self):
+        staff = StaffProfile.objects.create(
+            tenant=self.school, staff_code="NSMID001", first_name="Sam", last_name="Bello", role="Clerk",
+            staff_type=StaffProfile.NON_TEACHING,
+        )
+
+        response = self.client.patch(f"/api/hr/staff/{staff.id}/", data={"middle_name": "Tunde"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        staff.refresh_from_db()
+        self.assertEqual(staff.full_name, "Sam Tunde Bello")
+        self.assertEqual(StaffProfile.objects.filter(middle_name__icontains="tun").count(), 1)
+
+    # -- admins and sign-up ------------------------------------------------------
+    @patch("users.views.ADMIN_OTP_ENABLED", False)
+    def test_signing_up_accepts_an_optional_middle_name(self):
+        payload = {
+            "first_name": "Ada", "last_name": "Obi", "password": "AdminPass123", "confirm_password": "AdminPass123",
+            "role": "school_admin", "school_code": self.school.schema_name, "terms_accepted": True,
+        }
+        with_middle = self.client.post(
+            "/api/auth/register/", data={**payload, "middle_name": "Grace", "email": "with@middle-name.edu"}, format="json",
+        )
+        without = self.client.post("/api/auth/register/", data={**payload, "email": "without@middle-name.edu"}, format="json")
+
+        self.assertEqual(with_middle.status_code, 201, with_middle.data)
+        self.assertEqual(without.status_code, 201, without.data)
+        self.assertEqual(User.objects.get(email="with@middle-name.edu").get_full_name(), "Ada Grace Obi")
+        self.assertEqual(User.objects.get(email="without@middle-name.edu").middle_name, "")
+
+    def test_a_school_admin_can_set_their_own_middle_name_in_school_settings(self):
+        response = self.client.patch("/api/app/school/settings/", data={"admin_middle_name": "Chidi"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["director"]["middle_name"], "Chidi")
+        self.assertEqual(response.data["director"]["full_name"], "Head Chidi Admin")
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.middle_name, "Chidi")
+
+    def test_the_login_user_payload_carries_the_middle_name(self):
+        from users.serializers import UserSerializer
+        self.admin.middle_name = "Chidi"
+        self.admin.save(update_fields=["middle_name"])
+
+        data = UserSerializer(self.admin).data
+        self.assertEqual((data["middle_name"], data["full_name"]), ("Chidi", "Head Chidi Admin"))
+
+
 class DocumentSignatureResolutionTests(TestCase):
     """The signature shown on report cards/transcripts/testimonials/ID cards
     must resolve to whichever admin actually uploaded one - even when other

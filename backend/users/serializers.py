@@ -20,7 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'email', 'first_name', 'last_name', 'full_name',
+            'id', 'email', 'first_name', 'middle_name', 'last_name', 'full_name',
             'role', 'admin_title', 'display_role', 'phone', 'profile_picture', 'date_of_birth',
             'gender', 'is_verified', 'is_active', 'created_at',
             'account_deletion_requested_at', 'account_deletion_scheduled_for',
@@ -44,6 +44,7 @@ class RegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True, min_length=8)
     first_name = serializers.CharField(max_length=150)
+    middle_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150)
     phone = serializers.CharField(max_length=17, required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=User.ROLE_CHOICES)

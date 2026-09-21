@@ -44,6 +44,7 @@ class StaffProfile(models.Model):
     staff_code = models.CharField(max_length=40)
     attendance_token = models.CharField(max_length=64, unique=True, default=secrets.token_urlsafe)
     first_name = models.CharField(max_length=100)
+    middle_name = models.CharField(max_length=100, blank=True, default="")
     last_name = models.CharField(max_length=100)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=30, blank=True)
@@ -104,7 +105,8 @@ class StaffProfile(models.Model):
 
     @property
     def full_name(self):
-        return f"{self.first_name} {self.last_name}".strip()
+        parts = (self.first_name, self.middle_name, self.last_name)
+        return " ".join(part.strip() for part in parts if part and part.strip())
 
     def __str__(self):
         return f"{self.full_name} - {self.staff_code}"

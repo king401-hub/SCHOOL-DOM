@@ -186,6 +186,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
   const [showPassword, setShowPassword] = useState(false);
 
   const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [lastName, setLastName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
@@ -534,6 +535,7 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
 
       const payload = {
         first_name: firstName.trim(),
+        middle_name: middleName.trim(),
         last_name: lastName.trim(),
         email: signupEmail.trim(),
         password: signupPassword,
@@ -1153,6 +1155,18 @@ export default function Signin({ onAuthenticated, onBack, initialMode = "signin"
                         onChange={(event) => setFirstName(event.target.value)}
                         placeholder="First name"
                         required
+                      />
+                    </div>
+
+                    <label htmlFor="middle-name">Middle name (optional)</label>
+                    <div className="input-wrap">
+                      <span className="input-icon">M</span>
+                      <input
+                        id="middle-name"
+                        type="text"
+                        value={middleName}
+                        onChange={(event) => setMiddleName(event.target.value)}
+                        placeholder="Middle name"
                       />
                     </div>
 

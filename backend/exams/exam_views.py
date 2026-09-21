@@ -343,7 +343,7 @@ def _cbt_student_payload(request):
     profile = getattr(user, "student_profile", None)
     return {
         "id": (profile.student_id if profile else "") or (profile.admission_number if profile else "") or user.username,
-        "name": f"{user.first_name} {user.last_name}".strip() or user.email,
+        "name": user.get_full_name() or user.email,
         "avatar": _profile_picture_url(request, user),
     }
 

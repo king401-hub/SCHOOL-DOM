@@ -14,7 +14,7 @@ from .models import (
 class StaffProfileAdmin(admin.ModelAdmin):
     list_display = ("staff_code", "full_name", "staff_type", "role", "department", "base_salary", "employment_status")
     list_filter = ("staff_type", "department", "employment_status")
-    search_fields = ("staff_code", "first_name", "last_name", "email", "role", "department", "emergency_contact_name")
+    search_fields = ("staff_code", "first_name", "middle_name", "last_name", "email", "role", "department", "emergency_contact_name")
 
 
 @admin.register(StaffAttendance)

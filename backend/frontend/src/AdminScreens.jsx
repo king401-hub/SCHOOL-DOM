@@ -6917,7 +6917,7 @@ function ReadOnlyPersonProfile({ person, title = "Profile", onClose, codeLabel =
         <dl className="record-detail-grid">
           <div>
             <dt>Name</dt>
-            <dd>{person.name || `${person.first_name || ""} ${person.last_name || ""}`.trim() || "-"}</dd>
+            <dd>{person.name || [person.first_name, person.middle_name, person.last_name].filter(Boolean).join(" ") || "-"}</dd>
           </div>
           {fields.map(([label, value]) => (
             <div key={label}>
@@ -7420,6 +7420,7 @@ function AdminNonTeachingStaffScreen({
   const absences = data?.absences || [];
   const [staffForm, setStaffForm] = useState({
     first_name: "",
+    middle_name: "",
     last_name: "",
     staff_type: "non_teaching",
     role: "",
@@ -7466,6 +7467,7 @@ function AdminNonTeachingStaffScreen({
     setCustomRole(false);
     setStaffForm({
       first_name: "",
+      middle_name: "",
       last_name: "",
       staff_type: "non_teaching",
       role: "",
@@ -7491,6 +7493,7 @@ function AdminNonTeachingStaffScreen({
     setShowStaffConfirmPassword(false);
     setStaffForm({
       first_name: item.first_name || "",
+      middle_name: item.middle_name || "",
       last_name: item.last_name || "",
       staff_type: item.staff_type || "non_teaching",
       role: item.role || "",
@@ -7609,6 +7612,7 @@ function AdminNonTeachingStaffScreen({
         <form className="panel-form" onSubmit={handleStaffSubmit}>
           <div className="panel-form-grid">
             <label className="panel-field">First name<input value={staffForm.first_name} onChange={(e) => setStaffForm((p) => ({ ...p, first_name: e.target.value }))} /></label>
+            <label className="panel-field">Middle name<input value={staffForm.middle_name} onChange={(e) => setStaffForm((p) => ({ ...p, middle_name: e.target.value }))} placeholder="Optional" /></label>
             <label className="panel-field">Last name<input value={staffForm.last_name} onChange={(e) => setStaffForm((p) => ({ ...p, last_name: e.target.value }))} /></label>
             <label className="panel-field">
               Role
@@ -9372,6 +9376,7 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
   const [directorSignaturePreview, setDirectorSignaturePreview] = useState("");
   const [signatureInputMode, setSignatureInputMode] = useState("upload");
   const [adminFirstName, setAdminFirstName] = useState("");
+  const [adminMiddleName, setAdminMiddleName] = useState("");
   const [adminLastName, setAdminLastName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -9397,11 +9402,12 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
     setDirectorSignaturePreview(director.signature || "");
     setDirectorSignatureFile(null);
     setAdminFirstName(director.first_name || user?.first_name || "");
+    setAdminMiddleName(director.middle_name || user?.middle_name || "");
     setAdminLastName(director.last_name || user?.last_name || "");
   }, [
     school.cac_registered_name, school.cac_certificate, school.entrance_photo, school.proof_of_address, school.ministry_approval_number,
     director.address, director.id_type, director.proof_of_address, director.id_document, director.passport_photo, director.signature,
-    director.first_name, director.last_name, user?.first_name, user?.last_name,
+    director.first_name, director.middle_name, director.last_name, user?.first_name, user?.middle_name, user?.last_name,
   ]);
 
   const handleEntrancePhotoChange = (event) => {
@@ -9429,6 +9435,7 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
     entrance_photo: entrancePhotoFile,
     proof_of_address: proofOfAddressFile,
     admin_first_name: adminFirstName.trim(),
+    admin_middle_name: adminMiddleName.trim(),
     admin_last_name: adminLastName.trim(),
     director_address: directorAddress.trim(),
     director_id_type: directorIdType,
@@ -9547,6 +9554,10 @@ function AdminComplianceScreen({ data, user, loading, error, onRetry, onSave }) 
                 <label className="panel-field">
                   First Name
                   <input value={adminFirstName} onChange={(event) => setAdminFirstName(event.target.value)} disabled={!canEdit || isSaving} />
+                </label>
+                <label className="panel-field">
+                  Middle Name
+                  <input value={adminMiddleName} onChange={(event) => setAdminMiddleName(event.target.value)} placeholder="Optional" disabled={!canEdit || isSaving} />
                 </label>
                 <label className="panel-field">
                   Last Name
@@ -11159,6 +11170,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
   const [selectedParentUserId, setSelectedParentUserId] = useState("");
   const [editForm, setEditForm] = useState({
     first_name: "",
+    middle_name: "",
     last_name: "",
     email: "",
     phone: "",
@@ -11190,6 +11202,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
 
   const buildEditForm = (parent) => ({
     first_name: parent?.first_name || "",
+    middle_name: parent?.middle_name || "",
     last_name: parent?.last_name || "",
     email: parent?.email || "",
     phone: parent?.phone || "",
@@ -11329,6 +11342,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
     try {
       const result = await onUpdate(selectedParentId, {
         first_name: editForm.first_name.trim(),
+        middle_name: editForm.middle_name.trim(),
         last_name: editForm.last_name.trim(),
         email: editForm.email.trim(),
         phone: editForm.phone.trim(),
@@ -11505,6 +11519,7 @@ function AdminParentsScreen({ data, school, loading, error, onRetry, onUpdate, o
                 <form className="panel-form" onSubmit={handleUpdateSubmit}>
                   <div className="panel-form-grid">
                     <label className="panel-field">First Name<input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required /></label>
+                    <label className="panel-field">Middle Name<input value={editForm.middle_name} onChange={(event) => setEditForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" /></label>
                     <label className="panel-field">Last Name<input value={editForm.last_name} onChange={(event) => setEditForm((prev) => ({ ...prev, last_name: event.target.value }))} /></label>
                     <label className="panel-field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} required /></label>
                     <label className="panel-field">Phone<PhoneCountryInput countries={countries} value={editForm.phone} onChange={(val) => setEditForm((prev) => ({ ...prev, phone: val }))} defaultCountryCode={defaultCountryCode} /></label>
@@ -12614,6 +12629,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [form, setForm] = useState({
     student_email: "",
     first_name: "",
+    middle_name: "",
     last_name: "",
     gender: "",
     state_of_origin: "",
@@ -12648,6 +12664,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [editForm, setEditForm] = useState({
     first_name: "",
+    middle_name: "",
     last_name: "",
     email: "",
     phone: "",
@@ -12705,6 +12722,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
 
   const buildEditForm = (student) => ({
     first_name: student?.first_name || "",
+    middle_name: student?.middle_name || "",
     last_name: student?.last_name || "",
     email: student?.email || "",
     phone: student?.phone || "",
@@ -12779,6 +12797,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
       setForm({
         student_email: "",
         first_name: "",
+        middle_name: "",
         last_name: "",
         gender: "",
         state_of_origin: "",
@@ -12845,6 +12864,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     try {
       const payload = {
         first_name: editForm.first_name.trim(),
+        middle_name: editForm.middle_name.trim(),
         last_name: editForm.last_name.trim(),
         email: editForm.email.trim(),
         phone: editForm.phone.trim(),
@@ -13039,6 +13059,10 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
             <label className="panel-field">
               First Name
               <input value={form.first_name} onChange={(event) => setForm((prev) => ({ ...prev, first_name: event.target.value }))} required />
+            </label>
+            <label className="panel-field">
+              Middle Name
+              <input value={form.middle_name} onChange={(event) => setForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" />
             </label>
             <label className="panel-field">
               Last Name
@@ -13426,6 +13450,10 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                         <input value={editForm.first_name} onChange={(e) => setEditForm((p) => ({ ...p, first_name: e.target.value }))} required />
                       </label>
                       <label className="panel-field">
+                        Middle Name
+                        <input value={editForm.middle_name} onChange={(e) => setEditForm((p) => ({ ...p, middle_name: e.target.value }))} placeholder="Optional" />
+                      </label>
+                      <label className="panel-field">
                         Last Name
                         <input value={editForm.last_name} onChange={(e) => setEditForm((p) => ({ ...p, last_name: e.target.value }))} required />
                       </label>
@@ -13698,6 +13726,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
   const [form, setForm] = useState({
     teacher_email: "",
     first_name: "",
+    middle_name: "",
     last_name: "",
     gender: "",
     phone: "",
@@ -13722,6 +13751,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
   const [editForm, setEditForm] = useState({
     first_name: "",
+    middle_name: "",
     last_name: "",
     email: "",
     phone: "",
@@ -13761,6 +13791,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
 
   const buildEditForm = (teacher) => ({
     first_name: teacher?.first_name || "",
+    middle_name: teacher?.middle_name || "",
     last_name: teacher?.last_name || "",
     email: teacher?.email || "",
     phone: teacher?.phone || "",
@@ -13875,6 +13906,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
         ...form,
         teacher_email: form.teacher_email.trim().toLowerCase(),
         first_name: form.first_name.trim(),
+        middle_name: (form.middle_name || "").trim(),
         last_name: form.last_name.trim(),
         phone: form.phone.trim(),
         gender: form.gender,
@@ -13906,6 +13938,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
       setForm({
         teacher_email: "",
         first_name: "",
+        middle_name: "",
         last_name: "",
         gender: "",
         phone: "",
@@ -13973,6 +14006,7 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
     try {
       const payload = {
         first_name: editForm.first_name.trim(),
+        middle_name: editForm.middle_name.trim(),
         last_name: editForm.last_name.trim(),
         email: editForm.email.trim(),
         phone: editForm.phone.trim(),
@@ -14059,6 +14093,10 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
             <label className="panel-field">
               First Name
               <input value={form.first_name} onChange={(event) => setForm((prev) => ({ ...prev, first_name: event.target.value }))} required />
+            </label>
+            <label className="panel-field">
+              Middle Name
+              <input value={form.middle_name} onChange={(event) => setForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" />
             </label>
             <label className="panel-field">
               Last Name
@@ -14300,6 +14338,10 @@ function AdminTeachersScreen({ data, school, loading, error, onRetry, onCreate, 
                   <label className="panel-field">
                     First Name
                     <input value={editForm.first_name} onChange={(event) => setEditForm((prev) => ({ ...prev, first_name: event.target.value }))} required />
+                  </label>
+                  <label className="panel-field">
+                    Middle Name
+                    <input value={editForm.middle_name} onChange={(event) => setEditForm((prev) => ({ ...prev, middle_name: event.target.value }))} placeholder="Optional" />
                   </label>
                   <label className="panel-field">
                     Last Name

@@ -135,7 +135,7 @@ class ExamAttemptDetailSerializer(serializers.Serializer):
         user = self.context['request'].user
         return {
             'id': f"STU{user.id:06d}",
-            'name': f"{user.first_name} {user.last_name}",
+            'name': user.get_full_name(),
             'avatar': getattr(user, 'profile_image', None)
         }
     

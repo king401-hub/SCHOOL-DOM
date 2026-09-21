@@ -50,8 +50,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Basic Information
     email = models.EmailField(_('email address'), unique=True, db_index=True)
     first_name = models.CharField(_('first name'), max_length=150, blank=True)
+    # Optional. Kept out of REQUIRED_FIELDS, and folded into get_full_name(), so
+    # every document and list that shows a name picks it up.
+    middle_name = models.CharField(_('middle name'), max_length=150, blank=True, default='')
     last_name = models.CharField(_('last name'), max_length=150, blank=True)
-    
+
     # Phone with validation
     phone_regex = RegexValidator(
         regex=r'^\+?1?\d{9,15}$',
@@ -171,8 +174,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.get_full_name() or self.email
     
     def get_full_name(self):
-        """Return the full name of the user"""
-        full_name = f"{self.first_name} {self.last_name}".strip()
+        """Return the full name of the user: first, middle and last name,
+        skipping any that are blank."""
+        parts = (self.first_name, self.middle_name, self.last_name)
+        full_name = " ".join(part.strip() for part in parts if part and part.strip())
         return full_name if full_name else self.email
     
     def get_short_name(self):

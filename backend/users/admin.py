@@ -103,7 +103,7 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ("role", "tenant", "is_staff", "is_active", "is_verified")
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Personal info", {"fields": ("first_name", "last_name", "phone", "profile_picture", "date_of_birth", "gender", "tenant")}),
+        ("Personal info", {"fields": ("first_name", "middle_name", "last_name", "phone", "profile_picture", "date_of_birth", "gender", "tenant")}),
         ("Director KYC", {"fields": ("director_address", "director_proof_of_address", "director_id_type", "director_id_document")}),
         ("Security", {"fields": ("is_verified", "is_locked", "last_login_ip", "login_attempts", "last_password_change")}),
         ("Permissions", {"fields": ("role", "is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
@@ -114,11 +114,11 @@ class UserAdmin(BaseUserAdmin):
             None,
             {
                 "classes": ("wide",),
-                "fields": ("email", "password1", "password2", "first_name", "last_name", "role", "tenant"),
+                "fields": ("email", "password1", "password2", "first_name", "middle_name", "last_name", "role", "tenant"),
             },
         ),
     )
-    search_fields = ("email", "first_name", "last_name", "tenant__name", "tenant__schema_name")
+    search_fields = ("email", "first_name", "middle_name", "last_name", "tenant__name", "tenant__schema_name")
     ordering = ("email",)
     filter_horizontal = ("groups", "user_permissions")
     readonly_fields = ("created_at", "updated_at", "last_login")

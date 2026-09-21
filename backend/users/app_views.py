@@ -1011,6 +1011,7 @@ def _director_payload(user, request=None):
     return {
         "full_name": user.get_full_name(),
         "first_name": user.first_name or "",
+        "middle_name": user.middle_name or "",
         "last_name": user.last_name or "",
         "email": user.email or "",
         "phone": user.phone or "",
@@ -1144,6 +1145,7 @@ def _student_payload(student_profile, request=None):
         "user_id": str(student_user.id),
         "name": student_user.get_full_name(),
         "first_name": student_user.first_name,
+        "middle_name": student_user.middle_name,
         "last_name": student_user.last_name,
         "email": student_user.email,
         "phone": student_user.phone,
@@ -1243,6 +1245,7 @@ def _parent_payload(parent_profile, request=None, outstanding_student_ids=None):
         "user_id": str(parent_user.id),
         "name": parent_user.get_full_name(),
         "first_name": parent_user.first_name,
+        "middle_name": parent_user.middle_name,
         "last_name": parent_user.last_name,
         "email": parent_user.email,
         "phone": parent_user.phone,
@@ -1541,6 +1544,7 @@ def _teacher_payload(teacher_profile, request=None):
         "user_id": str(user.id),
         "name": user.get_full_name(),
         "first_name": user.first_name,
+        "middle_name": user.middle_name,
         "last_name": user.last_name,
         "email": user.email,
         "phone": user.phone,
@@ -1868,6 +1872,7 @@ def _ensure_student_profile_for_tenant(
     profile_picture=None,
     student_password=None,
     confirm_student_password=None,
+    middle_name="",
 ):
     student_user = User.objects.filter(email__iexact=email).first()
     if student_user and student_user.role != "student":
@@ -1883,6 +1888,7 @@ def _ensure_student_profile_for_tenant(
         student_user = User(
             email=email,
             first_name=first_name,
+            middle_name=str(middle_name or "").strip(),
             last_name=last_name,
             role="student",
             tenant=user.tenant,
@@ -1954,7 +1960,10 @@ def _ensure_teacher_user_for_tenant(
     profile_picture=None,
     teacher_password=None,
     confirm_teacher_password=None,
+    middle_name=None,
 ):
+    """`middle_name=None` means "not supplied" (leave an existing one alone);
+    an empty string clears it."""
     teacher_user = User.objects.filter(email__iexact=email).first()
     if teacher_user and teacher_user.role != "teacher":
         raise ValueError("This email already exists for a non-teacher account.")
@@ -1969,6 +1978,7 @@ def _ensure_teacher_user_for_tenant(
         teacher_user = User(
             email=email,
             first_name=first_name,
+            middle_name=str(middle_name or "").strip(),
             last_name=last_name,
             role="teacher",
             tenant=user.tenant,
@@ -1999,6 +2009,9 @@ def _ensure_teacher_user_for_tenant(
     if first_name and teacher_user.first_name != first_name:
         teacher_user.first_name = first_name
         update_fields.append("first_name")
+    if middle_name is not None and teacher_user.middle_name != str(middle_name).strip():
+        teacher_user.middle_name = str(middle_name).strip()
+        update_fields.append("middle_name")
     if last_name and teacher_user.last_name != last_name:
         teacher_user.last_name = last_name
         update_fields.append("last_name")
@@ -2726,6 +2739,7 @@ def _group_student_candidates_queryset(user, class_id=None, search=None):
         needle = str(search).strip()
         qs = qs.filter(
             Q(user__first_name__icontains=needle)
+            | Q(user__middle_name__icontains=needle)
             | Q(user__last_name__icontains=needle)
             | Q(student_id__icontains=needle)
             | Q(admission_number__icontains=needle)
@@ -5798,7 +5812,7 @@ def parent_detail(request, parent_id):
         return Response({"success": True, "message": f"{label} deleted from parent directory."})
 
     user_update_fields = []
-    for field in ("first_name", "last_name", "phone"):
+    for field in ("first_name", "middle_name", "last_name", "phone"):
         if field in request.data:
             next_value = str(request.data.get(field) or "").strip()
             if getattr(parent_user, field) != next_value:
@@ -6193,6 +6207,7 @@ def create_student(request):
     is_new_student = not (existing_user_for_email and StudentProfile.objects.filter(user=existing_user_for_email).exists())
 
     first_name = str(request.data.get("first_name", "")).strip()
+    middle_name = str(request.data.get("middle_name", "")).strip()
     last_name = str(request.data.get("last_name", "")).strip()
     guardian_name = str(request.data.get("guardian_name", "")).strip()
     guardian_phone = str(request.data.get("guardian_phone", "")).strip()
@@ -6228,6 +6243,7 @@ def create_student(request):
             user=user,
             email=student_email,
             first_name=first_name,
+            middle_name=middle_name,
             last_name=last_name,
             guardian_name=guardian_name,
             guardian_phone=guardian_phone,
@@ -6264,6 +6280,9 @@ def create_student(request):
     if first_name and student_user.first_name != first_name:
         student_user.first_name = first_name
         user_update_fields.append("first_name")
+    if "middle_name" in request.data and student_user.middle_name != middle_name:
+        student_user.middle_name = middle_name
+        user_update_fields.append("middle_name")
     if last_name and student_user.last_name != last_name:
         student_user.last_name = last_name
         user_update_fields.append("last_name")
@@ -6430,7 +6449,7 @@ def student_detail(request, student_id):
             student_user.gender = normalized_gender
             user_update_fields.append("gender")
 
-    for field in ("first_name", "last_name", "phone"):
+    for field in ("first_name", "middle_name", "last_name", "phone"):
         if field in request.data:
             new_value = str(request.data.get(field) or "").strip()
             if getattr(student_user, field) != new_value:
@@ -6701,6 +6720,7 @@ def create_enrollment(request):
                 user=user,
                 email=email,
                 first_name=str(request.data.get("first_name", "")).strip(),
+                middle_name=str(request.data.get("middle_name", "")).strip(),
                 last_name=str(request.data.get("last_name", "")).strip(),
                 guardian_name=str(request.data.get("guardian_name", "")).strip(),
                 guardian_phone=str(request.data.get("guardian_phone", "")).strip(),
@@ -7320,6 +7340,7 @@ def create_teacher(request):
         )
 
     first_name = str(request.data.get("first_name", "")).strip()
+    middle_name = str(request.data.get("middle_name") or "").strip() if "middle_name" in request.data else None
     last_name = str(request.data.get("last_name", "")).strip()
     phone = str(request.data.get("phone", "")).strip()
     gender = str(request.data.get("gender", "")).strip()
@@ -7339,6 +7360,7 @@ def create_teacher(request):
             user=user,
             email=teacher_email,
             first_name=first_name,
+            middle_name=middle_name,
             last_name=last_name,
             phone=phone,
             profile_picture=profile_picture,
@@ -7480,7 +7502,7 @@ def teacher_detail(request, teacher_id):
             teacher_user.email = new_email
             user_update_fields.append("email")
 
-    for field in ("first_name", "last_name", "phone"):
+    for field in ("first_name", "middle_name", "last_name", "phone"):
         if field in request.data:
             new_value = str(request.data.get(field) or "").strip()
             if getattr(teacher_user, field) != new_value:
@@ -7917,7 +7939,11 @@ def school_settings(request):
                 update_fields.append(field)
 
         user_update_fields = []
-        for field, attr in (("admin_first_name", "first_name"), ("admin_last_name", "last_name")):
+        for field, attr in (
+            ("admin_first_name", "first_name"),
+            ("admin_middle_name", "middle_name"),
+            ("admin_last_name", "last_name"),
+        ):
             raw = request.data.get(field)
             if raw is not None:
                 new_value = str(raw).strip()
@@ -12092,6 +12118,7 @@ def _result_leaderboard(user, class_group=None, term=None, teacher=None, limit=2
             "student",
             "student__student_id",
             "student__user__first_name",
+            "student__user__middle_name",
             "student__user__last_name",
             "class_group__name",
             "class_group__section",
@@ -12106,7 +12133,11 @@ def _result_leaderboard(user, class_group=None, term=None, teacher=None, limit=2
             {
                 "rank": idx,
                 "student_id": row["student__student_id"],
-                "student_name": f"{row['student__user__first_name']} {row['student__user__last_name']}".strip(),
+                "student_name": " ".join(
+                    part for part in (
+                        row["student__user__first_name"], row["student__user__middle_name"], row["student__user__last_name"],
+                    ) if part
+                ).strip(),
                 "class_name": _class_label(class_group) if class_group else row["class_group__name"],
                 "total_score": float(row["total_score"] or 0),
                 "average_score": round(float(row["total_score"] or 0) / max(row["subject_count"] or 1, 1), 2),
@@ -12675,10 +12706,17 @@ def _fuzzy_student_filter(queryset, code):
     to a tenant. Shared by the teacher score-entry lookup and the admin student
     search endpoint."""
     name_terms = [term for term in re.split(r"\s+", code) if term]
-    name_query = Q(user__first_name__icontains=code) | Q(user__last_name__icontains=code)
+    name_query = (
+        Q(user__first_name__icontains=code)
+        | Q(user__middle_name__icontains=code)
+        | Q(user__last_name__icontains=code)
+    )
     if len(name_terms) >= 2:
         name_query |= Q(user__first_name__icontains=name_terms[0], user__last_name__icontains=name_terms[-1])
         name_query |= Q(user__first_name__icontains=name_terms[-1], user__last_name__icontains=name_terms[0])
+        # "Ada Grace" / "Grace Obi": the middle name with either neighbour.
+        name_query |= Q(user__first_name__icontains=name_terms[0], user__middle_name__icontains=name_terms[-1])
+        name_query |= Q(user__middle_name__icontains=name_terms[0], user__last_name__icontains=name_terms[-1])
     return queryset.filter(
         Q(student_id__icontains=code)
         | Q(user__email__iexact=code)

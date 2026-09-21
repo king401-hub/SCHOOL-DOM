@@ -98,6 +98,7 @@ export default function SignUpPage() {
 
   const [role, setRole] = useState<Role>('school_admin');
   const [fullName, setFullName] = useState('');
+  const [middleName, setMiddleName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -212,6 +213,7 @@ export default function SignUpPage() {
 
       const regData = await postJson('/api/auth/register/', {
         first_name: firstName,
+        middle_name: middleName.trim(),
         last_name: lastName,
         email: email.trim(),
         password,
@@ -365,10 +367,17 @@ export default function SignUpPage() {
               <div>
                 <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold mb-3">Representative contact details</p>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-slate-500 text-xs mb-1.5">Full Name</label>
-                    <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
-                      placeholder="Dr. Eleanor Vance" autoComplete="name" className={inputCls} />
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-500 text-xs mb-1.5">Full Name</label>
+                      <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+                        placeholder="Dr. Eleanor Vance" autoComplete="name" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-xs mb-1.5">Middle Name (optional)</label>
+                      <input type="text" value={middleName} onChange={e => setMiddleName(e.target.value)}
+                        placeholder="Optional" autoComplete="additional-name" className={inputCls} />
+                    </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
