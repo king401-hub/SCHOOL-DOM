@@ -46,6 +46,10 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   // configurable at the backend/device level").
   int _cooldownSeconds = 8;
   static const _resultDisplaySeconds = 4;
+  // How long a tapped card may sit on "Reading card..." waiting for the
+  // backend to identify it. After this the scan is treated as offline and
+  // handled from the locally cached data (see _handleScan).
+  static const _scanReadTimeout = Duration(seconds: 3);
 
   final FlutterTts _tts = FlutterTts();
   final Battery _battery = Battery();
@@ -319,16 +323,27 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           'device_id': await KioskStore.deviceId,
         },
         queueWhenOffline: true,
+        timeout: _scanReadTimeout,
       );
 
       if (result['offline'] == true) {
-        // No network at all to reach the backend - the queue mechanism
-        // above blindly stores ANY scan, so check the last-synced
+        // Either no network at all, or the backend didn't answer within
+        // _scanReadTimeout (timed_out) - either way we go on what is cached.
+        // The queue mechanism above blindly stores ANY scan, so check the last-synced
         // assignment snapshot ourselves before claiming success for a card
         // that was never actually registered. An unknown card can never
         // succeed once replayed either, so drop it from the queue instead
         // of leaving it stuck retrying forever.
         final contact = await GuardianContactsCache.lookup(uid);
+        if (contact == null && result['timed_out'] == true) {
+          // The backend is only slow, not unreachable, so it may well know
+          // this card - our cache just doesn't. Keep the scan queued for the
+          // replay to settle instead of telling a real student their card is
+          // unregistered.
+          await _showResult(_ScanOutcome.welcome, message: 'Saved - will sync when back online.');
+          await _refreshPendingCount();
+          return;
+        }
         if (contact == null) {
           await _removeQueuedScan(idempotencyKey);
           await _showResult(_ScanOutcome.invalid, message: 'Card not recognized (offline).');

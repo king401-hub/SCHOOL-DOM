@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -65,6 +66,10 @@ Future<Map<String, dynamic>> apiRequest(
   dynamic payload,
   bool retry = true,
   bool queueWhenOffline = false,
+  // One overall budget for the whole call (first attempt, any token refresh
+  // and the retry). Running out of it is treated like having no network:
+  // with queueWhenOffline the request is queued and `timed_out` is returned.
+  Duration? timeout,
 }) async {
   var session = await getSession();
   if (session?['access'] == null) {
@@ -83,24 +88,45 @@ Future<Map<String, dynamic>> apiRequest(
     body = jsonEncode(payload);
   }
 
+  final deadline = timeout == null ? null : DateTime.now().add(timeout);
+  Future<T> withinBudget<T>(Future<T> call) {
+    if (deadline == null) return call;
+    final left = deadline.difference(DateTime.now());
+    return call.timeout(left.isNegative ? Duration.zero : left);
+  }
+
+  Future<Map<String, dynamic>> saveForLater({required bool timedOut}) async {
+    await enqueue({'method': method, 'endpoint': endpoint, 'payload': payload});
+    return {
+      'success': true,
+      'offline': true,
+      if (timedOut) 'timed_out': true,
+      'message': 'Saved offline.',
+    };
+  }
+
   http.Response res;
   try {
-    res = await _send(method, uri, headers, body);
+    res = await withinBudget(_send(method, uri, headers, body));
   } on SocketException catch (_) {
-    if (queueWhenOffline && method != 'GET') {
-      await enqueue({'method': method, 'endpoint': endpoint, 'payload': payload});
-      return {'success': true, 'offline': true, 'message': 'Saved offline.'};
-    }
+    if (queueWhenOffline && method != 'GET') return saveForLater(timedOut: false);
     throw ApiException('Network error. Check your connection.');
+  } on TimeoutException catch (_) {
+    if (queueWhenOffline && method != 'GET') return saveForLater(timedOut: true);
+    throw ApiException('The server took too long to respond.');
   }
 
   if (res.statusCode == 401 && retry) {
-    session = await _tryRefresh(session);
-    headers['Authorization'] = 'Bearer ${session!['access']}';
     try {
-      res = await _send(method, uri, headers, body);
+      session = await withinBudget<Map<String, dynamic>?>(_tryRefresh(session));
+      headers['Authorization'] = 'Bearer ${session!['access']}';
+      res = await withinBudget(_send(method, uri, headers, body));
     } on SocketException catch (_) {
+      if (queueWhenOffline && method != 'GET') return saveForLater(timedOut: false);
       throw ApiException('Network error. Check your connection.');
+    } on TimeoutException catch (_) {
+      if (queueWhenOffline && method != 'GET') return saveForLater(timedOut: true);
+      throw ApiException('The server took too long to respond.');
     }
   }
 
@@ -134,9 +160,9 @@ Future<http.Response> _send(
 }
 
 Future<Map<String, dynamic>> postJson(String endpoint, Map<String, dynamic> payload,
-        {bool queueWhenOffline = false}) =>
+        {bool queueWhenOffline = false, Duration? timeout}) =>
     apiRequest('POST', endpoint,
-        payload: payload, queueWhenOffline: queueWhenOffline);
+        payload: payload, queueWhenOffline: queueWhenOffline, timeout: timeout);
 
 Future<Map<String, dynamic>> getJson(String endpoint) => apiRequest('GET', endpoint);
 
