@@ -4530,6 +4530,13 @@ body[data-theme="dark"] .btn-secondary:hover { background: #1e293b; border-color
 
 .panel-form-actions button[type="submit"]:hover,
 .panel-form-actions button.primary:hover {
+  /* Re-declares the same gradient as the rule above (rather than relying on
+     it staying in place): the later, lower-specificity ".panel-form-actions
+     button:hover" rule sets `background` too, and since THIS rule was silent
+     on that property it lost every time on hover - the button's white text
+     landed on that rule's near-white hover fill and vanished. Same class of
+     bug as the dark-mode fix a few thousand lines down. */
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
   opacity: 0.9;
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(79,70,229,0.38);
