@@ -889,7 +889,8 @@ def create_staff(request):
     staff_type = str(request.data.get("staff_type") or StaffProfile.TEACHING)
     staff_prefix = "NS" if staff_type == StaffProfile.NON_TEACHING else "TS"
     seed = f"{first_name}{last_name}{email}{timezone.now().strftime('%f')}"
-    staff_code = str(request.data.get("staff_code", "")).strip() or _generate_short_staff_code(tenant, staff_prefix, seed)
+    requested_staff_code = str(request.data.get("staff_code", "")).strip()
+    staff_code = requested_staff_code or _generate_short_staff_code(tenant, staff_prefix, seed)
     if StaffProfile.objects.filter(tenant=tenant, staff_code__iexact=staff_code).exists():
         return Response({"success": False, "message": "Staff code already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -933,6 +934,46 @@ def create_staff(request):
                 is_active=True,
                 is_verified=True,
             )
+
+    # StaffProfile.user is one-to-one, so a person who already has one - most
+    # often an accountant/teacher who logged in and visited their own
+    # self-service HR screen before an admin got round to formally adding
+    # them (see _self_staff_profile, which auto-creates a skeletal profile on
+    # first visit) - can't get a second row from this form; creating one
+    # unconditionally crashed with an IntegrityError on every submit for that
+    # email, including a first attempt right after the person's first login.
+    # Complete the existing profile with what was submitted instead.
+    existing_staff = StaffProfile.objects.filter(tenant=tenant, user=linked_user).first() if linked_user else None
+    if existing_staff:
+        existing_staff.staff_code = staff_code if requested_staff_code else existing_staff.staff_code
+        existing_staff.first_name = first_name
+        existing_staff.middle_name = middle_name
+        existing_staff.last_name = last_name
+        existing_staff.email = email
+        existing_staff.phone = str(request.data.get("phone", "")).strip()
+        existing_staff.gender = gender
+        existing_staff.address = str(request.data.get("address", "")).strip()
+        existing_staff.staff_type = staff_type
+        existing_staff.role = role
+        existing_staff.department = str(request.data.get("department", "")).strip()
+        existing_staff.employment_type = str(request.data.get("employment_type") or "full_time")
+        existing_staff.employment_status = str(request.data.get("employment_status") or StaffProfile.ACTIVE)
+        existing_staff.hire_date = hire_date
+        existing_staff.base_salary = base_salary
+        existing_staff.bank_name = str(request.data.get("bank_name", "")).strip()
+        existing_staff.bank_code = str(request.data.get("bank_code", "")).strip()
+        existing_staff.bank_account_name = str(request.data.get("bank_account_name", "")).strip()
+        existing_staff.bank_account_number = str(request.data.get("bank_account_number", "")).strip()
+        existing_staff.emergency_contact_name = str(request.data.get("emergency_contact_name", "")).strip()
+        existing_staff.emergency_contact_phone = str(request.data.get("emergency_contact_phone", "")).strip()
+        existing_staff.emergency_contact_relation = str(request.data.get("emergency_contact_relation", "")).strip()
+        existing_staff.notes = str(request.data.get("notes", "")).strip()
+        existing_staff.save()
+        _activity(
+            tenant, existing_staff, request.user, "staff_profile_completed",
+            f"Completed the self-service profile for {existing_staff.full_name}",
+        )
+        return Response({"success": True, "message": "Staff profile updated.", "staff": _staff_payload(existing_staff)})
 
     staff = StaffProfile.objects.create(
         tenant=tenant,

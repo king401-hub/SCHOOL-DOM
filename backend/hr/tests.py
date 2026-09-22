@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import SchoolTenant
@@ -82,13 +83,17 @@ class HRManagementAPITests(TestCase):
         self.assertEqual(paid_advance_response.status_code, 200)
         self.assertEqual(SalaryAdvanceRequest.objects.get(staff=staff).status, "paid")
 
+        # Payroll only nets off advances requested in the payroll month, and the
+        # advance above is dated today - so run payroll for the current month
+        # (a hard-coded month only passed while the calendar happened to match).
+        today = timezone.localdate()
         payroll_response = self.client.post(
             "/api/hr/payroll/create/",
-            data={"staff_id": staff_id, "year": 2026, "month": 5, "allowances": "5000", "deductions": "2000", "amount_paid": "140000"},
+            data={"staff_id": staff_id, "year": today.year, "month": today.month, "allowances": "5000", "deductions": "2000", "amount_paid": "140000"},
             format="json",
         )
         self.assertEqual(payroll_response.status_code, 201)
-        payroll = PayrollRecord.objects.get(staff=staff, year=2026, month=5)
+        payroll = PayrollRecord.objects.get(staff=staff, year=today.year, month=today.month)
         self.assertEqual(payroll.net_salary, Decimal("143000.00"))
         self.assertEqual(payroll.balance_after_payment, Decimal("3000.00"))
 
@@ -440,3 +445,55 @@ class HRManagementAPITests(TestCase):
         self.client.force_authenticate(user=parent_user)
         response = self.client.get("/api/hr/me/employment-letter/")
         self.assertEqual(response.status_code, 403)
+
+    def test_adding_staff_for_an_account_that_already_self_service_created_a_profile(self):
+        # Regression: an accountant (or teacher) who is invited/given a login
+        # before HR formally adds them, and who visits their own self-service
+        # HR screen first, gets a skeletal StaffProfile auto-created for them
+        # (_self_staff_profile). StaffProfile.user is one-to-one, so an admin
+        # then filling in "Add non-teaching staff" with that same email+
+        # password to set up salary/bank details used to crash with an
+        # IntegrityError on every submission - the account could never be
+        # created at all.
+        accountant_user = User.objects.create_user(
+            email="amaka.accountant@school.edu",
+            password="AccountantPass123",
+            first_name="Amaka",
+            last_name="Bello",
+            role="accountant",
+            tenant=self.school,
+            is_active=True,
+            is_verified=True,
+        )
+        self.client.force_authenticate(user=accountant_user)
+        snapshot = self.client.get("/api/hr/me/")
+        self.assertEqual(snapshot.status_code, 200)
+        auto_created_id = snapshot.data["staff"]["id"]
+        auto_created_code = snapshot.data["staff"]["staff_code"]
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/hr/staff/create/",
+            data={
+                "first_name": "Amaka",
+                "last_name": "Bello",
+                "staff_type": "non_teaching",
+                "role": "Accountant",
+                "department": "Finance",
+                "base_salary": "150000",
+                "email": "amaka.accountant@school.edu",
+                "staff_password": "NewLoginPass123",
+                "confirm_staff_password": "NewLoginPass123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(StaffProfile.objects.filter(user=accountant_user).count(), 1, "must update, not duplicate")
+        staff = StaffProfile.objects.get(user=accountant_user)
+        self.assertEqual(str(staff.id), auto_created_id)
+        self.assertEqual(staff.staff_code, auto_created_code, "an untouched staff_code should be kept, not regenerated")
+        self.assertEqual(staff.department, "Finance")
+        self.assertEqual(staff.base_salary, Decimal("150000"))
+        accountant_user.refresh_from_db()
+        self.assertTrue(accountant_user.check_password("NewLoginPass123"))
