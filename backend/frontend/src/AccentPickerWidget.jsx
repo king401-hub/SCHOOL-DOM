@@ -26,7 +26,7 @@ function loadPos() {
 // off-canvas (right <= 0) until opened, so it doesn't count.
 function defaultLeftFor() {
   try {
-    const sidebar = document.querySelector(".teacher-sidebar, .student-sidebar, .app-sidebar");
+    const sidebar = document.querySelector(".teacher-sidebar, .ts-sidebar, .student-sidebar, .app-sidebar");
     if (!sidebar) return 16;
     const rect = sidebar.getBoundingClientRect();
     const onScreen = rect.width > 0 && rect.left >= 0 && rect.right > 0;
@@ -43,11 +43,24 @@ export default function AccentPickerWidget({ session }) {
   const pos = savedPos || { left: defaultLeft, bottom: 16 };
 
   useEffect(() => {
-    // Runs after the whole tree has committed, so the sidebar is in the DOM.
+    // The dashboards mount their sidebar a beat after this widget (they wait on
+    // their data first), so re-check when the page structure changes as well as
+    // on resize. setState with an unchanged value is a no-op, so this stays cheap.
     const update = () => setDefaultLeft(defaultLeftFor());
     update();
+    let timer = null;
+    const soon = () => {
+      if (timer) return;
+      timer = window.setTimeout(() => { timer = null; update(); }, 250);
+    };
+    const observer = typeof MutationObserver === "function" ? new MutationObserver(soon) : null;
+    observer?.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener("resize", update);
+    };
   }, [session]);
   const [isDragging, setIsDragging] = useState(false);
   const [open, setOpen] = useState(false);

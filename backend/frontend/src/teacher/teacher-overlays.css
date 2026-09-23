@@ -1,0 +1,154 @@
+/* ==========================================================================
+   TEACHER STUDIO — overlays: command palette (portaled to <body>).
+   Scoped by body.ts-on because these render outside the workspace shell.
+   ========================================================================== */
+
+body.ts-on .ts-palette-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: start center;
+  padding: clamp(3rem, 12vh, 8rem) 1rem 1rem;
+  background: rgba(7, 11, 28, 0.5);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: ts-fade 160ms linear both;
+}
+
+body.ts-on .ts-palette {
+  width: min(620px, 100%);
+  max-height: min(70vh, 560px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid var(--ts-line-strong);
+  background: var(--ts-surface);
+  color: var(--ts-text);
+  font-family: var(--ts-font);
+  box-shadow: 0 40px 90px -30px rgba(7, 11, 28, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: ts-pop 260ms var(--ts-ease) both;
+}
+
+body.ts-on .ts-palette__search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.95rem 1.1rem;
+  border-bottom: 1px solid var(--ts-line);
+  color: var(--ts-muted);
+}
+body.ts-on .ts-palette__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ts-ink);
+  font: 600 1.02rem/1.3 var(--ts-font);
+}
+body.ts-on .ts-palette__search input::placeholder { color: var(--ts-faint); font-weight: 500; }
+body.ts-on .ts-palette .ts-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.4rem;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--ts-line-strong);
+  border-bottom-width: 2px;
+  background: var(--ts-surface-2);
+  color: var(--ts-muted);
+  font: 600 0.68rem/1 var(--ts-mono);
+}
+
+body.ts-on .ts-palette__list { margin: 0; padding: 0.4rem 0.5rem 0.5rem; list-style: none; overflow-y: auto; overscroll-behavior: contain; }
+body.ts-on .ts-palette__heading { margin: 0.6rem 0.6rem 0.25rem; color: var(--ts-faint); font: 700 0.64rem/1.2 var(--ts-font); letter-spacing: 0.14em; text-transform: uppercase; }
+body.ts-on .ts-palette__list li:first-child .ts-palette__heading { margin-top: 0.3rem; }
+body.ts-on .ts-palette__list button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.65rem;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--ts-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 90ms linear;
+}
+body.ts-on .ts-palette__list button.is-active { background: var(--ts-accent-soft-2); color: var(--ts-ink); }
+body.ts-on .ts-palette__icon { flex: none; display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 11px; color: var(--ts-accent-ink); background: var(--ts-accent-soft); }
+body.ts-on .ts-palette__list button.is-active .ts-palette__icon { color: #fff; background: var(--ts-grad); }
+body.ts-on .ts-palette__label { flex: 1; min-width: 0; display: grid; font: 650 0.9rem/1.3 var(--ts-font); }
+body.ts-on .ts-palette__label small { color: var(--ts-muted); font: 500 0.76rem/1.3 var(--ts-font); }
+body.ts-on .ts-palette__empty { padding: 1.6rem 1rem; text-align: center; color: var(--ts-muted); font-size: 0.9rem; }
+body.ts-on .ts-palette__foot { display: flex; gap: 1rem; padding: 0.6rem 1rem; border-top: 1px solid var(--ts-line); background: var(--ts-surface-2); color: var(--ts-muted); font: 600 0.72rem/1 var(--ts-font); }
+body.ts-on .ts-palette__foot span { display: inline-flex; align-items: center; gap: 0.3rem; }
+
+/* --------------------------------------------------------------------------
+   The app's global notifications bell is position:fixed (top-right). In the
+   teacher workspace it takes the slot the top bar reserves for it and wears
+   the same button style as the rest of the bar.
+   -------------------------------------------------------------------------- */
+
+/* (specificity chosen to beat the legacy per-role / per-breakpoint bell rules,
+   which parked it top-left on phones - where the menu button now lives) */
+body.ts-on[data-dashboard-role="teacher"] .global-notification-shell:not(.has-mobile-position) {
+  top: 0.85rem;
+  right: clamp(1rem, 3vw, 2.25rem);
+  left: auto;
+  justify-items: end;
+}
+body.ts-on[data-dashboard-role="teacher"] .global-notification-button {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+body.ts-on .global-notification-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--ts-line);
+  border-radius: 13px;
+  background: var(--ts-surface);
+  color: var(--ts-text);
+  box-shadow: var(--ts-shadow-1);
+  transition: transform var(--ts-fast) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease);
+}
+body.ts-on .global-notification-button:hover { transform: translateY(-1px); box-shadow: var(--ts-shadow-2); }
+body.ts-on .global-notification-button > span:not(.notification-badge) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+body.ts-on .global-notification-button.has-unread { border-color: color-mix(in srgb, var(--ts-danger) 55%, var(--ts-line)); }
+body.ts-on .global-notification-button .notification-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border: 2px solid var(--ts-canvas);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f43f5e, #fb7185);
+  color: #fff;
+  font: 800 0.6rem/1 var(--ts-font);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ts-on .ts-palette-layer,
+  body.ts-on .ts-palette { animation: ts-fade 120ms linear both; }
+}

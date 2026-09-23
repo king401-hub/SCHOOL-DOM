@@ -6,6 +6,7 @@ import {
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
   Package, Archive, Palette, KeyRound, Wallet, Trophy, Search, Pencil,
+  FilePlus2, ClipboardList,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -108,6 +109,8 @@ import {
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
+import TeacherShell from "./teacher/TeacherShell";
+import TeacherHome from "./teacher/TeacherHome";
 const AdminAiAssistantScreen = lazy(() => import("./AiAssistantScreen"));
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const AdminInventoryScreen = lazy(() => import("./components/Inventory/InventoryScreen"));
@@ -5873,6 +5876,7 @@ function TeacherWorkspace({
     } catch {}
   }, []);
   const [navOpen, setNavOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [editingExam, setEditingExam] = useState(null);
   const [loadingExamId, setLoadingExamId] = useState("");
   const [examEditError, setExamEditError] = useState("");
@@ -5893,22 +5897,44 @@ function TeacherWorkspace({
   const teacherProfile = data?.profile || data?.teacher || {};
   const teacherName = teacherProfile.name || session?.user?.full_name || session?.user?.email || "Teacher";
   const nonK12 = isNonK12School(session, data);
-  const teacherTabs = [
-    ["overview", "Home", "overview"],
-    // Labels match the page each tab opens: "Exam Builder" (the builder) and
-    // "My Exams" (the page titled "My Exams") - the sidebar used to say
-    // "Exams" / "Exam History" - and "Student Attendance" for both attendance
-    // variants (the non-K-12 one used to say just "Attendance").
-    ["exam-builder", "Exam Builder", "exam"],
-    ["past-exams", "My Exams", "calendar"],
-    nonK12 ? ["attendance-info", "Student Attendance", "attendance"] : ["attendance", "Student Attendance", "attendance"],
-    ["planning", nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad", "planning"],
-    ["timetable", "Timetable", "calendar"],
-    ["class-messages", "Messages & Notifications", "message"],
-    ["results", "Results", "results"],
-    ["theory-grading", "Theory Grading", "results"],
-    ["requests", "HR System", "requests"],
+  // Grouped for the sidebar; the flat teacherTabs list below keeps the old
+  // [key, label, icon] shape for everything that just needs the page set.
+  const attendanceKey = nonK12 ? "attendance-info" : "attendance";
+  const teacherNav = [
+    {
+      label: "Today",
+      items: [
+        { key: "overview", label: "Home", icon: LayoutDashboard, keywords: "dashboard overview today" },
+        { key: "timetable", label: "Timetable", icon: CalendarClock, keywords: "schedule periods week classes" },
+      ],
+    },
+    {
+      label: "Classroom",
+      items: [
+        { key: attendanceKey, label: "Attendance", icon: CalendarCheck, keywords: "register present absent late scan qr student" },
+        { key: "planning", label: nonK12 ? "Course outlines & notes" : "Lesson plans & notes", icon: BookOpen, keywords: "scheme of work notepad" },
+        { key: "class-messages", label: "Messages", icon: MessageCircle, keywords: "inbox notifications parents students announce" },
+      ],
+    },
+    {
+      label: "Assessment",
+      items: [
+        { key: "exam-builder", label: "Exam builder", icon: FilePlus2, keywords: "create exam cbt questions test" },
+        { key: "past-exams", label: "My exams", icon: FileCheck, keywords: "history published drafts edit" },
+        { key: "theory-grading", label: "Theory grading", icon: FileSignature, keywords: "mark written answers queue score" },
+        { key: "results", label: "Results & rankings", icon: Trophy, keywords: "scores grades positions cbt" },
+      ],
+    },
+    {
+      label: "Me",
+      items: [{ key: "requests", label: "My HR", icon: Briefcase, keywords: "leave salary advance payslip letter hr" }],
+    },
   ];
+  const teacherTabs = teacherNav.flatMap((section) => section.items.map((item) => [item.key, item.label, item.icon]));
+  const navBadges = {
+    "class-messages": unreadInbox,
+    "theory-grading": (data?.cbt_results || []).filter((row) => row?.needs_theory_grading).length,
+  };
 
   const selectTeacherTab = useCallback(
     (key) => {
@@ -5922,26 +5948,34 @@ function TeacherWorkspace({
     [setActiveTab]
   );
 
-  const teacherSearchItems = useMemo(
+  const extraNav = useMemo(
     () => [
-      ...teacherTabs.map(([key, label, icon]) => ({ id: key, label, section: "Teacher Workspace", iconName: icon, kind: "tab" })),
-      { id: "/quizzes", label: "Assessments", section: "Teacher Workspace", iconName: "exam", kind: "route" },
+      {
+        id: "assessments",
+        label: "Assessments",
+        hint: "Quizzes and question bank",
+        icon: ClipboardList,
+        keywords: "quiz question bank practice",
+        onSelect: () => {
+          onNavigate?.("/quizzes");
+          setNavOpen(false);
+        },
+      },
     ],
-    // teacherTabs is rebuilt fresh each render from nonK12, so key it on that instead
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nonK12]
+    [onNavigate]
   );
 
-  const handleTeacherSearchSelect = useCallback(
-    (item) => {
-      if (item.kind === "route") {
-        onNavigate?.(item.id);
-        setNavOpen(false);
-      } else {
-        selectTeacherTab(item.id);
-      }
-    },
-    [onNavigate, selectTeacherTab]
+  // "Do" entries in the Ctrl+K palette: verbs, where the pages list is nouns.
+  const paletteActions = useMemo(
+    () => [
+      { id: "do-attendance", label: "Take attendance", hint: "Tap through today's class register", section: "Do", keywords: "mark register present absent", icon: CalendarCheck, run: () => selectTeacherTab(nonK12 ? "attendance-info" : "attendance") },
+      { id: "do-exam", label: "Build a new exam", hint: "Start the exam builder", section: "Do", keywords: "create test cbt", icon: FilePlus2, run: () => selectTeacherTab("exam-builder") },
+      { id: "do-mark", label: "Mark written answers", hint: "Open the theory marking queue", section: "Do", keywords: "grade score", icon: FileSignature, run: () => selectTeacherTab("theory-grading") },
+      { id: "do-scores", label: "Enter scores", hint: "Record marks for a subject", section: "Do", keywords: "results grades", icon: Trophy, run: () => selectTeacherTab("results") },
+      { id: "do-message", label: "Message a class", hint: "Send a note to students", section: "Do", keywords: "announce inbox", icon: MessageCircle, run: () => selectTeacherTab("class-messages") },
+      { id: "do-leave", label: "Request leave", hint: "Leave and salary advances", section: "Do", keywords: "hr off absent advance", icon: Briefcase, run: () => selectTeacherTab("requests") },
+    ],
+    [nonK12, selectTeacherTab]
   );
 
   // Escape closes the phone drawer, matching a click on the overlay.
@@ -6055,7 +6089,7 @@ function TeacherWorkspace({
   const renderTeacherContent = () => {
     if (activeTab === "overview") {
       return (
-        <TeacherDashboard session={session} data={data} onCreatePrompt={onCreatePrompt} onNotifyExam={onNotifyExam} isRefreshing={isRefreshing} onNavigate={onNavigate} onTabChange={setActiveTab} onRefresh={onRefresh} />
+        <TeacherHome session={session} data={data} isRefreshing={isRefreshing} nonK12={nonK12} onTabChange={selectTeacherTab} onEditProfile={() => setProfileOpen(true)} />
       );
     }
     if (activeTab === "exam-builder") {
@@ -6267,79 +6301,40 @@ function TeacherWorkspace({
   };
 
   return (
-    <section className={`teacher-workspace-shell ${navOpen ? "nav-open" : ""}`}>
-      <button
-        type="button"
-        className="teacher-sidebar-toggle"
-        aria-expanded={navOpen}
-        aria-controls="teacher-sidebar"
-        aria-label={`${navOpen ? "Close" : "Open"} navigation menu, current page ${tabTitle}`}
-        onClick={() => setNavOpen((current) => !current)}
+    <>
+      <TeacherShell
+        session={session}
+        schoolName={data?.school?.name || session?.school?.name || "SchoolDom"}
+        teacherName={teacherName}
+        teacherRole={teacherProfile.specialization && !/^not specified$/i.test(String(teacherProfile.specialization).trim()) ? teacherProfile.specialization : "Teacher"}
+        avatarUrl={teacherProfile.profile_picture || ""}
+        sections={teacherNav}
+        extraNav={extraNav}
+        badges={navBadges}
+        activeTab={activeTab}
+        onSelectTab={selectTeacherTab}
+        tabTitle={tabTitle}
+        navOpen={navOpen}
+        onToggleNav={() => setNavOpen((current) => !current)}
+        onCloseNav={() => setNavOpen(false)}
+        themePreference={themePreference}
+        onThemeChange={onThemeChange}
+        onSignOut={onSignOut}
+        onOpenProfile={() => setProfileOpen(true)}
+        paletteActions={paletteActions}
       >
-        <span className="menu-bars" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </span>
-        <span aria-hidden="true">{tabTitle}</span>
-      </button>
-      <aside className="teacher-sidebar" id="teacher-sidebar">
-        <div className="teacher-sidebar-head">
-          <span>Teacher Workspace</span>
-          <strong>{teacherName}</strong>
-          <small>{data?.school?.name || session?.school?.name || "SchoolDom"}</small>
-          <CurrentTermBadge session={session} />
-        </div>
-        <SidebarSearch
-          items={teacherSearchItems}
-          onSelect={handleTeacherSearchSelect}
-          placeholder="Search pages..."
-          renderIcon={(item) => <DashboardIcon name={item.iconName} className="inline-icon" />}
-        />
-        <nav className="teacher-sidebar-nav" aria-label="Teacher workspace navigation">
-          {teacherTabs.map(([key, label, icon]) => (
-            <button
-              key={key}
-              type="button"
-              className={activeTab === key ? "active" : ""}
-              aria-current={activeTab === key ? "page" : undefined}
-              onClick={() => selectTeacherTab(key)}
-            >
-              <DashboardIcon name={icon} className="inline-icon" />
-              <span>{label}</span>
-              {key === "class-messages" && unreadInbox > 0 ? (
-                <strong className="notification-badge">{unreadInbox > 99 ? "99+" : unreadInbox}</strong>
-              ) : null}
-            </button>
-          ))}
-          <button type="button" onClick={() => onNavigate?.("/quizzes")}>
-            <DashboardIcon name="exam" className="inline-icon" />
-            <span>Assessments</span>
-          </button>
-        </nav>
-        <div className="teacher-sidebar-footer">
-          <button
-            type="button"
-            className="theme-icon-toggle"
-            onClick={() => onThemeChange?.(themePreference === "dark" ? "light" : "dark")}
-            aria-label={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
-            title={`Switch to ${themePreference === "dark" ? "light" : "dark"} theme`}
-          >
-            <ThemeModeIcon mode={themePreference} className="inline-icon" />
-            <span>{themePreference === "dark" ? "Dark" : "Light"}</span>
-          </button>
-          {onSignOut ? (
-            <button type="button" className="teacher-sidebar-signout" onClick={onSignOut}>
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </aside>
-      <div className="teacher-sidebar-overlay" role="presentation" onClick={() => setNavOpen(false)} />
-      <main className="teacher-workspace-main">
         {renderTeacherContent()}
-      </main>
-    </section>
+      </TeacherShell>
+      <EditableStaffBioProfile
+        session={session}
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onSaved={onRefresh}
+        fallbackProfile={teacherProfile}
+        title="My profile"
+        subtitle="Keep your details up to date"
+      />
+    </>
   );
 }
 
@@ -10269,10 +10264,13 @@ export default function App() {
 useEffect(() => {
   if (!session) {
     document.body.removeAttribute("data-dashboard-role");
+    document.body.classList.remove("ts-on");
     return;
     }
     document.body.setAttribute("data-theme", themePreference);
     document.body.setAttribute("data-dashboard-role", session.user?.role || "");
+    // "Teacher Studio" design scope (see teacher/teacher-studio.css).
+    document.body.classList.toggle("ts-on", session.user?.role === "teacher");
     window.localStorage.setItem(UI_THEME_KEY, themePreference);
   }, [session, themePreference]);
 

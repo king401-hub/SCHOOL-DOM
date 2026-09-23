@@ -1,0 +1,547 @@
+/* ==========================================================================
+   TEACHER STUDIO — design system for the teacher workspace (web).
+
+   Scope: everything is keyed off `body.ts-on` (added while the teacher
+   workspace is mounted) or `.teacher-workspace-shell`, so admin, student and
+   parent screens are untouched. Loaded AFTER styles.css (see main.jsx) and
+   uses a doubled scope class on selectors that must beat the legacy rules.
+
+   Layers:  1 tokens  2 canvas & type  3 motion  4 kit primitives
+            5 legacy-class reskin  6 shell  7 pages
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- 1 tokens */
+
+body.ts-on {
+  /* type */
+  --ts-font: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --ts-display: "Outfit", "Manrope", "Segoe UI", system-ui, sans-serif;
+  --ts-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* surfaces */
+  --ts-canvas: #f2f4fa;
+  --ts-canvas-2: #e9edf7;
+  --ts-surface: #ffffff;
+  --ts-surface-2: #f7f8fc;
+  --ts-surface-3: #eff2f9;
+  --ts-line: rgba(15, 23, 42, 0.08);
+  --ts-line-strong: rgba(15, 23, 42, 0.15);
+
+  /* ink */
+  --ts-ink: #0b1220;
+  --ts-text: #2a3548;
+  --ts-muted: #5f6f86;
+  --ts-faint: #94a3b8;
+
+  /* brand */
+  --ts-accent: #4f46e5;
+  --ts-accent-2: #7c3aed;
+  --ts-accent-ink: #4338ca;
+  --ts-accent-soft: rgba(79, 70, 229, 0.09);
+  --ts-accent-soft-2: rgba(79, 70, 229, 0.15);
+  --ts-ring: rgba(99, 102, 241, 0.38);
+  --ts-grad: linear-gradient(135deg, #4f46e5 0%, #6a55e8 46%, #7c3aed 100%);
+  --ts-grad-hover: linear-gradient(135deg, #4338ca 0%, #5b47df 46%, #6d28d9 100%);
+
+  /* semantics */
+  --ts-ok: #059669;
+  --ts-ok-soft: rgba(5, 150, 105, 0.11);
+  --ts-warn: #b45309;
+  --ts-warn-soft: rgba(217, 119, 6, 0.13);
+  --ts-danger: #e11d48;
+  --ts-danger-soft: rgba(225, 29, 72, 0.1);
+  --ts-info: #0369a1;
+  --ts-info-soft: rgba(2, 132, 199, 0.11);
+
+  /* depth */
+  --ts-shadow-1: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --ts-shadow-2: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 26px -12px rgba(16, 24, 40, 0.16);
+  --ts-shadow-3: 0 2px 6px rgba(16, 24, 40, 0.06), 0 26px 52px -20px rgba(16, 24, 40, 0.3);
+  --ts-shadow-accent: 0 8px 22px -8px rgba(79, 70, 229, 0.55);
+  --ts-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  /* shape */
+  --ts-r-xs: 8px;
+  --ts-r-sm: 11px;
+  --ts-r-md: 15px;
+  --ts-r-lg: 20px;
+  --ts-r-xl: 28px;
+
+  /* motion */
+  --ts-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ts-ease-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --ts-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --ts-fast: 140ms;
+  --ts-med: 240ms;
+  --ts-slow: 460ms;
+
+  /* subject / class palette: solid + soft pairs, addressed by data-tone="0".."7" */
+  --ts-t0: #6366f1; --ts-t0-soft: rgba(99, 102, 241, 0.12);
+  --ts-t1: #0ea5e9; --ts-t1-soft: rgba(14, 165, 233, 0.12);
+  --ts-t2: #10b981; --ts-t2-soft: rgba(16, 185, 129, 0.12);
+  --ts-t3: #f59e0b; --ts-t3-soft: rgba(245, 158, 11, 0.14);
+  --ts-t4: #f43f5e; --ts-t4-soft: rgba(244, 63, 94, 0.11);
+  --ts-t5: #8b5cf6; --ts-t5-soft: rgba(139, 92, 246, 0.12);
+  --ts-t6: #14b8a6; --ts-t6-soft: rgba(20, 184, 166, 0.12);
+  --ts-t7: #f97316; --ts-t7-soft: rgba(249, 115, 22, 0.13);
+
+  /* sidebar (dark ink in BOTH themes: the calm anchor of the layout) */
+  --ts-side-bg: linear-gradient(168deg, #101a36 0%, #0c1329 52%, #0a1024 100%);
+  --ts-side-text: #b7c2dd;
+  --ts-side-strong: #f4f7ff;
+  --ts-side-line: rgba(255, 255, 255, 0.08);
+  --ts-side-hover: rgba(255, 255, 255, 0.06);
+  --ts-side-active: rgba(129, 140, 248, 0.17);
+
+  --ts-grain-opacity: 0.05;
+  --ts-grain-blend: multiply;
+}
+
+body.ts-on[data-theme="dark"] {
+  --ts-canvas: #070b16;
+  --ts-canvas-2: #0a1120;
+  --ts-surface: #0f172a;
+  --ts-surface-2: #0b1324;
+  --ts-surface-3: #131c33;
+  --ts-line: rgba(148, 163, 184, 0.14);
+  --ts-line-strong: rgba(148, 163, 184, 0.26);
+
+  --ts-ink: #f3f6ff;
+  --ts-text: #c9d3ea;
+  --ts-muted: #8b9ab7;
+  --ts-faint: #62708c;
+
+  --ts-accent: #8b8dfb;
+  --ts-accent-2: #a78bfa;
+  --ts-accent-ink: #b4b8ff;
+  --ts-accent-soft: rgba(139, 141, 251, 0.13);
+  --ts-accent-soft-2: rgba(139, 141, 251, 0.22);
+  --ts-ring: rgba(139, 141, 251, 0.45);
+  --ts-grad: linear-gradient(135deg, #5b57f0 0%, #7160f3 46%, #8b5cf6 100%);
+  --ts-grad-hover: linear-gradient(135deg, #6a66f5 0%, #806ff6 46%, #9a6cf8 100%);
+
+  --ts-ok: #34d399;
+  --ts-ok-soft: rgba(52, 211, 153, 0.13);
+  --ts-warn: #fbbf24;
+  --ts-warn-soft: rgba(251, 191, 36, 0.14);
+  --ts-danger: #fb7185;
+  --ts-danger-soft: rgba(251, 113, 133, 0.13);
+  --ts-info: #38bdf8;
+  --ts-info-soft: rgba(56, 189, 248, 0.13);
+
+  --ts-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ts-shadow-2: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 30px -14px rgba(0, 0, 0, 0.7);
+  --ts-shadow-3: 0 2px 6px rgba(0, 0, 0, 0.4), 0 30px 60px -22px rgba(0, 0, 0, 0.85);
+  --ts-shadow-accent: 0 10px 26px -10px rgba(99, 102, 241, 0.7);
+  --ts-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --ts-t0: #818cf8; --ts-t0-soft: rgba(129, 140, 248, 0.16);
+  --ts-t1: #38bdf8; --ts-t1-soft: rgba(56, 189, 248, 0.15);
+  --ts-t2: #34d399; --ts-t2-soft: rgba(52, 211, 153, 0.15);
+  --ts-t3: #fbbf24; --ts-t3-soft: rgba(251, 191, 36, 0.16);
+  --ts-t4: #fb7185; --ts-t4-soft: rgba(251, 113, 133, 0.15);
+  --ts-t5: #a78bfa; --ts-t5-soft: rgba(167, 139, 250, 0.16);
+  --ts-t6: #2dd4bf; --ts-t6-soft: rgba(45, 212, 191, 0.15);
+  --ts-t7: #fb923c; --ts-t7-soft: rgba(251, 146, 60, 0.16);
+
+  --ts-side-bg: linear-gradient(168deg, #0d1530 0%, #0a1024 55%, #070c1b 100%);
+  --ts-grain-opacity: 0.07;
+  --ts-grain-blend: screen;
+}
+
+/* tone helper: <x data-tone="3"> exposes --tone / --tone-soft to descendants */
+body.ts-on [data-tone="0"] { --tone: var(--ts-t0); --tone-soft: var(--ts-t0-soft); }
+body.ts-on [data-tone="1"] { --tone: var(--ts-t1); --tone-soft: var(--ts-t1-soft); }
+body.ts-on [data-tone="2"] { --tone: var(--ts-t2); --tone-soft: var(--ts-t2-soft); }
+body.ts-on [data-tone="3"] { --tone: var(--ts-t3); --tone-soft: var(--ts-t3-soft); }
+body.ts-on [data-tone="4"] { --tone: var(--ts-t4); --tone-soft: var(--ts-t4-soft); }
+body.ts-on [data-tone="5"] { --tone: var(--ts-t5); --tone-soft: var(--ts-t5-soft); }
+body.ts-on [data-tone="6"] { --tone: var(--ts-t6); --tone-soft: var(--ts-t6-soft); }
+body.ts-on [data-tone="7"] { --tone: var(--ts-t7); --tone-soft: var(--ts-t7-soft); }
+body.ts-on [data-tone="indigo"] { --tone: var(--ts-t0); --tone-soft: var(--ts-t0-soft); }
+body.ts-on [data-tone="sky"] { --tone: var(--ts-t1); --tone-soft: var(--ts-t1-soft); }
+body.ts-on [data-tone="emerald"] { --tone: var(--ts-t2); --tone-soft: var(--ts-t2-soft); }
+body.ts-on [data-tone="amber"] { --tone: var(--ts-t3); --tone-soft: var(--ts-t3-soft); }
+body.ts-on [data-tone="rose"] { --tone: var(--ts-t4); --tone-soft: var(--ts-t4-soft); }
+body.ts-on [data-tone="violet"] { --tone: var(--ts-t5); --tone-soft: var(--ts-t5-soft); }
+
+/* ------------------------------------------------------------ 2 canvas/type */
+
+body.ts-on {
+  background: var(--ts-canvas);
+  color: var(--ts-text);
+  font-family: var(--ts-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Two fixed decorative layers behind everything: a slow aurora and film grain. */
+body.ts-on::before,
+body.ts-on::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body.ts-on::before {
+  background:
+    radial-gradient(60vmax 44vmax at 8% -6%, rgba(99, 102, 241, 0.16), transparent 62%),
+    radial-gradient(52vmax 40vmax at 104% 4%, rgba(168, 85, 247, 0.1), transparent 60%),
+    radial-gradient(56vmax 46vmax at 50% 118%, rgba(14, 165, 233, 0.09), transparent 62%);
+  animation: ts-aurora 38s var(--ts-ease-io) infinite alternate;
+}
+
+body.ts-on[data-theme="dark"]::before {
+  background:
+    radial-gradient(60vmax 44vmax at 8% -6%, rgba(99, 102, 241, 0.26), transparent 62%),
+    radial-gradient(52vmax 40vmax at 104% 4%, rgba(139, 92, 246, 0.18), transparent 60%),
+    radial-gradient(56vmax 46vmax at 50% 118%, rgba(14, 165, 233, 0.13), transparent 62%);
+}
+
+body.ts-on::after {
+  opacity: var(--ts-grain-opacity);
+  mix-blend-mode: var(--ts-grain-blend);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n' x='0' y='0'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.3  0 0 0 0 0.3  0 0 0 0 0.4  0 0 0 .9 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 180px 180px;
+}
+
+@keyframes ts-aurora {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-1.5%, 1.5%, 0) scale(1.04); }
+}
+
+.teacher-workspace-shell.ts {
+  position: relative;
+  z-index: 1;
+  font-family: var(--ts-font);
+  color: var(--ts-text);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  font-feature-settings: "cv11", "ss01";
+}
+
+.teacher-workspace-shell.ts h1,
+.teacher-workspace-shell.ts h2,
+.teacher-workspace-shell.ts h3,
+.teacher-workspace-shell.ts h4 {
+  font-family: var(--ts-display);
+  color: var(--ts-ink);
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+}
+
+.teacher-workspace-shell.ts ::selection {
+  background: var(--ts-accent-soft-2);
+  color: var(--ts-ink);
+}
+
+.teacher-workspace-shell.ts :where(.metric-value, .ts-num, td, th, .ts-tabular) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* thin, quiet scrollbars */
+.teacher-workspace-shell.ts * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ts-line-strong) transparent;
+}
+.teacher-workspace-shell.ts *::-webkit-scrollbar { width: 10px; height: 10px; }
+.teacher-workspace-shell.ts *::-webkit-scrollbar-thumb {
+  background: var(--ts-line-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.teacher-workspace-shell.ts *::-webkit-scrollbar-thumb:hover { background-color: var(--ts-faint); background-clip: content-box; }
+
+/* -------------------------------------------------------------- 3 motion */
+
+@keyframes ts-rise {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes ts-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ts-pop {
+  from { opacity: 0; transform: scale(0.96) translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+}
+@keyframes ts-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes ts-sheen {
+  from { transform: translateX(-120%) skewX(-18deg); }
+  to { transform: translateX(260%) skewX(-18deg); }
+}
+@keyframes ts-pulse-ring {
+  0% { box-shadow: 0 0 0 0 var(--ts-ring); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+@keyframes ts-draw {
+  from { stroke-dashoffset: 60; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* A page swaps in with a soft rise; direct children of an element marked
+   .ts-stagger follow one after another (index comes from --ts-i). */
+.ts-page {
+  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+}
+.ts-stagger > * {
+  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+  animation-delay: calc(var(--ts-i, 0) * var(--ts-step, 45ms));
+}
+.ts-reveal {
+  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+  animation-delay: calc(var(--ts-i, 0) * var(--ts-step, 45ms));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ts-on::before { animation: none; }
+  .ts-page,
+  .ts-stagger > *,
+  .ts-reveal { animation: ts-fade 160ms linear both; animation-delay: 0ms; }
+  .teacher-workspace-shell.ts *,
+  .teacher-workspace-shell.ts *::before,
+  .teacher-workspace-shell.ts *::after {
+    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------ 4 kit primitives */
+
+.teacher-workspace-shell.ts .ts-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.4rem;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--ts-line-strong);
+  border-bottom-width: 2px;
+  background: var(--ts-surface);
+  color: var(--ts-muted);
+  font: 600 0.68rem/1 var(--ts-mono);
+}
+
+/* page header ------------------------------------------------------------ */
+
+.teacher-workspace-shell.ts .ts-page-header {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding: 1.5rem 1.75rem;
+  border-radius: var(--ts-r-xl);
+  border: 1px solid var(--ts-line);
+  background:
+    radial-gradient(90% 140% at 100% 0%, var(--tone-soft, var(--ts-accent-soft)), transparent 60%),
+    linear-gradient(180deg, var(--ts-surface), var(--ts-surface-2));
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+  overflow: hidden;
+}
+
+.teacher-workspace-shell.ts .ts-page-header__glow {
+  position: absolute;
+  z-index: -1;
+  right: -60px;
+  top: -80px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--tone, var(--ts-accent)) 0%, transparent 68%);
+  opacity: 0.16;
+  filter: blur(6px);
+}
+
+.teacher-workspace-shell.ts .ts-page-header__main {
+  display: flex;
+  align-items: center;
+  gap: 1.05rem;
+  min-width: 0;
+}
+
+.teacher-workspace-shell.ts .ts-page-header__icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 16px;
+  color: #fff;
+  background: var(--ts-grad);
+  box-shadow: var(--ts-shadow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.teacher-workspace-shell.ts .ts-eyebrow {
+  margin: 0 0 0.2rem;
+  font: 700 0.7rem/1.2 var(--ts-font);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ts-accent-ink);
+}
+
+.teacher-workspace-shell.ts .ts-page-title {
+  margin: 0;
+  font-size: clamp(1.45rem, 1.1rem + 1.2vw, 2rem);
+  font-weight: 700;
+}
+
+.teacher-workspace-shell.ts .ts-page-sub {
+  margin: 0.3rem 0 0;
+  max-width: 62ch;
+  color: var(--ts-muted);
+  font-size: 0.93rem;
+}
+
+.teacher-workspace-shell.ts .ts-page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.teacher-workspace-shell.ts .ts-page-header__meta {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* section card ----------------------------------------------------------- */
+
+.teacher-workspace-shell.ts .ts-card {
+  position: relative;
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--ts-r-lg);
+  border: 1px solid var(--ts-line);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+  transition: box-shadow var(--ts-med) var(--ts-ease), border-color var(--ts-med) var(--ts-ease), transform var(--ts-med) var(--ts-ease);
+}
+
+.teacher-workspace-shell.ts .ts-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.teacher-workspace-shell.ts .ts-card__titles {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.teacher-workspace-shell.ts .ts-card__icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 10px;
+  color: var(--tone, var(--ts-accent));
+  background: var(--tone-soft, var(--ts-accent-soft));
+}
+
+.teacher-workspace-shell.ts .ts-card__title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 650;
+}
+
+.teacher-workspace-shell.ts .ts-card__sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ts-muted);
+}
+
+/* skeleton ---------------------------------------------------------------- */
+
+.teacher-workspace-shell.ts .ts-skel {
+  display: block;
+  border-radius: 8px;
+  background: linear-gradient(100deg, var(--ts-surface-3) 30%, color-mix(in srgb, var(--ts-surface-3) 55%, var(--ts-surface)) 50%, var(--ts-surface-3) 70%);
+  background-size: 200% 100%;
+  animation: ts-shimmer 1.5s linear infinite;
+}
+.teacher-workspace-shell.ts .ts-skel-lines { display: grid; gap: 0.6rem; }
+
+/* progress ring ----------------------------------------------------------- */
+
+.teacher-workspace-shell.ts .ts-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.teacher-workspace-shell.ts .ts-ring svg { display: block; }
+.teacher-workspace-shell.ts .ts-ring__track { stroke: var(--ts-surface-3); }
+.teacher-workspace-shell.ts .ts-ring__bar {
+  stroke: var(--tone, var(--ts-accent));
+  transition: stroke-dashoffset 1.1s var(--ts-ease);
+}
+.teacher-workspace-shell.ts .ts-ring__label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  line-height: 1.1;
+}
+.teacher-workspace-shell.ts .ts-ring__label strong { font: 700 1.25rem/1 var(--ts-display); color: var(--ts-ink); }
+.teacher-workspace-shell.ts .ts-ring__label small { font-size: 0.68rem; color: var(--ts-muted); margin-top: 0.15rem; }
+
+/* avatar ------------------------------------------------------------------ */
+
+.teacher-workspace-shell.ts .ts-avatar,
+body.ts-on .ts-avatar {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 34%;
+  overflow: hidden;
+  color: #fff;
+  font-family: var(--ts-display);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: linear-gradient(140deg, var(--tone, var(--ts-t0)), color-mix(in srgb, var(--tone, var(--ts-t0)) 55%, #7c3aed));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 10px -4px color-mix(in srgb, var(--tone, var(--ts-t0)) 70%, transparent);
+}
+.teacher-workspace-shell.ts .ts-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* empty state ------------------------------------------------------------- */
+
+.teacher-workspace-shell.ts .ts-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  padding: 2.4rem 1rem;
+  text-align: center;
+}
+.teacher-workspace-shell.ts .ts-empty--compact { padding: 1.2rem 0.75rem; }
+.teacher-workspace-shell.ts .ts-empty__art { width: 104px; height: 104px; margin-bottom: 0.4rem; overflow: visible; }
+.teacher-workspace-shell.ts .ts-empty--compact .ts-empty__art { width: 72px; height: 72px; }
+.teacher-workspace-shell.ts .ts-empty__art .a1 { fill: var(--ts-t0); opacity: 0.9; }
+.teacher-workspace-shell.ts .ts-empty__art .a2 { fill: var(--ts-t0-soft); stroke: var(--ts-t0); stroke-width: 1.6; }
+.teacher-workspace-shell.ts .ts-empty__art .a3 { fill: var(--ts-t3); opacity: 0.9; }
+.teacher-workspace-shell.ts .ts-empty__art .base { fill: var(--ts-line-strong); }
+.teacher-workspace-shell.ts .ts-empty__art .line { stroke: var(--ts-t0); stroke-width: 3; stroke-linecap: round; fill: none; }
+.teacher-workspace-shell.ts .ts-empty__art .line.thick { stroke-width: 5; }
+.teacher-workspace-shell.ts .ts-empty__art .check { stroke-dasharray: 60; animation: ts-draw 700ms 200ms var(--ts-ease) both; }
+.teacher-workspace-shell.ts .ts-empty__title { margin: 0; font-size: 1.05rem; font-weight: 650; }
+.teacher-workspace-shell.ts .ts-empty__message { margin: 0; max-width: 40ch; color: var(--ts-muted); font-size: 0.88rem; }
+.teacher-workspace-shell.ts .ts-empty__action { margin-top: 0.7rem; }
