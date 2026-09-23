@@ -46,7 +46,9 @@ import { FinanceHistoryModal } from "./FinanceHistoryModal";
 import ExamSubmissionModal from "./components/ExamSubmissionModal";
 import ResultBatchReviewModal from "./components/ResultBatchReviewModal";
 
-function ConfirmModal({ open, title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel }) {
+// `secondaryLabel` adds a third button between Cancel and the confirm button
+// (see useConfirm: it resolves "secondary", where confirm resolves true).
+function ConfirmModal({ open, title, message, confirmLabel = "Confirm", secondaryLabel = "", danger = false, onConfirm, onSecondary, onCancel }) {
   return (
     <Popup
       open={open}
@@ -64,8 +66,11 @@ function ConfirmModal({ open, title, message, confirmLabel = "Confirm", danger =
       </div>
       <h3 className="cfm-title" id="cfm-title">{title}</h3>
       {message && <p className="cfm-message">{message}</p>}
-      <div className="cfm-actions">
+      <div className={`cfm-actions${secondaryLabel ? " cfm-actions--wrap" : ""}`}>
         <button type="button" className="cfm-btn cfm-btn--cancel" onClick={onCancel}>Cancel</button>
+        {secondaryLabel ? (
+          <button type="button" className="cfm-btn cfm-btn--secondary" onClick={onSecondary}>{secondaryLabel}</button>
+        ) : null}
         <button type="button" className={`cfm-btn cfm-btn--ok${danger ? " cfm-btn--danger" : " cfm-btn--neutral"}`} onClick={onConfirm}>{confirmLabel}</button>
       </div>
     </Popup>
@@ -193,8 +198,9 @@ function useConfirm() {
     setOpen(true);
   }), []);
   const handleConfirm = useCallback(() => { setOpen(false); resolveRef.current?.(true); }, []);
+  const handleSecondary = useCallback(() => { setOpen(false); resolveRef.current?.("secondary"); }, []);
   const handleCancel = useCallback(() => { setOpen(false); resolveRef.current?.(false); }, []);
-  const dialog = state ? <ConfirmModal {...state} open={open} onConfirm={handleConfirm} onCancel={handleCancel} /> : null;
+  const dialog = state ? <ConfirmModal {...state} open={open} onConfirm={handleConfirm} onSecondary={handleSecondary} onCancel={handleCancel} /> : null;
   return [confirm, dialog];
 }
 
@@ -1818,6 +1824,8 @@ function AdminFinanceScreen({
   const [resendBusyId, setResendBusyId] = useState("");
   // The Resend confirmation: { payment, loading, error, data, summary } or null.
   const [receiptPreview, setReceiptPreview] = useState(null);
+  // "Record this payment anyway?" - see handleCashPaymentSubmit.
+  const [confirm, confirmDialog] = useConfirm();
   const [subaccountMessage, setSubaccountMessage] = useState("");
   const [subaccountError, setSubaccountError] = useState("");
   const anyBusy = Boolean(busyAction) || Boolean(resendBusyId) || vaListLoading || Boolean(vaBusyParentId);
@@ -2517,10 +2525,60 @@ function AdminFinanceScreen({
     }
   };
 
+  // The student a Record Payment entry points at, found in the roster the
+  // screen already loaded. The form takes a student ID, admission number or
+  // email (the same three the server accepts), so match on any of them.
+  const findPaymentRowForEntry = (entry) => {
+    const needle = String(entry || "").trim().toLowerCase();
+    if (!needle) return null;
+    return paymentRows.find((row) =>
+      [row.student_id, row.admission_number, row.student_email, row.id].some(
+        (value) => String(value || "").trim().toLowerCase() === needle
+      )
+    ) || null;
+  };
+
   const handleCashPaymentSubmit = async (event) => {
     event.preventDefault();
     setFeedback("");
     setFormError("");
+
+    // Money that goes beyond what the student owes never reduces a fee: the
+    // server keeps the excess as prepaid credit on the student's wallet, which
+    // is not shown on the Overview. A payment recorded for a student who owes
+    // nothing looks like it vanished, so ask before recording one.
+    const entered = Number(cashPaymentForm.amount);
+    const studentRow = findPaymentRowForEntry(cashPaymentForm.student_id);
+    if (studentRow && entered > 0) {
+      const owed = Math.max(Number(studentRow.remaining_balance || 0), 0);
+      if (entered - owed > 0.005) {
+        const who = studentRow.name || "This student";
+        if (owed <= 0) {
+          // Nothing to pay against: the usual reason is that the student has no
+          // bill yet, so offer to make one instead of parking the money.
+          const choice = await confirm({
+            title: "No outstanding fees",
+            message: `${who} has no outstanding fees, so ${formatFinanceAmount(entered)} would not reduce any fee - it would be kept as prepaid credit on the student's wallet. Create a bill for the student first, or record the payment anyway.`,
+            confirmLabel: "Create bill",
+            secondaryLabel: "Record anyway",
+          });
+          if (choice === true) {
+            handleOpenNewBill();
+            return;
+          }
+          if (choice !== "secondary") return;
+        } else {
+          const proceed = await confirm({
+            title: "Payment is more than what is owed",
+            message: `${who} only owes ${formatFinanceAmount(owed)}. ${formatFinanceAmount(entered - owed)} of this ${formatFinanceAmount(entered)} payment will not reduce any fee - it will be kept as prepaid credit on the student's wallet. Record it anyway?`,
+            confirmLabel: "Record anyway",
+            danger: true,
+          });
+          if (!proceed) return;
+        }
+      }
+    }
+
     setBusyAction("cashPayment");
     try {
       const result = await onCashPaymentRecord(cashPaymentForm);
@@ -3590,6 +3648,8 @@ function AdminFinanceScreen({
         onSend={confirmReceiptResend}
         onClose={() => setReceiptPreview(null)}
       />
+
+      {confirmDialog}
 
       {printingBill ? (
         <div style={{ position: "fixed", top: 0, left: "-9999px", zIndex: -1 }}>

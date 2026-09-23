@@ -27402,6 +27402,16 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
   border: 1px solid rgba(255,255,255,0.1);
 }
 .cfm-btn--cancel:hover { background: rgba(255,255,255,0.12); color: #cbd5e1; }
+/* Optional third button (ConfirmModal's secondaryLabel). With three buttons the
+   row wraps instead of squeezing the labels on a phone. */
+.cfm-actions--wrap { flex-wrap: wrap; }
+.cfm-actions--wrap .cfm-btn { flex: 1 1 30%; white-space: nowrap; padding-left: 0.5rem; padding-right: 0.5rem; }
+.cfm-btn--secondary {
+  background: transparent;
+  color: #cbd5e1;
+  border: 1px solid rgba(255,255,255,0.28);
+}
+.cfm-btn--secondary:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .cfm-btn--ok { color: #fff; }
 .cfm-btn--danger  { background: #ef4444; }
 .cfm-btn--danger:hover  { background: #dc2626; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(239,68,68,0.4); }
@@ -27424,6 +27434,8 @@ body[data-dashboard-role="student"] .student-sidebar-profile:hover .student-avat
     border-color: rgba(0,0,0,0.1);
   }
   .cfm-btn--cancel:hover { background: #e2e8f0; color: #1e293b; }
+  .cfm-btn--secondary { color: #475569; border-color: rgba(0,0,0,0.22); }
+  .cfm-btn--secondary:hover { background: #f1f5f9; color: #1e293b; }
 }
 
 /* ── Static sidebars — always pinned at ≥ 560px (tablet + desktop) ──────── */

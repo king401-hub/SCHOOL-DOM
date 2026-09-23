@@ -2274,6 +2274,27 @@ class RecordedPaymentMethodTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.data["success"])
 
+    def test_finance_snapshot_rows_carry_every_identifier_the_payment_form_accepts(self):
+        """Record Payment takes a student ID, admission number or email. The web
+        app warns before recording a payment for a student who owes nothing by
+        finding the student in these rows, so all three - and the balance - have
+        to be on them."""
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+
+        def row():
+            rows = client.get("/api/finance/admin/overview/").data["student_payment_rows"]
+            return next(r for r in rows if r["id"] == str(self.student.id))
+
+        owing = row()
+        self.assertEqual(owing["student_id"], "RCP001")
+        self.assertEqual(owing["admission_number"], "ADM-RCP-001")
+        self.assertEqual(owing["student_email"], "student@recorded.edu")
+        self.assertEqual(owing["remaining_balance"], Decimal("20000.00"))
+
+        record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
+        self.assertEqual(row()["remaining_balance"], Decimal("0.00"))
+
     def test_recorded_by_distinguishes_manual_entries_from_auto_matched_transfers(self):
         """A manually-recorded bank transfer and a webhook auto-matched one can
         share payment_method "bank_transfer" - recorded_by is what tells them

@@ -590,6 +590,11 @@ def _admin_finance_snapshot(user):
                 "id": str(student.id),
                 "name": student.user.get_full_name() or student.user.email,
                 "student_id": student.student_id or student.admission_number,
+                # Record Payment accepts a student ID, admission number or email;
+                # the web app finds the student in these rows to warn before a
+                # payment is recorded for someone who owes nothing.
+                "admission_number": student.admission_number or "",
+                "student_email": student.user.email,
                 "class_name": _class_label(student.current_class),
                 "payment_reference": payment_reference.code,
                 "payment_status": payment_status,
