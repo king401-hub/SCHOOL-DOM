@@ -1,0 +1,181 @@
+/* ==========================================================================
+   TEACHER STUDIO — Messages (class announcements + the chat inbox)
+   The chat components are shared with other roles, so everything here hangs
+   off the workspace shell and swaps their hard-coded colours for tokens.
+   ========================================================================== */
+
+/* composer for a whole class ------------------------------------------------ */
+
+body.ts-on .teacher-workspace-shell.ts .class-message-panel { display: grid; gap: 1.1rem; }
+body.ts-on .teacher-workspace-shell.ts .class-message-panel .panel-head { margin: 0; }
+body.ts-on .teacher-workspace-shell.ts .class-message-panel textarea { min-height: 7.5rem; }
+
+.ts-msgcompose__title { display: flex; align-items: center; gap: 0.7rem; }
+.ts-msgcompose__icon {
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 13px;
+  background: var(--ts-accent-soft-2);
+  color: var(--ts-accent-ink);
+}
+
+/* shell ------------------------------------------------------------------------ */
+
+body.ts-on .teacher-workspace-shell.ts .chat-shell {
+  grid-template-columns: 320px minmax(0, 1fr);
+  height: clamp(540px, 74vh, 820px);
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-xl);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-3), var(--ts-highlight);
+}
+
+/* sidebar ------------------------------------------------------------------------ */
+
+body.ts-on .teacher-workspace-shell.ts .chat-sidebar {
+  background: var(--ts-surface);
+  border-right: 1px solid var(--ts-line);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-sidebar-head { padding: 1.15rem 1rem 0.8rem; }
+body.ts-on .teacher-workspace-shell.ts .chat-sidebar-title h3 { color: var(--ts-ink); font: 650 1.05rem/1.2 var(--ts-display); }
+body.ts-on .teacher-workspace-shell.ts .chat-sidebar-icon { display: none; }
+body.ts-on .teacher-workspace-shell.ts .chat-unread-badge {
+  min-width: 1.35rem;
+  height: 1.35rem;
+  background: var(--ts-grad);
+  font-family: var(--ts-font);
+  box-shadow: var(--ts-shadow-accent);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-sidebar-close-btn { border-color: var(--ts-line-strong); color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .chat-sidebar-close-btn:hover { background: var(--ts-surface-3); color: var(--ts-ink); }
+
+body.ts-on .teacher-workspace-shell.ts .chat-search-wrap .chat-search-input {
+  min-height: 2.5rem;
+  padding: 0.5rem 0.8rem 0.5rem 2.4rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 12px;
+  background-color: var(--ts-surface-2);
+  color: var(--ts-ink);
+  font: 500 0.86rem/1.3 var(--ts-font);
+  box-shadow: none;
+}
+body.ts-on .teacher-workspace-shell.ts .chat-search-wrap .chat-search-input::placeholder { color: var(--ts-faint); }
+body.ts-on .teacher-workspace-shell.ts .chat-search-wrap .chat-search-input:focus { border-color: var(--ts-accent); background-color: var(--ts-surface); box-shadow: 0 0 0 4px var(--ts-ring); }
+body.ts-on .teacher-workspace-shell.ts .chat-search-icon { left: 0.85rem; color: var(--ts-faint); }
+
+body.ts-on .teacher-workspace-shell.ts .chat-filter-tabs {
+  margin: 0 0.85rem 0.7rem;
+  padding: 0.25rem;
+  gap: 0.2rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 13px;
+  background: var(--ts-surface-3);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-filter-tabs button {
+  padding: 0.4rem 0.5rem;
+  border-radius: 10px;
+  color: var(--ts-muted);
+  font: 650 0.78rem/1.2 var(--ts-font);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-filter-tabs button b { background: var(--ts-grad); font-family: var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-filter-tabs button:hover { background: transparent; color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .chat-filter-tabs button.active { background: var(--ts-surface); color: var(--ts-accent-ink); box-shadow: var(--ts-shadow-2); }
+
+body.ts-on .teacher-workspace-shell.ts .chat-thread-list { scrollbar-color: var(--ts-line-strong) transparent; }
+body.ts-on .teacher-workspace-shell.ts .chat-empty-hint { color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-item {
+  position: relative;
+  padding: 0.6rem 0.7rem;
+  border-radius: 14px;
+  transition: background var(--ts-fast) linear, transform var(--ts-fast) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-thread-item:hover { background: var(--ts-surface-3); }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-item.active { background: var(--ts-accent-soft); }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ts-grad);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-thread-avatar {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 34%;
+  font-family: var(--ts-display);
+  background: linear-gradient(140deg, var(--ts-t0), var(--ts-t5));
+}
+body.ts-on .teacher-workspace-shell.ts .chat-thread-name { color: var(--ts-ink); font: 600 0.86rem/1.3 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-item.unread .chat-thread-name { color: var(--ts-ink); font-weight: 800; }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-preview { color: var(--ts-muted); font-size: 0.76rem; }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-time { color: var(--ts-faint); font: 600 0.68rem/1 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-thread-badge { background: var(--ts-grad); font-family: var(--ts-font); }
+
+/* conversation ------------------------------------------------------------------- */
+
+body.ts-on .teacher-workspace-shell.ts .chat-panel { background: var(--ts-surface-2); }
+body.ts-on .teacher-workspace-shell.ts .chat-panel-head {
+  padding: 0.85rem 1.2rem;
+  border-bottom: 1px solid var(--ts-line);
+  background: var(--ts-surface);
+  box-shadow: none;
+}
+body.ts-on .teacher-workspace-shell.ts .chat-head-avatar { border-radius: 34%; font-family: var(--ts-display); background: linear-gradient(140deg, var(--ts-t0), var(--ts-t5)); }
+body.ts-on .teacher-workspace-shell.ts .chat-head-contact strong { color: var(--ts-ink); font: 700 0.95rem/1.3 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-head-contact small { color: var(--ts-muted); font-size: 0.76rem; }
+body.ts-on .teacher-workspace-shell.ts .chat-icon-btn { border-color: var(--ts-line-strong); border-radius: 11px; color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .chat-icon-btn:hover { background: var(--ts-accent-soft); color: var(--ts-accent-ink); }
+body.ts-on .teacher-workspace-shell.ts .chat-mobile-menu-btn span { background: var(--ts-muted); }
+
+body.ts-on .teacher-workspace-shell.ts .chat-body { padding: 1.3rem 1.25rem; scrollbar-color: var(--ts-line-strong) transparent; }
+body.ts-on .teacher-workspace-shell.ts .chat-empty-state p { color: var(--ts-muted); }
+
+body.ts-on .teacher-workspace-shell.ts .chat-bubble-avatar { border-radius: 34%; font-family: var(--ts-display); background: linear-gradient(140deg, var(--ts-t1), var(--ts-t0)); }
+body.ts-on .teacher-workspace-shell.ts .chat-bubble.in {
+  border: 1px solid var(--ts-line);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-1);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-bubble.out {
+  background: var(--ts-grad);
+  box-shadow: var(--ts-shadow-accent);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-bubble.in .chat-bubble-text { color: var(--ts-text); }
+body.ts-on .teacher-workspace-shell.ts .chat-bubble-subject { font-family: var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-bubble-text { font: 500 0.9rem/1.55 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-bubble.in .chat-bubble-subject { color: var(--ts-ink); opacity: 1; }
+body.ts-on .teacher-workspace-shell.ts .chat-bubble-time { color: inherit; }
+
+/* composer --------------------------------------------------------------------------- */
+
+body.ts-on .teacher-workspace-shell.ts .chat-composer { border-top: 1px solid var(--ts-line); background: var(--ts-surface); padding: 0.75rem 1rem 0.85rem; }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-row {
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 18px;
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .chat-composer-row:focus-within { border-color: var(--ts-accent); box-shadow: 0 0 0 4px var(--ts-ring); }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-input { color: var(--ts-ink); font-family: var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-input::placeholder { color: var(--ts-faint); }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-icon-btn { color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-icon-btn:hover { color: var(--ts-accent-ink); background: var(--ts-accent-soft); }
+body.ts-on .teacher-workspace-shell.ts .chat-send-btn { background: var(--ts-grad); box-shadow: var(--ts-shadow-accent); }
+body.ts-on .teacher-workspace-shell.ts .chat-send-btn:hover { background: var(--ts-grad-hover); }
+body.ts-on .teacher-workspace-shell.ts .chat-attachment-chip { border-color: color-mix(in srgb, var(--ts-accent) 30%, transparent); background: var(--ts-accent-soft); color: var(--ts-accent-ink); }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-feedback.error { background: var(--ts-danger-soft); border-color: color-mix(in srgb, var(--ts-danger) 30%, transparent); color: var(--ts-danger); }
+body.ts-on .teacher-workspace-shell.ts .chat-composer-feedback.success { background: var(--ts-ok-soft); border-color: color-mix(in srgb, var(--ts-ok) 30%, transparent); color: var(--ts-ok); }
+body.ts-on .teacher-workspace-shell.ts .chat-emoji-picker { border: 1px solid var(--ts-line-strong); background: var(--ts-surface); box-shadow: var(--ts-shadow-3); }
+body.ts-on .teacher-workspace-shell.ts .chat-emoji-btn:hover { background: var(--ts-surface-3); }
+
+/* phones ----------------------------------------------------------------------------- */
+
+@media (max-width: 820px) {
+  body.ts-on .teacher-workspace-shell.ts .chat-shell { grid-template-columns: minmax(0, 1fr); height: clamp(520px, 84vh, 720px); border-radius: 22px; }
+  body.ts-on .teacher-workspace-shell.ts .chat-sidebar { box-shadow: var(--ts-shadow-3); }
+  body.ts-on .teacher-workspace-shell.ts .chat-bubble-wrap { max-width: 90%; }
+}

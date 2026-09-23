@@ -1,0 +1,199 @@
+/* ==========================================================================
+   TEACHER STUDIO — Lesson plans & notes (plan form, notepad, saved cards) and
+   the rich-text editors used across the teacher forms.
+   ========================================================================== */
+
+body.ts-on .teacher-workspace-shell.ts .ts-planning-tabs { margin: 0 0 1.25rem; }
+body.ts-on .teacher-workspace-shell.ts .academic-planning-panel { display: grid; gap: 0; }
+body.ts-on .teacher-workspace-shell.ts .academic-planning-grid { display: grid; gap: 1.25rem; margin-bottom: 0.5rem; }
+
+/* rich text (the small B / I / U editor) -------------------------------------------------- */
+
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea { display: grid; gap: 0; }
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-toolbar {
+  display: flex;
+  gap: 0.2rem;
+  width: fit-content;
+  margin: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--ts-line-strong);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--ts-surface-3);
+}
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-toolbar button {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 1.8rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ts-text);
+  font: 700 0.82rem/1 var(--ts-font);
+  cursor: pointer;
+  transition: background var(--ts-fast) linear, color var(--ts-fast) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-toolbar button:hover,
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-toolbar button:focus-visible { background: var(--ts-surface); color: var(--ts-accent-ink); box-shadow: var(--ts-shadow-1); }
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-editor {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 0 var(--ts-r-sm) var(--ts-r-sm) var(--ts-r-sm);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font: 500 0.92rem/1.6 var(--ts-font);
+  box-shadow: var(--ts-shadow-1);
+  outline: 0;
+  transition: border-color var(--ts-fast) linear, box-shadow var(--ts-med) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-editor:empty::before { color: var(--ts-faint); }
+body.ts-on .teacher-workspace-shell.ts .formatted-textarea-editor:focus { border-color: var(--ts-accent); box-shadow: 0 0 0 4px var(--ts-ring); }
+
+/* saved plans + notes ----------------------------------------------------------------------- */
+
+.ts-saved { display: grid; gap: 0.9rem; margin-top: 1.4rem; padding-top: 1.4rem; border-top: 1px solid var(--ts-line); }
+.ts-saved__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.4rem 1rem; }
+.ts-saved__head h4 { margin: 0; font: 650 1rem/1.3 var(--ts-display); color: var(--ts-ink); }
+.ts-saved__head small { color: var(--ts-muted); font: 500 0.82rem/1.4 var(--ts-font); }
+
+body.ts-on .teacher-workspace-shell.ts .scheme-subject-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 235px), 1fr));
+  gap: 0.85rem;
+  margin: 0;
+}
+
+body.ts-on .teacher-workspace-shell.ts .ts-plancard {
+  --tone: var(--ts-accent);
+  --tone-soft: var(--ts-accent-soft);
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 0.15rem;
+  padding: 0;
+  border: 1px solid var(--ts-line);
+  border-radius: 18px;
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-1);
+  overflow: hidden;
+  transition: transform var(--ts-med) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease), border-color var(--ts-med) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone] { --tone: var(--tone-x); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--tone-x, var(--ts-accent)); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="0"] { --tone-x: var(--ts-t0); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="1"] { --tone-x: var(--ts-t1); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="2"] { --tone-x: var(--ts-t2); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="3"] { --tone-x: var(--ts-t3); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="4"] { --tone-x: var(--ts-t4); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="5"] { --tone-x: var(--ts-t5); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="6"] { --tone-x: var(--ts-t6); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard[data-tone="7"] { --tone-x: var(--ts-t7); }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard:hover { transform: translateY(-3px); box-shadow: var(--ts-shadow-2); border-color: color-mix(in srgb, var(--tone-x, var(--ts-accent)) 35%, var(--ts-line)); }
+
+body.ts-on .teacher-workspace-shell.ts .ts-plancard .scheme-plan-card-button,
+body.ts-on .teacher-workspace-shell.ts .ts-plancard.note-card {
+  display: grid;
+  align-content: start;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 1.05rem 1.05rem 1rem;
+  border: 0;
+  background: transparent;
+  color: var(--ts-text);
+  text-align: left;
+  cursor: pointer;
+}
+body.ts-on .teacher-workspace-shell.ts .ts-plancard.note-card { cursor: default; }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard h4 { margin: 0.1rem 0 0; color: var(--ts-ink); font: 650 0.95rem/1.35 var(--ts-display); overflow-wrap: anywhere; }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard p { margin: 0; color: var(--ts-muted); font: 500 0.82rem/1.5 var(--ts-font); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+body.ts-on .teacher-workspace-shell.ts .ts-plancard small.pill { justify-self: start; margin-top: 0.4rem; text-transform: capitalize; }
+.ts-plancard__week {
+  justify-self: start;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone-x, var(--ts-accent)) 14%, transparent);
+  color: var(--tone-x, var(--ts-accent-ink));
+  font: 800 0.66rem/1.3 var(--ts-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.ts-on .teacher-workspace-shell.ts .scheme-plan-section { display: grid; gap: 0.5rem; }
+body.ts-on .teacher-workspace-shell.ts .scheme-plan-section h5 { margin: 0; color: var(--ts-muted); font: 700 0.7rem/1.3 var(--ts-font); letter-spacing: 0.1em; text-transform: uppercase; }
+body.ts-on .teacher-workspace-shell.ts .academic-planning-roster { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+/* notepad ---------------------------------------------------------------------------------------- */
+
+body.ts-on .teacher-workspace-shell.ts .notepad-shell {
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  min-height: 30rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-r-lg);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-1);
+  overflow: hidden;
+}
+body.ts-on .teacher-workspace-shell.ts .notepad-editor-col { min-height: 30rem; border-right: 1px solid var(--ts-line); background: var(--ts-surface); }
+
+body.ts-on .teacher-workspace-shell.ts .nped-toolbar {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--ts-line);
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .nped-tool-btn {
+  min-width: 1.9rem;
+  height: 1.8rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ts-text);
+  font: 650 0.78rem/1 var(--ts-font);
+  transition: background var(--ts-fast) linear, color var(--ts-fast) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .nped-tool-btn:hover { border: 0; background: var(--ts-surface); color: var(--ts-accent-ink); box-shadow: var(--ts-shadow-1); }
+body.ts-on .teacher-workspace-shell.ts .nped-tool-btn:active { background: var(--ts-accent-soft-2); color: var(--ts-accent-ink); }
+body.ts-on .teacher-workspace-shell.ts .nped-sep { background: var(--ts-line-strong); }
+
+body.ts-on .teacher-workspace-shell.ts .nped-editor {
+  padding: 1.3rem 1.5rem;
+  color: var(--ts-text);
+  font: 500 0.95rem/1.75 var(--ts-font);
+}
+body.ts-on .teacher-workspace-shell.ts .nped-editor:empty::before { color: var(--ts-faint); }
+body.ts-on .teacher-workspace-shell.ts .nped-editor :is(h1, h2, h3, strong) { color: var(--ts-ink); font-family: var(--ts-display); }
+body.ts-on .teacher-workspace-shell.ts .nped-editor em { color: var(--ts-accent-ink); }
+body.ts-on .teacher-workspace-shell.ts .nped-editor u { text-decoration-color: var(--ts-accent); }
+body.ts-on .teacher-workspace-shell.ts .nped-editor blockquote { border-left-color: var(--ts-accent); color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .nped-editor :is(pre, code) { border-color: var(--ts-line); background: var(--ts-surface-3); color: var(--ts-accent-ink); }
+
+body.ts-on .teacher-workspace-shell.ts .notepad-settings-col { background: var(--ts-surface-2); }
+body.ts-on .teacher-workspace-shell.ts .notepad-settings-title {
+  padding: 0.95rem 1.05rem 0.75rem;
+  border-bottom: 1px solid var(--ts-line);
+  color: var(--ts-faint);
+  font: 700 0.66rem/1.2 var(--ts-font);
+  letter-spacing: 0.13em;
+}
+body.ts-on .teacher-workspace-shell.ts .notepad-settings-body { gap: 0.95rem; padding: 1.05rem; }
+body.ts-on .teacher-workspace-shell.ts .notepad-field > span,
+body.ts-on .teacher-workspace-shell.ts .notepad-toggle-row > span { color: var(--ts-text); font: 650 0.78rem/1.3 var(--ts-font); }
+
+body.ts-on .teacher-workspace-shell.ts .notepad-toggle { width: 2.4rem; height: 1.4rem; background: var(--ts-line-strong); }
+body.ts-on .teacher-workspace-shell.ts .notepad-toggle.active { background: var(--ts-grad); }
+body.ts-on .teacher-workspace-shell.ts .notepad-toggle-thumb { top: 0.2rem; left: 0.2rem; width: 1rem; height: 1rem; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+body.ts-on .teacher-workspace-shell.ts .notepad-toggle.active .notepad-toggle-thumb { transform: translateX(1rem); }
+
+body.ts-on .teacher-workspace-shell.ts .notepad-save-btn {
+  min-height: 2.6rem;
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-grad);
+  box-shadow: var(--ts-shadow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  font: 700 0.88rem/1.2 var(--ts-font);
+}
+body.ts-on .teacher-workspace-shell.ts .notepad-save-btn:hover { opacity: 1; background: var(--ts-grad-hover); }
+
+@media (max-width: 900px) {
+  body.ts-on .teacher-workspace-shell.ts .notepad-shell { grid-template-columns: minmax(0, 1fr); }
+  body.ts-on .teacher-workspace-shell.ts .notepad-editor-col { border-right: 0; border-bottom: 1px solid var(--ts-line); }
+}

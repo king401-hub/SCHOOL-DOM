@@ -1,0 +1,377 @@
+/* ==========================================================================
+   TEACHER STUDIO — Exam builder, and the dialogs (modals) used around the
+   teacher workspace.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- builder */
+
+body.ts-on .teacher-workspace-shell.ts .exam-builder-shell {
+  display: block;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+/* the old dark rail duplicated the step tabs - the workspace sidebar is the rail now */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-sidebar { display: none; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-main { display: grid; gap: 1.25rem; padding: 0; }
+
+body.ts-on .teacher-workspace-shell.ts .exam-builder-top {
+  position: relative;
+  isolation: isolate;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 1.5rem 1.75rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-xl);
+  background:
+    radial-gradient(90% 140% at 100% 0%, var(--ts-t5-soft), transparent 60%),
+    linear-gradient(180deg, var(--ts-surface), var(--ts-surface-2));
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+  overflow: hidden;
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-top > div:first-child::before {
+  content: "Assessment";
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--ts-accent-ink);
+  font: 700 0.7rem/1.2 var(--ts-font);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-top h2 { margin: 0; font: 700 clamp(1.45rem, 1.1rem + 1.2vw, 2rem)/1.15 var(--ts-display); color: var(--ts-ink); letter-spacing: -0.02em; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-top p { margin: 0.3rem 0 0; max-width: 62ch; color: var(--ts-muted); font-size: 0.93rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-actions { gap: 0.6rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-actions > button:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.6rem;
+  padding: 0.6rem 1.2rem;
+  border: 0;
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-grad);
+  color: #fff;
+  font: 700 0.88rem/1.2 var(--ts-font);
+  box-shadow: var(--ts-shadow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: transform var(--ts-fast) var(--ts-ease), background var(--ts-med) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-actions > button:last-child:hover:not(:disabled) { background: var(--ts-grad-hover); transform: translateY(-1px); }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-actions > button:last-child:disabled { opacity: 0.6; cursor: progress; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-actions .table-action { min-height: 2.6rem; padding: 0.55rem 1rem; }
+
+body.ts-on .teacher-workspace-shell.ts .cbt-status-pill { padding: 0.4rem 0.85rem; font-size: 0.74rem; }
+
+body.ts-on .teacher-workspace-shell.ts .exam-builder-card {
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-xl);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+  overflow: hidden;
+}
+
+/* the five tabs read as numbered steps */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs {
+  counter-reset: step;
+  gap: 0.3rem;
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--ts-line);
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button {
+  counter-increment: step;
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ts-muted);
+  font: 700 0.86rem/1.2 var(--ts-font);
+  white-space: nowrap;
+  transition: background var(--ts-med) var(--ts-ease), color var(--ts-fast) linear, box-shadow var(--ts-med) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  background: var(--ts-surface-3);
+  color: var(--ts-muted);
+  font: 800 0.74rem/1 var(--ts-display);
+  transition: background var(--ts-med) var(--ts-ease), color var(--ts-fast) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button:hover:not(.active) { color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button.active { border: 0; background: var(--ts-surface); color: var(--ts-accent-ink); box-shadow: var(--ts-shadow-2); }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button.active::before { background: var(--ts-grad); color: #fff; }
+
+body.ts-on .teacher-workspace-shell.ts :is(.exam-builder-form, .exam-builder-list, .exam-builder-settings) { padding: 1.5rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-form { gap: 1.1rem 1.25rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-form > .panel-field.full { grid-column: 1 / -1; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-list { display: grid; gap: 1rem; align-content: start; }
+
+body.ts-on .teacher-workspace-shell.ts .exam-builder-row {
+  align-items: end;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 16px;
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-row > span { color: var(--ts-faint); font: 800 0.8rem/1 var(--ts-display); }
+
+/* question cards */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-question {
+  margin: 0;
+  border: 1px solid var(--ts-line);
+  border-radius: 20px;
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-1);
+  overflow: hidden;
+  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-question .exam-builder-row { border: 0; border-radius: 0; background: transparent; padding: 1rem 1.15rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-question .question-reorder-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--ts-line);
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .exam-question-toggle { border-radius: 12px; }
+body.ts-on .teacher-workspace-shell.ts .exam-question-toggle:hover,
+body.ts-on .teacher-workspace-shell.ts .exam-question-toggle:focus-visible { background: var(--ts-accent-soft); }
+body.ts-on .teacher-workspace-shell.ts .exam-question-chevron { color: var(--ts-accent); }
+body.ts-on .teacher-workspace-shell.ts .question-index { color: var(--ts-ink); font: 700 0.95rem/1.3 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .question-index-kind {
+  display: inline-block;
+  margin-left: 0.55rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--ts-accent-soft);
+  color: var(--ts-accent-ink);
+  font: 700 0.68rem/1.4 var(--ts-font);
+  vertical-align: middle;
+}
+body.ts-on .teacher-workspace-shell.ts .exam-question-summary { color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .cbt-question-source { padding: 0.75rem 1.15rem 0; color: var(--ts-muted); font: 700 0.74rem/1.3 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .question-group-builder { margin: 0 1.15rem 1rem; padding: 0.85rem; border: 1px dashed var(--ts-line-strong); border-radius: 16px; background: var(--ts-surface-2); }
+body.ts-on .teacher-workspace-shell.ts .question-group-builder .exam-builder-row { padding: 0.25rem; }
+body.ts-on .teacher-workspace-shell.ts .cbt-option-grid { gap: 0.9rem; padding: 0 1.15rem 1rem; }
+body.ts-on .teacher-workspace-shell.ts .question-builder-image-preview { max-width: 12rem; max-height: 9rem; border: 1px solid var(--ts-line); border-radius: 14px; object-fit: contain; background: var(--ts-surface); }
+
+body.ts-on .teacher-workspace-shell.ts .table-action.danger { color: var(--ts-danger); }
+body.ts-on .teacher-workspace-shell.ts .table-action.danger:hover:not(:disabled) { background: var(--ts-danger-soft); border-color: color-mix(in srgb, var(--ts-danger) 40%, transparent); color: var(--ts-danger); }
+
+/* "add" buttons and the question tally */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-add-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.25rem 0 0; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-add-row .table-action { min-height: 2.5rem; padding: 0.5rem 1rem; border-style: dashed; border-radius: 12px; color: var(--ts-accent-ink); background: transparent; box-shadow: none; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-add-row .table-action:hover:not(:disabled) { border-style: solid; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-total {
+  width: fit-content;
+  margin: 0;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: var(--ts-accent-soft);
+  color: var(--ts-accent-ink);
+  font: 700 0.8rem/1.3 var(--ts-font);
+}
+
+/* question-bank + import panels */
+body.ts-on .teacher-workspace-shell.ts .cbt-bank-picker,
+body.ts-on .teacher-workspace-shell.ts .standard-question-import,
+body.ts-on .teacher-workspace-shell.ts .extracted-images-panel {
+  margin: 0;
+  padding: 1.15rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 18px;
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .standard-question-import { border-color: color-mix(in srgb, var(--ts-accent) 26%, var(--ts-line)); background: linear-gradient(180deg, var(--ts-accent-soft), transparent 90%), var(--ts-surface-2); }
+body.ts-on .teacher-workspace-shell.ts .cbt-bank-picker-head h3,
+body.ts-on .teacher-workspace-shell.ts .cbt-bank-picker-head h4 { font: 650 1rem/1.3 var(--ts-display); color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .cbt-bank-picker-head p { color: var(--ts-muted); font-size: 0.85rem; }
+body.ts-on .teacher-workspace-shell.ts .standard-import-textarea {
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font: 500 0.85rem/1.55 var(--ts-mono);
+  box-shadow: var(--ts-shadow-1);
+}
+body.ts-on .teacher-workspace-shell.ts .extracted-image-card { border: 1px solid var(--ts-line); border-radius: 14px; background: var(--ts-surface); color: var(--ts-text); }
+body.ts-on .teacher-workspace-shell.ts .extracted-image-card img { border-color: var(--ts-line); background: var(--ts-surface-2); }
+body.ts-on .teacher-workspace-shell.ts .file-action { position: relative; overflow: hidden; }
+
+/* settings rows */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-settings { display: grid; gap: 0.75rem; align-content: start; }
+body.ts-on .teacher-workspace-shell.ts .remember-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.05rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 16px;
+  background: var(--ts-surface-2);
+  color: var(--ts-ink);
+  font: 600 0.9rem/1.4 var(--ts-font);
+  cursor: pointer;
+  transition: border-color var(--ts-fast) linear, background var(--ts-fast) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .remember-row:hover { border-color: color-mix(in srgb, var(--ts-accent) 40%, var(--ts-line)); }
+body.ts-on .teacher-workspace-shell.ts .remember-row input { width: 1.15rem; height: 1.15rem; margin: 0; }
+body.ts-on .teacher-workspace-shell.ts .student-panel-sub { color: var(--ts-muted); font: 500 0.88rem/1.6 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .student-panel-sub strong { color: var(--ts-ink); }
+
+/* review */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid { padding: 1.5rem; gap: 1rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid .metric-card { box-shadow: var(--ts-shadow-1); }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid .app-panel.full { box-shadow: none; background: var(--ts-surface-2); }
+body.ts-on .teacher-workspace-shell.ts .exam-preview-question { padding: 1rem 0; border-top: 1px solid var(--ts-line); }
+body.ts-on .teacher-workspace-shell.ts .exam-preview-question-text { color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .exam-preview-kind { padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--ts-accent-soft); color: var(--ts-accent-ink); font: 700 0.68rem/1.4 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .exam-preview-passage { border: 1px solid var(--ts-line); border-radius: 14px; background: var(--ts-surface); }
+body.ts-on .teacher-workspace-shell.ts .exam-preview-passage h4 { color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .option-label { color: var(--ts-text); }
+body.ts-on .teacher-workspace-shell.ts .theory-answer-box { border: 1px dashed var(--ts-line-strong); border-radius: 12px; background: var(--ts-surface); color: var(--ts-muted); }
+
+/* the publish bar follows you down a long question list */
+body.ts-on .teacher-workspace-shell.ts .exam-builder-bottom-actions {
+  position: sticky;
+  bottom: 0.9rem;
+  z-index: 12;
+  /* keep clear of the two floating widgets (accent picker, assistant) at the corners */
+  margin: 0 3.75rem;
+  padding: 0.85rem 1.1rem 0.85rem 1.35rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--ts-surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  box-shadow: var(--ts-shadow-3);
+}
+body.ts-on .teacher-workspace-shell.ts .exam-builder-bottom-actions p { color: var(--ts-text); font: 600 0.9rem/1.45 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-publish-btn { padding: 0.75rem 1.6rem; font-size: 0.94rem; }
+
+@media (max-width: 900px) {
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-top { padding: 1.2rem; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs { overflow-x: auto; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button { flex: 0 0 auto; padding-inline: 0.8rem; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-row { grid-template-columns: minmax(0, 1fr); }
+  /* on small screens the bar would sit under the corner widgets, so it just flows */
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-bottom-actions { position: static; margin: 0; }
+}
+@media (max-width: 560px) {
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-form { grid-template-columns: minmax(0, 1fr); }
+  body.ts-on .teacher-workspace-shell.ts :is(.exam-builder-form, .exam-builder-list, .exam-builder-settings) { padding: 1rem; }
+  body.ts-on .teacher-workspace-shell.ts .cbt-option-grid { grid-template-columns: minmax(0, 1fr); }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-bottom-actions { justify-content: center; text-align: center; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-publish-btn { width: 100%; }
+}
+
+/* ------------------------------------------------------------------ dialogs
+   Modals are portaled to <body> (or fixed-position siblings of the shell), so
+   they hang off body.ts-on rather than the workspace shell.                     */
+
+body.ts-on :is(.modal-overlay, .modal-overlay-bg, .lesson-plan-dialog-backdrop, .cbt-info-modal) {
+  background: rgba(7, 11, 28, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+body.ts-on :is(.edit-modal-card, .lesson-plan-dialog, .cbt-info-card, .student-profile-card) {
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 26px;
+  background: var(--ts-surface);
+  color: var(--ts-text);
+  font-family: var(--ts-font);
+  box-shadow: 0 40px 90px -30px rgba(7, 11, 28, 0.8), var(--ts-highlight);
+}
+
+body.ts-on .edit-modal-head { padding: 1.5rem 1.6rem 0; }
+body.ts-on .edit-modal-head h3,
+body.ts-on .lesson-plan-dialog-head h3,
+body.ts-on .cbt-info-card h3 { color: var(--ts-ink); font: 700 1.25rem/1.25 var(--ts-display); letter-spacing: -0.02em; }
+body.ts-on .edit-modal-head p,
+body.ts-on .lesson-plan-dialog-head small { color: var(--ts-muted); font: 500 0.86rem/1.5 var(--ts-font); }
+body.ts-on .edit-modal-card > .panel-form-actions { padding: 1.1rem 1.6rem 1.5rem; }
+
+body.ts-on :is(.edit-modal-close, .student-profile-close) {
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 12px;
+  background: var(--ts-surface);
+  color: var(--ts-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: background var(--ts-fast) linear, color var(--ts-fast) linear, transform var(--ts-fast) var(--ts-ease);
+}
+body.ts-on :is(.edit-modal-close, .student-profile-close):hover { background: var(--ts-danger-soft); border-color: color-mix(in srgb, var(--ts-danger) 35%, transparent); color: var(--ts-danger); transform: scale(1.06); }
+
+body.ts-on .lesson-plan-dialog-meta span { border: 1px solid var(--ts-line); border-radius: 999px; background: var(--ts-surface-3); color: var(--ts-text); font: 700 0.76rem/1.3 var(--ts-font); }
+
+body.ts-on .cbt-info-kicker { color: var(--ts-accent-ink); font: 700 0.72rem/1.2 var(--ts-font); letter-spacing: 0.12em; }
+body.ts-on .cbt-info-card p:not(.cbt-info-kicker) { color: var(--ts-text); }
+body.ts-on .cbt-pin-display {
+  border: 1px solid color-mix(in srgb, var(--ts-accent) 30%, transparent);
+  border-radius: 18px;
+  background: var(--ts-accent-soft);
+  color: var(--ts-ink);
+  font-family: var(--ts-mono);
+}
+body.ts-on .cbt-info-card button,
+body.ts-on .cbt-flag-actions button {
+  border: 0;
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-grad);
+  color: #fff;
+  font: 700 0.9rem/1.2 var(--ts-font);
+  box-shadow: var(--ts-shadow-accent);
+}
+
+/* profile editor */
+body.ts-on .teacher-profile-modal { z-index: 1400; background: rgba(7, 11, 28, 0.55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); pointer-events: auto; }
+body.ts-on .teacher-profile-card { width: min(100%, 720px); max-height: min(90vh, 820px); animation: ts-pop 320ms var(--ts-ease) both; }
+body.ts-on .teacher-profile-card .student-profile-card-head {
+  padding: 1.25rem 1.4rem;
+  border-bottom: 1px solid var(--ts-line);
+  background: radial-gradient(90% 140% at 100% 0%, var(--ts-accent-soft-2), transparent 60%), var(--ts-surface-2);
+}
+body.ts-on .teacher-profile-card .student-profile-card-head h3 { color: var(--ts-ink); font: 700 1.3rem/1.2 var(--ts-display); }
+body.ts-on .teacher-profile-card .student-profile-card-head small { color: var(--ts-muted); font: 600 0.8rem/1.3 var(--ts-mono); }
+body.ts-on .teacher-profile-card .student-profile-card-head .topbar-kicker { color: var(--ts-accent-ink); font: 700 0.68rem/1.2 var(--ts-font); letter-spacing: 0.11em; text-transform: uppercase; }
+body.ts-on .student-profile-photo {
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 0;
+  border-radius: 32%;
+  background: var(--ts-grad);
+  color: #fff;
+  font: 700 1.5rem/1 var(--ts-display);
+  box-shadow: var(--ts-shadow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+body.ts-on .teacher-profile-modal .teacher-profile-card .teacher-profile-edit-form.panel-form { padding: 1.3rem 1.4rem 1.4rem; gap: 1.2rem; }
+body.ts-on .teacher-profile-modal .teacher-profile-card .teacher-profile-edit-form .panel-form-actions { margin-top: 0.5rem; padding-top: 1rem; border-top: 1px solid var(--ts-line); }
+body.ts-on .teacher-profile-card .field-note a { color: var(--ts-accent-ink); font-weight: 650; }
+body.ts-on .settings-logo-field { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem; border: 1px solid var(--ts-line); border-radius: 18px; background: var(--ts-surface-2); }
+body.ts-on .settings-logo-preview { border: 1px dashed var(--ts-line-strong); border-radius: 14px; background: var(--ts-surface); color: var(--ts-faint); }
+body.ts-on .signature-mode-tabs { display: inline-flex; gap: 0.25rem; padding: 0.25rem; border: 1px solid var(--ts-line); border-radius: 13px; background: var(--ts-surface-3); }
+body.ts-on .signature-mode-tabs button { padding: 0.4rem 0.9rem; border: 0; border-radius: 10px; background: transparent; color: var(--ts-muted); font: 650 0.8rem/1.2 var(--ts-font); cursor: pointer; }
+body.ts-on .signature-mode-tabs button.is-active { background: var(--ts-surface); color: var(--ts-accent-ink); box-shadow: var(--ts-shadow-1); }
+body.ts-on .panel-field-label { color: var(--ts-text); font: 650 0.78rem/1.3 var(--ts-font); }
+
+@media (max-width: 560px) {
+  body.ts-on .teacher-profile-card .student-profile-card-head { grid-template-columns: 3.6rem minmax(0, 1fr) auto; }
+  body.ts-on .student-profile-photo { width: 3.6rem; height: 3.6rem; font-size: 1.2rem; }
+  body.ts-on :is(.teacher-profile-modal) .panel-form-grid { grid-template-columns: minmax(0, 1fr); }
+}

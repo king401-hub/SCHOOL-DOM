@@ -6,7 +6,7 @@ import {
   Settings, LogOut, Bell, ChevronDown, ChevronRight, Menu, X,
   Banknote, LifeBuoy, CalendarClock, MessageCircle, ShieldCheck, FileSignature,
   Package, Archive, Palette, KeyRound, Wallet, Trophy, Search, Pencil,
-  FilePlus2, ClipboardList,
+  FilePlus2, ClipboardList, Monitor,
 } from "lucide-react";
 import Signin from "./Schooldom/src/SignIn";
 
@@ -113,7 +113,8 @@ import TeacherShell from "./teacher/TeacherShell";
 import TeacherHome from "./teacher/TeacherHome";
 import TeacherTimetable from "./teacher/TeacherTimetable";
 import TeacherAttendance, { TeacherAttendanceInfo } from "./teacher/TeacherAttendance";
-import { PageHeader } from "./teacher/TeacherKit";
+import { Avatar, EmptyState, MetricTile, PageHeader, pluralize, toneIndex } from "./teacher/TeacherKit";
+import { TeacherLoading, TeacherLoadError } from "./teacher/TeacherLoading";
 const AdminAiAssistantScreen = lazy(() => import("./AiAssistantScreen"));
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const AdminInventoryScreen = lazy(() => import("./components/Inventory/InventoryScreen"));
@@ -467,14 +468,33 @@ function StudentCbtEntry({ onEntry }) {
   );
 }
 
-function RecordList({ title, rows = [], render, onSelect }) {
+// "25 Sep" from an ISO date; falls back to the raw text.
+function shortDate(value) {
+  const parsed = new Date(`${String(value || "").slice(0, 10)}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? String(value || "") : parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+// A coloured status chip for HR rows (approved / pending / rejected ...).
+function StatusChip({ status }) {
+  const value = String(status || "").toLowerCase();
+  const tone = ["approved", "paid", "present", "completed"].includes(value)
+    ? "approved"
+    : ["pending", "late", "processing"].includes(value)
+      ? "pending"
+      : ["rejected", "absent", "declined", "cancelled"].includes(value)
+        ? "rejected"
+        : "unknown";
+  return <span className={`pill status-${tone} ts-statuschip`}>{value ? value.replace(/_/g, " ") : "—"}</span>;
+}
+
+function RecordList({ title, rows = [], render, onSelect, emptyText = "No records found." }) {
   return (
     <article className="app-panel">
       <h3>{title}</h3>
       {rows.length > 0 ? (
         <ul className="panel-list">
-          {rows.map((item) => (
-            <li key={item.id || render(item)}>
+          {rows.map((item, index) => (
+            <li key={item.id ?? `${title}-${index}`}>
               {onSelect ? (
                 <button type="button" className="table-action ghost" onClick={() => onSelect(item)}>
                   {render(item)}
@@ -486,7 +506,7 @@ function RecordList({ title, rows = [], render, onSelect }) {
           ))}
         </ul>
       ) : (
-        <p className="panel-empty">No records found.</p>
+        <p className="panel-empty">{emptyText}</p>
       )}
     </article>
   );
@@ -4019,6 +4039,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [planTab, setPlanTab] = useState("plan");
   const nonK12 = isNonK12School(session, planning);
   const planningTitle = nonK12 ? "Course Outline & Notepad" : "Lesson Plans & Notepad";
   const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
@@ -4073,7 +4094,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
         subject_id: Number(form.subject_id),
         week_number: Number(form.week_number || 1),
       });
-      setFeedback(`${planningItemLabel} saved and aligned with the active term.`);
+      setFeedback(`Saved. Your ${planningItemLabel.toLowerCase()} is now part of this term's plan.`);
       setForm((prev) => ({ ...prev, title: "", objectives: "", activities: "", resources: "", assessment: "", notes: "", attachment: null }));
       await loadPlanning(form.class_id, form.subject_id);
     } catch (saveError) {
@@ -4087,7 +4108,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     setError("");
     try {
       await requestJson(session, "POST", "/api/app/academic/notes/", noteForm);
-      setFeedback("Note saved.");
+      setFeedback("Note saved to your notepad.");
       setNoteForm({ title: "Quick note", body: "", pinned: false });
       await loadPlanning();
     } catch (saveError) {
@@ -4116,18 +4137,27 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     <article className="app-panel academic-planning-panel">
       <div className="panel-head">
         <div>
-          <h3>{planningTitle}</h3>
-          <small>{planning?.active_term?.name || "Active term"} - {planning?.active_year?.name || "Academic year"}</small>
+          <h3>{nonK12 ? "Your course plan" : "Your term plan"}</h3>
+          <small>{planning?.active_term?.name || "Active term"} · {planning?.active_year?.name || "Academic year"}</small>
         </div>
         {/* latest_week is the newest week that has a saved plan; "Week 0" read
             like the current week of term when nothing had been planned yet. */}
         <span className="pill">
-          {planning?.progress?.latest_week ? `Latest plan: Week ${planning.progress.latest_week}` : "No plans yet"}
+          {planning?.progress?.latest_week ? `Planned up to week ${planning.progress.latest_week}` : "Nothing planned yet"}
         </span>
       </div>
       {error ? <p className="form-feedback error">{error}</p> : null}
       {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+      <div className="segmented-control ts-planning-tabs" role="group" aria-label="What would you like to write?">
+        <button type="button" className={planTab === "plan" ? "active" : ""} aria-pressed={planTab === "plan"} onClick={() => setPlanTab("plan")}>
+          New {planningItemLabel.toLowerCase()}
+        </button>
+        <button type="button" className={planTab === "notes" ? "active" : ""} aria-pressed={planTab === "notes"} onClick={() => setPlanTab("notes")}>
+          Notepad
+        </button>
+      </div>
       <div className="academic-planning-grid">
+        {planTab === "plan" ? (
         <form className="panel-form" onSubmit={handlePlanSubmit}>
           <div className="panel-form-grid">
             <label className="panel-field">
@@ -4205,6 +4235,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
           ) : null}
           <div className="panel-form-actions"><button type="submit">Save {planningItemLabel.toLowerCase()}</button></div>
         </form>
+        ) : (
         <form className="notepad-shell" onSubmit={handleNoteSubmit}>
           <div className="notepad-editor-col">
             <NotepadEditor
@@ -4268,29 +4299,41 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
             </div>
             <button type="submit" className="notepad-save-btn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9l20-7z"/></svg>
-              Save Note
+              Save note
             </button>
           </aside>
         </form>
+        )}
       </div>
-      <div className="scheme-subject-grid">
-        {plans.map((plan) => (
-          <article key={plan.id} className="scheme-subject-card">
-            <button type="button" className="scheme-plan-card-button" onClick={() => setSelectedPlan(plan)}>
-              <h4>Week {plan.week_number}: {plan.title}{plan.attachment_url ? " 📎" : ""}</h4>
-              <p>{plan.subject} - {plan.class_name}</p>
-              <small>{plan.status}</small>
-            </button>
-          </article>
-        ))}
-        {notes.slice(0, 3).map((note) => (
-          <article key={note.id} className="scheme-subject-card note-card">
-            <h4>{note.title}</h4>
-            <p><RichQuizText text={note.body || "No note content."} /></p>
-            <small>{note.pinned ? "Pinned" : "Note"}</small>
-          </article>
-        ))}
-      </div>
+      <section className="ts-saved" aria-label="Saved plans and notes">
+        <div className="ts-saved__head">
+          <h4>Saved this term</h4>
+          <small>{pluralize(plans.length, planningItemLabel.toLowerCase())} · {pluralize(notes.length, "note")}</small>
+        </div>
+        {plans.length === 0 && notes.length === 0 ? (
+          <p className="panel-empty">Nothing saved yet. Your {planningItemLabel.toLowerCase()}s and notes will line up here as you write them.</p>
+        ) : (
+          <div className="scheme-subject-grid">
+            {plans.map((plan) => (
+              <article key={plan.id} className="scheme-subject-card ts-plancard" data-tone={toneIndex(plan.subject)}>
+                <button type="button" className="scheme-plan-card-button" onClick={() => setSelectedPlan(plan)}>
+                  <span className="ts-plancard__week">Week {plan.week_number}</span>
+                  <h4>{plan.title}{plan.attachment_url ? " 📎" : ""}</h4>
+                  <p>{[plan.subject, plan.class_name].filter(Boolean).join(" · ")}</p>
+                  <small className={`pill status-${plan.status === "completed" ? "present" : plan.status === "draft" ? "draft" : "processing"}`}>{plan.status}</small>
+                </button>
+              </article>
+            ))}
+            {notes.slice(0, 6).map((note) => (
+              <article key={note.id} className="scheme-subject-card note-card ts-plancard" data-tone="3">
+                <span className="ts-plancard__week">{note.pinned ? "Pinned note" : "Note"}</span>
+                <h4>{note.title}</h4>
+                <p><RichQuizText text={note.body || "No note content."} /></p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
     </article>
     <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} title={planningItemLabel} itemLabel={planningItemLabel} />
     </section>
@@ -4604,7 +4647,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
       ) : null}
 
       <section className="metric-grid staff-metric-grid">
-        <MetricCard label="Staff ID" value={staff.staff_code || "-"} trend={staff.role || "Staff profile"} icon="id" tone="blue" />
+        <MetricCard label="Staff ID" value={staff.staff_code || "-"} trend={staff.role && !/^not specified$/i.test(String(staff.role).trim()) ? staff.role : "Staff profile"} icon="id" tone="blue" />
         <MetricCard label="Salary Balance" value={formatMoney(staff.salary_balance)} trend="Current HR balance" icon="money" tone="emerald" />
         <MetricCard label="Pending Leave" value={snapshot?.summary?.pending_leaves ?? 0} trend="Awaiting review" icon="calendar" tone="amber" />
         <MetricCard label="Pending Advances" value={snapshot?.summary?.pending_advances ?? 0} trend="Awaiting review" icon="requests" tone="rose" />
@@ -4620,20 +4663,20 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
       <article className="app-panel">
         <div className="panel-head panel-head-wrap">
           <div>
-            <h3>My profile</h3>
-            <small>Update biodata, credentials, guarantor's form, and download your employment letter.</small>
+            <h3>My staff profile</h3>
+            <small>Keep your biodata and documents current, or download your employment letter.</small>
           </div>
           <div className="panel-head-actions">
             {onNavigate ? (
               <button type="button" className="table-action" onClick={() => onNavigate("/school-activities")}>
-                School Activities
+                School calendar
               </button>
             ) : null}
             <button type="button" className="table-action" onClick={handleDownloadEmploymentLetter} disabled={letterBusy}>
-              {letterBusy ? <><Spinner size={12} /> Preparing…</> : "Download Employment Letter"}
+              {letterBusy ? <><Spinner size={12} /> Preparing…</> : "Employment letter"}
             </button>
             <button type="button" className="table-action" onClick={() => setProfileOpen(true)}>
-              Edit biodata
+              Edit my details
             </button>
           </div>
         </div>
@@ -4655,35 +4698,73 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
 
       <section className="panel-grid">
         <article className="app-panel">
-          <div className="panel-head"><h3>Request leave</h3><small>Sent to HR for approval.</small></div>
+          <div className="panel-head"><div><h3>Ask for leave</h3><small>HR reviews it and you'll see the decision below.</small></div></div>
           <form className="panel-form" onSubmit={handleLeaveSubmit}>
             <div className="panel-form-grid">
-              <label className="panel-field">Type<input value={leaveForm.leave_type} onChange={(event) => setLeaveForm((prev) => ({ ...prev, leave_type: event.target.value }))} /></label>
-              <label className="panel-field">Start<input type="date" value={leaveForm.start_date} onChange={(event) => setLeaveForm((prev) => ({ ...prev, start_date: event.target.value }))} required /></label>
-              <label className="panel-field">End<input type="date" value={leaveForm.end_date} onChange={(event) => setLeaveForm((prev) => ({ ...prev, end_date: event.target.value }))} required /></label>
-              <label className="panel-field full">Reason<textarea value={leaveForm.reason} onChange={(event) => setLeaveForm((prev) => ({ ...prev, reason: event.target.value }))} rows="3" /></label>
+              <label className="panel-field full">
+                Type of leave
+                <select value={leaveForm.leave_type} onChange={(event) => setLeaveForm((prev) => ({ ...prev, leave_type: event.target.value }))}>
+                  {["Annual", "Sick", "Casual", "Maternity", "Paternity", "Study", "Compassionate", "Unpaid", "Other"].map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                  {leaveForm.leave_type && !["Annual", "Sick", "Casual", "Maternity", "Paternity", "Study", "Compassionate", "Unpaid", "Other"].includes(leaveForm.leave_type) ? (
+                    <option value={leaveForm.leave_type}>{leaveForm.leave_type}</option>
+                  ) : null}
+                </select>
+              </label>
+              <label className="panel-field">First day<input type="date" value={leaveForm.start_date} onChange={(event) => setLeaveForm((prev) => ({ ...prev, start_date: event.target.value }))} required /></label>
+              <label className="panel-field">Last day<input type="date" value={leaveForm.end_date} min={leaveForm.start_date || undefined} onChange={(event) => setLeaveForm((prev) => ({ ...prev, end_date: event.target.value }))} required /></label>
+              <label className="panel-field full">Reason <textarea value={leaveForm.reason} onChange={(event) => setLeaveForm((prev) => ({ ...prev, reason: event.target.value }))} rows="3" placeholder="A short note helps HR decide faster" /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave"}>{busy === "leave" ? <><Spinner size={12} /> Sending...</> : "Send leave request"}</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave"}>{busy === "leave" ? <><Spinner size={12} /> Sending…</> : "Send leave request"}</button></div>
           </form>
         </article>
 
         <article className="app-panel">
-          <div className="panel-head"><h3>Request salary advance</h3><small>Amount remains pending until HR approves.</small></div>
+          <div className="panel-head"><div><h3>Ask for a salary advance</h3><small>It stays pending until HR approves it.</small></div></div>
           <form className="panel-form" onSubmit={handleAdvanceSubmit}>
             <div className="panel-form-grid">
-              <label className="panel-field">Amount<input type="number" min="1" step="0.01" value={advanceForm.amount} onChange={(event) => setAdvanceForm((prev) => ({ ...prev, amount: event.target.value }))} required /></label>
-              <label className="panel-field full">Reason<textarea value={advanceForm.reason} onChange={(event) => setAdvanceForm((prev) => ({ ...prev, reason: event.target.value }))} rows="3" /></label>
+              <label className="panel-field full">Amount ({NAIRA_SYMBOL})<input type="number" min="1" step="0.01" inputMode="decimal" placeholder="e.g. 20000" value={advanceForm.amount} onChange={(event) => setAdvanceForm((prev) => ({ ...prev, amount: event.target.value }))} required /></label>
+              <label className="panel-field full">Reason <textarea value={advanceForm.reason} onChange={(event) => setAdvanceForm((prev) => ({ ...prev, reason: event.target.value }))} rows="3" placeholder="Tell HR what it's for" /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance"}>{busy === "advance" ? <><Spinner size={12} /> Sending...</> : "Send advance request"}</button></div>
+            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance"}>{busy === "advance" ? <><Spinner size={12} /> Sending…</> : "Send advance request"}</button></div>
           </form>
         </article>
       </section>
 
-      <section className="panel-grid">
-        <RecordList title="Leave history" rows={leaves.slice(0, 8)} render={(item) => `${item.leave_type} - ${item.start_date} to ${item.end_date} - ${item.status}`} />
-        <RecordList title="Salary advance history" rows={advances.slice(0, 8)} render={(item) => `${formatMoney(item.amount)} - ${item.request_date} - ${item.status}`} />
-        <RecordList title="Payroll history" rows={payroll.slice(0, 8)} render={(item) => `${item.period} - ${formatMoney(item.net_salary)} - ${item.status}`} />
-        <RecordList title="Attendance history" rows={attendance.slice(0, 8)} render={(item) => `${item.date} - ${item.status}`} />
+      <section className="panel-grid ts-recgrid">
+        <RecordList
+          title="Leave history"
+          rows={leaves.slice(0, 8)}
+          emptyText="You haven't asked for any leave yet."
+          render={(item) => (
+            <span className="ts-rec"><b>{item.leave_type}</b><small>{shortDate(item.start_date)} – {shortDate(item.end_date)}</small><StatusChip status={item.status} /></span>
+          )}
+        />
+        <RecordList
+          title="Salary advance history"
+          rows={advances.slice(0, 8)}
+          emptyText="No advance requests yet."
+          render={(item) => (
+            <span className="ts-rec"><b>{formatMoney(item.amount)}</b><small>Asked on {shortDate(item.request_date)}</small><StatusChip status={item.status} /></span>
+          )}
+        />
+        <RecordList
+          title="Payroll history"
+          rows={payroll.slice(0, 8)}
+          emptyText="Your payslips will appear here once payroll runs."
+          render={(item) => (
+            <span className="ts-rec"><b>{item.period}</b><small>Net {formatMoney(item.net_salary)}</small><StatusChip status={item.status} /></span>
+          )}
+        />
+        <RecordList
+          title="Attendance history"
+          rows={attendance.slice(0, 8)}
+          emptyText="No attendance recorded for you yet."
+          render={(item) => (
+            <span className="ts-rec"><b>{shortDate(item.date)}</b><small>{new Date(`${String(item.date || "").slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" })}</small><StatusChip status={item.status} /></span>
+          )}
+        />
       </section>
 
       <MessageInboxPanel
@@ -5556,10 +5637,12 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
   // head - directly answers "reduce the complexity, users don't know how
   // to operate it well".
   const scoreBreakdownKeys = ["theory_score", "cbt_score", "assessment_score", "assignment_score", "attendance_score", "other_score"];
-  const scoreTotal = scoreBreakdownKeys.reduce((sum, key) => sum + (Number(form[key]) || 0), 0);
+  const scoreTotal = Math.round(scoreBreakdownKeys.reduce((sum, key) => sum + (Number(form[key]) || 0), 0) * 100) / 100;
+  const maxScore = Number(form.max_score) > 0 ? Number(form.max_score) : 100;
+  const selectedStudent = form.student_id ? studentOptions.find((student) => student.student_id === form.student_id) || { name: form.student_id, student_id: form.student_id } : null;
 
   return (
-    <section className="screen-grid teacher-results teacher-dashboard">
+    <section className="screen-grid teacher-results">
       <PageHeader
         eyebrow="Assessment"
         title="Results & rankings"
@@ -5569,257 +5652,261 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
       />
 
       <div className="metric-grid teacher-results-stats">
-        <MetricCard
-          label="Students"
-          value={studentOptions.length || "—"}
-          trend={scopeLabel ? `in ${scopeLabel}` : "select a subject"}
-          icon="overview"
-          tone="emerald"
-        />
-        <MetricCard
-          label="Subjects"
-          value={subjects.length}
-          trend="assigned to you"
-          icon="planning"
-          tone="blue"
-        />
-        <MetricCard
-          label="CBT Results"
-          value={subjectCbtResults.length}
-          trend="for your subjects"
-          icon="results"
-          tone="teal"
-        />
-        <MetricCard
-          label="Class Ranking"
-          value={topRanked ? topRanked.student_name : "—"}
-          trend={topRanked ? `${topRanked.total_score} pts · ${ordinalRank(topRanked.rank)}` : "awaiting results"}
-          icon="exam"
-          tone="amber"
-        />
+        <MetricTile label="Students" value={studentOptions.length || "—"} note={scopeLabel ? `in ${scopeLabel}` : "Pick a subject to see them"} icon={Users} tone="emerald" />
+        <MetricTile label="Subjects" value={subjects.length} note="assigned to you" icon={BookOpen} tone="indigo" />
+        <MetricTile label="CBT results" value={subjectCbtResults.length} note="from your subjects" icon={Monitor} tone="sky" />
+        <MetricTile label="Top of the class" value={topRanked ? topRanked.student_name : "—"} note={topRanked ? `${topRanked.total_score} pts · ${ordinalRank(topRanked.rank)}` : "Awaiting results"} icon={Trophy} tone="amber" />
       </div>
 
       <div className="panel-grid teacher-results-grid">
-        <article className="app-panel frosted-card teacher-results-form-card">
+        <article className="app-panel teacher-results-form-card">
           <div className="panel-head">
             <div>
-              <h3>Submit Subject Score</h3>
-              <small>Only subjects assigned to you are listed.</small>
+              <h3>Record a score</h3>
+              <small>Only the subjects you teach are listed.</small>
             </div>
-            <span className="pill">{subjects.length || 0} subjects</span>
+            <span className="pill">{pluralize(subjects.length || 0, "subject")}</span>
           </div>
           <form className="panel-form" onSubmit={handleSubmit}>
-            <div className="panel-form-grid">
-              <label className="panel-field compact-subject-field">
-                Subject
-                <select
-                  className="compact-subject-select"
-                  value={form.subject_id}
-                  onChange={(event) => setForm((prev) => ({ ...prev, subject_id: event.target.value }))}
-                  disabled={subjects.length === 1}
-                >
-                  {subjects.length === 0 ? <option value="">No subjects assigned</option> : null}
-                  {subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.name}
-                    </option>
-                  ))}
-                </select>
-                {subjects.length === 1 ? <small className="field-note">Auto-selected assigned subject.</small> : null}
-              </label>
-              <label className="panel-field">
-                Class (optional)
-                <select
-                  value={form.class_id}
-                  onChange={(event) => setForm((prev) => ({ ...prev, class_id: event.target.value, student_id: "" }))}
-                >
-                  <option value="">Use student's class</option>
-                  {classOptions.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label || item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="panel-field full student-picker-field">
-                <span className="student-picker-label">Find student</span>
-                <span className="student-picker-search-wrap">
-                  <Search size={14} className="student-picker-search-icon" aria-hidden="true" />
-                  <input
-                    className="student-picker-search"
-                    value={studentSearch}
-                    onChange={(event) => setStudentSearch(event.target.value)}
-                    placeholder="Search by name or exam number..."
-                  />
-                </span>
-                <select
-                  className="student-picker-select"
-                  value={form.student_id}
-                  onChange={(event) => setForm((prev) => ({ ...prev, student_id: event.target.value }))}
-                  disabled={studentLoading || studentOptions.length === 0}
-                >
-                  <option value="">{studentLoading ? "Loading students..." : studentSearch ? "Select matching student" : "Select student"}</option>
-                  {filteredStudentOptions.map((student) => (
-                    <option
-                      key={student.id || student.student_id}
-                      value={student.student_id}
-                      title={`${student.name} - ${student.student_id} - ${student.email || "No email"} - ${student.class_name || ""}`}
-                    >
-                      {student.name} - {student.student_id}
-                    </option>
-                  ))}
-                  {!studentLoading && studentSearch && filteredStudentOptions.length === 0 ? <option value="" disabled>No matching students</option> : null}
-                </select>
-                <small className="field-note">
-                  {form.student_id
-                    ? (() => {
-                        const selected = studentOptions.find((student) => student.student_id === form.student_id);
-                        return selected ? `${selected.class_name || "Class not set"} - ${selected.email || "No email"}` : "Selected student";
-                      })()
-                    : "Students are available when you teach the selected subject."}
-                </small>
-              </label>
-              <label className="panel-field">
-                Max score
-                <input
-                  type="number"
-                  value={form.max_score}
-                  onChange={(event) => setForm((prev) => ({ ...prev, max_score: event.target.value }))}
-                  min="1"
-                  step="0.01"
-                />
-              </label>
-              <div className="panel-field full teacher-results-score-section-label">Score breakdown</div>
-              {[
-                ["theory_score", "Theory exam"],
-                ["cbt_score", "CBT exam"],
-                ["assessment_score", "Assessment"],
-                ["assignment_score", "Assignment"],
-                ["attendance_score", "Attendance"],
-                ["other_score", "Other CA"],
-              ].map(([key, label]) => (
-                <label key={key} className="panel-field">
-                  {label}
-                  <input type="number" min="0" step="0.01" value={form[key]} onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))} />
+            <div className="ts-formstep">
+              <p className="ts-formstep__label"><span>1</span> Who is it for?</p>
+              <div className="panel-form-grid">
+                <label className="panel-field compact-subject-field">
+                  Subject
+                  <select
+                    className="compact-subject-select"
+                    value={form.subject_id}
+                    onChange={(event) => setForm((prev) => ({ ...prev, subject_id: event.target.value, student_id: "" }))}
+                    disabled={subjects.length === 1}
+                  >
+                    {subjects.length === 0 ? <option value="">No subjects assigned</option> : null}
+                    {subjects.map((subject) => (
+                      <option key={subject.id} value={subject.id}>
+                        {subject.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-              ))}
+                <label className="panel-field">
+                  <span>Class <span className="ts-optional">(optional)</span></span>
+                  <select
+                    value={form.class_id}
+                    onChange={(event) => setForm((prev) => ({ ...prev, class_id: event.target.value, student_id: "" }))}
+                  >
+                    <option value="">All my classes</option>
+                    {classOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label || item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="panel-field full ts-student-field">
+                  <span className="student-picker-label">Student</span>
+                  {selectedStudent ? (
+                    <div className="ts-picked">
+                      <Avatar name={selectedStudent.name} src={selectedStudent.profile_picture || ""} size={42} />
+                      <span className="ts-picked__text">
+                        <strong>{selectedStudent.name}</strong>
+                        <small>{[selectedStudent.student_id, selectedStudent.class_name].filter(Boolean).join(" · ")}</small>
+                      </span>
+                      <button type="button" className="table-action" onClick={() => { setForm((prev) => ({ ...prev, student_id: "" })); setStudentSearch(""); }}>Change</button>
+                    </div>
+                  ) : (
+                    <div className="ts-picker">
+                      <label className="ts-search">
+                        <Search size={15} aria-hidden="true" />
+                        <input
+                          value={studentSearch}
+                          onChange={(event) => setStudentSearch(event.target.value)}
+                          placeholder={studentLoading ? "Loading students…" : "Search by name or student ID"}
+                          disabled={studentLoading || studentOptions.length === 0}
+                          aria-label="Search students"
+                        />
+                      </label>
+                      {studentOptions.length === 0 && !studentLoading ? (
+                        <p className="field-note">No students yet. Students appear once you teach the chosen subject.</p>
+                      ) : (
+                        <ul className="ts-picker__list" aria-label="Matching students">
+                          {filteredStudentOptions.slice(0, 40).map((student) => (
+                            <li key={student.id || student.student_id}>
+                              <button type="button" onClick={() => { setForm((prev) => ({ ...prev, student_id: student.student_id })); setStudentSearch(""); }}>
+                                <Avatar name={student.name} src={student.profile_picture || ""} size={30} />
+                                <span><strong>{student.name}</strong><small>{[student.student_id, student.class_name].filter(Boolean).join(" · ")}</small></span>
+                              </button>
+                            </li>
+                          ))}
+                          {!studentLoading && filteredStudentOptions.length === 0 ? <li className="ts-picker__none">Nobody matches “{studentSearch}”.</li> : null}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="ts-formstep">
+              <p className="ts-formstep__label"><span>2</span> The scores</p>
+              <div className="ts-score-grid">
+                <label className="panel-field ts-score-grid__max">
+                  Maximum score
+                  <input
+                    type="number"
+                    value={form.max_score}
+                    onChange={(event) => setForm((prev) => ({ ...prev, max_score: event.target.value }))}
+                    min="1"
+                    step="0.01"
+                  />
+                </label>
+                {[
+                  ["theory_score", "Theory exam"],
+                  ["cbt_score", "CBT exam"],
+                  ["assessment_score", "Assessment"],
+                  ["assignment_score", "Assignment"],
+                  ["attendance_score", "Attendance"],
+                  ["other_score", "Other CA"],
+                ].map(([key, label]) => (
+                  <label key={key} className="panel-field">
+                    {label}
+                    <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form[key]} onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))} />
+                  </label>
+                ))}
+              </div>
+              <div className={`ts-total${scoreTotal > maxScore ? " is-over" : ""}`} aria-live="polite">
+                <div className="ts-total__row">
+                  <span>Running total</span>
+                  <strong>{scoreTotal} <small>/ {maxScore}</small></strong>
+                </div>
+                <div className="ts-total__bar"><i style={{ width: `${Math.min(100, (scoreTotal / maxScore) * 100)}%` }} /></div>
+                {scoreTotal > maxScore ? <p>These add up to more than the maximum score.</p> : null}
+              </div>
+            </div>
+
+            <div className="ts-formstep">
+              <p className="ts-formstep__label"><span>3</span> Anything to add?</p>
               <label className="panel-field full">
-                Remarks (optional)
+                <span>Remarks <span className="ts-optional">(optional)</span></span>
                 <FormattedTextarea value={form.remarks} onChange={(event) => setForm((prev) => ({ ...prev, remarks: event.target.value }))} />
               </label>
             </div>
-            <div className="teacher-results-total-preview">
-              <span>Running total</span>
-              <strong>{scoreTotal} / {form.max_score || 100}</strong>
-            </div>
-            {error ? <p className="form-feedback error">{error}</p> : null}
-            {feedback ? <p className="form-feedback success">{feedback}</p> : null}
+
+            {error ? <p className="form-feedback error" role="alert">{error}</p> : null}
+            {feedback ? <p className="form-feedback success" role="status">{feedback}</p> : null}
             <div className="panel-form-actions teacher-results-form-actions">
-              <button type="submit" className="teacher-results-submit-btn" disabled={busy || subjects.length === 0}>
-                {busy ? <><Spinner size={12} /> Saving...</> : "Submit Score"}
+              <button type="button" className="table-action" onClick={handlePushResults} disabled={pushBusy} title="Send everything you've recorded to the school admin">
+                {pushBusy ? <><Spinner size={12} /> Sending…</> : "Send results to admin"}
               </button>
-              <button type="button" className="table-action" onClick={handlePushResults} disabled={pushBusy}>
-                {pushBusy ? <><Spinner size={12} /> Pushing...</> : "Push Result to Admin"}
+              <button type="submit" className="teacher-results-submit-btn" disabled={busy || subjects.length === 0}>
+                {busy ? <><Spinner size={12} /> Saving…</> : "Save score"}
               </button>
             </div>
           </form>
         </article>
 
-        <article className="app-panel frosted-card teacher-results-rankings-card">
+        <article className="app-panel teacher-results-rankings-card">
           <div className="panel-head">
             <div>
-              <h3>Results &amp; Rankings</h3>
-              <small>View recent CBT results and class standings.</small>
+              <h3>Standings</h3>
+              <small>How students rank on the scores you've recorded.</small>
             </div>
           </div>
-          <div className="segmented-control teacher-results-tabs">
-            <button type="button" className={resultsTab === "rankings" ? "active" : ""} onClick={() => setResultsTab("rankings")}>
+          <div className="segmented-control teacher-results-tabs" role="group" aria-label="Standings view">
+            <button type="button" className={resultsTab === "rankings" ? "active" : ""} aria-pressed={resultsTab === "rankings"} onClick={() => setResultsTab("rankings")}>
               Rankings
             </button>
-            <button type="button" className={resultsTab === "cbt" ? "active" : ""} onClick={() => setResultsTab("cbt")}>
-              CBT Results
+            <button type="button" className={resultsTab === "cbt" ? "active" : ""} aria-pressed={resultsTab === "cbt"} onClick={() => setResultsTab("cbt")}>
+              CBT results
             </button>
           </div>
 
           {resultsTab === "rankings" ? (
             recent.length ? (
-              <table className="data-table teacher-rankings-table">
+              <>
+                <div className={`ts-podium ts-podium--${Math.min(3, recent.length)}`}>
+                  {[recent[1], recent[0], recent[2]].filter(Boolean).map((row) => (
+                    <div key={row.student_id} className={`ts-podium__step is-${row.rank}`} data-tone={toneIndex(row.student_name)}>
+                      <Avatar name={row.student_name} src={row.profile_picture || ""} size={row.rank === 1 ? 64 : 52} />
+                      <RankBadge rank={row.rank} />
+                      <strong>{row.student_name}</strong>
+                      <span>{row.class_name || "—"}</span>
+                      <b>{row.total_score}<small> pts</small></b>
+                      <em>avg {row.average_score}</em>
+                    </div>
+                  ))}
+                </div>
+                {recent.length > 3 ? (
+                  <div className="table-scroll">
+                    <table className="data-table teacher-rankings-table">
+                      <thead>
+                        <tr><th>#</th><th>Student</th><th>Class</th><th>Total</th></tr>
+                      </thead>
+                      <tbody>
+                        {recent.slice(3).map((row) => (
+                          <tr key={row.student_id}>
+                            <td><RankBadge rank={row.rank} /></td>
+                            <td><strong className="theory-queue-name">{row.student_name}</strong></td>
+                            <td>{row.class_name || "—"}</td>
+                            <td>{row.total_score}<small>avg {row.average_score}</small></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <EmptyState compact art="clipboard" title="No standings yet" message="Save a student's score and the rankings will build themselves here." />
+            )
+          ) : subjectCbtResults.length ? (
+            <div className="table-scroll">
+              <table className="data-table">
                 <thead>
                   <tr>
-                    <th>#</th>
                     <th>Student</th>
-                    <th>Class</th>
-                    <th>Total Score</th>
-                    <th>Position</th>
+                    <th>Subject</th>
+                    <th>Score</th>
+                    <th><span className="visually-hidden">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recent.map((row) => (
-                    <tr key={row.student_id}>
-                      <td>{row.rank}</td>
-                      <td>{row.student_name}</td>
-                      <td>{row.class_name || "-"}</td>
-                      <td>
-                        {row.total_score}
-                        <small>avg {row.average_score}</small>
+                  {subjectCbtResults.slice(0, 30).map((row) => (
+                    <tr key={row.attempt_id || row.id}>
+                      <td><strong className="theory-queue-name">{row.student_name}</strong><small>{[row.student_id || row.student_email, row.class_name].filter(Boolean).join(" · ")}</small></td>
+                      <td>{row.subject || "General"}</td>
+                      <td><strong>{row.score ?? 0}</strong><small>out of {row.total_points ?? "—"}</small></td>
+                      <td className="table-action-cell">
+                        <button
+                          type="button"
+                          className="table-action"
+                          onClick={() => setReviewingAttempt({ id: row.attempt_id || row.id, name: row.student_name })}
+                        >
+                          View script
+                        </button>
+                        <button
+                          type="button"
+                          className="table-action"
+                          title="Copy this CBT score into the form"
+                          onClick={() => {
+                            setForm((prev) => ({
+                              ...prev,
+                              student_id: row.student_id || prev.student_id,
+                              subject_id: row.subject_id || prev.subject_id,
+                              class_id: row.class_id || prev.class_id,
+                              cbt_score: String(row.score ?? ""),
+                            }));
+                            setStudentSearch("");
+                          }}
+                        >
+                          Use score
+                        </button>
                       </td>
-                      <td><RankBadge rank={row.rank} /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            ) : (
-              <p className="panel-empty">Submit a score to see rankings.</p>
-            )
-          ) : subjectCbtResults.length ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  <th>Subject</th>
-                  <th>Class</th>
-                  <th>CBT Score</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {subjectCbtResults.slice(0, 30).map((row) => (
-                  <tr key={row.attempt_id || row.id}>
-                    <td>{row.student_name}<small>{row.student_id || row.student_email}</small></td>
-                    <td>{row.subject || "General"}</td>
-                    <td>{row.class_name || "-"}</td>
-                    <td>{row.score ?? 0}/{row.total_points ?? "-"}</td>
-                    <td className="table-action-cell">
-                      <button
-                        type="button"
-                        className="table-action"
-                        onClick={() => setReviewingAttempt({ id: row.attempt_id || row.id, name: row.student_name })}
-                      >
-                        View script
-                      </button>
-                      <button
-                        type="button"
-                        className="table-action"
-                        onClick={() => {
-                          setForm((prev) => ({
-                            ...prev,
-                            student_id: row.student_id || prev.student_id,
-                            subject_id: row.subject_id || prev.subject_id,
-                            class_id: row.class_id || prev.class_id,
-                            cbt_score: String(row.score ?? ""),
-                          }));
-                          setStudentSearch(row.student_id || row.student_name || "");
-                        }}
-                      >
-                        Fill
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            </div>
           ) : (
-            <p className="panel-empty">No submitted CBT results for your assigned subjects yet.</p>
+            <EmptyState compact art="inbox" title="No CBT results yet" message="When students finish a CBT for one of your subjects, their scores show up here." />
           )}
         </article>
       </div>
@@ -6129,6 +6216,7 @@ function TeacherWorkspace({
           <TeacherPastExamsPanel
             session={session}
             onEditExam={handleEditExam}
+            onCreateExam={() => selectTeacherTab("exam-builder")}
             loadingExamId={loadingExamId}
             editError={examEditError}
           />
@@ -9648,12 +9736,16 @@ const result =     await postJson(session, `/api/app/exams/${examId}/offline-sub
         )}
 
         {loading && !data ? (
-          <DashboardLoader />
+          role === "teacher" ? <TeacherLoading /> : <DashboardLoader />
         ) : error ? (
-          <div className="state-panel">
-            <h3>Error</h3>
-            <p>{error}</p>
-          </div>
+          role === "teacher" ? (
+            <TeacherLoadError message={error} onRetry={loadDashboard} />
+          ) : (
+            <div className="state-panel">
+              <h3>Error</h3>
+              <p>{error}</p>
+            </div>
+          )
         ) : role === "teacher" ? (
           <TeacherWorkspace
             session={session}

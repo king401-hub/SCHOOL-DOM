@@ -1,0 +1,202 @@
+/* ==========================================================================
+   TEACHER STUDIO — My exams, theory grading
+   ========================================================================== */
+
+.ts-exams-page { display: grid; gap: 1.25rem; }
+
+.teacher-workspace-shell.ts .exam-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+  gap: 1rem;
+}
+
+/* screen-reader-only text (used by the theory queue and a few icon buttons) */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* toolbar shared by list pages ------------------------------------------------- */
+
+.ts-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; margin-bottom: 1.1rem; }
+.ts-toolbar__search { flex: 1 1 220px; max-width: 380px; }
+.ts-toolbar__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-left: auto; }
+
+.ts-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  margin-left: 0.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ts-muted) 14%, transparent);
+  color: var(--ts-muted);
+  font: 800 0.66rem/1 var(--ts-font);
+}
+.teacher-workspace-shell.ts .segmented-control > button.active .ts-count { background: var(--ts-accent-soft-2); color: var(--ts-accent-ink); }
+
+/* exam rows --------------------------------------------------------------------- */
+
+.ts-examrows { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+.ts-examrows-skeleton { display: grid; gap: 0.6rem; }
+
+.ts-examrow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.75rem 1.1rem;
+  padding: 0.8rem 1rem 0.8rem 1rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 18px;
+  background: var(--ts-surface);
+  overflow: hidden;
+  transition: transform var(--ts-med) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease), border-color var(--ts-med) linear;
+}
+.ts-examrow::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--tone); }
+.ts-examrow:hover { transform: translateY(-2px); box-shadow: var(--ts-shadow-2); border-color: color-mix(in srgb, var(--tone) 35%, var(--ts-line)); }
+
+.ts-examrow__date {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: 3.4rem;
+  height: 3.6rem;
+  border-radius: 15px;
+  background: var(--tone-soft);
+  color: var(--tone);
+}
+.ts-examrow__date b { font: 700 1.35rem/1 var(--ts-display); }
+.ts-examrow__date small { margin-top: 0.15rem; font: 800 0.6rem/1 var(--ts-font); letter-spacing: 0.1em; }
+
+.ts-examrow__main { min-width: 0; display: grid; gap: 0.05rem; }
+.ts-examrow__main strong { color: var(--ts-ink); font: 700 0.96rem/1.35 var(--ts-font); overflow-wrap: anywhere; }
+.ts-examrow__main span { color: var(--ts-muted); font: 500 0.8rem/1.4 var(--ts-font); }
+.ts-examrow__when { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 0.15rem; color: var(--ts-text) !important; font-weight: 600 !important; }
+
+.ts-examrow__badges { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+.ts-examrow__count { display: grid; justify-items: center; min-width: 4.4rem; }
+.ts-examrow__count b { color: var(--ts-ink); font: 700 1.2rem/1.1 var(--ts-display); font-variant-numeric: tabular-nums; }
+.ts-examrow__count small { color: var(--ts-muted); font: 600 0.68rem/1.2 var(--ts-font); }
+.ts-examrow__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
+
+@media (max-width: 1100px) {
+  .ts-examrow { grid-template-columns: 3.5rem minmax(0, 1fr) auto; }
+  .ts-examrow__badges { grid-column: 2 / -1; grid-row: 2; justify-content: flex-start; }
+  .ts-examrow__count { grid-column: 3; grid-row: 1; }
+  .ts-examrow__actions { grid-column: 2 / -1; grid-row: 3; justify-content: flex-start; }
+}
+
+@media (max-width: 560px) {
+  .ts-toolbar__search { max-width: none; }
+  .ts-toolbar__actions { margin-left: 0; width: 100%; }
+  .ts-toolbar__actions > * { flex: 1 1 auto; }
+  .ts-examrow { grid-template-columns: 3.1rem minmax(0, 1fr); padding: 0.75rem; }
+  .ts-examrow__date { width: 3rem; height: 3.3rem; }
+  .ts-examrow__count { grid-column: 2; grid-row: auto; justify-items: start; grid-auto-flow: column; gap: 0.35rem; align-items: baseline; }
+  .ts-examrow__badges,
+  .ts-examrow__actions { grid-column: 1 / -1; grid-row: auto; }
+}
+
+/* ==========================================================================
+   Theory grading (also rendered, unstyled by the Studio, on the admin side)
+   ========================================================================== */
+
+.theory-progress { position: relative; display: grid; gap: 0.45rem; margin: 0 0 1.1rem; font-weight: 700; font-size: 0.82rem; }
+.theory-progress i { position: relative; display: block; height: 8px; border-radius: 999px; background: rgba(120, 130, 160, 0.2); overflow: hidden; }
+.theory-progress i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--pct, 0%); border-radius: inherit; background: linear-gradient(90deg, #4f46e5, #7c3aed); transition: width 700ms cubic-bezier(0.22, 1, 0.36, 1); }
+.theory-quick { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.15rem; }
+.theory-quick button { padding: 0.25rem 0.7rem; border: 1px solid rgba(120, 130, 160, 0.4); border-radius: 999px; background: transparent; color: inherit; font-weight: 700; font-size: 0.72rem; cursor: pointer; }
+.theory-caughtup { display: grid; justify-items: center; gap: 0.25rem; padding: 2.2rem 1rem; text-align: center; color: #059669; }
+.theory-caughtup__bg { fill: currentColor; opacity: 0.13; }
+.theory-caughtup strong { color: inherit; font-size: 1.05rem; }
+.theory-caughtup p { margin: 0; opacity: 0.8; color: inherit; }
+
+body.ts-on .teacher-workspace-shell.ts .theory-caughtup { color: var(--ts-ok); }
+body.ts-on .teacher-workspace-shell.ts .theory-caughtup strong { color: var(--ts-ink); font: 650 1.05rem/1.3 var(--ts-display); }
+body.ts-on .teacher-workspace-shell.ts .theory-caughtup p { color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .theory-progress { color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .theory-progress i { background: var(--ts-surface-3); }
+body.ts-on .teacher-workspace-shell.ts .theory-progress i::after { background: var(--ts-grad); }
+
+body.ts-on .teacher-workspace-shell.ts .theory-queue-name { color: var(--ts-ink); font-weight: 650; }
+
+body.ts-on .teacher-workspace-shell.ts .theory-answers { gap: 1rem; }
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem 1.15rem 1.15rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-lg);
+  background: var(--ts-surface-2);
+  box-shadow: none;
+  transition: border-color var(--ts-med) linear, background var(--ts-med) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card.is-scored { border-color: color-mix(in srgb, var(--ts-ok) 40%, var(--ts-line)); background: color-mix(in srgb, var(--ts-ok) 5%, var(--ts-surface-2)); }
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card .message-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card .message-head p { margin: 0; color: var(--ts-ink); font: 650 0.95rem/1.5 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card .message-head small {
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: var(--ts-accent-soft);
+  color: var(--ts-accent-ink);
+  font: 700 0.72rem/1.4 var(--ts-font);
+  white-space: nowrap;
+}
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card__n {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 10px;
+  background: var(--ts-grad);
+  color: #fff;
+  font: 800 0.8rem/1 var(--ts-display);
+}
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card .message-meta { margin: 0; padding: 0.7rem 0.9rem; border-left: 3px solid var(--ts-line-strong); background: var(--ts-surface-3); border-radius: 0 12px 12px 0; color: var(--ts-muted); font-size: 0.85rem; }
+body.ts-on .teacher-workspace-shell.ts .theory-answer {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-md);
+  background: var(--ts-surface);
+}
+body.ts-on .teacher-workspace-shell.ts .theory-answer__label { display: block; margin-bottom: 0.3rem; color: var(--ts-faint); font: 700 0.64rem/1.2 var(--ts-font); letter-spacing: 0.13em; text-transform: uppercase; }
+body.ts-on .teacher-workspace-shell.ts .theory-answer .message-body { margin: 0; padding: 0; border: 0; background: transparent; color: var(--ts-text); font: 500 0.95rem/1.65 var(--ts-font); white-space: pre-wrap; overflow-wrap: anywhere; }
+body.ts-on .teacher-workspace-shell.ts .theory-answer-card .panel-form-grid > .panel-field:not(.full) { max-width: 18rem; }
+body.ts-on .teacher-workspace-shell.ts .theory-quick button {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 999px;
+  background: var(--ts-surface);
+  color: var(--ts-accent-ink);
+  font: 700 0.72rem/1.2 var(--ts-font);
+  cursor: pointer;
+  transition: background var(--ts-fast) linear, border-color var(--ts-fast) linear, transform var(--ts-fast) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .theory-quick button:hover { background: var(--ts-accent-soft-2); border-color: var(--ts-accent); transform: translateY(-1px); }
+body.ts-on .teacher-workspace-shell.ts .theory-scored { margin-right: auto; color: var(--ts-ok); font: 700 0.82rem/1.3 var(--ts-font); }
+body.ts-on .teacher-workspace-shell.ts .theory-publish { justify-content: space-between; margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid var(--ts-line); }
+body.ts-on .teacher-workspace-shell.ts .theory-publish small { color: var(--ts-muted); font-size: 0.82rem; }
+
+/* the "selected"/on state of small pill buttons (Auto | Clock in ..., PIN active) */
+body.ts-on .teacher-workspace-shell.ts .table-action.active:not(.primary) {
+  border-color: color-mix(in srgb, var(--ts-accent) 45%, transparent);
+  background: var(--ts-accent-soft-2);
+  color: var(--ts-accent-ink);
+}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import FormattedTextarea from "./components/FormattedTextarea";
 import RichText from "./components/RichText";
 import { formatDate, MetricCard, requestJson, Spinner } from "./AppShared";
+import { CalendarClock, ClipboardList, Clock3, FileCheck, Hourglass, Megaphone, Pencil, Plus, RefreshCw, Search, Send } from "lucide-react";
+import { EmptyState, MetricTile, Skeleton, clockTime, dateTile, relativeDay, stagger, toneIndex } from "./teacher/TeacherKit";
 import { setLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 
 const IMPORT_SAMPLE = `1. What is the capital of France?
@@ -983,7 +985,7 @@ export function TeacherExamBuilder({
   const selectedSubject = subjectOptions.find((item) => String(item.id) === String(form.subjectId));
   const canPublishExam = ["school_admin", "principal", "super_admin"].includes(session?.user?.role);
   const builderSections = [
-    ["details", "Exam Details"],
+    ["details", "Details"],
     ["sections", "Sections"],
     ["questions", "Questions"],
     ["settings", "Settings"],
@@ -1574,28 +1576,28 @@ export function TeacherExamBuilder({
       <main className="exam-builder-main">
         <div className="exam-builder-top">
           <div>
-            <h2 id={isEditing ? "edit-exam-title" : undefined}>{isEditing ? "Edit Exam" : "Create New Exam"}</h2>
-            <p>{isEditing ? `Exams / ${form.title || "Edit Exam"}` : "Exams / Create New Exam"}</p>
+            <h2 id={isEditing ? "edit-exam-title" : undefined}>{isEditing ? "Edit exam" : "Build an exam"}</h2>
+            <p>{isEditing ? form.title || "Untitled exam" : "Work through the five steps, save a draft whenever you like, then send it off when it's ready."}</p>
           </div>
           <div className="exam-builder-actions">
             {isEditing ? (
               <button type="button" className="table-action" onClick={onBackToList}>
-                Back to Past Exams
+                Back to my exams
               </button>
             ) : null}
             {isEditing && onStartNewExam ? (
               <button type="button" className="table-action" onClick={onStartNewExam}>
-                + New Exam
+                Start a new exam
               </button>
             ) : null}
             <button type="button" className="table-action" onClick={() => setActiveSection("review")}>
-              Preview Exam
+              Preview
             </button>
             <span className={`cbt-status-pill tone-${isPublished ? "success" : "info"}`}>
               {isPublished ? "Published" : "Draft"}
             </span>
             <button type="button" onClick={handleSaveExam} disabled={saving}>
-              {saving ? <><Spinner size={14} /> Saving...</> : "Save Draft"}
+              {saving ? <><Spinner size={14} /> Saving…</> : "Save draft"}
             </button>
           </div>
         </div>
@@ -1622,13 +1624,13 @@ export function TeacherExamBuilder({
 
           {activeSection === "details" ? (
             <div className="exam-builder-form">
-              <label className="panel-field">Exam Title<input value={form.title} onChange={(event) => setField("title", event.target.value)} /></label>
-              <label className="panel-field">Exam Code<input value={form.code} onChange={(event) => setField("code", event.target.value)} placeholder="Optional" /></label>
-              <label className="panel-field full">Description<textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows={4} /></label>
+              <label className="panel-field">Exam title<input value={form.title} onChange={(event) => setField("title", event.target.value)} placeholder="e.g. Mathematics mid-term" /></label>
+              <label className="panel-field">Exam code<input value={form.code} onChange={(event) => setField("code", event.target.value)} placeholder="Optional" /></label>
+              <label className="panel-field full">Description<textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows={4} placeholder="A line or two about what this exam covers (optional)" /></label>
               <label className="panel-field">Class / Course<select value={form.classId} onChange={(event) => setField("classId", event.target.value)}><option value="">All classes</option>{classOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.name}</option>)}</select></label>
               <label className="panel-field">Subject<select value={form.subjectId} onChange={(event) => setField("subjectId", event.target.value)}><option value="">General</option>{subjectOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               <label className="panel-field">
-                Exam Type
+                Exam type
                 <select value={form.examFormat} onChange={(event) => setField("examFormat", event.target.value)}>
                   <option value="objective">Objective (MCQ)</option>
                   <option value="theory">Theory</option>
@@ -1636,10 +1638,10 @@ export function TeacherExamBuilder({
                 </select>
               </label>
               <label className="panel-field">Teacher<input value={teacherName || "Teacher"} readOnly /></label>
-              <label className="panel-field">Start Date<input type="datetime-local" value={form.startDate} onChange={(event) => setField("startDate", event.target.value)} /></label>
-              <label className="panel-field">End Date<input type="datetime-local" value={form.endDate} onChange={(event) => setField("endDate", event.target.value)} /></label>
-              <label className="panel-field">Exam Duration (minutes)<input type="number" min="1" value={form.duration} onChange={(event) => setField("duration", event.target.value)} /></label>
-              <label className="panel-field full">Instructions for Students<textarea value={form.instructions} onChange={(event) => setField("instructions", event.target.value)} rows={6} /></label>
+              <label className="panel-field">Opens<input type="datetime-local" value={form.startDate} onChange={(event) => setField("startDate", event.target.value)} /></label>
+              <label className="panel-field">Closes<input type="datetime-local" value={form.endDate} onChange={(event) => setField("endDate", event.target.value)} /></label>
+              <label className="panel-field">Time allowed (minutes)<input type="number" min="1" value={form.duration} onChange={(event) => setField("duration", event.target.value)} /></label>
+              <label className="panel-field full">Instructions for students<textarea value={form.instructions} onChange={(event) => setField("instructions", event.target.value)} rows={6} /></label>
             </div>
           ) : null}
 
@@ -1647,12 +1649,12 @@ export function TeacherExamBuilder({
             <div className="exam-builder-list">
               {sections.map((section, index) => (
                 <div key={section.id} className="exam-builder-row">
-                  <label className="panel-field">Section Title<input value={section.title} onChange={(event) => setSections((previous) => previous.map((item) => item.id === section.id ? { ...item, title: event.target.value } : item))} /></label>
+                  <label className="panel-field">Section title<input value={section.title} onChange={(event) => setSections((previous) => previous.map((item) => item.id === section.id ? { ...item, title: event.target.value } : item))} /></label>
                   <label className="panel-field">Marks<input type="number" value={section.marks} onChange={(event) => setSections((previous) => previous.map((item) => item.id === section.id ? { ...item, marks: event.target.value } : item))} /></label>
                   <span>#{index + 1}</span>
                 </div>
               ))}
-              <button type="button" className="table-action" onClick={addSection}>Add section</button>
+              <button type="button" className="table-action" onClick={addSection}>+ Add a section</button>
             </div>
           ) : null}
 
@@ -2042,46 +2044,46 @@ export function TeacherExamBuilder({
               <div className="table-actions-inline exam-builder-add-row">
                 {form.examFormat !== "theory" ? (
                   <button type="button" className="table-action" onClick={() => addQuestion("mcq")}>
-                    {form.examFormat === "mixed" ? "Add Objective Question" : "Add question"}
+                    {form.examFormat === "mixed" ? "+ Objective question" : "+ Add a question"}
                   </button>
                 ) : null}
                 {form.examFormat !== "objective" ? (
-                  <button type="button" className="table-action" onClick={() => addQuestion("short_answer")}>Add Theory Question</button>
+                  <button type="button" className="table-action" onClick={() => addQuestion("short_answer")}>+ Theory question</button>
                 ) : null}
                 {form.examFormat !== "objective" ? (
                   <button type="button" className="table-action" onClick={() => addQuestion("essay", { kind: COMPOSITION_KIND, marks: "20" })}>
-                    Add Composition
+                    + Composition
                   </button>
                 ) : null}
                 {/* A passage question is an ordinary question with a group attached;
                     the group carries the passage, and further questions join it from
                     the "Passage / group" picker on each question. */}
                 <button type="button" className="table-action" onClick={addPassageQuestion}>
-                  Add Passage / Comprehension
+                  + Passage / comprehension
                 </button>
               </div>
               <p className="exam-builder-total">
-                {questions.length} question{questions.length === 1 ? "" : "s"} &bull; {totalMarks} total mark{totalMarks === 1 ? "" : "s"}
+                {questions.length} question{questions.length === 1 ? "" : "s"} &bull; {totalMarks} mark{totalMarks === 1 ? "" : "s"} in all
               </p>
             </div>
           ) : null}
 
           {activeSection === "settings" ? (
             <div className="exam-builder-settings">
-              <label className="remember-row"><input type="checkbox" checked={form.randomizeQuestions} onChange={(event) => setField("randomizeQuestions", event.target.checked)} /> Randomize questions</label>
-              <label className="remember-row"><input type="checkbox" checked={form.showResults} disabled /> Send results to teacher only after submission</label>
+              <label className="remember-row"><input type="checkbox" checked={form.randomizeQuestions} onChange={(event) => setField("randomizeQuestions", event.target.checked)} /> Shuffle the questions for each student</label>
+              <label className="remember-row"><input type="checkbox" checked={form.showResults} disabled /> Only share results with you after a student submits</label>
               <p className="student-panel-sub">
-                This exam is currently <strong>{isPublished ? "Published" : "a Draft"}</strong>.{" "}
+                This exam is currently <strong>{isPublished ? "published" : "a draft"}</strong>.{" "}
                 {canPublishExam
-                  ? "Save Draft only saves your changes. Use Publish Exam at the bottom when you're ready to make it available to students."
-                  : "Save Draft only saves your changes. Use Send to Admin at the bottom when you're ready for an administrator to review and publish it."}
+                  ? "Save draft only keeps your changes. Use Publish exam at the bottom when you're ready to open it to students."
+                  : "Save draft only keeps your changes. Use Send to admin at the bottom when you're ready for an administrator to review and publish it."}
               </p>
             </div>
           ) : null}
 
           {activeSection === "review" ? (
             <div className="exam-review-grid">
-              <MetricCard label="Exam" value={form.title || "Untitled"} trend={form.code || "No code"} />
+              <MetricCard label="Exam" value={form.title || "Untitled"} trend={form.code || "No code yet"} />
               <MetricCard label="Class" value={selectedClass?.label || selectedClass?.name || "All classes"} trend={selectedSubject?.name || "General"} />
               <MetricCard label="Duration" value={`${manualDuration || 0} mins`} trend={`${form.startDate || "-"} to ${form.endDate || "-"}`} />
               <MetricCard label="Questions" value={questions.length} trend={`${totalMarks} total marks`} />
@@ -2091,7 +2093,7 @@ export function TeacherExamBuilder({
               </article>
               <article className="app-panel full">
                 <h3>Student preview</h3>
-                <p>Exactly what a student will see for each question - objective options, or an empty theory answer box.</p>
+                <p>This is exactly what a student will see: the options for objective questions, or an empty answer box for theory.</p>
                 {questions.map((question, index) => {
                   const questionType = question.questionType || "mcq";
                   const isTheory = THEORY_QUESTION_TYPES.has(questionType);
@@ -2153,11 +2155,11 @@ export function TeacherExamBuilder({
             {isPublished
               ? "This exam is live. Publishing again re-confirms it with your latest changes."
               : canPublishExam
-                ? "When you're ready, publish this exam to make it available to eligible students."
-                : "When you're ready, send this exam to an administrator to review and publish."}
+                ? "Happy with it? Publish the exam to open it to eligible students."
+                : "Happy with it? Send the exam to your administrator to review and publish."}
           </p>
           <button type="button" className="btn-primary exam-builder-publish-btn" onClick={handlePublishExam} disabled={saving || publishing}>
-            {publishing ? <><Spinner size={14} /> {canPublishExam ? "Publishing..." : "Sending..."}</> : canPublishExam ? "Publish Exam" : "Send to Admin"}
+            {publishing ? <><Spinner size={14} /> {canPublishExam ? "Publishing…" : "Sending…"}</> : canPublishExam ? "Publish exam" : "Send to admin"}
           </button>
         </div>
       </main>
@@ -2822,71 +2824,95 @@ export function TheoryGradingPanel({ session }) {
     }
   };
 
+  const scoredCount = answers.filter((answer) => answer.score !== null && answer.score !== undefined).length;
+  const setDraftScore = (answerId, score) =>
+    setDrafts((previous) => ({ ...previous, [answerId]: { ...previous[answerId], score: String(score) } }));
+
   if (selectedAttemptId) {
     return (
       <article className="app-panel theory-grading-panel">
         <div className="panel-head">
           <div>
-            <h3>Grade theory answers</h3>
-            <p>{attemptDetail?.student_name || "Student"} · {attemptDetail?.exam_title || "Exam"}</p>
+            <h3>Marking {attemptDetail?.student_name || "student"}</h3>
+            <p>{attemptDetail?.exam_title || "Exam"}</p>
           </div>
-          <button type="button" className="table-action" onClick={closeAttempt}>Back to queue</button>
+          <button type="button" className="table-action" onClick={closeAttempt}>← Back to the queue</button>
         </div>
         {answersLoading ? (
-          <p className="panel-empty">Loading answers...</p>
+          <p className="panel-empty">Opening the script…</p>
         ) : answers.length === 0 ? (
-          <p className="panel-empty">No theory answers found for this attempt.</p>
+          <p className="panel-empty">This attempt has no written answers to mark.</p>
         ) : (
-          <div className="panel-list">
-            {answers.map((answer) => (
-              <div key={answer.answer_id} className="message-item theory-answer-card">
-                <div className="message-head">
-                  <p>{answer.question_text}</p>
-                  <small>{answer.points} mark{answer.points === 1 ? "" : "s"}</small>
-                </div>
-                {answer.passage?.passage_text ? <p className="message-meta">{answer.passage.passage_text}</p> : null}
-                {answer.image ? <img className="question-builder-image-preview" src={answer.image} alt="Question" /> : null}
-                {answer.attachment ? (
-                  <a href={answer.attachment} target="_blank" rel="noreferrer" className="question-attachment-link">📎 View attached file</a>
-                ) : null}
-                <p className="message-body">{answer.answer_text || <em>No answer submitted.</em>}</p>
-                <div className="panel-form-grid">
-                  <label className="panel-field">
-                    Score (out of {answer.points})
-                    <input
-                      type="number"
-                      min="0"
-                      max={answer.points}
-                      value={drafts[answer.answer_id]?.score ?? ""}
-                      onChange={(event) => setDrafts((previous) => ({ ...previous, [answer.answer_id]: { ...previous[answer.answer_id], score: event.target.value } }))}
-                    />
-                  </label>
-                  <label className="panel-field full">
-                    Feedback
-                    <FormattedTextarea
-                      value={drafts[answer.answer_id]?.feedback || ""}
-                      onChange={(event) => setDrafts((previous) => ({ ...previous, [answer.answer_id]: { ...previous[answer.answer_id], feedback: event.target.value } }))}
-                      rows={2}
-                    />
-                  </label>
-                </div>
-                <div className="panel-form-actions">
-                  <button type="button" onClick={() => saveGrade(answer.answer_id)} disabled={savingAnswerId === answer.answer_id || drafts[answer.answer_id]?.score === ""}>
-                    {savingAnswerId === answer.answer_id ? <><Spinner size={12} /> Saving...</> : answer.score !== null && answer.score !== undefined ? "Update score" : "Save score"}
-                  </button>
-                  {answer.score !== null && answer.score !== undefined ? <span className="form-feedback success">Scored {answer.score}/{answer.points}</span> : null}
-                </div>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="theory-progress" role="progressbar" aria-valuemin={0} aria-valuemax={answers.length} aria-valuenow={scoredCount} aria-label="Answers scored">
+              <span>{scoredCount} of {answers.length} answers scored</span>
+              <i style={{ "--pct": `${Math.round((scoredCount / answers.length) * 100)}%` }} />
+            </div>
+            <div className="panel-list theory-answers">
+              {answers.map((answer, index) => {
+                const draftScore = drafts[answer.answer_id]?.score ?? "";
+                const isScored = answer.score !== null && answer.score !== undefined;
+                const points = Number(answer.points) || 0;
+                return (
+                  <div key={answer.answer_id} className={`message-item theory-answer-card${isScored ? " is-scored" : ""}`}>
+                    <div className="message-head">
+                      <span className="theory-answer-card__n">{index + 1}</span>
+                      <p>{answer.question_text}</p>
+                      <small>{answer.points} mark{answer.points === 1 ? "" : "s"}</small>
+                    </div>
+                    {answer.passage?.passage_text ? <p className="message-meta">{answer.passage.passage_text}</p> : null}
+                    {answer.image ? <img className="question-builder-image-preview" src={answer.image} alt="Question" /> : null}
+                    {answer.attachment ? (
+                      <a href={answer.attachment} target="_blank" rel="noreferrer" className="question-attachment-link">📎 View attached file</a>
+                    ) : null}
+                    <div className="theory-answer">
+                      <span className="theory-answer__label">Student's answer</span>
+                      <p className="message-body">{answer.answer_text || <em>No answer submitted.</em>}</p>
+                    </div>
+                    <div className="panel-form-grid">
+                      <label className="panel-field">
+                        Score (out of {answer.points})
+                        <input
+                          type="number"
+                          min="0"
+                          max={answer.points}
+                          value={draftScore}
+                          onChange={(event) => setDraftScore(answer.answer_id, event.target.value)}
+                        />
+                        <span className="theory-quick" role="group" aria-label="Quick scores">
+                          <button type="button" onClick={() => setDraftScore(answer.answer_id, points)}>Full marks</button>
+                          {points > 1 ? <button type="button" onClick={() => setDraftScore(answer.answer_id, Math.round((points / 2) * 100) / 100)}>Half</button> : null}
+                          <button type="button" onClick={() => setDraftScore(answer.answer_id, 0)}>Zero</button>
+                        </span>
+                      </label>
+                      <label className="panel-field full">
+                        Feedback for the student (optional)
+                        <FormattedTextarea
+                          value={drafts[answer.answer_id]?.feedback || ""}
+                          onChange={(event) => setDrafts((previous) => ({ ...previous, [answer.answer_id]: { ...previous[answer.answer_id], feedback: event.target.value } }))}
+                          rows={2}
+                        />
+                      </label>
+                    </div>
+                    <div className="panel-form-actions">
+                      {isScored ? <span className="theory-scored">Saved · {answer.score}/{answer.points}</span> : null}
+                      <button type="button" onClick={() => saveGrade(answer.answer_id)} disabled={savingAnswerId === answer.answer_id || draftScore === ""}>
+                        {savingAnswerId === answer.answer_id ? <><Spinner size={12} /> Saving…</> : isScored ? "Update score" : "Save score"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
         {answersError ? <p className="form-feedback error">{answersError}</p> : null}
         {publishMessage ? <p className="form-feedback success">{publishMessage}</p> : null}
-        <div className="panel-form-actions">
+        <div className="panel-form-actions theory-publish">
+          {!allGraded && !publishMessage ? <small>Score every answer to publish this student's result.</small> : null}
           <button type="button" onClick={publishResults} disabled={!allGraded || publishing || Boolean(publishMessage)}>
-            {publishing ? <><Spinner size={14} /> Publishing...</> : "Publish results"}
+            {publishing ? <><Spinner size={14} /> Publishing…</> : "Publish result"}
           </button>
-          {!allGraded && !publishMessage ? <small>Score every answer before publishing.</small> : null}
         </div>
       </article>
     );
@@ -2896,52 +2922,62 @@ export function TheoryGradingPanel({ session }) {
     <article className="app-panel theory-grading-panel">
       <div className="panel-head">
         <div>
-          <h3>Theory grading queue</h3>
-          <p>Attempts with at least one theory answer still awaiting a score.</p>
+          <h3>Waiting for your score</h3>
+          <p>{queue.length ? `${queue.length} ${queue.length === 1 ? "student has" : "students have"} written answers you haven't marked yet.` : "Students' written answers land here as soon as they submit."}</p>
         </div>
         <button type="button" className="table-action" onClick={loadQueue} disabled={queueLoading}>
-          {queueLoading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
+          {queueLoading ? <><Spinner size={12} /> Refreshing…</> : "Refresh"}
         </button>
       </div>
       {queueError ? <p className="form-feedback error">{queueError}</p> : null}
       {queueLoading ? (
-        <p className="panel-empty">Loading queue...</p>
+        <p className="panel-empty">Fetching your marking queue…</p>
       ) : queue.length === 0 ? (
-        <p className="panel-empty">Nothing awaiting grading right now.</p>
+        <div className="theory-caughtup">
+          <svg viewBox="0 0 64 64" width="64" height="64" fill="none" aria-hidden="true">
+            <circle cx="32" cy="32" r="28" className="theory-caughtup__bg" />
+            <path d="m20 33 8 8 16-18" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <strong>You're all caught up</strong>
+          <p>Nothing is waiting to be marked right now.</p>
+        </div>
       ) : (
-        <table className="data-table">
-          <thead><tr><th>Student</th><th>Exam</th><th>Submitted</th><th>Action</th></tr></thead>
-          <tbody>
-            {queue.map((row) => (
-              <tr key={row.attempt_id}>
-                <td>{row.student_name}</td>
-                <td>{row.exam_title}</td>
-                <td>{formatDate(row.submitted_at)}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="table-action active"
-                    onClick={() => openAttempt(row.attempt_id)}
-                    disabled={answersLoading && selectedAttemptId === row.attempt_id}
-                  >
-                    {answersLoading && selectedAttemptId === row.attempt_id ? <><Spinner size={12} /> Opening...</> : "Grade"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>Student</th><th>Exam</th><th>Submitted</th><th><span className="visually-hidden">Action</span></th></tr></thead>
+            <tbody>
+              {queue.map((row) => (
+                <tr key={row.attempt_id}>
+                  <td><strong className="theory-queue-name">{row.student_name}</strong></td>
+                  <td>{row.exam_title}</td>
+                  <td>{formatDate(row.submitted_at)}</td>
+                  <td className="table-action-cell">
+                    <button
+                      type="button"
+                      className="table-action active primary"
+                      onClick={() => openAttempt(row.attempt_id)}
+                      disabled={answersLoading && selectedAttemptId === row.attempt_id}
+                    >
+                      {answersLoading && selectedAttemptId === row.attempt_id ? <><Spinner size={12} /> Opening…</> : "Start marking"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </article>
   );
 }
 
-export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "", editError = "" }) {
+export function TeacherPastExamsPanel({ session, onEditExam, onCreateExam, loadingExamId = "", editError = "" }) {
   const [exams, setExams] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [pinBusy, setPinBusy] = useState("");
   const [pinMessage, setPinMessage] = useState("");
   const [pinPlain, setPinPlain] = useState("");
@@ -2955,7 +2991,7 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
       setExams(result.exams || []);
       setSummary(result.summary || {});
     } catch (loadError) {
-      setError(loadError.message || "Could not load exams.");
+      setError(loadError.message || "We couldn't load your exams. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -2966,26 +3002,40 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
   }, [loadExams]);
 
   const now = Date.now();
+  const timeOf = (value) => {
+    const time = value ? new Date(value).getTime() : NaN;
+    return Number.isNaN(time) ? null : time;
+  };
   const isPastExam = (exam) => {
-    const endValue = exam.end_date || exam.start_date;
-    if (!endValue) return false;
-    const examTime = new Date(endValue).getTime();
-    return Number.isNaN(examTime) ? false : examTime < now;
+    const end = timeOf(exam.end_date || exam.start_date);
+    return end === null ? false : end < now;
   };
   const isUpcomingExam = (exam) => {
-    const startValue = exam.start_date || exam.end_date;
-    if (!startValue) return false;
-    const examTime = new Date(startValue).getTime();
-    return Number.isNaN(examTime) ? false : examTime >= now;
+    const start = timeOf(exam.start_date || exam.end_date);
+    return start === null ? false : start >= now;
   };
   const pastExams = exams.filter(isPastExam);
   const upcomingExams = exams.filter(isUpcomingExam);
-  const visibleExams =
-    filter === "past"
-      ? pastExams
-      : filter === "upcoming"
-        ? upcomingExams
-        : exams;
+  const draftExams = exams.filter((exam) => !exam.is_published);
+
+  // upcoming first (soonest at the top), then everything else newest-first
+  const ordered = [...exams].sort((a, b) => {
+    const aUp = isUpcomingExam(a);
+    const bUp = isUpcomingExam(b);
+    const aTime = timeOf(a.start_date || a.end_date) ?? 0;
+    const bTime = timeOf(b.start_date || b.end_date) ?? 0;
+    if (aUp && bUp) return aTime - bTime;
+    if (aUp !== bUp) return aUp ? -1 : 1;
+    return bTime - aTime;
+  });
+  const query = search.trim().toLowerCase();
+  const visibleExams = ordered.filter((exam) => {
+    if (filter === "past" && !isPastExam(exam)) return false;
+    if (filter === "upcoming" && !isUpcomingExam(exam)) return false;
+    if (filter === "drafts" && exam.is_published) return false;
+    if (!query) return true;
+    return [exam.title, exam.subject, exam.class_name].filter(Boolean).join(" ").toLowerCase().includes(query);
+  });
 
   const generatePin = async (exam) => {
     setPinBusy(`generate-${exam.id}`);
@@ -3007,112 +3057,112 @@ export function TeacherPastExamsPanel({ session, onEditExam, loadingExamId = "",
     }
   };
 
+  const filters = [
+    ["all", "All", exams.length],
+    ["upcoming", "Upcoming", upcomingExams.length],
+    ["past", "Past", pastExams.length],
+    ["drafts", "Drafts", draftExams.length],
+  ];
+
   return (
-    <section className="app-panel teacher-past-exams-panel">
-      {/* The tab's hero already says "My Exams" and carries this same
-          description, so the panel only needs its toolbar. */}
-      <div className="student-panel-head">
-        <button type="button" className="table-action" onClick={loadExams} disabled={loading}>
-          {loading ? <><Spinner size={12} /> Refreshing...</> : "Refresh"}
-        </button>
-      </div>
-
+    <div className="ts-exams-page">
       <div className="exam-review-grid">
-        <MetricCard label="Total Exams" value={summary.total_exams ?? exams.length} trend="Teacher-created records" />
-        <MetricCard label="Published" value={summary.published_exams ?? 0} trend="Visible to students" />
-        <MetricCard label="Past Exams" value={pastExams.length} trend="Closed exam windows" />
-        <MetricCard label="Upcoming" value={upcomingExams.length} trend="Scheduled exam windows" />
+        <MetricTile label="Total exams" value={summary.total_exams ?? exams.length} note="Everything you've created" icon={ClipboardList} tone="indigo" />
+        <MetricTile label="Published" value={summary.published_exams ?? exams.length - draftExams.length} note="Visible to students" icon={FileCheck} tone="emerald" />
+        <MetricTile label="Coming up" value={upcomingExams.length} note="Scheduled and waiting" icon={CalendarClock} tone="sky" />
+        <MetricTile label="Finished" value={pastExams.length} note="Their window has closed" icon={Hourglass} tone="amber" />
       </div>
 
-      {error ? <p className="form-feedback error">{error}</p> : null}
-      {editError ? <p className="form-feedback error">{editError}</p> : null}
-      {pinMessage ? <p className={`form-feedback ${pinPlain ? "success" : "error"}`}>{pinMessage}{pinPlain ? ` PIN: ${pinPlain}` : ""}</p> : null}
+      <section className="app-panel teacher-past-exams-panel">
+        <div className="ts-toolbar">
+          <div className="segmented-control inbox-filter" role="group" aria-label="Filter exams">
+            {filters.map(([key, label, count]) => (
+              <button key={key} type="button" className={filter === key ? "active" : ""} aria-pressed={filter === key} onClick={() => setFilter(key)}>
+                {label} <span className="ts-count">{count}</span>
+              </button>
+            ))}
+          </div>
+          <label className="ts-search ts-toolbar__search">
+            <Search size={15} aria-hidden="true" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, subject or class" aria-label="Search your exams" />
+          </label>
+          <div className="ts-toolbar__actions">
+            <button type="button" className="table-action" onClick={loadExams} disabled={loading} title="Reload your exams">
+              {loading ? <><Spinner size={12} /> Refreshing…</> : <><RefreshCw size={13} aria-hidden="true" /> Refresh</>}
+            </button>
+            {onCreateExam ? (
+              <button type="button" className="ts-btn ts-btn--primary" onClick={onCreateExam}>
+                <Plus size={15} aria-hidden="true" /> New exam
+              </button>
+            ) : null}
+          </div>
+        </div>
 
-      <div className="segmented-control inbox-filter">
-        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>
-          All ({exams.length})
-        </button>
-        <button type="button" className={filter === "past" ? "active" : ""} onClick={() => setFilter("past")}>
-          Past ({pastExams.length})
-        </button>
-        <button type="button" className={filter === "upcoming" ? "active" : ""} onClick={() => setFilter("upcoming")}>
-          Upcoming ({upcomingExams.length})
-        </button>
-      </div>
+        {error ? <p className="form-feedback error">{error}</p> : null}
+        {editError ? <p className="form-feedback error">{editError}</p> : null}
+        {pinMessage ? <p className={`form-feedback ${pinPlain ? "success" : "error"}`}>{pinMessage}{pinPlain ? ` PIN: ${pinPlain}` : ""}</p> : null}
 
-      {loading ? (
-        <p className="panel-empty">Loading exams...</p>
-      ) : visibleExams.length === 0 ? (
-        <p className="panel-empty">No exams found for this filter.</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="student-table">
-            <thead>
-              <tr>
-                <th>Exam</th>
-                <th>Class</th>
-                <th>Subject</th>
-                <th>Schedule</th>
-                <th>Window</th>
-                <th>Status</th>
-                {canManagePins ? <th>PIN</th> : null}
-                <th>Submissions</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleExams.map((exam) => {
-                const closed = isPastExam(exam);
-                const upcoming = isUpcomingExam(exam);
-                return (
-                <tr key={exam.id}>
-                  <td>{exam.title || "Untitled exam"}</td>
-                  <td>{exam.class_name || "All classes"}</td>
-                  <td>{exam.subject || "General"}</td>
-                  <td>{formatDate(exam.end_date || exam.start_date)}</td>
-                  <td>
-                    <span className={`student-status-pill status-${closed ? "absent" : upcoming ? "present" : "unmarked"}`}>
-                      {closed ? "Past" : upcoming ? "Upcoming" : "Open"}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`student-status-pill status-${exam.is_published ? "present" : "unmarked"}`}>
-                      {exam.is_published ? "Published" : "Draft"}
-                    </span>
-                  </td>
-                  {canManagePins ? (
-                    <td>
+        {loading && !exams.length ? (
+          <div className="ts-examrows-skeleton" aria-hidden="true">
+            {[0, 1, 2, 3].map((row) => <Skeleton key={row} width="100%" height={76} radius={16} />)}
+          </div>
+        ) : visibleExams.length === 0 ? (
+          <EmptyState
+            art={exams.length ? "search" : "clipboard"}
+            title={exams.length ? "No exams match that" : "You haven't set an exam yet"}
+            message={
+              exams.length
+                ? "Try another filter or a different search."
+                : "Build your first exam. It can be objective, theory or both, and it stays here as a draft until you send it."
+            }
+            action={!exams.length && onCreateExam ? <button type="button" className="ts-btn ts-btn--primary" onClick={onCreateExam}><Plus size={15} aria-hidden="true" /> Build an exam</button> : null}
+          />
+        ) : (
+          <ul className="ts-examrows">
+            {visibleExams.map((exam, index) => {
+              const closed = isPastExam(exam);
+              const upcoming = isUpcomingExam(exam);
+              const when = exam.start_date || exam.end_date;
+              const tile = dateTile(when);
+              const opening = String(loadingExamId) === String(exam.id);
+              return (
+                <li key={exam.id} className="ts-examrow ts-reveal" data-tone={toneIndex(exam.subject || exam.title)} style={stagger(index, 35)}>
+                  <span className="ts-examrow__date" aria-hidden="true"><b>{tile.day}</b><small>{tile.month}</small></span>
+                  <div className="ts-examrow__main">
+                    <strong>{exam.title || "Untitled exam"}</strong>
+                    <span>{[exam.class_name || "All classes", exam.subject || "General"].join(" · ")}</span>
+                    <span className="ts-examrow__when"><Clock3 size={12} aria-hidden="true" /> {relativeDay(when)}{clockTime(when) ? ` · ${clockTime(when)}` : ""}</span>
+                  </div>
+                  <div className="ts-examrow__badges">
+                    <span className={`student-status-pill ${closed ? "pill-gray" : upcoming ? "pill-blue" : "pill-green"}`}>{closed ? "Closed" : upcoming ? "Scheduled" : "Open now"}</span>
+                    <span className={`student-status-pill ${exam.is_published ? "pill-green" : "pill-amber"}`}>{exam.is_published ? "Published" : "Draft"}</span>
+                  </div>
+                  <div className="ts-examrow__count" title="Submissions so far">
+                    <b>{exam.submissions ?? 0}</b>
+                    <small>{Number(exam.submissions) === 1 ? "submission" : "submissions"}</small>
+                  </div>
+                  <div className="ts-examrow__actions">
+                    {canManagePins ? (
                       <button
                         type="button"
                         className={`table-action ${exam.pin_required ? "active" : ""}`}
                         onClick={() => generatePin(exam)}
                         disabled={pinBusy === `generate-${exam.id}`}
                       >
-                        {pinBusy === `generate-${exam.id}` ? <><Spinner size={12} /> Generating...</> : exam.pin_required ? `Active (${exam.active_pin_count || 1})` : "Generate PIN"}
+                        {pinBusy === `generate-${exam.id}` ? <><Spinner size={12} /> Generating…</> : exam.pin_required ? `PIN active (${exam.active_pin_count || 1})` : "Generate PIN"}
                       </button>
-                    </td>
-                  ) : null}
-                  <td>{exam.submissions ?? 0}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="table-action"
-                      onClick={() => onEditExam?.(exam.id)}
-                      disabled={String(loadingExamId) === String(exam.id)}
-                    >
-                      {String(loadingExamId) === String(exam.id)
-                        ? <><Spinner size={12} /> Opening...</>
-                        : exam.is_published ? "View / Edit" : "Continue Editing"}
+                    ) : null}
+                    <button type="button" className="table-action" onClick={() => onEditExam?.(exam.id)} disabled={opening}>
+                      {opening ? <><Spinner size={12} /> Opening…</> : exam.is_published ? <><Pencil size={13} aria-hidden="true" /> View / edit</> : <><Pencil size={13} aria-hidden="true" /> Keep editing</>}
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </li>
               );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -3137,7 +3187,7 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.classId) {
-      setError("Select a class before sending.");
+      setError("Choose a class before sending.");
   return;
     }
     if (!form.body.trim() && attachments.length === 0) {
@@ -3169,7 +3219,15 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
 
   return (
     <article className="app-panel class-message-panel">
-      <h3>Message students in a class</h3>
+      <div className="panel-head">
+        <div className="ts-msgcompose__title">
+          <span className="ts-msgcompose__icon" aria-hidden="true"><Megaphone size={18} /></span>
+          <div>
+            <h3>Message a class</h3>
+            <small>Send an announcement to every student in the class you pick.</small>
+          </div>
+        </div>
+      </div>
       <form className="panel-form" onSubmit={handleSubmit}>
         <div className="panel-form-grid">
           <label className="panel-field">
@@ -3178,7 +3236,7 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
               value={form.classId}
               onChange={(event) => setForm((prev) => ({ ...prev, classId: event.target.value }))}
             >
-              <option value="">Select class</option>
+              <option value="">Choose a class</option>
               {classOptions.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.label || item.name}
@@ -3187,23 +3245,23 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
             </select>
           </label>
           <label className="panel-field">
-            Subject
+            Subject (optional)
             <input
               value={form.subject}
               onChange={(event) => setForm((prev) => ({ ...prev, subject: event.target.value }))}
-              placeholder="Optional subject"
+              placeholder="e.g. Homework for Friday"
             />
           </label>
           <label className="panel-field full">
-            Message
+            Your message
             <textarea
               value={form.body}
               onChange={(event) => setForm((prev) => ({ ...prev, body: event.target.value }))}
-              placeholder="Write your announcement for this class"
+              placeholder="What would you like your class to know?"
             />
           </label>
           <label className="panel-field full">
-            Attachments
+            Attach files (up to 5)
             <input ref={attachmentInputRef} type="file" multiple onChange={(event) => setAttachments(Array.from(event.target.files || []).slice(0, 5))} />
             {attachments.length ? <small className="field-note">{attachments.map((file) => file.name).join(", ")}</small> : null}
           </label>
@@ -3212,7 +3270,7 @@ export function ClassMessageComposer({ classOptions = [], onSend }) {
         {feedback ? <p className="form-feedback success">{feedback}</p> : null}
         <div className="panel-form-actions">
           <button type="submit" disabled={isSending || !classOptions.length}>
-            {isSending ? <><Spinner size={14} /> Sending…</> : "Send to class"}
+            {isSending ? <><Spinner size={14} /> Sending…</> : <><Send size={15} aria-hidden="true" /> Send to class</>}
           </button>
         </div>
       </form>

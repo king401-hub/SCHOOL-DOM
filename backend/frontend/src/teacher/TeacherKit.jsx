@@ -377,6 +377,57 @@ export function EmptyState({ art = "books", title, message, action, compact = fa
   );
 }
 
+/* -------------------------------------------------------------- metric tile */
+
+/** A headline number with an icon and a one-line note. Shares the .metric-card
+ *  skin (see teacher-pages.css) so tiles look the same wherever they appear. */
+export function MetricTile({ label, value, note, icon: Icon, tone = "indigo", decimals = 0, suffix = "" }) {
+  const numeric = typeof value === "number" || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+  return (
+    <div className="metric-card ts-metric" data-tone={tone}>
+      <div className="metric-card-head">
+        {Icon ? (
+          <span className="metric-icon" aria-hidden="true">
+            <Icon size={18} strokeWidth={1.9} />
+          </span>
+        ) : null}
+        <span className="metric-label">{label}</span>
+      </div>
+      <strong className="metric-value">{numeric ? <CountUp value={Number(value)} decimals={decimals} suffix={suffix} /> : value ?? "—"}</strong>
+      {note ? <span className="metric-trend">{note}</span> : null}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------- dates */
+
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+/** "Today", "Tomorrow", "In 5 days", "3 days ago" ... falls back to "9 Oct". */
+export function relativeDay(value, now = new Date()) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const days = Math.round((startOfDay(date) - startOfDay(now)) / 86400000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days === -1) return "Yesterday";
+  if (days > 1 && days < 31) return `In ${days} days`;
+  if (days < -1 && days > -31) return `${-days} days ago`;
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: date.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+}
+
+/** { day: "9", month: "OCT" } for the little calendar tile on exam rows. */
+export function dateTile(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { day: "–", month: "" };
+  return { day: String(date.getDate()), month: date.toLocaleDateString(undefined, { month: "short" }).toUpperCase() };
+}
+
+export const clockTime = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+};
+
 /* --------------------------------------------------------------- misc */
 
 /** Keeps an element's measured box in state (used by the sliding nav marker). */

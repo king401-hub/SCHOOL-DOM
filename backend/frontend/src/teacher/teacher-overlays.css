@@ -148,7 +148,62 @@ body.ts-on .global-notification-button .notification-badge {
   font: 800 0.6rem/1 var(--ts-font);
 }
 
+/* --------------------------------------------------------------------------
+   Loading skeleton + load-error card (shown before the shell can render)
+   -------------------------------------------------------------------------- */
+
+.teacher-workspace-shell.ts.ts-loading .ts-sidebar { display: grid; align-content: start; gap: 1.1rem; padding: 1.25rem 1rem; }
+.ts-loading__brand { display: flex; align-items: center; gap: 0.75rem; }
+.ts-loading__nav { display: grid; gap: 0.6rem; margin-top: 0.4rem; }
+.teacher-workspace-shell.ts.ts-loading .ts-sidebar .ts-skel {
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.06) 30%, rgba(255, 255, 255, 0.13) 50%, rgba(255, 255, 255, 0.06) 70%);
+  background-size: 200% 100%;
+}
+.ts-loading__main { display: grid; gap: 1rem; align-content: start; }
+/* on the main canvas the skeleton blocks are white cards that gently shimmer */
+.teacher-workspace-shell.ts.ts-loading .ts-main .ts-skel {
+  border: 1px solid var(--ts-line);
+  background: linear-gradient(100deg, var(--ts-surface) 30%, var(--ts-surface-3) 50%, var(--ts-surface) 70%);
+  background-size: 200% 100%;
+  box-shadow: var(--ts-shadow-1);
+}
+.ts-loading__message { margin: 0; color: var(--ts-muted); font: 600 0.9rem/1.4 var(--ts-font); animation: ts-fade 900ms linear infinite alternate; }
+.ts-loading__tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; }
+.ts-loading__cols { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1rem; }
+@media (max-width: 900px) { .ts-loading__cols { grid-template-columns: minmax(0, 1fr); } }
+
+body.ts-on .ts-loaderror {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  width: min(30rem, calc(100% - 2rem));
+  margin: 18vh auto 0;
+  padding: 2.4rem 2rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 26px;
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-3);
+  text-align: center;
+  font-family: var(--ts-font);
+  animation: ts-pop 320ms var(--ts-ease) both;
+}
+body.ts-on .ts-loaderror__icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; border-radius: 18px; background: var(--ts-danger-soft); color: var(--ts-danger); }
+body.ts-on .ts-loaderror h2 { margin: 0.3rem 0 0; color: var(--ts-ink); font: 700 1.3rem/1.25 var(--ts-display); }
+body.ts-on .ts-loaderror p { margin: 0; color: var(--ts-muted); font-size: 0.92rem; }
+body.ts-on .ts-loaderror__btn {
+  margin-top: 0.7rem;
+  padding: 0.65rem 1.4rem;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ts-grad);
+  color: #fff;
+  font: 700 0.9rem/1.2 var(--ts-font);
+  box-shadow: var(--ts-shadow-accent);
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .ts-loading__message { animation: none; }
   body.ts-on .ts-palette-layer,
   body.ts-on .ts-palette { animation: ts-fade 120ms linear both; }
 }
