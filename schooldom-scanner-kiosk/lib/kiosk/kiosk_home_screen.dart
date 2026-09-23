@@ -347,13 +347,13 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           // replay to settle instead of telling a real student their card is
           // unregistered.
           await _showResult(_ScanOutcome.welcome, message: 'Saved - will sync when back online.');
-          await _refreshPendingCount();
+          unawaited(_refreshPendingCount());
           return;
         }
         if (contact == null) {
           await _removeQueuedScan(idempotencyKey);
           await _showResult(_ScanOutcome.invalid, message: 'Card not recognized (offline).');
-          await _refreshPendingCount();
+          unawaited(_refreshPendingCount());
           return;
         }
 
@@ -390,7 +390,15 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           }
         }
         await _showResult(event == 'clockout' ? _ScanOutcome.goodbye : _ScanOutcome.welcome, message: message);
-        await _refreshPendingCount();
+        // Not awaited: replayOfflineQueue() syncs in the background from
+        // here on. Awaiting it used to mean a slow/flaky connection (not a
+        // clean disconnect, which fails fast) held _busy true well past the
+        // ~4s the result flash stays up for - so once _outcome reset to null,
+        // the ready screen came back showing "Reading card..." (busy still
+        // true) instead of "Ready to Scan", stuck until the sync eventually
+        // gave up. See replayOfflineQueue's own _replayItemTimeout for the
+        // network-side half of this fix.
+        unawaited(_refreshPendingCount());
         return;
       }
 
@@ -553,7 +561,17 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
 
   // ---------------------------------------------------------------- Heartbeat
 
+  // Guards against a slow heartbeat (see the timeout on the POST below - this
+  // is a second line of defense for whatever that timeout doesn't cover,
+  // e.g. time spent waiting on battery/location) still being in flight when
+  // the next one fires 2 minutes later; without it a run of degraded network
+  // conditions could pile up more and more overlapping heartbeats instead of
+  // just one at a time.
+  bool _heartbeatInFlight = false;
+
   Future<void> _sendHeartbeat() async {
+    if (_heartbeatInFlight) return;
+    _heartbeatInFlight = true;
     try {
       final battery = await _battery.batteryLevel.catchError((_) => -1);
       final state = await _battery.batteryState.catchError((_) => BatteryState.unknown);
@@ -562,6 +580,13 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       if (deviceAuthToken == null) return;
       final position = await _getCurrentLocation();
 
+      // Bounded like every other network call this app makes (see
+      // _scanReadTimeout/_replayItemTimeout) - this used to have no timeout
+      // at all, so a flaky-but-not-fully-down connection could leave a
+      // heartbeat hanging indefinitely, and with a new one due every 2
+      // minutes regardless (_heartbeatInFlight guards that pile-up), a
+      // terminal on a bad connection could accumulate more and more stuck
+      // requests over hours of uptime.
       final response = await http.post(
         Uri.parse('$apiBaseUrl/api/device-fleet/device/heartbeat/'),
         headers: {'Content-Type': 'application/json'},
@@ -575,7 +600,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           if (position != null) 'latitude': position.latitude,
           if (position != null) 'longitude': position.longitude,
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
       if (!mounted) return;
       setState(() => _online = response.statusCode == 200);
 
@@ -610,6 +635,8 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       }
     } catch (_) {
       if (mounted) setState(() => _online = false);
+    } finally {
+      _heartbeatInFlight = false;
     }
     _refreshPendingCount();
   }

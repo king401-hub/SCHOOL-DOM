@@ -166,25 +166,53 @@ Future<Map<String, dynamic>> postJson(String endpoint, Map<String, dynamic> payl
 
 Future<Map<String, dynamic>> getJson(String endpoint) => apiRequest('GET', endpoint);
 
-Future<({int synced, int remaining})> replayOfflineQueue() async {
-  final queue = await readQueue();
-  if (queue.isEmpty) return (synced: 0, remaining: 0);
+// Bounds each queued item's sync attempt - same reasoning as _scanReadTimeout
+// in kiosk_home_screen.dart, just more generous since this runs in the
+// background rather than holding up "Reading card...". Without this, a
+// flaky-but-not-fully-down connection (weak Wi-Fi at the gate, not a clean
+// disconnect) left every apiRequest call here unbounded, and since this
+// function used to be awaited from _handleScan's offline branch, that hang
+// held _busy true - so the terminal ended up back on "Reading card..." after
+// the brief result flash ended, for good, on the very connection quality this
+// offline queue exists to handle.
+const _replayItemTimeout = Duration(seconds: 10);
 
-  final failed = <QueueItem>[];
-  var synced = 0;
-  for (final item in queue) {
-    try {
-      await apiRequest(
-        item['method'] as String,
-        item['endpoint'] as String,
-        payload: item['payload'],
-        queueWhenOffline: false,
-      );
-      synced++;
-    } catch (_) {
-      failed.add(item);
-    }
+// True while a pass through the queue is in flight. Guards against a slow
+// pass (still possible even with the per-item timeout above, e.g. many
+// queued items each taking the full 10s) still being underway when the next
+// caller - the 2-minute heartbeat timer, or another scan - asks to replay
+// again; without this a slow connection accumulates more and more concurrent
+// replay passes over the same queue instead of just one at a time.
+bool _replayInProgress = false;
+
+Future<({int synced, int remaining})> replayOfflineQueue() async {
+  if (_replayInProgress) {
+    return (synced: 0, remaining: (await readQueue()).length);
   }
-  await writeQueue(failed);
-  return (synced: synced, remaining: failed.length);
+  _replayInProgress = true;
+  try {
+    final queue = await readQueue();
+    if (queue.isEmpty) return (synced: 0, remaining: 0);
+
+    final failed = <QueueItem>[];
+    var synced = 0;
+    for (final item in queue) {
+      try {
+        await apiRequest(
+          item['method'] as String,
+          item['endpoint'] as String,
+          payload: item['payload'],
+          queueWhenOffline: false,
+          timeout: _replayItemTimeout,
+        );
+        synced++;
+      } catch (_) {
+        failed.add(item);
+      }
+    }
+    await writeQueue(failed);
+    return (synced: synced, remaining: failed.length);
+  } finally {
+    _replayInProgress = false;
+  }
 }
