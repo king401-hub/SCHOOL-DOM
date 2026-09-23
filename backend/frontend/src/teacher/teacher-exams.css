@@ -4,11 +4,13 @@
 
 .ts-exams-page { display: grid; gap: 1.25rem; }
 
-.teacher-workspace-shell.ts .exam-review-grid {
+.teacher-workspace-shell.ts .ts-exams-page .exam-review-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+  padding: 0;
 }
+@media (min-width: 1180px) { .teacher-workspace-shell.ts .ts-exams-page .exam-review-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 /* screen-reader-only text (used by the theory queue and a few icon buttons) */
 .visually-hidden {
@@ -101,7 +103,7 @@
   .ts-toolbar__actions > * { flex: 1 1 auto; }
   .ts-examrow { grid-template-columns: 3.1rem minmax(0, 1fr); padding: 0.75rem; }
   .ts-examrow__date { width: 3rem; height: 3.3rem; }
-  .ts-examrow__count { grid-column: 2; grid-row: auto; justify-items: start; grid-auto-flow: column; gap: 0.35rem; align-items: baseline; }
+  .ts-examrow__count { grid-column: 2; grid-row: auto; display: flex; justify-content: flex-start; gap: 0.35rem; align-items: baseline; }
   .ts-examrow__badges,
   .ts-examrow__actions { grid-column: 1 / -1; grid-row: auto; }
 }

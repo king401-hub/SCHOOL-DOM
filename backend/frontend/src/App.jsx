@@ -2357,7 +2357,7 @@ function StudentWorkspace({
   );
 }
 
-function TeacherQuizPage({ session, onNavigate }) {
+function TeacherQuizPage({ session, onNavigate, embedded = false }) {
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2515,25 +2515,27 @@ function TeacherQuizPage({ session, onNavigate }) {
   };
 
   return (
-    <section className="quiz-layout">
-      <header className="quiz-hero">
-        <div>
-          <p className="quiz-kicker">Assessments</p>
-          <h1>Test and Assessments</h1>
-          <p>Create, publish, and track quick checks.</p>
-        </div>
-        <div className="quiz-actions">
-          <button type="button" className="pill-button ghost" onClick={() => onNavigate?.("/dashboard")}>
-            Back to dashboard
-          </button>
-        </div>
-      </header>
+    <section className={`quiz-layout${embedded ? " is-embedded" : ""}`}>
+      {embedded ? null : (
+        <header className="quiz-hero">
+          <div>
+            <p className="quiz-kicker">Quick quizzes</p>
+            <h1>Quick quizzes</h1>
+            <p>Write a short check, publish it to your students and see how they did.</p>
+          </div>
+          <div className="quiz-actions">
+            <button type="button" className="pill-button ghost" onClick={() => onNavigate?.("/dashboard")}>
+              Back to dashboard
+            </button>
+          </div>
+        </header>
+      )}
 
       <form className="quiz-builder" onSubmit={handleCreate}>
         <div className="quiz-builder-head">
           <div>
-            <p className="quiz-kicker">New assessment</p>
-            <h3>Compose questions & options</h3>
+            <p className="quiz-kicker">New quiz</p>
+            <h3>Write your questions</h3>
           </div>
           <div className="quiz-switches">
             <label className="switch">
@@ -2542,7 +2544,7 @@ function TeacherQuizPage({ session, onNavigate }) {
                 checked={builder.allow_multiple_attempts}
                 onChange={(event) => setBuilder((prev) => ({ ...prev, allow_multiple_attempts: event.target.checked }))}
               />
-              <span>Allow multiple attempts</span>
+              <span>Let students retry</span>
             </label>
             <label className="switch">
               <input
@@ -2550,7 +2552,7 @@ function TeacherQuizPage({ session, onNavigate }) {
                 checked={builder.is_published}
                 onChange={(event) => setBuilder((prev) => ({ ...prev, is_published: event.target.checked }))}
               />
-              <span>Publish on save</span>
+              <span>Publish as soon as I save</span>
             </label>
           </div>
         </div>
@@ -2561,7 +2563,7 @@ function TeacherQuizPage({ session, onNavigate }) {
             <input
               value={builder.title}
               onChange={(event) => setBuilder((prev) => ({ ...prev, title: event.target.value }))}
-              placeholder="Weekly checkpoint"
+              placeholder="e.g. Week 3 checkpoint"
               required
             />
           </label>
@@ -2570,7 +2572,7 @@ function TeacherQuizPage({ session, onNavigate }) {
             <FormattedTextarea
               value={builder.description}
               onChange={(event) => setBuilder((prev) => ({ ...prev, description: event.target.value }))}
-              placeholder="Add context for students..."
+              placeholder="A short note for students (optional)"
             />
           </label>
           <label className="quiz-field">
@@ -2595,13 +2597,13 @@ function TeacherQuizPage({ session, onNavigate }) {
                   <FormattedTextarea
                     value={question.text}
                     onChange={(event) => updateQuestion(qIndex, { text: event.target.value })}
-                    placeholder="Ask a question..."
+                    placeholder="Type your question"
                     rows={2}
                   />
                   <FormattedTextarea
                     value={question.explanation}
                     onChange={(event) => updateQuestion(qIndex, { explanation: event.target.value })}
-                    placeholder="Answer / explanation shown after submission"
+                    placeholder="Explanation students see after they submit (optional)"
                     className="quiz-explanation"
                   />
                 </div>
@@ -2627,7 +2629,7 @@ function TeacherQuizPage({ session, onNavigate }) {
                     <input
                       value={choice.text}
                       onChange={(event) => updateChoice(qIndex, cIndex, { text: event.target.value })}
-                      placeholder="Option text"
+                      placeholder="Type an answer option"
                     />
                   </label>
                 ))}
@@ -2649,20 +2651,20 @@ function TeacherQuizPage({ session, onNavigate }) {
         {error ? <p className="form-feedback error">{error}</p> : null}
         <div className="quiz-submit-row">
           <button className="pill-button" type="submit" disabled={saving}>
-            {saving ? <><Spinner /> Saving...</> : "Save assessment"}
+            {saving ? <><Spinner /> Saving…</> : "Save quiz"}
           </button>
         </div>
       </form>
 
       <section className="quiz-list-section">
         <div className="quiz-list-head">
-          <h3>Assessments</h3>
-          <span className="pill muted">{quizzes.length} total</span>
+          <h3>Your quizzes</h3>
+          <span className="pill muted">{quizzes.length} in all</span>
         </div>
         {loading ? (
-          <p className="panel-empty">Loading assessments...</p>
+          <p className="panel-empty">Fetching your quizzes…</p>
         ) : quizzes.length === 0 ? (
-          <p className="panel-empty">No assessments yet. Create one above.</p>
+          <p className="panel-empty">No quizzes yet. Write your first one above and it will appear here.</p>
         ) : (
           <div className="quiz-grid">
             {quizzes.map((quiz) => (
@@ -2685,20 +2687,22 @@ function TeacherQuizPage({ session, onNavigate }) {
                   </button>
                 </div>
                 <div className="quiz-card-meta">
-                  <span>{quiz.question_count} questions</span>
-                  <span>{quiz.submission_count} submissions</span>
+                  <span>{quiz.question_count} question{Number(quiz.question_count) === 1 ? "" : "s"}</span>
+                  <span>{quiz.submission_count} submission{Number(quiz.submission_count) === 1 ? "" : "s"}</span>
                 </div>
                 <div className="quiz-card-actions">
-                  <button type="button" onClick={() => onNavigate?.(`/quizzes?quiz=${quiz.id}`)}>
-                    Open
-                  </button>
+                  {embedded ? null : (
+                    <button type="button" onClick={() => onNavigate?.(`/quizzes?quiz=${quiz.id}`)}>
+                      Open
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="danger"
                     onClick={() => handleDelete(quiz.id)}
                     disabled={mutatingId === `delete-${quiz.id}`}
                   >
-                    {mutatingId === `delete-${quiz.id}` ? <><Spinner size={12} /> Deleting...</> : "Delete"}
+                    {mutatingId === `delete-${quiz.id}` ? <><Spinner size={12} /> Deleting…</> : "Delete"}
                   </button>
                 </div>
               </article>
@@ -3795,6 +3799,17 @@ function StudentQuizPage({ session, onNavigate }) {
       </section>
     </section>
   );
+}
+
+// Old bookmarks to /quizzes: teachers now find the quizzes inside their workspace.
+function TeacherQuizzesRedirect({ onNavigate }) {
+  useEffect(() => {
+    try {
+      localStorage.setItem(TEACHER_TAB_STORAGE_KEY, "quizzes");
+    } catch {}
+    onNavigate("/dashboard", { replace: true });
+  }, [onNavigate]);
+  return null;
 }
 
 function QuizHub({ session, onNavigate }) {
@@ -6008,6 +6023,7 @@ function TeacherWorkspace({
       items: [
         { key: "exam-builder", label: "Exam builder", icon: FilePlus2, keywords: "create exam cbt questions test" },
         { key: "past-exams", label: "My exams", icon: FileCheck, keywords: "history published drafts edit" },
+        { key: "quizzes", label: "Quick quizzes", icon: ClipboardList, keywords: "quiz question bank practice short test assessment" },
         { key: "theory-grading", label: "Theory grading", icon: FileSignature, keywords: "mark written answers queue score" },
         { key: "results", label: "Results & rankings", icon: Trophy, keywords: "scores grades positions cbt" },
       ],
@@ -6035,22 +6051,7 @@ function TeacherWorkspace({
     [setActiveTab]
   );
 
-  const extraNav = useMemo(
-    () => [
-      {
-        id: "assessments",
-        label: "Assessments",
-        hint: "Quizzes and question bank",
-        icon: ClipboardList,
-        keywords: "quiz question bank practice",
-        onSelect: () => {
-          onNavigate?.("/quizzes");
-          setNavOpen(false);
-        },
-      },
-    ],
-    [onNavigate]
-  );
+  const extraNav = useMemo(() => [], []);
 
   // "Do" entries in the Ctrl+K palette: verbs, where the pages list is nouns.
   const paletteActions = useMemo(
@@ -6285,6 +6286,20 @@ function TeacherWorkspace({
           onLoadClassStudents={onLoadClassStudents}
           onPushResults={onPushResults}
         />
+      );
+    }
+    if (activeTab === "quizzes") {
+      return (
+        <section className="screen-grid">
+          <PageHeader
+            eyebrow="Assessment"
+            title="Quick quizzes"
+            subtitle="Short checks you can write in a few minutes, publish to your students and track."
+            icon={ClipboardList}
+            tone="rose"
+          />
+          <TeacherQuizPage session={session} onNavigate={onNavigate} embedded />
+        </section>
       );
     }
     if (activeTab === "theory-grading") {
@@ -10574,6 +10589,10 @@ if (isAdmin && currentPath !== STUDENT_CBT_DESKTOP_PATH && !ADMIN_ROUTE_SET.has(
         onSessionUpdate={setSession}
       />
     );
+  }
+
+  if (currentPath === "/quizzes" && role === "teacher") {
+    return <TeacherQuizzesRedirect onNavigate={navigate} />;
   }
 
   if (currentPath === "/quizzes") {

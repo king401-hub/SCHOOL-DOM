@@ -481,8 +481,12 @@ body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overl
 body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .metric-grid,
 body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .staff-metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+@media (min-width: 1180px) {
+  body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .metric-grid,
+  body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .staff-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .metric-card {
@@ -604,6 +608,19 @@ body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overl
 body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .school-activity-item p { margin: 0.25rem 0 0; color: var(--ts-muted); font-size: 0.84rem; }
 
 /* ------------------------------------------------------------ small screens */
+
+/* headline tiles read best as a 2 x n block on a phone */
+@media (max-width: 560px) {
+  body.ts-on .teacher-workspace-shell.ts :is(.metric-grid, .staff-metric-grid, .ts-exams-page .exam-review-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+  body.ts-on .teacher-workspace-shell.ts .metric-card { padding: 0.85rem 0.9rem 0.9rem; border-radius: 18px; }
+  body.ts-on .teacher-workspace-shell.ts .metric-card-head { align-items: flex-start; flex-direction: column; gap: 0.45rem; }
+  body.ts-on .teacher-workspace-shell.ts .metric-icon { width: 2rem; height: 2rem; border-radius: 11px; }
+  body.ts-on .teacher-workspace-shell.ts .metric-value { margin-top: 0.2rem; font-size: 1.55rem; }
+  body.ts-on .teacher-workspace-shell.ts .metric-card::after { display: none; }
+}
 
 @media (max-width: 720px) {
   body.ts-on :is(.teacher-workspace-shell.ts, .teacher-profile-modal, .modal-overlay) .panel-form-grid { grid-template-columns: minmax(0, 1fr); }

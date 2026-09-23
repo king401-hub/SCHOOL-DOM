@@ -289,15 +289,18 @@ body.ts-on::after {
 
 /* A page swaps in with a soft rise; direct children of an element marked
    .ts-stagger follow one after another (index comes from --ts-i). */
+/* Fill-mode is `backwards`, never `both`: a finished animation must not leave a
+   transform behind, because a transformed ancestor becomes the containing block
+   for position:fixed / absolute descendants (modals, the chat drawer). */
 .ts-page {
-  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+  animation: ts-rise var(--ts-slow) var(--ts-ease) backwards;
 }
 .ts-stagger > * {
-  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+  animation: ts-rise var(--ts-slow) var(--ts-ease) backwards;
   animation-delay: calc(var(--ts-i, 0) * var(--ts-step, 45ms));
 }
 .ts-reveal {
-  animation: ts-rise var(--ts-slow) var(--ts-ease) both;
+  animation: ts-rise var(--ts-slow) var(--ts-ease) backwards;
   animation-delay: calc(var(--ts-i, 0) * var(--ts-step, 45ms));
 }
 
@@ -305,7 +308,7 @@ body.ts-on::after {
   body.ts-on::before { animation: none; }
   .ts-page,
   .ts-stagger > *,
-  .ts-reveal { animation: ts-fade 160ms linear both; animation-delay: 0ms; }
+  .ts-reveal { animation: ts-fade 160ms linear backwards; animation-delay: 0ms; }
   .teacher-workspace-shell.ts *,
   .teacher-workspace-shell.ts *::before,
   .teacher-workspace-shell.ts *::after {

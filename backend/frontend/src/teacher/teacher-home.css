@@ -166,7 +166,9 @@
 
 /* stat tiles ---------------------------------------------------------------- */
 
-.ts-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; }
+/* four tiles: a 2 x 2 block until there is room for one row of four */
+.ts-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+@media (min-width: 1180px) { .ts-stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 .teacher-workspace-shell.ts .ts-stat {
   position: relative;

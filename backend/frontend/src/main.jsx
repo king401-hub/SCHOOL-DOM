@@ -13,6 +13,7 @@ import "./teacher/teacher-results.css";
 import "./teacher/teacher-inbox.css";
 import "./teacher/teacher-planning.css";
 import "./teacher/teacher-builder.css";
+import "./teacher/teacher-quizzes.css";
 import "./teacher/teacher-overlays.css";
 import "./pwa";
 

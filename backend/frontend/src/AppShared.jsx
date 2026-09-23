@@ -2794,12 +2794,12 @@ export function MessageInboxPanel({
             <h3>{title}</h3>
             {totalUnread > 0 && <span className="chat-unread-badge">{totalUnread}</span>}
           </div>
-          <button type="button" className="chat-sidebar-close-btn" onClick={() => setSidebarOpen(false)}><XIcon size={18} /></button>
+          <button type="button" className="chat-sidebar-close-btn" onClick={() => setSidebarOpen(false)} aria-label="Close conversations"><XIcon size={18} /></button>
         </div>
 
         <div className="chat-search-wrap">
           <Search size={14} className="chat-search-icon" />
-          <input className="chat-search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search conversations…" />
+          <input className="chat-search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search conversations…" aria-label="Search conversations" />
         </div>
 
         <div className="chat-filter-tabs">
@@ -2910,7 +2910,7 @@ export function MessageInboxPanel({
       <section className="chat-panel">
         {/* Header */}
         <header className="chat-panel-head">
-          <button type="button" className="chat-mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
+          <button type="button" className="chat-mobile-menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Show conversations">
             <span /><span /><span />
           </button>
           {chatMode === "group" && activeGroup ? (
@@ -3063,6 +3063,7 @@ export function MessageInboxPanel({
                   onChange={(e) => setGroupComposeBody(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGroupComposeSubmit(e); } }}
                   placeholder={`Message ${activeGroup?.name || "group"}…`}
+                  aria-label="Write a group message"
                   rows={1}
                 />
                 <label className="chat-composer-icon-btn" title="Attach file" aria-label="Attach file">
@@ -3133,6 +3134,7 @@ export function MessageInboxPanel({
                 onChange={(e) => setComposeForm((p) => ({ ...p, body: e.target.value }))}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleComposeSubmit(e); } }}
                 placeholder={composerRecipient ? `Message ${composerRecipient.label.split(" - ")[0]}…` : "Write a message…"}
+                aria-label="Write a message"
                 rows={1}
               />
 

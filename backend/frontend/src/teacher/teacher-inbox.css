@@ -24,6 +24,7 @@ body.ts-on .teacher-workspace-shell.ts .class-message-panel textarea { min-heigh
 /* shell ------------------------------------------------------------------------ */
 
 body.ts-on .teacher-workspace-shell.ts .chat-shell {
+  position: relative; /* the phone drawer is absolutely positioned inside the shell */
   grid-template-columns: 320px minmax(0, 1fr);
   height: clamp(540px, 74vh, 820px);
   border: 1px solid var(--ts-line);
@@ -173,6 +174,9 @@ body.ts-on .teacher-workspace-shell.ts .chat-emoji-picker { border: 1px solid va
 body.ts-on .teacher-workspace-shell.ts .chat-emoji-btn:hover { background: var(--ts-surface-3); }
 
 /* phones ----------------------------------------------------------------------------- */
+
+body.ts-on .teacher-workspace-shell.ts .chat-mobile-menu-btn { width: 2.4rem; height: 2.4rem; padding: 0.55rem; justify-content: center; border-radius: 11px; }
+body.ts-on .teacher-workspace-shell.ts .chat-mobile-menu-btn:hover { background: var(--ts-surface-3); }
 
 @media (max-width: 820px) {
   body.ts-on .teacher-workspace-shell.ts .chat-shell { grid-template-columns: minmax(0, 1fr); height: clamp(520px, 84vh, 720px); border-radius: 22px; }

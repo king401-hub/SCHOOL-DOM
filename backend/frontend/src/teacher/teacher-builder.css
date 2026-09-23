@@ -230,7 +230,7 @@ body.ts-on .teacher-workspace-shell.ts .student-panel-sub { color: var(--ts-mute
 body.ts-on .teacher-workspace-shell.ts .student-panel-sub strong { color: var(--ts-ink); }
 
 /* review */
-body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid { padding: 1.5rem; gap: 1rem; }
+body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); padding: 1.5rem; gap: 1rem; }
 body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid .metric-card { box-shadow: var(--ts-shadow-1); }
 body.ts-on .teacher-workspace-shell.ts .exam-builder-card .exam-review-grid .app-panel.full { box-shadow: none; background: var(--ts-surface-2); }
 body.ts-on .teacher-workspace-shell.ts .exam-preview-question { padding: 1rem 0; border-top: 1px solid var(--ts-line); }
@@ -261,6 +261,10 @@ body.ts-on .teacher-workspace-shell.ts .exam-builder-publish-btn { padding: 0.75
 
 @media (max-width: 900px) {
   body.ts-on .teacher-workspace-shell.ts .exam-builder-top { padding: 1.2rem; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-top { flex-direction: column; align-items: stretch; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-actions { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; width: 100%; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-actions > * { flex: 0 0 auto; }
+  body.ts-on .teacher-workspace-shell.ts .exam-builder-actions > button:last-child { margin-left: auto; }
   body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs { overflow-x: auto; }
   body.ts-on .teacher-workspace-shell.ts .exam-builder-tabs button { flex: 0 0 auto; padding-inline: 0.8rem; }
   body.ts-on .teacher-workspace-shell.ts .exam-builder-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }

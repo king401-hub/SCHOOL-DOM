@@ -55,8 +55,12 @@ export default function AccentPickerWidget({ session }) {
     };
     const observer = typeof MutationObserver === "function" ? new MutationObserver(soon) : null;
     observer?.observe(document.body, { childList: true, subtree: true });
+    // The sidebar mounts within a few seconds of sign-in; after that only a
+    // resize can move it, so stop watching the whole document.
+    const stopWatching = window.setTimeout(() => observer?.disconnect(), 15000);
     window.addEventListener("resize", update);
     return () => {
+      window.clearTimeout(stopWatching);
       observer?.disconnect();
       if (timer) window.clearTimeout(timer);
       window.removeEventListener("resize", update);

@@ -1576,7 +1576,7 @@ export function TeacherExamBuilder({
       <main className="exam-builder-main">
         <div className="exam-builder-top">
           <div>
-            <h2 id={isEditing ? "edit-exam-title" : undefined}>{isEditing ? "Edit exam" : "Build an exam"}</h2>
+            <h2 id={isEditing ? "edit-exam-title" : undefined} role="heading" aria-level={1}>{isEditing ? "Edit exam" : "Build an exam"}</h2>
             <p>{isEditing ? form.title || "Untitled exam" : "Work through the five steps, save a draft whenever you like, then send it off when it's ready."}</p>
           </div>
           <div className="exam-builder-actions">
