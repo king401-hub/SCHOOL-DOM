@@ -699,85 +699,81 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
+        // The school name used to sit at the left of this pill; it now leaves
+        // the top bar to the icons (the big school name above the scan circle
+        // is what identifies the school), so they can be centred and given
+        // proper tap targets instead of 14px icons squeezed to one side.
         child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Expanded + Flexible/ellipsis so a long school name shrinks
-          // instead of pushing the status icons (wifi/settings/key/update)
-          // off-screen - the icon row keeps its natural width always.
-          Expanded(
-            child: Row(children: [
-              const Icon(Icons.school_outlined, size: 14, color: Colors.white38),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  _schoolName ?? 'SchoolDom',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_pendingCount > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.cloud_upload_outlined, size: 18, color: Colors.amber.shade300),
+                  const SizedBox(width: 4),
+                  Text('$_pendingCount pending', style: TextStyle(color: Colors.amber.shade300, fontSize: 12, fontWeight: FontWeight.w700)),
+                ]),
               ),
-            ]),
-          ),
-          const SizedBox(width: 8),
-          Row(children: [
-            if (_pendingCount > 0) ...[
-              Icon(Icons.cloud_upload_outlined, size: 14, color: Colors.amber.shade300),
-              const SizedBox(width: 4),
-              Text('$_pendingCount pending', style: TextStyle(color: Colors.amber.shade300, fontSize: 11, fontWeight: FontWeight.w700)),
-              const SizedBox(width: 12),
-            ],
-            if (_updateInfo != null) ...[
-              GestureDetector(
+            if (_updateInfo != null)
+              _statusButton(
                 onTap: _showUpdateDialog,
-                child: Icon(Icons.system_update_outlined, size: 14, color: Colors.amber.shade300),
+                child: Icon(Icons.system_update_outlined, size: _statusIconSize, color: Colors.amber.shade300),
               ),
-              const SizedBox(width: 12),
-            ],
-            if (_pairedSchoolName != null) ...[
-              GestureDetector(
+            if (_pairedSchoolName != null)
+              _statusButton(
                 onTap: _switchingSchool ? null : _confirmSwitchSchool,
                 child: _switchingSchool
                     ? const SizedBox(
-                        width: 14,
-                        height: 14,
+                        width: _statusIconSize,
+                        height: _statusIconSize,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white38),
                       )
-                    : const Icon(Icons.sync_alt, size: 14, color: Colors.white38),
+                    : const Icon(Icons.sync_alt, size: _statusIconSize, color: Colors.white38),
               ),
-              const SizedBox(width: 12),
-            ],
-            Icon(_online ? Icons.wifi : Icons.wifi_off, size: 14, color: _online ? Colors.white38 : Colors.redAccent),
-            const SizedBox(width: 12),
+            // Connection indicator - not a button.
+            _statusButton(
+              child: Icon(_online ? Icons.wifi : Icons.wifi_off, size: _statusIconSize, color: _online ? Colors.white38 : Colors.redAccent),
+            ),
+            _statusButton(
+              onTap: () async {
+                _pauseHidCapture();
+                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GatePinScreen()));
+                _resumeHidCapture();
+              },
+              child: const Icon(Icons.settings_outlined, size: _statusIconSize, color: Colors.white38),
+            ),
             // Re-opens the license-key entry screen - for recovering from a
             // wrong/expired code or a terminal stuck on "Waiting for school
             // assignment". Gated behind a confirmation dialog rather than
             // acting on a bare tap, since a single accidental tap
             // de-registering a live terminal would be worse than the
             // friction of one extra step.
-            GestureDetector(
-              onTap: () async {
-                _pauseHidCapture();
-                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const GatePinScreen()));
-                _resumeHidCapture();
-              },
-              child: const Icon(Icons.settings_outlined, size: 14, color: Colors.white38),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
+            _statusButton(
               onTap: _confirmReProvision,
-              child: const Icon(Icons.key_outlined, size: 14, color: Colors.white38),
+              child: const Icon(Icons.key_outlined, size: _statusIconSize, color: Colors.white38),
             ),
-          ]),
-        ],
+          ],
         ),
       ),
+    );
+  }
+
+  static const double _statusIconSize = 20;
+
+  /// One icon in the top pill, padded out to a comfortable tap target. The
+  /// whole padded square answers taps (opaque), not just the icon's own pixels.
+  Widget _statusButton({required Widget child, VoidCallback? onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(padding: const EdgeInsets.all(10), child: child),
     );
   }
 
