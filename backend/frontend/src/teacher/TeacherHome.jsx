@@ -27,32 +27,20 @@ import {
   EmptyState,
   SectionCard,
   Skeleton,
+  clock,
   formatLongDate,
   friendlyName,
   greetingFor,
   pluralize,
   stagger,
   timeAgo,
+  toMinutes,
   toneIndex,
 } from "./TeacherKit";
 
 const NAIRA = "₦";
 
 /* ------------------------------------------------------------- timetable */
-
-const toMinutes = (value) => {
-  const [hours, minutes] = String(value || "").split(":").map(Number);
-  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
-};
-
-const clock = (value) => {
-  const minutes = toMinutes(value);
-  if (minutes === null) return "";
-  const hours24 = Math.floor(minutes / 60);
-  const suffix = hours24 >= 12 ? "pm" : "am";
-  const hours12 = hours24 % 12 || 12;
-  return `${hours12}:${String(minutes % 60).padStart(2, "0")} ${suffix}`;
-};
 
 /** Loads the teacher's timetable once and works out today's lessons, which one
  *  is running now and what comes next (re-evaluated every 30s). */

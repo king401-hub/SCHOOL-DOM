@@ -5,6 +5,9 @@ import "./styles.css";
 import "./teacher/teacher-studio.css";
 import "./teacher/teacher-shell.css";
 import "./teacher/teacher-home.css";
+import "./teacher/teacher-pages.css";
+import "./teacher/teacher-timetable.css";
+import "./teacher/teacher-attendance.css";
 import "./teacher/teacher-overlays.css";
 import "./pwa";
 

@@ -1,0 +1,605 @@
+/* ==========================================================================
+   TEACHER STUDIO — layer 5: reskin of the legacy building blocks
+   (panels, forms, tables, pills, segmented controls, metric cards, states).
+
+   Every teacher page is assembled from the same old class names (app-panel,
+   panel-form, data-table ...). Restyling them ONCE, inside the workspace shell,
+   gives every page the Studio look without touching the other roles. Selectors
+   carry `body.ts-on .teacher-workspace-shell.ts` so they out-rank the legacy
+   `body[data-dashboard-role="teacher"] ...` rules without needing !important.
+   ========================================================================== */
+
+body.ts-on { color-scheme: light; }
+body.ts-on[data-theme="dark"] { color-scheme: dark; }
+
+/* ------------------------------------------------------------ layout glue */
+
+body.ts-on .teacher-workspace-shell.ts .screen-grid,
+body.ts-on .teacher-workspace-shell.ts .workspace-inbox {
+  display: grid;
+  gap: 1.25rem;
+  align-content: start;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-grid {
+  display: grid;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+/* ----------------------------------------------------------------- panels */
+
+body.ts-on .teacher-workspace-shell.ts .app-panel {
+  position: relative;
+  padding: 1.3rem 1.4rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-lg);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+  color: var(--ts-text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body.ts-on .teacher-workspace-shell.ts .app-panel.frosted-card { background: var(--ts-surface); }
+
+body.ts-on .teacher-workspace-shell.ts .app-panel > h3,
+body.ts-on .teacher-workspace-shell.ts .panel-head h3 {
+  margin: 0;
+  color: var(--ts-ink);
+  font: 650 1.05rem/1.25 var(--ts-display);
+  letter-spacing: -0.015em;
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-head small,
+body.ts-on .teacher-workspace-shell.ts .panel-head p {
+  display: block;
+  margin: 0.15rem 0 0;
+  color: var(--ts-muted);
+  font: 500 0.82rem/1.4 var(--ts-font);
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-head > small { margin: 0; align-self: center; }
+
+body.ts-on .teacher-workspace-shell.ts .panel-head-actions,
+body.ts-on .teacher-workspace-shell.ts .panel-head-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+
+body.ts-on .teacher-workspace-shell.ts .state-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.4rem 1.5rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-lg);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+}
+body.ts-on .teacher-workspace-shell.ts .state-panel h3 { margin: 0; font: 650 1.05rem/1.3 var(--ts-display); color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .state-panel p { margin: 0; color: var(--ts-muted); font-size: 0.9rem; max-width: 70ch; }
+
+/* ------------------------------------------------------------- empty text */
+
+body.ts-on .teacher-workspace-shell.ts .panel-empty {
+  margin: 0;
+  padding: 1.5rem 1rem;
+  border: 1px dashed var(--ts-line-strong);
+  border-radius: var(--ts-r-md);
+  background: var(--ts-surface-2);
+  color: var(--ts-muted);
+  font: 500 0.88rem/1.5 var(--ts-font);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ forms */
+
+body.ts-on .teacher-workspace-shell.ts .panel-form {
+  display: grid;
+  gap: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1rem;
+  align-items: start;
+}
+body.ts-on .teacher-workspace-shell.ts .panel-form-grid > .full,
+body.ts-on .teacher-workspace-shell.ts .panel-form-grid > .panel-form-note { grid-column: 1 / -1; }
+
+body.ts-on .teacher-workspace-shell.ts .panel-field,
+body.ts-on .teacher-workspace-shell.ts .notepad-field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  color: var(--ts-text);
+  font: 650 0.78rem/1.3 var(--ts-font);
+  letter-spacing: 0.005em;
+}
+
+body.ts-on .teacher-workspace-shell.ts .field-note {
+  margin: 0;
+  color: var(--ts-muted);
+  font: 500 0.76rem/1.45 var(--ts-font);
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(
+  .panel-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  .panel-field select,
+  .panel-field textarea,
+  .notepad-field input,
+  .notepad-field select,
+  .exam-builder-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  .exam-builder-form select,
+  .exam-builder-form textarea,
+  .chat-search-input,
+  .student-picker-search
+) {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-r-sm);
+  background-color: var(--ts-surface);
+  color: var(--ts-ink);
+  font: 500 0.92rem/1.35 var(--ts-font);
+  box-shadow: var(--ts-shadow-1);
+  transition: border-color var(--ts-fast) linear, box-shadow var(--ts-med) var(--ts-ease), background-color var(--ts-fast) linear;
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field, .notepad-field, .exam-builder-form) textarea {
+  min-height: 6rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field, .notepad-field, .exam-builder-form) input::placeholder,
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field, .notepad-field, .exam-builder-form) textarea::placeholder {
+  color: var(--ts-faint);
+  font-weight: 500;
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field, .notepad-field, .exam-builder-form) :is(input, select, textarea):hover:not(:focus):not(:disabled) {
+  border-color: color-mix(in srgb, var(--ts-accent) 38%, var(--ts-line-strong));
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field, .notepad-field, .exam-builder-form) :is(input, select, textarea):focus {
+  outline: 2px solid transparent;
+  border-color: var(--ts-accent);
+  box-shadow: 0 0 0 4px var(--ts-ring);
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field, .notepad-field, .exam-builder-form) :is(input, select, textarea):disabled {
+  background-color: var(--ts-surface-3);
+  color: var(--ts-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* one chevron for every select, tinted per theme */
+body.ts-on .teacher-workspace-shell.ts :is(.panel-field select, .notepad-field select, .exam-builder-form select, .compact-subject-select, .student-picker-select) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.4rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+  background-size: 1rem;
+  cursor: pointer;
+}
+body.ts-on[data-theme="dark"] .teacher-workspace-shell.ts :is(.panel-field select, .notepad-field select, .exam-builder-form select, .compact-subject-select, .student-picker-select) {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-field input[type="file"] {
+  width: 100%;
+  padding: 0.45rem;
+  border: 1px dashed var(--ts-line-strong);
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-surface-2);
+  color: var(--ts-muted);
+  font: 500 0.85rem/1.3 var(--ts-font);
+  cursor: pointer;
+  transition: border-color var(--ts-fast) linear, background var(--ts-fast) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .panel-field input[type="file"]:hover { border-color: var(--ts-accent); background: var(--ts-accent-soft); }
+body.ts-on .teacher-workspace-shell.ts .panel-field input[type="file"]::file-selector-button {
+  margin-right: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ts-accent-soft-2);
+  color: var(--ts-accent-ink);
+  font: 700 0.8rem/1 var(--ts-font);
+  cursor: pointer;
+}
+body.ts-on .teacher-workspace-shell.ts .panel-field input[type="file"]::file-selector-button:hover { background: var(--ts-accent); color: #fff; }
+
+body.ts-on .teacher-workspace-shell.ts .panel-field.checkbox-field { display: flex; align-items: center; gap: 0.6rem; }
+body.ts-on .teacher-workspace-shell.ts :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--ts-accent); }
+
+/* actions row + the two button families that live inside forms ------------ */
+
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 0;
+  padding-top: 0.25rem;
+}
+
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions > button,
+body.ts-on .teacher-workspace-shell.ts .btn-primary,
+body.ts-on .teacher-workspace-shell.ts .pill-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.6rem;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-grad);
+  color: #fff;
+  font: 700 0.88rem/1.2 var(--ts-font);
+  letter-spacing: 0.005em;
+  box-shadow: var(--ts-shadow-accent), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+  transition: transform var(--ts-fast) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease), background var(--ts-med) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions > button:hover:not(:disabled),
+body.ts-on .teacher-workspace-shell.ts .btn-primary:hover:not(:disabled),
+body.ts-on .teacher-workspace-shell.ts .pill-button:hover:not(:disabled) { background: var(--ts-grad-hover); transform: translateY(-1px); }
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions > button:active:not(:disabled),
+body.ts-on .teacher-workspace-shell.ts .btn-primary:active:not(:disabled) { transform: scale(0.98); }
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions > button:disabled,
+body.ts-on .teacher-workspace-shell.ts .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+
+/* the quiet sibling: ghost / secondary / small table actions */
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions > :is(.secondary, .ghost, .table-action),
+body.ts-on .teacher-workspace-shell.ts .pill-button.ghost,
+body.ts-on .teacher-workspace-shell.ts .table-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 0;
+  padding: 0.42rem 0.85rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 10px;
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font: 650 0.8rem/1.2 var(--ts-font);
+  box-shadow: var(--ts-shadow-1);
+  cursor: pointer;
+  transition: transform var(--ts-fast) var(--ts-ease), background var(--ts-fast) linear, border-color var(--ts-fast) linear, color var(--ts-fast) linear;
+}
+body.ts-on .teacher-workspace-shell.ts .panel-form-actions > :is(.secondary, .ghost, .table-action) { min-height: 2.6rem; padding: 0.6rem 1.05rem; font-size: 0.86rem; border-radius: var(--ts-r-sm); }
+body.ts-on .teacher-workspace-shell.ts :is(.table-action, .pill-button.ghost, .panel-form-actions > :is(.secondary, .ghost)):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ts-accent) 45%, var(--ts-line-strong));
+  background: var(--ts-accent-soft);
+  color: var(--ts-accent-ink);
+  transform: translateY(-1px);
+  box-shadow: var(--ts-shadow-1);
+}
+body.ts-on .teacher-workspace-shell.ts .table-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* the highlighted row action ("Grade", "Review" ...) */
+body.ts-on .teacher-workspace-shell.ts .table-action.primary,
+body.ts-on .teacher-workspace-shell.ts .table-action.accent {
+  border-color: transparent;
+  background: var(--ts-grad);
+  color: #fff;
+  box-shadow: var(--ts-shadow-accent);
+}
+body.ts-on .teacher-workspace-shell.ts .table-action.primary:hover:not(:disabled),
+body.ts-on .teacher-workspace-shell.ts .table-action.accent:hover:not(:disabled) { background: var(--ts-grad-hover); color: #fff; }
+
+body.ts-on .teacher-workspace-shell.ts .table-actions-inline,
+body.ts-on .teacher-workspace-shell.ts .table-action-cell { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+body.ts-on .teacher-workspace-shell.ts td.table-action-cell { display: table-cell; white-space: nowrap; }
+body.ts-on .teacher-workspace-shell.ts td.table-action-cell > * + * { margin-left: 0.4rem; }
+
+/* ---------------------------------------------------------- form feedback */
+
+body.ts-on .teacher-workspace-shell.ts .form-feedback {
+  margin: 0;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-sm);
+  font: 600 0.85rem/1.45 var(--ts-font);
+  animation: ts-pop 260ms var(--ts-ease) both;
+}
+body.ts-on .teacher-workspace-shell.ts .form-feedback.success { background: var(--ts-ok-soft); color: var(--ts-ok); border-color: color-mix(in srgb, var(--ts-ok) 32%, transparent); }
+body.ts-on .teacher-workspace-shell.ts .form-feedback.error { background: var(--ts-danger-soft); color: var(--ts-danger); border-color: color-mix(in srgb, var(--ts-danger) 32%, transparent); }
+body.ts-on .teacher-workspace-shell.ts .form-feedback.info { background: var(--ts-info-soft); color: var(--ts-info); border-color: color-mix(in srgb, var(--ts-info) 32%, transparent); }
+body.ts-on .teacher-workspace-shell.ts .form-feedback.warning { background: var(--ts-warn-soft); color: var(--ts-warn); border-color: color-mix(in srgb, var(--ts-warn) 32%, transparent); }
+
+/* ----------------------------------------------------------------- tables */
+
+body.ts-on .teacher-workspace-shell.ts :is(.table-wrap, .table-scroll, .data-table-wrap, .timetable-grid-wrap) {
+  overflow-x: auto;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-md);
+  background: var(--ts-surface);
+}
+
+body.ts-on .teacher-workspace-shell.ts .data-table,
+body.ts-on .teacher-workspace-shell.ts .student-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: transparent;
+  color: var(--ts-text);
+  font-size: 0.88rem;
+}
+
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) thead { position: static; }
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) th {
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--ts-line);
+  background: var(--ts-surface-2);
+  color: var(--ts-muted);
+  font: 700 0.68rem/1.2 var(--ts-font);
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) th:first-child { border-top-left-radius: var(--ts-r-md); }
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) th:last-child { border-top-right-radius: var(--ts-r-md); }
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) td {
+  padding: 0.85rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--ts-line);
+  background: transparent;
+  color: var(--ts-text);
+  vertical-align: middle;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) td small {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--ts-muted);
+  font-size: 0.76rem;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) tbody tr { background: transparent; transition: background var(--ts-fast) linear; }
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) tbody tr:nth-child(even) { background: transparent; }
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) tbody tr:hover { background: var(--ts-accent-soft) !important; }
+body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) tbody tr:last-child td { border-bottom: 0; }
+
+/* ------------------------------------------------------------ pills/status */
+
+body.ts-on .teacher-workspace-shell.ts .pill,
+body.ts-on .teacher-workspace-shell.ts .cbt-status-pill,
+body.ts-on .teacher-workspace-shell.ts .student-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.28rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--ts-surface-3);
+  color: var(--ts-muted);
+  font: 700 0.72rem/1.1 var(--ts-font);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+body.ts-on .teacher-workspace-shell.ts .pill.muted { background: var(--ts-surface-3); color: var(--ts-muted); }
+
+body.ts-on .teacher-workspace-shell.ts :is(.pill-green, .status-paid, .status-active, .status-approved, .status-success, .status-present, .tone-success) {
+  background: var(--ts-ok-soft); color: var(--ts-ok); border-color: transparent;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.pill-amber, .status-pending, .status-overdue, .status-late, .status-unmarked, .tone-warning) {
+  background: var(--ts-warn-soft); color: var(--ts-warn); border-color: transparent;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.pill-red, .status-failed, .status-inactive, .status-rejected, .status-absent, .tone-danger) {
+  background: var(--ts-danger-soft); color: var(--ts-danger); border-color: transparent;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.pill-blue, .status-processing, .status-excused, .tone-info) {
+  background: var(--ts-info-soft); color: var(--ts-info); border-color: transparent;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.pill-violet, .status-draft) {
+  background: var(--ts-accent-soft); color: var(--ts-accent-ink); border-color: transparent;
+}
+body.ts-on .teacher-workspace-shell.ts :is(.pill-gray, .status-unknown) {
+  background: var(--ts-surface-3); color: var(--ts-muted); border-color: transparent;
+}
+
+/* rank medals */
+body.ts-on .teacher-workspace-shell.ts .rank-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.4rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font: 800 0.74rem/1 var(--ts-font);
+  background: var(--ts-surface-3);
+  color: var(--ts-muted);
+}
+body.ts-on .teacher-workspace-shell.ts .rank-badge-gold { background: linear-gradient(135deg, #fde68a, #f59e0b); color: #5b3a00; box-shadow: 0 4px 12px -4px rgba(245, 158, 11, 0.7); }
+body.ts-on .teacher-workspace-shell.ts .rank-badge-silver { background: linear-gradient(135deg, #f1f5f9, #cbd5e1); color: #334155; }
+body.ts-on .teacher-workspace-shell.ts .rank-badge-bronze { background: linear-gradient(135deg, #fed7aa, #f97316); color: #5a2a05; }
+
+/* ------------------------------------------------------ segmented controls */
+
+body.ts-on .teacher-workspace-shell.ts .segmented-control {
+  display: inline-flex;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.25rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 14px;
+  background: var(--ts-surface-3);
+  overflow-x: auto;
+}
+body.ts-on .teacher-workspace-shell.ts .segmented-control > button {
+  flex: 1 0 auto;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ts-muted);
+  font: 650 0.82rem/1.2 var(--ts-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--ts-med) var(--ts-ease), color var(--ts-fast) linear, box-shadow var(--ts-med) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .segmented-control > button:hover:not(.active) { color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .segmented-control > button.active {
+  background: var(--ts-surface);
+  color: var(--ts-accent-ink);
+  box-shadow: var(--ts-shadow-2);
+}
+body.ts-on .teacher-workspace-shell.ts .segmented-control.teacher-results-tabs { display: flex; width: 100%; margin-bottom: 1rem; }
+
+/* ----------------------------------------------------------- metric cards */
+
+body.ts-on .teacher-workspace-shell.ts .metric-grid,
+body.ts-on .teacher-workspace-shell.ts .staff-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+  gap: 1rem;
+}
+
+body.ts-on .teacher-workspace-shell.ts .metric-card {
+  --tone: var(--ts-accent);
+  --tone-soft: var(--ts-accent-soft);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  gap: 0.15rem;
+  padding: 1.05rem 1.15rem 1.1rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-lg);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-2), var(--ts-highlight);
+  color: var(--ts-text);
+  overflow: hidden;
+  transition: transform var(--ts-med) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease);
+}
+body.ts-on .teacher-workspace-shell.ts .metric-card::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--tone), color-mix(in srgb, var(--tone) 40%, transparent));
+}
+body.ts-on .teacher-workspace-shell.ts .metric-card::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: -40px;
+  bottom: -50px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--tone-soft), transparent 70%);
+}
+body.ts-on .teacher-workspace-shell.ts .metric-card:hover { transform: translateY(-3px); box-shadow: var(--ts-shadow-3), var(--ts-highlight); }
+body.ts-on .teacher-workspace-shell.ts .metric-card.tone-blue { --tone: var(--ts-t0); --tone-soft: var(--ts-t0-soft); }
+body.ts-on .teacher-workspace-shell.ts .metric-card.tone-emerald { --tone: var(--ts-t2); --tone-soft: var(--ts-t2-soft); }
+body.ts-on .teacher-workspace-shell.ts .metric-card.tone-teal { --tone: var(--ts-t6); --tone-soft: var(--ts-t6-soft); }
+body.ts-on .teacher-workspace-shell.ts .metric-card.tone-amber { --tone: var(--ts-t3); --tone-soft: var(--ts-t3-soft); }
+body.ts-on .teacher-workspace-shell.ts .metric-card.tone-rose { --tone: var(--ts-t4); --tone-soft: var(--ts-t4-soft); }
+body.ts-on .teacher-workspace-shell.ts .metric-card.tone-violet { --tone: var(--ts-t5); --tone-soft: var(--ts-t5-soft); }
+
+body.ts-on .teacher-workspace-shell.ts .metric-card-head { display: flex; align-items: center; gap: 0.7rem; }
+body.ts-on .teacher-workspace-shell.ts .metric-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 13px;
+  background: var(--tone-soft);
+  color: var(--tone);
+}
+body.ts-on .teacher-workspace-shell.ts .metric-label { color: var(--ts-muted); font: 650 0.8rem/1.2 var(--ts-font); letter-spacing: 0; text-transform: none; }
+body.ts-on .teacher-workspace-shell.ts .metric-value {
+  margin-top: 0.5rem;
+  color: var(--ts-ink);
+  font: 700 clamp(1.7rem, 1.4rem + 0.9vw, 2.2rem)/1.1 var(--ts-display);
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+body.ts-on .teacher-workspace-shell.ts .metric-trend { color: var(--ts-muted); font: 500 0.8rem/1.4 var(--ts-font); }
+
+/* ------------------------------------------------ misc small legacy pieces */
+
+body.ts-on .teacher-workspace-shell.ts .topbar-kicker { color: var(--ts-accent-ink); font: 700 0.7rem/1.2 var(--ts-font); letter-spacing: 0.11em; text-transform: uppercase; }
+
+body.ts-on .teacher-workspace-shell.ts hr { border: 0; border-top: 1px solid var(--ts-line); margin: 1rem 0; }
+
+body.ts-on .teacher-workspace-shell.ts .panel-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+body.ts-on .teacher-workspace-shell.ts .panel-list > li {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-surface-2);
+  color: var(--ts-text);
+  font-size: 0.86rem;
+}
+
+body.ts-on .teacher-workspace-shell.ts .school-activity-empty { margin: 0; color: var(--ts-muted); }
+body.ts-on .teacher-workspace-shell.ts .school-activity-banner {
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-md);
+  background: var(--ts-surface-2);
+}
+body.ts-on .teacher-workspace-shell.ts .school-activity-banner h4 { margin: 0 0 0.6rem; font: 650 0.92rem/1.3 var(--ts-display); }
+body.ts-on .teacher-workspace-shell.ts .school-activity-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+body.ts-on .teacher-workspace-shell.ts .school-activity-item {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--ts-line);
+  border-left: 4px solid var(--ts-accent);
+  border-radius: 12px;
+  background: var(--ts-surface);
+}
+body.ts-on .teacher-workspace-shell.ts .school-activity-item-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
+body.ts-on .teacher-workspace-shell.ts .school-activity-item-head strong { color: var(--ts-ink); }
+body.ts-on .teacher-workspace-shell.ts .school-activity-item-head span { color: var(--ts-muted); font-size: 0.8rem; }
+body.ts-on .teacher-workspace-shell.ts .school-activity-item p { margin: 0.25rem 0 0; color: var(--ts-muted); font-size: 0.84rem; }
+
+/* ------------------------------------------------------------ small screens */
+
+@media (max-width: 720px) {
+  body.ts-on .teacher-workspace-shell.ts .panel-form-grid { grid-template-columns: minmax(0, 1fr); }
+  body.ts-on .teacher-workspace-shell.ts .app-panel { padding: 1.05rem 1rem; border-radius: 18px; }
+  body.ts-on .teacher-workspace-shell.ts .panel-form-actions { justify-content: stretch; }
+  body.ts-on .teacher-workspace-shell.ts .panel-form-actions > button { flex: 1 1 auto; }
+  body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) th,
+  body.ts-on .teacher-workspace-shell.ts :is(.data-table, .student-table) td { padding: 0.7rem 0.75rem; }
+}

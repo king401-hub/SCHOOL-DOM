@@ -111,6 +111,9 @@ import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMes
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 import TeacherShell from "./teacher/TeacherShell";
 import TeacherHome from "./teacher/TeacherHome";
+import TeacherTimetable from "./teacher/TeacherTimetable";
+import TeacherAttendance, { TeacherAttendanceInfo } from "./teacher/TeacherAttendance";
+import { PageHeader } from "./teacher/TeacherKit";
 const AdminAiAssistantScreen = lazy(() => import("./AiAssistantScreen"));
 const AdminExpenseTrackerScreen = lazy(() => import("./ExpenseTracker"));
 const AdminInventoryScreen = lazy(() => import("./components/Inventory/InventoryScreen"));
@@ -5557,16 +5560,13 @@ function TeacherResultsPanel({ session, school, subjects = [], classOptions = []
 
   return (
     <section className="screen-grid teacher-results teacher-dashboard">
-      <div className="screen-hero teacher-results-hero">
-        <span className="teacher-results-hero-icon" aria-hidden="true">
-          <Trophy size={22} strokeWidth={1.8} />
-        </span>
-        <div>
-          <p className="topbar-kicker">Results Workspace</p>
-          <h2>Grade &amp; Rankings</h2>
-          <p>Submit marks and view standings for your classes.</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Assessment"
+        title="Results & rankings"
+        subtitle="Record each student's scores and see how your class is standing."
+        icon={Trophy}
+        tone="amber"
+      />
 
       <div className="metric-grid teacher-results-stats">
         <MetricCard
@@ -6118,17 +6118,14 @@ function TeacherWorkspace({
     }
     if (activeTab === "past-exams") {
       return (
-        <section className="screen-grid teacher-dashboard">
-          <div className="screen-hero teacher-results-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <FileCheck size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">Exam History</p>
-              <h2>My Exams</h2>
-              <p>View exams you have set, including past exams, and edit their setup when needed.</p>
-            </div>
-          </div>
+        <section className="screen-grid">
+          <PageHeader
+            eyebrow="Assessment"
+            title="My exams"
+            subtitle="Everything you've set: drafts, live exams and past ones. Open any of them to review or edit its setup."
+            icon={FileCheck}
+            tone="violet"
+          />
           <TeacherPastExamsPanel
             session={session}
             onEditExam={handleEditExam}
@@ -6139,97 +6136,42 @@ function TeacherWorkspace({
       );
     }
     if (activeTab === "attendance") {
-      return (
-        <section className="screen-grid">
-          <ScannerAppDownloadBanner />
-          <TeacherSwipeAttendancePanel session={session} classOptions={classOptions} />
-          <IdCardAttendanceScanner session={session} />
-        </section>
-      );
+      return <TeacherAttendance session={session} classOptions={classOptions} />;
     }
     if (activeTab === "attendance-info") {
-      return (
-        <section className="screen-grid teacher-dashboard">
-          <div className="screen-hero teacher-results-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <CalendarCheck size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">Attendance</p>
-              <h2>Student Attendance</h2>
-              <p>How attendance works for your school.</p>
-            </div>
-          </div>
-          <article className="app-panel state-panel">
-            <h3>Student Self Attendance</h3>
-            <p>For non K-12 schools, students can mark attendance themselves from their Attendance page using the student QR scanner.</p>
-            <p>Teachers can also scan the QR code on the back of a student's SchoolDom ID card to verify the student and mark attendance.</p>
-          </article>
-          <IdCardAttendanceScanner session={session} />
-        </section>
-      );
+      return <TeacherAttendanceInfo session={session} />;
     }
     if (activeTab === "planning") {
       return (
-        <section className="screen-grid teacher-dashboard">
-          <div className="screen-hero teacher-results-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <BookOpen size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">Academic Planning</p>
-              <h2>{nonK12 ? "Course Outline and Notepad" : "Lesson Plans and Notepad"}</h2>
-              <p>{nonK12 ? "Create course outlines and keep quick academic notes." : "Create weekly scheme-of-work plans and keep quick academic notes."}</p>
-            </div>
-          </div>
+        <section className="screen-grid">
+          <PageHeader
+            eyebrow="Classroom"
+            title={nonK12 ? "Course outlines & notes" : "Lesson plans & notes"}
+            subtitle={nonK12 ? "Map out your courses week by week, and keep quick notes close by." : "Plan the weeks ahead and capture ideas before they slip away."}
+            icon={BookOpen}
+            tone="sky"
+          />
           <TeacherPlanningPanel session={session} onNavigate={onNavigate} />
         </section>
       );
     }
     if (activeTab === "timetable") {
-      return (
-        <section className="screen-grid teacher-dashboard">
-          <div className="screen-hero teacher-results-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <CalendarClock size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">Weekly Schedule</p>
-              <h2>My Timetable</h2>
-              <p>Your weekly teaching schedule across all assigned classes.</p>
-            </div>
-          </div>
-          {/* In a card like every other tab; the bare table used to sit
-              straight on the page background with a loose "Schedule" label. */}
-          <article className="app-panel">
-            <TimetableWeekView
-              session={session}
-              title="Schedule"
-              subtitle=""
-              emptyMessage="No timetable entries have been assigned to you yet."
-              showClassColumn
-            />
-          </article>
-        </section>
-      );
+      return <TeacherTimetable session={session} />;
     }
     if (activeTab === "class-messages") {
       return (
-        <section className="screen-grid teacher-dashboard">
-          <div className="screen-hero teacher-results-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <MessageCircle size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">Communication</p>
-              <h2>Messages &amp; Notifications</h2>
-              <p>Message your classes and keep up with what admin has sent you.</p>
-            </div>
-          </div>
+        <section className="screen-grid">
+          <PageHeader
+            eyebrow="Classroom"
+            title="Messages"
+            subtitle="Write to a whole class in one go, and keep up with everything your school has sent you."
+            icon={MessageCircle}
+            tone="rose"
+          />
           <div className="workspace-inbox">
             <ClassMessageComposer classOptions={classOptions} onSend={onClassMessageSend} />
             <MessageInboxPanel
-              title="Messages & Notifications"
+              title="Inbox"
               messages={inbox}
               recipientOptions={recipientOptions}
               sessionScope={`${session?.school?.id || session?.school?.school_code || data?.school?.id || data?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
@@ -6259,42 +6201,30 @@ function TeacherWorkspace({
     }
     if (activeTab === "theory-grading") {
       return (
-        <section className="screen-grid teacher-dashboard">
-          <div className="screen-hero teacher-results-hero">
-            <span className="teacher-results-hero-icon" aria-hidden="true">
-              <FileSignature size={22} strokeWidth={1.8} />
-            </span>
-            <div>
-              <p className="topbar-kicker">Marking Queue</p>
-              <h2>Theory Grading</h2>
-              <p>Score written answers waiting for a grade.</p>
-            </div>
-          </div>
+        <section className="screen-grid">
+          <PageHeader
+            eyebrow="Assessment"
+            title="Theory grading"
+            subtitle="Written answers waiting for a score. Open a script, mark it and move on to the next."
+            icon={FileSignature}
+            tone="amber"
+          />
           <TheoryGradingPanel session={session} />
         </section>
       );
     }
     if (activeTab === "requests") {
       return (
-        <>
-          {/* StaffSelfServicePanel is shared with non-teacher roles and can't be
-              wrapped in .teacher-dashboard itself, so only the hero is wrapped
-              - otherwise it rendered as a plain white card unlike every other
-              teacher tab. */}
-          <div className="teacher-dashboard">
-            <div className="screen-hero teacher-results-hero teacher-tab-standalone-hero">
-              <span className="teacher-results-hero-icon" aria-hidden="true">
-                <Briefcase size={22} strokeWidth={1.8} />
-              </span>
-              <div>
-                <p className="topbar-kicker">HR</p>
-                <h2>HR System</h2>
-                <p>Request leave, request salary advances, and review your HR activity.</p>
-              </div>
-            </div>
-          </div>
+        <section className="screen-grid">
+          <PageHeader
+            eyebrow="Me"
+            title="My HR"
+            subtitle="Ask for leave or a salary advance, and keep track of your pay and attendance."
+            icon={Briefcase}
+            tone="emerald"
+          />
           <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />
-        </>
+        </section>
       );
     }
     return null;

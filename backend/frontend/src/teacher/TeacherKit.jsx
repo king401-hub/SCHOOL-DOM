@@ -138,6 +138,22 @@ export function pluralize(count, singular, plural) {
   return `${count} ${Number(count) === 1 ? singular : plural || `${singular}s`}`;
 }
 
+/** "08:40" -> 520 (minutes since midnight); null when it isn't a time. */
+export const toMinutes = (value) => {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
+};
+
+/** "13:05" -> "1:05 pm" */
+export const clock = (value) => {
+  const minutes = toMinutes(value);
+  if (minutes === null) return "";
+  const hours24 = Math.floor(minutes / 60);
+  const suffix = hours24 >= 12 ? "pm" : "am";
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${String(minutes % 60).padStart(2, "0")} ${suffix}`;
+};
+
 /* --------------------------------------------------------------- hotkeys */
 
 /** Registers a keyboard shortcut; ignored while typing in a field. */

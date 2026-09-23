@@ -1,0 +1,393 @@
+/* ==========================================================================
+   TEACHER STUDIO — Attendance (tap flow, register, ID-card scanner)
+   ========================================================================== */
+
+.ts-att { display: grid; gap: 1.25rem; }
+
+/* class / date / progress bar ---------------------------------------------- */
+
+.teacher-workspace-shell.ts .ts-att-controls { padding: 1.15rem 1.3rem; }
+.ts-att-controls__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.25rem 2rem; }
+.ts-att-controls__pick { flex: 1 1 320px; min-width: 0; display: grid; gap: 0.9rem; }
+
+.ts-classes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.ts-classes__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.95rem 0.5rem 0.8rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: 999px;
+  background: var(--ts-surface);
+  color: var(--ts-text);
+  font: 650 0.86rem/1.2 var(--ts-font);
+  cursor: pointer;
+  transition: transform var(--ts-fast) var(--ts-ease), background var(--ts-med) var(--ts-ease), border-color var(--ts-fast) linear, box-shadow var(--ts-med) var(--ts-ease);
+}
+.ts-classes__item i { width: 9px; height: 9px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 3px var(--tone-soft); }
+.ts-classes__item:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--tone) 55%, var(--ts-line-strong)); }
+.ts-classes__item.is-on {
+  border-color: color-mix(in srgb, var(--tone) 65%, transparent);
+  background: var(--tone-soft);
+  color: var(--ts-ink);
+  box-shadow: 0 8px 18px -10px var(--tone);
+}
+
+.ts-att-date { display: grid; gap: 0.1rem; }
+.ts-att-date .ts-mini-label { margin-bottom: 0.35rem; }
+.ts-att-date__field { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 0.9rem; }
+.teacher-workspace-shell.ts .ts-att-date input[type="date"] {
+  min-height: 2.65rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font: 600 0.9rem/1.3 var(--ts-font);
+  box-shadow: var(--ts-shadow-1);
+}
+.teacher-workspace-shell.ts .ts-att-date input[type="date"]:focus { outline: 2px solid transparent; border-color: var(--ts-accent); box-shadow: 0 0 0 4px var(--ts-ring); }
+
+.ts-att-progress { display: flex; align-items: center; gap: 1.1rem; }
+.ts-att-counts { display: grid; grid-template-columns: repeat(2, auto); gap: 0.4rem 0.6rem; }
+.ts-att-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: var(--tone-soft);
+  color: var(--ts-text);
+  font: 600 0.75rem/1.2 var(--ts-font);
+  white-space: nowrap;
+}
+.ts-att-count i { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); }
+.ts-att-count b { color: var(--ts-ink); font: 800 0.8rem/1 var(--ts-display); font-variant-numeric: tabular-nums; }
+
+/* stage + register ---------------------------------------------------------- */
+
+.ts-att-main { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+
+.ts-stage {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.25rem 1.35rem 1.35rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-xl);
+  background:
+    radial-gradient(90% 60% at 50% 0%, var(--ts-accent-soft-2), transparent 70%),
+    var(--ts-surface);
+  box-shadow: var(--ts-shadow-3), var(--ts-highlight);
+  overflow: hidden;
+}
+.ts-stage::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: auto -20% -45% -20%;
+  height: 60%;
+  background: radial-gradient(closest-side, var(--ts-accent-soft), transparent);
+}
+.ts-stage.is-complete { background: radial-gradient(90% 60% at 50% 0%, var(--ts-ok-soft), transparent 70%), var(--ts-surface); }
+
+.ts-stage__top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 1.6rem; }
+.ts-stage__count {
+  padding: 0.28rem 0.75rem;
+  border-radius: 999px;
+  background: var(--ts-surface-3);
+  color: var(--ts-muted);
+  font: 700 0.72rem/1.2 var(--ts-font);
+  letter-spacing: 0.02em;
+}
+
+.ts-stage__who { display: grid; justify-items: center; gap: 0.35rem; text-align: center; animation: ts-pop 420ms var(--ts-ease) both; }
+.ts-stage__who .ts-avatar { font-size: 38px !important; border-radius: 32%; box-shadow: 0 0 0 6px var(--tone-soft), 0 18px 32px -14px var(--tone), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.ts-stage__who h2 { margin: 0.55rem 0 0; font: 700 clamp(1.4rem, 1.15rem + 1vw, 1.85rem)/1.15 var(--ts-display); overflow-wrap: anywhere; }
+.ts-stage__who p { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin: 0; }
+.ts-stage__who p span { padding: 0.2rem 0.65rem; border-radius: 999px; background: var(--ts-surface-3); color: var(--ts-muted); font: 600 0.78rem/1.3 var(--ts-font); }
+.ts-stage__id { font-family: var(--ts-mono) !important; letter-spacing: 0.02em; color: var(--ts-text) !important; }
+.ts-stage__current { padding: 0.25rem 0.75rem; border-radius: 999px; font: 700 0.74rem/1.3 var(--ts-font); }
+
+.ts-stage__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+
+.ts-mark {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 4.1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1.5px solid color-mix(in srgb, var(--tone) 35%, var(--ts-line));
+  border-radius: 18px;
+  background: var(--tone-soft);
+  color: var(--ts-ink);
+  font: 700 1rem/1.2 var(--ts-font);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--ts-fast) var(--ts-ease-spring), background var(--ts-med) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease), border-color var(--ts-fast) linear, color var(--ts-fast) linear;
+}
+.ts-mark__icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 14px;
+  background: var(--ts-surface);
+  color: var(--tone);
+  box-shadow: var(--ts-shadow-1);
+  transition: background var(--ts-med) var(--ts-ease), color var(--ts-fast) linear, transform var(--ts-med) var(--ts-ease-spring);
+}
+.ts-mark .ts-kbd { background: color-mix(in srgb, var(--ts-surface) 70%, transparent); }
+.ts-mark:hover:not(:disabled) {
+  transform: translateY(-3px);
+  border-color: var(--tone);
+  background: var(--tone);
+  color: #fff;
+  box-shadow: 0 16px 28px -14px var(--tone);
+}
+.ts-mark:hover:not(:disabled) .ts-mark__icon { background: rgba(255, 255, 255, 0.24); color: #fff; transform: scale(1.08) rotate(-4deg); }
+.ts-mark:hover:not(:disabled) .ts-kbd { color: #fff; border-color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.18); }
+.ts-mark:active:not(:disabled) { transform: scale(0.97); }
+.ts-mark:disabled { opacity: 0.6; cursor: progress; }
+.ts-mark.is-current { border-color: var(--tone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 28%, transparent); }
+
+.ts-stage__hint { margin: 0; color: var(--ts-muted); font: 500 0.8rem/1.6 var(--ts-font); text-align: center; }
+.ts-stage__hint .ts-kbd { margin: 0 0.1rem; }
+.ts-stage__toast { display: flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 1.4rem; margin: -0.3rem 0 0; color: var(--ts-ok); font: 700 0.82rem/1.3 var(--ts-font); animation: ts-fade 200ms linear both; }
+.ts-stage__toast:empty { animation: none; }
+.ts-stage__bulk { display: flex; justify-content: center; }
+
+.ts-stage__done { display: grid; gap: 0.5rem; padding: 0.5rem 0; }
+.ts-stage__summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; }
+.ts-stage__summary span {
+  display: grid;
+  justify-items: center;
+  min-width: 5.2rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 16px;
+  background: var(--tone-soft);
+  color: var(--ts-muted);
+  font: 700 0.72rem/1.3 var(--ts-font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ts-stage__summary b { color: var(--ts-ink); font: 700 1.6rem/1.1 var(--ts-display); letter-spacing: 0; }
+
+/* register ------------------------------------------------------------------ */
+
+.teacher-workspace-shell.ts .ts-register { padding: 1.15rem 1.2rem 1.2rem; }
+.ts-register__tools { display: grid; gap: 0.7rem; margin-bottom: 0.9rem; }
+.ts-register__tools .segmented-control { width: 100%; }
+.ts-register__tools .segmented-control > button { flex: 1 1 0; padding: 0.45rem 0.6rem; font-size: 0.78rem; }
+
+.ts-search {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.6rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-r-sm);
+  background: var(--ts-surface);
+  color: var(--ts-muted);
+  box-shadow: var(--ts-shadow-1);
+  transition: border-color var(--ts-fast) linear, box-shadow var(--ts-med) var(--ts-ease);
+}
+.ts-search:focus-within { border-color: var(--ts-accent); box-shadow: 0 0 0 4px var(--ts-ring); }
+.teacher-workspace-shell.ts .ts-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.55rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--ts-ink);
+  font: 500 0.9rem/1.3 var(--ts-font);
+  box-shadow: none;
+  outline: 0;
+}
+.teacher-workspace-shell.ts .ts-search input:focus { box-shadow: none; }
+
+.ts-roll { display: grid; gap: 0.3rem; max-height: 31rem; margin: 0; padding: 0 0.15rem 0 0; overflow-y: auto; list-style: none; overscroll-behavior: contain; }
+.ts-roll__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ts-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ts-fast) linear, border-color var(--ts-fast) linear, transform var(--ts-fast) var(--ts-ease);
+}
+.ts-roll__row:hover { background: var(--ts-surface-3); }
+.ts-roll__row.is-active { background: var(--ts-accent-soft); border-color: color-mix(in srgb, var(--ts-accent) 35%, transparent); }
+.ts-roll__avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 34%;
+  background: linear-gradient(140deg, var(--tone, var(--ts-t0)), color-mix(in srgb, var(--tone, var(--ts-t0)) 55%, #7c3aed));
+  color: #fff;
+  font: 700 0.78rem/1 var(--ts-display);
+}
+.ts-roll__name { flex: 1; min-width: 0; display: grid; }
+.ts-roll__name strong { color: var(--ts-ink); font: 650 0.88rem/1.3 var(--ts-font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-roll__name small { color: var(--ts-muted); font: 500 0.74rem/1.3 var(--ts-mono); }
+.ts-roll__status { flex: none; padding: 0.22rem 0.65rem; border-radius: 999px; font: 700 0.7rem/1.3 var(--ts-font); }
+.ts-roll__status.is-todo { color: var(--ts-faint); background: transparent; border: 1px dashed var(--ts-line-strong); font-weight: 600; }
+
+/* status colours shared by the register rows and the stage badge */
+.ts-roll__status.status-present, .ts-stage__current.status-present { background: var(--ts-ok-soft); color: var(--ts-ok); }
+.ts-roll__status.status-late, .ts-stage__current.status-late { background: var(--ts-warn-soft); color: var(--ts-warn); }
+.ts-roll__status.status-excused, .ts-stage__current.status-excused { background: var(--ts-info-soft); color: var(--ts-info); }
+.ts-roll__status.status-absent, .ts-stage__current.status-absent { background: var(--ts-danger-soft); color: var(--ts-danger); }
+
+/* scanner app link ------------------------------------------------------------ */
+
+.ts-scanner-app {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-lg);
+  background: linear-gradient(120deg, var(--ts-accent-soft), transparent 70%), var(--ts-surface);
+  box-shadow: var(--ts-shadow-1), var(--ts-highlight);
+  color: inherit;
+  text-decoration: none;
+  transition: transform var(--ts-med) var(--ts-ease), box-shadow var(--ts-med) var(--ts-ease);
+}
+.ts-scanner-app:hover { transform: translateY(-2px); box-shadow: var(--ts-shadow-2); }
+.ts-scanner-app__icon { flex: none; display: grid; place-items: center; width: 2.7rem; height: 2.7rem; border-radius: 15px; background: var(--ts-grad); color: #fff; box-shadow: var(--ts-shadow-accent); }
+.ts-scanner-app__text { flex: 1; min-width: 0; display: grid; }
+.ts-scanner-app__text strong { color: var(--ts-ink); font: 700 0.92rem/1.3 var(--ts-font); }
+.ts-scanner-app__text small { color: var(--ts-muted); font: 500 0.82rem/1.4 var(--ts-font); }
+.ts-scanner-app__cta { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; border-radius: 11px; background: var(--ts-surface); border: 1px solid var(--ts-line-strong); color: var(--ts-accent-ink); font: 700 0.8rem/1.2 var(--ts-font); }
+
+/* the reused ID-card scanner, flattened into its section ---------------------- */
+
+.teacher-workspace-shell.ts .ts-scan .app-panel { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.teacher-workspace-shell.ts .ts-scan .table-actions-inline {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin: 0 0 0.5rem !important;
+  padding: 0.25rem;
+  border: 1px solid var(--ts-line);
+  border-radius: 14px;
+  background: var(--ts-surface-3);
+}
+.teacher-workspace-shell.ts .ts-scan .table-actions-inline .table-action { border: 0; background: transparent; box-shadow: none; padding: 0.45rem 1rem; font-size: 0.82rem; color: var(--ts-muted); }
+.teacher-workspace-shell.ts .ts-scan .table-actions-inline .table-action.active { background: var(--ts-surface); color: var(--ts-accent-ink); box-shadow: var(--ts-shadow-2); }
+.teacher-workspace-shell.ts .ts-scan .student-panel-sub { color: var(--ts-muted); }
+.teacher-workspace-shell.ts .ts-scan .student-panel-head { display: none; }
+
+.teacher-workspace-shell.ts .qr-scanner-panel { display: grid; gap: 1rem; }
+.teacher-workspace-shell.ts .qr-scanner-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+.teacher-workspace-shell.ts .qr-camera-card {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 13rem;
+  border-radius: var(--ts-r-lg);
+  background: radial-gradient(70% 90% at 50% 0%, rgba(99, 102, 241, 0.32), transparent 70%), #0b1226;
+  color: #9fb0d3;
+  font: 600 0.85rem/1.4 var(--ts-font);
+  text-align: center;
+  overflow: hidden;
+}
+.teacher-workspace-shell.ts .qr-camera-card::before,
+.teacher-workspace-shell.ts .qr-camera-card::after {
+  content: "";
+  position: absolute;
+  inset: 1.4rem;
+  border-radius: 20px;
+  pointer-events: none;
+  background:
+    linear-gradient(#a5b4fc, #a5b4fc) top left / 26px 3px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) top left / 3px 26px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) top right / 26px 3px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) top right / 3px 26px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) bottom left / 26px 3px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) bottom left / 3px 26px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) bottom right / 26px 3px no-repeat,
+    linear-gradient(#a5b4fc, #a5b4fc) bottom right / 3px 26px no-repeat;
+  opacity: 0.85;
+}
+.teacher-workspace-shell.ts .qr-camera-card::after { display: none; }
+.teacher-workspace-shell.ts .qr-camera-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+.teacher-workspace-shell.ts .qr-camera-card video.is-active { opacity: 1; }
+.teacher-workspace-shell.ts .qr-camera-card span { position: relative; padding: 0 2.6rem; }
+
+.teacher-workspace-shell.ts .qr-scanner-copy {
+  display: grid;
+  align-content: center;
+  gap: 0.4rem;
+  padding: 1.2rem 1.3rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-lg);
+  background: var(--ts-surface-2);
+}
+.teacher-workspace-shell.ts .qr-scanner-copy strong { color: var(--ts-ink); font: 700 1.05rem/1.3 var(--ts-display); }
+.teacher-workspace-shell.ts .qr-scanner-copy p { margin: 0; color: var(--ts-muted); font-size: 0.86rem; }
+.teacher-workspace-shell.ts .qr-scanner-copy .panel-form-actions { justify-content: flex-start; margin-top: 0.4rem; }
+
+.teacher-workspace-shell.ts .attendance-clock-result {
+  display: grid;
+  gap: 0.15rem;
+  margin-top: 0.9rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--ts-r-md);
+  background: var(--ts-ok-soft);
+  color: var(--ts-ok);
+  font-size: 0.85rem;
+}
+.teacher-workspace-shell.ts .attendance-clock-result strong { color: var(--ts-ink); }
+
+/* numbered how-it-works steps -------------------------------------------------- */
+
+.ts-steps { display: grid; gap: 0.9rem; margin: 0; padding: 0; list-style: none; }
+.ts-steps li { display: flex; gap: 0.9rem; align-items: flex-start; }
+.ts-steps__n { flex: none; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 12px; background: var(--ts-accent-soft-2); color: var(--ts-accent-ink); font: 800 0.9rem/1 var(--ts-display); }
+.ts-steps strong { color: var(--ts-ink); font: 700 0.95rem/1.3 var(--ts-font); }
+.ts-steps p { margin: 0.15rem 0 0; color: var(--ts-muted); font-size: 0.88rem; max-width: 62ch; }
+
+/* responsive -------------------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+  .ts-att-main { grid-template-columns: minmax(0, 1fr); }
+  .ts-roll { max-height: 26rem; }
+}
+
+@media (max-width: 720px) {
+  .ts-att-progress { width: 100%; justify-content: space-between; }
+  .teacher-workspace-shell.ts .qr-scanner-grid { grid-template-columns: minmax(0, 1fr); }
+  .ts-stage { padding: 1rem 0.9rem 1.1rem; border-radius: 22px; }
+  .ts-mark { min-height: 4.4rem; }
+  .ts-scanner-app { flex-wrap: wrap; }
+  .ts-scanner-app__text { flex: 1 1 11rem; }
+  .ts-scanner-app__cta { margin-left: 3.7rem; }
+}
+
+@media (max-width: 520px) {
+  .ts-mark .ts-kbd { display: none; }
+  .ts-mark { grid-template-columns: auto 1fr; gap: 0.6rem; padding: 0.65rem 0.7rem; font-size: 0.95rem; }
+  .ts-mark__icon { width: 2.2rem; height: 2.2rem; border-radius: 12px; }
+}
+
+@media (hover: none) {
+  .ts-mark .ts-kbd,
+  .ts-stage__keys { display: none; }
+}
+
+@media (max-width: 340px) {
+  .ts-stage__actions { grid-template-columns: minmax(0, 1fr); }
+}
