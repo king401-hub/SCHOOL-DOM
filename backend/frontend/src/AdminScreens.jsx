@@ -3402,9 +3402,9 @@ function AdminFinanceScreen({
                             {bill.status !== "cancelled" ? (
                               <button type="button" className="table-action" onClick={() => handleOpenEditBill(bill)}>Edit</button>
                             ) : null}
-                            {bill.status !== "cancelled" ? (
+                            {bill.status === "draft" ? (
                               <button type="button" className="table-action" onClick={() => handleBillPublish(bill.id)} disabled={billActionBusyId === bill.id}>
-                                {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : bill.status === "draft" ? "Publish" : "Regenerate"}
+                                {billActionBusyId === bill.id ? <><Spinner size={12} /> Working...</> : "Publish"}
                               </button>
                             ) : null}
                             {bill.status === "published" ? (
