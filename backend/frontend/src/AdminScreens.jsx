@@ -46,6 +46,8 @@ import ExamSubmissionModal from "./components/ExamSubmissionModal";
 import ResultBatchReviewModal from "./components/ResultBatchReviewModal";
 import TimetableBoard from "./components/timetable/TimetableBoard";
 import TimetableEntryDialog from "./components/timetable/TimetableEntryDialog";
+import ClassTimetableDialog from "./components/timetable/ClassTimetableDialog";
+import TimetableSettingsDialog from "./components/timetable/TimetableSettingsDialog";
 
 // `secondaryLabel` adds a third button between Cancel and the confirm button
 // (see useConfirm: it resolves "secondary", where confirm resolves true).
@@ -5848,7 +5850,7 @@ function summarizeSchoolDays(values) {
   return sorted.map(label).join(", ");
 }
 
-function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, onUpdate, onDelete, onSaveSettings, onGenerate }) {
+function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, onUpdate, onDelete, onDeleteClass, onSaveSettings, onGenerate }) {
   const entries = data?.entries || [];
   const classes = data?.classes || [];
   const subjects = data?.subjects || [];
@@ -5858,34 +5860,14 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
   const settings = data?.settings || null;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsRef = useRef(null);
-  const [dialog, setDialog] = useState(null);
+  const [dialog, setDialog] = useState(null); // the add / edit popup
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [classView, setClassView] = useState(null); // the "view a class timetable" popup
+  const [classViewOpen, setClassViewOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [jumpTo, setJumpTo] = useState(null);
-  const dialogCounter = useRef(0);
+  const counter = useRef(0);
   const [confirm, confirmDialog] = useConfirm();
-
-  const [settingsForm, setSettingsForm] = useState({
-    periods_per_day: "8", period_duration_minutes: "40", day_start_time: "08:00", school_days: [0, 1, 2, 3, 4], break_periods: [],
-  });
-  const [settingsBusy, setSettingsBusy] = useState(false);
-  const [settingsError, setSettingsError] = useState("");
-  const [settingsSuccess, setSettingsSuccess] = useState("");
-
-  // Syncs to whatever the server last reported (initial load, and again
-  // right after a save) - never clobbers in-progress typing otherwise, since
-  // `settings` only changes when the screen actually reloads.
-  useEffect(() => {
-    if (!settings) return;
-    setSettingsForm({
-      periods_per_day: String(settings.periods_per_day),
-      period_duration_minutes: String(settings.period_duration_minutes),
-      day_start_time: settings.day_start_time,
-      school_days: settings.school_days,
-      break_periods: settings.break_periods || [],
-    });
-  }, [settings]);
 
   // a confirmation message fades on its own so it never lingers over a later action
   useEffect(() => {
@@ -5894,90 +5876,49 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const toggleSettingsDay = (value) => {
-    setSettingsForm((current) => {
-      const has = current.school_days.includes(value);
-      const next = has
-        ? current.school_days.filter((day) => day !== value)
-        : [...current.school_days, value].sort((a, b) => a - b);
-      return { ...current, school_days: next };
-    });
-  };
-
-  const toggleSettingsBreakPeriod = (index) => {
-    setSettingsForm((current) => {
-      const has = current.break_periods.includes(index);
-      const next = has
-        ? current.break_periods.filter((period) => period !== index)
-        : [...current.break_periods, index].sort((a, b) => a - b);
-      return { ...current, break_periods: next };
-    });
-  };
-
-  const handleSettingsSubmit = async (event) => {
-    event.preventDefault();
-    setSettingsError("");
-    setSettingsSuccess("");
-    if (!settingsForm.school_days.length) {
-      setSettingsError("Select at least one school day.");
-      return;
-    }
-    setSettingsBusy(true);
-    try {
-      const periodsPerDay = Number(settingsForm.periods_per_day);
-      const result = await onSaveSettings?.({
-        periods_per_day: periodsPerDay,
-        period_duration_minutes: Number(settingsForm.period_duration_minutes),
-        day_start_time: settingsForm.day_start_time,
-        school_days: settingsForm.school_days,
-        break_periods: settingsForm.break_periods.filter((period) => period <= periodsPerDay),
-      });
-      setSettingsSuccess(result?.message || "Timetable settings saved.");
-    } catch (actionError) {
-      setSettingsError(actionError.message || "Could not save timetable settings.");
-    } finally {
-      setSettingsBusy(false);
-    }
-  };
-
   const openDialog = (next) => {
-    dialogCounter.current += 1;
-    setDialog({ ...next, nonce: dialogCounter.current });
+    counter.current += 1;
+    setDialog({ ...next, nonce: counter.current });
     setDialogOpen(true);
   };
 
   const handleSaved = (text, classId) => {
     setDialogOpen(false);
-    dialogCounter.current += 1;
-    setNotice({ id: dialogCounter.current, tone: "success", text });
-    setJumpTo({ classId, nonce: dialogCounter.current });
+    counter.current += 1;
+    setNotice({ id: counter.current, tone: "success", text });
+    // follow a lesson added to another class on the board, but not while a class popup is open
+    if (!classViewOpen) setJumpTo({ classId, nonce: counter.current });
   };
 
-  // Delete straight from the list under the grid (asks first, like the dialog does).
-  const handleDeleteEntry = async (entry) => {
-    const label = entry.display_label || entry.subject_name || "this lesson";
-    const dayName = days.find((item) => String(item.value) === String(entry.day_of_week))?.label || "";
-    const when = `${dayName} ${entry.start_time}\u2013${entry.end_time}`.trim();
+  const openClassView = (classId) => {
+    counter.current += 1;
+    setClassView({ id: classId, nonce: counter.current });
+    setClassViewOpen(true);
+  };
+
+  // Delete a whole class timetable from the list under the grid (asks first).
+  const handleDeleteClass = async ({ label, entryIds, count }) => {
     const ok = await confirm({
-      title: "Delete this lesson?",
-      message: `${label} for ${entry.class_name}, ${when}. This can't be undone.`,
-      confirmLabel: "Delete",
+      title: `Delete the ${label} timetable?`,
+      message: `All ${count} ${count === 1 ? "lesson" : "lessons"} for ${label} will be removed. You can rebuild it with Generate, but any lessons you added or changed by hand will be lost.`,
+      confirmLabel: "Delete timetable",
       danger: true,
     });
     if (!ok) return;
-    dialogCounter.current += 1;
-    const id = dialogCounter.current;
+    counter.current += 1;
+    const id = counter.current;
     try {
-      await onDelete?.(entry.id);
-      setNotice({ id, tone: "success", text: `Deleted ${label} from ${entry.class_name}, ${when}.` });
+      await onDeleteClass?.(entryIds);
+      setNotice({ id, tone: "success", text: `Deleted the ${label} timetable (${count} ${count === 1 ? "lesson" : "lessons"}).` });
     } catch (actionError) {
-      setNotice({ id, tone: "error", text: actionError?.message || "Could not delete this lesson." });
+      setNotice({ id, tone: "error", text: actionError?.message || `Could not delete the ${label} timetable.` });
     }
   };
 
-  const openSettings = () => {
-    setSettingsOpen(true);
-    window.requestAnimationFrame(() => settingsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+  const handleSettingsSaved = (text) => {
+    setSettingsOpen(false);
+    counter.current += 1;
+    setNotice({ id: counter.current, tone: "success", text });
   };
 
   const settingsSummary = settings
@@ -5999,109 +5940,31 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
         <TimetableBoard
           entries={entries}
           classes={classes}
-          subjects={subjects}
           days={days}
           timeSlots={timeSlots}
           notice={notice}
           jumpTo={jumpTo}
-          onOpenEntry={(entry) => openDialog({ mode: "view", entry })}
+          onOpenEntry={(entry) => openDialog({ mode: "form", entry })}
           onOpenCell={({ entries: cellEntries, dayValue, start, end }) => openDialog({ mode: "cell", entries: cellEntries, cell: { dayValue, start, end } })}
           onAddAt={(slot) => openDialog({ mode: "form", prefill: slot })}
           onAddBlank={({ classId }) => openDialog({ mode: "form", prefill: { classId } })}
-          onDeleteEntry={handleDeleteEntry}
+          onViewClass={openClassView}
+          onDeleteClass={handleDeleteClass}
           onGenerate={onGenerate}
-          onOpenSettings={openSettings}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       </article>
 
-      <article className="app-panel tt-settings" ref={settingsRef}>
+      <article className="app-panel tt-settings">
         <div className="tt-settings-bar">
           <div>
             <h3>Timetable settings</h3>
             <p>{settingsSummary}</p>
           </div>
-          <button
-            type="button"
-            className="btn-secondary"
-            aria-expanded={settingsOpen}
-            aria-controls="tt-settings-body"
-            onClick={() => setSettingsOpen((open) => !open)}
-          >
-            {settingsOpen ? "Hide settings" : "Edit settings"}
+          <button type="button" className="btn-secondary" onClick={() => setSettingsOpen(true)}>
+            Edit settings
           </button>
         </div>
-        {settingsOpen ? (
-          <form className="panel-form" id="tt-settings-body" onSubmit={handleSettingsSubmit}>
-            <p className="field-note">Periods, their length and the school days. The weekly schedule above and Generate both use these.</p>
-            <div className="panel-form-grid">
-              <label className="panel-field">
-                Periods per day
-                <input
-                  type="number" min="1" max="20"
-                  value={settingsForm.periods_per_day}
-                  onChange={(event) => setSettingsForm((current) => ({ ...current, periods_per_day: event.target.value }))}
-                  disabled={settingsBusy}
-                />
-              </label>
-              <label className="panel-field">
-                Period duration (minutes)
-                <input
-                  type="number" min="5" max="240"
-                  value={settingsForm.period_duration_minutes}
-                  onChange={(event) => setSettingsForm((current) => ({ ...current, period_duration_minutes: event.target.value }))}
-                  disabled={settingsBusy}
-                />
-              </label>
-              <label className="panel-field">
-                Day starts at
-                <input
-                  type="time"
-                  value={settingsForm.day_start_time}
-                  onChange={(event) => setSettingsForm((current) => ({ ...current, day_start_time: event.target.value }))}
-                  disabled={settingsBusy}
-                />
-              </label>
-              <label className="panel-field full">
-                School days
-                <div className="panel-field-row">
-                  {TIMETABLE_DAY_FALLBACK.map((day) => (
-                    <label key={day.value}>
-                      <input
-                        type="checkbox"
-                        checked={settingsForm.school_days.includes(day.value)}
-                        onChange={() => toggleSettingsDay(day.value)}
-                        disabled={settingsBusy}
-                      />
-                      {" "}{day.label}
-                    </label>
-                  ))}
-                </div>
-              </label>
-              <label className="panel-field full">
-                Break periods
-                <div className="panel-field-row">
-                  {Array.from({ length: Math.max(0, Number(settingsForm.periods_per_day) || 0) }, (_, i) => i + 1).map((index) => (
-                    <label key={index}>
-                      <input
-                        type="checkbox"
-                        checked={settingsForm.break_periods.includes(index)}
-                        onChange={() => toggleSettingsBreakPeriod(index)}
-                        disabled={settingsBusy}
-                      />
-                      {" "}Period {index}
-                    </label>
-                  ))}
-                </div>
-                <small className="field-note">Break periods are skipped by Generate and shown as "Break" for every class.</small>
-              </label>
-            </div>
-            {settingsError ? <p className="form-feedback error">{settingsError}</p> : null}
-            {settingsSuccess ? <p className="form-feedback success">{settingsSuccess}</p> : null}
-            <div className="panel-form-actions">
-              <button type="submit" disabled={settingsBusy}>{settingsBusy ? <><Spinner /> Saving...</> : "Save Settings"}</button>
-            </div>
-          </form>
-        ) : null}
       </article>
 
       <TimetableEntryDialog
@@ -6118,6 +5981,29 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
         onUpdate={onUpdate}
         onDelete={onDelete}
         confirm={confirm}
+      />
+
+      <ClassTimetableDialog
+        open={classViewOpen}
+        view={classView}
+        // while an edit popup is on top of it, Escape / backdrop clicks belong to that popup
+        onClose={() => {
+          if (!dialogOpen) setClassViewOpen(false);
+        }}
+        classes={classes}
+        entries={entries}
+        days={days}
+        timeSlots={timeSlots}
+        onEditEntry={(entry) => openDialog({ mode: "form", entry })}
+        onAddAt={(slot) => openDialog({ mode: "form", prefill: slot })}
+      />
+
+      <TimetableSettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onSave={onSaveSettings}
+        onSaved={handleSettingsSaved}
       />
 
       {confirmDialog}
@@ -12525,7 +12411,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   );
 }
 
-function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onClassFilterChange, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const subjectOptions = data?.options?.subjects || [];
@@ -12569,6 +12455,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [tokenWarning, setTokenWarning] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [classFilter, setClassFilter] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [editForm, setEditForm] = useState({
     first_name: "",
@@ -13226,14 +13113,32 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                 Filter
               </button>
               {showFilters ? (
-                <label className="panel-field full search-field">
-                  Search by student ID, name, {groupLabels.singular.toLowerCase()}, or email
-                  <input
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Example: STU1029"
-                  />
-                </label>
+                <div className="directory-filter-fields">
+                  <label className="panel-field">
+                    {groupLabels.singular}
+                    <select
+                      value={classFilter}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setClassFilter(value);
+                        onClassFilterChange?.(value);
+                      }}
+                    >
+                      <option value="">All {groupLabels.plural.toLowerCase()}</option>
+                      {classes.map((item) => (
+                        <option key={item.id} value={item.id}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="panel-field search-field">
+                    Search by student ID, name, {groupLabels.singular.toLowerCase()}, or email
+                    <input
+                      value={searchTerm}
+                      onChange={(event) => setSearchTerm(event.target.value)}
+                      placeholder="Example: STU1029"
+                    />
+                  </label>
+                </div>
               ) : null}
             </div>
 

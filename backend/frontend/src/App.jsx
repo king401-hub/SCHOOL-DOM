@@ -6764,7 +6764,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   }, [helpOpen, session]);
 
   const loadScreen = useCallback(
-    async (path, force = false, silent = false) => {
+    async (path, force = false, silent = false, query = "") => {
       const endpoint = ADMIN_ENDPOINTS[path];
       if (!endpoint) {
         return;
@@ -6779,7 +6779,7 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
       }
       setScreenError((prev) => ({ ...prev, [path]: "" }));
       try {
-        let data = await requestJson(session, "GET", endpoint);
+        let data = await requestJson(session, "GET", `${endpoint}${query}`);
         // /api/app/exams/ already includes submitted_results and auto_submitted_exams.
         if (path === "/finance") {
           try {
@@ -8347,6 +8347,40 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [addAdminNotification, loadScreen, session]
   );
 
+  // Delete every lesson of one class. There is no bulk endpoint, so the existing
+  // per-lesson DELETE is called one after another (never in parallel, which some
+  // databases turn into lock errors) and the screen reloads once at the end.
+  const handleDeleteClassTimetable = useCallback(
+    async (entryIds) => {
+      let removed = 0;
+      for (const entryId of entryIds) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await requestJson(session, "DELETE", `/api/app/timetables/${entryId}/`);
+          removed += 1;
+        } catch {
+          // keep going: the summary below reports how many were removed
+        }
+      }
+      if (removed) {
+        addAdminNotification({
+          category: "Academics",
+          module: "Timetable",
+          action: `Deleted a class timetable (${removed} ${removed === 1 ? "lesson" : "lessons"}).`,
+          status: "Removed",
+          priority: "Low",
+          tone: "info",
+        });
+      }
+      await loadScreen("/timetables", true);
+      if (removed < entryIds.length) {
+        throw new Error(`Only ${removed} of ${entryIds.length} lessons could be deleted. Please try again.`);
+      }
+      return { removed };
+    },
+    [addAdminNotification, loadScreen, session]
+  );
+
   const handleSaveTimetableSettings = useCallback(
     async (payload) => {
       const result = await requestJson(session, "PATCH", "/api/app/timetables/settings/", payload);
@@ -8814,6 +8848,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreate={handleCreateStudent}
         onUpdate={handleUpdateStudent}
         onDelete={handleDeleteStudent}
+        onClassFilterChange={(classId) => loadScreen("/students", true, false, classId ? `?class_id=${encodeURIComponent(classId)}` : "")}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
@@ -8974,6 +9009,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreate={handleCreateTimetableEntry}
         onUpdate={handleUpdateTimetableEntry}
         onDelete={handleDeleteTimetableEntry}
+        onDeleteClass={handleDeleteClassTimetable}
         onSaveSettings={handleSaveTimetableSettings}
         onGenerate={handleGenerateTimetable}
       />
