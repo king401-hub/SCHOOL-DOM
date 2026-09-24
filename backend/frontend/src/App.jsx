@@ -7308,8 +7308,15 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   );
 
   const handleAdminBillDelete = useCallback(
-    async (billId) => requestJson(session, "DELETE", `/api/finance/admin/bills/${billId}/`),
-    [session]
+    async (billId) => {
+      const result = await requestJson(session, "DELETE", `/api/finance/admin/bills/${billId}/`);
+      await Promise.all([
+        loadScreen("/finance", true),
+        loadScreen("/dashboard", true),
+      ]);
+      return result;
+    },
+    [loadScreen, session]
   );
 
   const handleAdminBillRecipientsLoad = useCallback(
