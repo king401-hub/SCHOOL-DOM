@@ -167,9 +167,9 @@ function DialogBody({
   const handleRemove = async () => {
     if (!entry) return;
     const ok = await confirm?.({
-      title: "Remove this lesson?",
+      title: "Delete this lesson?",
       message: `${entryLabel(entry)} for ${entry.class_name}, ${dayLabel(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}. This can't be undone.`,
-      confirmLabel: "Remove",
+      confirmLabel: "Delete",
       danger: true,
     });
     if (!ok) return;
@@ -177,9 +177,9 @@ function DialogBody({
     setBusy(true);
     try {
       await onDelete?.(entry.id);
-      onSaved(`Removed ${entryLabel(entry)} from ${entry.class_name}, ${dayLabel(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}.`, entry.class_id);
+      onSaved(`Deleted ${entryLabel(entry)} from ${entry.class_name}, ${dayLabel(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}.`, entry.class_id);
     } catch (actionError) {
-      setError(actionError?.message || "Could not remove this lesson.");
+      setError(actionError?.message || "Could not delete this lesson.");
     } finally {
       setBusy(false);
     }
@@ -276,7 +276,7 @@ function DialogBody({
         {error ? <p className="tt-alert" role="alert">{error}</p> : null}
         <div className="panel-form-actions tt-actions-split">
           <button type="button" className="btn-danger" onClick={handleRemove} disabled={busy}>
-            {busy ? <Spinner size={12} /> : <Trash2 size={14} aria-hidden="true" />} Remove
+            {busy ? <Spinner size={12} /> : <Trash2 size={14} aria-hidden="true" />} Delete
           </button>
           <span className="tt-spacer" />
           {from === "cell" ? (

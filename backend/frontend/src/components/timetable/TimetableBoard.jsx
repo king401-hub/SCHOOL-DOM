@@ -3,7 +3,7 @@
 // empty slot to add. All-classes view collapses into compact chips, and on a
 // phone it shows one day at a time.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Coffee, Info, LayoutGrid, List, Pencil, Plus, Sparkles } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Coffee, Eye, Info, LayoutGrid, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Spinner } from "../../AppShared";
 import "./timetable.css";
 import {
@@ -25,7 +25,6 @@ import {
 } from "./timetableUtils";
 
 const CLASS_STORAGE_KEY = "schooldom.admin_timetable_class";
-const VIEW_STORAGE_KEY = "schooldom.admin_timetable_view";
 const TABS_MAX = 8; // beyond this many classes a dropdown scales better than tabs
 const CHIPS_PER_CELL = 3;
 
@@ -130,9 +129,60 @@ function ClassPicker({ classes, value, onChange }) {
   );
 }
 
+/* ------------------------------------------------------------- day switcher */
+
+// Clicking a weekday (grid header, or these tabs) switches the board to that day.
+function DayTabs({ days, selected, todayValue, counts, showWeek, onSelect, onWeek }) {
+  const tabsRef = useRef(null);
+  const onKeyDown = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index = days.findIndex((day) => Number(day.value) === Number(selected));
+    let next = index;
+    if (event.key === "ArrowLeft") next = (index - 1 + days.length) % days.length;
+    if (event.key === "ArrowRight") next = (index + 1) % days.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = days.length - 1;
+    onSelect(Number(days[next].value));
+    window.requestAnimationFrame(() => tabsRef.current?.querySelector('[aria-selected="true"]')?.focus());
+  };
+  return (
+    <div className="tt-dayswitch">
+      {showWeek ? (
+        <button type="button" className="tt-weekbtn" onClick={onWeek}>
+          <LayoutGrid size={14} aria-hidden="true" /> Whole week
+        </button>
+      ) : null}
+      <div className="tt-daytabs" role="tablist" aria-label="Day" ref={tabsRef} onKeyDown={onKeyDown}>
+        {days.map((day) => {
+          const active = Number(day.value) === Number(selected);
+          const today = Number(day.value) === todayValue;
+          const count = counts.get(Number(day.value)) || 0;
+          return (
+            <button
+              key={day.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              aria-label={`${day.label}${today ? " (today)" : ""}, ${count} ${count === 1 ? "lesson" : "lessons"}`}
+              className={`tt-daytab${active ? " is-active" : ""}${today ? " is-today" : ""}`}
+              onClick={() => onSelect(Number(day.value))}
+            >
+              <span>{shortDay(day.label)}</span>
+              <i aria-hidden="true">{count}</i>
+              {today ? <em>Today</em> : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* --------------------------------------------------------------------- cards */
 
-function EntryCard({ entry, subjectsById, context, onOpen, navProps }) {
+function EntryCard({ entry, subjectsById, context, onOpen, navProps, detail = false }) {
   const unassigned = needsTeacher(entry);
   const full = entryLabel(entry);
   const hue = hueStyle(entry);
@@ -150,6 +200,7 @@ function EntryCard({ entry, subjectsById, context, onOpen, navProps }) {
     >
       <span className="tt-card-name">{subjectShort(full)}</span>
       {teacher ? <span className="tt-card-sub">{teacher}</span> : null}
+      {detail && entry.room ? <span className="tt-card-room">{entry.room}</span> : null}
       {unassigned ? (
         <span className="tt-warn" aria-hidden="true">
           <AlertTriangle size={12} />
@@ -194,13 +245,14 @@ export default function TimetableBoard({
   onOpenCell,
   onAddAt,
   onAddBlank,
+  onDeleteEntry,
   onGenerate,
   onOpenSettings,
 }) {
   const [classChoice, setClassChoice] = useState(() => readStored(CLASS_STORAGE_KEY));
-  const [view, setView] = useState(() => (readStored(VIEW_STORAGE_KEY) === "list" ? "list" : "grid"));
   const [unassignedOnly, setUnassignedOnly] = useState(false);
-  const [mobileDay, setMobileDay] = useState(null);
+  const [focusDay, setFocusDay] = useState(null); // null = the whole week
+  const [deletingId, setDeletingId] = useState(null);
   const [now, setNow] = useState(() => new Date());
   const [generating, setGenerating] = useState(false);
   const [generateNote, setGenerateNote] = useState(null);
@@ -227,10 +279,6 @@ export default function TimetableBoard({
     setClassChoice(value);
     writeStored(CLASS_STORAGE_KEY, value);
   }, []);
-  const chooseView = (value) => {
-    setView(value);
-    writeStored(VIEW_STORAGE_KEY, value);
-  };
 
   // After adding a lesson to a class other than the one on screen, follow it so
   // the new lesson is visible (the all-classes view already shows every class).
@@ -252,6 +300,20 @@ export default function TimetableBoard({
   const cells = useMemo(() => groupByCell(visible), [visible]);
   const rows = useMemo(() => buildRows(timeSlots, scoped), [timeSlots, scoped]);
   const listEntries = useMemo(() => [...visible].sort(byDayThenTime), [visible]);
+  const dayCounts = useMemo(() => {
+    const counts = new Map();
+    visible.forEach((entry) => counts.set(Number(entry.day_of_week), (counts.get(Number(entry.day_of_week)) || 0) + 1));
+    return counts;
+  }, [visible]);
+  const listGroups = useMemo(() => {
+    const groups = [];
+    listEntries.forEach((entry) => {
+      const last = groups[groups.length - 1];
+      if (last && last.day === Number(entry.day_of_week)) last.entries.push(entry);
+      else groups.push({ day: Number(entry.day_of_week), entries: [entry] });
+    });
+    return groups;
+  }, [listEntries]);
 
   // If the filter was on and the last unassigned lesson got a teacher, drop it
   // so the board doesn't sit empty.
@@ -262,7 +324,9 @@ export default function TimetableBoard({
   const todayValue = weekdayIndex(now);
   const minutesNow = now.getHours() * 60 + now.getMinutes();
   const dayValues = useMemo(() => days.map((day) => Number(day.value)), [days]);
-  const selectedDay = mobileDay !== null && dayValues.includes(mobileDay) ? mobileDay : dayValues.includes(todayValue) ? todayValue : dayValues[0];
+  const validFocus = focusDay !== null && dayValues.includes(focusDay) ? focusDay : null;
+  const dayMode = isNarrow || validFocus !== null; // a phone always works one day at a time
+  const selectedDay = validFocus ?? (dayValues.includes(todayValue) ? todayValue : dayValues[0]);
 
   const isNowRow = (row) => {
     const start = toMinutes(row.start_time);
@@ -272,6 +336,15 @@ export default function TimetableBoard({
 
   const className = activeClass ? activeClass.label || activeClass.name : "";
   const dayName = (value) => days.find((day) => Number(day.value) === Number(value))?.label || "";
+
+  const deleteFromList = async (entry) => {
+    setDeletingId(entry.id);
+    try {
+      await onDeleteEntry?.(entry);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const runGenerate = async () => {
     setGenerating(true);
@@ -291,7 +364,7 @@ export default function TimetableBoard({
   const addLabel = (dayValue, row) =>
     `Add a lesson${className ? ` for ${className}` : ""} on ${dayName(dayValue)}, ${timeRange(row.start_time, row.end_time)}`;
 
-  const renderCell = (dayValue, row, navProps) => {
+  const renderCell = (dayValue, row, navProps, options = {}) => {
     const list = cells.get(cellKey(dayValue, row.start_time, row.end_time)) || [];
     const context = `${dayName(dayValue)}, ${timeRange(row.start_time, row.end_time)}`;
 
@@ -314,7 +387,7 @@ export default function TimetableBoard({
 
     if (single) {
       return list.map((entry, index) => (
-        <EntryCard key={entry.id} entry={entry} subjectsById={subjectsById} context={context} onOpen={onOpenEntry} navProps={index === 0 ? navProps : undefined} />
+        <EntryCard key={entry.id} entry={entry} subjectsById={subjectsById} context={context} onOpen={onOpenEntry} navProps={index === 0 ? navProps : undefined} detail={options.detail} />
       ));
     }
 
@@ -396,8 +469,16 @@ export default function TimetableBoard({
               const today = Number(day.value) === todayValue;
               return (
                 <th key={day.value} scope="col" className={`tt-day${today ? " is-today" : ""}`} aria-current={today ? "date" : undefined}>
-                  <span>{day.label}</span>
-                  {today ? <em>Today</em> : null}
+                  <button
+                    type="button"
+                    className="tt-daybtn"
+                    onClick={() => setFocusDay(Number(day.value))}
+                    aria-label={`Show ${day.label} only`}
+                    title={`Show ${day.label} only`}
+                  >
+                    <span>{day.label}</span>
+                    {today ? <em>Today</em> : null}
+                  </button>
                 </th>
               );
             })}
@@ -444,27 +525,17 @@ export default function TimetableBoard({
     </div>
   );
 
-  const mobileDayView = (
-    <div className="tt-mobile">
-      <div className="tt-daytabs" role="tablist" aria-label="Day">
-        {days.map((day) => {
-          const active = Number(day.value) === Number(selectedDay);
-          const today = Number(day.value) === todayValue;
-          return (
-            <button
-              key={day.value}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={`tt-daytab${active ? " is-active" : ""}${today ? " is-today" : ""}`}
-              onClick={() => setMobileDay(Number(day.value))}
-            >
-              <span>{shortDay(day.label)}</span>
-              {today ? <em>Today</em> : null}
-            </button>
-          );
-        })}
-      </div>
+  const dayView = (
+    <div className={`tt-mobile${isNarrow ? "" : " is-wide"}`}>
+      <DayTabs
+        days={days}
+        selected={selectedDay}
+        todayValue={todayValue}
+        counts={dayCounts}
+        showWeek={!isNarrow}
+        onSelect={setFocusDay}
+        onWeek={() => setFocusDay(null)}
+      />
       <ol className="tt-daylist">
         {rows.map((row) => {
           const list = cells.get(cellKey(selectedDay, row.start_time, row.end_time)) || [];
@@ -483,7 +554,7 @@ export default function TimetableBoard({
                 <span>{row.end_time}</span>
                 {rowNow ? <em>Now</em> : null}
               </div>
-              <div className="tt-daycell">{renderCell(Number(selectedDay), row)}</div>
+              <div className="tt-daycell">{renderCell(Number(selectedDay), row, undefined, { detail: true })}</div>
             </li>
           );
         })}
@@ -491,12 +562,68 @@ export default function TimetableBoard({
     </div>
   );
 
-  const listView = listEntries.length ? (
+  // View opens the details dialog (which has Edit and Delete); Delete asks first.
+  const rowActions = (entry) => {
+    const what = `${entryLabel(entry)} for ${entry.class_name}, ${dayName(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}`;
+    return (
+      <>
+        <button type="button" className="tt-rowbtn" aria-label={`View ${what}`} onClick={() => onOpenEntry?.(entry)}>
+          <Eye size={13} aria-hidden="true" /> View
+        </button>
+        <button
+          type="button"
+          className="tt-rowbtn is-danger"
+          aria-label={`Delete ${what}`}
+          disabled={deletingId === entry.id}
+          onClick={() => deleteFromList(entry)}
+        >
+          {deletingId === entry.id ? <Spinner size={12} /> : <Trash2 size={13} aria-hidden="true" />} Delete
+        </button>
+      </>
+    );
+  };
+
+  const teacherCell = (entry) =>
+    entry.teacher_name ? (
+      entry.teacher_name
+    ) : needsTeacher(entry) ? (
+      <span className="tt-badge"><AlertTriangle size={12} aria-hidden="true" /> No teacher yet</span>
+    ) : (
+      <span className="tt-muted">&mdash;</span>
+    );
+
+  const listBody = isNarrow ? (
+    <div className="tt-listcards">
+      {listGroups.map((group) => (
+        <section key={group.day} className={`tt-listgroup${validFocus === group.day ? " is-focus" : ""}`} aria-label={`${dayName(group.day)} lessons`}>
+          <h5 className="tt-listday">
+            {dayName(group.day)} <small>{group.entries.length}</small>
+            {group.day === todayValue ? <em>Today</em> : null}
+          </h5>
+          <ul>
+            {group.entries.map((entry) => {
+              const hue = hueStyle(entry);
+              return (
+                <li key={entry.id} className="tt-listcard">
+                  <span className={`tt-dot${hue ? "" : " is-neutral"}`} style={hue} aria-hidden="true" />
+                  <div className="tt-listcard-main">
+                    <strong title={entryLabel(entry)}>{entryLabel(entry)}</strong>
+                    <span>{timeRange(entry.start_time, entry.end_time)}{!single ? ` \u00b7 ${classTiny(entry.class_name)}` : ""}</span>
+                    <span>{teacherCell(entry)}{entry.room ? ` \u00b7 ${entry.room}` : ""}</span>
+                  </div>
+                  <div className="tt-listcard-actions">{rowActions(entry)}</div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  ) : (
     <div className="tt-listwrap">
       <table className="tt-list">
         <thead>
           <tr>
-            <th scope="col">Day</th>
             <th scope="col">Time</th>
             {!single ? <th scope="col">Class</th> : null}
             <th scope="col">Subject</th>
@@ -505,37 +632,47 @@ export default function TimetableBoard({
             <th scope="col"><span className="tt-sr">Actions</span></th>
           </tr>
         </thead>
-        <tbody>
-          {listEntries.map((entry) => {
-            const unassigned = needsTeacher(entry);
-            const hue = hueStyle(entry);
-            return (
-              <tr key={entry.id} className={Number(entry.day_of_week) === todayValue ? "is-today" : undefined}>
-                <td>{dayName(entry.day_of_week) || entry.day_label}</td>
-                <td className="tt-list-time">{timeRange(entry.start_time, entry.end_time)}</td>
-                {!single ? <td>{entry.class_name}</td> : null}
-                <td>
-                  <span className={`tt-dot${hue ? "" : " is-neutral"}`} style={hue} aria-hidden="true" />
-                  <span title={entryLabel(entry)}>{entryLabel(entry)}</span>
-                </td>
-                <td>
-                  {entry.teacher_name ? entry.teacher_name : unassigned ? <span className="tt-badge"><AlertTriangle size={12} aria-hidden="true" /> No teacher yet</span> : <span className="tt-muted">&mdash;</span>}
-                </td>
-                <td>{entry.room || <span className="tt-muted">&mdash;</span>}</td>
-                <td className="tt-list-actions">
-                  <button type="button" className="tt-rowbtn" aria-label={`Open ${entryLabel(entry)} for ${entry.class_name} on ${dayName(entry.day_of_week)}`} onClick={() => onOpenEntry?.(entry)}>
-                    <Pencil size={13} aria-hidden="true" /> Edit
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
+        {listGroups.map((group) => (
+          <tbody key={group.day} className={validFocus === group.day ? "is-focus" : undefined}>
+            <tr className="tt-listday-row">
+              <th scope="colgroup" colSpan={single ? 5 : 6}>
+                <span className="tt-listday">{dayName(group.day)} <small>{group.entries.length} {group.entries.length === 1 ? "lesson" : "lessons"}</small></span>
+                {group.day === todayValue ? <em>Today</em> : null}
+              </th>
+            </tr>
+            {group.entries.map((entry) => {
+              const hue = hueStyle(entry);
+              return (
+                <tr key={entry.id}>
+                  <td className="tt-list-time">{timeRange(entry.start_time, entry.end_time)}</td>
+                  {!single ? <td>{entry.class_name}</td> : null}
+                  <td>
+                    <span className={`tt-dot${hue ? "" : " is-neutral"}`} style={hue} aria-hidden="true" />
+                    <span title={entryLabel(entry)}>{entryLabel(entry)}</span>
+                  </td>
+                  <td>{teacherCell(entry)}</td>
+                  <td>{entry.room || <span className="tt-muted">&mdash;</span>}</td>
+                  <td className="tt-list-actions">{rowActions(entry)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        ))}
       </table>
     </div>
-  ) : (
-    <p className="panel-empty">{unassignedOnly ? "Every lesson here has a teacher." : "No lessons yet. Use Add lesson or Generate to get started."}</p>
   );
+
+  const listSection =
+    noClasses || (!listEntries.length && !unassignedOnly) ? null : (
+      <section className="tt-listsection" aria-label="All lessons in this timetable">
+        <header className="tt-listhead">
+          <h4>{single ? `Lessons for ${className}` : "Lessons for all classes"}</h4>
+          <span className="tt-count">{listEntries.length}</span>
+          <small>{unassignedOnly ? "Only lessons that still need a teacher" : "Everything in the timetable, day by day"}</small>
+        </header>
+        {listEntries.length ? listBody : <p className="panel-empty">Every lesson here has a teacher.</p>}
+      </section>
+    );
 
   return (
     <section className="tt-board" aria-label="Weekly schedule" ref={rootRef}>
@@ -564,15 +701,6 @@ export default function TimetableBoard({
       {noClasses ? null : <ClassPicker classes={classes} value={pickerValue} onChange={chooseClass} />}
 
       <div className="tt-toolbar">
-        <div className="tt-viewtoggle" role="group" aria-label="View">
-          <button type="button" className={view === "grid" ? "is-active" : ""} aria-pressed={view === "grid"} onClick={() => chooseView("grid")}>
-            <LayoutGrid size={14} aria-hidden="true" /> Grid
-          </button>
-          <button type="button" className={view === "list" ? "is-active" : ""} aria-pressed={view === "list"} onClick={() => chooseView("list")}>
-            <List size={14} aria-hidden="true" /> List
-          </button>
-        </div>
-
         <label className={`tt-switch${unassignedOnly ? " is-on" : ""}`}>
           <input
             type="checkbox"
@@ -617,9 +745,11 @@ export default function TimetableBoard({
               <Sparkles size={14} aria-hidden="true" /> {single ? `${className} has no lessons yet.` : "No lessons yet."} Click any <b>+ Add</b> slot, or use <b>Generate</b> to fill the week.
             </p>
           ) : null}
-          {view === "list" ? listView : isNarrow ? mobileDayView : desktopGrid}
+          {dayMode ? dayView : desktopGrid}
         </>
       )}
+
+      {listSection}
     </section>
   );
 }

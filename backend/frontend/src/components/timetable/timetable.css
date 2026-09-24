@@ -178,24 +178,6 @@ body[data-theme="dark"] .tt-dot {
 
 .tt-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
 
-.tt-viewtoggle { display: inline-flex; padding: 0.2rem; border: 1px solid var(--tt-line); border-radius: 12px; background: var(--tt-surface); }
-.tt-viewtoggle button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.38rem 0.85rem;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--tt-muted);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 650;
-  cursor: pointer;
-}
-.tt-viewtoggle button:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 1px; }
-.tt-viewtoggle button.is-active { background: var(--tt-bg); color: var(--tt-accent); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18); }
-
 .tt-switch { position: relative; display: inline-flex; align-items: center; gap: 0.55rem; color: var(--tt-text); font-size: 0.84rem; font-weight: 600; cursor: pointer; user-select: none; }
 .tt-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .tt-switch-track { position: relative; flex: none; width: 2.3rem; height: 1.3rem; border-radius: 999px; background: var(--tt-line-strong); transition: background 160ms ease; }
@@ -251,7 +233,27 @@ body[data-theme="dark"] .tt-alert { color: #fecaca; background: rgba(239, 68, 68
 .tt-corner,
 .tt-day { position: sticky; top: 0; z-index: 3; padding: 0.7rem 0.5rem; background: var(--tt-head); color: var(--tt-muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-align: center; text-transform: uppercase; }
 .tt-corner { left: 0; z-index: 5; width: 5.6rem; }
+.tt-day { padding: 0; }
 .tt-day span { display: block; }
+.tt-daybtn {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.15rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.7rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.tt-daybtn:hover { background: var(--tt-accent-soft); color: var(--tt-accent); }
+.tt-daybtn:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: -3px; }
 .tt-day em { display: inline-block; margin-top: 0.15rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--tt-accent); color: #fff; font-size: 0.62rem; font-style: normal; letter-spacing: 0.06em; }
 .tt-day.is-today { color: var(--tt-accent); box-shadow: inset 0 -3px 0 var(--tt-accent); }
 
@@ -398,13 +400,47 @@ body[data-theme] .tt-dot.is-neutral {
 
 .tt-listwrap { overflow: auto; max-height: min(74vh, 800px); border: 1px solid var(--tt-line); border-radius: 14px; background: var(--tt-bg); }
 .tt-list { width: 100%; min-width: 640px; border-collapse: separate; border-spacing: 0; font-size: 0.85rem; }
-.tt-list th { position: sticky; top: 0; z-index: 2; padding: 0.65rem 0.8rem; background: var(--tt-head); color: var(--tt-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-align: left; text-transform: uppercase; border-bottom: 1px solid var(--tt-line); }
+.tt-list thead th { position: sticky; top: 0; z-index: 2; padding: 0.65rem 0.8rem; background: var(--tt-head); color: var(--tt-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-align: left; text-transform: uppercase; border-bottom: 1px solid var(--tt-line); }
 .tt-list td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--tt-line); vertical-align: middle; }
 .tt-list tbody tr:hover td { background: var(--tt-accent-soft); }
-.tt-list tr.is-today td:first-child { box-shadow: inset 3px 0 0 var(--tt-accent); }
-.tt-list tbody tr:last-child td { border-bottom: 0; }
+.tt-list tbody:last-of-type tr:last-child td { border-bottom: 0; }
 .tt-list-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tt-list-actions { width: 1%; text-align: right; white-space: nowrap; }
+.tt-list-actions .tt-rowbtn + .tt-rowbtn { margin-left: 0.4rem; }
+
+.tt-listsection { display: grid; gap: 0.7rem; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px solid var(--tt-line); }
+.tt-listhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.7rem; }
+.tt-listhead h4 { margin: 0; color: var(--tt-text); font-size: 1rem; }
+.tt-count { padding: 0.05rem 0.6rem; border-radius: 999px; background: var(--tt-accent-soft); color: var(--tt-accent); font-size: 0.74rem; font-weight: 800; }
+.tt-listhead small { color: var(--tt-muted); font-size: 0.8rem; }
+
+.tt-listday-row th { padding: 0.5rem 0.8rem; border-top: 1px solid var(--tt-line); border-bottom: 1px solid var(--tt-line); background: var(--tt-head); text-align: left; }
+.tt-listday { color: var(--tt-text); font-size: 0.82rem; font-weight: 800; letter-spacing: 0.02em; }
+.tt-listday small { margin-left: 0.4rem; color: var(--tt-muted); font-size: 0.74rem; font-weight: 600; }
+.tt-listday-row em,
+h5.tt-listday em { margin-left: 0.6rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--tt-accent); color: #fff; font-size: 0.62rem; font-style: normal; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+tbody.is-focus .tt-listday-row th { background: var(--tt-accent-soft); box-shadow: inset 3px 0 0 var(--tt-accent); }
+tbody.is-focus .tt-listday-row .tt-listday { color: var(--tt-accent); }
+.tt-list tbody.is-focus td { background: var(--tt-today); }
+
+.tt-rowbtn.is-danger { color: #dc2626; }
+body[data-theme="dark"] .tt-rowbtn.is-danger { color: #f87171; }
+.tt-rowbtn.is-danger:hover:not(:disabled),
+.tt-rowbtn.is-danger:focus-visible { border-color: #dc2626; background: rgba(220, 38, 38, 0.1); color: #dc2626; }
+body[data-theme="dark"] .tt-rowbtn.is-danger:hover:not(:disabled) { color: #fca5a5; }
+.tt-rowbtn:disabled { opacity: 0.55; cursor: progress; }
+
+/* phone: the same list as cards, grouped by day */
+.tt-listcards { display: grid; gap: 0.9rem; }
+.tt-listgroup ul { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+h5.tt-listday { display: flex; align-items: center; gap: 0.3rem; margin: 0 0 0.45rem; padding: 0.4rem 0.7rem; border-radius: 10px; background: var(--tt-head); }
+.tt-listgroup.is-focus h5.tt-listday { background: var(--tt-accent-soft); color: var(--tt-accent); }
+.tt-listcard { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2rem 0.6rem; align-items: start; padding: 0.65rem 0.75rem; border: 1px solid var(--tt-line); border-radius: 12px; background: var(--tt-bg); }
+.tt-listcard .tt-dot { margin: 0.4rem 0 0; }
+.tt-listcard-main { display: grid; min-width: 0; gap: 0.05rem; }
+.tt-listcard-main strong { overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+.tt-listcard-main span { color: var(--tt-muted); font-size: 0.8rem; }
+.tt-listcard-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 0.4rem; padding-top: 0.2rem; }
 .tt-rowbtn { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.7rem; border: 1px solid var(--tt-line-strong); border-radius: 8px; background: transparent; color: var(--tt-text); font: inherit; font-size: 0.78rem; font-weight: 650; cursor: pointer; }
 .tt-rowbtn:hover,
 .tt-rowbtn:focus-visible { border-color: var(--tt-accent); background: var(--tt-accent-soft); color: var(--tt-accent); outline: none; }
@@ -417,11 +453,17 @@ body[data-theme] .tt-dot.is-neutral {
 /* ------------------------------------------------------------ phone: one day */
 
 .tt-mobile { display: grid; gap: 0.75rem; }
-.tt-daytabs { display: flex; gap: 0.3rem; padding: 0.25rem; border: 1px solid var(--tt-line); border-radius: 14px; background: var(--tt-surface); }
+.tt-dayswitch { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.5rem; }
+.tt-weekbtn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; border: 1px dashed var(--tt-line-strong); border-radius: 12px; background: transparent; color: var(--tt-muted); font: inherit; font-size: 0.84rem; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.tt-weekbtn:hover,
+.tt-weekbtn:focus-visible { border-color: var(--tt-accent); background: var(--tt-accent-soft); color: var(--tt-accent); outline: none; }
+.tt-daytabs { display: flex; flex: 1 1 18rem; gap: 0.3rem; padding: 0.25rem; border: 1px solid var(--tt-line); border-radius: 14px; background: var(--tt-surface); }
 .tt-daytab { position: relative; flex: 1 1 0; min-width: 0; padding: 0.5rem 0.2rem; border: 0; border-radius: 10px; background: transparent; color: var(--tt-muted); font: inherit; font-size: 0.82rem; font-weight: 700; text-align: center; cursor: pointer; }
 .tt-daytab em { display: block; color: var(--tt-accent); font-size: 0.6rem; font-style: normal; letter-spacing: 0.05em; text-transform: uppercase; }
 .tt-daytab:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 1px; }
+.tt-daytab i { display: inline-block; min-width: 1.15rem; margin-left: 0.3rem; padding: 0 0.3rem; border-radius: 999px; background: var(--tt-head); color: var(--tt-muted); font-size: 0.66rem; font-style: normal; font-weight: 800; line-height: 1.35; }
 .tt-daytab.is-active { background: var(--tt-accent); color: #fff; }
+.tt-daytab.is-active i { background: rgba(255, 255, 255, 0.25); color: #fff; }
 .tt-daytab.is-active em { color: #fff; }
 
 .tt-daylist { display: grid; gap: 0.15rem; margin: 0; padding: 0; list-style: none; }
@@ -432,6 +474,15 @@ body[data-theme] .tt-dot.is-neutral {
 .tt-daytime span { color: var(--tt-muted); font-size: 0.74rem; }
 .tt-daytime em { width: fit-content; margin-top: 0.2rem; padding: 0.02rem 0.4rem; border-radius: 999px; background: var(--tt-accent); color: #fff; font-size: 0.6rem; font-style: normal; font-weight: 700; text-transform: uppercase; }
 .tt-daycell > * + * { margin-top: 0.3rem; }
+.tt-daycell .tt-card { height: auto; min-height: 3.6rem; }
+.tt-card-room { overflow: hidden; color: var(--tt-c-sub); font-size: 0.72rem; font-style: italic; text-overflow: ellipsis; white-space: nowrap; opacity: 0.9; }
+.tt-mobile.is-wide .tt-dayrow { grid-template-columns: 5.6rem minmax(0, 1fr); padding: 0.5rem 0.4rem; }
+.tt-mobile.is-wide .tt-daylist { max-width: 64rem; }
+.tt-mobile.is-wide .tt-daycell .tt-card { flex-direction: row; align-items: center; justify-content: flex-start; gap: 1rem; padding-block: 0.55rem; }
+.tt-mobile.is-wide .tt-daycell .tt-card-name { flex: 0 0 13rem; font-size: 0.92rem; }
+.tt-mobile.is-wide .tt-daycell .tt-card-sub { flex: 1; font-size: 0.82rem; }
+.tt-mobile.is-wide .tt-daycell .tt-card-room { margin-left: auto; }
+.tt-mobile.is-wide .tt-add { height: 3.2rem; }
 .tt-daybreak { display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.5rem; color: var(--tt-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; background: var(--tt-head); border-radius: 10px; }
 .tt-daybreak small { font-size: 0.7rem; letter-spacing: 0; text-transform: none; }
 

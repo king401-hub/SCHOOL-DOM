@@ -5953,6 +5953,28 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
     setJumpTo({ classId, nonce: dialogCounter.current });
   };
 
+  // Delete straight from the list under the grid (asks first, like the dialog does).
+  const handleDeleteEntry = async (entry) => {
+    const label = entry.display_label || entry.subject_name || "this lesson";
+    const dayName = days.find((item) => String(item.value) === String(entry.day_of_week))?.label || "";
+    const when = `${dayName} ${entry.start_time}\u2013${entry.end_time}`.trim();
+    const ok = await confirm({
+      title: "Delete this lesson?",
+      message: `${label} for ${entry.class_name}, ${when}. This can't be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    dialogCounter.current += 1;
+    const id = dialogCounter.current;
+    try {
+      await onDelete?.(entry.id);
+      setNotice({ id, tone: "success", text: `Deleted ${label} from ${entry.class_name}, ${when}.` });
+    } catch (actionError) {
+      setNotice({ id, tone: "error", text: actionError?.message || "Could not delete this lesson." });
+    }
+  };
+
   const openSettings = () => {
     setSettingsOpen(true);
     window.requestAnimationFrame(() => settingsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
@@ -5986,6 +6008,7 @@ function AdminTimetablesScreen({ data = {}, loading, error, onRetry, onCreate, o
           onOpenCell={({ entries: cellEntries, dayValue, start, end }) => openDialog({ mode: "cell", entries: cellEntries, cell: { dayValue, start, end } })}
           onAddAt={(slot) => openDialog({ mode: "form", prefill: slot })}
           onAddBlank={({ classId }) => openDialog({ mode: "form", prefill: { classId } })}
+          onDeleteEntry={handleDeleteEntry}
           onGenerate={onGenerate}
           onOpenSettings={openSettings}
         />
