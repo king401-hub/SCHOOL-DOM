@@ -4474,7 +4474,7 @@ function StaffSchoolActivitiesPage({ session, onNavigate }) {
   );
 }
 
-function StaffSelfServicePanel({ session, initialData = null, standalone = false, showAttendance = true, onRefresh, onNavigate }) {
+function StaffSelfServicePanel({ session, initialData = null, standalone = false, showAttendance = true, showMessages = true, onRefresh, onNavigate }) {
   const [snapshot, setSnapshot] = useState(initialData || null);
   const [employmentLetter, setEmploymentLetter] = useState(null);
   const [letterBusy, setLetterBusy] = useState(false);
@@ -4541,8 +4541,10 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
     }
   }, [initialData, loadSelfService, session]);
 
+  // The inbox is optional (the teacher's HR page leaves it out - teachers have
+  // Messages of their own), so don't fetch or poll for it when it isn't shown.
   useEffect(() => {
-    if (!session) return undefined;
+    if (!session || !showMessages) return undefined;
     loadMessages().catch(() => {});
     const pollId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
@@ -4550,7 +4552,7 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
       }
     }, MESSAGE_POLL_INTERVAL_MS);
     return () => window.clearInterval(pollId);
-  }, [loadMessages, session]);
+  }, [loadMessages, session, showMessages]);
 
   const handleDownloadEmploymentLetter = async () => {
     setLetterBusy(true);
@@ -4782,16 +4784,18 @@ function StaffSelfServicePanel({ session, initialData = null, standalone = false
         />
       </section>
 
-      <MessageInboxPanel
-        title="Staff Messages"
-        messages={messageData?.inbox || []}
-        recipientOptions={staffRecipientOptions}
-        sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
-        onComposeSubmit={handleStaffMessageSend}
-        onMarkRead={handleStaffMessageRead}
-        onDelete={handleStaffMessageDelete}
-        onRefresh={loadMessages}
-      />
+      {showMessages ? (
+        <MessageInboxPanel
+          title="Staff Messages"
+          messages={messageData?.inbox || []}
+          recipientOptions={staffRecipientOptions}
+          sessionScope={`${session?.school?.id || session?.school?.school_code || messageData?.school?.id || messageData?.school?.school_code || "school"}:${session?.user?.id || session?.user?.email || "user"}`}
+          onComposeSubmit={handleStaffMessageSend}
+          onMarkRead={handleStaffMessageRead}
+          onDelete={handleStaffMessageDelete}
+          onRefresh={loadMessages}
+        />
+      ) : null}
     </section>
   );
 }
@@ -6326,7 +6330,7 @@ function TeacherWorkspace({
             icon={Briefcase}
             tone="emerald"
           />
-          <StaffSelfServicePanel session={session} showAttendance={false} onRefresh={null} onNavigate={onNavigate} />
+          <StaffSelfServicePanel session={session} showAttendance={false} showMessages={false} onRefresh={null} onNavigate={onNavigate} />
         </section>
       );
     }
