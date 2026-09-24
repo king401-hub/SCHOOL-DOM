@@ -1307,7 +1307,10 @@ def admin_class_fee_detail(request, fee_id):
 
 
 def _bills_for_user(user):
-    return Bill.objects.filter(tenant=user.tenant).prefetch_related("items", "classes")
+    tenant = user.tenant
+    if tenant is None:
+        tenant = StaffProfile.objects.filter(user=user).values_list("tenant", flat=True).first()
+    return Bill.objects.filter(tenant=tenant).prefetch_related("items", "classes")
 
 
 @api_view(["GET", "POST"])
