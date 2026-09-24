@@ -2882,13 +2882,6 @@ def message_groups(request):
                 [MessageGroupMembership(group=group, user=member) for member in member_users]
             )
 
-    page_size = 15
-    try:
-        offset = max(int(request.query_params.get("offset") or 0), 0)
-    except (TypeError, ValueError):
-        offset = 0
-    page = list(listed[offset:offset + page_size])
-
     return Response(
         {"success": True, "message": "Group created.", "group": _group_payload(group, viewer=user, request=request)},
         status=status.HTTP_201_CREATED,
@@ -5657,6 +5650,13 @@ def students_snapshot(request):
         listed = listed.filter(user__is_active=False)
     elif status_filter == "unassigned":
         listed = listed.filter(current_class__isnull=True)
+
+    page_size = 15
+    try:
+        offset = max(int(request.query_params.get("offset") or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+    page = list(listed[offset:offset + page_size])
 
     return Response(
         {
