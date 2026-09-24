@@ -2882,6 +2882,13 @@ def message_groups(request):
                 [MessageGroupMembership(group=group, user=member) for member in member_users]
             )
 
+    page_size = 15
+    try:
+        offset = max(int(request.query_params.get("offset") or 0), 0)
+    except (TypeError, ValueError):
+        offset = 0
+    page = list(listed[offset:offset + page_size])
+
     return Response(
         {"success": True, "message": "Group created.", "group": _group_payload(group, viewer=user, request=request)},
         status=status.HTTP_201_CREATED,
@@ -5662,7 +5669,8 @@ def students_snapshot(request):
                 "male_count": male_count,
                 "female_count": female_count,
             },
-            "students": [_student_payload(student, request=request) for student in listed[:60]],
+            "students": [_student_payload(student, request=request) for student in page],
+            "has_more": listed[offset + page_size:offset + page_size + 1].exists(),
             "options": {
                 "classes": [
                     {

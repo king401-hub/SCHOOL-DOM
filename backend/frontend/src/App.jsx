@@ -8617,6 +8617,26 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const data = screenData[activePath];
   const loading = Boolean(screenLoading[activePath]);
   const error = screenError[activePath] || "";
+  const handleLoadMoreStudents = useCallback(
+    async (classId, offset) => {
+      const params = new URLSearchParams({ offset: String(offset) });
+      if (classId) params.set("class_id", classId);
+      const result = await requestJson(session, "GET", `/api/app/students/?${params.toString()}`);
+      setScreenData((previous) => {
+        const current = previous["/students"] || {};
+        return {
+          ...previous,
+          "/students": {
+            ...current,
+            ...result,
+            students: [...(current.students || []), ...(result.students || [])],
+          },
+        };
+      });
+      return result;
+    },
+    [session]
+  );
   const activeSchool = data?.school || data?.local_data?.school || null;
   const schoolName =
     activeSchool?.name ||
@@ -8849,6 +8869,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onUpdate={handleUpdateStudent}
         onDelete={handleDeleteStudent}
         onClassFilterChange={(classId) => loadScreen("/students", true, false, classId ? `?class_id=${encodeURIComponent(classId)}` : "")}
+        onLoadMoreStudents={handleLoadMoreStudents}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}

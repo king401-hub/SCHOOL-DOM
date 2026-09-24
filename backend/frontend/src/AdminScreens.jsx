@@ -12411,7 +12411,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   );
 }
 
-function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onClassFilterChange, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onClassFilterChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const subjectOptions = data?.options?.subjects || [];
@@ -12456,6 +12456,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [editForm, setEditForm] = useState({
     first_name: "",
@@ -12561,6 +12562,16 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
       return haystack.includes(query);
     });
   }, [searchTerm, students]);
+
+  const handleLoadMore = async () => {
+    if (!onLoadMoreStudents || loadingMore || !data?.has_more) return;
+    setLoadingMore(true);
+    try {
+      await onLoadMoreStudents(classFilter, students.length);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -13190,6 +13201,13 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
             ) : (
               <p className="panel-empty">{searchTerm ? "No students match your filter." : "No students found."}</p>
             )}
+            {data?.has_more ? (
+              <div className="panel-form-actions" style={{ marginTop: "0.75rem" }}>
+                <button type="button" className="btn-secondary" onClick={handleLoadMore} disabled={loadingMore}>
+                  {loadingMore ? <><Spinner size={12} /> Loading...</> : "View more students"}
+                </button>
+              </div>
+            ) : null}
           </article>
 
           {pendingDeleteStudent ? (
