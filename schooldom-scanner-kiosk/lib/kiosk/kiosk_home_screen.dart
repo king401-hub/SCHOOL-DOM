@@ -94,6 +94,8 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   // decorative, gives the "Ready to Scan" state some life instead of a
   // static ring sitting on a flat background.
   late final AnimationController _pulseController;
+  // 0.6 -> 1.0 -> 0.6: the glow's brightness (see _buildReadyState).
+  late final Animation<double> _pulseOpacity;
 
   // ------------------------------------------------------ External USB HID reader
   // A plugged-in USB HID keyboard-emulation card reader (the common/cheap type -
@@ -134,6 +136,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     super.initState();
     WakelockPlus.enable();
     _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
+    _pulseOpacity = Tween<double>(begin: 0.6, end: 1.0).animate(_pulseController);
     _tts.setLanguage('en-US');
     _tts.setSpeechRate(0.46);
     _tts.setVolume(1.0);
@@ -473,6 +476,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       _resultData = data;
       _resultMessage = message;
     });
+    // The idle glow isn't on screen while a result is - stop asking for a new
+    // frame every 16ms to animate something nobody can see.
+    _pulseController.stop();
 
     // Deliberately generic, never the student's name - a shared kiosk
     // announcing names aloud is a privacy concern the school flagged.
@@ -496,7 +502,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     final hasFees = data?['fees'] != null;
     _resultTimer?.cancel();
     _resultTimer = Timer(Duration(seconds: hasFees ? 15 : _resultDisplaySeconds), () {
-      if (mounted) setState(() => _outcome = null);
+      if (!mounted) return;
+      setState(() => _outcome = null);
+      _pulseController.repeat(reverse: true);
     });
   }
 
@@ -1124,40 +1132,52 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           ),
         ),
         const SizedBox(height: 48),
-        AnimatedBuilder(
-          animation: _pulseController,
-          builder: (context, child) {
-            final t = _pulseController.value; // 0 -> 1 -> 0
-            return Container(
-              width: 190,
-              height: 190,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.18 + (0.12 * t)),
-                    blurRadius: 30 + (20 * t),
-                    spreadRadius: 2 + (4 * t),
+        // The glow used to be redrawn from scratch every frame (a large blurred
+        // shadow whose blur, spread and colour all changed ~60 times a second,
+        // all day, with nothing isolating it from the rest of the screen) - a
+        // constant load that a weak terminal GPU feels as lag even when nobody
+        // is scanning. Now the ring and glow are drawn once, cached by the
+        // RepaintBoundary, and only their opacity breathes, which costs almost
+        // nothing to animate. Same look, minus the glow slightly changing size.
+        RepaintBoundary(
+          child: SizedBox(
+            width: 190,
+            height: 190,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                FadeTransition(
+                  opacity: _pulseOpacity,
+                  child: Container(
+                    width: 190,
+                    height: 190,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.30),
+                          blurRadius: 40,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.6), width: 2),
+                    ),
                   ),
-                ],
-                border: Border.all(color: AppColors.primary.withValues(alpha: 0.4 + (0.2 * t)), width: 2),
-              ),
-              child: child,
-            );
-          },
-          child: Center(
-            child: Container(
-              width: 130,
-              height: 130,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withValues(alpha: 0.12),
-              ),
-              child: Icon(
-                _busy ? Icons.hourglass_top_rounded : Icons.contactless_rounded,
-                size: 60,
-                color: AppColors.primary,
-              ),
+                ),
+                Container(
+                  width: 130,
+                  height: 130,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                  ),
+                  child: Icon(
+                    _busy ? Icons.hourglass_top_rounded : Icons.contactless_rounded,
+                    size: 60,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
