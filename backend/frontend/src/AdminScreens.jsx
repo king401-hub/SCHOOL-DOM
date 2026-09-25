@@ -12414,7 +12414,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   );
 }
 
-function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, onClassFilterChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, initialClassFilter = "", onClassFilterChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const subjectOptions = data?.options?.subjects || [];
@@ -12456,9 +12456,11 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [tokenWarning, setTokenWarning] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  // The loaded list belongs to the class filter that fetched it, so a screen that
+  // is re-opened (its state resets, the data does not) starts from that filter.
+  const [showFilters, setShowFilters] = useState(Boolean(initialClassFilter));
   const [searchTerm, setSearchTerm] = useState("");
-  const [classFilter, setClassFilter] = useState("");
+  const [classFilter, setClassFilter] = useState(initialClassFilter);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [editForm, setEditForm] = useState({

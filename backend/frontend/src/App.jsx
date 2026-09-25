@@ -157,6 +157,8 @@ const SupportCenterPanel = lazyAdminScreen("SupportCenterPanel");
 
 const NAIRA_SYMBOL = "\u20A6";
 const DAILY_PERSONAL_QUESTION_LIMIT = 20;
+// Rows the admin Students directory loads per page (matches students_snapshot).
+const STUDENT_DIRECTORY_PAGE_SIZE = 15;
 const ADMIN_ACTIVITY_LOG_KEY = "schooldom.admin_activity_notifications";
 const STUDENT_CBT_DESKTOP_PATH = "/student-cbt";
 const TEACHER_TAB_STORAGE_KEY = "schooldom.teacher_active_tab";
@@ -6682,6 +6684,14 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   const [screenData, setScreenData] = useState({});
   const [screenLoading, setScreenLoading] = useState({});
   const [screenError, setScreenError] = useState({});
+  // Students directory: the class picked in its filter, and the newest request
+  // that may write the list. The screen is refreshed every few seconds and after
+  // every edit, so every reload must re-apply the filter and an older, slower
+  // response must never overwrite a newer one.
+  const [studentClassFilter, setStudentClassFilter] = useState("");
+  const studentClassFilterRef = useRef("");
+  const studentsRequestRef = useRef(0);
+  const studentsLoadingMoreRef = useRef(false);
   const [adminActivityRecords, setAdminActivityRecords] = useState(() => readAdminActivityLog(session));
   const [countriesList, setCountriesList] = useState([]);
   const [navOpen, setNavOpen] = useState(false);
@@ -6774,12 +6784,35 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
         return;
       }
 
+      let requestQuery = query;
+      let requestId = 0;
+      if (path === "/students") {
+        // Don't let a background refresh race a "View more" that is still loading.
+        if (silent && studentsLoadingMoreRef.current) {
+          return;
+        }
+        requestId = ++studentsRequestRef.current;
+        if (!requestQuery) {
+          const params = new URLSearchParams();
+          if (studentClassFilterRef.current) {
+            params.set("class_id", studentClassFilterRef.current);
+          }
+          // Keep the pages the admin already opened with "View more".
+          const loaded = screenData[path]?.students?.length || 0;
+          if (loaded > STUDENT_DIRECTORY_PAGE_SIZE) {
+            params.set("limit", String(loaded));
+          }
+          requestQuery = params.toString() ? `?${params.toString()}` : "";
+        }
+      }
+      const isSuperseded = () => path === "/students" && requestId !== studentsRequestRef.current;
+
       if (!silent || !screenData[path]) {
         setScreenLoading((prev) => ({ ...prev, [path]: true }));
       }
       setScreenError((prev) => ({ ...prev, [path]: "" }));
       try {
-        let data = await requestJson(session, "GET", `${endpoint}${query}`);
+        let data = await requestJson(session, "GET", `${endpoint}${requestQuery}`);
         // /api/app/exams/ already includes submitted_results and auto_submitted_exams.
         if (path === "/finance") {
           try {
@@ -6795,14 +6828,33 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
             };
           }
         }
+        if (isSuperseded()) {
+          return;
+        }
         setScreenData((prev) => ({ ...prev, [path]: data }));
       } catch (requestError) {
-        setScreenError((prev) => ({ ...prev, [path]: requestError.message || "Could not load data." }));
+        if (!isSuperseded()) {
+          setScreenError((prev) => ({ ...prev, [path]: requestError.message || "Could not load data." }));
+        }
       } finally {
-        setScreenLoading((prev) => ({ ...prev, [path]: false }));
+        if (!isSuperseded()) {
+          setScreenLoading((prev) => ({ ...prev, [path]: false }));
+        }
       }
     },
     [screenData, session]
+  );
+
+  const handleStudentClassFilterChange = useCallback(
+    (classId) => {
+      const next = classId ? String(classId) : "";
+      studentClassFilterRef.current = next;
+      setStudentClassFilter(next);
+      // Always an explicit query (even for "all") so this loads a fresh first page
+      // instead of reusing the "keep what is already loaded" size of a reload.
+      return loadScreen("/students", true, false, next ? `?class_id=${encodeURIComponent(next)}` : "?offset=0");
+    },
+    [loadScreen]
   );
 
   useEffect(() => {
@@ -8628,19 +8680,31 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     async (classId, offset) => {
       const params = new URLSearchParams({ offset: String(offset) });
       if (classId) params.set("class_id", classId);
-      const result = await requestJson(session, "GET", `/api/app/students/?${params.toString()}`);
-      setScreenData((previous) => {
-        const current = previous["/students"] || {};
-        return {
-          ...previous,
-          "/students": {
-            ...current,
-            ...result,
-            students: [...(current.students || []), ...(result.students || [])],
-          },
-        };
-      });
-      return result;
+      const requestId = studentsRequestRef.current;
+      studentsLoadingMoreRef.current = true;
+      try {
+        const result = await requestJson(session, "GET", `/api/app/students/?${params.toString()}`);
+        // The list was reloaded or switched to another class while this page was on
+        // its way - appending it would mix classes or repeat rows, so drop it.
+        if (requestId !== studentsRequestRef.current || String(classId || "") !== studentClassFilterRef.current) {
+          return result;
+        }
+        setScreenData((previous) => {
+          const current = previous["/students"] || {};
+          const known = new Set((current.students || []).map((student) => student.id));
+          return {
+            ...previous,
+            "/students": {
+              ...current,
+              ...result,
+              students: [...(current.students || []), ...(result.students || []).filter((student) => !known.has(student.id))],
+            },
+          };
+        });
+        return result;
+      } finally {
+        studentsLoadingMoreRef.current = false;
+      }
     },
     [session]
   );
@@ -8875,7 +8939,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onCreate={handleCreateStudent}
         onUpdate={handleUpdateStudent}
         onDelete={handleDeleteStudent}
-        onClassFilterChange={(classId) => loadScreen("/students", true, false, classId ? `?class_id=${encodeURIComponent(classId)}` : "")}
+        initialClassFilter={studentClassFilter}
+        onClassFilterChange={handleStudentClassFilterChange}
         onLoadMoreStudents={handleLoadMoreStudents}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}

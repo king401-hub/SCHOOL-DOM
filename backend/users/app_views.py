@@ -5624,7 +5624,10 @@ def students_snapshot(request):
         StudentProfile.objects.select_related("user", "current_class", "extra_curricular_activity_title")
         .prefetch_related("elective_subjects")
         .filter(user__tenant=user.tenant)
-        .order_by("-created_at")
+        # "-id" breaks ties: students created in the same instant (bulk imports)
+        # would otherwise come back in an unstable order, so offset pages could
+        # repeat some students and skip others.
+        .order_by("-created_at", "-id")
     )
     classes_qs = _scope_to_user_tenant(Class.objects.all(), user).order_by("name", "section")
     activity_titles_qs = _student_activity_title_queryset(user, include_inactive=True).annotate(student_count=Count("students"))
@@ -5652,6 +5655,12 @@ def students_snapshot(request):
         listed = listed.filter(current_class__isnull=True)
 
     page_size = 15
+    try:
+        # ?limit=N lets a refresh re-fetch everything already opened with "View
+        # more" in one request, instead of collapsing back to the first page.
+        page_size = min(max(int(request.query_params.get("limit") or page_size), 1), 500)
+    except (TypeError, ValueError):
+        pass
     try:
         offset = max(int(request.query_params.get("offset") or 0), 0)
     except (TypeError, ValueError):

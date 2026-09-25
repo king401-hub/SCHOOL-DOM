@@ -7471,3 +7471,97 @@ class ClassResultSnapshotTests(TestCase):
             "class_id": self.class_a.id, "academic_year_id": empty_year.id,
         }, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class StudentDirectoryPagingTests(TestCase):
+    """The admin Student Directory loads students a page at a time. Choosing a
+    class must list only that class's students, in a stable order, so paging - and
+    a refresh that re-asks for everything already opened via ?limit= - never
+    repeats, skips or mixes in another class."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Directory School", schema_name="directory_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin = User.objects.create_user(
+            email="admin@directory.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.big_class = Class.objects.create(tenant=self.legacy_tenant, name="SSS 1", section="Science")
+        self.small_class = Class.objects.create(tenant=self.legacy_tenant, name="SSS 2", section="Art")
+        for index in range(20):
+            self._student(index, self.big_class)
+        for index in range(20, 25):
+            self._student(index, self.small_class)
+        # A bulk import stamps many students with exactly the same created_at.
+        StudentProfile.objects.update(created_at=timezone.now() - timedelta(days=1))
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _student(self, index, school_class, tenant=None):
+        user = User.objects.create_user(
+            email=f"pupil{index}@directory.edu", password=None, first_name=f"Pupil{index}", last_name="Test",
+            role="student", tenant=tenant or self.school, is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=f"DIR{index:03d}", admission_number=f"DIRADM{index:03d}",
+            admission_date=date(2025, 9, 1), current_class=school_class,
+            guardian_name="Guardian", guardian_phone="08010000001", guardian_relation="Parent",
+        )
+
+    def _list(self, **params):
+        response = self.client.get("/api/app/students/", params)
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
+
+    def _all_pages(self, **params):
+        ids, offset = [], 0
+        while True:
+            page = self._list(offset=offset, **params)
+            ids += [row["id"] for row in page["students"]]
+            if not page["has_more"]:
+                return ids
+            offset += len(page["students"])
+
+    def test_class_filter_lists_every_student_of_that_class_and_nobody_else(self):
+        first_page = self._list(class_id=self.big_class.id)
+        self.assertEqual(len(first_page["students"]), 15)
+        self.assertTrue(first_page["has_more"])
+        self.assertEqual({row["class_id"] for row in first_page["students"]}, {self.big_class.id})
+
+        wanted = {str(pk) for pk in StudentProfile.objects.filter(current_class=self.big_class).values_list("id", flat=True)}
+        listed = [str(pk) for pk in self._all_pages(class_id=self.big_class.id)]
+        self.assertEqual(len(listed), 20)
+        self.assertEqual(set(listed), wanted)
+
+    def test_paging_never_repeats_or_skips_students_that_share_a_created_at(self):
+        listed = self._all_pages()
+        self.assertEqual(len(listed), 25)
+        self.assertEqual(len(set(listed)), 25)
+
+    def test_the_summary_still_counts_the_whole_school_when_a_class_is_chosen(self):
+        self.assertEqual(self._list(class_id=self.small_class.id)["summary"]["total_students"], 25)
+
+    def test_limit_refetches_everything_already_opened_in_one_request(self):
+        paged = self._all_pages(class_id=self.big_class.id)
+        everything = self._list(class_id=self.big_class.id, limit=len(paged))
+        self.assertEqual([row["id"] for row in everything["students"]], paged)
+        self.assertFalse(everything["has_more"])
+
+        partial = self._list(class_id=self.big_class.id, limit=18)
+        self.assertEqual(len(partial["students"]), 18)
+        self.assertTrue(partial["has_more"])
+
+    def test_limit_and_offset_ignore_bad_values(self):
+        self.assertEqual(len(self._list(limit="abc")["students"]), 15)
+        self.assertEqual(len(self._list(offset="x")["students"]), 15)
+        self.assertEqual(len(self._list(limit="0")["students"]), 1)
+        self.assertEqual(len(self._list(limit="99999")["students"]), 25)
+
+    def test_another_schools_students_are_never_listed(self):
+        other = SchoolTenant.objects.create(name="Other Directory School", schema_name="other_directory_school", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        other_class = Class.objects.create(tenant=other_legacy, name="SSS 1", section="Science")
+        self._student(99, other_class, tenant=other)
+
+        self.assertEqual(len(self._all_pages()), 25)
+        self.assertEqual(self._all_pages(class_id=other_class.id), [])
