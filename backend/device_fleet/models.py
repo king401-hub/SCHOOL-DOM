@@ -95,7 +95,9 @@ class Device(models.Model):
     # "Do not mark a device offline after only one missed heartbeat" from the
     # spec; the mobile app's heartbeat interval is expected to be well under
     # this, so one or two missed beats (a brief network blip) don't flip it.
-    OFFLINE_AFTER_SECONDS = 5 * 60
+    # The kiosk beats every 5 minutes (2 in builds up to 1.4.6), so this is a
+    # little over two missed beats.
+    OFFLINE_AFTER_SECONDS = 12 * 60
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device_id = models.CharField(max_length=20, unique=True, editable=False)
@@ -170,7 +172,7 @@ class Device(models.Model):
     battery_health = models.CharField(max_length=15, choices=BATTERY_HEALTH_CHOICES, blank=True, default='')
     battery_temperature_c = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
     # Anti-theft/asset tracking - reported with every heartbeat (roughly
-    # every 2 minutes, matching the kiosk's existing heartbeat cadence)
+    # every 5 minutes, the kiosk's heartbeat cadence)
     # rather than a slower occasional check, per product decision: these
     # are meant to be fixed-location terminals, so live tracking is what
     # actually catches one going missing quickly, not a daily snapshot.

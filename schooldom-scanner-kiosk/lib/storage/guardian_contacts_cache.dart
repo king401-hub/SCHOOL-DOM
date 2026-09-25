@@ -11,7 +11,10 @@ import '../api/client.dart';
 const _kCacheKey = 'guardian_contacts_cache';
 
 class GuardianContactsCache {
-  static Future<void> refresh() async {
+  /// True when the list was pulled and saved, false when it could not be (the
+  /// previous copy is kept) - so a caller can retry sooner after a failure than
+  /// after a success.
+  static Future<bool> refresh() async {
     try {
       final result = await getJson('/api/rfid/card-assignments/');
       final data = (result['data'] as List?) ?? const [];
@@ -28,8 +31,10 @@ class GuardianContactsCache {
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kCacheKey, jsonEncode(map));
+      return true;
     } catch (_) {
       // Offline, or the pull failed - keep whatever was cached last time.
+      return false;
     }
   }
 

@@ -52,6 +52,18 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   // backend to identify it. After this the scan is treated as offline and
   // handled from the locally cached data (see _handleScan).
   static const _scanReadTimeout = Duration(seconds: 3);
+  // How often the terminal reports in (battery, location, app version, unsynced
+  // scans) and picks up remote changes (log-out, school switch, updates). It was
+  // every 2 minutes. The server now calls a device offline after 12 minutes of
+  // silence (Device.OFFLINE_AFTER_SECONDS), so a couple of missed beats still
+  // don't flip it.
+  static const _heartbeatInterval = Duration(minutes: 5);
+  // The offline card list (name + guardian phone per card, used to text a parent
+  // from the terminal's own SIM when the network is down) used to be downloaded
+  // in full on every heartbeat - for a big school that is a large download and a
+  // lot of JSON work on the UI thread every couple of minutes. It only changes
+  // when cards are assigned, so pulling it this often is plenty.
+  static const _contactsRefreshInterval = Duration(minutes: 30);
 
   final FlutterTts _tts = FlutterTts();
   final Battery _battery = Battery();
@@ -130,7 +142,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     _startNfcSession();
     _ensureLocationPermission();
     _sendHeartbeat();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) => _sendHeartbeat());
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) => _sendHeartbeat());
     _hidFocusNode.addListener(() {
       if (_hidCaptureEnabled && !_hidFocusNode.hasFocus) {
         Future.delayed(const Duration(milliseconds: 50), () {
@@ -564,7 +576,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   // Guards against a slow heartbeat (see the timeout on the POST below - this
   // is a second line of defense for whatever that timeout doesn't cover,
   // e.g. time spent waiting on battery/location) still being in flight when
-  // the next one fires 2 minutes later; without it a run of degraded network
+  // the next one fires a few minutes later; without it a run of degraded network
   // conditions could pile up more and more overlapping heartbeats instead of
   // just one at a time.
   bool _heartbeatInFlight = false;
@@ -583,7 +595,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       // Bounded like every other network call this app makes (see
       // _scanReadTimeout/_replayItemTimeout) - this used to have no timeout
       // at all, so a flaky-but-not-fully-down connection could leave a
-      // heartbeat hanging indefinitely, and with a new one due every 2
+      // heartbeat hanging indefinitely, and with a new one due every few
       // minutes regardless (_heartbeatInFlight guards that pile-up), a
       // terminal on a bad connection could accumulate more and more stuck
       // requests over hours of uptime.
@@ -615,6 +627,8 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         if (schoolId != null && schoolName != null && schoolName != _schoolName) {
           setState(() => _schoolName = schoolName);
           await KioskStore.setActiveSchool(id: schoolId, name: schoolName);
+          // The card list on hand belongs to the previous school.
+          _contactsRefreshedAt = null;
         }
         final pairedId = data['paired_school_id'] as String?;
         final pairedName = data['paired_school_name'] as String?;
@@ -630,8 +644,9 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
           _maybePromptForUpdate(data);
         }
         // Piggyback on a confirmed-online heartbeat to keep the offline
-        // guardian-phone cache fresh (see _handleScan's offline branch).
-        unawaited(GuardianContactsCache.refresh());
+        // guardian-phone cache fresh (see _handleScan's offline branch) - but
+        // only when it has gone stale, not on every beat.
+        _refreshContactsIfStale();
       }
     } catch (_) {
       if (mounted) setState(() => _online = false);
@@ -639,6 +654,26 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       _heartbeatInFlight = false;
     }
     _refreshPendingCount();
+  }
+
+  DateTime? _contactsRefreshedAt;
+  bool _contactsRefreshing = false;
+
+  /// Pulls the offline card list if it has never been pulled or is older than
+  /// [_contactsRefreshInterval]. A failed pull does not count, so it is retried
+  /// on the next heartbeat rather than after another 30 minutes.
+  void _refreshContactsIfStale() {
+    final last = _contactsRefreshedAt;
+    if (_contactsRefreshing) return;
+    if (last != null && DateTime.now().difference(last) < _contactsRefreshInterval) return;
+    _contactsRefreshing = true;
+    unawaited(
+      GuardianContactsCache.refresh()
+          .then((ok) {
+            if (ok) _contactsRefreshedAt = DateTime.now();
+          })
+          .whenComplete(() => _contactsRefreshing = false),
+    );
   }
 
   Future<void> _handleRemoteRevocation() async {
@@ -827,7 +862,7 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   /// Pops the "update available" question up on its own the first time a
   /// heartbeat reports a newer build after launch, instead of leaving it to a
   /// tiny icon nobody notices. Held back while a card is being read or a scan
-  /// result is showing; the next heartbeat (2 min) tries again.
+  /// result is showing; the next heartbeat (5 min) tries again.
   void _maybePromptForUpdate(Map<String, dynamic> info) {
     final code = (info['latest_version_code'] as num?)?.toInt();
     final show = shouldPromptForUpdate(
@@ -1032,8 +1067,11 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       await KioskStore.setPairedSchool(id: newPairedId, name: newPairedName);
 
       // The duplicate-tap cache is keyed on card UID alone, which is only
-      // unique per school - it must not carry across a school boundary.
+      // unique per school - it must not carry across a school boundary. Same
+      // for the offline card list: fetch the new school's right away.
       _recentScans.clear();
+      _contactsRefreshedAt = null;
+      _refreshContactsIfStale();
 
       if (mounted) {
         setState(() {
