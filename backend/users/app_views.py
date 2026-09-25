@@ -14405,14 +14405,12 @@ def _send_attendance_sms_batch(phones_and_messages, provider="ebulksms"):
     sender_fn = send_kudisms if provider == "kudisms" else send_ebulksms
     for phone, message in phones_and_messages:
         try:
-            # "XCEL" is KudiSMS's approved sender ID for SchoolGate - it is
-            # NOT approved on eBulkSMS, which rejected every send while this
-            # was passed unconditionally to both providers. eBulkSMS uses its
-            # own ("SchoolDom") default instead by simply not overriding it.
-            if provider == "kudisms":
-                sender_fn(phone, message, sender="XCEL")
-            else:
-                sender_fn(phone, message)
+            # No sender is passed to either provider. KudiSMS's send_kudisms
+            # uses settings.SCHOOLGATE_SMS_SENDER ("XCEL" unless changed) - that
+            # sender ID is NOT approved on eBulkSMS, which rejected every send
+            # while it was passed unconditionally to both - and eBulkSMS uses
+            # its own ("SchoolDom") default.
+            sender_fn(phone, message)
         except Exception:
             logger.exception("Attendance SMS to %s failed", phone)
 

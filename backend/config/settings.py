@@ -551,6 +551,13 @@ KUDISMS_API_KEY = os.getenv('KUDISMS_API_KEY', '')
 # one type only, so the wrong endpoint reports it as error 106 "sender ID does
 # not exist". If the first is rejected with 106 the other is tried once.
 KUDISMS_ROUTE = os.getenv('KUDISMS_ROUTE', 'corporate')
+# The sender name SchoolGate's texts (gate clock-in/out, fee reminder, weekly
+# digest) arrive under. It has to be approved on KudiSMS as a sender ID of the
+# type the route above accepts (a corporate one for 'corporate'): to show
+# "SchoolDom" instead, get that name approved there first, then set
+# SCHOOLGATE_SMS_SENDER=SchoolDom in the environment and restart. At most 11
+# characters. Other texts (receipts etc.) go via eBulkSMS as "SchoolDom".
+SCHOOLGATE_SMS_SENDER = os.getenv('SCHOOLGATE_SMS_SENDER', 'XCEL')
 
 # Which provider SchoolGate's own SMS (gate clock-in/out, on-demand fee
 # reminder, weekly digest) goes out through - 'kudisms' with the "XCEL" sender

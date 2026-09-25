@@ -1015,6 +1015,25 @@ class KudiSmsServiceTests(TestCase):
         mock_post.assert_called_once()
         self.assertEqual(result["error_code"], "100")
 
+    @override_settings(KUDISMS_API_KEY="test-token", SCHOOLGATE_SMS_SENDER="SchoolDom")
+    @patch("finance.services.requests.post")
+    def test_the_sender_name_comes_from_the_setting(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: dict(self.SENT))
+
+        send_kudisms("08012345678", "Hello")
+
+        self.assertEqual(mock_post.call_args.kwargs["json"]["senderID"], "SchoolDom")
+
+    @override_settings(KUDISMS_API_KEY="test-token", SCHOOLGATE_SMS_SENDER="SchoolDom")
+    @patch("finance.services.requests.post")
+    def test_an_explicit_sender_overrides_the_setting(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: dict(self.SENT))
+
+        send_kudisms("08012345678", "Hello", sender="Other")
+
+        self.assertEqual(mock_post.call_args.kwargs["json"]["senderID"], "Other")
+
+
     @override_settings(KUDISMS_API_KEY="")
     @patch("finance.services.requests.post")
     def test_missing_credentials_skips_without_calling_the_provider(self, mock_post):

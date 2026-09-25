@@ -960,7 +960,7 @@ KUDISMS_ENDPOINTS = {
 _kudisms_route_hint = {"route": None}
 
 
-def send_kudisms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
+def send_kudisms(to_phone: str, message: str, sender: str = "") -> dict:
     """Send SMS via KudiSMS's JSON API. Used ONLY for the SchoolGate product's
     own SMS (gate clock-in/out, on-demand fee reminder, weekly digest - see
     rfid_attendance/views.py and rfid_attendance/tasks.py), which is
@@ -979,7 +979,11 @@ def send_kudisms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
     default, "bulk" for the promotional /sms endpoint). If KudiSMS answers 106
     ("sender ID does not exist") the other route is tried once, since the same
     sender ID is only ever registered for one of them, and whichever delivers is
-    remembered. The returned dict carries the route used."""
+    remembered. The returned dict carries the route used.
+
+    `sender` is the name the text arrives under; left blank it is
+    settings.SCHOOLGATE_SMS_SENDER ("XCEL" unless changed)."""
+    sender = (sender or getattr(settings, "SCHOOLGATE_SMS_SENDER", "") or "XCEL").strip()
     message = _sms_safe_text(message)
     if len(message) > SMS_CHAR_LIMIT:
         logger.warning("KudiSMS message truncated from %d to %d chars", len(message), SMS_CHAR_LIMIT)

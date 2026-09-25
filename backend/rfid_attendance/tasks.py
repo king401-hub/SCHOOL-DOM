@@ -82,10 +82,9 @@ def send_schoolgate_weekly_reports():
                 counts.get("late_days", 0),
             )
             try:
-                if send_sms is send_kudisms:
-                    send_sms(phone, message, sender="XCEL")
-                else:
-                    send_sms(phone, message)
+                # send_kudisms picks its sender name from
+                # settings.SCHOOLGATE_SMS_SENDER; eBulkSMS uses its own default.
+                send_sms(phone, message)
                 sent += 1
             except Exception:
                 logger.exception("Weekly SchoolGate SMS to %s failed", phone)
