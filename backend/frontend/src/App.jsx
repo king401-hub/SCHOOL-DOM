@@ -1560,7 +1560,7 @@ function StudentPageShell({ session, student, currentPath, onNavigate, pageKicke
   const studentName = (
     student?.name ||
     session?.user?.full_name ||
-    [session?.user?.first_name, session?.user?.middle_name, session?.user?.last_name].filter(Boolean).join(" ") ||
+    [session?.user?.last_name, session?.user?.first_name, session?.user?.middle_name].filter(Boolean).join(" ") ||
     session?.user?.name ||
     "Student"
   );

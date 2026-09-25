@@ -2559,7 +2559,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(data["amount_paid"], "20000.00")
         self.assertEqual(data["balance_remaining"], "30000.00")
         self.assertEqual(data["payment_status"], "partial")
-        self.assertEqual(data["student_name"], "Chidi Okafor")
+        self.assertEqual(data["student_name"], "Okafor Chidi")
         self.assertEqual(data["student_id"], "RCP001")
         self.assertEqual(data["class_name"], "JSS 2")
         self.assertEqual(data["payment_method"], "Cash")
@@ -3050,10 +3050,10 @@ class CashPaymentReceiptNotificationTests(TestCase):
 
         data = self._preview(payment).data
 
-        self.assertEqual(data["payment"]["student_name"], "Chidi Okafor")
+        self.assertEqual(data["payment"]["student_name"], "Okafor Chidi")
         self.assertEqual(data["payment"]["amount"], "20000.00")
         self.assertEqual(data["payment"]["reference"], payment.receipt_number or payment.bank_reference)
-        self.assertIn("Chidi Okafor", data["preview"]["sms"]["message"])
+        self.assertIn("Okafor Chidi", data["preview"]["sms"]["message"])
         self.assertIn("Receipt School", data["preview"]["email"]["subject"])
         self.assertIn("Partial Payment", data["preview"]["email"]["subject"])
 

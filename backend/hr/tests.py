@@ -426,7 +426,7 @@ class HRManagementAPITests(TestCase):
         response = self.client.get("/api/hr/me/employment-letter/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["success"])
-        self.assertEqual(response.data["staff"]["name"], "Grace Eze")
+        self.assertEqual(response.data["staff"]["name"], "Eze Grace")
         self.assertEqual(response.data["staff"]["role"], "Teacher")
         self.assertEqual(response.data["staff"]["department"], "Science")
         self.assertEqual(response.data["school"]["name"], self.school.name)

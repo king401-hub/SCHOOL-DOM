@@ -105,7 +105,8 @@ class StaffProfile(models.Model):
 
     @property
     def full_name(self):
-        parts = (self.first_name, self.middle_name, self.last_name)
+        # Surname first, matching users.User.get_full_name.
+        parts = (self.last_name, self.first_name, self.middle_name)
         return " ".join(part.strip() for part in parts if part and part.strip())
 
     def __str__(self):

@@ -1986,9 +1986,12 @@ function AdminFinanceScreen({
   // Suppressed once a match has been picked, so the dropdown doesn't keep
   // reappearing under the id/email it just filled in.
   const normalizedCashPaymentSearch = cashPaymentForm.student_id.trim().toLowerCase();
+  // Names show surname first, so match each typed word on its own: "Ada Obi"
+  // finds "Obi Ada" as well as "Obi Ada" does.
+  const cashPaymentSearchTerms = normalizedCashPaymentSearch.split(/\s+/).filter(Boolean);
   const cashPaymentStudentMatches = (cashPaymentStudentPicked || normalizedCashPaymentSearch.length < 2) ? [] : paymentRows.filter((row) => {
     const searchable = [row.name, row.student_id, row.class_name].filter(Boolean).join(" ").toLowerCase();
-    return searchable.includes(normalizedCashPaymentSearch);
+    return cashPaymentSearchTerms.every((term) => searchable.includes(term));
   }).slice(0, 8);
   const visibleCreditRows = creditRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
   const visibleCashPaymentRows = cashPaymentRows.slice(0, FINANCE_TABLE_PREVIEW_COUNT);
@@ -6711,7 +6714,7 @@ function ReadOnlyPersonProfile({ person, title = "Profile", onClose, codeLabel =
         <dl className="record-detail-grid">
           <div>
             <dt>Name</dt>
-            <dd>{person.name || [person.first_name, person.middle_name, person.last_name].filter(Boolean).join(" ") || "-"}</dd>
+            <dd>{person.name || [person.last_name, person.first_name, person.middle_name].filter(Boolean).join(" ") || "-"}</dd>
           </div>
           {fields.map(([label, value]) => (
             <div key={label}>

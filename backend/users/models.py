@@ -174,9 +174,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.get_full_name() or self.email
     
     def get_full_name(self):
-        """Return the full name of the user: first, middle and last name,
-        skipping any that are blank."""
-        parts = (self.first_name, self.middle_name, self.last_name)
+        """Return the full name of the user, surname first (the convention in
+        school registers, result sheets and ID cards): last, first, then middle
+        name, skipping any that are blank. Every screen, document and message
+        that shows a name goes through this, so the order is set here."""
+        parts = (self.last_name, self.first_name, self.middle_name)
         full_name = " ".join(part.strip() for part in parts if part and part.strip())
         return full_name if full_name else self.email
     

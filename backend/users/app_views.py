@@ -12143,7 +12143,7 @@ def _result_leaderboard(user, class_group=None, term=None, teacher=None, limit=2
                 "student_id": row["student__student_id"],
                 "student_name": " ".join(
                     part for part in (
-                        row["student__user__first_name"], row["student__user__middle_name"], row["student__user__last_name"],
+                        row["student__user__last_name"], row["student__user__first_name"], row["student__user__middle_name"],
                     ) if part
                 ).strip(),
                 "class_name": _class_label(class_group) if class_group else row["class_group__name"],

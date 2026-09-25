@@ -205,7 +205,7 @@ class AlumniApiTests(AlumniTestBase):
         self.assertEqual(response.status_code, 200)
         student = response.data["student"]
         self.assertTrue(student["is_live"])
-        self.assertEqual(student["profile"]["name"], "Sam Scholar")
+        self.assertEqual(student["profile"]["name"], "Scholar Sam")
         self.assertEqual(len(student["academics"]["report_cards"]), 1)
 
     def test_detail_serves_a_deleted_student_from_the_sealed_snapshot(self):
@@ -217,7 +217,7 @@ class AlumniApiTests(AlumniTestBase):
         self.assertEqual(response.status_code, 200)
         student = response.data["student"]
         self.assertFalse(student["is_live"])
-        self.assertEqual(student["profile"]["name"], "Sam Scholar")
+        self.assertEqual(student["profile"]["name"], "Scholar Sam")
         self.assertEqual(len(student["academics"]["report_cards"]), 1)
 
     def test_archived_student_stays_searchable_after_deletion(self):

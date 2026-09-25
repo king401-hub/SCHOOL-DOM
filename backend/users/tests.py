@@ -2691,13 +2691,13 @@ class ClassReportCardSmsTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         states = {item["name"]: item["state"] for item in response.data["students"]}
         self.assertEqual(states, {
-            "Ada Ready": "ready",
-            "Bola NoPhone": "no_phone",
-            "Chi NoResults": "no_results",     # no scores at all
-            "Dayo Draft": "no_results",        # scores exist but are not published
-            "Femi SecondPhone": "ready",       # falls back to the second guardian
+            "Ready Ada": "ready",
+            "NoPhone Bola": "no_phone",
+            "NoResults Chi": "no_results",     # no scores at all
+            "Draft Dayo": "no_results",        # scores exist but are not published
+            "SecondPhone Femi": "ready",       # falls back to the second guardian
         })
-        femi = next(item for item in response.data["students"] if item["name"] == "Femi SecondPhone")
+        femi = next(item for item in response.data["students"] if item["name"] == "SecondPhone Femi")
         self.assertEqual(femi["phone"], "08010000006")
 
     @patch("finance.services.send_ebulksms")
@@ -2716,12 +2716,12 @@ class ClassReportCardSmsTests(TestCase):
         self.assertEqual(sorted(links.values_list("phone", flat=True)), ["08010000001", "08010000006"])
         self.assertEqual(SmsMessageLog.objects.filter(category=SmsMessageLog.RESULTS, delivery_status=SmsMessageLog.SENT).count(), 2)
         sent_bodies = " ".join(call.args[1] for call in mock_send.call_args_list)
-        self.assertIn("Report Card: Ada Ready", sent_bodies)
-        self.assertIn("Report Card: Femi SecondPhone", sent_bodies)
-        self.assertNotIn("Dayo Draft", sent_bodies)  # unpublished results are never sent
+        self.assertIn("Report Card: Ready Ada", sent_bodies)
+        self.assertIn("Report Card: SecondPhone Femi", sent_bodies)
+        self.assertNotIn("Draft Dayo", sent_bodies)  # unpublished results are never sent
         reasons = {item["name"]: item["reason"] for item in response.data["problems"]}
-        self.assertIn("No guardian phone", reasons["Bola NoPhone"])
-        self.assertIn("No published results", reasons["Dayo Draft"])
+        self.assertIn("No guardian phone", reasons["NoPhone Bola"])
+        self.assertIn("No published results", reasons["Draft Dayo"])
 
     @patch("finance.services.send_ebulksms")
     def test_stops_when_the_wallet_runs_out_of_credits(self, mock_send):
@@ -2865,7 +2865,8 @@ class CurrentTermAPITests(TestCase):
 class MiddleNameTests(TestCase):
     """Every kind of user can have an optional middle name. It is folded into
     get_full_name(), so it appears wherever a name is shown (report cards, ID
-    cards, lists), and it can be set and cleared where names are edited."""
+    cards, lists), and it can be set and cleared where names are edited. A full
+    name reads surname first: last, first, then middle name."""
 
     def setUp(self):
         from django.core.cache import cache as django_cache
@@ -2893,14 +2894,15 @@ class MiddleNameTests(TestCase):
         return StudentProfile.objects.get(user__email=email)
 
     # -- the name itself ----------------------------------------------------
-    def test_full_name_puts_the_middle_name_between_first_and_last(self):
+    def test_full_name_is_surname_first_then_first_name_then_middle_name(self):
         user = User(email="x@y.edu", first_name="Ada", middle_name="Grace", last_name="Obi")
-        self.assertEqual(user.get_full_name(), "Ada Grace Obi")
+        self.assertEqual(user.get_full_name(), "Obi Ada Grace")
 
     def test_full_name_still_works_without_a_middle_name_and_falls_back_to_email(self):
-        self.assertEqual(User(email="x@y.edu", first_name="Ada", last_name="Obi").get_full_name(), "Ada Obi")
-        self.assertEqual(User(email="x@y.edu", first_name="Ada", middle_name="  ", last_name="Obi").get_full_name(), "Ada Obi")
+        self.assertEqual(User(email="x@y.edu", first_name="Ada", last_name="Obi").get_full_name(), "Obi Ada")
+        self.assertEqual(User(email="x@y.edu", first_name="Ada", middle_name="  ", last_name="Obi").get_full_name(), "Obi Ada")
         self.assertEqual(User(email="x@y.edu", first_name="Ada", middle_name="Grace").get_full_name(), "Ada Grace")
+        self.assertEqual(User(email="x@y.edu", last_name="Obi").get_full_name(), "Obi")
         self.assertEqual(User(email="x@y.edu").get_full_name(), "x@y.edu")
 
     # -- students -----------------------------------------------------------
@@ -2908,12 +2910,12 @@ class MiddleNameTests(TestCase):
         student = self._student(middle_name="Grace")
 
         self.assertEqual(student.user.middle_name, "Grace")
-        self.assertEqual(student.user.get_full_name(), "Ada Grace Obi")
+        self.assertEqual(student.user.get_full_name(), "Obi Ada Grace")
 
     def test_a_student_without_a_middle_name_is_unaffected(self):
         student = self._student(email="plain@middle-name.edu")
         self.assertEqual(student.user.middle_name, "")
-        self.assertEqual(student.user.get_full_name(), "Ada Obi")
+        self.assertEqual(student.user.get_full_name(), "Obi Ada")
 
     def test_a_students_middle_name_can_be_set_and_cleared_when_editing(self):
         student = self._student()
@@ -2923,17 +2925,17 @@ class MiddleNameTests(TestCase):
         student.user.refresh_from_db()
         self.assertEqual(student.user.middle_name, "Grace")
         self.assertEqual(response.data["student"]["middle_name"], "Grace")
-        self.assertEqual(response.data["student"]["name"], "Ada Grace Obi")
+        self.assertEqual(response.data["student"]["name"], "Obi Ada Grace")
 
         response = self.client.patch(f"/api/app/students/{student.id}/", data={"middle_name": ""}, format="json")
         student.user.refresh_from_db()
-        self.assertEqual((student.user.middle_name, student.user.get_full_name()), ("", "Ada Obi"))
+        self.assertEqual((student.user.middle_name, student.user.get_full_name()), ("", "Obi Ada"))
 
     def test_the_middle_name_shows_on_the_id_card_and_student_payload(self):
         from users.app_views import _id_card_student_payload
         student = self._student(middle_name="Grace")
 
-        self.assertEqual(_id_card_student_payload(student)["name"], "Ada Grace Obi")
+        self.assertEqual(_id_card_student_payload(student)["name"], "Obi Ada Grace")
 
     def test_student_search_finds_a_student_by_middle_name(self):
         student = self._student(middle_name="Grace")
@@ -2955,13 +2957,13 @@ class MiddleNameTests(TestCase):
         )
         self.assertEqual(response.status_code, 201, response.data)
         profile = TeacherProfile.objects.get(user__email="nora@middle-name.edu")
-        self.assertEqual(profile.user.get_full_name(), "Nora Jane Teacher")
+        self.assertEqual(profile.user.get_full_name(), "Teacher Nora Jane")
 
         response = self.client.patch(f"/api/app/teachers/{profile.id}/", data={"middle_name": "Janet"}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         profile.user.refresh_from_db()
         self.assertEqual(profile.user.middle_name, "Janet")
-        self.assertEqual(response.data["teacher"]["name"], "Nora Janet Teacher")
+        self.assertEqual(response.data["teacher"]["name"], "Teacher Nora Janet")
 
     def test_a_teacher_save_that_does_not_mention_the_middle_name_leaves_it_alone(self):
         from users.app_views import _ensure_teacher_user_for_tenant
@@ -2994,7 +2996,7 @@ class MiddleNameTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         parent_user.refresh_from_db()
-        self.assertEqual(parent_user.get_full_name(), "Pat Ann Parent")
+        self.assertEqual(parent_user.get_full_name(), "Parent Pat Ann")
 
     # -- staff (HR) -----------------------------------------------------------
     def test_a_staff_members_middle_name_is_saved_and_reaches_their_login(self):
@@ -3010,11 +3012,11 @@ class MiddleNameTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         staff = StaffProfile.objects.get(email="sam@middle-name.edu")
-        self.assertEqual(staff.full_name, "Sam Tunde Bello")
+        self.assertEqual(staff.full_name, "Bello Sam Tunde")
         self.assertEqual(response.data["staff"]["middle_name"], "Tunde")
-        self.assertEqual(response.data["staff"]["name"], "Sam Tunde Bello")
+        self.assertEqual(response.data["staff"]["name"], "Bello Sam Tunde")
         self.assertEqual(staff.user.middle_name, "Tunde")
-        self.assertEqual(staff.user.get_full_name(), "Sam Tunde Bello")
+        self.assertEqual(staff.user.get_full_name(), "Bello Sam Tunde")
 
     def test_a_staff_members_middle_name_can_be_edited_and_searched(self):
         staff = StaffProfile.objects.create(
@@ -3026,7 +3028,7 @@ class MiddleNameTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         staff.refresh_from_db()
-        self.assertEqual(staff.full_name, "Sam Tunde Bello")
+        self.assertEqual(staff.full_name, "Bello Sam Tunde")
         self.assertEqual(StaffProfile.objects.filter(middle_name__icontains="tun").count(), 1)
 
     # -- admins and sign-up ------------------------------------------------------
@@ -3043,7 +3045,7 @@ class MiddleNameTests(TestCase):
 
         self.assertEqual(with_middle.status_code, 201, with_middle.data)
         self.assertEqual(without.status_code, 201, without.data)
-        self.assertEqual(User.objects.get(email="with@middle-name.edu").get_full_name(), "Ada Grace Obi")
+        self.assertEqual(User.objects.get(email="with@middle-name.edu").get_full_name(), "Obi Ada Grace")
         self.assertEqual(User.objects.get(email="without@middle-name.edu").middle_name, "")
 
     def test_a_school_admin_can_set_their_own_middle_name_in_school_settings(self):
@@ -3051,7 +3053,7 @@ class MiddleNameTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["director"]["middle_name"], "Chidi")
-        self.assertEqual(response.data["director"]["full_name"], "Head Chidi Admin")
+        self.assertEqual(response.data["director"]["full_name"], "Admin Head Chidi")
         self.admin.refresh_from_db()
         self.assertEqual(self.admin.middle_name, "Chidi")
 
@@ -3061,7 +3063,7 @@ class MiddleNameTests(TestCase):
         self.admin.save(update_fields=["middle_name"])
 
         data = UserSerializer(self.admin).data
-        self.assertEqual((data["middle_name"], data["full_name"]), ("Chidi", "Head Chidi Admin"))
+        self.assertEqual((data["middle_name"], data["full_name"]), ("Chidi", "Admin Head Chidi"))
 
 
 class AdminSessionLifetimeTests(TestCase):
@@ -5037,7 +5039,7 @@ class TeachersAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["verified"])
         person = response.data["person"]
-        self.assertEqual(person["name"], "Private Student")
+        self.assertEqual(person["name"], "Student Private")
         self.assertEqual(person["unique_id"], "STU-PRIVATE-1")
         self.assertEqual(person["email"], "privacy.student@teacher-smoke.edu")
         self.assertNotIn("guardian_name", person)
@@ -7151,8 +7153,8 @@ class ClassBroadsheetFeatureTests(TestCase):
         response = self.client.get("/api/app/students/search/?q=Okoro")
         self.assertEqual(response.status_code, 200)
         names = [row["name"] for row in response.data["results"]]
-        self.assertIn("Ada Okoro", names)
-        self.assertIn("Bola Okoro", names)
+        self.assertIn("Okoro Ada", names)
+        self.assertIn("Okoro Bola", names)
 
     def test_search_matches_exact_student_id(self):
         self.client.force_authenticate(user=self.admin)
@@ -7243,7 +7245,7 @@ class ClassBroadsheetFeatureTests(TestCase):
         response = self.client.get(f"/api/app/results/broadsheet/parents/?class_id={self.class_a.id}")
         parent2_row = next(row for row in response.data["parents"] if row["user_id"] == str(self.parent2.user_id))
         child_names = {child["name"] for child in parent2_row["children_in_class"]}
-        self.assertEqual(child_names, {"Bola Okoro"})  # not Dami Lawal (class_b sibling)
+        self.assertEqual(child_names, {"Okoro Bola"})  # not Lawal Dami (class_b sibling)
 
     def test_parents_list_includes_both_twins(self):
         self.client.force_authenticate(user=self.admin)

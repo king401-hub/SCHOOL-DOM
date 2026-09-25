@@ -74,7 +74,7 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
     def test_scan_while_school_a_active_resolves_school_a_holder(self):
         resp = self._scan("1111", "key-a-1")
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["person"]["name"], "Alice A")
+        self.assertEqual(resp.data["person"]["name"], "A Alice")  # surname first
 
         record = AttendanceRecord.objects.get(student=self.student_a)
         self.assertEqual(record.tenant.slug.lower(), "school_a")
@@ -87,7 +87,7 @@ class SharedDeviceTenantIsolationTestCase(TestCase):
 
         resp = self._scan("1111", "key-b-1")
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["person"]["name"], "Bob B")
+        self.assertEqual(resp.data["person"]["name"], "B Bob")  # surname first
 
         record = AttendanceRecord.objects.get(student=self.student_b)
         self.assertEqual(record.tenant.slug.lower(), "school_b")

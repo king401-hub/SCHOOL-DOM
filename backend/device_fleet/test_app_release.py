@@ -25,7 +25,7 @@ class AppReleaseStrTests(TestCase):
         staff = User.objects.create_user(
             email="ops@test.com", password="testpass123", first_name="Ada", last_name="Ops", role="staff",
         )
-        self.assertEqual(str(DeviceAuditLog(action="revoke", actor=staff)), "revoke - Ada Ops")
+        self.assertEqual(str(DeviceAuditLog(action="revoke", actor=staff)), "revoke - Ops Ada")  # surname first
 
 
 class AppReleaseControlPanelTests(TestCase):
