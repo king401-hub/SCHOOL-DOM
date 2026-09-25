@@ -19,7 +19,7 @@ from finance.models import (
     Transaction,
     Wallet,
 )
-from finance.services import bill_invoice_status, fee_paid_amount
+from finance.services import bill_class_map, bill_invoice_status, fee_paid_amount, outstanding_bill_origin
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -67,6 +67,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_identifier = serializers.SerializerMethodField()
     class_label = serializers.SerializerMethodField()
+    outstanding_from = serializers.SerializerMethodField()
 
     class Meta:
         model = SchoolFee
@@ -77,6 +78,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
             "student_identifier",
             "class_fee",
             "class_label",
+            "outstanding_from",
             "title",
             "amount",
             "currency",
@@ -125,6 +127,21 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
             return ""
         section = getattr(school_class, "section", "") or ""
         return f"{school_class.name} - {section}" if section else school_class.name
+
+    def get_outstanding_from(self, obj):
+        """The class this invoice came from, while it is still unpaid and the
+        student has moved on to a class its bill does not cover ("" otherwise) -
+        shown as "Outstanding bill" so it is not mistaken for a duplicate."""
+        if not obj.bill_id or self.get_remaining_balance(obj) <= 0:
+            return ""
+        # Bills' classes are looked up once per bill, not once per row: shared
+        # through the context when the caller built it, else kept on the serializer.
+        cache = self.context.get("bill_classes")
+        if cache is None:
+            cache = self.__dict__.setdefault("_bill_class_cache", {})
+        if obj.bill_id not in cache:
+            cache[obj.bill_id] = bill_class_map([obj.bill_id]).get(obj.bill_id, [])
+        return outstanding_bill_origin(obj.student.current_class_id, cache[obj.bill_id])
 
 
 class BillInvoiceSerializer(SchoolFeeSerializer):

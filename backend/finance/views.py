@@ -75,11 +75,13 @@ from finance.services import (
     assign_monthly_activation_credits,
     bulk_fee_paid_amounts,
     bulk_get_or_create_activation_credits,
+    bill_class_map,
     bulk_get_or_create_payment_references,
     compute_finance_summary,
     eligible_students_for_activation_credits,
     fee_totals_by_student,
     ensure_monthly_credit_reminder,
+    outstanding_bill_origin,
     generate_reference,
     get_or_create_admin_wallet,
     get_or_create_activation_credit_pool,
@@ -547,6 +549,22 @@ def _admin_finance_snapshot(user):
     manual_fees = fee_data["manual_fees"]
     paid_amounts = fee_data["paid_amounts"]
 
+    # Unpaid bill invoices a student carried out of an earlier class stay on
+    # their account and count in what they owe. Gathered here so the student
+    # rows below (and the fee list) can call them "Outstanding bill" instead of
+    # leaving them looking like a duplicate of the new class's bill.
+    bill_classes = bill_class_map({fee.bill_id for fee in manual_fees if fee.bill_id})
+    carried_by_student = {}
+    for fee in manual_fees:
+        origin = outstanding_bill_origin(fee.student.current_class_id, bill_classes.get(fee.bill_id))
+        remaining_on_fee = max(fee.amount - paid_amounts.get(fee.id, Decimal("0.00")), Decimal("0.00"))
+        if not origin or remaining_on_fee <= 0:
+            continue
+        carried = carried_by_student.setdefault(fee.student_id, {"amount": Decimal("0.00"), "from": []})
+        carried["amount"] += remaining_on_fee
+        if origin not in carried["from"]:
+            carried["from"].append(origin)
+
     student_rows = []
     activation_rows = []
     expected_total = Decimal("0.00")
@@ -601,6 +619,9 @@ def _admin_finance_snapshot(user):
                 "expected_amount": expected_for_student,
                 "amount_paid": paid_for_student,
                 "remaining_balance": remaining,
+                # The part of the balance that is an unpaid bill from an earlier class.
+                "outstanding_bill_amount": (carried_by_student.get(student.id) or {}).get("amount", Decimal("0.00")),
+                "outstanding_bill_from": ", ".join((carried_by_student.get(student.id) or {}).get("from", [])),
                 "has_login_credit": has_login_credit,
                 "activation_active_until": activation_credit.active_until,
                 "credit_excluded": activation_credit.is_excluded_from_auto_deductions,
@@ -657,7 +678,7 @@ def _admin_finance_snapshot(user):
     student_fee_rows = SchoolFeeSerializer(
         sorted([*generated_fees, *manual_fees], key=lambda fee: (fee.student.user.last_name, fee.student.user.first_name, fee.due_date, fee.title)),
         many=True,
-        context={"paid_amounts": paid_amounts},
+        context={"paid_amounts": paid_amounts, "bill_classes": bill_classes},
     ).data
 
     pool = get_or_create_activation_credit_pool(user.tenant)

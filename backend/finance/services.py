@@ -4163,6 +4163,38 @@ def bill_invoice_number(bill, student):
     return f"INV-{bill.id.hex[:6].upper()}-{student_code}"
 
 
+def bill_class_map(bill_ids):
+    """{bill_id: [(class_id, "JSS - 1"), ...]} - the classes each bill was
+    published to, for any number of bills in one query."""
+    from academic.models import Class
+
+    result = {}
+    ids = [bill_id for bill_id in set(bill_ids) if bill_id]
+    if not ids:
+        return result
+    rows = Class.objects.filter(bills__id__in=ids).values_list("bills__id", "id", "name", "section")
+    for bill_id, class_id, name, section in rows:
+        label = f"{name} - {section}" if section else name
+        result.setdefault(bill_id, []).append((class_id, label))
+    return result
+
+
+def outstanding_bill_origin(current_class_id, bill_classes):
+    """The class(es) an invoice was issued for, when the student has since moved
+    to a class that bill does not cover - "" otherwise.
+
+    An unpaid invoice does not go away when a student changes class: it stays on
+    their account and counts in what they owe. This is what lets the screens
+    call it an "Outstanding bill" instead of leaving it looking like a second,
+    duplicate bill next to the new class's own. A bill with no classes at all
+    says nothing about where it came from, so it is never labelled."""
+    if not current_class_id or not bill_classes:
+        return ""
+    if any(class_id == current_class_id for class_id, _label in bill_classes):
+        return ""
+    return ", ".join(label for _class_id, label in bill_classes)
+
+
 def sync_bill_invoices(bill, actor=None):
     """Fan out a Bill to one SchoolFee invoice per student across bill.classes,
     mirroring sync_tenant_class_fees's bulk create/update-only-if-unpaid

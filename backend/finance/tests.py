@@ -2405,6 +2405,117 @@ class RecordedPaymentMethodTests(TestCase):
         self.assertEqual(auto_data["recorded_by"], "")
 
 
+class OutstandingBillLabelTests(TestCase):
+    """A student who changes class keeps their unpaid invoice from the old class:
+    it stays on their account and counts in what they owe. The screens call it
+    an "Outstanding bill", so it is not mistaken for a duplicate of the new
+    class's own bill."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Outstanding Bill School", schema_name="outstanding_bill_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@outstanding.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.jss1 = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        self.jss2 = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="2")
+        student_user = User.objects.create_user(
+            email="ade@outstanding.edu", password="StudentPass123", first_name="Ade", last_name="Mola",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="OBL001", admission_number="ADM-OBL-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.jss1,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _publish(self, title, school_class, amount, due_in_days):
+        from datetime import timedelta
+        from finance.services import sync_bill_invoices
+
+        bill = Bill.objects.create(
+            tenant=self.school, title=title, status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate() + timedelta(days=due_in_days),
+        )
+        if school_class is not None:
+            bill.classes.set([school_class])
+        BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal(amount))
+        sync_bill_invoices(bill, actor=self.admin_user)
+        return bill
+
+    def _move_to(self, school_class):
+        self.student.current_class = school_class
+        self.student.save(update_fields=["current_class"])
+
+    def _overview(self):
+        data = self.client.get("/api/finance/admin/overview/").data
+        row = next(r for r in data["student_payment_rows"] if r["id"] == str(self.student.id))
+        fees = {f["title"]: f for f in data["student_fee_rows"] if str(f["student"]) == str(self.student.id)}
+        return row, fees
+
+    def _move_up_with_an_unpaid_old_bill(self):
+        self._publish("JSS 1 Term Fee", self.jss1, "60000", due_in_days=-14)
+        self._move_to(self.jss2)
+        self._publish("JSS 2 Term Fee", self.jss2, "48000", due_in_days=14)
+
+    def test_an_unpaid_invoice_from_the_old_class_is_called_an_outstanding_bill(self):
+        self._move_up_with_an_unpaid_old_bill()
+
+        row, fees = self._overview()
+
+        # Both still count - nothing was dropped - and the old one is named.
+        self.assertEqual(row["expected_amount"], Decimal("108000.00"))
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("60000.00"))
+        self.assertEqual(row["outstanding_bill_from"], "JSS - 1")
+        self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "JSS - 1")
+        self.assertEqual(fees["JSS 2 Term Fee"]["outstanding_from"], "")
+
+    def test_it_is_no_longer_outstanding_once_it_is_paid(self):
+        self._move_up_with_an_unpaid_old_bill()
+        # Oldest due date first, so this pays the JSS 1 invoice.
+        record_cash_payment(self.student, Decimal("60000.00"), actor=self.admin_user)
+
+        row, fees = self._overview()
+
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("0.00"))
+        self.assertEqual(row["outstanding_bill_from"], "")
+        self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "")
+
+    def test_a_part_paid_old_invoice_only_counts_what_is_left(self):
+        self._move_up_with_an_unpaid_old_bill()
+        record_cash_payment(self.student, Decimal("25000.00"), actor=self.admin_user)
+
+        row, fees = self._overview()
+
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("35000.00"))
+        self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "JSS - 1")
+
+    def test_a_student_still_in_the_bills_class_is_not_flagged(self):
+        self._publish("JSS 1 Term Fee", self.jss1, "60000", due_in_days=14)
+
+        row, fees = self._overview()
+
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("0.00"))
+        self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "")
+
+    def test_a_bill_with_no_classes_is_never_labelled(self):
+        bill = self._publish("Loose Bill", None, "12000", due_in_days=14)
+        SchoolFee.objects.create(
+            student=self.student, bill=bill, title="Loose Bill", amount=Decimal("12000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+        row, fees = self._overview()
+
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("0.00"))
+        self.assertEqual(fees["Loose Bill"]["outstanding_from"], "")
+
+
 class BillDeleteTests(TestCase):
     """DELETE on a bill now removes it outright instead of soft-cancelling -
     must stay safe for a published bill with real invoices/payments already
