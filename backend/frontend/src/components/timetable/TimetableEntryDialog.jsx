@@ -1,11 +1,11 @@
-// One dialog for everything you do to a slot: see it, edit it, remove it (with a
-// confirmation), add to an empty one, or pick from the classes sharing a cell.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Clock3, DoorOpen, Pencil, Trash2, UserRound, Users, X } from "lucide-react";
+// The one popup for changing a lesson: click a subject and it opens here to edit
+// (with Delete inside), click an empty slot and it opens here to add, and a cell
+// shared by many classes first lists them so you can pick one.
+import { useMemo, useRef, useState } from "react";
+import { AlertTriangle, Trash2, X } from "lucide-react";
 import { Popup, Spinner } from "../../AppShared";
-import { entryLabel, hueStyle, initialsOf, needsTeacher, timeRange } from "./timetableUtils";
-
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+import { entryLabel, hueStyle, needsTeacher, timeRange } from "./timetableUtils";
+import { useDialogFocus } from "./TimetableParts";
 
 function blankForm({ entry, prefill, days }) {
   if (entry) {
@@ -32,65 +32,31 @@ function blankForm({ entry, prefill, days }) {
   };
 }
 
-function DialogBody({
-  dialog,
-  onClose,
-  onSaved,
-  classes,
-  subjects,
-  teachers,
-  days,
-  timeSlots = [],
-  onCreate,
-  onUpdate,
-  onDelete,
-  confirm,
-}) {
+const matchesPeriod = (form, timeSlots) =>
+  timeSlots.some((slot) => slot.start_time === form.start_time && slot.end_time === form.end_time);
+
+function DialogBody({ dialog, onClose, onSaved, classes, subjects, teachers, days, timeSlots = [], onCreate, onUpdate, onDelete, confirm }) {
   const [mode, setMode] = useState(dialog.mode);
   const [entry, setEntry] = useState(dialog.entry || null);
-  const [from, setFrom] = useState(dialog.mode === "view" && dialog.entries?.length ? "cell" : "");
-  const [form, setForm] = useState(() => blankForm({ entry: dialog.mode === "form" ? dialog.entry : null, prefill: dialog.prefill, days }));
+  const [from, setFrom] = useState("");
+  const [form, setForm] = useState(() => blankForm({ entry: dialog.entry || null, prefill: dialog.prefill, days }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [customTime, setCustomTime] = useState(
-    () => Boolean(form.start_time && form.end_time && !timeSlots.some((slot) => slot.start_time === form.start_time && slot.end_time === form.end_time))
+    () => Boolean(form.start_time && form.end_time && !matchesPeriod(form, timeSlots))
   );
-  // The "class, day or period" section starts open only when the slot isn't known yet
-  // (a blank add). It is state, not derived, so picking a period doesn't collapse it.
-  const [timeOpen, setTimeOpen] = useState(() => dialog.mode === "form" && !dialog.entry && !(dialog.prefill?.classId && dialog.prefill?.start && dialog.prefill?.end));
+  // The "class, day or period" section starts open only when the slot isn't known
+  // yet (a blank add). It is state, not derived, so picking a period doesn't collapse it.
+  const [timeOpen, setTimeOpen] = useState(
+    () => dialog.mode === "form" && !dialog.entry && !(dialog.prefill?.classId && dialog.prefill?.start && dialog.prefill?.end)
+  );
   const rootRef = useRef(null);
+  const onKeyDown = useDialogFocus(rootRef, `${mode}:${entry?.id ?? "new"}`);
 
   const dayLabel = (value) => days.find((day) => String(day.value) === String(value))?.label || "";
   const className = (id) => {
     const found = classes.find((item) => String(item.id) === String(id));
     return found ? found.label || found.name : "";
-  };
-
-  // focus in, and hand focus back to whatever opened the dialog
-  useEffect(() => {
-    const previous = document.activeElement;
-    return () => {
-      if (previous && document.contains(previous)) previous.focus?.();
-    };
-  }, []);
-  useEffect(() => {
-    const target = rootRef.current?.querySelector("[data-autofocus]") || rootRef.current?.querySelector(FOCUSABLE);
-    target?.focus?.();
-  }, [mode, entry]);
-
-  const onKeyDown = (event) => {
-    if (event.key !== "Tab") return;
-    const nodes = [...(rootRef.current?.querySelectorAll(FOCUSABLE) || [])].filter((node) => node.offsetParent !== null);
-    if (!nodes.length) return;
-    const first = nodes[0];
-    const last = nodes[nodes.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
   };
 
   const selectedClass = classes.find((item) => String(item.id) === String(form.class_id));
@@ -108,7 +74,7 @@ function DialogBody({
     setForm((current) => ({ ...current, [name]: value }));
   };
 
-  // Pick a period instead of typing two times; "Custom time" keeps the old free entry.
+  // Pick a period instead of typing two times; "Custom time" keeps free entry.
   const matchedSlot = timeSlots.find((slot) => slot.start_time === form.start_time && slot.end_time === form.end_time);
   const periodValue = customTime ? "custom" : matchedSlot ? `${matchedSlot.start_time}|${matchedSlot.end_time}` : "";
   const choosePeriod = (value) => {
@@ -126,9 +92,13 @@ function DialogBody({
     setForm((current) => ({ ...current, start_time: start, end_time: end }));
   };
 
-  const startEdit = (target) => {
+  const editEntry = (target, cameFrom = "") => {
+    const next = blankForm({ entry: target, days });
     setEntry(target);
-    setForm(blankForm({ entry: target, days }));
+    setForm(next);
+    setCustomTime(Boolean(next.start_time && next.end_time && !matchesPeriod(next, timeSlots)));
+    setTimeOpen(false);
+    setFrom(cameFrom);
     setError("");
     setMode("form");
   };
@@ -151,7 +121,7 @@ function DialogBody({
         end_time: form.end_time,
         room: form.room.trim(),
       };
-      const editing = mode === "form" && entry;
+      const editing = Boolean(entry);
       if (editing) await onUpdate?.(entry.id, payload);
       else await onCreate?.(payload);
       const what = payload.title || subjects.find((item) => String(item.id) === String(payload.subject_id))?.name || "the lesson";
@@ -164,11 +134,12 @@ function DialogBody({
     }
   };
 
-  const handleRemove = async () => {
+  const handleDelete = async () => {
     if (!entry) return;
+    const where = `${entry.class_name}, ${dayLabel(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}`;
     const ok = await confirm?.({
       title: "Delete this lesson?",
-      message: `${entryLabel(entry)} for ${entry.class_name}, ${dayLabel(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}. This can't be undone.`,
+      message: `${entryLabel(entry)} for ${where}. This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -177,11 +148,21 @@ function DialogBody({
     setBusy(true);
     try {
       await onDelete?.(entry.id);
-      onSaved(`Deleted ${entryLabel(entry)} from ${entry.class_name}, ${dayLabel(entry.day_of_week)} ${timeRange(entry.start_time, entry.end_time)}.`, entry.class_id);
+      onSaved(`Deleted ${entryLabel(entry)} from ${where}.`, entry.class_id);
     } catch (actionError) {
       setError(actionError?.message || "Could not delete this lesson.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const cancel = () => {
+    setError("");
+    if (from === "cell" || (!entry && dialog.entries?.length)) {
+      setEntry(null);
+      setMode("cell");
+    } else {
+      onClose();
     }
   };
 
@@ -193,21 +174,13 @@ function DialogBody({
 
   if (mode === "cell") {
     title = `${dayLabel(dialog.cell?.dayValue)} · ${timeRange(dialog.cell?.start, dialog.cell?.end)}`;
-    subtitle = `${dialog.entries.length} classes have a lesson at this time`;
+    subtitle = `${dialog.entries.length} classes have a lesson at this time. Pick one to edit it.`;
     content = (
       <>
         <ul className="tt-celllist">
           {dialog.entries.map((item, index) => (
             <li key={item.id}>
-              <button
-                type="button"
-                data-autofocus={index === 0 ? "" : undefined}
-                onClick={() => {
-                  setEntry(item);
-                  setFrom("cell");
-                  setMode("view");
-                }}
-              >
+              <button type="button" data-autofocus={index === 0 ? "" : undefined} onClick={() => editEntry(item, "cell")}>
                 <span className={`tt-dot${hueStyle(item) ? "" : " is-neutral"}`} style={hueStyle(item)} aria-hidden="true" />
                 <span className="tt-celllist-main">
                   <strong>{entryLabel(item)}</strong>
@@ -228,6 +201,7 @@ function DialogBody({
             onClick={() => {
               setEntry(null);
               setForm(blankForm({ entry: null, prefill: { classId: "", dayValue: dialog.cell.dayValue, start: dialog.cell.start, end: dialog.cell.end }, days }));
+              setCustomTime(false);
               setTimeOpen(true);
               setMode("form");
             }}
@@ -237,64 +211,13 @@ function DialogBody({
         </div>
       </>
     );
-  } else if (mode === "view" && entry) {
-    const unassigned = needsTeacher(entry);
-    title = entryLabel(entry);
-    subtitle = entry.class_name;
-    content = (
-      <>
-        <div className={`tt-detail${hueStyle(entry) ? "" : " is-neutral"}`} style={hueStyle(entry)}>
-          <span className={`tt-swatch${hueStyle(entry) ? "" : " is-neutral"}`} aria-hidden="true">{initialsOf(entryLabel(entry))}</span>
-          <dl>
-            <div>
-              <dt><Clock3 size={14} aria-hidden="true" /> When</dt>
-              <dd>{dayLabel(entry.day_of_week)} &middot; {timeRange(entry.start_time, entry.end_time)}</dd>
-            </div>
-            <div>
-              <dt><UserRound size={14} aria-hidden="true" /> Teacher</dt>
-              <dd>
-                {entry.teacher_name ? entry.teacher_name : unassigned ? (
-                  <span className="tt-badge"><AlertTriangle size={12} aria-hidden="true" /> No teacher yet</span>
-                ) : (
-                  <span className="tt-muted">Not needed</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt><Users size={14} aria-hidden="true" /> Class</dt>
-              <dd>{entry.class_name}</dd>
-            </div>
-            {entry.room ? (
-              <div>
-                <dt><DoorOpen size={14} aria-hidden="true" /> Room</dt>
-                <dd>{entry.room}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </div>
-        {unassigned ? <p className="tt-tip">Tip: choose Edit and pick a teacher so this lesson shows on their timetable too.</p> : null}
-        {error ? <p className="tt-alert" role="alert">{error}</p> : null}
-        <div className="panel-form-actions tt-actions-split">
-          <button type="button" className="btn-danger" onClick={handleRemove} disabled={busy}>
-            {busy ? <Spinner size={12} /> : <Trash2 size={14} aria-hidden="true" />} Delete
-          </button>
-          <span className="tt-spacer" />
-          {from === "cell" ? (
-            <button type="button" className="btn-secondary" onClick={() => { setEntry(null); setMode("cell"); }}>
-              <ArrowLeft size={14} aria-hidden="true" /> Back
-            </button>
-          ) : null}
-          <button type="button" className="btn-primary" data-autofocus="" onClick={() => startEdit(entry)}>
-            <Pencil size={14} aria-hidden="true" /> Edit
-          </button>
-        </div>
-      </>
-    );
   } else {
     const editing = Boolean(entry);
     const slotKnown = Boolean(form.class_id && form.start_time && form.end_time);
     title = editing ? "Edit lesson" : "Add a lesson";
-    subtitle = slotKnown ? `${className(form.class_id)} · ${dayLabel(form.day_of_week)} · ${timeRange(form.start_time, form.end_time)}` : "Choose the class, day and period, then the subject.";
+    subtitle = slotKnown
+      ? `${className(form.class_id)} · ${dayLabel(form.day_of_week)} · ${timeRange(form.start_time, form.end_time)}`
+      : "Choose the class, day and period, then the subject.";
     content = (
       <form className="tt-form" onSubmit={handleSubmit}>
         <div className="panel-form-grid">
@@ -377,24 +300,14 @@ function DialogBody({
         </details>
 
         {error ? <p className="tt-alert" role="alert">{error}</p> : null}
-        <div className="panel-form-actions">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              if (editing) {
-                setMode("view");
-              } else if (dialog.entries?.length) {
-                setMode("cell");
-              } else {
-                onClose();
-              }
-              setError("");
-            }}
-            disabled={busy}
-          >
-            Cancel
-          </button>
+        <div className="panel-form-actions tt-actions-split">
+          {editing ? (
+            <button type="button" className="btn-danger" onClick={handleDelete} disabled={busy}>
+              <Trash2 size={14} aria-hidden="true" /> Delete lesson
+            </button>
+          ) : null}
+          <span className="tt-spacer" />
+          <button type="button" className="btn-secondary" onClick={cancel} disabled={busy}>Cancel</button>
           <button type="submit" className="btn-primary" disabled={busy}>
             {busy ? <><Spinner size={12} /> Saving&hellip;</> : editing ? "Save changes" : "Add lesson"}
           </button>
