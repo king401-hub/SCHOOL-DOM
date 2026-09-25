@@ -545,6 +545,12 @@ EBULKSMS_APIKEY = os.getenv('EBULKSMS_APIKEY', '')
 # SMS, on-demand fee reminder, and weekly digest). Docs:
 # https://documenter.getpostman.com/view/44181644/2sB2cd3HUd
 KUDISMS_API_KEY = os.getenv('KUDISMS_API_KEY', '')
+# Which KudiSMS endpoint SchoolGate's SMS is sent to first: 'corporate'
+# (POST /api/corporate, for an approved *corporate* sender ID) or 'bulk'
+# (POST /api/sms, for an approved *promotional* one). A sender ID is approved for
+# one type only, so the wrong endpoint reports it as error 106 "sender ID does
+# not exist". If the first is rejected with 106 the other is tried once.
+KUDISMS_ROUTE = os.getenv('KUDISMS_ROUTE', 'corporate')
 
 # Which provider SchoolGate's own SMS (gate clock-in/out, on-demand fee
 # reminder, weekly digest) goes out through - 'kudisms' with the "XCEL" sender

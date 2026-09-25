@@ -925,28 +925,95 @@ class KudiSmsServiceTests(TestCase):
     send_ebulksms. These test the provider call directly, same level as
     send_ebulksms has no dedicated low-level test for either."""
 
+    NOT_FOUND = {"status": "error", "error_code": "106", "msg": "The sender ID used does not exist"}
+    SENT = {"status": "success", "error_code": "000", "cost": "3.50", "msg": "Message received Successfully"}
+    CORPORATE_URL = "https://my.kudisms.net/api/corporate"
+    BULK_URL = "https://my.kudisms.net/api/sms"
+
+    def setUp(self):
+        # The route that last delivered is remembered for the life of the
+        # process; every test starts without a memory.
+        from finance import services
+        services._kudisms_route_hint["route"] = None
+        self.addCleanup(services._kudisms_route_hint.update, route=None)
+
     @override_settings(KUDISMS_API_KEY="test-token")
     @patch("finance.services.requests.post")
-    def test_sends_the_documented_payload_shape(self, mock_post):
+    def test_sends_the_documented_corporate_payload_shape(self, mock_post):
         mock_post.return_value = Mock(status_code=200, json=lambda: {
-            "status": "success", "error_code": "000", "cost": "5.60",
-            "data": ["2348012345678|abc-123"], "msg": "Message received Successfully",
-            "length": 8, "page": 1, "balance": "15,585.41",
+            "status": "success", "error_code": "000", "cost": "3.50",
+            "data": "2348012345678|abc-123", "msg": "Message received Successfully",
+            "length": 8, "page": 1, "balance": "102,954.20",
         })
 
         result = send_kudisms("08012345678", "Chidi arrived at school at 7:45 AM. -SchoolDom")
 
         mock_post.assert_called_once()
         call_args, call_kwargs = mock_post.call_args
-        self.assertEqual(call_args[0], "https://my.kudisms.net/api/sms")
+        self.assertEqual(call_args[0], self.CORPORATE_URL)
         payload = call_kwargs["json"]
         self.assertEqual(payload["token"], "test-token")
         self.assertEqual(payload["senderID"], "XCEL")
         self.assertEqual(payload["recipients"], "2348012345678")
         self.assertEqual(payload["message"], "Chidi arrived at school at 7:45 AM. -SchoolDom")
-        self.assertEqual(payload["gateway"], "2")
+        self.assertNotIn("gateway", payload)  # the corporate endpoint takes none
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["error_code"], "000")
+        self.assertEqual(result["route"], "corporate")
+
+    @override_settings(KUDISMS_API_KEY="test-token", KUDISMS_ROUTE="bulk")
+    @patch("finance.services.requests.post")
+    def test_the_bulk_route_uses_the_promotional_endpoint_with_a_gateway(self, mock_post):
+        mock_post.return_value = Mock(status_code=200, json=lambda: dict(self.SENT))
+
+        result = send_kudisms("08012345678", "Hello")
+
+        mock_post.assert_called_once()
+        call_args, call_kwargs = mock_post.call_args
+        self.assertEqual(call_args[0], self.BULK_URL)
+        self.assertEqual(call_kwargs["json"]["gateway"], "2")
+        self.assertEqual(result["route"], "bulk")
+
+    @override_settings(KUDISMS_API_KEY="test-token")
+    @patch("finance.services.requests.post")
+    def test_a_106_on_one_route_falls_back_to_the_other_and_remembers_it(self, mock_post):
+        """A sender ID is approved for one type only, so the same name is
+        reported as missing when it is sent down the wrong endpoint."""
+        mock_post.side_effect = [
+            Mock(status_code=200, json=lambda: dict(self.NOT_FOUND)),
+            Mock(status_code=200, json=lambda: dict(self.SENT)),
+            Mock(status_code=200, json=lambda: dict(self.SENT)),
+        ]
+
+        first = send_kudisms("08012345678", "First")
+
+        self.assertEqual([c.args[0] for c in mock_post.call_args_list], [self.CORPORATE_URL, self.BULK_URL])
+        self.assertEqual((first["status"], first["error_code"], first["route"]), ("success", "000", "bulk"))
+
+        # The next message goes straight to the route that worked.
+        send_kudisms("08012345678", "Second")
+        self.assertEqual(mock_post.call_count, 3)
+        self.assertEqual(mock_post.call_args_list[-1].args[0], self.BULK_URL)
+
+    @override_settings(KUDISMS_API_KEY="test-token")
+    @patch("finance.services.requests.post")
+    def test_it_gives_up_when_neither_route_knows_the_sender_id(self, mock_post):
+        mock_post.side_effect = lambda *a, **k: Mock(status_code=200, json=lambda: dict(self.NOT_FOUND))
+
+        result = send_kudisms("08012345678", "Hello")
+
+        self.assertEqual(mock_post.call_count, 2)  # one per route, never a third
+        self.assertEqual(result["error_code"], "106")
+
+    @override_settings(KUDISMS_API_KEY="test-token")
+    @patch("finance.services.requests.post")
+    def test_other_errors_do_not_trigger_a_second_send(self, mock_post):
+        mock_post.return_value = Mock(status_code=401, json=lambda: {"status": "error", "error_code": "100", "msg": "Token provided is invalid"})
+
+        result = send_kudisms("08012345678", "Hello")
+
+        mock_post.assert_called_once()
+        self.assertEqual(result["error_code"], "100")
 
     @override_settings(KUDISMS_API_KEY="")
     @patch("finance.services.requests.post")

@@ -946,6 +946,20 @@ def _ebulksms_accepted(result: dict):
     return False, "SMS provider did not confirm delivery."
 
 
+# KudiSMS has one endpoint per kind of SMS, and a sender ID is approved for one
+# kind only: /sms takes promotional sender IDs, /corporate takes corporate ones
+# (https://kudisms.net/docs/sms/). Sending an approved sender ID down the wrong
+# endpoint is reported as error 106, "The sender ID used does not exist".
+KUDISMS_ENDPOINTS = {
+    "corporate": "https://my.kudisms.net/api/corporate",
+    "bulk": "https://my.kudisms.net/api/sms",
+}
+# The route that last delivered, remembered for the life of the process so a
+# sender ID registered on the non-default route does not pay for a rejected
+# request on every message.
+_kudisms_route_hint = {"route": None}
+
+
 def send_kudisms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
     """Send SMS via KudiSMS's JSON API. Used ONLY for the SchoolGate product's
     own SMS (gate clock-in/out, on-demand fee reminder, weekly digest - see
@@ -955,10 +969,17 @@ def send_kudisms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
     stays on send_ebulksms - this is a deliberate product split between two
     providers, not a migration off eBulkSMS.
 
-    API docs: https://documenter.getpostman.com/view/44181644/2sB2cd3HUd
+    API docs: https://kudisms.net/docs/sms/ (also
+    https://documenter.getpostman.com/view/44181644/2sB2cd3HUd)
     error_code "000" = sent; anything else is a provider-side rejection
     (invalid token, unapproved sender ID, insufficient balance, etc - see the
-    code table in the docs)."""
+    code table in the docs).
+
+    Goes out on the route named by settings.KUDISMS_ROUTE ("corporate" by
+    default, "bulk" for the promotional /sms endpoint). If KudiSMS answers 106
+    ("sender ID does not exist") the other route is tried once, since the same
+    sender ID is only ever registered for one of them, and whichever delivers is
+    remembered. The returned dict carries the route used."""
     message = _sms_safe_text(message)
     if len(message) > SMS_CHAR_LIMIT:
         logger.warning("KudiSMS message truncated from %d to %d chars", len(message), SMS_CHAR_LIMIT)
@@ -974,30 +995,53 @@ def send_kudisms(to_phone: str, message: str, sender: str = "XCEL") -> dict:
         logger.error("KudiSMS: phone %s could not be normalized to Nigerian format (got %s)", to_phone, normalized)
         return {"status": "error", "reason": f"Invalid phone format: {normalized}"}
 
-    payload = {
-        "token": token,
-        "senderID": sender[:11],
-        "recipients": normalized,
-        "message": message,
-        # 2 = refunds the charge for a DND-blocked number rather than
-        # pretending it delivered - matches the documented sample requests.
-        "gateway": "2",
-    }
+    configured = str(getattr(settings, "KUDISMS_ROUTE", "corporate") or "corporate").strip().lower()
+    if configured not in KUDISMS_ENDPOINTS:
+        configured = "corporate"
+    first = _kudisms_route_hint["route"] or configured
+    routes = [first, "bulk" if first == "corporate" else "corporate"]
+
     logger.info("KudiSMS → to=%s sender=%s chars=%d", normalized, sender, len(message))
-    try:
-        response = requests.post(
-            "https://my.kudisms.net/api/sms",
-            json=payload,
-            timeout=15,
-        )
-        data = response.json()
-        logger.info("KudiSMS response [HTTP %s]: %s", response.status_code, data)
+    data = None
+    for route in routes:
+        payload = {
+            "token": token,
+            "senderID": sender[:11],
+            "recipients": normalized,
+            "message": message,
+        }
+        if route == "bulk":
+            # 2 = refunds the charge for a DND-blocked number rather than
+            # pretending it delivered - matches the documented sample requests.
+            # (The corporate endpoint takes no gateway field.)
+            payload["gateway"] = "2"
+        try:
+            response = requests.post(KUDISMS_ENDPOINTS[route], json=payload, timeout=15)
+            data = response.json()
+        except Exception as exc:
+            logger.error("KudiSMS request failed (%s route): %s", route, exc)
+            return {"status": "error", "reason": str(exc)}
+        logger.info("KudiSMS response [%s route, HTTP %s]: %s", route, response.status_code, data)
         if response.status_code != 200:
             logger.error("KudiSMS non-200 HTTP status %s: %s", response.status_code, data)
+        if not isinstance(data, dict):
+            return data
+
+        if str(data.get("error_code")) == "106" and route != routes[-1]:
+            # "The sender ID used does not exist": each endpoint only accepts
+            # the sender IDs approved for its own type (promotional for /sms,
+            # corporate for /corporate), so a real sender ID is reported as
+            # missing when it is sent down the wrong one. Try the other once.
+            logger.warning(
+                "KudiSMS: sender %s is not registered for the %s route; trying the other route", sender, route,
+            )
+            continue
+
+        data["route"] = route
+        if _kudisms_accepted(data)[0]:
+            _kudisms_route_hint["route"] = route
         return data
-    except Exception as exc:
-        logger.error("KudiSMS request failed: %s", exc)
-        return {"status": "error", "reason": str(exc)}
+    return data
 
 
 def _kudisms_accepted(result: dict):
