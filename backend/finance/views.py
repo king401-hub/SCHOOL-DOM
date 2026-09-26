@@ -556,13 +556,16 @@ def _admin_finance_snapshot(user):
     bill_classes = bill_class_map({fee.bill_id for fee in manual_fees if fee.bill_id})
     carried_by_student = {}
     for fee in manual_fees:
-        origin = outstanding_bill_origin(fee.student.current_class_id, bill_classes.get(fee.bill_id))
+        if not fee.bill_id:
+            continue
+        origin = outstanding_bill_origin(fee.student.current_class_id, bill_classes.get(fee.bill_id, []))
         remaining_on_fee = max(fee.amount - paid_amounts.get(fee.id, Decimal("0.00")), Decimal("0.00"))
-        if not origin or remaining_on_fee <= 0:
+        if origin is None or remaining_on_fee <= 0:
             continue
         carried = carried_by_student.setdefault(fee.student_id, {"amount": Decimal("0.00"), "from": []})
         carried["amount"] += remaining_on_fee
-        if origin not in carried["from"]:
+        # "" means the bill's class is gone: still outstanding, nothing to name.
+        if origin and origin not in carried["from"]:
             carried["from"].append(origin)
 
     student_rows = []

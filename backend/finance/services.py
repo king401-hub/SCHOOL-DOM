@@ -4180,18 +4180,24 @@ def bill_class_map(bill_ids):
 
 
 def outstanding_bill_origin(current_class_id, bill_classes):
-    """The class(es) an invoice was issued for, when the student has since moved
-    to a class that bill does not cover - "" otherwise.
+    """Whether an unpaid bill invoice is an "outstanding bill", and where from.
+
+    Returns None when it is not: the student is in a class the bill covers, or
+    has no class at all. Otherwise it is one - the invoice is left over from a
+    class the student has since left - and the return value is the class(es) it
+    was issued for, or "" when the bill lists no class any more (its class was
+    removed or renamed), so nothing can be said about where it came from.
 
     An unpaid invoice does not go away when a student changes class: it stays on
     their account and counts in what they owe. This is what lets the screens
     call it an "Outstanding bill" instead of leaving it looking like a second,
-    duplicate bill next to the new class's own. A bill with no classes at all
-    says nothing about where it came from, so it is never labelled."""
-    if not current_class_id or not bill_classes:
+    duplicate bill next to the new class's own."""
+    if not current_class_id:
+        return None
+    if not bill_classes:
         return ""
     if any(class_id == current_class_id for class_id, _label in bill_classes):
-        return ""
+        return None
     return ", ".join(label for _class_id, label in bill_classes)
 
 
@@ -4200,7 +4206,11 @@ def sync_bill_invoices(bill, actor=None):
     mirroring sync_tenant_class_fees's bulk create/update-only-if-unpaid
     pattern. Calling this again after editing the bill's items/classes is
     exactly "regenerate/resync" - no separate endpoint needed. Never touches
-    a row where amount_paid > 0."""
+    a row where amount_paid > 0, and never overwrites an invoice an admin has
+    edited by hand (is_customized) - the same rule the class-fee syncs follow.
+    Without that rule an edited invoice quietly reverted to the bill's amount the
+    next time anyone in the class made a payment, since recording a payment
+    re-syncs every published bill of the student's class."""
     from users.models import StudentProfile
 
     class_ids = list(bill.classes.values_list("id", flat=True))
@@ -4239,6 +4249,8 @@ def sync_bill_invoices(bill, actor=None):
             )
             continue
         if (paid_amounts.get(fee.id) or Decimal("0.00")) > 0:
+            continue
+        if fee.is_customized:
             continue
         changed = False
         for field, value in {

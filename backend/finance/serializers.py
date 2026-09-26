@@ -67,6 +67,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_identifier = serializers.SerializerMethodField()
     class_label = serializers.SerializerMethodField()
+    is_outstanding_bill = serializers.SerializerMethodField()
     outstanding_from = serializers.SerializerMethodField()
 
     class Meta:
@@ -78,6 +79,7 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
             "student_identifier",
             "class_fee",
             "class_label",
+            "is_outstanding_bill",
             "outstanding_from",
             "title",
             "amount",
@@ -128,20 +130,35 @@ class SchoolFeeSerializer(serializers.ModelSerializer):
         section = getattr(school_class, "section", "") or ""
         return f"{school_class.name} - {section}" if section else school_class.name
 
+    def _outstanding_origin(self, obj):
+        """None unless this is an unpaid bill invoice the student carried out of
+        another class (see outstanding_bill_origin) - else the class it came
+        from, "" when that is unknown. Worked out once per row."""
+        results = self.__dict__.setdefault("_outstanding_results", {})
+        if obj.id in results:
+            return results[obj.id]
+        origin = None
+        if obj.bill_id and self.get_remaining_balance(obj) > 0:
+            # Bills' classes are looked up once per bill, not once per row:
+            # shared through the context when the caller built it, else kept on
+            # the serializer.
+            cache = self.context.get("bill_classes")
+            if cache is None:
+                cache = self.__dict__.setdefault("_bill_class_cache", {})
+            if obj.bill_id not in cache:
+                cache[obj.bill_id] = bill_class_map([obj.bill_id]).get(obj.bill_id, [])
+            origin = outstanding_bill_origin(obj.student.current_class_id, cache[obj.bill_id])
+        results[obj.id] = origin
+        return origin
+
+    def get_is_outstanding_bill(self, obj):
+        """Still unpaid, and left over from a class the student has moved on
+        from (or whose class the bill no longer lists) - shown as "Outstanding
+        bill" so it is not mistaken for a duplicate of the new class's bill."""
+        return self._outstanding_origin(obj) is not None
+
     def get_outstanding_from(self, obj):
-        """The class this invoice came from, while it is still unpaid and the
-        student has moved on to a class its bill does not cover ("" otherwise) -
-        shown as "Outstanding bill" so it is not mistaken for a duplicate."""
-        if not obj.bill_id or self.get_remaining_balance(obj) <= 0:
-            return ""
-        # Bills' classes are looked up once per bill, not once per row: shared
-        # through the context when the caller built it, else kept on the serializer.
-        cache = self.context.get("bill_classes")
-        if cache is None:
-            cache = self.__dict__.setdefault("_bill_class_cache", {})
-        if obj.bill_id not in cache:
-            cache[obj.bill_id] = bill_class_map([obj.bill_id]).get(obj.bill_id, [])
-        return outstanding_bill_origin(obj.student.current_class_id, cache[obj.bill_id])
+        return self._outstanding_origin(obj) or ""
 
 
 class BillInvoiceSerializer(SchoolFeeSerializer):

@@ -2473,7 +2473,9 @@ class OutstandingBillLabelTests(TestCase):
         self.assertEqual(row["outstanding_bill_amount"], Decimal("60000.00"))
         self.assertEqual(row["outstanding_bill_from"], "JSS - 1")
         self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "JSS - 1")
+        self.assertTrue(fees["JSS 1 Term Fee"]["is_outstanding_bill"])
         self.assertEqual(fees["JSS 2 Term Fee"]["outstanding_from"], "")
+        self.assertFalse(fees["JSS 2 Term Fee"]["is_outstanding_bill"])
 
     def test_it_is_no_longer_outstanding_once_it_is_paid(self):
         self._move_up_with_an_unpaid_old_bill()
@@ -2503,17 +2505,111 @@ class OutstandingBillLabelTests(TestCase):
         self.assertEqual(row["outstanding_bill_amount"], Decimal("0.00"))
         self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "")
 
-    def test_a_bill_with_no_classes_is_never_labelled(self):
-        bill = self._publish("Loose Bill", None, "12000", due_in_days=14)
-        SchoolFee.objects.create(
-            student=self.student, bill=bill, title="Loose Bill", amount=Decimal("12000.00"),
-            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
-        )
+    def test_a_bill_whose_class_is_gone_is_still_an_outstanding_bill(self):
+        """A school that removed or renamed a class leaves its old bill listing no
+        class at all. The invoice is still owed, so it is still an outstanding
+        bill - just without a class to name."""
+        bill = self._publish("JSS 1 Term Fee", self.jss1, "60000", due_in_days=-14)
+        bill.classes.clear()
+
+        row, fees = self._overview()
+
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("60000.00"))
+        self.assertEqual(row["outstanding_bill_from"], "")
+        self.assertTrue(fees["JSS 1 Term Fee"]["is_outstanding_bill"])
+        self.assertEqual(fees["JSS 1 Term Fee"]["outstanding_from"], "")
+
+    def test_a_class_less_bill_stops_being_outstanding_once_it_is_paid(self):
+        bill = self._publish("JSS 1 Term Fee", self.jss1, "60000", due_in_days=-14)
+        bill.classes.clear()
+        record_cash_payment(self.student, Decimal("60000.00"), actor=self.admin_user)
 
         row, fees = self._overview()
 
         self.assertEqual(row["outstanding_bill_amount"], Decimal("0.00"))
-        self.assertEqual(fees["Loose Bill"]["outstanding_from"], "")
+        self.assertFalse(fees["JSS 1 Term Fee"]["is_outstanding_bill"])
+
+    def test_a_student_without_a_class_is_not_flagged(self):
+        self._publish("JSS 1 Term Fee", self.jss1, "60000", due_in_days=-14)
+        self._move_to(None)
+
+        row, fees = self._overview()
+
+        self.assertEqual(row["outstanding_bill_amount"], Decimal("0.00"))
+        self.assertFalse(fees["JSS 1 Term Fee"]["is_outstanding_bill"])
+
+
+class BillInvoiceEditTests(TestCase):
+    """Editing one student's bill invoice (Finance > Student Fees > Edit) has to
+    stick. It used to be reset to the bill's amount the next time the bill
+    synced - which happens whenever anyone in the class makes a payment."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Invoice Edit School", schema_name="invoice_edit_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@invoiceedit.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="2")
+        self.edited_student = self._student("edited@invoiceedit.edu", "IE001")
+        self.other_student = self._student("other@invoiceedit.edu", "IE002")
+        self.bill = Bill.objects.create(
+            tenant=self.school, title="Term Fee", status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        self.bill.classes.set([self.school_class])
+        self.item = BillItem.objects.create(bill=self.bill, description="Tuition", amount=Decimal("48000.00"))
+        from finance.services import sync_bill_invoices
+        self.sync = sync_bill_invoices
+        self.sync(self.bill, actor=self.admin_user)
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _student(self, email, code):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", role="student", tenant=self.school,
+            is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=code, admission_number=f"ADM-{code}", admission_date=timezone.localdate(),
+            guardian_name="Guardian", guardian_relation="Parent", current_class=self.school_class,
+        )
+
+    def _invoice(self, student):
+        return SchoolFee.objects.get(student=student, bill=self.bill)
+
+    def _edit_amount(self, student, amount):
+        response = self.client.patch(f"/api/finance/admin/fees/{self._invoice(student).id}/", {"amount": amount}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_an_edited_invoice_keeps_its_amount_when_the_bill_syncs_again(self):
+        self._edit_amount(self.edited_student, 30000)
+
+        self.sync(self.bill, actor=self.admin_user)
+
+        self.assertEqual(self._invoice(self.edited_student).amount, Decimal("30000.00"))
+        self.assertEqual(self._invoice(self.other_student).amount, Decimal("48000.00"))
+
+    def test_recording_a_payment_for_a_classmate_does_not_undo_the_edit(self):
+        """Recording a payment re-syncs every published bill of the payer's class."""
+        self._edit_amount(self.edited_student, 30000)
+
+        record_cash_payment(self.other_student, Decimal("10000.00"), actor=self.admin_user)
+
+        self.assertEqual(self._invoice(self.edited_student).amount, Decimal("30000.00"))
+
+    def test_an_untouched_invoice_still_follows_the_bill(self):
+        self._edit_amount(self.edited_student, 30000)
+        self.item.amount = Decimal("50000.00")
+        self.item.save(update_fields=["amount"])
+
+        self.sync(self.bill, actor=self.admin_user)
+
+        self.assertEqual(self._invoice(self.other_student).amount, Decimal("50000.00"))
+        self.assertEqual(self._invoice(self.edited_student).amount, Decimal("30000.00"))
 
 
 class BillDeleteTests(TestCase):
