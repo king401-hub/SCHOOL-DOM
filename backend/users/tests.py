@@ -7917,3 +7917,156 @@ class StudentBulkImportTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["counts"]["create"], 1)
+
+
+class ImportStudentsCommandTests(TestCase):
+    """`manage.py import_students`: the same import as the Students screen, run
+    from the server. All names and numbers here are made up."""
+
+    HEADER = "First name,Surname,Class,Phone number\n"
+
+    def setUp(self):
+        import tempfile
+
+        self.school = SchoolTenant.objects.create(name="Command Import School", schema_name="command_import_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.jss1 = Class.objects.create(tenant=self.legacy_tenant, name="JSS 1", section="")
+        self.ss2_art = Class.objects.create(tenant=self.legacy_tenant, name="SS 2", section="Art")
+        self.admin = User.objects.create_user(
+            email="admin@commandimport.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = folder.name
+
+    def _file(self, body, header=None):
+        import os
+
+        path = os.path.join(self.folder, "students.csv")
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write((header or self.HEADER) + body)
+        return path
+
+    def _run(self, body, header=None, **options):
+        import os
+        from io import StringIO
+        from django.core.management import call_command
+
+        options.setdefault("login_sheet", os.path.join(self.folder, "logins.csv"))
+        out, err = StringIO(), StringIO()
+        call_command("import_students", school=self.school.schema_name, file=self._file(body, header), stdout=out, stderr=err, **options)
+        return out.getvalue(), err.getvalue()
+
+    def _sheet(self):
+        import csv
+        import os
+
+        with open(os.path.join(self.folder, "logins.csv"), encoding="utf-8-sig", newline="") as handle:
+            return list(csv.DictReader(handle))
+
+    def test_without_commit_nothing_is_saved(self):
+        out, _ = self._run("Ada,Okafor,JSS 1,08011112222\nBola,Bello,jss1,08033334444\n")
+        self.assertIn("2 to add", out)
+        self.assertIn("Dry run", out)
+        self.assertEqual(StudentProfile.objects.count(), 0)
+
+    def test_commit_creates_the_students_and_writes_a_login_sheet_that_works(self):
+        import os
+
+        out, err = self._run("Ada,Okafor,JSS 1,08011112222\nBola,Bello,jss1,08033334444 / 08055556666\n", commit=True)
+        self.assertEqual(err, "")
+        self.assertIn("Added 2 student(s)", out)
+        ada = StudentProfile.objects.get(user__first_name="Ada")
+        self.assertEqual(ada.user.tenant, self.school)
+        self.assertEqual(ada.current_class, self.jss1)
+        self.assertEqual(ada.user.email, "ada@gmail.com")
+        bola = StudentProfile.objects.get(user__first_name="Bola")
+        self.assertEqual((bola.guardian_name, bola.second_guardian_name), ("Mr Bello", "Mrs Bello"))
+
+        sheet = self._sheet()
+        self.assertEqual(len(sheet), 2)
+        for line in sheet:
+            self.assertTrue(User.objects.get(email=line["Login email"]).check_password(line["Password"]))
+        if os.name == "posix":
+            self.assertEqual(os.stat(os.path.join(self.folder, "logins.csv")).st_mode & 0o077, 0)  # private
+
+    def test_more_than_one_batch_is_imported(self):
+        body = "".join(f"Kid{chr(65 + n % 26)}{n},Test,JSS 1,\n" for n in range(60))
+        out, _ = self._run(body, commit=True)
+        self.assertIn("Added 60 student(s)", out)
+        self.assertEqual(StudentProfile.objects.filter(current_class=self.jss1).count(), 60)
+        self.assertEqual(len(self._sheet()), 60)
+
+    def test_running_it_again_creates_nobody_new(self):
+        body = "Ada,Okafor,JSS 1,08011112222\n"
+        self._run(body, commit=True)
+        out, _ = self._run(body, commit=True)
+        self.assertIn("Nobody new to add", out)
+        self.assertEqual(StudentProfile.objects.count(), 1)
+
+    def test_an_unmatched_class_stops_a_commit_until_it_is_mapped(self):
+        from django.core.management.base import CommandError
+
+        body = "Ada,Okafor,JSS 1,\nBola,Bello,SS2/ART DEPARTMENT,\nChidi,Eze,Reception,\n"
+        with self.assertRaises(CommandError) as raised:
+            self._run(body, commit=True)
+        self.assertIn("--skip-errors", str(raised.exception))
+        self.assertEqual(StudentProfile.objects.count(), 0)  # not even the good rows
+
+        # "SS2/ART DEPARTMENT" already matches SS 2 - Art; Reception is sent to JSS 1.
+        out, _ = self._run(body, commit=True, class_map=["Reception=JSS 1"])
+        self.assertIn("Added 3 student(s)", out)
+        self.assertEqual(StudentProfile.objects.get(user__first_name="Bola").current_class, self.ss2_art)
+        self.assertEqual(StudentProfile.objects.get(user__first_name="Chidi").current_class, self.jss1)
+
+    def test_skip_errors_imports_the_good_rows_only(self):
+        out, _ = self._run("Ada,Okafor,JSS 1,\nChidi,Eze,Reception,\n", commit=True, skip_errors=True)
+        self.assertIn("Added 1 student(s)", out)
+        self.assertFalse(StudentProfile.objects.filter(user__first_name="Chidi").exists())
+
+    def test_a_class_for_the_whole_file(self):
+        out, _ = self._run("Ada,Okafor,,\n", header="First name,Surname,Class,Phone number\n", commit=True, default_class="JSS 1")
+        self.assertIn("Added 1 student(s)", out)
+        self.assertEqual(StudentProfile.objects.get().current_class, self.jss1)
+
+    def test_a_class_map_target_that_does_not_exist_is_refused(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            self._run("Ada,Okafor,Reception,\n", commit=True, class_map=["Reception=Primary 9"])
+
+    def test_activation_tokens_are_only_spent_on_request(self):
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 3
+        pool.save(update_fields=["balance", "updated_at"])
+        self._run("Ada,Okafor,JSS 1,\n", commit=True)
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 3)
+        self._run("Bola,Bello,JSS 1,\n", commit=True, assign_tokens=True)
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 2)
+
+    def test_an_unknown_school_or_a_school_without_an_admin_is_refused(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            call_command("import_students", school="no_such_school", file=self._file("Ada,Okafor,JSS 1,\n"), stdout=StringIO())
+        User.objects.filter(pk=self.admin.pk).update(is_active=False)
+        with self.assertRaises(CommandError):
+            self._run("Ada,Okafor,JSS 1,\n", commit=True)
+
+    def test_students_land_in_the_named_school_not_another(self):
+        other = SchoolTenant.objects.create(name="Other Command School", schema_name="other_command_school", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        Class.objects.create(tenant=other_legacy, name="JSS 1", section="")
+        User.objects.create_user(
+            email="admin@othercommand.edu", password="AdminPass123", role="school_admin",
+            tenant=other, is_active=True, is_verified=True,
+        )
+        self._run("Ada,Okafor,JSS 1,\n", commit=True)
+        student = StudentProfile.objects.get()
+        self.assertEqual(student.user.tenant, self.school)
+        self.assertEqual(student.current_class, self.jss1)
