@@ -477,6 +477,28 @@ def create_paystack_dedicated_account(customer_code: str, split_code: str = "", 
     return data["data"]
 
 
+PLACEHOLDER_PARENT_EMAIL_SUFFIX = "@schooldom.local"
+
+
+def paystack_customer_email(email: str) -> str:
+    """The address to register a parent under at Paystack.
+
+    A parent added without a guardian email is stored under a made-up address
+    ending @schooldom.local (users.app_views._sync_guardian_parent). Paystack's
+    customer API refuses that domain - '"email" must be a valid email' - so
+    every virtual account for such a parent failed, however often it was
+    retried. The same made-up local part on a domain that is ours keeps it
+    unique per parent and lets Paystack accept it; a real guardian email is
+    passed through untouched. Override the domain with
+    PAYSTACK_PLACEHOLDER_EMAIL_DOMAIN.
+    """
+    email = str(email or "").strip()
+    if email.lower().endswith(PLACEHOLDER_PARENT_EMAIL_SUFFIX):
+        domain = getattr(settings, "PAYSTACK_PLACEHOLDER_EMAIL_DOMAIN", "") or "schooldom.academy"
+        return f"{email[:-len(PLACEHOLDER_PARENT_EMAIL_SUFFIX)]}@{domain}"
+    return email
+
+
 def provision_parent_virtual_account(parent_user, actor=None):
     """
     Auto-provision a real Paystack dedicated virtual account for a parent, replacing the need
@@ -497,7 +519,7 @@ def provision_parent_virtual_account(parent_user, actor=None):
     # Append school name to last_name so the DVA account reads "Parent Name - School Name"
     last_name_field = f"{last_name} - {school_name}"[:50] if school_name else (last_name or "Guardian")
     customer = create_paystack_customer(
-        email=parent_user.email,
+        email=paystack_customer_email(parent_user.email),
         first_name=first_name or "Parent",
         last_name=last_name_field,
         phone=getattr(parent_user, "phone", "") or "",

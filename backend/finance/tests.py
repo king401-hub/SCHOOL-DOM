@@ -4149,6 +4149,48 @@ class ParentVirtualAccountProvisioningTests(TestCase):
         self.assertEqual(result, {"status": "skipped", "reason": "already_has_dva"})
         mock_provision.assert_not_called()
 
+    @patch("finance.services.create_paystack_dedicated_account")
+    @patch("finance.services.get_or_create_paystack_dva_split_code", return_value="SPL_test")
+    @patch("finance.services.create_paystack_customer", return_value={"customer_code": "CUS_test"})
+    def test_a_parent_with_a_made_up_email_is_registered_at_paystack_under_a_valid_one(self, mock_customer, _mock_split, mock_dedicated):
+        """Paystack refuses @schooldom.local ('"email" must be a valid email'), which
+        every parent added without a guardian email is stored under."""
+        from finance.services import provision_parent_virtual_account
+
+        mock_dedicated.return_value = {"account_number": "0123456789", "bank": {"name": "Wema Bank"}, "account_name": "Parent Example"}
+        parent = self._parent("parent2348011112222.abc123@schooldom.local")
+
+        vac, created = provision_parent_virtual_account(parent)
+
+        self.assertTrue(created)
+        self.assertEqual(mock_customer.call_args.kwargs["email"], "parent2348011112222.abc123@schooldom.academy")
+        parent.refresh_from_db()
+        self.assertEqual(parent.email, "parent2348011112222.abc123@schooldom.local")  # the stored address is not changed
+        self.assertEqual(vac.account_number, "0123456789")
+
+    @patch("finance.services.create_paystack_dedicated_account")
+    @patch("finance.services.get_or_create_paystack_dva_split_code", return_value="SPL_test")
+    @patch("finance.services.create_paystack_customer", return_value={"customer_code": "CUS_test"})
+    def test_a_real_guardian_email_is_sent_to_paystack_unchanged(self, mock_customer, _mock_split, mock_dedicated):
+        from finance.services import provision_parent_virtual_account
+
+        mock_dedicated.return_value = {"account_number": "0123456780", "bank": {"name": "Wema Bank"}, "account_name": "Parent Example"}
+        parent = self._parent("real.parent@example.com")
+
+        provision_parent_virtual_account(parent)
+
+        self.assertEqual(mock_customer.call_args.kwargs["email"], "real.parent@example.com")
+
+    def test_the_placeholder_domain_can_be_changed_and_only_the_placeholder_is_touched(self):
+        from finance.services import paystack_customer_email
+
+        self.assertEqual(paystack_customer_email("parent1.abc@SchoolDom.LOCAL"), "parent1.abc@schooldom.academy")
+        with override_settings(PAYSTACK_PLACEHOLDER_EMAIL_DOMAIN="parents.example"):
+            self.assertEqual(paystack_customer_email("parent1.abc@schooldom.local"), "parent1.abc@parents.example")
+        self.assertEqual(paystack_customer_email("mum@schooldom.local.example.com"), "mum@schooldom.local.example.com")
+        self.assertEqual(paystack_customer_email("mum@gmail.com"), "mum@gmail.com")
+        self.assertEqual(paystack_customer_email(""), "")
+
     def test_a_missing_user_is_skipped(self):
         self.assertEqual(provision_parent_dva(str(uuid.uuid4()))["status"], "skipped")
 
