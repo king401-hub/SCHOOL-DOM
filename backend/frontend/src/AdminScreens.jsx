@@ -36,6 +36,7 @@ import {
   ReportCardSheet,
   Popup,
   describeReceiptOutcome,
+  useCurrentTerm,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
@@ -1034,11 +1035,15 @@ function InvoiceDocument({ id, school, bill, student, parent, invoiceNumber, vir
   );
 }
 
-function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPublish }) {
+function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPublish, defaultTitle = "" }) {
   const isEdit = Boolean(bill?.id);
   const isPublished = bill?.status === "published";
+  // A new bill starts titled with the active term ("First Term 2026/2027").
+  // It is only a starting point: once the admin types in the field it is
+  // theirs, and the term arriving late (it is fetched) never overwrites it.
+  const titleTouched = useRef(false);
   const [form, setForm] = useState({
-    title: bill?.title || "",
+    title: bill?.title || (isEdit ? "" : defaultTitle),
     class_ids: (bill?.classes || []).map(String),
     due_date: bill?.due_date || "",
     discount_amount: bill?.discount_amount || "0",
@@ -1053,6 +1058,11 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
   const [saving, setSaving] = useState("");
   const [error, setError] = useState("");
   const [savedBillId, setSavedBillId] = useState(bill?.id || "");
+
+  useEffect(() => {
+    if (isEdit || titleTouched.current || !defaultTitle) return;
+    setForm((current) => (current.title ? current : { ...current, title: defaultTitle }));
+  }, [defaultTitle, isEdit]);
 
   const previewBill = {
     title: form.title,
@@ -1143,7 +1153,7 @@ function BillDesignerModal({ bill, school, classOptions, onClose, onSave, onPubl
           <div className="bill-designer-form">
             <label className="panel-field full">
               Bill title
-              <input value={form.title} onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))} placeholder="e.g. First Term School Fees" disabled={isPublished} />
+              <input value={form.title} onChange={(e) => { titleTouched.current = true; setForm((c) => ({ ...c, title: e.target.value })); }} placeholder="e.g. First Term School Fees" disabled={isPublished} />
             </label>
             <label className="panel-field full">
               Classes
@@ -1736,6 +1746,9 @@ function AdminFinanceScreen({
   const studentFeeRows = finance?.student_fee_rows || [];
   const classOptions = finance?.class_options || [];
   const billTermOptions = finance?.term_options || [];
+  // What a new bill is titled by default: the active term, e.g. "First Term 2026/2027".
+  const { term: activeTerm, year: activeYear } = useCurrentTerm(session);
+  const defaultBillTitle = activeTerm?.name ? [activeTerm.name, activeYear?.name].filter(Boolean).join(" ") : "";
   const paymentRows = finance?.student_payment_rows || [];
   const creditPool = finance?.activation_credit_pool || {};
   const creditSummary = finance?.activation_credit_summary || {};
@@ -3616,6 +3629,7 @@ function AdminFinanceScreen({
           onClose={handleCloseBillDesigner}
           onSave={onBillSave}
           onPublish={onBillPublish}
+          defaultTitle={defaultBillTitle}
         />
       ) : null}
 
