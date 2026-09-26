@@ -8070,3 +8070,151 @@ class ImportStudentsCommandTests(TestCase):
         student = StudentProfile.objects.get()
         self.assertEqual(student.user.tenant, self.school)
         self.assertEqual(student.current_class, self.jss1)
+
+
+class ResetStudentPasswordsCommandTests(TestCase):
+    """`manage.py reset_student_passwords`: a new password and login sheet for the
+    students of an imported CSV when the original sheet was lost. All names and
+    numbers here are made up."""
+
+    HEADER = "First name,Surname,Class,Phone number\n"
+
+    def setUp(self):
+        import tempfile
+
+        self.school = SchoolTenant.objects.create(name="Reset Password School", schema_name="reset_password_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.jss1 = Class.objects.create(tenant=self.legacy_tenant, name="JSS 1", section="")
+        User.objects.create_user(
+            email="admin@resetpw.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = folder.name
+        self.csv_body = "Ada,Okafor,JSS 1,08011112222\nBola,Bello,JSS 1,08033334444\n"
+        self.first_sheet = self._import()
+
+    def _path(self, name):
+        import os
+
+        return os.path.join(self.folder, name)
+
+    def _csv(self, body=None):
+        path = self._path("students.csv")
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(self.HEADER + (self.csv_body if body is None else body))
+        return path
+
+    def _sheet(self, path):
+        import csv
+
+        with open(path, encoding="utf-8-sig", newline="") as handle:
+            return {line["Login email"]: line["Password"] for line in csv.DictReader(handle)}
+
+    def _import(self):
+        from io import StringIO
+        from django.core.management import call_command
+
+        sheet = self._path("first-logins.csv")
+        call_command(
+            "import_students", school=self.school.schema_name, file=self._csv(), commit=True,
+            login_sheet=sheet, stdout=StringIO(), stderr=StringIO(),
+        )
+        return self._sheet(sheet)
+
+    def _reset(self, body=None, **options):
+        from io import StringIO
+        from django.core.management import call_command
+
+        options.setdefault("login_sheet", self._path("reset-logins.csv"))
+        out = StringIO()
+        call_command(
+            "reset_student_passwords", school=options.pop("school", self.school.schema_name),
+            file=self._csv(body), stdout=out, stderr=StringIO(), **options,
+        )
+        return out.getvalue()
+
+    def _works(self, email, password):
+        return User.objects.get(email=email).check_password(password)
+
+    def test_without_commit_no_password_changes(self):
+        out = self._reset()
+        self.assertIn("2 to reset", out)
+        self.assertIn("Dry run", out)
+        for email, password in self.first_sheet.items():
+            self.assertTrue(self._works(email, password))
+
+    def test_commit_gives_each_student_a_new_working_password_and_the_old_one_stops_working(self):
+        out = self._reset(commit=True)
+        self.assertIn("New passwords set for 2 student(s)", out)
+
+        new_sheet = self._sheet(self._path("reset-logins.csv"))
+        self.assertEqual(set(new_sheet), set(self.first_sheet))  # same logins, new passwords
+        for email, password in new_sheet.items():
+            self.assertTrue(self._works(email, password))
+            self.assertNotEqual(password, self.first_sheet[email])
+            self.assertFalse(self._works(email, self.first_sheet[email]))
+
+    def test_students_who_are_not_in_the_csv_are_not_touched(self):
+        other = User.objects.create_user(
+            email="other.pupil@resetpw.edu", password="KeepThis123", first_name="Chidi", last_name="Eze",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=other, student_id="RSTOTHER", admission_number="RSTADM", admission_date=date(2025, 9, 1),
+            current_class=self.jss1, guardian_name="Eze", guardian_relation="Guardian",
+        )
+        self._reset(commit=True)
+        self.assertTrue(self._works("other.pupil@resetpw.edu", "KeepThis123"))
+
+    def test_a_student_who_has_already_signed_in_is_left_alone_unless_asked(self):
+        from users.models import LoginHistory
+
+        ada = User.objects.get(first_name="Ada")
+        LoginHistory.objects.create(user=ada, ip_address="127.0.0.1", status="success")
+
+        out = self._reset(commit=True)
+
+        self.assertIn("1 to reset", out)
+        self.assertIn("1 already signed in", out)
+        self.assertTrue(self._works(ada.email, self.first_sheet[ada.email]))
+        self.assertEqual(set(self._sheet(self._path("reset-logins.csv"))), {User.objects.get(first_name="Bola").email})
+
+        self._reset(commit=True, include_signed_in=True, login_sheet=self._path("second-reset.csv"))
+        self.assertFalse(self._works(ada.email, self.first_sheet[ada.email]))
+
+    def test_a_failed_login_attempt_does_not_count_as_signing_in(self):
+        from users.models import LoginHistory
+
+        ada = User.objects.get(first_name="Ada")
+        LoginHistory.objects.create(user=ada, ip_address="127.0.0.1", status="failed")
+        self.assertIn("2 to reset", self._reset())
+
+    def test_rows_that_match_nobody_or_no_class_are_reported_not_guessed(self):
+        out = self._reset(body=self.csv_body + "Dayo,Alli,JSS 1,\nEmeka,Obi,Reception,\n")
+        self.assertIn("2 to reset", out)
+        self.assertIn("1 not found", out)
+        self.assertIn("1 with an unknown class", out)
+        self.assertIn("Dayo Alli", out)
+
+    def test_another_schools_student_with_the_same_name_is_not_touched(self):
+        other = SchoolTenant.objects.create(name="Other Reset School", schema_name="other_reset_school", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        other_class = Class.objects.create(tenant=other_legacy, name="JSS 1", section="")
+        stranger = User.objects.create_user(
+            email="ada.elsewhere@example.com", password="KeepThis123", first_name="Ada", last_name="Okafor",
+            role="student", tenant=other, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=stranger, student_id="RSTELSE", admission_number="RSTELSEADM", admission_date=date(2025, 9, 1),
+            current_class=other_class, guardian_name="Okafor", guardian_relation="Guardian",
+        )
+        self._reset(commit=True)
+        self.assertTrue(self._works("ada.elsewhere@example.com", "KeepThis123"))
+
+    def test_an_unknown_school_is_refused(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            self._reset(school="no_such_school")
