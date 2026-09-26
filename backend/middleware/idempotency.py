@@ -20,6 +20,10 @@ SKIP_PATHS = frozenset(
         "/api/app/attendance/teacher-mark/",
         "/api/app/attendance/student-qr-mark/",
         "/api/app/attendance/mark/",
+        # Checks a spreadsheet and saves nothing. Its answer depends on who is
+        # already in the school, so replaying an earlier answer would show a
+        # class list as importable right after it was imported.
+        "/api/app/students/import/preview/",
     }
 )
 

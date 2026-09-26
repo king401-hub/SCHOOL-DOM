@@ -28500,3 +28500,53 @@ body[data-theme="dark"] .receipt-preview-message {
   border-color: #334155;
   color: #e2e8f0;
 }
+
+/* ── Student import (spreadsheet) ─────────────────────────────────────────── */
+.student-import-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.student-import-callout h3,
+.student-import-callout p { margin: 0; }
+.student-import-callout p { opacity: 0.75; font-size: 0.9rem; margin-top: 0.2rem; }
+
+.student-import-card { width: min(1040px, calc(100vw - 24px)); }
+.student-import-body { display: grid; gap: 1rem; padding-bottom: 1rem; }
+.student-import-steps { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.5rem; line-height: 1.5; }
+.student-import-rules {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+}
+.student-import-rules ul { margin: 0.4rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.25rem; }
+.student-import-counts { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.student-import-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.9rem;
+}
+.student-import-count.ok { border-color: rgba(22, 163, 74, 0.55); color: #15803d; }
+.student-import-count.bad { border-color: rgba(220, 38, 38, 0.55); color: #b91c1c; }
+.student-import-section { display: grid; gap: 0.5rem; }
+.student-import-section small { opacity: 0.75; line-height: 1.4; }
+.student-import-classes td { vertical-align: middle; }
+.student-import-classes select { width: 100%; min-width: 180px; }
+.student-import-check { display: flex; gap: 0.6rem; align-items: flex-start; line-height: 1.4; }
+.student-import-check input { margin-top: 0.25rem; }
+.student-import-check small { display: block; opacity: 0.75; }
+.student-import-rows { max-height: 320px; overflow: auto; }
+.student-import-row.error td { background: rgba(220, 38, 38, 0.08); }
+.student-import-row.skip td { opacity: 0.6; }
+.student-import-progress { display: grid; justify-items: center; gap: 0.6rem; padding: 2rem 0; }
+.student-import-progress progress { width: min(420px, 100%); }
+
+body[data-theme="dark"] .student-import-count.ok { color: #4ade80; }
+body[data-theme="dark"] .student-import-count.bad { color: #f87171; }

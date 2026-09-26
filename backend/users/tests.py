@@ -7565,3 +7565,355 @@ class StudentDirectoryPagingTests(TestCase):
 
         self.assertEqual(len(self._all_pages()), 25)
         self.assertEqual(self._all_pages(class_id=other_class.id), [])
+
+
+class StudentBulkImportTests(TestCase):
+    """Importing a class list from a spreadsheet instead of typing each student.
+    All names, numbers and addresses here are made up."""
+
+    HEADER = "First name,Middle name,Surname,Class,Gender,Date of Birth,Phone number,Home address\n"
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Bulk Import School", schema_name="bulk_import_school", is_active=True)
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.jss1 = Class.objects.create(tenant=self.legacy_tenant, name="JSS 1", section="")
+        self.pry3 = Class.objects.create(tenant=self.legacy_tenant, name="Primary 3", section="")
+        self.ss2 = Class.objects.create(tenant=self.legacy_tenant, name="SS 2", section="Science")
+        self.admin = User.objects.create_user(
+            email="admin@bulkimport.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _csv(self, body, header=None):
+        return SimpleUploadedFile("students.csv", ((header or self.HEADER) + body).encode("utf-8"), content_type="text/csv")
+
+    def _preview(self, body, header=None, **extra):
+        response = self.client.post(
+            "/api/app/students/import/preview/", {"file": self._csv(body, header), **extra}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
+
+    def _commit(self, rows, **extra):
+        response = self.client.post("/api/app/students/import/commit/", {"rows": rows, **extra}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
+
+    def test_preview_saves_nothing_and_reads_messy_class_names(self):
+        result = self._preview(
+            "ada,,OKAFOR,jss1,female,14/05/2013,08011112222,1 Test Street\n"
+            "Bola,Tunde,Bello,PRIMARY THREE,M,,08033334444,\n"
+            "Chidi,,Eze,SSS 2 / SCIENCE DEPARTMENT,,,,\n"
+        )
+        self.assertEqual(result["counts"], {"create": 3, "skip": 0, "error": 0})
+        self.assertEqual([row["class_id"] for row in result["rows"]], [str(self.jss1.id), str(self.pry3.id), str(self.ss2.id)])
+        self.assertEqual(result["rows"][0]["last_name"], "Okafor")  # ALL CAPS is tidied
+        self.assertEqual(result["rows"][0]["date_of_birth"], "2013-05-14")
+        self.assertEqual(StudentProfile.objects.count(), 0)
+        self.assertFalse(User.objects.filter(role="student").exists())
+
+    def test_generated_email_is_one_of_the_names_and_never_a_taken_address(self):
+        User.objects.create_user(
+            email="ada@gmail.com", password="x", role="student", tenant=self.school, is_active=True, is_verified=True
+        )
+        result = self._preview(
+            "Ada,Grace,Okafor,JSS 1,F,,,\n"
+            "Ada,,Nwosu,JSS 1,F,,,\n"
+            "Ada,,Okoye,JSS 1,F,,,\n"
+        )
+        emails = [row["email"] for row in result["rows"]]
+        self.assertEqual(emails[0], "grace@gmail.com")  # first name is taken, the next name is used
+        self.assertEqual(emails[1], "nwosu@gmail.com")
+        self.assertEqual(emails[2], "okoye@gmail.com")
+        self.assertEqual(len(set(emails)), 3)
+
+    def test_two_students_with_the_same_only_name_get_different_emails(self):
+        result = self._preview("Ada,,Ada,JSS 1,F,,,\nAda,,Ada,PRIMARY 3,F,,,\n")
+        first, second = (row["email"] for row in result["rows"])
+        self.assertEqual(first, "ada@gmail.com")
+        self.assertNotEqual(second, first)
+        self.assertTrue(second.endswith("@gmail.com"))
+
+    def test_the_email_domain_can_be_changed(self):
+        result = self._preview("Ada,,Okafor,JSS 1,F,,,\n", email_domain="@school.example")
+        self.assertEqual(result["rows"][0]["email"], "ada@school.example")
+
+    def test_guardian_is_named_after_the_surname_and_two_numbers_read_as_mr_and_mrs(self):
+        result = self._preview(
+            "Ada,,Okafor,JSS 1,F,,08011112222,\n"
+            "Bola,,Bello,JSS 1,M,,08033334444 / 0805 555 6666,\n"
+        )
+        one, two = result["rows"]
+        self.assertEqual((one["guardian_name"], one["guardian_phone"], one["second_guardian_name"]), ("Okafor", "+2348011112222", ""))
+        self.assertEqual(
+            (two["guardian_name"], two["guardian_phone"], two["second_guardian_name"], two["second_guardian_phone"]),
+            ("Mr Bello", "+2348033334444", "Mrs Bello", "+2348055556666"),
+        )
+
+    def test_a_second_phone_column_counts_as_the_second_number(self):
+        result = self._preview(
+            "Ada,,Okafor,JSS 1,F,08011112222,08033334444\n",
+            header="First name,Middle name,Surname,Class,Gender,Father number,Mother number\n".replace(",Middle name", ",Middle name"),
+        )
+        row = result["rows"][0]
+        self.assertEqual((row["guardian_name"], row["second_guardian_name"]), ("Mr Okafor", "Mrs Okafor"))
+
+    def test_a_bad_phone_or_date_is_a_warning_not_a_failure(self):
+        result = self._preview("Ada,,Okafor,JSS 1,F,31/31/2013,12345,\n")
+        row = result["rows"][0]
+        self.assertEqual(row["status"], "create")
+        self.assertEqual(row["guardian_phone"], "")
+        self.assertEqual(row["date_of_birth"], "")
+        self.assertEqual(len(row["warnings"]), 2)
+
+    def test_an_unknown_class_is_reported_and_can_be_mapped(self):
+        body = "Ada,,Okafor,Reception,F,,,\nBola,,Bello,JSS 1,M,,,\n"
+        result = self._preview(body)
+        self.assertEqual(result["counts"], {"create": 1, "skip": 0, "error": 1})
+        self.assertIn("Reception", result["rows"][0]["message"])
+        self.assertIn(
+            {"id": str(self.jss1.id), "label": "JSS 1"}, result["available_classes"],
+        )
+        unmatched = [item for item in result["classes"] if not item["class_id"]]
+        self.assertEqual([item["source"] for item in unmatched], ["Reception"])
+
+        again = self.client.post(
+            "/api/app/students/import/preview/",
+            {"rows": result["source_rows"], "class_map": {"Reception": str(self.pry3.id)}},
+            format="json",
+        )
+        self.assertEqual(again.data["counts"], {"create": 2, "skip": 0, "error": 0})
+        self.assertEqual(again.data["rows"][0]["class_id"], str(self.pry3.id))
+
+    def test_a_class_for_the_whole_file_fills_in_a_missing_class_column(self):
+        result = self._preview(
+            "Ada,,Okafor,,F,,,\n", default_class_id=str(self.jss1.id),
+        )
+        self.assertEqual(result["rows"][0]["class_id"], str(self.jss1.id))
+        without = self._preview("Ada,,Okafor,,F,,,\n")
+        self.assertEqual(without["counts"]["error"], 1)
+
+    def test_a_class_name_shared_by_two_sections_is_ambiguous(self):
+        Class.objects.create(tenant=self.legacy_tenant, name="SS 2", section="Art")
+        result = self._preview("Ada,,Okafor,SS 2,F,,,\nBola,,Bello,SS 2 Art,M,,,\n")
+        self.assertEqual(result["rows"][0]["status"], "error")
+        self.assertIn("more than one class", result["rows"][0]["message"])
+        self.assertEqual(result["rows"][1]["status"], "create")
+
+    def test_the_same_student_twice_in_a_file_is_only_created_once(self):
+        result = self._preview("Ada,,Okafor,JSS 1,F,,,\nADA,,OKAFOR,jss1,F,,,\n")
+        self.assertEqual([row["status"] for row in result["rows"]], ["create", "skip"])
+
+    def test_a_file_without_name_columns_is_refused(self):
+        response = self.client.post(
+            "/api/app/students/import/preview/",
+            {"file": self._csv("JSS 1,08011112222\n", header="Class,Phone\n")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("first name", response.data["message"])
+
+    def test_commit_creates_students_who_can_sign_in_with_the_password_returned(self):
+        preview = self._preview(
+            "Ada,,Okafor,JSS 1,F,14/05/2013,08011112222,1 Test Street\n"
+            "Bola,,Okafor,PRIMARY 3,M,,08011112222,1 Test Street\n"
+            "Chidi,,Eze,JSS 1,,,08033334444 / 08055556666,\n"
+        )
+        result = self._commit(preview["source_rows"])
+
+        self.assertEqual(len(result["created"]), 3, result)
+        self.assertEqual(result["failed"], [])
+        ada = StudentProfile.objects.get(user__email="ada@gmail.com")
+        self.assertEqual(ada.current_class, self.jss1)
+        self.assertEqual(ada.user.get_full_name(), "Okafor Ada")
+        self.assertEqual(ada.user.gender, "F")
+        self.assertEqual(str(ada.user.date_of_birth), "2013-05-14")
+        self.assertEqual((ada.guardian_name, ada.guardian_phone, ada.home_address), ("Okafor", "+2348011112222", "1 Test Street"))
+        self.assertTrue(ada.student_id.startswith("STBI"), ada.student_id)  # ST + initials of the first two words of the school name
+
+        passwords = {item["email"]: item["password"] for item in result["created"]}
+        self.assertEqual(len(set(passwords.values())), 3)  # one each, not shared
+        for email, password in passwords.items():
+            self.assertGreaterEqual(len(password), 8)
+            self.assertTrue(User.objects.get(email=email).check_password(password))
+
+        chidi = StudentProfile.objects.get(user__first_name="Chidi")
+        self.assertEqual((chidi.guardian_name, chidi.second_guardian_name), ("Mr Eze", "Mrs Eze"))
+
+    def test_siblings_sharing_a_phone_end_up_under_one_parent(self):
+        preview = self._preview(
+            "Ada,,Okafor,JSS 1,F,,08011112222,\nBola,,Okafor,PRIMARY 3,M,,08011112222,\n"
+        )
+        self._commit(preview["source_rows"])
+        parents = ParentProfile.objects.filter(user__tenant=self.school)
+        self.assertEqual(parents.count(), 1)
+        self.assertEqual(parents.first().children.count(), 2)
+
+    def test_importing_the_same_file_again_creates_nobody_new(self):
+        body = "Ada,,Okafor,JSS 1,F,,08011112222,\nBola,,Bello,PRIMARY 3,M,,08033334444,\n"
+        self._commit(self._preview(body)["source_rows"])
+        self.assertEqual(StudentProfile.objects.count(), 2)
+
+        from django.core.cache import cache as django_cache
+        django_cache.clear()  # IdempotencyMiddleware replays an identical POST made within 10 seconds
+        again = self._commit(self._preview(body)["source_rows"])
+        self.assertEqual(again["created"], [])
+        self.assertEqual(len(again["skipped"]), 2)
+        self.assertEqual(StudentProfile.objects.count(), 2)
+
+    def test_one_bad_row_does_not_stop_the_rest(self):
+        rows = self._preview("Ada,,Okafor,JSS 1,F,,,\nBola,,Bello,Nowhere,M,,,\nChidi,,Eze,JSS 1,M,,,\n")["source_rows"]
+        result = self._commit(rows)
+        self.assertEqual([item["name"] for item in result["created"]], ["Ada Okafor", "Chidi Eze"])
+        self.assertEqual([item["name"] for item in result["failed"]], ["Bola Bello"])
+
+    def test_imported_students_get_the_fees_of_their_class(self):
+        from finance.models import Bill, BillItem, SchoolFee
+
+        bill = Bill.objects.create(
+            tenant=self.school, title="Term Fee", status=Bill.STATUS_PUBLISHED, created_by=self.admin,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        bill.classes.set([self.jss1])
+        BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal("48000.00"))
+
+        rows = self._preview("Ada,,Okafor,JSS 1,F,,,\nBola,,Bello,PRIMARY 3,M,,,\n")["source_rows"]
+        self._commit(rows)
+
+        ada = StudentProfile.objects.get(user__first_name="Ada")
+        bola = StudentProfile.objects.get(user__first_name="Bola")
+        self.assertEqual(SchoolFee.objects.get(student=ada, bill=bill).amount, Decimal("48000.00"))
+        self.assertFalse(SchoolFee.objects.filter(student=bola, bill=bill).exists())
+
+    def test_activation_tokens_are_only_spent_when_asked_for(self):
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 5
+        pool.save(update_fields=["balance", "updated_at"])
+        rows = self._preview("Ada,,Okafor,JSS 1,F,,,\nBola,,Bello,JSS 1,M,,,\n")["source_rows"]
+
+        preview = self._preview("Chidi,,Eze,JSS 1,M,,,\n")
+        self.assertEqual(preview["activation_tokens"], {"available": 5, "needed": 1})
+
+        self._commit(rows)
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 5)
+
+        result = self._commit(
+            self._preview("Chidi,,Eze,JSS 1,M,,,\nDayo,,Alli,JSS 1,M,,,\n")["source_rows"], assign_tokens=True
+        )
+        pool.refresh_from_db()
+        self.assertEqual(pool.balance, 3)
+        self.assertEqual(result["tokens_assigned"], 2)
+
+    def test_running_out_of_tokens_still_creates_the_students(self):
+        pool = get_or_create_activation_credit_pool(self.school)
+        pool.balance = 0
+        pool.save(update_fields=["balance", "updated_at"])
+        result = self._commit(self._preview("Ada,,Okafor,JSS 1,F,,,\n")["source_rows"], assign_tokens=True)
+        self.assertEqual(len(result["created"]), 1)
+        self.assertEqual(result["tokens_assigned"], 0)
+        self.assertIn("Insufficient", result["token_message"])
+
+    def test_a_password_column_is_used_when_given(self):
+        header = self.HEADER.strip() + ",Password\n"
+        preview = self._preview("Ada,,Okafor,JSS 1,F,,,,Sunshine9\n", header=header)
+        self.assertNotIn("password", preview["rows"][0])  # never sent back to the browser
+        result = self._commit(preview["source_rows"])
+        self.assertEqual(result["created"][0]["password"], "Sunshine9")
+
+    def test_an_email_column_is_used_and_must_be_free(self):
+        header = self.HEADER.strip() + ",Email\n"
+        User.objects.create_user(
+            email="taken@example.com", password="x", role="teacher", tenant=self.school, is_active=True, is_verified=True
+        )
+        result = self._preview(
+            "Ada,,Okafor,JSS 1,F,,,,ada.okafor@example.com\nBola,,Bello,JSS 1,M,,,,taken@example.com\n", header=header
+        )
+        self.assertEqual(result["rows"][0]["email"], "ada.okafor@example.com")
+        self.assertEqual(result["rows"][1]["status"], "error")
+        self.assertIn("already used", result["rows"][1]["message"])
+
+    def test_students_are_created_in_the_admins_own_school_only(self):
+        other = SchoolTenant.objects.create(name="Other Import School", schema_name="other_import_school", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        Class.objects.create(tenant=other_legacy, name="JSS 1", section="")
+        Class.objects.create(tenant=other_legacy, name="Nursery 1", section="")
+        result = self._preview("Ada,,Okafor,Nursery 1,F,,,\n")
+        self.assertEqual(result["rows"][0]["status"], "error")  # another school's class is invisible
+
+        self._commit(self._preview("Ada,,Okafor,JSS 1,F,,,\n")["source_rows"])
+        student = StudentProfile.objects.get(user__first_name="Ada")
+        self.assertEqual(student.user.tenant, self.school)
+        self.assertEqual(student.current_class, self.jss1)
+
+    def test_only_school_admins_may_import(self):
+        teacher = User.objects.create_user(
+            email="teacher@bulkimport.edu", password="TeacherPass123", role="teacher",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=teacher)
+        response = self.client.post(
+            "/api/app/students/import/preview/", {"file": self._csv("Ada,,Okafor,JSS 1,F,,,\n")}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post(
+            "/api/app/students/import/commit/", {"rows": [{"first_name": "A", "last_name": "B"}]}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(StudentProfile.objects.count(), 0)
+
+    def test_a_commit_batch_has_a_size_limit(self):
+        rows = [{"line": n, "first_name": f"Kid{n}", "last_name": "Test", "class": "JSS 1"} for n in range(30)]
+        response = self.client.post("/api/app/students/import/commit/", {"rows": rows}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(StudentProfile.objects.count(), 0)
+
+    def test_a_repeated_preview_is_never_a_stale_replay(self):
+        rows = self._preview("Ada,,Okafor,JSS 1,F,,,\n")["source_rows"]
+        body = {"rows": rows}
+        first = self.client.post("/api/app/students/import/preview/", body, format="json")
+        self.assertEqual(first.data["counts"]["create"], 1)
+
+        self._commit(rows)
+
+        # Same body, seconds later: the idempotency middleware would replay the
+        # first answer for any other endpoint.
+        second = self.client.post("/api/app/students/import/preview/", body, format="json")
+        self.assertEqual(second.data["counts"], {"create": 0, "skip": 1, "error": 0})
+
+    def test_birth_dates_are_read_in_the_formats_schools_write_them(self):
+        from users.student_import import parse_birth_date
+
+        expected = date(2012, 5, 14)
+        for text in ("2012-05-14", "14/05/2012", "14-05-2012", "14.05.2012", "14 May 2012", "14th May, 2012",
+                     "May 14, 2012", "14 may 2012", "14TH MAY 2012"):
+            self.assertEqual(parse_birth_date(text), expected, text)
+        self.assertEqual(parse_birth_date("3rd Sept. 2011"), date(2011, 9, 3))
+        self.assertIsNone(parse_birth_date("5th May"))  # no year
+        self.assertIsNone(parse_birth_date("31/31/2012"))
+        self.assertIsNone(parse_birth_date(""))
+
+    def test_numbers_missing_a_digit_are_not_accepted(self):
+        from users.student_import import canonical_phone, split_phone_numbers
+
+        def phones(cell):
+            return [canonical_phone(intl, digits) for intl, digits in split_phone_numbers(cell)]
+
+        self.assertEqual(phones("08011112222"), ["+2348011112222"])
+        self.assertEqual(phones("8011112222"), ["+2348011112222"])
+        self.assertEqual(phones("+2348011112222"), ["+2348011112222"])
+        self.assertEqual(phones("0801111222"), [""])  # one digit short
+        self.assertEqual(phones("08011112222, 09033334444"), ["+2348011112222", "+2349033334444"])
+
+    def test_excel_style_files_are_read(self):
+        """Excel writes a BOM, and in some regions semicolons instead of commas."""
+        raw = "\ufeffFirst name;Surname;Class\nAda;Okafor;JSS 1\n".encode("utf-8")
+        response = self.client.post(
+            "/api/app/students/import/preview/",
+            {"file": SimpleUploadedFile("students.csv", raw, content_type="text/csv")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["counts"]["create"], 1)

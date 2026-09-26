@@ -6420,6 +6420,104 @@ def create_student(request):
     )
 
 
+def _student_import_request(request):
+    """Shared by the preview and commit endpoints: the admin check, the rows and
+    the options that change what a row becomes. Returns (rows, options, error)."""
+    from users import student_import
+
+    user = request.user
+    if getattr(user, "role", None) not in ADMIN_ROLES:
+        return None, None, Response(
+            {"success": False, "message": "Only school admins can import students."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if not user.tenant:
+        return None, None, Response(
+            {"success": False, "message": "Your account is not linked to a school."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    class_map = request.data.get("class_map") or {}
+    if isinstance(class_map, str):
+        try:
+            class_map = json.loads(class_map)
+        except ValueError:
+            class_map = {}
+    options = {
+        "default_class_id": str(request.data.get("default_class_id") or "").strip(),
+        "class_map": class_map if isinstance(class_map, dict) else {},
+        "email_domain": str(request.data.get("email_domain") or "").strip(),
+    }
+
+    uploaded = request.FILES.get("file")
+    try:
+        if uploaded:
+            rows = student_import.read_upload(uploaded)
+        else:
+            raw_rows = request.data.get("rows")
+            if not isinstance(raw_rows, list) or not raw_rows:
+                raise student_import.ImportFileError("Attach a CSV file of students.")
+            if len(raw_rows) > student_import.MAX_ROWS:
+                raise student_import.ImportFileError("Too many students in one import.")
+            allowed = set(student_import.TEMPLATE_COLUMNS) | {"line"}
+            rows = [
+                {key: value for key, value in item.items() if key in allowed}
+                for item in raw_rows
+                if isinstance(item, dict)
+            ]
+    except student_import.ImportFileError as exc:
+        return None, None, Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return rows, options, None
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def student_import_preview(request):
+    """Check a student spreadsheet and report what importing it would do,
+    without saving anything. Send `file` the first time; send back `rows`
+    (the `source_rows` of the first answer) plus a `class_map` to re-check."""
+    from users import student_import
+
+    rows, options, error = _student_import_request(request)
+    if error:
+        return error
+    result = student_import.build_preview(request.user, rows, **options)
+
+    from finance.services import get_or_create_activation_credit_pool
+
+    try:
+        available_tokens = int(get_or_create_activation_credit_pool(request.user.tenant).balance)
+    except Exception:
+        available_tokens = 0
+    payload = {
+        "success": True,
+        **result,
+        "activation_tokens": {"available": available_tokens, "needed": result["counts"]["create"]},
+    }
+    if request.FILES.get("file"):
+        payload["source_rows"] = rows
+    return Response(payload)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def student_import_commit(request):
+    """Create one small batch of the previewed students. The browser calls this
+    repeatedly; each answer lists the new students with their first passwords,
+    which are not stored anywhere in readable form."""
+    from users import student_import
+
+    rows, options, error = _student_import_request(request)
+    if error:
+        return error
+    assign_tokens = str(request.data.get("assign_tokens") or "").strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        result = student_import.commit_rows(request.user, rows, assign_tokens=assign_tokens, **options)
+    except student_import.ImportFileError as exc:
+        return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({"success": True, **result})
+
+
 @api_view(["PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def student_detail(request, student_id):

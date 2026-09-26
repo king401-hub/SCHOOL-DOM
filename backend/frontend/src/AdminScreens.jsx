@@ -45,6 +45,7 @@ import { SmsTransactionHistoryModal, SmsWalletStatusPill, useSmsWalletReceipt } 
 import { FinanceHistoryModal } from "./FinanceHistoryModal";
 import ExamSubmissionModal from "./components/ExamSubmissionModal";
 import ResultBatchReviewModal from "./components/ResultBatchReviewModal";
+import StudentImportModal from "./components/StudentImportModal";
 import TimetableBoard from "./components/timetable/TimetableBoard";
 import TimetableEntryDialog from "./components/timetable/TimetableEntryDialog";
 import ClassTimetableDialog from "./components/timetable/ClassTimetableDialog";
@@ -12428,7 +12429,8 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   );
 }
 
-function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, initialClassFilter = "", onClassFilterChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG" }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, initialClassFilter = "", onClassFilterChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG", session }) {
+  const [showImport, setShowImport] = useState(false);
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
   const subjectOptions = data?.options?.subjects || [];
@@ -12873,6 +12875,18 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
 
       {data ? (
         <>
+      {session ? (
+        <article className="app-panel student-import-callout">
+          <div>
+            <h3>Adding a whole class?</h3>
+            <p>Import students from a spreadsheet instead of typing them one at a time.</p>
+          </div>
+          <button type="button" className="table-action" onClick={() => setShowImport(true)}>Import from spreadsheet</button>
+        </article>
+      ) : null}
+      {showImport ? (
+        <StudentImportModal session={session} onClose={() => setShowImport(false)} onImported={onRetry} />
+      ) : null}
       <article className="app-panel">
         <h3>Admissions</h3>
         <form className="panel-form" onSubmit={handleSubmit}>

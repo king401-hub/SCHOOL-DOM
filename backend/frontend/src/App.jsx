@@ -8944,6 +8944,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onLoadMoreStudents={handleLoadMoreStudents}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}
+        session={session}
         school={screenData["/settings"]?.school || screenData["/dashboard"]?.school || session?.school}
         countries={countriesList}
         defaultCountryCode={screenData["/settings"]?.school?.country || "NG"}
