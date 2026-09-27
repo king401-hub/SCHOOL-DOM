@@ -105,6 +105,7 @@ import {
   downloadPrintablePng,
   downloadPrintablePdf,
   CurrentTermBadge,
+  TopbarClock,
   describeReceiptOutcome,
 } from "./AppShared";
 import { TeacherExamManager, TeacherExamBuilder, TeacherPastExamsPanel, ClassMessageComposer, TheoryGradingPanel } from "./TeacherExamPanels";
@@ -9416,6 +9417,7 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
             </div>
           </div>
           <div className="topbar-actions">
+            <TopbarClock />
             <CurrentTermBadge session={session} showWhenEmpty />
             <button
               type="button"

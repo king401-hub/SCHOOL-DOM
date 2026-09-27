@@ -1,9 +1,42 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, BarChart2, CalendarCheck, ChevronRight, DollarSign, FileCheck, Mic, Paperclip, School, Sparkles, MessageSquare } from "lucide-react";
+import { AlertTriangle, ArrowUp, BarChart2, CalendarCheck, ChevronRight, DollarSign, FileCheck, Mic, Paperclip, RotateCcw, School, Sparkles, MessageSquare } from "lucide-react";
 import { API_BASE_URL } from "./appConstants";
 import { DashboardIcon, formatDate, MetricCard, refreshAccessToken } from "./AppShared";
 
 const MAX_HISTORY_TURNS = 20;
+
+// The conversation on this page survives leaving and coming back to the
+// dashboard (it used to reset to nothing every time), scoped per admin so
+// two people sharing a browser never see each other's chat. Only user/
+// assistant turns are saved - never a still-in-flight "thinking" placeholder,
+// which would otherwise reload as a spinner that never resolves.
+const CHAT_STORAGE_PREFIX = "schooldom_dashboard_ai_chat";
+const MAX_SAVED_MESSAGES = 60;
+
+function loadSavedMessages(key) {
+  if (!key) return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(key, msgs) {
+  if (!key) return;
+  try {
+    const toSave = msgs.filter((m) => !m.thinking).slice(-MAX_SAVED_MESSAGES);
+    if (toSave.length) {
+      localStorage.setItem(key, JSON.stringify(toSave));
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // localStorage may be unavailable (private mode, full quota) - the chat
+    // still works for this visit, it just won't be remembered next time.
+  }
+}
 
 // A small curated accent set (teal/cyan/emerald - the brand family - plus
 // the orange/indigo already used elsewhere in this app, e.g. AiChatWidget's
@@ -37,17 +70,49 @@ function buildHistoryForApi(msgs) {
 // this screen) rather than a shared hook, to avoid touching the already-
 // shipped floating widget for this page's sake.
 export default function AiAssistantScreen({ session, data, loading, error: dashboardError, onRetry }) {
-  const [messages, setMessages] = useState([]);
+  const storageKey = `${CHAT_STORAGE_PREFIX}:${session?.user?.id || session?.user?.email || "user"}`;
+  const [messages, setMessages] = useState(() => loadSavedMessages(storageKey));
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [busySeconds, setBusySeconds] = useState(0);
   const [error, setError] = useState(null);
+  const [aiOffline, setAiOffline] = useState(false);
   const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
   const [recentStudentWindow, setRecentStudentWindow] = useState("7d");
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
   const busyTimerRef = useRef(null);
+
+  useEffect(() => {
+    saveMessages(storageKey, messages);
+  }, [storageKey, messages]);
+
+  // A quiet, best-effort check - if the assistant's language model is down,
+  // say so up front instead of only finding out once a typed message fails.
+  // A network hiccup on this call stays silent rather than falsely claiming
+  // the assistant is offline.
+  useEffect(() => {
+    let cancelled = false;
+    const headers = {};
+    if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+    fetch(`${API_BASE_URL}/api/secretary/status/`, { headers })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((result) => {
+        if (!cancelled && result) setAiOffline(result.online === false);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access]);
+
+  function startNewChat() {
+    setMessages([]);
+    setInput("");
+    setError(null);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  }
 
   const firstName = session?.user?.first_name || "there";
   const userInitial = (session?.user?.first_name?.[0] || "U").toUpperCase();
@@ -250,6 +315,13 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
           ) : null}
         </div>
 
+        {aiOffline ? (
+          <div className="ai-assistant-offline-banner">
+            <AlertTriangle size={15} strokeWidth={2} />
+            <span>SchoolDom AI isn&rsquo;t responding right now. You can still try - a reply may just take longer, or fail, until it&rsquo;s back.</span>
+          </div>
+        ) : null}
+
         {!hasMessages ? (
           <div className="ai-assistant-hero">
             <div className="ai-assistant-hero-icon">
@@ -282,6 +354,11 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
           </div>
         ) : (
           <div className="ai-assistant-messages">
+            <div className="ai-assistant-messages-head">
+              <button type="button" className="ai-assistant-newchat-btn" onClick={startNewChat}>
+                <RotateCcw size={13} strokeWidth={2} /> New chat
+              </button>
+            </div>
             {messages.map((msg, i) => (
               <div key={msg.id ?? i} className={`ai-assistant-message ai-assistant-message-${msg.role}`}>
                 {msg.role === "assistant" && (

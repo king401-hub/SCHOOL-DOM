@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone, Download, CalendarDays } from "lucide-react";
+import { Paperclip, Smile, Send, Check, CheckCheck, Trash2, Phone, Video, MoreVertical, Search, X as XIcon, ChevronDown, Mic, Megaphone, Download, CalendarDays, Clock } from "lucide-react";
 import {
   API_BASE_URL,
   LEGACY_SESSION_KEY,
@@ -633,6 +633,35 @@ export function CurrentTermBadge({ session, showWhenEmpty = false, className = "
       aria-label={`Current term: ${label}`}
     >
       <CalendarDays size={14} strokeWidth={2} aria-hidden="true" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+/** Live clock shown in the app topbar. Formatting (date order, 12h/24h) is left
+ * to the viewer's own browser locale rather than a fixed one, so it reads
+ * correctly wherever the admin actually is; the time itself is the browser's
+ * local wall-clock, which is also the timezone a person physically at the
+ * keyboard cares about - not the school's registered address. */
+export function TopbarClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const label = now.toLocaleString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return (
+    <span className="topbar-clock-chip" title={now.toLocaleString()}>
+      <Clock size={14} strokeWidth={2} aria-hidden="true" />
       <span>{label}</span>
     </span>
   );
