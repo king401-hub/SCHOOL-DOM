@@ -15089,10 +15089,12 @@ function AdminLicenseScreen({ data, loading, error, onRetry, onActivate, onPurch
           ) : (
             <p className="panel-empty">No CBT license on file for your school yet.</p>
           )}
-          <div className="license-activation-section">
-            <h3>{isActive ? "Renew or Replace License" : "Activate Your CBT License"}</h3>
-            <LicenseActivationForm onActivate={onActivate} onPurchase={onPurchase} onVerifyPurchase={onVerifyPurchase} compact />
-          </div>
+          {isActive ? null : (
+            <div className="license-activation-section">
+              <h3>Activate Your CBT License</h3>
+              <LicenseActivationForm onActivate={onActivate} onPurchase={onPurchase} onVerifyPurchase={onVerifyPurchase} compact />
+            </div>
+          )}
         </article>
       ) : null}
     </section>

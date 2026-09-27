@@ -184,3 +184,199 @@ class SchoolGateSmsProviderTests(TestCase):
         mock_thread.assert_called_once()
         _call_args, call_kwargs = mock_thread.call_args
         self.assertEqual(call_kwargs["args"][1], "kudisms")
+
+
+class WeeklyReportServiceTests(TestCase):
+    """weekly_attendance report: rfid_attendance.services.send_weekly_reports.
+    Split out of the Celery task so it can be tested and run from a management
+    command without needing a Celery worker/beat - see
+    project-no-celery-in-production memory."""
+
+    def setUp(self):
+        import datetime as _dt
+
+        self.today = _dt.date(2026, 9, 25)  # a Friday
+        self.week_start = self.today - _dt.timedelta(days=self.today.weekday())
+        self.school = SchoolTenant.objects.create(
+            name="Weekly Report School", schema_name="weekly_report_school",
+            product=SchoolTenant.PRODUCT_SCHOOLGATE, is_active=True,
+        )
+        from tenants.models import Tenant
+
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+
+    def _student(self, first, last, phone="08010000000"):
+        from users.models import StudentProfile
+
+        user = User.objects.create_user(
+            email=f"{first}.{last}@weeklyreport.test".lower(), password="testpass123",
+            first_name=first, last_name=last, role="student", tenant=self.school,
+            is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=f"WR{user.id.hex[:6].upper()}", admission_number=f"ADM-{user.id.hex[:6]}",
+            admission_date=self.week_start, guardian_name=last, guardian_phone=phone, guardian_relation="Parent",
+        )
+
+    def _mark(self, profile, day_offset, status):
+        AttendanceRecord.objects.create(
+            tenant=self.legacy_tenant, student=profile.user,
+            date=self.week_start + datetime.timedelta(days=day_offset), status=status,
+        )
+
+    def test_dry_run_describes_every_message_and_sends_nothing(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        present = self._student("Present", "Pupil")
+        self._mark(present, 0, "present")
+        self._mark(present, 1, "late")
+
+        with patch("finance.services.send_kudisms") as mock_send:
+            results = send_weekly_reports(school_code=self.school.schema_name, today=self.today, dry_run=True)
+
+        mock_send.assert_not_called()
+        rows = results[self.school.schema_name]["rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["outcome"], "dry_run")
+        self.assertIn("present 2/5 days", rows[0]["message"])
+        self.assertIn("Absent: 3", rows[0]["message"])
+        self.assertIn("Late: 1", rows[0]["message"])
+        self.assertIn("Attendance: 40%", rows[0]["message"])
+
+    def test_a_student_who_never_showed_up_all_week_is_reported_absent_5(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        self._student("Ghost", "Pupil")
+
+        results = send_weekly_reports(school_code=self.school.schema_name, today=self.today, dry_run=True)
+
+        message = results[self.school.schema_name]["rows"][0]["message"]
+        self.assertIn("present 0/5 days", message)
+        self.assertIn("Absent: 5", message)
+
+    def test_a_student_with_no_guardian_phone_is_skipped_not_failed(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        self._student("Nophone", "Pupil", phone="")
+
+        results = send_weekly_reports(school_code=self.school.schema_name, today=self.today, dry_run=True)
+
+        row = results[self.school.schema_name]["rows"][0]
+        self.assertEqual(row["outcome"], "skipped (no guardian phone on file)")
+        self.assertEqual(results[self.school.schema_name]["skipped"], 1)
+
+    def test_committing_actually_sends_through_the_configured_provider(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        self._student("Real", "Send")
+
+        with override_settings(SCHOOLGATE_SMS_PROVIDER="kudisms"), \
+                patch("finance.services.send_kudisms") as mock_kudisms:
+            results = send_weekly_reports(school_code=self.school.schema_name, today=self.today, dry_run=False)
+
+        mock_kudisms.assert_called_once()
+        self.assertEqual(results[self.school.schema_name]["sent"], 1)
+        self.assertEqual(results[self.school.schema_name]["rows"][0]["outcome"], "sent")
+
+    def test_a_send_failure_is_reported_not_raised(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        self._student("Fails", "Pupil")
+
+        with override_settings(SCHOOLGATE_SMS_PROVIDER="kudisms"), \
+                patch("finance.services.send_kudisms", side_effect=RuntimeError("gateway down")):
+            results = send_weekly_reports(school_code=self.school.schema_name, today=self.today, dry_run=False)
+
+        self.assertEqual(results[self.school.schema_name]["failed"], 1)
+        self.assertIn("gateway down", results[self.school.schema_name]["rows"][0]["outcome"])
+
+    def test_an_inactive_or_non_schoolgate_school_is_left_out(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        inactive = SchoolTenant.objects.create(
+            name="Inactive Gate School", schema_name="inactive_gate_school",
+            product=SchoolTenant.PRODUCT_SCHOOLGATE, is_active=False,
+        )
+        other_product = SchoolTenant.objects.create(
+            name="Full Product School", schema_name="full_product_school", is_active=True,
+        )
+        results = send_weekly_reports(today=self.today, dry_run=True)
+        self.assertNotIn(inactive.schema_name, results)
+        self.assertNotIn(other_product.schema_name, results)
+        self.assertIn(self.school.schema_name, results)
+
+    def test_only_the_named_schools_students_are_included(self):
+        from rfid_attendance.services import send_weekly_reports
+
+        other = SchoolTenant.objects.create(
+            name="Other Weekly Report School", schema_name="other_weekly_report_school",
+            product=SchoolTenant.PRODUCT_SCHOOLGATE, is_active=True,
+        )
+        self._student("Ours", "Pupil")
+        User.objects.create_user(
+            email="theirs@weeklyreport.test", password="testpass123", first_name="Theirs", last_name="Pupil",
+            role="student", tenant=other, is_active=True, is_verified=True,
+        )
+
+        results = send_weekly_reports(school_code=self.school.schema_name, today=self.today, dry_run=True)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results[self.school.schema_name]["rows"]), 1)
+
+
+class SendWeeklyReportsCommandTests(TestCase):
+    """`manage.py send_weekly_reports`: the way to test the weekly report
+    without Celery, and the command an OS cron entry on the VPS should call."""
+
+    def setUp(self):
+        import datetime as _dt
+        from tenants.models import Tenant
+        from users.models import StudentProfile
+
+        self.school = SchoolTenant.objects.create(
+            name="Command Weekly School", schema_name="command_weekly_school",
+            product=SchoolTenant.PRODUCT_SCHOOLGATE, is_active=True,
+        )
+        Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        user = User.objects.create_user(
+            email="pupil@commandweekly.test", password="testpass123", first_name="Command", last_name="Pupil",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=user, student_id="CW0001", admission_number="ADM-CW0001",
+            admission_date=_dt.date(2026, 9, 21), guardian_name="Pupil", guardian_phone="08010000000",
+            guardian_relation="Parent",
+        )
+
+    def _run(self, **options):
+        from io import StringIO
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("send_weekly_reports", stdout=out, **options)
+        return out.getvalue()
+
+    def test_without_commit_nothing_is_sent(self):
+        with patch("finance.services.send_kudisms") as mock_send:
+            out = self._run(school=self.school.schema_name)
+        mock_send.assert_not_called()
+        self.assertIn("Command Pupil", out)
+        self.assertIn("Dry run", out)
+
+    def test_commit_without_a_school_is_refused(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            self._run(commit=True)
+
+    def test_commit_with_a_school_sends(self):
+        with override_settings(SCHOOLGATE_SMS_PROVIDER="kudisms"), \
+                patch("finance.services.send_kudisms") as mock_send:
+            out = self._run(school=self.school.schema_name, commit=True)
+        mock_send.assert_called_once()
+        self.assertIn("1 to send", out)
+        self.assertNotIn("Dry run", out)
+
+    def test_an_unknown_school_reports_nothing_found(self):
+        out = self._run(school="no_such_school")
+        self.assertIn("No active SchoolGate school matches", out)
