@@ -146,7 +146,18 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
 
   useEffect(() => () => clearInterval(busyTimerRef.current), []);
 
-  async function sendTurn(text, priorMessages, retried = false) {
+  // Leaving the dashboard (any route change) unmounts this screen - React
+  // just drops every setMessages call that resolves afterwards, so a reply
+  // that finishes while the admin is elsewhere used to vanish silently: the
+  // conversation just sat there looking finished, with no reply and no
+  // "thinking" indicator, because nothing was left mounted to show either.
+  // The fetch itself isn't cancelled by unmounting (no abort-on-unmount here)
+  // - it keeps running - so this saves the outcome straight to storage from
+  // plain values (priorMessages/userMsg, captured before any of this could
+  // happen), never relying on React state or the effect that mirrors it,
+  // neither of which run once unmounted. Reopening the dashboard then loads
+  // the finished conversation instead of the one that looked abandoned.
+  async function sendTurn(text, priorMessages, userMsg, retried = false) {
     const headers = { "Content-Type": "application/json" };
     if (session?.access) headers.Authorization = `Bearer ${session.access}`;
 
@@ -163,7 +174,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
 
       if (res.status === 401 && !retried) {
         await refreshAccessToken(session);
-        return sendTurn(text, priorMessages, true);
+        return sendTurn(text, priorMessages, userMsg, true);
       }
 
       if (!res.ok) {
@@ -189,8 +200,15 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         }
       }
 
+      saveMessages(storageKey, [...priorMessages, userMsg, assistantMsg]);
       setMessages((prev) => [...prev.filter((m) => !m.thinking), assistantMsg]);
     } catch (err) {
+      if (err?.name !== "AbortError") {
+        // Still worth keeping the admin's own message even though the reply
+        // failed - matches what staying on the page and seeing the error
+        // already left behind.
+        saveMessages(storageKey, [...priorMessages, userMsg]);
+      }
       setMessages((prev) => prev.filter((m) => !m.thinking));
       if (err?.name !== "AbortError") {
         setError(err.message || "Something went wrong.");
@@ -216,7 +234,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
     busyTimerRef.current = setInterval(() => setBusySeconds((s) => s + 1), 1000);
 
     try {
-      await sendTurn(trimmed, priorMessages);
+      await sendTurn(trimmed, priorMessages, userMsg);
     } finally {
       setBusy(false);
       setBusySeconds(0);
