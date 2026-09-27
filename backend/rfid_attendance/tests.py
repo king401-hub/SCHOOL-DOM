@@ -360,7 +360,7 @@ class SendWeeklyReportsCommandTests(TestCase):
         with patch("finance.services.send_kudisms") as mock_send:
             out = self._run(school=self.school.schema_name)
         mock_send.assert_not_called()
-        self.assertIn("Command Pupil", out)
+        self.assertIn("Pupil Command", out)  # surname first
         self.assertIn("Dry run", out)
 
     def test_commit_without_a_school_is_refused(self):
