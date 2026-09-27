@@ -28,6 +28,7 @@ from academic.models import (
     TimetableSettings,
 )
 from core.models import Domain, SchoolGroup, SchoolTenant
+from device_fleet.models import Device
 from exams.models import Exam, ExamAttempt, ExamPin, Question, QuestionBank
 from finance.models import ActivationCreditPool, ActivationCreditTransaction, PaymentReceiptLink, SmsMessageLog, StudentPaymentReference
 from finance.services import (
@@ -750,6 +751,26 @@ class EnrollmentsAPITests(TestCase):
         response = self.client.get("/api/app/messages/")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(any(item["email"] == "parent.msg@smoke.edu" for item in response.data["recipients"]))
+
+    def test_messages_snapshot_never_lists_a_scanner_kiosk_as_a_recipient(self):
+        """Every registered scanner device gets its own real, active,
+        role="staff" User (Device.scanner_user) so a scan can authenticate -
+        it must never show up as a person an admin can message."""
+        device = Device.objects.create(tenant=self.school, status="active", authorized=True)
+        device.scanner_user = User.objects.create_user(
+            email=f"device-{device.device_id.lower()}@scanner.schooldom.internal",
+            password=None,
+            first_name="SchoolDom Scanner",
+            last_name=device.device_id,
+            role="staff",
+            tenant=self.school,
+            is_active=True,
+        )
+        device.save(update_fields=["scanner_user"])
+
+        response = self.client.get("/api/app/messages/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(item["email"] == device.scanner_user.email for item in response.data["recipients"]))
 
     def test_parent_gets_no_message_recipients_and_cannot_send(self):
         parent_user = User.objects.create_user(
@@ -7958,6 +7979,16 @@ class ImportStudentsCommandTests(TestCase):
         call_command("import_students", school=self.school.schema_name, file=self._file(body, header), stdout=out, stderr=err, **options)
         return out.getvalue(), err.getvalue()
 
+    def _run_single(self, **options):
+        import os
+        from io import StringIO
+        from django.core.management import call_command
+
+        options.setdefault("login_sheet", os.path.join(self.folder, "logins.csv"))
+        out, err = StringIO(), StringIO()
+        call_command("import_student", school=self.school.schema_name, stdout=out, stderr=err, **options)
+        return out.getvalue(), err.getvalue()
+
     def _sheet(self):
         import csv
         import os
@@ -8004,6 +8035,28 @@ class ImportStudentsCommandTests(TestCase):
         out, _ = self._run(body, commit=True)
         self.assertIn("Nobody new to add", out)
         self.assertEqual(StudentProfile.objects.count(), 1)
+
+    def test_single_student_command_previews_then_imports_details(self):
+        details = {
+            "first_name": "Jide",
+            "last_name": "Okafor",
+            "class_name": "JSS 1",
+            "date_of_birth": "2013-05-14",
+            "guardian_name": "Parent Example",
+            "guardian_phone": "08011112222",
+        }
+        out, _ = self._run_single(**details)
+        self.assertIn("Dry run", out)
+        self.assertEqual(StudentProfile.objects.count(), 0)
+
+        out, err = self._run_single(**details, commit=True)
+        self.assertEqual(err, "")
+        self.assertIn("Added 1 student(s)", out)
+        profile = StudentProfile.objects.get(user__first_name="Jide")
+        self.assertEqual(profile.current_class, self.jss1)
+        self.assertEqual(profile.guardian_name, "Parent Example")
+        self.assertEqual(profile.guardian_phone, "+2348011112222")
+        self.assertEqual(profile.user.date_of_birth.isoformat(), "2013-05-14")
 
     def test_an_unmatched_class_stops_a_commit_until_it_is_mapped(self):
         from django.core.management.base import CommandError

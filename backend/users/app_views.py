@@ -2482,8 +2482,18 @@ def _sync_teacher_hr_salary(teacher_profile):
 
 def _message_recipient_queryset_for_user(user):
     # In-app messaging is staff and students only - parents are never valid
-    # senders or recipients here (they get SMS/notifications instead).
-    base = User.objects.filter(tenant=user.tenant, is_active=True).exclude(id=user.id).exclude(role="parent")
+    # senders or recipients here (they get SMS/notifications instead). Nor is
+    # a scanner kiosk: Device.scanner_user gives every registered device its
+    # own real, active, role="staff" User so a scan can authenticate like a
+    # normal API caller (see device_fleet.views.register_device) - without
+    # this exclusion those show up here as messageable "staff" named e.g.
+    # "SCN-004 SchoolDom Scanner".
+    base = (
+        User.objects.filter(tenant=user.tenant, is_active=True)
+        .exclude(id=user.id)
+        .exclude(role="parent")
+        .exclude(scanner_device__isnull=False)
+    )
     role = getattr(user, "role", "")
     if role == "parent":
         return User.objects.none()
