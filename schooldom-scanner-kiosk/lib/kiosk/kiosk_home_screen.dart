@@ -76,6 +76,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
   String? _schoolName;
   bool _online = true;
   int _pendingCount = 0;
+  // True once a queue replay has found the terminal's own session dead (its
+  // 7-day refresh token expired from sitting unused, or a scan hasn't been
+  // attempted in a while) - see replayOfflineQueue's sessionExpired. Queued
+  // scans cannot sync again until someone taps the key icon and re-enters the
+  // license key (there is no lighter "sign back in" - see kiosk_store.dart).
+  bool _sessionExpired = false;
   Map<String, dynamic>? _updateInfo;
   bool _downloadingUpdate = false;
   // The build number we last popped the update dialog up for (once per launch,
@@ -455,7 +461,11 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       // The device's own session expired/was revoked server-side (a
       // superadmin hitting "Log Out Device" invalidates it immediately -
       // see device_fleet.views.revoke_device). Never silently keep scanning
-      // as if nothing happened.
+      // as if nothing happened. Also flips the status-bar badge on
+      // immediately, same as a background replay discovering this - a
+      // live scan failing this way is the strongest possible signal, no
+      // need to wait for the next queue flush to say so.
+      if (mounted) setState(() => _sessionExpired = true);
       await _showResult(_ScanOutcome.error, message: 'This terminal has been logged out remotely.');
     } catch (_) {
       await _showResult(_ScanOutcome.error, message: 'Unable to record attendance. Please try again.');
@@ -539,7 +549,12 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
     // here since a fresh scan just landed in the same queue, and this is
     // the only place in kiosk mode that needs the count at all.
     final result = await replayOfflineQueue();
-    if (mounted) setState(() => _pendingCount = result.remaining);
+    if (mounted) {
+      setState(() {
+        _pendingCount = result.remaining;
+        _sessionExpired = result.sessionExpired;
+      });
+    }
   }
 
   // ---------------------------------------------------------------- Location
@@ -755,14 +770,33 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (_pendingCount > 0)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.cloud_upload_outlined, size: 18, color: Colors.amber.shade300),
-                  const SizedBox(width: 4),
-                  Text('$_pendingCount pending', style: TextStyle(color: Colors.amber.shade300, fontSize: 12, fontWeight: FontWeight.w700)),
-                ]),
+            if (_pendingCount > 0 || _sessionExpired)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // The queue cannot drain on its own once the session is dead
+                // (see _sessionExpired) - tapping this takes the operator
+                // straight to the same "Re-enter license key?" action as the
+                // key icon, instead of leaving them to notice it on their own.
+                onTap: _sessionExpired ? _confirmReProvision : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                      _sessionExpired ? Icons.key_off_outlined : Icons.cloud_upload_outlined,
+                      size: 18,
+                      color: _sessionExpired ? Colors.redAccent : Colors.amber.shade300,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _sessionExpired ? '$_pendingCount pending - tap to sign in' : '$_pendingCount pending',
+                      style: TextStyle(
+                        color: _sessionExpired ? Colors.redAccent : Colors.amber.shade300,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ]),
+                ),
               ),
             if (_updateInfo != null)
               _statusButton(
@@ -1027,9 +1061,14 @@ class _KioskHomeScreenState extends State<KioskHomeScreen> with SingleTickerProv
       final flush = await replayOfflineQueue();
       if (flush.remaining > 0) {
         if (mounted) {
+          setState(() => _sessionExpired = flush.sessionExpired);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Could not sync ${flush.remaining} pending scan(s) - check connection and try again.'),
+              content: Text(
+                flush.sessionExpired
+                    ? 'Could not sync ${flush.remaining} pending scan(s) - re-enter the license key first (key icon above).'
+                    : 'Could not sync ${flush.remaining} pending scan(s) - check connection and try again.',
+              ),
               backgroundColor: AppColors.danger,
             ),
           );

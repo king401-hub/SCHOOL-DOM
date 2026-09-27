@@ -185,18 +185,29 @@ const _replayItemTimeout = Duration(seconds: 10);
 // replay passes over the same queue instead of just one at a time.
 bool _replayInProgress = false;
 
-Future<({int synced, int remaining})> replayOfflineQueue() async {
+// Set once a replay attempt hits SessionExpiredException, so the caller can
+// tell "genuinely stuck - a human has to re-enter the license key" apart from
+// "still catching up on a slow connection". Without this the terminal's own
+// synthetic-user session dying (SIMPLE_JWT's 7-day refresh token, never
+// renewed because nothing called the API while the terminal sat idle) reads
+// exactly like an ordinary offline spell: every item just sits in the queue,
+// retried every heartbeat, "N pending" on screen forever, with nothing to
+// tell whoever is looking at it that the fix is the key icon in the status
+// bar, not "wait for a better connection". See kiosk_home_screen.dart's
+// _sessionExpired.
+Future<({int synced, int remaining, bool sessionExpired})> replayOfflineQueue() async {
   if (_replayInProgress) {
-    return (synced: 0, remaining: (await readQueue()).length);
+    return (synced: 0, remaining: (await readQueue()).length, sessionExpired: false);
   }
   _replayInProgress = true;
   try {
     final queue = await readQueue();
-    if (queue.isEmpty) return (synced: 0, remaining: 0);
+    if (queue.isEmpty) return (synced: 0, remaining: 0, sessionExpired: false);
 
     final failed = <QueueItem>[];
     var synced = 0;
-    for (final item in queue) {
+    for (var index = 0; index < queue.length; index++) {
+      final item = queue[index];
       try {
         await apiRequest(
           item['method'] as String,
@@ -206,12 +217,20 @@ Future<({int synced, int remaining})> replayOfflineQueue() async {
           timeout: _replayItemTimeout,
         );
         synced++;
+      } on SessionExpiredException {
+        // Every remaining item would fail the exact same way (the session is
+        // gone, not just this one request) - stop here rather than burn
+        // through the rest of the queue one doomed HTTP round-trip at a time,
+        // and leave them all queued exactly as they were.
+        failed.addAll(queue.sublist(index));
+        await writeQueue(failed);
+        return (synced: synced, remaining: failed.length, sessionExpired: true);
       } catch (_) {
         failed.add(item);
       }
     }
     await writeQueue(failed);
-    return (synced: synced, remaining: failed.length);
+    return (synced: synced, remaining: failed.length, sessionExpired: false);
   } finally {
     _replayInProgress = false;
   }
