@@ -14503,11 +14503,11 @@ def kids_monitor_deactivate(request, parent_id):
 
 def _send_attendance_sms_batch(phones_and_messages, provider="ebulksms"):
     """Runs in a background thread — sends SMS without blocking the attendance request/response.
-    Kids Monitor alerts (the default, unconfigured call site below) are funded by the parent's
-    own paid subscription, not the school's SMS wallet, so this intentionally calls send_ebulksms
-    directly rather than send_wallet_sms. rfid_attendance's SchoolGate-only call sites pass
-    provider="kudisms" instead - see finance.services.send_kudisms for why SchoolGate uses a
-    separate provider from the rest of the platform."""
+    Kids Monitor alerts (funded by the parent's own paid subscription, not the school's SMS
+    wallet, so this intentionally calls send_ebulksms/send_kudisms directly rather than
+    send_wallet_sms) pass settings.SMS_PROVIDER; rfid_attendance's SchoolGate call sites pass
+    settings.SCHOOLGATE_SMS_PROVIDER - see finance.services.send_kudisms. The "ebulksms" default
+    below is only what a caller gets for passing nothing at all."""
     from finance.services import send_ebulksms, send_kudisms
     sender_fn = send_kudisms if provider == "kudisms" else send_ebulksms
     for phone, message in phones_and_messages:
@@ -14706,7 +14706,9 @@ def _notify_parents_on_attendance(
         to_send.append((phone, message))
 
     if to_send:
-        threading.Thread(target=_send_attendance_sms_batch, args=(to_send,), daemon=True).start()
+        threading.Thread(
+            target=_send_attendance_sms_batch, args=(to_send, settings.SMS_PROVIDER), daemon=True
+        ).start()
 
 
 # Static dial-code map (ISO alpha-2 → calling code).  Covers all 249 UN-recognised

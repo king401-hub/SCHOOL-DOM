@@ -1344,7 +1344,7 @@ class SmsWalletTests(TestCase):
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, 3)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_wallet_sms_charges_one_credit_and_logs_sent(self, mock_send):
         # Real eBulkSMS success shape, confirmed from production logs - nested
         # under "response", not a top-level "status" key.
@@ -1365,7 +1365,7 @@ class SmsWalletTests(TestCase):
         self.assertEqual(debit_tx.balance_before, 50)
         self.assertEqual(debit_tx.balance_after, 49)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_uncharged_send_delivers_and_logs_without_touching_the_wallet(self, mock_send):
         """Payment receipts confirm money already received, so they are never billed."""
         wallet = get_or_create_sms_wallet(self.school)
@@ -1386,7 +1386,7 @@ class SmsWalletTests(TestCase):
         self.assertEqual(SmsWalletTransaction.objects.filter(wallet=wallet, tx_type=SmsWalletTransaction.DEBIT).count(), 0)
         mock_send.assert_called_once()
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_uncharged_send_still_goes_out_on_an_empty_or_locked_wallet(self, mock_send):
         """A school with no credits must still be able to receive money and have
         the payer confirmed - the receipt cannot be gated on their balance."""
@@ -1406,7 +1406,7 @@ class SmsWalletTests(TestCase):
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, 0)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_billed_sends_are_unaffected_by_the_uncharged_path(self, mock_send):
         """The default stays charge-the-wallet, so reminders and bulk still bill."""
         wallet = get_or_create_sms_wallet(self.school)
@@ -1418,7 +1418,7 @@ class SmsWalletTests(TestCase):
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, 9)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_wallet_sms_never_charges_on_provider_failure(self, mock_send):
         # No charge-then-refund anymore: a confirmed provider failure must
         # never touch the wallet balance at all, and never create a debit or
@@ -1874,7 +1874,7 @@ class PaystackDvaReconciliationTests(TestCase):
         self.parent_user.phone = "+2348012345678"
         self.parent_user.save(update_fields=["phone"])
 
-        with patch("finance.services.send_ebulksms") as mock_sms:
+        with patch("finance.services._dispatch_wallet_sms") as mock_sms:
             mock_sms.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
             process_virtual_account_payment(
                 tenant=self.school, account_number=self.vac.account_number,
@@ -1921,7 +1921,7 @@ class FeeReminderSecureLinkTests(TestCase):
             due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
         )
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_single_sms_reminder_includes_working_bill_link_within_char_limit(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
 
@@ -1934,7 +1934,7 @@ class FeeReminderSecureLinkTests(TestCase):
         self.assertIn("/r/" + link.short_code, sent_message)
         self.assertEqual(link.data["students"][0]["total_outstanding"], "50000.00")
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_bulk_personalized_sms_reminder_includes_bill_link(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
 
@@ -2175,7 +2175,7 @@ class CashPaymentTests(TestCase):
         with self.assertRaises(ValueError):
             record_cash_payment(self.student, Decimal("0.00"), actor=self.admin_user)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_offline_payment_texts_the_guardian_a_receipt_link_free_of_charge(self, mock_send):
         """This SMS is the only thing carrying the receipt link to a parent who
         paid offline, so it must actually send - and never bill the school."""
@@ -2201,7 +2201,7 @@ class CashPaymentTests(TestCase):
         self.assertIn("/r/", log.message)
         self.assertTrue(PaymentReceiptLink.objects.filter(tenant=self.school).exists())
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_offline_payment_receipt_sends_even_when_the_wallet_is_empty(self, mock_send):
         self.student.guardian_phone = "2348012345678"
         self.student.save(update_fields=["guardian_phone"])
@@ -2865,7 +2865,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(data["school_phone"], "08011112222")
         self.assertEqual(data["school_email"], "office@receipt.edu")
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_cash_payment_sends_both_sms_and_email_from_one_receipt(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         payment = self._record()
@@ -2890,7 +2890,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertIn(link.short_code, payment.receipt_link_url)
         self.assertIn(link.short_code, SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).message)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_recording_a_cash_payment_delivers_the_receipt_on_the_first_click(self, mock_send):
         """The receipt goes out during the very request that records the
         payment, and the response says what happened to it - no Resend, no
@@ -2926,7 +2926,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertIn("default", admin_bank_payment_recover._non_atomic_requests)
 
     @patch("finance.services._run_in_background_later")
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_a_failed_first_attempt_is_reported_and_retried_automatically(self, mock_send, mock_later):
         mock_send.side_effect = RuntimeError("gateway down")
         client = APIClient()
@@ -2950,7 +2950,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(mock_later.call_args.kwargs["pool"], "receipts")
 
     @patch("finance.services._run_in_background_later")
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_the_automatic_retry_sends_only_what_failed_and_stops_once_delivered(self, mock_send, mock_later):
         mock_send.side_effect = RuntimeError("gateway down")
         payment = self._record()
@@ -2989,7 +2989,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(payment.receipt_notification_attempts, 1 + len(RECEIPT_AUTO_RETRY_DELAYS))
         mock_later.assert_not_called()
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_a_stale_copy_of_the_payment_cannot_resend_a_delivered_channel(self, mock_send):
         """Two deliveries can start from the same stale row (an admin's Resend
         click while the automatic one is in flight, a timer and the sweep).
@@ -3046,7 +3046,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
 
     @patch("finance.tasks.send_payment_receipt_task.apply_async")
     @patch("finance.tasks.send_payment_receipt_task.delay")
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_delivery_does_not_depend_on_celery(self, mock_send, mock_delay, mock_apply_async):
         """Regression: receipts were handed to Celery first. With no broker,
         .delay() blocked ~110s retrying the connection (recording a payment
@@ -3092,7 +3092,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         # TestCase never commits, so the on_commit hook has not fired.
         mock_background.assert_not_called()
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_a_failing_channel_is_recorded_and_never_touches_the_payment(self, mock_send):
         mock_send.side_effect = RuntimeError("gateway down")
         payment = self._record()
@@ -3113,7 +3113,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertIn("gateway down", payment.receipt_notification_error)
         self.assertEqual(BankPayment.objects.filter(student=self.student).count(), 1)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_retry_resends_only_the_channel_that_failed(self, mock_send):
         mock_send.side_effect = RuntimeError("gateway down")
         payment = self._record()
@@ -3131,7 +3131,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         # The email already landed, so the parent is not mailed a second time.
         self.assertEqual(len(mail.outbox), 1)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_a_delivered_receipt_is_never_swept_up_again(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         payment = self._record()
@@ -3151,7 +3151,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
 
         self.assertEqual(retry_failed_payment_receipts(), {"retried": 0, "delivered": 0})
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_a_parent_with_no_email_still_gets_a_clean_sent_status(self, mock_send):
         """"Skipped" is not a failure - it means there was no such channel to
         try, so a phone-only parent must not leave the row looking broken."""
@@ -3198,7 +3198,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(wallet.balance, 25)
         self.assertEqual(SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).credits_charged, 0)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_admin_can_resend_a_receipt_that_failed(self, mock_send):
         mock_send.side_effect = RuntimeError("gateway down")
         payment = self._record()
@@ -3584,7 +3584,7 @@ class PayslipExpenseTests(TestCase):
         types = {row["type"] for row in response.data["records"]}
         self.assertIn("payslip", types)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_payslip_via_sms_is_wallet_billed_and_uses_secure_link(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         created = self._create_payslip()

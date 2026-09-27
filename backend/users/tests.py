@@ -942,7 +942,7 @@ class EnrollmentsAPITests(TestCase):
         self.assertIn("2349036425748", phones)
         self.assertIn("2348153197053", phones)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_admin_can_send_guardian_bulk_sms(self, mock_send):
         # Guardian SMS is billed to the school's SMS wallet and sent one number
         # at a time through eBulkSMS (it used to go out via a school's own
@@ -973,7 +973,7 @@ class EnrollmentsAPITests(TestCase):
             2,
         )
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_report_card_sms_is_billed_to_school_wallet_and_creates_secure_link(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         wallet = get_or_create_sms_wallet(self.school)
@@ -1006,7 +1006,7 @@ class EnrollmentsAPITests(TestCase):
         self.assertEqual(log.category, SmsMessageLog.RESULTS)
         self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_report_card_sms_provider_failure_is_not_billed_and_shows_clear_reason(self, mock_send):
         mock_send.return_value = {"response": {"status": "FAILED", "totalsent": 0}}
         wallet = get_or_create_sms_wallet(self.school)
@@ -2701,7 +2701,7 @@ class ClassReportCardSmsTests(TestCase):
         femi = next(item for item in response.data["students"] if item["name"] == "SecondPhone Femi")
         self.assertEqual(femi["phone"], "08010000006")
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_sends_to_ready_students_only_and_bills_one_credit_each(self, mock_send):
         mock_send.return_value = self.OK
 
@@ -2724,7 +2724,7 @@ class ClassReportCardSmsTests(TestCase):
         self.assertIn("No guardian phone", reasons["NoPhone Bola"])
         self.assertIn("No published results", reasons["Draft Dayo"])
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_stops_when_the_wallet_runs_out_of_credits(self, mock_send):
         from finance.models import SmsWallet
         mock_send.return_value = self.OK
@@ -7262,7 +7262,7 @@ class ClassBroadsheetFeatureTests(TestCase):
 
     # ── Sending ──────────────────────────────────────────────────────────────
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_creates_one_link_per_parent_with_correct_highlight(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         self.client.force_authenticate(user=self.admin)
@@ -7297,7 +7297,7 @@ class ClassBroadsheetFeatureTests(TestCase):
         }, format="json")
         self.assertFalse(PaymentReceiptLink.objects.filter(phone="08010000002").exists())
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_ignores_a_parent_id_not_actually_in_the_class(self, mock_send):
         """A manipulated request selecting parent3 (no child in class_a) must
         not be trusted - re-filtered server-side, so no link/SMS goes out."""
@@ -7310,7 +7310,7 @@ class ClassBroadsheetFeatureTests(TestCase):
         self.assertEqual(response.data["sent"], 1)
         self.assertFalse(PaymentReceiptLink.objects.filter(phone="08010000003").exists())
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_insufficient_credit_on_one_recipient_does_not_abort_batch(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         from finance.services import get_or_create_sms_wallet

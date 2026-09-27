@@ -534,10 +534,9 @@ TERMII_API_KEY = os.getenv('TERMII_API_KEY', '')
 TERMII_WHATSAPP_FROM = os.getenv('TERMII_WHATSAPP_FROM', '')
 TERMII_BASE_URL = os.getenv('TERMII_BASE_URL', 'https://api.ng.termii.com')
 
-# eBulkSMS - payment receipts, fee reminders, and every other SMS in the
-# platform except SchoolGate's own gate/weekly-digest SMS, which goes via
-# KudiSMS instead (see SCHOOLGATE_SMS_PROVIDER below and finance.services.
-# send_kudisms for why).
+# eBulkSMS - the fallback for payment receipts, fee reminders, bulk messages
+# and Kids Monitor alerts (see SMS_PROVIDER below) when SMS_PROVIDER is set
+# back to 'ebulksms'.
 EBULKSMS_USERNAME = os.getenv('EBULKSMS_USERNAME', '')
 EBULKSMS_APIKEY = os.getenv('EBULKSMS_APIKEY', '')
 
@@ -567,6 +566,16 @@ SCHOOLGATE_SMS_SENDER = os.getenv('SCHOOLGATE_SMS_SENDER', 'XCEL')
 # without a code change. Needs KUDISMS_API_KEY - without it every SchoolGate
 # SMS is skipped (see finance.services.send_kudisms).
 SCHOOLGATE_SMS_PROVIDER = os.getenv('SCHOOLGATE_SMS_PROVIDER', 'kudisms')
+
+# Which provider every OTHER SMS in the platform (payment receipts, fee
+# reminders, bulk messages, broadsheets, Kids Monitor alerts) goes out
+# through - see finance.services.send_wallet_sms and
+# users.app_views._send_attendance_sms_batch's Kids Monitor call site. Sent
+# as SCHOOLGATE_SMS_SENDER ("XCEL"), the same identity as SchoolGate's own
+# SMS - "SchoolDom" is not an approved KudiSMS sender ID and would be
+# rejected with error 106. Set SMS_PROVIDER=ebulksms to fall back to
+# eBulkSMS's "SchoolDom" sender without a code change.
+SMS_PROVIDER = os.getenv('SMS_PROVIDER', 'kudisms')
 
 if PAYMENT_PROVIDER == 'flutterwave' and not FLUTTERWAVE_SECRET_KEY:
     missing = [

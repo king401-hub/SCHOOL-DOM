@@ -28,7 +28,7 @@ class SecretarySendSmsToolTests(TestCase):
         )
         self.tools = SecretaryTools(self.school, self.admin)
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_sms_charges_wallet_only_after_provider_confirms(self, mock_send):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
         wallet = get_or_create_sms_wallet(self.school)
@@ -41,7 +41,7 @@ class SecretarySendSmsToolTests(TestCase):
         self.assertEqual(wallet.balance, starting_balance - 1)
         self.assertTrue(SmsMessageLog.objects.filter(category=SmsMessageLog.OTHER, delivery_status=SmsMessageLog.SENT).exists())
 
-    @patch("finance.services.send_ebulksms")
+    @patch("finance.services._dispatch_wallet_sms")
     def test_send_sms_provider_failure_charges_nothing_and_reports_reason(self, mock_send):
         mock_send.return_value = {"response": {"status": "FAILED", "totalsent": 0}}
         wallet = get_or_create_sms_wallet(self.school)

@@ -983,13 +983,15 @@ _kudisms_route_hint = {"route": None}
 
 
 def send_kudisms(to_phone: str, message: str, sender: str = "") -> dict:
-    """Send SMS via KudiSMS's JSON API. Used ONLY for the SchoolGate product's
-    own SMS (gate clock-in/out, on-demand fee reminder, weekly digest - see
-    rfid_attendance/views.py and rfid_attendance/tasks.py), which is
-    unconditional and funded outside the school's SMS wallet. Every other SMS
-    in the platform (payment receipts, fee reminders, bulk parent messages)
-    stays on send_ebulksms - this is a deliberate product split between two
-    providers, not a migration off eBulkSMS.
+    """Send SMS via KudiSMS's JSON API. Originally used only for the
+    SchoolGate product's own SMS (gate clock-in/out, on-demand fee reminder,
+    weekly digest - see rfid_attendance/views.py and rfid_attendance/tasks.py);
+    since settings.SMS_PROVIDER it is also the default for every other SMS in
+    the platform (payment receipts, fee reminders, bulk parent messages,
+    broadsheets, Kids Monitor alerts - see send_wallet_sms and
+    users.app_views._send_attendance_sms_batch). SMS_PROVIDER/
+    SCHOOLGATE_SMS_PROVIDER=ebulksms falls back to send_ebulksms without a
+    code change.
 
     API docs: https://kudisms.net/docs/sms/ (also
     https://documenter.getpostman.com/view/44181644/2sB2cd3HUd)
@@ -1084,11 +1086,36 @@ def _kudisms_accepted(result: dict):
     return False, str(result.get("msg") or f"KudiSMS error code {result.get('error_code')}.")
 
 
+def _sms_accepted(result: dict):
+    """_ebulksms_accepted/_kudisms_accepted, whichever actually applies -
+    send_wallet_sms's provider is a runtime setting (SMS_PROVIDER), so its
+    result could be either shape regardless of what the setting currently
+    says (an in-flight message sent before a provider switch, say). KudiSMS's
+    real responses always carry "error_code"; both providers' own early-exit
+    sentinels ({"status": "error"/"skipped", "reason": ...}) are shaped
+    identically and are caught by _ebulksms_accepted's first check either way."""
+    if isinstance(result, dict) and "error_code" in result:
+        return _kudisms_accepted(result)
+    return _ebulksms_accepted(result)
+
+
+def _dispatch_wallet_sms(phone: str, message: str, sender: str) -> dict:
+    """The one place send_wallet_sms's provider choice is made, so a test only
+    interested in wallet-charging/logging behaviour can mock this single call
+    instead of knowing or caring which underlying provider is configured.
+    KudiSMS ignores `sender` (an eBulkSMS identity like "SchoolDom" is not an
+    approved KudiSMS sender ID - see SMS_PROVIDER) and uses its own
+    SCHOOLGATE_SMS_SENDER ("XCEL") default instead."""
+    if str(getattr(settings, "SMS_PROVIDER", "kudisms")).lower() == "kudisms":
+        return send_kudisms(phone, message)
+    return send_ebulksms(phone, message, sender=sender)
+
+
 def sms_failure_reason(log: "SmsMessageLog") -> str:
     """Human-readable reason an SmsMessageLog failed, re-derived from its stored
     provider_response using the same logic send_wallet_sms used to decide not to
     charge for it - so callers can show admins exactly why a send didn't go out."""
-    _, reason = _ebulksms_accepted(log.provider_response or {})
+    _, reason = _sms_accepted(log.provider_response or {})
     return reason or "SMS delivery failed."
 
 
@@ -1151,11 +1178,11 @@ def send_wallet_sms(
     )
 
     try:
-        result = send_ebulksms(phone, message, sender=sender)
+        result = _dispatch_wallet_sms(phone, message, sender=sender)
     except Exception as exc:
         result = {"status": "error", "reason": str(exc)}
 
-    accepted, _reason = _ebulksms_accepted(result)
+    accepted, _reason = _sms_accepted(result)
     log.provider_response = result
 
     if not accepted:
