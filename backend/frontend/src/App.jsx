@@ -74,6 +74,7 @@ import {
   postJson,
   copyToClipboard,
   formatDate,
+  DateOfBirthInput,
   userDisplayName,
   userInitials,
   userRoleLabel,
@@ -4927,7 +4928,7 @@ function EditableStaffBioProfile({ session, open, onClose, onSaved, fallbackProf
           <div className="panel-form-grid">
             <label className="panel-field">Phone<input value={profileForm.phone} onChange={(event) => setProfileForm((prev) => ({ ...prev, phone: event.target.value }))} /></label>
             <label className="panel-field">Gender<select value={profileForm.gender} onChange={(event) => setProfileForm((prev) => ({ ...prev, gender: event.target.value }))}><option value="">Select gender</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option><option value="N">Prefer not to say</option></select></label>
-            <label className="panel-field">Date of birth<input type="date" value={profileForm.date_of_birth} onChange={(event) => setProfileForm((prev) => ({ ...prev, date_of_birth: event.target.value }))} /></label>
+            <label className="panel-field">Date of birth<DateOfBirthInput value={profileForm.date_of_birth} onChange={(value) => setProfileForm((prev) => ({ ...prev, date_of_birth: value }))} /></label>
             <label className="panel-field full">Address<textarea rows="2" value={profileForm.address} onChange={(event) => setProfileForm((prev) => ({ ...prev, address: event.target.value }))} /></label>
             <label className="panel-field">Email address<input type="email" value={profileForm.email} onChange={(event) => setProfileForm((prev) => ({ ...prev, email: event.target.value }))} /></label>
             <label className="panel-field">Nationality<input value={profileForm.nationality} onChange={(event) => setProfileForm((prev) => ({ ...prev, nationality: event.target.value }))} /></label>

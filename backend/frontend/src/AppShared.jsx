@@ -548,6 +548,67 @@ export function formatDate(value) {
   }
 }
 
+function isoToDdMmYyyy(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "";
+}
+
+function ddMmYyyyToIso(display) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(display);
+  if (!match) return "";
+  const [, dd, mm, yyyy] = match;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * A date-of-birth field typed and read as dd/mm/yyyy.
+ *
+ * A native <input type="date"> shows and parses dates in whatever locale the
+ * browser/OS is set to - on a US-locale machine that's mm/dd/yyyy, which
+ * silently swaps day and month for anyone who types a date the way they
+ * normally would (05/09 read as 9 May instead of 5 September). This is a
+ * plain text field with light auto-formatting instead, so it always reads
+ * dd/mm/yyyy regardless of the browser's locale.
+ *
+ * `value`/`onChange` still carry the ISO "YYYY-MM-DD" string every date_of_birth
+ * field, form and API call already uses - only the typing/display changes.
+ */
+export function DateOfBirthInput({ value, onChange, className = "", ...rest }) {
+  const [text, setText] = useState(() => isoToDdMmYyyy(value));
+
+  useEffect(() => {
+    setText(isoToDdMmYyyy(value));
+  }, [value]);
+
+  const handleChange = (event) => {
+    const digits = event.target.value.replace(/\D/g, "").slice(0, 8);
+    let day = digits.slice(0, 2);
+    let month = digits.slice(2, 4);
+    const year = digits.slice(4, 8);
+    // Clamp to a sane range as each part is completed, rather than letting
+    // "45" or "13" sit in the day/month slots while still being typed.
+    if (day.length === 2 && Number(day) > 31) day = "31";
+    if (month.length === 2 && Number(month) > 12) month = "12";
+    const formatted = [day, month, year].filter(Boolean).join("/");
+    setText(formatted);
+    onChange(digits.length === 8 ? ddMmYyyyToIso(formatted) : "");
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="dd/mm/yyyy"
+      maxLength={10}
+      className={className}
+      value={text}
+      onChange={handleChange}
+      {...rest}
+    />
+  );
+}
+
 // ---- Current term ----------------------------------------------------------
 // One indicator, rendered in every page frame (admin, teacher, student, parent),
 // so whichever page you are on - bills, receipts, results, exams, attendance -

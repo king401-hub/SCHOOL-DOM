@@ -13,6 +13,7 @@ import {
   PhoneCountryInput,
   requestJson,
   formatDate,
+  DateOfBirthInput,
   userDisplayName,
   userInitials,
   userRoleLabel,
@@ -12995,7 +12996,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                 </label>
                 <label className="panel-field">
                   Date of Birth
-                  <input type="date" value={form.date_of_birth} onChange={(event) => setForm((prev) => ({ ...prev, date_of_birth: event.target.value }))} />
+                  <DateOfBirthInput value={form.date_of_birth} onChange={(value) => setForm((prev) => ({ ...prev, date_of_birth: value }))} />
                 </label>
                 <label className="panel-field">
                   Disability
@@ -13341,7 +13342,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                       </label>
                       <label className="panel-field">
                         Date of Birth
-                        <input type="date" value={editForm.date_of_birth} onChange={(e) => setEditForm((p) => ({ ...p, date_of_birth: e.target.value }))} />
+                        <DateOfBirthInput value={editForm.date_of_birth} onChange={(value) => setEditForm((p) => ({ ...p, date_of_birth: value }))} />
                       </label>
                       <label className="panel-field">
                         Profile Picture
