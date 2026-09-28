@@ -15,6 +15,7 @@ import "./teacher/teacher-planning.css";
 import "./teacher/teacher-builder.css";
 import "./teacher/teacher-quizzes.css";
 import "./teacher/teacher-overlays.css";
+import "./teacher/teacher-studio-admin.css";
 import "./pwa";
 
 const rootElement = document.getElementById("root");

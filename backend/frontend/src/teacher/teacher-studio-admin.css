@@ -1,0 +1,155 @@
+/* ==========================================================================
+   TEACHER STUDIO ON THE ADMIN SIDE — extends the same design system (tokens,
+   kit primitives, buttons) to two admin screens: the HR page and the shared
+   theory-grading panel (teacher-exams.css already notes that panel is "also
+   rendered, unstyled by the Studio, on the admin side").
+
+   Mechanism: an admin screen calls useAdminStudioScope(true) (TeacherKit.jsx)
+   while mounted, which adds `ts-on` to <body> - the same switch App.jsx
+   flips on for a real teacher session - then wraps its own root in
+   `teacher-workspace-shell ts`, which is what every teacher-studio.css /
+   teacher-*.css selector requires to match. Everything below is keyed off
+   `[data-dashboard-role]` (which App.jsx always sets to the session's real
+   role) rather than `ts-on` alone, specifically so a genuine teacher session
+   is never touched by these admin-only rules, and so the decorative
+   aurora/grain layer - meant to sit behind a WHOLE replaced app shell, not
+   one embedded page - never shows through the admin shell's own sidebar and
+   topbar.
+   ========================================================================== */
+
+body.ts-on:not([data-dashboard-role="teacher"])::before,
+body.ts-on:not([data-dashboard-role="teacher"])::after {
+  display: none;
+}
+
+/* .teacher-workspace-shell.ts (teacher-shell.css) doubles as the teacher app
+   shell's OWN 250px-sidebar + content structural grid, forced with
+   !important there for its own reasons (see that file's comment) - it's
+   reused here only for its design-system SCOPE, never that layout, since
+   these pages already sit inside the admin shell's own sidebar. Without
+   this override every child lands in that 2-column grid instead of
+   stacking one per row, so it has to answer !important with !important too. */
+.admin-ts-page.teacher-workspace-shell,
+.admin-grading-studio.teacher-workspace-shell {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0.75rem !important;
+  min-height: 0 !important;
+  align-items: stretch !important;
+}
+
+/* The admin shell keeps its own background/topbar/sidebar untouched; only
+   the wrapped page itself becomes a Studio-styled "island" within it. */
+body.ts-on:not([data-dashboard-role="teacher"]) .admin-ts-page {
+  background: var(--ts-canvas);
+  border-radius: var(--ts-r-xl);
+  padding: 1rem 1rem 1.35rem;
+}
+
+@media (max-width: 640px) {
+  body.ts-on:not([data-dashboard-role="teacher"]) .admin-ts-page {
+    border-radius: var(--ts-r-lg);
+    padding: 0.75rem 0.75rem 1rem;
+  }
+}
+
+/* -------------------------------------------------------------- HR page */
+
+.hr-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
+
+.hr-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 0.9rem;
+  align-items: start;
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font: 700 0.72rem/1.4 var(--ts-font);
+  text-transform: capitalize;
+  white-space: nowrap;
+  background: var(--ts-surface-3);
+  color: var(--ts-muted);
+}
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-pill[data-tone="warn"] { background: var(--ts-warn-soft); color: var(--ts-warn); }
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-pill[data-tone="ok"] { background: var(--ts-ok-soft); color: var(--ts-ok); }
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-pill[data-tone="danger"] { background: var(--ts-danger-soft); color: var(--ts-danger); }
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-pill[data-tone="info"] { background: var(--ts-info-soft); color: var(--ts-info); }
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-rows {
+  display: grid;
+  gap: 0.55rem;
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-r-md);
+  background: var(--ts-surface-2);
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__name {
+  font-weight: 650;
+  color: var(--ts-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__meta {
+  font-size: 0.8rem;
+  color: var(--ts-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__actions {
+  flex: none;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__actions .ts-btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+/* Compact ghost/danger variants for the small inline row actions above -
+   .ts-btn--ghost already covers the neutral case (Reject reuses it with a
+   danger tint via colour, not a new skin). */
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__actions .ts-btn--danger {
+  color: var(--ts-danger);
+  background: var(--ts-danger-soft);
+  border-color: transparent;
+}
+body.ts-on:not([data-dashboard-role="teacher"]) .hr-row__actions .ts-btn--danger:hover {
+  background: color-mix(in srgb, var(--ts-danger) 18%, var(--ts-danger-soft));
+}
+
+/* ------------------------------------------------------- theory grading */
+
+body.ts-on:not([data-dashboard-role="teacher"]) .admin-grading-studio {
+  background: var(--ts-canvas);
+  border-radius: var(--ts-r-xl);
+  padding: 1rem;
+}

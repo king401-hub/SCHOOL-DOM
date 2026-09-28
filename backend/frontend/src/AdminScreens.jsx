@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy } from "lucide-react";
+import { X, User, MapPin, Users, GraduationCap, Heart, Lock, Activity, ShieldAlert, ChevronDown, Download, Clock, Copy, Briefcase, CalendarClock, Wallet, UserCheck, CheckCircle2, XCircle, Banknote } from "lucide-react";
 import {
   API_BASE_URL,
   ID_CARD_VERIFY_PATH,
@@ -40,6 +40,7 @@ import {
   useCurrentTerm,
 } from "./AppShared";
 import { TeacherExamBuilder, TheoryGradingPanel, ExamGroupBuilder } from "./TeacherExamPanels";
+import { PageHeader, SectionCard, MetricTile, EmptyState, useAdminStudioScope } from "./teacher/TeacherKit";
 import { getLastActiveExamId, clearLastActiveExamId } from "./examBuilderDraft";
 import SignaturePad from "./components/SignaturePad";
 import { SmsTransactionHistoryModal, SmsWalletStatusPill, useSmsWalletReceipt } from "./SmsWalletHistory";
@@ -3889,6 +3890,12 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
   const gradingEnabled = session?.school?.grading_enabled !== false;
 
   const [activeView, setActiveView] = useState("desktop");
+  // TheoryGradingPanel is shared with the teacher dashboard, which shows it
+  // with the full Teacher Studio treatment - see teacher-exams.css's own
+  // note that it's "also rendered, unstyled by the Studio, on the admin
+  // side". This opts admin into that same styling only while this one tab
+  // is open.
+  useAdminStudioScope(activeView === "theory-grading");
   const [editingExam, setEditingExam] = useState(null);
   const [editError, setEditError] = useState("");
   const [loadingExamId, setLoadingExamId] = useState("");
@@ -5025,7 +5032,11 @@ function AdminExamResultsScreen({ data = {}, loading, error, onRetry, onUpload, 
           onDelete={onDeleteGradingScale}
         />
       ) : null}
-      {activeView === "theory-grading" ? <TheoryGradingPanel session={session} /> : null}
+      {activeView === "theory-grading" ? (
+        <div className="teacher-workspace-shell ts admin-grading-studio">
+          <TheoryGradingPanel session={session} />
+        </div>
+      ) : null}
       {confirmDialog}
     </section>
   );
@@ -6779,6 +6790,7 @@ function AdminHRPayrollScreen({
   const staffOptions = staff.map((item) => ({ id: item.id, label: `${item.name} (${item.staff_code})` }));
   const formatMoney = (value) => `${NAIRA_SYMBOL}${Number(value || 0).toLocaleString()}`;
   const visibleActivity = activityExpanded ? activity : activity.slice(0, 3);
+  useAdminStudioScope(true);
 
   const runAction = async (key, action, successMessage) => {
     setBusy(key);
@@ -6821,24 +6833,33 @@ function AdminHRPayrollScreen({
   };
 
   return (
-    <section className="screen-grid">
-      <div className="screen-hero">
-        <h2>HR Management</h2>
-        <p>Manage staff records, payroll, attendance, leave, and salary advances.</p>
-      </div>
+    <section className="screen-grid teacher-workspace-shell ts admin-ts-page">
+      <PageHeader
+        icon={Briefcase}
+        eyebrow="Finance & HR"
+        title="HR Management"
+        subtitle="Staff records, payroll, attendance, leave, and salary advances."
+      />
 
       <ScreenState loading={loading && !staff.length} error={error} onRetry={onRetry} />
 
       {(feedback || formError) ? (
-        <article className="app-panel">
+        <SectionCard>
           {feedback ? <p className="form-feedback success">{feedback}</p> : null}
           {formError ? <p className="form-feedback error">{formError}</p> : null}
-        </article>
+        </SectionCard>
       ) : null}
 
-      <section className="panel-grid">
-        <article className="app-panel">
-          <div className="panel-head"><h3>QR attendance</h3><small>Use the same shared QR code used by teaching staff.</small></div>
+      <div className="hr-metrics">
+        <MetricTile label="Staff" value={summary.total_staff ?? staff.length} icon={Users} tone="indigo" note={`${summary.active_staff ?? staff.length} active`} />
+        <MetricTile label="Pending leave" value={summary.pending_leaves ?? 0} icon={CalendarClock} tone="amber" note="awaiting review" />
+        <MetricTile label="Pending advances" value={summary.pending_advances ?? 0} icon={Wallet} tone="rose" note="awaiting review" />
+        <MetricTile label="Present today" value={summary.today_present ?? 0} icon={UserCheck} tone="emerald" note={`${summary.today_absent ?? 0} absent`} />
+        <MetricTile label="Payroll this month" value={formatMoney(summary.monthly_payroll ?? 0)} icon={Banknote} tone="sky" note={`${formatMoney(summary.monthly_paid ?? 0)} paid so far`} />
+      </div>
+
+      <div className="hr-forms">
+        <SectionCard title="QR attendance" subtitle="Use the same shared QR code used by teaching staff." icon={UserCheck} tone="emerald">
           <form className="panel-form" onSubmit={handleAttendanceSubmit}>
             <div className="panel-form-grid">
               <label className="panel-field">Staff<select value={attendanceForm.staff_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, staff_id: e.target.value }))}><option value="">Select staff</option>{staffOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
@@ -6846,12 +6867,11 @@ function AdminHRPayrollScreen({
               <label className="panel-field">Date<input type="date" value={attendanceForm.date} onChange={(e) => setAttendanceForm((p) => ({ ...p, date: e.target.value }))} /></label>
               <label className="panel-field">Notes<input value={attendanceForm.notes} onChange={(e) => setAttendanceForm((p) => ({ ...p, notes: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "attendance" || !attendanceForm.qr_token || !attendanceForm.staff_id}>{busy === "attendance" ? <><Spinner /> Marking...</> : "Mark from shared QR"}</button></div>
+            <div className="panel-form-actions"><button type="submit" className="ts-btn ts-btn--primary" disabled={busy === "attendance" || !attendanceForm.qr_token || !attendanceForm.staff_id}>{busy === "attendance" ? <><Spinner /> Marking...</> : "Mark from shared QR"}</button></div>
           </form>
-        </article>
+        </SectionCard>
 
-        <article className="app-panel">
-          <div className="panel-head"><h3>Manual attendance override</h3><small>Record absent, late, half day, or excused - no QR code needed.</small></div>
+        <SectionCard title="Manual attendance override" subtitle="Record absent, late, half day, or excused - no QR code needed." icon={CalendarClock} tone="sky">
           <form className="panel-form" onSubmit={handleManualAttendanceSubmit}>
             <div className="panel-form-grid">
               <label className="panel-field">Staff<select value={manualAttendanceForm.staff_id} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, staff_id: e.target.value }))}><option value="">Select staff</option>{staffOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
@@ -6868,15 +6888,13 @@ function AdminHRPayrollScreen({
               </label>
               <label className="panel-field">Notes<input value={manualAttendanceForm.notes} onChange={(e) => setManualAttendanceForm((p) => ({ ...p, notes: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "manual-attendance" || !manualAttendanceForm.staff_id}>{busy === "manual-attendance" ? <><Spinner /> Saving...</> : "Save attendance"}</button></div>
+            <div className="panel-form-actions"><button type="submit" className="ts-btn ts-btn--primary" disabled={busy === "manual-attendance" || !manualAttendanceForm.staff_id}>{busy === "manual-attendance" ? <><Spinner /> Saving...</> : "Save attendance"}</button></div>
           </form>
-        </article>
+        </SectionCard>
+      </div>
 
-      </section>
-
-      <section className="panel-grid">
-        <article className="app-panel">
-          <div className="panel-head"><h3>Leave requests</h3><small>{summary.pending_leaves ?? 0} pending</small></div>
+      <div className="hr-forms">
+        <SectionCard title="Leave requests" subtitle={`${summary.pending_leaves ?? 0} pending`} icon={CalendarClock} tone="amber">
           <form className="panel-form" onSubmit={handleLeaveSubmit}>
             <div className="panel-form-grid">
               <label className="panel-field">Staff<select value={leaveForm.staff_id} onChange={(e) => setLeaveForm((p) => ({ ...p, staff_id: e.target.value }))}><option value="">Select staff</option>{staffOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
@@ -6885,77 +6903,131 @@ function AdminHRPayrollScreen({
               <label className="panel-field">End<input type="date" value={leaveForm.end_date} onChange={(e) => setLeaveForm((p) => ({ ...p, end_date: e.target.value }))} /></label>
               <label className="panel-field full">Reason<input value={leaveForm.reason} onChange={(e) => setLeaveForm((p) => ({ ...p, reason: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "leave" || !leaveForm.staff_id}>{busy === "leave" ? <><Spinner /> Requesting...</> : "Request leave"}</button></div>
+            <div className="panel-form-actions"><button type="submit" className="ts-btn ts-btn--primary" disabled={busy === "leave" || !leaveForm.staff_id}>{busy === "leave" ? <><Spinner /> Requesting...</> : "Request leave"}</button></div>
           </form>
-        </article>
+          {leaves.length ? (
+            <div className="hr-rows" style={{ marginTop: "1rem" }}>
+              {leaves.slice(0, 8).map((item) => (
+                <div key={item.id} className="hr-row">
+                  <div className="hr-row__body">
+                    <span className="hr-row__name">{item.staff_name}</span>
+                    <span className="hr-row__meta">{item.leave_type} - {formatDate(item.start_date)} to {formatDate(item.end_date)}</span>
+                  </div>
+                  <span className="hr-pill" data-tone={item.status === "pending" ? "warn" : item.status === "approved" ? "ok" : "danger"}>{item.status}</span>
+                  {item.status === "pending" ? (
+                    <div className="hr-row__actions">
+                      <button type="button" className="ts-btn ts-btn--ghost" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "approved"), "Leave approved.")} disabled={busy === "leave-review"}>
+                        {busy === "leave-review" ? <Spinner size={12} /> : <><CheckCircle2 size={14} /> Approve</>}
+                      </button>
+                      <button type="button" className="ts-btn ts-btn--danger" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "rejected"), "Leave rejected.")} disabled={busy === "leave-review"}>
+                        {busy === "leave-review" ? <Spinner size={12} /> : <><XCircle size={14} /> Reject</>}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState compact art="calendar" title="No leave requests yet" message="Requests staff make (or you record for them) will show up here." />
+          )}
+        </SectionCard>
 
-        <article className="app-panel">
-          <div className="panel-head"><h3>Salary advance</h3><small>{summary.pending_advances ?? 0} pending</small></div>
+        <SectionCard title="Salary advance" subtitle={`${summary.pending_advances ?? 0} pending`} icon={Wallet} tone="rose">
           <form className="panel-form" onSubmit={handleAdvanceSubmit}>
             <div className="panel-form-grid">
               <label className="panel-field">Staff<select value={advanceForm.staff_id} onChange={(e) => setAdvanceForm((p) => ({ ...p, staff_id: e.target.value }))}><option value="">Select staff</option>{staffOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
               <label className="panel-field">Amount<input type="number" value={advanceForm.amount} onChange={(e) => setAdvanceForm((p) => ({ ...p, amount: e.target.value }))} /></label>
               <label className="panel-field full">Reason<input value={advanceForm.reason} onChange={(e) => setAdvanceForm((p) => ({ ...p, reason: e.target.value }))} /></label>
             </div>
-            <div className="panel-form-actions"><button type="submit" disabled={busy === "advance" || !advanceForm.staff_id}>{busy === "advance" ? <><Spinner /> Requesting...</> : "Request advance"}</button></div>
+            <div className="panel-form-actions"><button type="submit" className="ts-btn ts-btn--primary" disabled={busy === "advance" || !advanceForm.staff_id}>{busy === "advance" ? <><Spinner /> Requesting...</> : "Request advance"}</button></div>
           </form>
-        </article>
-      </section>
-
-      <section className="panel-grid">
-        <RecordList title="Payroll history" rows={payroll.slice(0, 8)} render={(item) => `${item.staff_name} - ${item.period} - ${formatMoney(item.net_salary)} - ${item.status}`} />
-        <RecordList title="Attendance history" rows={attendance.slice(0, 8)} render={(item) => `${item.staff_name} - ${item.date} - ${item.status}`} />
-        <RecordList
-          title="Leave history"
-          rows={leaves.slice(0, 8)}
-          render={(item) => (
-            <span>
-              {item.staff_name} - {item.leave_type} - {item.status}
-              {item.status === "pending" ? (
-                <>
-                  {" "}
-                  <button type="button" className="table-action" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "approved"), "Leave approved.")} disabled={busy === "leave-review"}>
-                    {busy === "leave-review" ? <Spinner size={12} /> : "Approve"}
-                  </button>
-                  <button type="button" className="table-action danger" onClick={() => runAction("leave-review", () => onReviewLeave(item.id, "rejected"), "Leave rejected.")} disabled={busy === "leave-review"}>
-                    {busy === "leave-review" ? <Spinner size={12} /> : "Reject"}
-                  </button>
-                </>
-              ) : null}
-            </span>
+          {advances.length ? (
+            <div className="hr-rows" style={{ marginTop: "1rem" }}>
+              {advances.slice(0, 8).map((item) => (
+                <div key={item.id} className="hr-row">
+                  <div className="hr-row__body">
+                    <span className="hr-row__name">{item.staff_name}</span>
+                    <span className="hr-row__meta">{formatMoney(item.amount)}{item.reason ? ` - ${item.reason}` : ""}</span>
+                  </div>
+                  <span className="hr-pill" data-tone={item.status === "pending" ? "warn" : item.status === "rejected" ? "danger" : "ok"}>{item.status}</span>
+                  {item.status === "pending" ? (
+                    <div className="hr-row__actions">
+                      <button type="button" className="ts-btn ts-btn--ghost" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "approved"), "Advance approved.")} disabled={busy === "advance-review"}>
+                        {busy === "advance-review" ? <Spinner size={12} /> : <><CheckCircle2 size={14} /> Approve</>}
+                      </button>
+                      <button type="button" className="ts-btn ts-btn--ghost" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "paid"), "Advance paid.")} disabled={busy === "advance-review"}>
+                        {busy === "advance-review" ? <Spinner size={12} /> : <><Banknote size={14} /> Pay</>}
+                      </button>
+                      <button type="button" className="ts-btn ts-btn--danger" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "rejected"), "Advance rejected.")} disabled={busy === "advance-review"}>
+                        {busy === "advance-review" ? <Spinner size={12} /> : <><XCircle size={14} /> Reject</>}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState compact art="calendar" title="No advance requests yet" message="Requests staff make (or you record for them) will show up here." />
           )}
-        />
-        <RecordList
-          title="Advance requests"
-          rows={advances.slice(0, 8)}
-          render={(item) => (
-            <span>
-              {item.staff_name} - {formatMoney(item.amount)} - {item.status}
-              {item.status === "pending" ? (
-                <>
-                  {" "}
-                  <button type="button" className="table-action" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "approved"), "Advance approved.")} disabled={busy === "advance-review"}>
-                    {busy === "advance-review" ? <Spinner size={12} /> : "Approve"}
-                  </button>
-                  <button type="button" className="table-action" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "paid"), "Advance paid.")} disabled={busy === "advance-review"}>
-                    {busy === "advance-review" ? <Spinner size={12} /> : "Pay"}
-                  </button>
-                  <button type="button" className="table-action danger" onClick={() => runAction("advance-review", () => onReviewAdvance(item.id, "rejected"), "Advance rejected.")} disabled={busy === "advance-review"}>
-                    {busy === "advance-review" ? <Spinner size={12} /> : "Reject"}
-                  </button>
-                </>
-              ) : null}
-            </span>
-          )}
-        />
-        <RecordList title="Absent records" rows={(data?.absences || []).slice(0, 8)} render={(item) => `${item.staff_name} - ${item.date} - ${item.notes || "Absent"}`} />
-      </section>
+        </SectionCard>
+      </div>
 
-      <article className="app-panel">
-        <div className="panel-head">
-          <h3>Activity log</h3>
-          <small>{activity.length} latest records</small>
-        </div>
+      <div className="hr-forms">
+        <SectionCard title="Payroll history" subtitle="Most recent runs" icon={Banknote} tone="sky">
+          {payroll.length ? (
+            <div className="hr-rows">
+              {payroll.slice(0, 8).map((item) => (
+                <div key={item.id} className="hr-row">
+                  <div className="hr-row__body">
+                    <span className="hr-row__name">{item.staff_name}</span>
+                    <span className="hr-row__meta">{item.period} - {formatMoney(item.net_salary)}</span>
+                  </div>
+                  <span className="hr-pill" data-tone={item.status === "paid" ? "ok" : item.status === "draft" ? "info" : "warn"}>{item.status}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState compact art="books" title="No payroll runs yet" message="Payroll history will show up here once it's recorded." />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Attendance history" subtitle="Most recent records" icon={UserCheck} tone="emerald">
+          {attendance.length ? (
+            <div className="hr-rows">
+              {attendance.slice(0, 8).map((item) => (
+                <div key={item.id} className="hr-row">
+                  <div className="hr-row__body">
+                    <span className="hr-row__name">{item.staff_name}</span>
+                    <span className="hr-row__meta">{formatDate(item.date)}</span>
+                  </div>
+                  <span className="hr-pill" data-tone={item.status === "present" ? "ok" : item.status === "absent" ? "danger" : "info"}>{item.status}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState compact art="calendar" title="No attendance recorded yet" message="Attendance marked from the shared QR or manually will show up here." />
+          )}
+        </SectionCard>
+      </div>
+
+      <SectionCard title="Absent records" subtitle="Most recent" icon={XCircle} tone="rose">
+        {(data?.absences || []).length ? (
+          <div className="hr-rows">
+            {(data?.absences || []).slice(0, 8).map((item) => (
+              <div key={item.id} className="hr-row">
+                <div className="hr-row__body">
+                  <span className="hr-row__name">{item.staff_name}</span>
+                  <span className="hr-row__meta">{formatDate(item.date)}{item.notes ? ` - ${item.notes}` : ""}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState compact art="check" title="Nobody's been marked absent" message="Absence records will show up here." />
+        )}
+      </SectionCard>
+
+      <SectionCard title="Activity log" subtitle={`${activity.length} latest records`} icon={Activity} tone="violet">
         {activity.length ? (
           <>
             <div className="table-scroll">
@@ -6976,16 +7048,16 @@ function AdminHRPayrollScreen({
             </div>
             {activity.length > 3 ? (
               <div className="finance-table-actions">
-                <button type="button" className="pill-button ghost" onClick={() => setActivityExpanded((current) => !current)}>
+                <button type="button" className="ts-btn ts-btn--ghost" onClick={() => setActivityExpanded((current) => !current)}>
                   {activityExpanded ? "Show less" : `More (${activity.length - 3})`}
                 </button>
               </div>
             ) : null}
           </>
         ) : (
-          <p className="panel-empty">No activity records yet.</p>
+          <EmptyState compact art="clipboard" title="No activity yet" message="Every HR action taken on this page will be logged here." />
         )}
-      </article>
+      </SectionCard>
     </section>
   );
 }

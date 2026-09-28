@@ -7,6 +7,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
+/** Opts an ADMIN screen into the Teacher Studio design system for as long as
+ *  it's mounted (see teacher-studio.css's `body.ts-on` scope). A real teacher
+ *  session already has `ts-on` on for its whole session (App.jsx, keyed off
+ *  the role) - this is only for the admin-side pages that reuse Studio-styled
+ *  pieces: the HR page, and the shared theory-grading panel, which
+ *  teacher-exams.css already flags as "also rendered, unstyled by the
+ *  Studio, on the admin side". It only ever adds/removes the class itself,
+ *  never touching a teacher session's own always-on scope, and the
+ *  decorative aurora/grain layer and admin-page framing that come with it
+ *  live in teacher-studio-admin.css, keyed off `[data-dashboard-role]` so
+ *  they never leak into a genuine teacher session either. */
+export function useAdminStudioScope(active) {
+  useEffect(() => {
+    if (!active) return undefined;
+    document.body.classList.add("ts-on");
+    return () => document.body.classList.remove("ts-on");
+  }, [active]);
+}
+
 export function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(
     () => typeof window !== "undefined" && Boolean(window.matchMedia?.(REDUCED_MOTION_QUERY).matches)
