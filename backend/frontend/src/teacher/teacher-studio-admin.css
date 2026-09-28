@@ -60,11 +60,18 @@ body.ts-on:not([data-dashboard-role="teacher"]) .admin-ts-page {
   gap: 0.75rem;
 }
 
+/* align-items: stretch (the default - no need to set it) on purpose: two
+   cards sharing a row rarely have the same amount of content (e.g. "Leave
+   requests" vs "Salary advance", one with a longer empty-state message than
+   the other), and left to their own height (align-items: start) the
+   shorter card ends early, leaving bare canvas background exposed below it
+   for the rest of the row - which reads as a stray gap before the next
+   section. Stretching keeps both cards' own bordered/backgrounded boxes
+   filling the full row height instead. */
 .hr-forms {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
   gap: 0.9rem;
-  align-items: start;
 }
 
 body.ts-on:not([data-dashboard-role="teacher"]) .hr-pill {
