@@ -92,6 +92,42 @@ def _generate_short_staff_code(tenant, prefix, seed=""):
     return candidate
 
 
+def create_teacher_staff_profile(user, tenant=None, actor=None, action="staff_profile_created", details="Teacher HR profile created"):
+    """Give a teacher's User its StaffProfile HR record, copied from their
+    TeacherProfile where one exists. Used both when an admin creates the
+    teacher (see users.app_views._sync_teacher_hr_salary - without this a
+    newly created teacher never appears in HR at all, only once/if they
+    happen to visit their own self-service staff page) and when a teacher
+    without one yet visits that self-service page themselves (below).
+    Assumes the caller has already checked no StaffProfile exists for this
+    user/tenant (by id or by email) - it always creates one."""
+    tenant = tenant or _tenant_for_user(user)
+    teacher_profile = TeacherProfile.objects.filter(user=user).first()
+    staff = StaffProfile.objects.create(
+        tenant=tenant,
+        user=user,
+        staff_code=_unique_staff_code(tenant, getattr(teacher_profile, "employee_id", "") or generate_short_teacher_id(user.id.hex, tenant)),
+        first_name=user.first_name or user.get_short_name(),
+        middle_name=user.middle_name or "",
+        last_name=user.last_name or "",
+        email=user.email,
+        phone=user.phone,
+        gender=user.gender or "",
+        date_of_birth=user.date_of_birth,
+        staff_type=StaffProfile.TEACHING,
+        role=getattr(teacher_profile, "specialization", "") or "Teacher",
+        department="Teaching",
+        employment_type=getattr(teacher_profile, "employment_type", "") or "full_time",
+        hire_date=getattr(teacher_profile, "hire_date", None) or timezone.localdate(),
+        base_salary=getattr(teacher_profile, "monthly_salary", None) or Decimal("0.00"),
+        emergency_contact_name=getattr(teacher_profile, "emergency_contact_name", "") or "",
+        emergency_contact_phone=getattr(teacher_profile, "emergency_contact_phone", "") or "",
+        emergency_contact_relation=getattr(teacher_profile, "emergency_contact_relation", "") or "",
+    )
+    _activity(tenant, staff, actor, action, details)
+    return staff
+
+
 def _self_staff_profile(user, create_teacher_profile=True):
     tenant = _tenant_for_user(user)
     if not tenant or getattr(user, "role", "") not in SELF_SERVICE_ROLES:
@@ -110,30 +146,10 @@ def _self_staff_profile(user, create_teacher_profile=True):
             return by_email
 
     if user.role == "teacher" and create_teacher_profile:
-        teacher_profile = TeacherProfile.objects.filter(user=user).first()
-        staff = StaffProfile.objects.create(
-            tenant=tenant,
-            user=user,
-            staff_code=_unique_staff_code(tenant, getattr(teacher_profile, "employee_id", "") or generate_short_teacher_id(user.id.hex, tenant)),
-            first_name=user.first_name or user.get_short_name(),
-            middle_name=user.middle_name or "",
-            last_name=user.last_name or "",
-            email=user.email,
-            phone=user.phone,
-            gender=user.gender or "",
-            date_of_birth=user.date_of_birth,
-            staff_type=StaffProfile.TEACHING,
-            role=getattr(teacher_profile, "specialization", "") or "Teacher",
-            department="Teaching",
-            employment_type=getattr(teacher_profile, "employment_type", "") or "full_time",
-            hire_date=getattr(teacher_profile, "hire_date", None) or timezone.localdate(),
-            base_salary=getattr(teacher_profile, "monthly_salary", None) or Decimal("0.00"),
-            emergency_contact_name=getattr(teacher_profile, "emergency_contact_name", "") or "",
-            emergency_contact_phone=getattr(teacher_profile, "emergency_contact_phone", "") or "",
-            emergency_contact_relation=getattr(teacher_profile, "emergency_contact_relation", "") or "",
+        return create_teacher_staff_profile(
+            user, tenant=tenant, actor=user,
+            action="staff_profile_self_linked", details="Teacher HR profile created for self-service",
         )
-        _activity(tenant, staff, user, "staff_profile_self_linked", "Teacher HR profile created for self-service")
-        return staff
 
     if user.role == "accountant":
         staff = StaffProfile.objects.create(

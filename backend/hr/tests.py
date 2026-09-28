@@ -497,3 +497,70 @@ class HRManagementAPITests(TestCase):
         self.assertEqual(staff.base_salary, Decimal("150000"))
         accountant_user.refresh_from_db()
         self.assertTrue(accountant_user.check_password("NewLoginPass123"))
+
+
+class BackfillTeacherStaffProfilesCommandTests(TestCase):
+    """`manage.py backfill_teacher_staff_profiles`: the one-off catch-up for
+    every teacher created before create_teacher started giving them an HR
+    record immediately (they only got one, if ever, on first visiting their
+    own staff self-service page)."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Backfill School", schema_name="backfill_school", is_active=True)
+        self.other_school = SchoolTenant.objects.create(name="Other Backfill School", schema_name="other_backfill_school", is_active=True)
+
+    def _teacher(self, email, tenant, salary="100000.00"):
+        user = User.objects.create_user(
+            email=email, password="TeacherPass123", first_name="T", last_name="Eacher",
+            role="teacher", tenant=tenant, is_active=True, is_verified=True,
+        )
+        return TeacherProfile.objects.create(
+            user=user, employee_id=f"EMP-{email}", qualification="B.Ed", specialization="Maths",
+            hire_date=timezone.localdate(), monthly_salary=Decimal(salary),
+        )
+
+    def _run(self, **options):
+        from io import StringIO
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("backfill_teacher_staff_profiles", stdout=out, **options)
+        return out.getvalue()
+
+    def test_without_commit_nothing_is_created(self):
+        self._teacher("missing1@backfill.edu", self.school)
+        out = self._run()
+        self.assertIn("1 teacher(s) without an HR record", out)
+        self.assertIn("Dry run", out)
+        self.assertEqual(StaffProfile.objects.count(), 0)
+
+    def test_commit_creates_the_missing_records_only(self):
+        missing = self._teacher("missing2@backfill.edu", self.school)
+        already_has_one = self._teacher("has-one@backfill.edu", self.school)
+        StaffProfile.objects.create(
+            tenant=self.school, user=already_has_one.user, staff_code="ALREADY1",
+            first_name="Has", last_name="One", staff_type=StaffProfile.TEACHING, role="Teacher",
+        )
+
+        out = self._run(commit=True)
+
+        self.assertIn("Created 1 HR record(s)", out)
+        staff = StaffProfile.objects.get(user=missing.user)
+        self.assertEqual(staff.staff_type, StaffProfile.TEACHING)
+        self.assertEqual(staff.base_salary, Decimal("100000.00"))
+        self.assertEqual(StaffProfile.objects.filter(user=already_has_one.user).count(), 1)  # not duplicated
+
+    def test_a_school_code_limits_the_backfill_to_that_school(self):
+        self._teacher("here@backfill.edu", self.school)
+        self._teacher("there@backfill.edu", self.other_school)
+
+        self._run(school=self.school.schema_name, commit=True)
+
+        self.assertTrue(StaffProfile.objects.filter(email="here@backfill.edu").exists())
+        self.assertFalse(StaffProfile.objects.filter(email="there@backfill.edu").exists())
+
+    def test_an_unknown_school_is_refused(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            self._run(school="no_such_school")

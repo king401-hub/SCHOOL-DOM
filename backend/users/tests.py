@@ -4844,6 +4844,68 @@ class TeachersAPITests(TestCase):
         self.assertEqual(profile.years_of_experience, 4)
         self.assertEqual(profile.user.tenant, self.school)
 
+    def test_create_teacher_api_also_creates_an_hr_staff_record(self):
+        """A teacher used to get no HR record at all until they happened to
+        visit their own staff self-service page (most never do), so they
+        simply never showed up in Admin > HR. Every new teacher gets one now,
+        immediately, without needing to log in first."""
+        from hr.models import StaffProfile
+
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "hr.teacher@teacher-smoke.edu",
+                "first_name": "Hr",
+                "last_name": "Teacher",
+                "specialization": "Physics",
+                "qualification": "B.Sc",
+                "employment_type": "full_time",
+                "years_of_experience": 3,
+                "monthly_salary": "150000",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
+        teacher_user = TeacherProfile.objects.get(user__email="hr.teacher@teacher-smoke.edu").user
+        staff = StaffProfile.objects.get(user=teacher_user)
+        self.assertEqual(staff.tenant, self.school)
+        self.assertEqual(staff.staff_type, StaffProfile.TEACHING)
+        self.assertEqual(staff.base_salary, Decimal("150000.00"))
+        self.assertEqual(staff.first_name, "Hr")
+
+        hr_response = self.client.get("/api/hr/overview/")
+        self.assertEqual(hr_response.status_code, 200)
+        self.assertTrue(any(item["id"] == str(staff.id) for item in hr_response.data["staff"]))
+
+    def test_a_staff_record_created_under_the_same_email_is_linked_not_duplicated(self):
+        """A staff record can already exist under a teacher's email (e.g. they
+        were entered into HR by hand before their teacher login existed) -
+        creating the teacher must link that one, not make a second."""
+        from hr.models import StaffProfile
+
+        StaffProfile.objects.create(
+            tenant=self.school, staff_code="PRELINKED1", first_name="Pre", last_name="Linked",
+            email="prelinked@teacher-smoke.edu", staff_type=StaffProfile.NON_TEACHING,
+            role="Teacher", department="Teaching", employment_type="full_time", hire_date=timezone.localdate(),
+        )
+
+        response = self.client.post(
+            "/api/app/teachers/create/",
+            data={
+                "teacher_email": "prelinked@teacher-smoke.edu",
+                "first_name": "Pre", "last_name": "Linked",
+                "specialization": "Chemistry", "qualification": "B.Sc", "employment_type": "full_time",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
+        self.assertEqual(StaffProfile.objects.filter(email__iexact="prelinked@teacher-smoke.edu").count(), 1)
+        staff = StaffProfile.objects.get(email__iexact="prelinked@teacher-smoke.edu")
+        self.assertEqual(staff.staff_code, "PRELINKED1")
+        self.assertEqual(staff.user.email, "prelinked@teacher-smoke.edu")
+
     def test_create_teacher_api_auto_generates_employee_id(self):
         response = self.client.post(
             "/api/app/teachers/create/",

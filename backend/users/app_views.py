@@ -2463,11 +2463,27 @@ def _class_scope_for_attendance_marking(user):
     return _teacher_assigned_classes(user)
 
 
-def _sync_teacher_hr_salary(teacher_profile):
+def _sync_teacher_hr_salary(teacher_profile, actor=None):
     if StaffProfile is None:
         return
-    staff = StaffProfile.objects.filter(tenant=teacher_profile.user.tenant, user=teacher_profile.user).first()
+    teacher_user = teacher_profile.user
+    staff = StaffProfile.objects.filter(tenant=teacher_user.tenant, user=teacher_user).first()
+    if not staff and teacher_user.email:
+        # A staff record already exists under this email (e.g. from an earlier
+        # non-teaching role) but was never linked to this user - link it rather
+        # than creating a second, orphaned one.
+        staff = StaffProfile.objects.filter(tenant=teacher_user.tenant, email__iexact=teacher_user.email).first()
+        if staff and not staff.user_id:
+            staff.user = teacher_user
+            staff.save(update_fields=["user", "updated_at"])
     if not staff:
+        # A teacher created by an admin never had an HR record at all until
+        # they happened to visit their own staff self-service page (see
+        # hr.views._self_staff_profile) - most never do, so they simply never
+        # showed up in HR. Give every teacher one immediately on creation.
+        from hr.views import create_teacher_staff_profile
+
+        create_teacher_staff_profile(teacher_user, tenant=teacher_user.tenant, actor=actor)
         return
     update_fields = []
     if staff.base_salary != teacher_profile.monthly_salary:
@@ -7592,7 +7608,7 @@ def create_teacher(request):
         classes = _scope_to_user_tenant(Class.objects.all(), user).filter(id__in=class_ids)
         teacher_profile.assigned_classes.set(classes)
 
-    _sync_teacher_hr_salary(teacher_profile)
+    _sync_teacher_hr_salary(teacher_profile, actor=user)
 
     return Response(
         {
@@ -7783,7 +7799,7 @@ def teacher_detail(request, teacher_id):
     if profile_update_fields:
         teacher_profile.save(update_fields=sorted(set(profile_update_fields)))
     if "monthly_salary" in profile_update_fields:
-        _sync_teacher_hr_salary(teacher_profile)
+        _sync_teacher_hr_salary(teacher_profile, actor=user)
 
     teacher_profile.refresh_from_db()
     return Response(
