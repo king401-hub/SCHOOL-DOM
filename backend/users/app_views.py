@@ -5664,6 +5664,17 @@ def students_snapshot(request):
     elif status_filter == "unassigned":
         listed = listed.filter(current_class__isnull=True)
 
+    # ?q= searches the whole tenant (before pagination), not just the page the
+    # admin has already loaded - the Student Directory's search box used to
+    # only filter the ~15 rows already fetched, so a student further down the
+    # list (or in another class, with the class filter on "All") was
+    # invisible to it even though they existed. Same match rules as the
+    # admin's other student search (report cards etc.) - see
+    # _fuzzy_student_filter.
+    search_query = str(request.query_params.get("q") or "").strip()
+    if search_query:
+        listed = _fuzzy_student_filter(listed, search_query)
+
     page_size = 15
     try:
         # ?limit=N lets a refresh re-fetch everything already opened with "View

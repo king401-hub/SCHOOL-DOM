@@ -7587,6 +7587,40 @@ class StudentDirectoryPagingTests(TestCase):
         self.assertEqual(len(self._all_pages()), 25)
         self.assertEqual(self._all_pages(class_id=other_class.id), [])
 
+    def test_search_finds_a_student_regardless_of_which_page_they_would_fall_on(self):
+        """?q= searches the whole school before paging, not the page already
+        loaded - every student here shares the same created_at (a bulk
+        import), so which ones happen to land on a small first page is
+        unpredictable; the search must find one of them anyway."""
+        target = StudentProfile.objects.get(student_id="DIR019")
+        found = self._list(q="DIR019", limit=5)["students"]
+        self.assertEqual([row["id"] for row in found], [str(target.id)])
+
+        found_by_name = self._list(q="Pupil19", limit=5)["students"]
+        self.assertEqual([row["id"] for row in found_by_name], [str(target.id)])
+
+        found_by_email = self._list(q="pupil19@directory.edu", limit=5)["students"]
+        self.assertEqual([row["id"] for row in found_by_email], [str(target.id)])
+
+    def test_search_combines_with_the_class_filter(self):
+        # Every fixture student's first name starts with "Pupil".
+        self.assertEqual(len(self._all_pages(q="Pupil")), 25)
+        self.assertEqual(len(self._all_pages(q="Pupil", class_id=self.big_class.id)), 20)
+        self.assertEqual(len(self._all_pages(q="Pupil", class_id=self.small_class.id)), 5)
+
+    def test_search_matching_nobody_returns_an_empty_page_not_an_error(self):
+        result = self._list(q="Nobody With This Name")
+        self.assertEqual(result["students"], [])
+        self.assertFalse(result["has_more"])
+
+    def test_search_never_reaches_into_another_school(self):
+        other = SchoolTenant.objects.create(name="Other Search School", schema_name="other_search_school", is_active=True)
+        other_legacy = Tenant.objects.create(name=other.name, slug=other.schema_name)
+        other_class = Class.objects.create(tenant=other_legacy, name="SSS 1", section="Science")
+        self._student(99, other_class, tenant=other)
+
+        self.assertEqual(self._list(q="Pupil99")["students"], [])
+
 
 class StudentBulkImportTests(TestCase):
     """Importing a class list from a spreadsheet instead of typing each student.

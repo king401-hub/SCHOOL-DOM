@@ -6692,6 +6692,11 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
   // response must never overwrite a newer one.
   const [studentClassFilter, setStudentClassFilter] = useState("");
   const studentClassFilterRef = useRef("");
+  // Search is server-side (the whole tenant, not just the loaded page - see
+  // students_snapshot's ?q=), so it needs the same "re-apply on every reload"
+  // treatment as the class filter above.
+  const [studentSearchTerm, setStudentSearchTerm] = useState("");
+  const studentSearchRef = useRef("");
   const studentsRequestRef = useRef(0);
   const studentsLoadingMoreRef = useRef(false);
   const [adminActivityRecords, setAdminActivityRecords] = useState(() => readAdminActivityLog(session));
@@ -6799,6 +6804,9 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
           if (studentClassFilterRef.current) {
             params.set("class_id", studentClassFilterRef.current);
           }
+          if (studentSearchRef.current) {
+            params.set("q", studentSearchRef.current);
+          }
           // Keep the pages the admin already opened with "View more".
           const loaded = screenData[path]?.students?.length || 0;
           if (loaded > STUDENT_DIRECTORY_PAGE_SIZE) {
@@ -6847,16 +6855,35 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     [screenData, session]
   );
 
+  // Always an explicit query (even when both are empty) so this loads a fresh
+  // first page instead of reusing the "keep what is already loaded" size of
+  // a plain reload.
+  const buildStudentsQuery = useCallback((classId, q) => {
+    const params = new URLSearchParams();
+    if (classId) params.set("class_id", classId);
+    if (q) params.set("q", q);
+    const qs = params.toString();
+    return qs ? `?${qs}` : "?offset=0";
+  }, []);
+
   const handleStudentClassFilterChange = useCallback(
     (classId) => {
       const next = classId ? String(classId) : "";
       studentClassFilterRef.current = next;
       setStudentClassFilter(next);
-      // Always an explicit query (even for "all") so this loads a fresh first page
-      // instead of reusing the "keep what is already loaded" size of a reload.
-      return loadScreen("/students", true, false, next ? `?class_id=${encodeURIComponent(next)}` : "?offset=0");
+      return loadScreen("/students", true, false, buildStudentsQuery(next, studentSearchRef.current));
     },
-    [loadScreen]
+    [loadScreen, buildStudentsQuery]
+  );
+
+  const handleStudentSearchChange = useCallback(
+    (term) => {
+      const next = term ? String(term).trim() : "";
+      studentSearchRef.current = next;
+      setStudentSearchTerm(next);
+      return loadScreen("/students", true, false, buildStudentsQuery(studentClassFilterRef.current, next));
+    },
+    [loadScreen, buildStudentsQuery]
   );
 
   useEffect(() => {
@@ -8682,13 +8709,19 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
     async (classId, offset) => {
       const params = new URLSearchParams({ offset: String(offset) });
       if (classId) params.set("class_id", classId);
+      const searchAtRequestTime = studentSearchRef.current;
+      if (searchAtRequestTime) params.set("q", searchAtRequestTime);
       const requestId = studentsRequestRef.current;
       studentsLoadingMoreRef.current = true;
       try {
         const result = await requestJson(session, "GET", `/api/app/students/?${params.toString()}`);
-        // The list was reloaded or switched to another class while this page was on
-        // its way - appending it would mix classes or repeat rows, so drop it.
-        if (requestId !== studentsRequestRef.current || String(classId || "") !== studentClassFilterRef.current) {
+        // The list was reloaded, switched to another class, or re-searched while
+        // this page was on its way - appending it would mix results, so drop it.
+        if (
+          requestId !== studentsRequestRef.current ||
+          String(classId || "") !== studentClassFilterRef.current ||
+          searchAtRequestTime !== studentSearchRef.current
+        ) {
           return result;
         }
         setScreenData((previous) => {
@@ -8943,6 +8976,8 @@ const unreadInboxCount = Number(screenData["/messages"]?.summary?.unread_inbox ?
         onDelete={handleDeleteStudent}
         initialClassFilter={studentClassFilter}
         onClassFilterChange={handleStudentClassFilterChange}
+        initialSearchTerm={studentSearchTerm}
+        onSearchChange={handleStudentSearchChange}
         onLoadMoreStudents={handleLoadMoreStudents}
         onActivityTitleSave={handleSaveStudentActivityTitle}
         onActivityTitleDeactivate={handleDeactivateStudentActivityTitle}

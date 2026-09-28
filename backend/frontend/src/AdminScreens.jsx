@@ -12430,7 +12430,7 @@ function AdminSmsWalletScreen({ data, loading, error, onRetry, onPurchase, onVer
   );
 }
 
-function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, initialClassFilter = "", onClassFilterChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG", session }) {
+function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, onUpdate, onDelete, initialClassFilter = "", onClassFilterChange, initialSearchTerm = "", onSearchChange, onLoadMoreStudents, onActivityTitleSave, onActivityTitleDeactivate, countries = [], defaultCountryCode = "NG", session }) {
   const [showImport, setShowImport] = useState(false);
   const students = data?.students || [];
   const classes = data?.options?.classes || [];
@@ -12473,11 +12473,31 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [tokenWarning, setTokenWarning] = useState(false);
-  // The loaded list belongs to the class filter that fetched it, so a screen that
-  // is re-opened (its state resets, the data does not) starts from that filter.
-  const [showFilters, setShowFilters] = useState(Boolean(initialClassFilter));
-  const [searchTerm, setSearchTerm] = useState("");
+  // The loaded list belongs to the class filter (and search) that fetched it,
+  // so a screen that is re-opened (its state resets, the data does not)
+  // starts from those.
+  const [showFilters, setShowFilters] = useState(Boolean(initialClassFilter || initialSearchTerm));
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
   const [classFilter, setClassFilter] = useState(initialClassFilter);
+
+  // The search box queries the whole school (students_snapshot's ?q=), not
+  // just the ~15 rows already loaded - a student further down the list, or
+  // in another class while the filter is "All", used to be invisible to it
+  // even though they existed (findable elsewhere, e.g. Finance's own
+  // search). Debounced so every keystroke doesn't fire a request, and the
+  // first run is skipped so mounting with an already-active search (e.g.
+  // re-opening this screen) doesn't force a redundant reload of data it was
+  // just handed.
+  const searchEffectSkippedFirstRun = useRef(false);
+  useEffect(() => {
+    if (!onSearchChange) return;
+    if (!searchEffectSkippedFirstRun.current) {
+      searchEffectSkippedFirstRun.current = true;
+      return;
+    }
+    const handle = window.setTimeout(() => onSearchChange(searchTerm), 350);
+    return () => window.clearTimeout(handle);
+  }, [searchTerm, onSearchChange]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [editForm, setEditForm] = useState({
@@ -12570,20 +12590,6 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
     confirm_student_password: "",
     profile_picture: null,
   });
-
-  const filteredStudents = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    if (!query) {
-      return students;
-    }
-    return students.filter((item) => {
-      const haystack = [item.name, item.email, item.student_id, item.class_name]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [searchTerm, students]);
 
   const handleLoadMore = async () => {
     if (!onLoadMoreStudents || loadingMore || !data?.has_more) return;
@@ -13176,7 +13182,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                     </select>
                   </label>
                   <label className="panel-field search-field">
-                    Search by student ID, name, {groupLabels.singular.toLowerCase()}, or email
+                    Search by student ID, name, or email - searches every {groupLabels.singular.toLowerCase()}, not just this page
                     <input
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
@@ -13187,7 +13193,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
               ) : null}
             </div>
 
-            {filteredStudents.length > 0 ? (
+            {students.length > 0 ? (
               <table className="data-table">
                 <thead>
                   <tr>
@@ -13200,7 +13206,7 @@ function AdminStudentsScreen({ data, school, loading, error, onRetry, onCreate, 
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredStudents.map((item) => (
+                  {students.map((item) => (
                     <tr key={item.id}>
                       <td>{item.name}</td>
                       <td>{item.email}</td>
