@@ -5435,13 +5435,20 @@ def receipt_message_for_payment(payment):
 
 
 def send_payment_receipt_sms(payment, receipt_data=None, receipt_url="") -> dict:
-    """Text a guardian their receipt link after an offline payment.
+    """Text a guardian their receipt link after a payment.
 
-    This SMS is the only thing that carries the receipt link to a parent who
-    paid offline - they may have no email on file and may never open the portal
-    - so it is sent free of the school's wallet (charge_wallet=False), exactly
-    like the online payment receipt. Never billed, never blocked by an empty
-    wallet: the school has already been paid.
+    Billed to the school's SMS wallet for a payment an admin recorded in
+    person (cash, POS, cheque, a bank transfer typed into the payment form -
+    see record_cash_payment's "recorded_by" metadata): the school chose to
+    also text a receipt for money it already has independent proof of
+    (it was standing at the till), so this is an ordinary billed message like
+    any other, and can fail on an empty or locked wallet exactly like one.
+
+    Free (charge_wallet=False) for a payment nobody at the school touched -
+    an incoming bank transfer or DVA/Paystack payment reconciled automatically
+    by webhook - where the SMS is the only thing that carries the receipt link
+    to a parent who paid offline and may have no email on file or never open
+    the portal. Never billed, never blocked by an empty wallet, for that case.
 
     Pass an already-built `receipt_data`/`receipt_url` to text and email the
     *same* receipt; called bare it mints its own.
@@ -5458,6 +5465,7 @@ def send_payment_receipt_sms(payment, receipt_data=None, receipt_url="") -> dict
         return {"sent": False, "skipped": True, "reason": "No guardian phone on file."}
 
     tenant = getattr(payment, "tenant", None) or getattr(student.user, "tenant", None)
+    recorded_in_person = bool((getattr(payment, "metadata", None) or {}).get("recorded_by"))
     try:
         if not receipt_url:
             receipt_data = receipt_data or build_payment_receipt_data(payment)
@@ -5467,9 +5475,11 @@ def send_payment_receipt_sms(payment, receipt_data=None, receipt_url="") -> dict
             phone,
             _sms_message_with_receipt_link(receipt_message_for_payment(payment), receipt_url),
             category=SmsMessageLog.RECEIPT,
-            narration="Payment receipt (not billed)",
-            charge_wallet=False,
+            narration="Payment receipt" if recorded_in_person else "Payment receipt (not billed)",
+            charge_wallet=recorded_in_person,
         )
+    except (InsufficientSmsCreditsError, SmsWalletLockedError) as exc:
+        return {"sent": False, "skipped": True, "reason": str(exc)}
     except Exception as exc:
         logger.exception("Payment receipt SMS failed for payment %s", getattr(payment, "id", "?"))
         return {"sent": False, "reason": f"Receipt SMS could not be sent: {exc}"}

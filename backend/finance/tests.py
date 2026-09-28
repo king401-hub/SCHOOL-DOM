@@ -2176,9 +2176,11 @@ class CashPaymentTests(TestCase):
             record_cash_payment(self.student, Decimal("0.00"), actor=self.admin_user)
 
     @patch("finance.services._dispatch_wallet_sms")
-    def test_offline_payment_texts_the_guardian_a_receipt_link_free_of_charge(self, mock_send):
-        """This SMS is the only thing carrying the receipt link to a parent who
-        paid offline, so it must actually send - and never bill the school."""
+    def test_a_recorded_payments_receipt_texts_the_guardian_and_bills_the_school(self, mock_send):
+        """A payment an admin recorded in person (cash, POS, a bank transfer
+        typed into the form) is an ordinary billed message: the school already
+        has independent proof it was paid (it was standing at the till), so
+        texting a receipt too is a service like any other, not a free courtesy."""
         self.student.guardian_phone = "2348012345678"
         self.student.save(update_fields=["guardian_phone"])
         wallet = get_or_create_sms_wallet(self.school)
@@ -2192,17 +2194,20 @@ class CashPaymentTests(TestCase):
         self.assertTrue(result["sent"])
         self.assertEqual(result["phone"], "2348012345678")
         wallet.refresh_from_db()
-        self.assertEqual(wallet.balance, 25)  # not billed
+        self.assertEqual(wallet.balance, 24)  # billed, unlike an auto-reconciled payment's receipt
 
         log = SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT)
-        self.assertEqual(log.credits_charged, 0)
+        self.assertEqual(log.credits_charged, 1)
         self.assertEqual(log.delivery_status, SmsMessageLog.SENT)
         # The receipt link is the whole point of the message.
         self.assertIn("/r/", log.message)
         self.assertTrue(PaymentReceiptLink.objects.filter(tenant=self.school).exists())
 
     @patch("finance.services._dispatch_wallet_sms")
-    def test_offline_payment_receipt_sends_even_when_the_wallet_is_empty(self, mock_send):
+    def test_a_recorded_payments_receipt_is_skipped_not_forced_on_an_empty_wallet(self, mock_send):
+        """Being billed like any other message cuts both ways: it can now be
+        held back by an empty or locked wallet, same as a fee reminder would -
+        the money is still banked and the payment is unaffected either way."""
         self.student.guardian_phone = "2348012345678"
         self.student.save(update_fields=["guardian_phone"])
         wallet = get_or_create_sms_wallet(self.school)
@@ -2211,7 +2216,41 @@ class CashPaymentTests(TestCase):
         mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
 
         payment = record_cash_payment(self.student, Decimal("20000.00"), actor=self.admin_user)
-        self.assertTrue(send_payment_receipt_sms(payment)["sent"])
+        result = send_payment_receipt_sms(payment)
+
+        self.assertFalse(result["sent"])
+        self.assertTrue(result["skipped"])
+        self.assertIn("Insufficient SMS credits", result["reason"])
+        mock_send.assert_not_called()
+        self.fee.refresh_from_db()
+        self.assertEqual(self.fee.status, SchoolFee.STATUS_PAID)  # the payment itself is unaffected
+
+    @patch("finance.services._dispatch_wallet_sms")
+    def test_an_auto_reconciled_payments_receipt_stays_free_even_on_an_empty_wallet(self, mock_send):
+        """A payment nobody at the school touched (an incoming bank transfer
+        matched by webhook, no admin recording it) is the opposite case: the
+        SMS may be the parent's only proof of a payment made offline, so it
+        must still go out free, forced through even an empty wallet."""
+        self.student.guardian_phone = "2348012345678"
+        self.student.save(update_fields=["guardian_phone"])
+        wallet = get_or_create_sms_wallet(self.school)
+        wallet.balance = 0
+        wallet.save(update_fields=["balance", "updated_at"])
+        mock_send.return_value = {"response": {"status": "SUCCESS", "totalsent": 1, "cost": 4}}
+
+        payment = BankPayment.objects.create(
+            tenant=self.school, amount=Decimal("20000.00"), narration="Bank transfer", bank_reference="BANK-AUTO-1",
+        )
+        payment = apply_bank_payment_to_student(payment, self.student)
+        self.assertNotIn("recorded_by", payment.metadata or {})
+
+        result = send_payment_receipt_sms(payment)
+
+        self.assertTrue(result["sent"])
+        mock_send.assert_called_once()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 0)  # never billed
+        self.assertEqual(SmsMessageLog.objects.get(category=SmsMessageLog.RECEIPT).credits_charged, 0)
 
     @patch("finance.services.send_ebulksms")
     def test_receipt_sms_falls_back_to_the_second_guardian_and_skips_when_none(self, mock_send):
