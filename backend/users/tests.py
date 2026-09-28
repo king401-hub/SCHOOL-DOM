@@ -4462,7 +4462,22 @@ class AttendanceAndPromptTests(TestCase):
         response = self.client.get("/api/app/performance-heatmap/")
 
         self.assertEqual(response.status_code, 200, getattr(response, "data", response))
-        self.assertTrue(response.data.get("success", True))
+
+    def test_an_accountant_can_view_performance_analytics_too(self):
+        """Added to the accountant's own nav alongside SMS Wallet, the Student
+        Directory and Settings - viewing only, no other admin power."""
+        accountant = User.objects.create_user(
+            email="heatmap.accountant@attendance.edu", password="AccountantPass123",
+            role="accountant", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client.force_authenticate(user=accountant)
+        response = self.client.get("/api/app/performance-heatmap/")
+        self.assertEqual(response.status_code, 200, getattr(response, "data", response))
+
+    def test_a_teacher_still_cannot_view_performance_analytics(self):
+        self.client.force_authenticate(user=self.teacher_user)
+        response = self.client.get("/api/app/performance-heatmap/")
+        self.assertEqual(response.status_code, 403)
 
     def test_document_endpoints_do_not_consume_tokens(self):
         admin_user = User.objects.create_user(

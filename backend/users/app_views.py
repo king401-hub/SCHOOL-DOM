@@ -3622,7 +3622,10 @@ def _average(values):
 @permission_classes([IsAuthenticated])
 def performance_heatmap_snapshot(request):
     user = request.user
-    if user.role not in ADMIN_ROLES:
+    # Accountants can view analytics (added to their nav alongside SMS Wallet,
+    # Student Directory and Settings) but never gain any of ADMIN_ROLES' other
+    # powers - this is a local addition, not a change to that shared set.
+    if user.role not in ADMIN_ROLES | {"accountant"}:
         return Response(
             {"success": False, "message": "Only school administrators can view performance analytics."},
             status=status.HTTP_403_FORBIDDEN,

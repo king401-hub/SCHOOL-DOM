@@ -85,8 +85,12 @@ export const ADMIN_ROUTES = [
 export const ACCOUNTANT_ROUTES = [
   { path: "/finance", label: "Finance" },
   { path: "/expenses", label: "Expenses" },
+  { path: "/sms-wallet", label: "SMS Wallet" },
+  { path: "/students", label: "Students" },
+  { path: "/performance-heatmap", label: "Performance Analytics" },
   { path: "/hr-self-service", label: "Payroll & Leave" },
   { path: "/messages", label: "Messages" },
+  { path: "/settings", label: "Settings" },
 ];
 export const ADMIN_ROUTE_SET = new Set([
   ...ADMIN_ROUTES.map((item) => item.path),

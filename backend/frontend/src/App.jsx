@@ -6667,8 +6667,10 @@ const ADMIN_NAV_SECTIONS = [
 ];
 
 const ACCOUNTANT_NAV_SECTIONS = [
-  { label: "Finance & HR", paths: ["/finance", "/expenses", "/hr-self-service"] },
-  { label: "Administration", paths: ["/messages"] },
+  { label: "Overview", paths: ["/performance-heatmap"] },
+  { label: "People", paths: ["/students"] },
+  { label: "Finance & HR", paths: ["/finance", "/expenses", "/sms-wallet", "/hr-self-service"] },
+  { label: "Administration", paths: ["/messages", "/settings"] },
 ];
 
 function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreference, onThemeChange, onSessionUpdate }) {
