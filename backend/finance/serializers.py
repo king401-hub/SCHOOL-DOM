@@ -23,6 +23,8 @@ from finance.services import bill_class_map, bill_invoice_status, fee_paid_amoun
 
 
 class TransactionSerializer(serializers.ModelSerializer):
+    received_on = serializers.SerializerMethodField()
+
     class Meta:
         model = Transaction
         fields = [
@@ -34,7 +36,33 @@ class TransactionSerializer(serializers.ModelSerializer):
             "reference",
             "narration",
             "created_at",
+            "received_on",
         ]
+
+    def get_received_on(self, obj):
+        metadata = obj.metadata or {}
+        received_on = metadata.get("received_on")
+        if received_on:
+            return received_on
+
+        bank_payment_id = metadata.get("bank_payment_id")
+        if not bank_payment_id:
+            return ""
+
+        linked_payment_dates = self.context.get("_bank_payment_received_dates")
+        if linked_payment_dates is None:
+            transactions = self.parent.instance if isinstance(self.parent, serializers.ListSerializer) else [obj]
+            bank_payment_ids = {
+                str((transaction.metadata or {}).get("bank_payment_id"))
+                for transaction in transactions
+                if (transaction.metadata or {}).get("bank_payment_id")
+            }
+            linked_payment_dates = {
+                str(payment_id): (payment_metadata or {}).get("received_on", "")
+                for payment_id, payment_metadata in BankPayment.objects.filter(id__in=bank_payment_ids).values_list("id", "metadata")
+            }
+            self.context["_bank_payment_received_dates"] = linked_payment_dates
+        return linked_payment_dates.get(str(bank_payment_id), "")
 
 
 class FinanceLedgerLogSerializer(serializers.ModelSerializer):

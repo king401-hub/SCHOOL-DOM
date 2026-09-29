@@ -1420,6 +1420,16 @@ const PAYMENT_METHOD_LABELS = {
   pos: "POS payment",
 };
 
+const formatFinanceHistoryDate = (receivedOn, fallback) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(receivedOn || ""))) {
+    const date = new Date(`${receivedOn}T00:00:00`);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+    }
+  }
+  return formatDate(fallback || receivedOn);
+};
+
 /* An action stays collapsed until asked for. Several of these forms are long,
    and open-by-default is what made the page feel endless. */
 function FinanceActionCard({ id, title, description, icon, open, onToggle, children }) {
@@ -1536,7 +1546,7 @@ function LiveTransactionFeed({ transactions, onRefresh, onViewAll, formatAmount,
             <div key={id || item.description} className={`live-feed-row${newIds.has(id) ? " is-new" : ""}`}>
               <div className="live-feed-main">
                 <strong>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</strong>
-                <small>{formatDate(item.created_at || item.date)}{item.reference ? ` · ${item.reference}` : ""}</small>
+                <small>{formatFinanceHistoryDate(item.received_on, item.created_at || item.date)}{item.reference ? ` · ${item.reference}` : ""}</small>
               </div>
               <div className="live-feed-meta">
                 <span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span>
@@ -1935,7 +1945,7 @@ function AdminFinanceScreen({
                           disabled={anyBusy && resendBusyId !== payment.id}
                         />
                       </td>
-                      <td>{formatDate(payment.matched_at || payment.created_at)}</td>
+                      <td>{formatFinanceHistoryDate(payment.received_on, payment.matched_at || payment.created_at)}</td>
                       <td>
                         <button type="button" className="table-action" onClick={() => handlePrintCashPaymentReceipt(payment)}>
                           Print Receipt
@@ -2727,7 +2737,7 @@ function AdminFinanceScreen({
       metaRows: [
         ["Receipt No", reference],
         ["Student", `${payment.student_name || "-"}${payment.student_id ? ` (${payment.student_id})` : ""}`],
-        ["Date", formatDate(payment.matched_at || payment.created_at)],
+        ["Date", formatFinanceHistoryDate(payment.received_on, payment.matched_at || payment.created_at)],
         ["Payment Method", methodLabel],
         ["Status", payment.status || "pending"],
       ],
@@ -2745,7 +2755,7 @@ function AdminFinanceScreen({
       reference,
       metaRows: [
         ["Receipt No", reference],
-        ["Date", formatDate(item.created_at || item.matched_at || item.date)],
+        ["Date", formatFinanceHistoryDate(item.received_on, item.created_at || item.matched_at || item.date)],
         ["Status", item.status || "pending"],
         ["Type", item.tx_type || item.type || "School finance transaction"],
       ],
@@ -3464,7 +3474,7 @@ function AdminFinanceScreen({
               <div className="table-scroll">
                 <table className="data-table">
                   <thead><tr><th>Date</th><th>Description</th><th>Status</th><th>Amount</th><th>Action</th></tr></thead>
-                  <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatDate(item.created_at || item.date)}</td><td>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td><td><button type="button" className="table-action" onClick={() => handlePrintTransactionReceipt(item)}>Receipt</button></td></tr>)) : <tr><td colSpan="5">No transactions yet.</td></tr>}</tbody>
+                  <tbody>{recentTransactions.length ? recentTransactions.map((item) => (<tr key={item.id || item.reference || item.description}><td>{formatFinanceHistoryDate(item.received_on, item.created_at || item.date)}</td><td>{item.narration || item.description || item.tx_type || item.type || item.reference || "School finance transaction"}</td><td><span className={`finance-status status-${item.status || "pending"}`}>{item.status || "pending"}</span></td><td>{formatFinanceAmount(item.amount || item.value)}</td><td><button type="button" className="table-action" onClick={() => handlePrintTransactionReceipt(item)}>Receipt</button></td></tr>)) : <tr><td colSpan="5">No transactions yet.</td></tr>}</tbody>
                 </table>
               </div>
               </article>

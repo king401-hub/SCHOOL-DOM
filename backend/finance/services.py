@@ -5880,6 +5880,7 @@ def apply_bank_payment_to_student(payment, student_profile, actor=None):
                     "bank_payment_id": str(payment.id),
                     "student_id": str(student_profile.id),
                     "payment_reference": payment.payment_reference.code if payment.payment_reference_id else "",
+                    "received_on": (payment.metadata or {}).get("received_on", ""),
                 },
                 created_by=actor,
             )
@@ -5909,6 +5910,7 @@ def apply_bank_payment_to_student(payment, student_profile, actor=None):
                         "source": "bank_payment",
                         "bank_payment_id": str(payment.id),
                         "student_id": str(student_profile.id),
+                        "received_on": (payment.metadata or {}).get("received_on", ""),
                     },
                     created_by=actor,
                 )
