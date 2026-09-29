@@ -5394,6 +5394,11 @@ def build_payment_receipt_data(payment) -> dict:
     amount_paid = _as_decimal(payment.applied_amount or payment.amount)
     outstanding = _payment_outstanding_balance(student)
     paid_at = payment.matched_at or payment.created_at or timezone.now()
+    received_on = (payment.metadata or {}).get("received_on")
+    try:
+        payment_date = date.fromisoformat(str(received_on)).strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        payment_date = timezone.localtime(paid_at).strftime("%d %b %Y")
 
     data = {
         "type": "receipt",
@@ -5404,10 +5409,11 @@ def build_payment_receipt_data(payment) -> dict:
         "amount_paid": str(amount_paid),
         "balance_remaining": str(outstanding),
         "payment_status": "paid" if outstanding <= 0 else "partial",
-        "payment_date": timezone.localtime(paid_at).strftime("%d %b %Y"),
+        "payment_date": payment_date,
         "payment_method": _payment_method_of(payment).replace("_", " ").title(),
         "description": payment.narration or "",
         "reference": payment.receipt_number or payment.bank_reference or "",
+        "bank_payment_id": str(payment.id),
     }
     data.update(_school_branding_for_receipt(tenant))
     return data

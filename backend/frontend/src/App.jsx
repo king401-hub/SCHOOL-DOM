@@ -2063,7 +2063,7 @@ function StudentFeesPage({ session, onNavigate, themePreference, onThemeChange }
                   <div key={p.id} className="fee-history-item">
                     <div className="fee-history-left">
                       <span className="fee-history-ref">{p.bank_reference || p.reference_code || "—"}</span>
-                      <span className="fee-history-date">{formatDate(p.created_at)}</span>
+                      <span className="fee-history-date">{p.received_on ? new Date(`${p.received_on}T00:00:00`).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" }) : formatDate(p.created_at)}</span>
                     </div>
                     <div className="fee-history-right">
                       <span className="fee-history-amount">{fmt(p.amount)}</span>

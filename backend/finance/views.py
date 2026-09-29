@@ -3,7 +3,7 @@ from decimal import Decimal
 import hashlib
 import hmac
 from hmac import compare_digest
-from datetime import datetime
+from datetime import date, datetime
 from html import escape
 import logging
 import re
@@ -477,6 +477,20 @@ def _render_receipt_link(request, link):
 
     theme = None
     data = dict(link.data or {})
+    if link.receipt_type == PaymentReceiptLink.RECEIPT:
+        payments = BankPayment.objects.filter(tenant_id=link.tenant_id) if link.tenant_id else BankPayment.objects.all()
+        payment_id = data.get("bank_payment_id")
+        payment = payments.filter(id=payment_id).first() if payment_id else None
+        if payment is None and data.get("reference"):
+            payment = payments.filter(
+                Q(receipt_number=data["reference"]) | Q(bank_reference=data["reference"])
+            ).first()
+        received_on = (payment.metadata or {}).get("received_on") if payment else None
+        if received_on:
+            try:
+                data["payment_date"] = date.fromisoformat(str(received_on)).strftime("%d %b %Y")
+            except ValueError:
+                pass
     if link.tenant_id:
         theme = DocumentTheme.objects.filter(school_tenant_id=link.tenant_id).first()
         if not data.get("school_logo") and getattr(link.tenant, "logo", None):
@@ -2949,7 +2963,7 @@ def bank_payment_receipt(request, payment_id):
             f"Status: {payment.status.title()}",
             f"Bank Reference: {payment.bank_reference}",
             f"Narration: {payment.narration}",
-            f"Date: {payment.matched_at or payment.created_at}",
+            f"Date: {(payment.metadata or {}).get('received_on') or payment.matched_at or payment.created_at}",
         ]
     )
     response = HttpResponse(content, content_type="text/plain")

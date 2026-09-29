@@ -1033,7 +1033,6 @@ class KudiSmsServiceTests(TestCase):
 
         self.assertEqual(mock_post.call_args.kwargs["json"]["senderID"], "Other")
 
-
     @override_settings(KUDISMS_API_KEY="")
     @patch("finance.services.requests.post")
     def test_missing_credentials_skips_without_calling_the_provider(self, mock_post):
@@ -2382,12 +2381,33 @@ class RecordedPaymentMethodTests(TestCase):
         client.force_authenticate(user=self.admin_user)
         response = client.post(
             "/api/finance/admin/cash-payments/record/",
-            {"student_id": self.student.student_id, "amount": "20000", "payment_method": "pos"},
+            {"student_id": self.student.student_id, "amount": "20000", "payment_method": "pos", "received_on": "2026-04-12"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["success"])
         self.assertEqual(response.data["payment"]["payment_method"], "pos")
         self.assertEqual(response.data["payment"]["recorded_by"], self.admin_user.email)
+        self.assertEqual(response.data["payment"]["received_on"], "2026-04-12")
+        from finance.models import Transaction
+        transaction = Transaction.objects.filter(
+            metadata__bank_payment_id=response.data["payment"]["id"],
+        ).first()
+        self.assertIsNotNone(transaction)
+        self.assertEqual(transaction.metadata["received_on"], "2026-04-12")
+        from finance.serializers import TransactionSerializer
+        transaction.metadata.pop("received_on")
+        transaction.save(update_fields=["metadata"])
+        self.assertEqual(TransactionSerializer(transaction).data["received_on"], "2026-04-12")
+
+    def test_admin_endpoint_rejects_invalid_received_date(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(
+            "/api/finance/admin/cash-payments/record/",
+            {"student_id": self.student.student_id, "amount": "20000", "received_on": "not-a-date"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
 
     def test_admin_endpoint_rejects_unsupported_payment_method(self):
         client = APIClient()
@@ -2881,11 +2901,11 @@ class CashPaymentReceiptNotificationTests(TestCase):
             due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
         )
 
-    def _record(self, amount="50000.00", note="Paid at the front desk"):
-        return record_cash_payment(self.student, Decimal(amount), note=note, actor=self.admin_user)
+    def _record(self, amount="50000.00", note="Paid at the front desk", received_on=None):
+        return record_cash_payment(self.student, Decimal(amount), note=note, actor=self.admin_user, received_on=received_on)
 
     def test_receipt_payload_carries_everything_the_document_must_show(self):
-        payment = self._record(amount="20000.00", note="Part payment for Term 2")
+        payment = self._record(amount="20000.00", note="Part payment for Term 2", received_on="2026-05-15")
         data = build_payment_receipt_data(payment)
 
         self.assertEqual(data["amount_paid"], "20000.00")
