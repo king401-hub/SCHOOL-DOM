@@ -1803,7 +1803,7 @@ function AdminFinanceScreen({
   const [feeEditorSearch, setFeeEditorSearch] = useState("");
   const [feeEditorClass, setFeeEditorClass] = useState("");
   const [bankPaymentForm, setBankPaymentForm] = useState({ amount: "", narration: "", bank_reference: "" });
-  const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "", payment_method: "cash" });
+  const [cashPaymentForm, setCashPaymentForm] = useState({ student_id: "", amount: "", note: "", payment_method: "cash", received_on: new Date().toISOString().slice(0, 10) });
   const [cashPaymentStudentPicked, setCashPaymentStudentPicked] = useState(false);
   const [creditPurchaseForm, setCreditPurchaseForm] = useState({ credits: "" });
   const [creditPurchaseReference, setCreditPurchaseReference] = useState("");
@@ -2024,7 +2024,7 @@ function AdminFinanceScreen({
       rows: cashPaymentRows,
       renderRow: renderCashPaymentRow,
       searchText: (row) => [row.student_name, row.student_id, row.receipt_number, row.bank_reference, row.note],
-      dateOf: (row) => row.matched_at || row.created_at,
+      dateOf: (row) => row.received_on || row.matched_at || row.created_at,
       statusOf: (row) => row.status,
       methodOf: (row) => row.payment_method,
     },
@@ -2608,7 +2608,7 @@ function AdminFinanceScreen({
       // whether the parent got it - say so instead of assuming it did.
       const receipt = describeReceiptOutcome(result?.payment);
       setFeedback(`${PAYMENT_METHOD_LABELS[cashPaymentForm.payment_method] || "Payment"} recorded and applied. ${receipt.text}`);
-      setCashPaymentForm({ student_id: "", amount: "", note: "", payment_method: "cash" });
+      setCashPaymentForm({ student_id: "", amount: "", note: "", payment_method: "cash", received_on: new Date().toISOString().slice(0, 10) });
       setCashPaymentStudentPicked(false);
     } catch (err) {
       setFormError(err.message || "Unable to record payment.");
@@ -2996,6 +2996,15 @@ function AdminFinanceScreen({
                     step="0.01"
                     value={cashPaymentForm.amount}
                     onChange={(event) => setCashPaymentForm((current) => ({ ...current, amount: event.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="panel-field">
+                  Payment received on
+                  <input
+                    type="date"
+                    value={cashPaymentForm.received_on}
+                    onChange={(event) => setCashPaymentForm((current) => ({ ...current, received_on: event.target.value }))}
                     required
                   />
                 </label>

@@ -1,6 +1,6 @@
 """Service helpers for wallet operations and Flutterwave integration."""
 from decimal import Decimal
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Optional
 import uuid
 import re
@@ -5975,7 +5975,7 @@ _RECORDABLE_PAYMENT_REFERENCE_PREFIXES = {
 }
 
 
-def record_cash_payment(student_profile, amount, note="", actor=None, payment_method="cash"):
+def record_cash_payment(student_profile, amount, note="", actor=None, payment_method="cash", received_on=None):
     """Record a payment taken in person (cash, bank transfer, or POS) and
     apply it to the student immediately.
 
@@ -5994,6 +5994,11 @@ def record_cash_payment(student_profile, amount, note="", actor=None, payment_me
     if payment_method not in RECORDABLE_PAYMENT_METHODS:
         raise ValueError("Unsupported payment method.")
 
+    try:
+        received_on = date.fromisoformat(str(received_on or timezone.localdate().isoformat())).isoformat()
+    except ValueError as exc:
+        raise ValueError("Received date must be a valid date.") from exc
+
     tenant = student_profile.user.tenant
     reference = get_or_create_student_payment_reference(student_profile)
     payment = BankPayment.objects.create(
@@ -6010,6 +6015,7 @@ def record_cash_payment(student_profile, amount, note="", actor=None, payment_me
             "payment_method": payment_method,
             "note": str(note or "").strip(),
             "recorded_by": actor.email if actor else "",
+            "received_on": received_on,
         },
     )
     return apply_bank_payment_to_student(payment, student_profile, actor=actor)

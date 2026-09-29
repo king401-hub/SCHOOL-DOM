@@ -2477,6 +2477,7 @@ def admin_cash_payment_record(request):
                 note=request.data.get("note"),
                 actor=user,
                 payment_method=request.data.get("payment_method") or "cash",
+                received_on=request.data.get("received_on"),
             )
     except ValueError as exc:
         return Response({"success": False, "message": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

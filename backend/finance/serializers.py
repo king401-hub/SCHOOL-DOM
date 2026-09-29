@@ -197,6 +197,7 @@ class BankPaymentSerializer(serializers.ModelSerializer):
     payment_method = serializers.SerializerMethodField()
     note = serializers.SerializerMethodField()
     recorded_by = serializers.SerializerMethodField()
+    received_on = serializers.SerializerMethodField()
     receipt_notification_status = serializers.CharField(read_only=True)
 
     class Meta:
@@ -219,6 +220,7 @@ class BankPaymentSerializer(serializers.ModelSerializer):
             "payment_method",
             "note",
             "recorded_by",
+            "received_on",
             "receipt_notification_status",
             "receipt_sms_status",
             "receipt_email_status",
@@ -255,6 +257,12 @@ class BankPaymentSerializer(serializers.ModelSerializer):
         # tell the two apart even though both can share payment_method
         # "bank_transfer".
         return (obj.metadata or {}).get("recorded_by", "")
+
+    def get_received_on(self, obj):
+        metadata = obj.metadata or {}
+        return metadata.get("received_on") or (
+            obj.created_at.date().isoformat() if metadata.get("recorded_by") else ""
+        )
 
 
 class ClassFeeSerializer(serializers.ModelSerializer):
