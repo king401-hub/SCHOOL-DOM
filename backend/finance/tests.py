@@ -2744,6 +2744,151 @@ class BillDeleteTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertTrue(Bill.objects.filter(id=bill.id).exists())
 
+    def test_deleting_a_bill_removes_an_untouched_invoice_but_keeps_a_part_paid_one(self):
+        """Regression: an invoice nobody had paid anything toward used to
+        survive the bill's deletion as an orphan (bill=NULL) exactly like a
+        paid one - so recreating the same bill later (or any edit that
+        re-syncs) found no invoice linked to the NEW bill and created a
+        second one, duplicating the fee with the payment history stranded on
+        the first. An untouched invoice has nothing worth preserving once its
+        bill is gone; a part-paid one still does."""
+        bill = Bill.objects.create(
+            tenant=self.school, title="Mixed Fees", status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+        )
+        BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal("15000.00"))
+        untouched_student = self._other_student("untouched@billdelete.edu", "BILL002")
+        untouched_fee = SchoolFee.objects.create(
+            student=untouched_student, bill=bill, title="Mixed Fees", amount=Decimal("15000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+        part_paid_fee = SchoolFee.objects.create(
+            student=self.student, bill=bill, title="Mixed Fees", amount=Decimal("15000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+        record_cash_payment(self.student, Decimal("5000.00"), actor=self.admin_user)
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.delete(f"/api/finance/admin/bills/{bill.id}/")
+        self.assertEqual(response.status_code, 200)
+
+        self.assertFalse(SchoolFee.objects.filter(id=untouched_fee.id).exists())
+        part_paid_fee.refresh_from_db()
+        self.assertIsNone(part_paid_fee.bill_id)
+
+    def _other_student(self, email, code):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", role="student", tenant=self.school,
+            is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=code, admission_number=f"ADM-{code}", admission_date=timezone.localdate(),
+            guardian_name="Guardian", guardian_relation="Parent", current_class=self.school_class,
+        )
+
+
+class BillDeleteThenRecreateTests(TestCase):
+    """The actual end-to-end bug: delete a bill, then publish a new one that
+    covers the same students - a student who had already paid must not end
+    up with a second, duplicate invoice for the same fee with their payment
+    stuck on the orphaned first one."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Bill Recreate School", schema_name="bill_recreate_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@billrecreate.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="3")
+        self.paid_student = self._student("paid@billrecreate.edu", "REC001")
+        self.unpaid_student = self._student("unpaid@billrecreate.edu", "REC002")
+
+    def _student(self, email, code):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", role="student", tenant=self.school,
+            is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=code, admission_number=f"ADM-{code}", admission_date=timezone.localdate(),
+            guardian_name="Guardian", guardian_relation="Parent", current_class=self.school_class,
+        )
+
+    def test_recreating_a_deleted_bill_reattaches_the_paid_invoice_instead_of_duplicating_it(self):
+        from finance.services import sync_bill_invoices
+
+        first_bill = Bill.objects.create(
+            tenant=self.school, title="Term Fee", status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        first_bill.classes.set([self.school_class])
+        BillItem.objects.create(bill=first_bill, description="Tuition", amount=Decimal("40000.00"))
+        sync_bill_invoices(first_bill, actor=self.admin_user)
+        record_cash_payment(self.paid_student, Decimal("40000.00"), actor=self.admin_user)
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.delete(f"/api/finance/admin/bills/{first_bill.id}/")
+        self.assertEqual(response.status_code, 200)
+        # The unpaid classmate's invoice was removed with the bill; the paid
+        # one survived, orphaned, exactly as BillDeleteTests already covers.
+        self.assertEqual(SchoolFee.objects.filter(student=self.unpaid_student).count(), 0)
+        self.assertEqual(SchoolFee.objects.filter(student=self.paid_student).count(), 1)
+
+        second_bill = Bill.objects.create(
+            tenant=self.school, title="Term Fee", status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        second_bill.classes.set([self.school_class])
+        BillItem.objects.create(bill=second_bill, description="Tuition", amount=Decimal("40000.00"))
+        sync_bill_invoices(second_bill, actor=self.admin_user)
+
+        # No duplicate for the student who already paid - their one invoice
+        # now belongs to the new bill, still showing as paid.
+        paid_invoices = SchoolFee.objects.filter(student=self.paid_student)
+        self.assertEqual(paid_invoices.count(), 1)
+        reattached = paid_invoices.get()
+        self.assertEqual(reattached.bill_id, second_bill.id)
+        self.assertEqual(fee_paid_amount(reattached), Decimal("40000.00"))
+        # The classmate who never paid simply gets a fresh invoice, as normal.
+        unpaid_invoices = SchoolFee.objects.filter(student=self.unpaid_student)
+        self.assertEqual(unpaid_invoices.count(), 1)
+        self.assertEqual(unpaid_invoices.get().bill_id, second_bill.id)
+
+    def test_a_customized_orphaned_invoice_keeps_its_custom_amount_when_reattached(self):
+        from finance.services import sync_bill_invoices
+
+        first_bill = Bill.objects.create(
+            tenant=self.school, title="Custom Term Fee", status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        first_bill.classes.set([self.school_class])
+        BillItem.objects.create(bill=first_bill, description="Tuition", amount=Decimal("40000.00"))
+        sync_bill_invoices(first_bill, actor=self.admin_user)
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        invoice = SchoolFee.objects.get(student=self.paid_student, bill=first_bill)
+        edit = client.patch(f"/api/finance/admin/fees/{invoice.id}/", {"amount": "25000"}, format="json")
+        self.assertEqual(edit.status_code, 200, edit.data)
+        record_cash_payment(self.paid_student, Decimal("25000.00"), actor=self.admin_user)
+
+        client.delete(f"/api/finance/admin/bills/{first_bill.id}/")
+
+        second_bill = Bill.objects.create(
+            tenant=self.school, title="Custom Term Fee", status=Bill.STATUS_PUBLISHED, created_by=self.admin_user,
+            published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        second_bill.classes.set([self.school_class])
+        BillItem.objects.create(bill=second_bill, description="Tuition", amount=Decimal("40000.00"))
+        sync_bill_invoices(second_bill, actor=self.admin_user)
+
+        reattached = SchoolFee.objects.get(student=self.paid_student)
+        self.assertEqual(reattached.bill_id, second_bill.id)
+        self.assertEqual(reattached.amount, Decimal("25000.00"))  # the edit survived, not overwritten to 40000
+
 
 class BillItemEditAfterPublishTests(TestCase):
     """Items used to be locked the moment a bill was published, and even

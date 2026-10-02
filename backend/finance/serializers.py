@@ -1,6 +1,7 @@
 """Serializers for finance API responses."""
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from rest_framework import serializers
 
 from finance.models import (
@@ -49,20 +50,29 @@ class TransactionSerializer(serializers.ModelSerializer):
         if not bank_payment_id:
             return ""
 
-        linked_payment_dates = self.context.get("_bank_payment_received_dates")
-        if linked_payment_dates is None:
-            transactions = self.parent.instance if isinstance(self.parent, serializers.ListSerializer) else [obj]
-            bank_payment_ids = {
-                str((transaction.metadata or {}).get("bank_payment_id"))
-                for transaction in transactions
-                if (transaction.metadata or {}).get("bank_payment_id")
-            }
-            linked_payment_dates = {
-                str(payment_id): (payment_metadata or {}).get("received_on", "")
-                for payment_id, payment_metadata in BankPayment.objects.filter(id__in=bank_payment_ids).values_list("id", "metadata")
-            }
-            self.context["_bank_payment_received_dates"] = linked_payment_dates
-        return linked_payment_dates.get(str(bank_payment_id), "")
+        # Cached per bank_payment_id on self.context, which DRF shares across
+        # every sibling serializer instance in the same list - so a
+        # transaction list with many rows pointing at the same handful of
+        # bank payments still costs one query per distinct payment, not one
+        # per row. Looked up lazily, one id at a time, rather than batched
+        # upfront from self.parent.instance: that attribute is only ever the
+        # list actually being serialized for a bare TransactionSerializer(qs,
+        # many=True) call - a declarative nested field like
+        # AdminWalletSerializer's own "transactions = TransactionSerializer(
+        # many=True)" never sets it, so self.parent.instance was None there
+        # and iterating it crashed every /api/finance/admin/overview/ load.
+        key = str(bank_payment_id)
+        cache = self.context.setdefault("_bank_payment_received_dates", {})
+        if key not in cache:
+            try:
+                payment_metadata = BankPayment.objects.filter(id=key).values_list("metadata", flat=True).first()
+            except (ValueError, ValidationError):
+                # metadata.bank_payment_id is free-form and has held a non-UUID
+                # placeholder before now - never let a malformed one 500 the
+                # whole list.
+                payment_metadata = None
+            cache[key] = (payment_metadata or {}).get("received_on", "")
+        return cache[key]
 
 
 class FinanceLedgerLogSerializer(serializers.ModelSerializer):

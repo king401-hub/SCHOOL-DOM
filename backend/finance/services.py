@@ -4273,16 +4273,44 @@ def sync_bill_invoices(bill, actor=None):
         return 0
 
     total = bill.total
+    student_ids = [s.id for s in students]
     existing_by_student = {
-        fee.student_id: fee for fee in SchoolFee.objects.filter(bill=bill, student_id__in=[s.id for s in students])
+        fee.student_id: fee for fee in SchoolFee.objects.filter(bill=bill, student_id__in=student_ids)
     }
-    paid_amounts = bulk_fee_paid_amounts(existing_by_student.values())
+    # A student can already have an invoice for this exact fee that's been
+    # orphaned (bill=NULL) by an earlier bill being deleted - deleting a bill
+    # only ever leaves behind invoices that were genuinely paid against (see
+    # admin_bill_detail's DELETE branch, which removes an untouched one
+    # outright), so any orphan found here always carries real payment
+    # history. Re-link it instead of creating a second invoice for the same
+    # fee: without this, the payment stayed stranded on the orphan while a
+    # fresh, unpaid invoice appeared alongside it - the same fee duplicated
+    # on every finance screen, with the money nowhere to be seen against it.
+    orphans_by_student = {
+        fee.student_id: fee
+        for fee in SchoolFee.objects.filter(
+            bill__isnull=True, student_id__in=student_ids, title__iexact=bill.title,
+        )
+        if fee.student_id not in existing_by_student
+    }
+    paid_amounts = bulk_fee_paid_amounts([*existing_by_student.values(), *orphans_by_student.values()])
 
     to_create = []
     to_update = []
+    to_relink = []
     for student in students:
         fee = existing_by_student.get(student.id)
         if fee is None:
+            orphan = orphans_by_student.get(student.id)
+            if orphan is not None:
+                orphan.bill = bill
+                if not orphan.is_customized:
+                    orphan.title = bill.title
+                    orphan.amount = total
+                    orphan.due_date = bill.due_date or orphan.due_date
+                orphan.updated_at = timezone.now()
+                to_relink.append(orphan)
+                continue
             to_create.append(
                 SchoolFee(
                     student=student,
@@ -4318,8 +4346,10 @@ def sync_bill_invoices(bill, actor=None):
         SchoolFee.objects.bulk_create(to_create)
     if to_update:
         SchoolFee.objects.bulk_update(to_update, ["title", "amount", "due_date", "updated_at"])
+    if to_relink:
+        SchoolFee.objects.bulk_update(to_relink, ["bill", "title", "amount", "due_date", "updated_at"])
 
-    return len(to_create) + len(to_update)
+    return len(to_create) + len(to_update) + len(to_relink)
 
 
 def bill_invoice_status(fee, paid_amount):

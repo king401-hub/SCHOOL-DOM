@@ -1497,8 +1497,14 @@ def admin_bill_detail(request, bill_id):
 
     Deleting removes the Bill/BillItem rows outright rather than soft-
     cancelling - safe to do even for a published bill, since SchoolFee.bill
-    is SET_NULL: any invoices and payments already generated from it are
-    kept, just detached from this bill record."""
+    is SET_NULL: any invoice with real payment against it is kept, just
+    detached from this bill record, so the receipt/transaction stays intact.
+    An invoice nobody has paid anything toward yet is deleted along with the
+    bill - it represents nothing now the bill is gone, and leaving it behind
+    as an orphan is exactly what used to make a same-title bill recreated
+    later (or an edit that re-syncs) generate a second, duplicate invoice for
+    it (see sync_bill_invoices, which re-adopts a genuinely paid orphan
+    instead of duplicating it, for the case that does need to survive)."""
     user = request.user
     if user.role not in FINANCE_ROLES:
         return Response({"success": False, "message": "Finance access required."}, status=status.HTTP_403_FORBIDDEN)
@@ -1507,6 +1513,13 @@ def admin_bill_detail(request, bill_id):
 
     if request.method == "DELETE":
         bill_id_str, bill_title, bill_total = str(bill.id), bill.title, bill.total
+        invoices = list(bill.invoices.all())
+        paid_amounts = bulk_fee_paid_amounts(invoices)
+        unpaid_invoice_ids = [
+            fee.id for fee in invoices if (paid_amounts.get(fee.id) or Decimal("0.00")) <= 0
+        ]
+        if unpaid_invoice_ids:
+            SchoolFee.objects.filter(id__in=unpaid_invoice_ids).delete()
         bill.delete()
         record_finance_activity(
             user.tenant, user, "bill_deleted", f"Deleted bill '{bill_title}'.",
