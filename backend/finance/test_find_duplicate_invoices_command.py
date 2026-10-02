@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from academic.models import Class
 from core.models import SchoolTenant
-from finance.models import SchoolFee
+from finance.models import Bill, SchoolFee
 from finance.services import record_cash_payment
 from tenants.models import Tenant
 from users.models import StudentProfile, User
@@ -58,4 +58,22 @@ class FindDuplicateInvoicesCommandTests(TestCase):
         )
         out = StringIO()
         call_command("find_duplicate_invoices", "--school", "dup_finder_school", stdout=out)
-        self.assertIn("No duplicate invoices found.", out.getvalue())
+        output = out.getvalue()
+        self.assertIn("No bills found for that scope.", output)
+        self.assertIn("No duplicate invoices found.", output)
+
+    def test_reports_two_live_bills_sharing_a_title(self):
+        first = Bill.objects.create(tenant=self.school, title="Term 1 Fees", status=Bill.STATUS_PUBLISHED)
+        second = Bill.objects.create(tenant=self.school, title="Term 1 Fees", status=Bill.STATUS_PUBLISHED)
+        SchoolFee.objects.create(
+            student=self.student, bill=first, title="Term 1 Fees", amount=Decimal("10000.00"),
+            due_date=timezone.localdate(), status=SchoolFee.STATUS_PENDING,
+        )
+
+        out = StringIO()
+        call_command("find_duplicate_invoices", "--school", "dup_finder_school", stdout=out)
+        output = out.getvalue()
+
+        self.assertIn("Found 1 duplicate bill title group(s)", output)
+        self.assertIn(f"bill={first.id} status=published invoices=1", output)
+        self.assertIn(f"bill={second.id} status=published invoices=0", output)
