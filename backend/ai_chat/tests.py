@@ -1,7 +1,14 @@
 import json
+from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
+from core.models import SchoolTenant
+from users.models import User
+
+from ai_chat.models import AIUsageCycle
+from ai_chat.services.usage import USAGE_LIMIT_SECONDS, check_quota, consume_usage
 from ai_chat.views import (
     CODE_REFUSAL_MESSAGE,
     TOOL_CALL_LEAK_MESSAGE,
@@ -120,3 +127,54 @@ class StreamOllamaReplyTests(TestCase):
 
         self.assertIn(TOOL_CALL_LEAK_MESSAGE, output)
         self.assertNotIn("create_cbt_exam", output)
+
+
+class ChatViewUsageQuotaTests(TestCase):
+    """The /api/ai/chat/ view must enforce the backend AI usage quota
+    before ever calling the AI provider, and must charge real usage time
+    for a request that does go through."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="Quota School", schema_name="quota_school", is_active=True)
+        self.user = User.objects.create_user(
+            email="student@quota.test", password="Pass12345", first_name="Quota", last_name="Student",
+            role="student", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    @patch("ai_chat.views.requests.post")
+    def test_exhausted_quota_returns_429_without_calling_ollama(self, mock_post):
+        check_quota(self.user, self.school)
+        consume_usage(self.user, USAGE_LIMIT_SECONDS)
+
+        response = self.client.post(
+            "/api/ai/chat/", data={"messages": [{"role": "user", "content": "Hi"}]}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["usage"]["remaining_seconds"], 0)
+        mock_post.assert_not_called()
+
+    @patch("ai_chat.views.requests.post")
+    @patch("ai_chat.views.time.monotonic", side_effect=[1000.0, 1005.0])
+    def test_successful_chat_charges_real_usage_time(self, mock_monotonic, mock_post):
+        # time.monotonic() is called exactly twice on this path: once for
+        # ai_start in chat(), once in _timed_stream's finally - fixing both
+        # readings makes the 5s "elapsed" deterministic instead of relying
+        # on a real (sub-millisecond, rounds to 0) mocked-response duration.
+        fake_response = MagicMock()
+        fake_response.iter_lines.return_value = iter([
+            json.dumps({"message": {"content": "Hello"}}).encode(),
+            json.dumps({"done": True}).encode(),
+        ])
+        mock_post.return_value = fake_response
+
+        response = self.client.post(
+            "/api/ai/chat/", data={"messages": [{"role": "user", "content": "Hi"}]}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        b"".join(response.streaming_content)  # drive the generator to completion
+
+        cycle = AIUsageCycle.objects.get(user=self.user)
+        self.assertEqual(cycle.usage_seconds, 5)

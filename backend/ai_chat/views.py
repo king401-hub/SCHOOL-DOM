@@ -3,6 +3,7 @@ AI_PROVIDER=openrouter - to OpenRouter's hosted API instead (see
 backend/ai_chat/README_openrouter.md)."""
 import json
 import logging
+import time
 
 import requests
 from django.conf import settings
@@ -26,6 +27,7 @@ from ai_secretary.code_guard import (
 # personas answer platform questions from one source of truth.
 from ai_secretary.prompts import PLATFORM_KNOWLEDGE_PROMPT
 from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
+from ai_chat.services.usage import AIUsageExhausted, check_quota, consume_usage, usage_dict, usage_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +153,18 @@ def _stream_ollama_reply(upstream):
         upstream.close()
 
 
+def _timed_stream(inner_iter, user, start_time):
+    """Wraps a reply generator so the AI usage quota is charged for the real
+    wall-clock duration of the provider call, no matter how the stream
+    ends - fully consumed, the provider drops mid-reply, or the client
+    disconnects early (closing this generator raises GeneratorExit, which
+    `finally` still catches, so usage is correctly charged even then)."""
+    try:
+        yield from inner_iter
+    finally:
+        consume_usage(user, time.monotonic() - start_time)
+
+
 def _friendly_openrouter_message(exc: OpenRouterError) -> str:
     """A message safe to show a user - never the raw provider error text,
     which can leak implementation detail (model name, OpenRouter's own
@@ -194,13 +208,20 @@ def _stream_openrouter_reply(first_chunk, rest_iter):
         yield "\n\n[Connection to the AI assistant was interrupted.]"
 
 
-def _chat_via_openrouter(messages):
+def _chat_via_openrouter(messages, user, ai_start):
     """The AI_PROVIDER=openrouter path for chat() below. Mirrors the Ollama
     path's shape: a connect/auth/config failure becomes a clean JSON error
     response (same as the `except requests.exceptions.RequestException`
     branch below does for Ollama) rather than a broken stream, by pulling
     the first chunk here before the StreamingHttpResponse is created - that
     chunk is then replayed as the first item of the actual stream.
+
+    `ai_start` is a time.monotonic() reading taken by chat() right before
+    this provider call begins - used to charge the AI usage quota for the
+    real wall-clock duration regardless of how this resolves (see
+    _timed_stream and the explicit consume_usage calls in the except
+    branches below, which fire instead since _timed_stream is never reached
+    on an upfront failure).
 
     Attached images aren't supported on this path (OpenRouter's content
     format differs from Ollama's `images` field, and the configured
@@ -216,9 +237,11 @@ def _chat_via_openrouter(messages):
     try:
         first_chunk = next(stream_iter, "")
     except OpenRouterTimeout as exc:
+        consume_usage(user, time.monotonic() - ai_start)
         logger.error("OpenRouter chat timed out before streaming began: %s", exc)
         return JsonResponse({"detail": "SchoolDom AI did not respond in time. Please try again."}, status=503)
     except OpenRouterError as exc:
+        consume_usage(user, time.monotonic() - ai_start)
         logger.error(
             "OpenRouter chat failed before streaming began (status=%s, code=%s): %s",
             exc.status_code, exc.code, exc,
@@ -227,7 +250,8 @@ def _chat_via_openrouter(messages):
         return JsonResponse({"detail": _friendly_openrouter_message(exc)}, status=status)
 
     response = StreamingHttpResponse(
-        _stream_openrouter_reply(first_chunk, stream_iter), content_type="text/plain; charset=utf-8"
+        _timed_stream(_stream_openrouter_reply(first_chunk, stream_iter), user, ai_start),
+        content_type="text/plain; charset=utf-8",
     )
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
@@ -245,8 +269,20 @@ def chat(request):
     if not messages:
         return JsonResponse({"detail": "messages is required."}, status=400)
 
+    try:
+        check_quota(request.user, getattr(request.user, "tenant", None))
+    except AIUsageExhausted as exc:
+        return JsonResponse(
+            {
+                "detail": "You've used your AI time for this cycle. It resets automatically - try again later.",
+                "usage": usage_dict(exc.cycle),
+            },
+            status=429,
+        )
+    ai_start = time.monotonic()
+
     if getattr(settings, "AI_PROVIDER", "ollama") == "openrouter":
-        return _chat_via_openrouter(messages)
+        return _chat_via_openrouter(messages, request.user, ai_start)
 
     has_images = any(msg.get("images") for msg in messages)
     model = VISION_MODEL if has_images else OLLAMA_MODEL
@@ -273,6 +309,7 @@ def chat(request):
     try:
         upstream = requests.post(OLLAMA_CHAT_URL, json=payload, stream=True, timeout=(5, 180))
     except requests.exceptions.RequestException:
+        consume_usage(request.user, time.monotonic() - ai_start)
         return JsonResponse(
             {
                 "detail": (
@@ -285,7 +322,8 @@ def chat(request):
         )
 
     response = StreamingHttpResponse(
-        _stream_ollama_reply(upstream), content_type="text/plain; charset=utf-8"
+        _timed_stream(_stream_ollama_reply(upstream), request.user, ai_start),
+        content_type="text/plain; charset=utf-8",
     )
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
@@ -295,16 +333,20 @@ def chat(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def status_check(request):
+    usage = usage_snapshot(request.user)
+
     if getattr(settings, "AI_PROVIDER", "ollama") == "openrouter":
         # A live OpenRouter call here would spend real quota on every poll
         # of this endpoint, unlike Ollama's free local /api/tags below - so
         # "online" just reflects whether a key is configured, not a live ping.
         online = bool(getattr(settings, "OPENROUTER_API_KEY", ""))
-        return JsonResponse({"online": online, "model": getattr(settings, "OPENROUTER_DEFAULT_MODEL", "")})
+        return JsonResponse({
+            "online": online, "model": getattr(settings, "OPENROUTER_DEFAULT_MODEL", ""), "usage": usage,
+        })
 
     try:
         resp = requests.get("http://localhost:11434/api/tags", timeout=3)
         online = resp.status_code == 200
     except requests.exceptions.RequestException:
         online = False
-    return JsonResponse({"online": online, "model": OLLAMA_MODEL})
+    return JsonResponse({"online": online, "model": OLLAMA_MODEL, "usage": usage})

@@ -15,6 +15,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
+from ai_chat.services.usage import AIUsageExhausted, check_quota, consume_usage, usage_dict
 
 from .code_guard import CODE_REFUSAL_MESSAGE, TOOL_CALL_LEAK_MESSAGE, looks_like_code, looks_like_leaked_tool_call
 from .prompts import SECRETARY_SYSTEM_PROMPT
@@ -409,6 +410,22 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
             payload["route"] = route
         return payload
 
+    # Usage quota check - only HERE, not before the deterministic Phase 1 /
+    # bulk-confirmation branches above, since those never call an AI
+    # provider at all and shouldn't be blocked by an AI time allowance.
+    # This is also what starts the user's 3-hour reset timer on their first
+    # AI request of a cycle (see ai_chat/services/usage.py).
+    try:
+        check_quota(requesting_user, tenant)
+    except AIUsageExhausted as exc:
+        reset_str = exc.cycle.cycle_resets_at.strftime("%H:%M")
+        return {
+            "reply": f"You've used up your AI time for now. It resets at {reset_str}.",
+            "tools_called": [],
+            "error": "AIUsageExhausted",
+            "usage": usage_dict(exc.cycle),
+        }
+
     # Build message list: system + trimmed history + new user turn
     messages = [{"role": "system", "content": SECRETARY_SYSTEM_PROMPT}]
     messages += history[-MAX_HISTORY:]
@@ -416,141 +433,155 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
 
     tools_called = []
     deadline = time.monotonic() + AGENT_DEADLINE_SECONDS
+    ai_time_spent = [0.0]  # mutable box - timed_call_model below accumulates into it
 
-    for iteration in range(MAX_ITERATIONS):
-        if time.monotonic() > deadline:
-            logger.warning("Secretary agent hit its %ds wall-clock deadline before MAX_ITERATIONS", AGENT_DEADLINE_SECONDS)
-            break
+    def timed_call_model(msgs):
+        start = time.monotonic()
         try:
-            data = _call_model(messages)
-        except requests.exceptions.ConnectionError as exc:
-            logger.error("Ollama connection refused: %s", exc)
-            return {
-                "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
-                "tools_called": tools_called,
-                "error": f"ConnectionError: {exc}",
-            }
-        except requests.exceptions.Timeout as exc:
-            logger.error("Ollama timed out (model may be overloaded): %s", exc)
-            return {
-                "reply": "The AI is taking too long to respond. Please try again in a moment.",
-                "tools_called": tools_called,
-                "error": f"Timeout: {exc}",
-            }
-        except requests.exceptions.HTTPError as exc:
-            logger.error("Ollama HTTP error: %s — response: %s", exc, getattr(exc.response, 'text', ''))
-            return {
-                "reply": "Something went wrong communicating with the AI. Let's try again.",
-                "tools_called": tools_called,
-                "error": f"HTTPError: {exc}",
-            }
-        except requests.exceptions.RequestException as exc:
-            logger.error("Ollama request failed: %s", exc)
-            return {
-                "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
-                "tools_called": tools_called,
-                "error": str(exc),
-            }
-        except OpenRouterTimeout as exc:
-            logger.error("OpenRouter timed out: %s", exc)
-            return {
-                "reply": "The AI is taking too long to respond. Please try again in a moment.",
-                "tools_called": tools_called,
-                "error": f"Timeout: {exc}",
-            }
-        except OpenRouterError as exc:
-            logger.error("OpenRouter error (status=%s, code=%s): %s", exc.status_code, exc.code, exc)
-            return {
-                "reply": _friendly_openrouter_message(exc),
-                "tools_called": tools_called,
-                "error": f"OpenRouterError: {exc}",
-            }
+            return _call_model(msgs)
+        finally:
+            ai_time_spent[0] += time.monotonic() - start
 
-        message = data.get("message", {})
-        tool_calls = message.get("tool_calls") or []
-
-        if not tool_calls:
-            content = message.get("content", "").strip()
-            fake_call = _extract_fake_tool_call(content) if content else None
-            if fake_call:
-                logger.warning(
-                    "Secretary model emitted tool call as plain content instead of tool_calls; recovered %s",
-                    fake_call["function"]["name"],
-                )
-                tool_calls = [fake_call]
-            else:
-                # No more tool calls — return the final answer. This is raw
-                # model text (unlike every other return point in run_agent,
-                # which is built from deterministic tool results), so it's
-                # the one place Secretary needs the same code-signal backstop
-                # Phoenix already has - the model has zero guardrail of its
-                # own otherwise.
-                if not content:
-                    reply = "Done ✅"
-                elif looks_like_code(content):
-                    # Nothing has been sent to the client yet (unlike
-                    # Phoenix's streaming path, which can only append a
-                    # refusal after whatever already left the server) -
-                    # replace outright rather than show the leak plus a
-                    # refusal after it.
-                    reply = CODE_REFUSAL_MESSAGE.strip()
-                elif looks_like_leaked_tool_call(content):
-                    # A tool-call-shaped blob _extract_fake_tool_call couldn't
-                    # recover (unknown tool name or malformed JSON) - still
-                    # must not reach the user as raw JSON.
-                    reply = TOOL_CALL_LEAK_MESSAGE.strip()
-                else:
-                    reply = content
-                return {"reply": reply, "tools_called": tools_called, "error": None}
-
-        # ── Execute each requested tool call ─────────────────────────────
-        # Add the assistant's tool-call message to history first
-        messages.append({
-            "role": "assistant",
-            "content": message.get("content") or "",
-            "tool_calls": tool_calls,
-        })
-
-        for call in tool_calls:
-            fn = call.get("function", {})
-            tool_name = fn.get("name", "")
-            raw_args = fn.get("arguments", {})
-
-            # Ollama sometimes passes arguments as a JSON string
-            if isinstance(raw_args, str):
-                try:
-                    raw_args = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    raw_args = {}
-
-            tools_called.append(tool_name)
-            logger.info("Secretary calling tool: %s(%s)", tool_name, list(raw_args.keys()))
-
-            result = tools.dispatch(tool_name, raw_args)
-
-            # Feed the tool result back as a "tool" role message - OpenRouter
-            # (unlike Ollama) requires tool_call_id to match it to the
-            # assistant turn that requested it; only add it when the
-            # provider actually gave one (Ollama's native tool_calls and the
-            # Ollama-only fake-call recovery above don't have one).
-            tool_message = {"role": "tool", "content": json.dumps(result)}
-            if call.get("id"):
-                tool_message["tool_call_id"] = call["id"]
-            messages.append(tool_message)
-
-    # Exceeded iteration cap — ask Ollama for a plain summary of what happened
-    logger.warning("Secretary exceeded MAX_ITERATIONS (%d)", MAX_ITERATIONS)
-    messages.append({
-        "role": "user",
-        "content": "Please summarise what was completed so far in one short sentence.",
-    })
     try:
-        data = _call_model(messages)
-        reply = data.get("message", {}).get("content", "").strip()
-    except Exception:
-        reply = "Something went wrong. Let's try again — or I can note it for your IT team."
+        for iteration in range(MAX_ITERATIONS):
+            if time.monotonic() > deadline:
+                logger.warning("Secretary agent hit its %ds wall-clock deadline before MAX_ITERATIONS", AGENT_DEADLINE_SECONDS)
+                break
+            try:
+                data = timed_call_model(messages)
+            except requests.exceptions.ConnectionError as exc:
+                logger.error("Ollama connection refused: %s", exc)
+                return {
+                    "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
+                    "tools_called": tools_called,
+                    "error": f"ConnectionError: {exc}",
+                }
+            except requests.exceptions.Timeout as exc:
+                logger.error("Ollama timed out (model may be overloaded): %s", exc)
+                return {
+                    "reply": "The AI is taking too long to respond. Please try again in a moment.",
+                    "tools_called": tools_called,
+                    "error": f"Timeout: {exc}",
+                }
+            except requests.exceptions.HTTPError as exc:
+                logger.error("Ollama HTTP error: %s — response: %s", exc, getattr(exc.response, 'text', ''))
+                return {
+                    "reply": "Something went wrong communicating with the AI. Let's try again.",
+                    "tools_called": tools_called,
+                    "error": f"HTTPError: {exc}",
+                }
+            except requests.exceptions.RequestException as exc:
+                logger.error("Ollama request failed: %s", exc)
+                return {
+                    "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
+                    "tools_called": tools_called,
+                    "error": str(exc),
+                }
+            except OpenRouterTimeout as exc:
+                logger.error("OpenRouter timed out: %s", exc)
+                return {
+                    "reply": "The AI is taking too long to respond. Please try again in a moment.",
+                    "tools_called": tools_called,
+                    "error": f"Timeout: {exc}",
+                }
+            except OpenRouterError as exc:
+                logger.error("OpenRouter error (status=%s, code=%s): %s", exc.status_code, exc.code, exc)
+                return {
+                    "reply": _friendly_openrouter_message(exc),
+                    "tools_called": tools_called,
+                    "error": f"OpenRouterError: {exc}",
+                }
 
-    if reply and looks_like_code(reply):
-        reply = CODE_REFUSAL_MESSAGE.strip()
+            message = data.get("message", {})
+            tool_calls = message.get("tool_calls") or []
 
-    return {"reply": reply or "Task completed.", "tools_called": tools_called, "error": None}
+            if not tool_calls:
+                content = message.get("content", "").strip()
+                fake_call = _extract_fake_tool_call(content) if content else None
+                if fake_call:
+                    logger.warning(
+                        "Secretary model emitted tool call as plain content instead of tool_calls; recovered %s",
+                        fake_call["function"]["name"],
+                    )
+                    tool_calls = [fake_call]
+                else:
+                    # No more tool calls — return the final answer. This is raw
+                    # model text (unlike every other return point in run_agent,
+                    # which is built from deterministic tool results), so it's
+                    # the one place Secretary needs the same code-signal backstop
+                    # Phoenix already has - the model has zero guardrail of its
+                    # own otherwise.
+                    if not content:
+                        reply = "Done ✅"
+                    elif looks_like_code(content):
+                        # Nothing has been sent to the client yet (unlike
+                        # Phoenix's streaming path, which can only append a
+                        # refusal after whatever already left the server) -
+                        # replace outright rather than show the leak plus a
+                        # refusal after it.
+                        reply = CODE_REFUSAL_MESSAGE.strip()
+                    elif looks_like_leaked_tool_call(content):
+                        # A tool-call-shaped blob _extract_fake_tool_call couldn't
+                        # recover (unknown tool name or malformed JSON) - still
+                        # must not reach the user as raw JSON.
+                        reply = TOOL_CALL_LEAK_MESSAGE.strip()
+                    else:
+                        reply = content
+                    return {"reply": reply, "tools_called": tools_called, "error": None}
+
+            # ── Execute each requested tool call ─────────────────────────────
+            # Add the assistant's tool-call message to history first
+            messages.append({
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls,
+            })
+
+            for call in tool_calls:
+                fn = call.get("function", {})
+                tool_name = fn.get("name", "")
+                raw_args = fn.get("arguments", {})
+
+                # Ollama sometimes passes arguments as a JSON string
+                if isinstance(raw_args, str):
+                    try:
+                        raw_args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        raw_args = {}
+
+                tools_called.append(tool_name)
+                logger.info("Secretary calling tool: %s(%s)", tool_name, list(raw_args.keys()))
+
+                result = tools.dispatch(tool_name, raw_args)
+
+                # Feed the tool result back as a "tool" role message - OpenRouter
+                # (unlike Ollama) requires tool_call_id to match it to the
+                # assistant turn that requested it; only add it when the
+                # provider actually gave one (Ollama's native tool_calls and the
+                # Ollama-only fake-call recovery above don't have one).
+                tool_message = {"role": "tool", "content": json.dumps(result)}
+                if call.get("id"):
+                    tool_message["tool_call_id"] = call["id"]
+                messages.append(tool_message)
+
+        # Exceeded iteration cap — ask Ollama for a plain summary of what happened
+        logger.warning("Secretary exceeded MAX_ITERATIONS (%d)", MAX_ITERATIONS)
+        messages.append({
+            "role": "user",
+            "content": "Please summarise what was completed so far in one short sentence.",
+        })
+        try:
+            data = timed_call_model(messages)
+            reply = data.get("message", {}).get("content", "").strip()
+        except Exception:
+            reply = "Something went wrong. Let's try again — or I can note it for your IT team."
+
+        if reply and looks_like_code(reply):
+            reply = CODE_REFUSAL_MESSAGE.strip()
+
+        return {"reply": reply or "Task completed.", "tools_called": tools_called, "error": None}
+    finally:
+        # Charges real AI time regardless of which return path above fired -
+        # success, every provider-error branch, and the iteration-cap
+        # fallback all go through this one accumulator.
+        consume_usage(requesting_user, ai_time_spent[0])

@@ -1,7 +1,10 @@
+import time
+
 from django.test import TestCase
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
 
 from academic.models import AcademicYear, Class, ResultBatch, StudentSubjectScore, Subject, Term, TimetableEntry
 from core.models import SchoolTenant
@@ -10,6 +13,8 @@ from finance.services import get_or_create_sms_wallet
 from tenants.models import Tenant
 from users.models import StudentProfile, User
 
+from ai_chat.models import AIUsageCycle
+from ai_chat.services.usage import USAGE_LIMIT_SECONDS, check_quota, consume_usage
 from ai_secretary.tools import SecretaryTools
 
 
@@ -462,3 +467,69 @@ class PhaseCRealToolsTests(TestCase):
         self.assertAlmostEqual(result["collected_percent"], 66.7, places=1)
         self.assertEqual(result["total_due"], 15000.0)
         self.assertEqual(result["total_paid"], 10000.0)
+
+
+class SecretaryUsageQuotaTests(TestCase):
+    """The /api/secretary/chat/ view must enforce the same AI usage quota
+    pool ai_chat uses, but only for turns that actually reach an AI
+    provider - deterministic Phase 1 commands (keyword-matched, zero AI
+    involvement) must stay free even once the quota is exhausted."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # parse_phase_one_command caches dispatch decisions by
+        # message text alone (ai_secretary/agent.py's _cache_key_for_command) -
+        # LocMemCache is process-global and not reset between TestCase methods,
+        # so a prior test's cached entry for the same message text can leak in.
+        self.school = SchoolTenant.objects.create(
+            name="Secretary Quota School", schema_name="secretary_quota_school", is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@secretaryquota.test", password="AdminPass123", first_name="Quota", last_name="Admin",
+            role="school_admin", tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_phase_one_fast_path_is_free_even_when_quota_exhausted(self):
+        check_quota(self.admin, self.school)
+        consume_usage(self.admin, USAGE_LIMIT_SECONDS)
+
+        response = self.client.post(
+            "/api/secretary/chat/", data={"message": "How many students are there?", "history": []}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    @patch("ai_secretary.agent._call_ollama")
+    def test_general_chat_returns_429_when_quota_exhausted(self, mock_call_ollama):
+        check_quota(self.admin, self.school)
+        consume_usage(self.admin, USAGE_LIMIT_SECONDS)
+
+        response = self.client.post(
+            "/api/secretary/chat/",
+            data={"message": "What's the best way to plan next term's curriculum?", "history": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["usage"]["remaining_seconds"], 0)
+        mock_call_ollama.assert_not_called()
+
+    @patch("ai_secretary.agent._call_ollama")
+    def test_general_chat_charges_real_usage_time(self, mock_call_ollama):
+        def slow_call(*args, **kwargs):
+            time.sleep(1.1)  # forces measured elapsed time to round to >= 1s
+            return {"message": {"content": "Here's some curriculum advice.", "tool_calls": []}}
+
+        mock_call_ollama.side_effect = slow_call
+
+        response = self.client.post(
+            "/api/secretary/chat/",
+            data={"message": "What's the best way to plan next term's curriculum?", "history": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        cycle = AIUsageCycle.objects.get(user=self.admin)
+        self.assertGreaterEqual(cycle.usage_seconds, 1)

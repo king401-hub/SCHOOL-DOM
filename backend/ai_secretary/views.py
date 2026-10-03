@@ -6,6 +6,8 @@ from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
+from ai_chat.services.usage import usage_snapshot
+
 from .agent import run_agent
 
 logger = logging.getLogger(__name__)
@@ -70,6 +72,9 @@ def secretary_chat(request):
         requesting_user=user,
     )
 
+    if result.get("error") == "AIUsageExhausted":
+        return JsonResponse({"detail": result["reply"], "usage": result.get("usage")}, status=429)
+
     if result.get("error") and not result.get("reply"):
         return JsonResponse({"detail": result["error"]}, status=503)
 
@@ -94,4 +99,6 @@ def secretary_status(request):
         online = r.status_code == 200
     except Exception:
         online = False
-    return JsonResponse({"online": online, "has_access": has_access, "role": role})
+    return JsonResponse({
+        "online": online, "has_access": has_access, "role": role, "usage": usage_snapshot(request.user),
+    })

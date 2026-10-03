@@ -4,9 +4,7 @@ import { refreshAccessToken } from "./AppShared";
 
 const AI_NAME = "SchoolDom AI";
 const HISTORY_KEY = "phoenix_ai_history";
-const LIMIT_KEY = "phoenix_ai_daily_limit";
 const TASKS_KEY = "phoenix_ai_tasks";
-const DAILY_LIMIT = 30;
 const MAX_SAVED_CONVOS = 50;
 const MAX_HISTORY_TURNS = 20;
 
@@ -46,25 +44,17 @@ const ADMIN_QUICK_PROMPTS = [
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
 
-function getTodayStr() {
-  return new Date().toISOString().slice(0, 10);
+function formatRemaining(seconds) {
+  if (seconds >= 60) return `${Math.ceil(seconds / 60)} min`;
+  return `${Math.max(0, seconds)} sec`;
 }
 
-function getDailyUsage() {
+function formatResetTime(iso) {
   try {
-    const raw = localStorage.getItem(LIMIT_KEY);
-    if (!raw) return 0;
-    const { date, count } = JSON.parse(raw);
-    return date === getTodayStr() ? count || 0 : 0;
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   } catch {
-    return 0;
+    return "";
   }
-}
-
-function incrementDailyUsage() {
-  const count = getDailyUsage() + 1;
-  localStorage.setItem(LIMIT_KEY, JSON.stringify({ date: getTodayStr(), count }));
-  return count;
 }
 
 function loadHistory() {
@@ -180,7 +170,7 @@ export default function AiChatWidget({ session }) {
   const [busySeconds, setBusySeconds] = useState(0);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(null);
-  const [dailyUsed, setDailyUsed] = useState(0);
+  const [usage, setUsage] = useState(null); // backend-reported AI usage quota - never computed client-side
   const [tasks, setTasks] = useState([]);
   const [taskInput, setTaskInput] = useState("");
   const [taskFilter, setTaskFilter] = useState("all");
@@ -196,10 +186,26 @@ export default function AiChatWidget({ session }) {
 
   useEffect(() => {
     setConversations(loadHistory());
-    setDailyUsed(getDailyUsage());
+    refreshUsage();
     setCurrentId(makeId());
     setTasks(loadTasks());
   }, []);
+
+  // ── AI usage quota (backend-controlled - this widget only displays it) ──────
+
+  async function refreshUsage() {
+    try {
+      const headers = {};
+      if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+      const endpoint = isAdmin ? "/api/secretary/status/" : "/api/ai/status/";
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.usage) setUsage(data.usage);
+    } catch {
+      // A failed poll just leaves the last-known usage displayed - not worth surfacing as an error.
+    }
+  }
 
   useEffect(() => {
     if (!listRef.current) return;
@@ -339,6 +345,7 @@ export default function AiChatWidget({ session }) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        if (data?.usage) setUsage(data.usage);
         throw new Error(data?.detail || "SchoolDom AI could not respond.");
       }
 
@@ -400,6 +407,7 @@ export default function AiChatWidget({ session }) {
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
+      if (data?.usage) setUsage(data.usage);
       throw new Error(data?.detail || "SchoolDom AI could not respond.");
     }
 
@@ -425,14 +433,6 @@ export default function AiChatWidget({ session }) {
     const trimmed = (quickText ?? input).trim();
     if (!trimmed || busy) return;
 
-    if (!isAdmin) {
-      const remaining = DAILY_LIMIT - dailyUsed;
-      if (remaining <= 0) {
-        setError(`You've reached today's limit of ${DAILY_LIMIT} messages. Come back tomorrow!`);
-        return;
-      }
-    }
-
     const priorMessages = messages;
     const userMsg = { id: makeId(), role: "user", content: trimmed };
     setInput("");
@@ -454,13 +454,13 @@ export default function AiChatWidget({ session }) {
         setBusySeconds(0);
         clearInterval(busyTimerRef.current);
         abortRef.current = null;
+        refreshUsage();
       }
       return;
     }
 
     const history = [...priorMessages, userMsg];
     setMessages([...history, { id: makeId(), role: "assistant", content: "" }]);
-    setDailyUsed(incrementDailyUsage());
     try {
       await streamChat(history);
       setMessages((prev) => {
@@ -483,6 +483,7 @@ export default function AiChatWidget({ session }) {
     } finally {
       setBusy(false);
       abortRef.current = null;
+      refreshUsage();
     }
   }
 
@@ -550,9 +551,10 @@ export default function AiChatWidget({ session }) {
 
   if (!session) return null;
 
-  const remaining = DAILY_LIMIT - dailyUsed;
+  const remainingSeconds = usage?.remaining_seconds;
+  const usageKnown = typeof remainingSeconds === "number";
   const userInitial = (session?.user?.first_name?.[0] || "U").toUpperCase();
-  const canSend = input.trim() && !busy && (isAdmin || remaining > 0);
+  const canSend = input.trim() && !busy && (!usageKnown || remainingSeconds > 0);
 
   const activeTasks = tasks.filter((t) => !t.done);
   const doneTasks = tasks.filter((t) => t.done);
@@ -833,9 +835,11 @@ export default function AiChatWidget({ session }) {
               </div>
 
               <div className="ai-chat-input-area">
-                {!isAdmin && remaining <= 5 && remaining > 0 && (
+                {usageKnown && remainingSeconds <= 300 && (
                   <div className="ai-chat-limit-warn">
-                    {remaining} message{remaining !== 1 ? "s" : ""} left today
+                    {remainingSeconds > 0
+                      ? `${formatRemaining(remainingSeconds)} of AI time left this cycle`
+                      : `No AI time left${usage?.cycle_resets_at ? ` — resets at ${formatResetTime(usage.cycle_resets_at)}` : ""}`}
                   </div>
                 )}
                 <div className="ai-chat-input-row">
@@ -846,7 +850,7 @@ export default function AiChatWidget({ session }) {
                     onKeyDown={handleKeyDown}
                     placeholder={isAdmin ? "Ask or tell SchoolDom AI what to do…" : "Ask SchoolDom AI anything…"}
                     rows={1}
-                    disabled={busy || (!isAdmin && remaining <= 0)}
+                    disabled={busy || (usageKnown && remainingSeconds <= 0)}
                   />
                   {busy ? (
                     <button
