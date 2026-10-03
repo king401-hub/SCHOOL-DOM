@@ -1,5 +1,8 @@
-"""Proxies chat requests to a locally running Ollama instance."""
+"""Proxies chat requests to a locally running Ollama instance, or - when
+AI_PROVIDER=openrouter - to OpenRouter's hosted API instead (see
+backend/ai_chat/README_openrouter.md)."""
 import json
+import logging
 
 import requests
 from django.conf import settings
@@ -16,6 +19,9 @@ from ai_secretary.code_guard import CODE_REFUSAL_MESSAGE, CODE_SIGNALS, looks_li
 # Schooldom doesn't have) - shared with ai_secretary's admin agent so both
 # personas answer platform questions from one source of truth.
 from ai_secretary.prompts import PLATFORM_KNOWLEDGE_PROMPT
+from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
+
+logger = logging.getLogger(__name__)
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 
@@ -128,6 +134,83 @@ def _stream_ollama_reply(upstream):
         upstream.close()
 
 
+def _friendly_openrouter_message(exc: OpenRouterError) -> str:
+    """A message safe to show a user - never the raw provider error text,
+    which can leak implementation detail (model name, OpenRouter's own
+    wording) that isn't useful to someone just trying to chat."""
+    if exc.status_code == 402:
+        return "SchoolDom AI is temporarily unavailable (the AI provider account is out of credits). Please contact support."
+    if exc.status_code == 403:
+        return "SchoolDom AI is temporarily unavailable (access was denied by the AI provider). Please contact support."
+    if exc.code == "MISSING_API_KEY":
+        return "SchoolDom AI is not configured yet. Please contact support."
+    return "SchoolDom AI could not be reached right now. Please try again shortly."
+
+
+def _stream_openrouter_reply(first_chunk, rest_iter):
+    """Continues a stream whose first chunk was already pulled in chat()
+    below (see the comment there for why), applying the same code-refusal
+    guard _stream_ollama_reply uses so the two providers behave identically
+    to the frontend - same CODE_REFUSAL_MESSAGE cutoff, same plain-text
+    chunk-at-a-time output, no frontend change needed either way."""
+    collected = first_chunk or ""
+    if first_chunk:
+        if _looks_like_code(collected):
+            yield CODE_REFUSAL_MESSAGE
+            return
+        yield first_chunk
+    try:
+        for content in rest_iter:
+            collected += content
+            if _looks_like_code(collected):
+                yield CODE_REFUSAL_MESSAGE
+                return
+            yield content
+    except (OpenRouterError, OpenRouterTimeout) as exc:
+        logger.error("OpenRouter stream dropped mid-reply: %s", exc)
+        yield "\n\n[Connection to the AI assistant was interrupted.]"
+
+
+def _chat_via_openrouter(messages):
+    """The AI_PROVIDER=openrouter path for chat() below. Mirrors the Ollama
+    path's shape: a connect/auth/config failure becomes a clean JSON error
+    response (same as the `except requests.exceptions.RequestException`
+    branch below does for Ollama) rather than a broken stream, by pulling
+    the first chunk here before the StreamingHttpResponse is created - that
+    chunk is then replayed as the first item of the actual stream.
+
+    Attached images aren't supported on this path (OpenRouter's content
+    format differs from Ollama's `images` field, and the configured
+    qwen/qwen3.8-27b model isn't a vision model) - the image itself is
+    silently dropped and only the text content is sent, rather than
+    rejecting the whole message.
+    """
+    openrouter_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    openrouter_messages += [{"role": m["role"], "content": m["content"]} for m in messages]
+
+    client = OpenRouterClient()
+    stream_iter = client.stream_chat(openrouter_messages, max_tokens=1024, temperature=0.7)
+    try:
+        first_chunk = next(stream_iter, "")
+    except OpenRouterTimeout as exc:
+        logger.error("OpenRouter chat timed out before streaming began: %s", exc)
+        return JsonResponse({"detail": "SchoolDom AI did not respond in time. Please try again."}, status=503)
+    except OpenRouterError as exc:
+        logger.error(
+            "OpenRouter chat failed before streaming began (status=%s, code=%s): %s",
+            exc.status_code, exc.code, exc,
+        )
+        status = exc.status_code if exc.status_code in (401, 402, 403, 404) else 503
+        return JsonResponse({"detail": _friendly_openrouter_message(exc)}, status=status)
+
+    response = StreamingHttpResponse(
+        _stream_openrouter_reply(first_chunk, stream_iter), content_type="text/plain; charset=utf-8"
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def chat(request):
@@ -138,6 +221,9 @@ def chat(request):
     messages = _clean_messages(raw_messages)
     if not messages:
         return JsonResponse({"detail": "messages is required."}, status=400)
+
+    if getattr(settings, "AI_PROVIDER", "ollama") == "openrouter":
+        return _chat_via_openrouter(messages)
 
     has_images = any(msg.get("images") for msg in messages)
     model = VISION_MODEL if has_images else OLLAMA_MODEL
@@ -186,6 +272,13 @@ def chat(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def status_check(request):
+    if getattr(settings, "AI_PROVIDER", "ollama") == "openrouter":
+        # A live OpenRouter call here would spend real quota on every poll
+        # of this endpoint, unlike Ollama's free local /api/tags below - so
+        # "online" just reflects whether a key is configured, not a live ping.
+        online = bool(getattr(settings, "OPENROUTER_API_KEY", ""))
+        return JsonResponse({"online": online, "model": getattr(settings, "OPENROUTER_DEFAULT_MODEL", "")})
+
     try:
         resp = requests.get("http://localhost:11434/api/tags", timeout=3)
         online = resp.status_code == 200

@@ -103,6 +103,30 @@ SECRETARY_OLLAMA_MODEL = os.getenv('SECRETARY_OLLAMA_MODEL', 'llama3.2:3b')
 # real load without touching Secretary or redeploying code.
 PHOENIX_OLLAMA_MODEL = os.getenv('PHOENIX_OLLAMA_MODEL', 'llama3.2:3b')
 
+# ── OpenRouter (optional alternative LLM provider for ai_chat) ──────────────
+# ai_chat's "SchoolDom AI" assistant can answer through OpenRouter's hosted
+# API instead of the local Ollama instance above - see AI_PROVIDER below.
+# ai_secretary's tool-calling Secretary agent is NOT wired to this; it still
+# talks to Ollama only (see backend/ai_chat/README_openrouter.md).
+# Get a key at https://openrouter.ai/keys - never hardcode it here.
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+OPENROUTER_BASE_URL = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+# qwen/qwen3.8-27b is free on OpenRouter as of writing, but free-tier models
+# are rate-limited and can be withdrawn or swapped by OpenRouter at any time
+# - see the README before relying on this for production traffic.
+OPENROUTER_DEFAULT_MODEL = os.getenv('OPENROUTER_DEFAULT_MODEL', 'qwen/qwen3.8-27b')
+OPENROUTER_TIMEOUT = int(os.getenv('OPENROUTER_TIMEOUT', '60'))
+OPENROUTER_MAX_RETRIES = int(os.getenv('OPENROUTER_MAX_RETRIES', '3'))
+# Optional - OpenRouter only uses these for its own public leaderboard
+# attribution (https://openrouter.ai/docs#headers); the API works without them.
+OPENROUTER_SITE_URL = os.getenv('OPENROUTER_SITE_URL', '')
+OPENROUTER_SITE_NAME = os.getenv('OPENROUTER_SITE_NAME', 'SchoolDom')
+
+# Which provider ai_chat's SchoolDom AI assistant talks to: 'ollama' (default)
+# or 'openrouter'. Defaults to 'ollama' so this is purely additive - nothing
+# changes for an existing deployment unless AI_PROVIDER is explicitly set.
+AI_PROVIDER = os.getenv('AI_PROVIDER', 'ollama').strip().lower()
+
 DEBUG = env_bool('DEBUG', True)
 # Keep local setup zero-config unless PostgreSQL is explicitly requested.
 USE_SQLITE_FOR_DEV = env_bool('USE_SQLITE_FOR_DEV', True)
