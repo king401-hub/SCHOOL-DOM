@@ -1,10 +1,10 @@
 """Synchronous client for OpenRouter's Chat Completions API
 (https://openrouter.ai/api/v1/chat/completions - OpenAI-compatible).
 
-Used by ai_chat.views when AI_PROVIDER=openrouter (see config/settings.py's
-"OpenRouter" section) as an alternative to the local Ollama instance -
-ai_secretary's tool-calling Secretary agent is NOT wired to this; it still
-talks to Ollama only (see backend/ai_chat/README_openrouter.md).
+Used by ai_chat.views (plain-chat "SchoolDom AI") and ai_secretary.agent
+(tool-calling "Secretary") when AI_PROVIDER=openrouter (see
+config/settings.py's "OpenRouter" section) as an alternative to the local
+Ollama instance - see backend/ai_chat/README_openrouter.md.
 """
 import json
 import logging
@@ -140,9 +140,14 @@ class OpenRouterClient:
     def chat(self, messages: list, **kwargs) -> dict:
         """POST a non-streaming chat completion.
 
-        Returns {"content": str, "usage": dict, "raw": dict}. Raises
-        OpenRouterError for any non-2xx response other than a retried-out
-        429/502, and OpenRouterTimeout if every attempt timed out.
+        Returns {"content": str, "tool_calls": list, "usage": dict, "raw": dict}.
+        "tool_calls" is OpenRouter's OpenAI-shaped
+        [{"id", "type": "function", "function": {"name", "arguments" (a
+        JSON string)}}] list, or [] when the model didn't call one - pass
+        tools=[...] (OpenAI/TOOL_SCHEMAS-style function schemas) as a kwarg
+        to enable them. Raises OpenRouterError for any non-2xx response
+        other than a retried-out 429/502, and OpenRouterTimeout if every
+        attempt timed out.
         """
         url = f"{self.base_url}{CHAT_COMPLETIONS_PATH}"
         payload = self._build_payload(messages, **kwargs)
@@ -176,8 +181,13 @@ class OpenRouterClient:
                 except ValueError as exc:
                     raise OpenRouterError("OpenRouter returned a non-JSON success response.") from exc
                 choice = (data.get("choices") or [{}])[0]
-                content = (choice.get("message") or {}).get("content") or ""
-                return {"content": content, "usage": data.get("usage") or {}, "raw": data}
+                message = choice.get("message") or {}
+                return {
+                    "content": message.get("content") or "",
+                    "tool_calls": message.get("tool_calls") or [],
+                    "usage": data.get("usage") or {},
+                    "raw": data,
+                }
 
             if response.status_code in _RETRYABLE_STATUS_CODES and attempt < self.max_retries:
                 logger.warning(

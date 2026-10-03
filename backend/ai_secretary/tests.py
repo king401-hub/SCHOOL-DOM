@@ -1,7 +1,7 @@
 from django.test import TestCase
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from academic.models import AcademicYear, Class, ResultBatch, StudentSubjectScore, Subject, Term, TimetableEntry
 from core.models import SchoolTenant
@@ -178,6 +178,53 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertEqual(result["tools_called"], [])
         self.assertIn(TOOL_CALL_LEAK_MESSAGE.strip(), result["reply"])
         self.assertNotIn("{", result["reply"])
+
+    @override_settings(AI_PROVIDER="openrouter")
+    def test_openrouter_tool_call_is_executed_and_summarized(self):
+        """With AI_PROVIDER=openrouter, run_agent must route through
+        OpenRouterClient instead of Ollama, execute a real tool_calls entry
+        the same way the Ollama path does, and feed its result back for a
+        natural-language summary."""
+        from ai_secretary.agent import run_agent
+
+        responses = [
+            {"content": "", "tool_calls": [
+                {"id": "call_1", "type": "function", "function": {"name": "count_students", "arguments": "{}"}},
+            ]},
+            {"content": "There are 0 students enrolled.", "tool_calls": []},
+        ]
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+            mock_client_cls.return_value.chat.side_effect = responses
+            result = run_agent(
+                "Give me a full report on enrollment, attendance and fees for this term.",
+                [], self.school, self.admin,
+            )
+
+        self.assertEqual(result["tools_called"], ["count_students"])
+        self.assertIn("0 students", result["reply"])
+
+    @override_settings(AI_PROVIDER="openrouter")
+    def test_openrouter_timeout_returns_friendly_message(self):
+        from ai_secretary.agent import run_agent
+        from ai_chat.services.openrouter_client import OpenRouterTimeout
+
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+            mock_client_cls.return_value.chat.side_effect = OpenRouterTimeout("timed out")
+            result = run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
+
+        self.assertIn("taking too long", result["reply"])
+        self.assertEqual(result["tools_called"], [])
+
+    @override_settings(AI_PROVIDER="openrouter")
+    def test_openrouter_insufficient_credit_returns_friendly_message(self):
+        from ai_secretary.agent import run_agent
+        from ai_chat.services.openrouter_client import OpenRouterError
+
+        with patch("ai_secretary.agent.OpenRouterClient") as mock_client_cls:
+            mock_client_cls.return_value.chat.side_effect = OpenRouterError("no credit", status_code=402)
+            result = run_agent("What's the best way to plan next term's curriculum?", [], self.school, self.admin)
+
+        self.assertIn("out of credits", result["reply"])
 
     def test_navigation_supports_every_admin_section(self):
         routes = {

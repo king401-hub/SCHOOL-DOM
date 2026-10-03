@@ -14,6 +14,8 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
+from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
+
 from .code_guard import CODE_REFUSAL_MESSAGE, TOOL_CALL_LEAK_MESSAGE, looks_like_code, looks_like_leaked_tool_call
 from .prompts import SECRETARY_SYSTEM_PROMPT
 from .tools import TOOL_SCHEMAS, SecretaryTools, resolve_navigation_page
@@ -274,6 +276,39 @@ def _call_ollama(messages: list, stream: bool = False, use_tools: bool = True) -
     return response.json()
 
 
+def _call_openrouter(messages: list, use_tools: bool = True) -> dict:
+    """POST to OpenRouter via OpenRouterClient, normalized to the same
+    {"message": {"content": ..., "tool_calls": [...]}} shape _call_ollama
+    returns above, so the rest of run_agent's loop needs no provider
+    branching. TOOL_SCHEMAS is already OpenAI-shaped (same "type":
+    "function"/"parameters" structure OpenRouter expects), so it's passed
+    through unchanged - no translation needed."""
+    client = OpenRouterClient()
+    kwargs = {"max_tokens": 600, "temperature": 0.3}
+    if use_tools:
+        kwargs["tools"] = TOOL_SCHEMAS
+    result = client.chat(messages, **kwargs)
+    return {"message": {"content": result["content"], "tool_calls": result["tool_calls"]}}
+
+
+def _call_model(messages: list, use_tools: bool = True) -> dict:
+    """Routes to OpenRouter or Ollama per settings.AI_PROVIDER - the one
+    place run_agent's loop needs to know a second provider exists."""
+    if getattr(settings, "AI_PROVIDER", "ollama") == "openrouter":
+        return _call_openrouter(messages, use_tools=use_tools)
+    return _call_ollama(messages, stream=False, use_tools=use_tools)
+
+
+def _friendly_openrouter_message(exc: OpenRouterError) -> str:
+    if exc.status_code == 402:
+        return "I can't reach the AI right now — the AI provider account is out of credits. Please contact Schooldom support."
+    if exc.status_code == 403:
+        return "I can't reach the AI right now — access was denied by the AI provider. Please contact Schooldom support."
+    if exc.code == "MISSING_API_KEY":
+        return "The AI isn't configured yet. Please contact Schooldom support."
+    return "Something went wrong reaching the AI. Let's try again — or I'll flag it for your IT team."
+
+
 def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict:
     """
     Run the full agent loop for one user turn.
@@ -387,7 +422,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
             logger.warning("Secretary agent hit its %ds wall-clock deadline before MAX_ITERATIONS", AGENT_DEADLINE_SECONDS)
             break
         try:
-            data = _call_ollama(messages, stream=False)
+            data = _call_model(messages)
         except requests.exceptions.ConnectionError as exc:
             logger.error("Ollama connection refused: %s", exc)
             return {
@@ -415,6 +450,20 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
                 "reply": "Network issue — might be light problem 😅. I'll retry when you're back online.",
                 "tools_called": tools_called,
                 "error": str(exc),
+            }
+        except OpenRouterTimeout as exc:
+            logger.error("OpenRouter timed out: %s", exc)
+            return {
+                "reply": "The AI is taking too long to respond. Please try again in a moment.",
+                "tools_called": tools_called,
+                "error": f"Timeout: {exc}",
+            }
+        except OpenRouterError as exc:
+            logger.error("OpenRouter error (status=%s, code=%s): %s", exc.status_code, exc.code, exc)
+            return {
+                "reply": _friendly_openrouter_message(exc),
+                "tools_called": tools_called,
+                "error": f"OpenRouterError: {exc}",
             }
 
         message = data.get("message", {})
@@ -479,11 +528,15 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
 
             result = tools.dispatch(tool_name, raw_args)
 
-            # Feed the tool result back as a "tool" role message
-            messages.append({
-                "role": "tool",
-                "content": json.dumps(result),
-            })
+            # Feed the tool result back as a "tool" role message - OpenRouter
+            # (unlike Ollama) requires tool_call_id to match it to the
+            # assistant turn that requested it; only add it when the
+            # provider actually gave one (Ollama's native tool_calls and the
+            # Ollama-only fake-call recovery above don't have one).
+            tool_message = {"role": "tool", "content": json.dumps(result)}
+            if call.get("id"):
+                tool_message["tool_call_id"] = call["id"]
+            messages.append(tool_message)
 
     # Exceeded iteration cap — ask Ollama for a plain summary of what happened
     logger.warning("Secretary exceeded MAX_ITERATIONS (%d)", MAX_ITERATIONS)
@@ -492,7 +545,7 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         "content": "Please summarise what was completed so far in one short sentence.",
     })
     try:
-        data = _call_ollama(messages, stream=False)
+        data = _call_model(messages)
         reply = data.get("message", {}).get("content", "").strip()
     except Exception:
         reply = "Something went wrong. Let's try again — or I can note it for your IT team."
