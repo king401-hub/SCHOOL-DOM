@@ -95,6 +95,57 @@ function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+// ── Lightweight markdown rendering (bold + bullet lists only - AI replies ──────
+// use **bold** and "- item" lists per the system prompts, nothing fancier) ─────
+
+function renderInline(str, keyPrefix) {
+  return str.split(/(\*\*[^*]+?\*\*)/g).map((part, idx) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4
+      ? <strong key={`${keyPrefix}-${idx}`}>{part.slice(2, -2)}</strong>
+      : part
+  );
+}
+
+function renderMarkdownLite(text) {
+  if (!text) return null;
+  const blocks = [];
+  let currentList = null;
+  const flushList = () => {
+    if (currentList) {
+      blocks.push({ type: "ul", items: currentList });
+      currentList = null;
+    }
+  };
+
+  for (const rawLine of text.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      flushList();
+      continue;
+    }
+    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (bulletMatch) {
+      (currentList || (currentList = [])).push(bulletMatch[1]);
+      continue;
+    }
+    flushList();
+    blocks.push({ type: "p", text: trimmed });
+  }
+  flushList();
+
+  return blocks.map((block, i) =>
+    block.type === "ul" ? (
+      <ul key={i} className="ai-chat-md-list">
+        {block.items.map((item, j) => (
+          <li key={j}>{renderInline(item, `${i}-${j}`)}</li>
+        ))}
+      </ul>
+    ) : (
+      <p key={i} className="ai-chat-md-p">{renderInline(block.text, `${i}`)}</p>
+    )
+  );
+}
+
 // ── Streaming helper ──────────────────────────────────────────────────────────
 
 function appendChunk(prev, chunk) {
@@ -296,7 +347,6 @@ export default function AiChatWidget({ session }) {
         id: makeId(),
         role: "assistant",
         content: data.reply || "Done ✅",
-        tools: data.tools_called || [],
         route: data.route || null,
       };
 
@@ -747,15 +797,10 @@ export default function AiChatWidget({ session }) {
                       <div className="ai-chat-bubble">
                         {msg.thinking || (!msg.content && busy && i === messages.length - 1) ? (
                           <span className="ai-typing"><span /><span /><span /></span>
+                        ) : msg.role === "assistant" ? (
+                          renderMarkdownLite(msg.content)
                         ) : (
                           <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
-                        )}
-                        {msg.tools?.length > 0 && (
-                          <div className="sec-tools-badge">
-                            {msg.tools.map((t) => (
-                              <span key={t} className="sec-tool-chip">{t.replace(/_/g, " ")}</span>
-                            ))}
-                          </div>
                         )}
                         {msg.role === "assistant" && msg.content && !msg.thinking && (
                           <button
