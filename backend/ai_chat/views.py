@@ -272,9 +272,10 @@ def chat(request):
     try:
         check_quota(request.user, getattr(request.user, "tenant", None))
     except AIUsageExhausted as exc:
+        reset_str = exc.cycle.cycle_resets_at.strftime("%H:%M")
         return JsonResponse(
             {
-                "detail": "You've used your AI time for this cycle. It resets automatically - try again later.",
+                "detail": f"You've used your AI time for this cycle. It resets at {reset_str}.",
                 "usage": usage_dict(exc.cycle),
             },
             status=429,

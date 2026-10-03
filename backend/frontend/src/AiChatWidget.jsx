@@ -588,7 +588,13 @@ export default function AiChatWidget({ session }) {
               </div>
               <div>
                 <strong>{AI_NAME}</strong>
-                <span className="ai-chat-subtitle">Your personal assistant</span>
+                <span className="ai-chat-subtitle">
+                  {usageKnown
+                    ? remainingSeconds > 0
+                      ? `${formatRemaining(remainingSeconds)} AI time left · resets ${formatResetTime(usage.cycle_resets_at)}`
+                      : `No AI time left · resets ${formatResetTime(usage.cycle_resets_at)}`
+                    : "Your personal assistant"}
+                </span>
               </div>
             </div>
             <div className="ai-chat-header-actions">
