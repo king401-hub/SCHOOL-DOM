@@ -33,3 +33,22 @@ CODE_REFUSAL_MESSAGE = (
 def looks_like_code(text: str) -> bool:
     lowered = text.lower()
     return any(signal in lowered for signal in CODE_SIGNALS)
+
+
+TOOL_CALL_LEAK_MESSAGE = (
+    "\n\nSorry, I didn't quite get that done — could you rephrase your request?"
+)
+
+
+def looks_like_leaked_tool_call(text: str) -> bool:
+    """Small/free models sometimes write out a hand-rolled imitation of a
+    tool call as plain reply text instead of using the API's real
+    tool-calling field (ai_secretary/agent.py tries to recover and actually
+    execute a known tool out of this first - this is only the backstop for
+    whatever it can't recover: an unrecognised tool name or malformed JSON,
+    which would otherwise leak raw JSON straight to the user)."""
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        return False
+    lowered = stripped.lower()
+    return '"function"' in lowered or ('"name"' in lowered and ('"arguments"' in lowered or '"parameters"' in lowered))

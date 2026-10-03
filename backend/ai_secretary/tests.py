@@ -132,6 +132,53 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertIn(CODE_REFUSAL_MESSAGE.strip(), result["reply"])
         self.assertNotIn("```", result["reply"])
 
+    def test_fake_tool_call_in_plain_content_is_recovered_and_executed(self):
+        """Regression test: llama3.2:3b sometimes fails to use Ollama's
+        native tool_calls field and instead writes out a hand-rolled
+        imitation of its own TOOL_SCHEMAS definition as plain content -
+        using "parameters" (the schema's own key name) instead of
+        "arguments" (what a real tool_calls entry uses). This used to leak
+        straight to the admin as raw JSON instead of creating anything -
+        it must now be recovered and actually executed."""
+        from ai_secretary.agent import run_agent
+
+        fake_call_text = (
+            '{"type":"function","function":{"name": "create_cbt_exam", '
+            '"parameters": {"subject": "Maths", "class_name": "SS2A", '
+            '"question_count": 20, "time_limit_minutes": 120}}}'
+        )
+        responses = [
+            {"message": {"content": fake_call_text, "tool_calls": []}},
+            {"message": {"content": "Done! I've created the CBT exam.", "tool_calls": []}},
+        ]
+        with patch("ai_secretary.agent._call_ollama", side_effect=responses):
+            result = run_agent(
+                "Please set up an exam for Maths in SS2A, 20 questions, 120 minutes.",
+                [], self.school, self.admin,
+            )
+
+        self.assertEqual(result["tools_called"], ["create_cbt_exam"])
+        self.assertNotIn("{", result["reply"])
+        self.assertIn("created", result["reply"].lower())
+
+    def test_fake_tool_call_for_unknown_tool_is_not_leaked(self):
+        """A tool-call-shaped blob that doesn't match any real tool (bad
+        name, or JSON too malformed to recover) must still never reach the
+        admin as raw JSON, same principle as the code-signal backstop."""
+        from ai_secretary.agent import run_agent
+        from ai_secretary.code_guard import TOOL_CALL_LEAK_MESSAGE
+
+        fake_call_text = '{"name": "delete_the_whole_database", "arguments": {}}'
+        with patch(
+            "ai_secretary.agent._call_ollama",
+            return_value={"message": {"content": fake_call_text, "tool_calls": []}},
+        ):
+            result = run_agent("Can you tidy up the records for me?", [], self.school, self.admin)
+
+        self.assertEqual(result["tools_called"], [])
+        self.assertIn(TOOL_CALL_LEAK_MESSAGE.strip(), result["reply"])
+        self.assertNotIn("{", result["reply"])
+
     def test_navigation_supports_every_admin_section(self):
         routes = {
             "Open the students page": "/students",

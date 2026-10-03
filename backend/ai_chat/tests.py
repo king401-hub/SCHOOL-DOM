@@ -2,7 +2,13 @@ import json
 
 from django.test import TestCase
 
-from ai_chat.views import CODE_REFUSAL_MESSAGE, _looks_like_code, _stream_ollama_reply
+from ai_chat.views import (
+    CODE_REFUSAL_MESSAGE,
+    TOOL_CALL_LEAK_MESSAGE,
+    _looks_like_code,
+    _looks_like_leaked_tool_call,
+    _stream_ollama_reply,
+)
 
 
 class FakeOllamaStream:
@@ -46,6 +52,19 @@ class LooksLikeCodeTests(TestCase):
         self.assertFalse(_looks_like_code(message))
 
 
+class LooksLikeLeakedToolCallTests(TestCase):
+    def test_detects_openai_style_function_call(self):
+        self.assertTrue(_looks_like_leaked_tool_call(
+            '{"type":"function","function":{"name": "create_cbt_exam", "parameters": {"subject": "Maths"}}}'
+        ))
+
+    def test_detects_flat_name_arguments_shape(self):
+        self.assertTrue(_looks_like_leaked_tool_call('{"name": "send_message", "arguments": {"text": "hi"}}'))
+
+    def test_does_not_flag_ordinary_text(self):
+        self.assertFalse(_looks_like_leaked_tool_call("Go to Students and click Add Student."))
+
+
 class StreamOllamaReplyTests(TestCase):
     def test_cuts_stream_and_refuses_when_model_starts_a_code_fence(self):
         upstream = FakeOllamaStream([
@@ -85,3 +104,19 @@ class StreamOllamaReplyTests(TestCase):
 
         self.assertIn(CODE_REFUSAL_MESSAGE, output)
         self.assertNotIn("leaked", output)
+
+    def test_cuts_stream_and_apologizes_when_model_emits_a_fake_tool_call(self):
+        """Regression test: a model can emit a tool-call-shaped JSON blob as
+        plain content on this zero-tools surface too (ai_chat has no
+        TOOL_SCHEMAS to recover a real call against, unlike ai_secretary) -
+        it must never reach the user as raw JSON either way."""
+        upstream = FakeOllamaStream([
+            {"message": {"content": '{"type":"function","function":'}},
+            {"message": {"content": '{"name": "create_cbt_exam", "parameters": {}}}'}},
+            {"done": True},
+        ])
+
+        output = "".join(_stream_ollama_reply(upstream))
+
+        self.assertIn(TOOL_CALL_LEAK_MESSAGE, output)
+        self.assertNotIn("create_cbt_exam", output)

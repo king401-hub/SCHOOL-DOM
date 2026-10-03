@@ -14,7 +14,13 @@ from rest_framework.permissions import IsAuthenticated
 # both AI personas cut a reply the moment it looks like code, from one
 # implementation - re-exported under these names so existing imports/tests
 # (ai_chat/tests.py) keep working unchanged.
-from ai_secretary.code_guard import CODE_REFUSAL_MESSAGE, CODE_SIGNALS, looks_like_code as _looks_like_code
+from ai_secretary.code_guard import (
+    CODE_REFUSAL_MESSAGE,
+    CODE_SIGNALS,
+    TOOL_CALL_LEAK_MESSAGE,
+    looks_like_code as _looks_like_code,
+    looks_like_leaked_tool_call as _looks_like_leaked_tool_call,
+)
 # Platform how-to knowledge (roles/navigation, common workflows, what
 # Schooldom doesn't have) - shared with ai_secretary's admin agent so both
 # personas answer platform questions from one source of truth.
@@ -58,6 +64,14 @@ word problems, science, or any other academic subject - always help normally wit
 those exactly like any other assistant would. "3x3", "what is the square root of 9",
 "solve for x", and similar are ordinary math questions, not code, and must never
 trigger the refusal above.
+
+## You have no tools and cannot take actions
+You cannot create exams, mark attendance, add students, send messages, or do
+anything else on the platform directly - you can only talk. Never output JSON,
+a function call, or anything shaped like {"name": ..., "arguments": ...} under
+any circumstance, even if a request sounds like an action. If asked to do
+something rather than explain it, say in plain words that you can't do it
+yourself, then give the exact steps to do it from the workflows below.
 
 """ + PLATFORM_KNOWLEDGE_PROMPT + """
 
@@ -125,6 +139,9 @@ def _stream_ollama_reply(upstream):
                 if _looks_like_code(collected):
                     yield CODE_REFUSAL_MESSAGE
                     return
+                if _looks_like_leaked_tool_call(collected):
+                    yield TOOL_CALL_LEAK_MESSAGE
+                    return
                 yield content
             if chunk.get("done"):
                 return
@@ -158,12 +175,18 @@ def _stream_openrouter_reply(first_chunk, rest_iter):
         if _looks_like_code(collected):
             yield CODE_REFUSAL_MESSAGE
             return
+        if _looks_like_leaked_tool_call(collected):
+            yield TOOL_CALL_LEAK_MESSAGE
+            return
         yield first_chunk
     try:
         for content in rest_iter:
             collected += content
             if _looks_like_code(collected):
                 yield CODE_REFUSAL_MESSAGE
+                return
+            if _looks_like_leaked_tool_call(collected):
+                yield TOOL_CALL_LEAK_MESSAGE
                 return
             yield content
     except (OpenRouterError, OpenRouterTimeout) as exc:

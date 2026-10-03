@@ -14,11 +14,13 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
-from .code_guard import CODE_REFUSAL_MESSAGE, looks_like_code
+from .code_guard import CODE_REFUSAL_MESSAGE, TOOL_CALL_LEAK_MESSAGE, looks_like_code, looks_like_leaked_tool_call
 from .prompts import SECRETARY_SYSTEM_PROMPT
 from .tools import TOOL_SCHEMAS, SecretaryTools, resolve_navigation_page
 
 logger = logging.getLogger(__name__)
+
+_KNOWN_TOOL_NAMES = {schema["function"]["name"] for schema in TOOL_SCHEMAS}
 
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 SECRETARY_MODEL = getattr(settings, "SECRETARY_OLLAMA_MODEL", "llama3.2:3b")
@@ -198,6 +200,37 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
     result = {"tool": "general_chat", "params": {}, "confidence": 0.1}
     cache.set(cache_key, result, timeout=300)
     return result
+
+
+def _extract_fake_tool_call(content: str):
+    """Ollama's small tool-calling models (3B-class) sometimes fail to use
+    the native `tool_calls` field at all and instead write out a hand-rolled
+    imitation of their own TOOL_SCHEMAS definition as plain message content
+    - e.g. {"type":"function","function":{"name": "create_cbt_exam",
+    "parameters": {...}}} (note "parameters", the schema's own key name,
+    rather than "arguments", what a real tool_calls entry uses). Recover a
+    usable call out of that instead of discarding the admin's request or
+    leaking the raw JSON to them. Returns a dict shaped like a real
+    tool_calls entry, or None if nothing recognisable was found."""
+    if not content or "{" not in content or "}" not in content:
+        return None
+    start, end = content.find("{"), content.rfind("}")
+    if end <= start:
+        return None
+    try:
+        parsed = json.loads(content[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+
+    fn = parsed.get("function") if isinstance(parsed.get("function"), dict) else parsed
+    name = fn.get("name") if isinstance(fn, dict) else None
+    if not name or name not in _KNOWN_TOOL_NAMES:
+        return None
+
+    args = fn.get("arguments")
+    if not isinstance(args, dict):
+        args = fn.get("parameters") if isinstance(fn.get("parameters"), dict) else {}
+    return {"function": {"name": name, "arguments": args}}
 
 
 def _call_ollama(messages: list, stream: bool = False, use_tools: bool = True) -> dict | requests.Response:
@@ -388,21 +421,38 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         tool_calls = message.get("tool_calls") or []
 
         if not tool_calls:
-            # No more tool calls — return the final answer. This is raw model
-            # text (unlike every other return point in run_agent, which is
-            # built from deterministic tool results), so it's the one place
-            # Secretary needs the same code-signal backstop Phoenix already
-            # has - the model has zero guardrail of its own otherwise.
-            reply = message.get("content", "").strip()
-            if not reply:
-                reply = "Done ✅"
-            elif looks_like_code(reply):
-                # Nothing has been sent to the client yet (unlike Phoenix's
-                # streaming path, which can only append a refusal after
-                # whatever already left the server) - replace outright rather
-                # than show the leaked code plus a refusal after it.
-                reply = CODE_REFUSAL_MESSAGE.strip()
-            return {"reply": reply, "tools_called": tools_called, "error": None}
+            content = message.get("content", "").strip()
+            fake_call = _extract_fake_tool_call(content) if content else None
+            if fake_call:
+                logger.warning(
+                    "Secretary model emitted tool call as plain content instead of tool_calls; recovered %s",
+                    fake_call["function"]["name"],
+                )
+                tool_calls = [fake_call]
+            else:
+                # No more tool calls — return the final answer. This is raw
+                # model text (unlike every other return point in run_agent,
+                # which is built from deterministic tool results), so it's
+                # the one place Secretary needs the same code-signal backstop
+                # Phoenix already has - the model has zero guardrail of its
+                # own otherwise.
+                if not content:
+                    reply = "Done ✅"
+                elif looks_like_code(content):
+                    # Nothing has been sent to the client yet (unlike
+                    # Phoenix's streaming path, which can only append a
+                    # refusal after whatever already left the server) -
+                    # replace outright rather than show the leak plus a
+                    # refusal after it.
+                    reply = CODE_REFUSAL_MESSAGE.strip()
+                elif looks_like_leaked_tool_call(content):
+                    # A tool-call-shaped blob _extract_fake_tool_call couldn't
+                    # recover (unknown tool name or malformed JSON) - still
+                    # must not reach the user as raw JSON.
+                    reply = TOOL_CALL_LEAK_MESSAGE.strip()
+                else:
+                    reply = content
+                return {"reply": reply, "tools_called": tools_called, "error": None}
 
         # ── Execute each requested tool call ─────────────────────────────
         # Add the assistant's tool-call message to history first
