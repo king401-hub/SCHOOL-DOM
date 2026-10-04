@@ -328,6 +328,23 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
 
   return (
     <section className="ai-assistant-page">
+      <header className="ai-chat-header ai-assistant-header">
+        <div className="ai-chat-header-left">
+          <div className="ai-chat-logo">
+            <img className="ai-header-logo-img" src="/phoenix-ai.png" alt="SchoolDom AI" />
+          </div>
+          <div>
+            <strong>SchoolDom AI</strong>
+            <span className="ai-chat-subtitle">
+              {usageKnown
+                ? remainingSeconds > 0
+                  ? `${formatAiTimeRemaining(remainingSeconds)} AI time left · resets ${formatAiResetTime(usage.cycle_resets_at)}`
+                  : `No AI time left · resets ${formatAiResetTime(usage.cycle_resets_at)}`
+                : "Your personal assistant"}
+            </span>
+          </div>
+        </div>
+      </header>
       <div className="ai-assistant-scroll" ref={scrollRef}>
         <div className="ai-assistant-stats">
           {loading && !data ? (
@@ -540,10 +557,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       </div>
 
       <p className="ai-assistant-footer">
-        <Sparkles size={12} /> Powered by SchoolDom AI &middot;{" "}
-        {usageKnown && remainingSeconds > 300
-          ? `${formatAiTimeRemaining(remainingSeconds)} AI time left this cycle`
-          : "Always here to help"}
+        <Sparkles size={12} /> Powered by SchoolDom AI &middot; Always here to help
       </p>
 
       {recentStudentsOpen ? (

@@ -3395,9 +3395,12 @@ body[data-theme="dark"] .ai-chat-error {
 
 .ai-assistant-page {
   display: grid;
-  grid-template-rows: 1fr auto auto;
+  grid-template-rows: auto 1fr auto auto;
   height: calc(100vh - 64px);
   max-height: calc(100vh - 64px);
+}
+.ai-assistant-header {
+  flex-shrink: 0;
 }
 
 .ai-assistant-scroll {
