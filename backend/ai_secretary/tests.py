@@ -523,6 +523,52 @@ class PhaseCRealToolsTests(TestCase):
         self.assertEqual(result["yesterday_total"], 5000.0)
         self.assertEqual(result["yesterday_count"], 1)
 
+    def test_create_student_builds_a_real_profile_that_other_tools_can_see(self):
+        """Regression test: create_student used to make a bare User with no
+        StudentProfile at all, so an AI-registered student was silently
+        invisible to get_class_roster/count_students/send_bulk_parent_message
+        (all of which query StudentProfile, not User, for class/guardian
+        data) - this proves the round trip actually works now."""
+        from users.models import StudentProfile
+
+        result = self.tools.dispatch("create_student", {
+            "name": "New Student",
+            "phone": "08011112222",
+            "class_name": "SS2A",
+            "guardian_name": "Mrs Guardian",
+        })
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["guardian_phone"], "+2348011112222")
+
+        profile = StudentProfile.objects.get(user__first_name="New", user__last_name="Student")
+        self.assertEqual(profile.current_class, self.class_obj)
+        self.assertEqual(profile.guardian_name, "Mrs Guardian")
+        self.assertEqual(profile.guardian_relation, "Guardian")
+        self.assertTrue(profile.student_id)
+        self.assertTrue(profile.admission_number)
+
+        roster = self.tools.dispatch("get_class_roster", {"class_name": "SS2A"})
+        self.assertEqual(roster["status"], "success")
+        self.assertIn(profile.user.get_full_name(), [s["name"] for s in roster["roster"]])
+
+        count = self.tools.dispatch("count_students", {"class_name": "SS2A"})
+        self.assertEqual(count["total"], 1)
+
+    def test_create_student_requires_guardian_name(self):
+        result = self.tools.dispatch("create_student", {
+            "name": "No Guardian", "phone": "08011112222", "class_name": "SS2A", "guardian_name": "",
+        })
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_student_unknown_class_reports_not_found(self):
+        result = self.tools.dispatch("create_student", {
+            "name": "Ghost Class Student", "phone": "08011112222", "class_name": "GhostClass", "guardian_name": "Someone",
+        })
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "NOT_FOUND")
+
 
 class SecretaryUsageQuotaTests(TestCase):
     """The /api/secretary/chat/ view must enforce the same AI usage quota

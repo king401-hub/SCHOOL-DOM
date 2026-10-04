@@ -61,16 +61,18 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "create_student",
-            "description": "Register a new student. Need: name, phone, class_name. Email optional.",
+            "description": "Register a new student with their guardian's contact info, so they immediately show up correctly in rosters, fee records, and bulk messages. Need: name, class_name (a real one - call list_classes first if unsure), guardian_name, phone (the guardian's phone). guardian_relation and email are optional.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Student full name"},
-                    "phone": {"type": "string", "description": "Parent phone E.164 e.g. +2348012345678"},
-                    "class_name": {"type": "string", "description": "Class e.g. JSS1, SS2A"},
-                    "email": {"type": "string", "description": "Parent email (optional)"},
+                    "phone": {"type": "string", "description": "Guardian/parent phone E.164 e.g. +2348012345678 - this is what fee reminders and bulk messages go to"},
+                    "class_name": {"type": "string", "description": "Class e.g. JSS1, SS2A - must be a real class name"},
+                    "guardian_name": {"type": "string", "description": "Parent or guardian's full name"},
+                    "guardian_relation": {"type": "string", "description": "Guardian's relation to the student, e.g. Mother, Father, Uncle (optional, defaults to 'Guardian')"},
+                    "email": {"type": "string", "description": "Student's own email (optional - a placeholder is generated if omitted)"},
                 },
-                "required": ["name", "phone", "class_name"],
+                "required": ["name", "phone", "class_name", "guardian_name"],
             },
         },
     },
@@ -431,49 +433,68 @@ class SecretaryTools:
 
     # ── Tool 1: create_student ───────────────────────────────────────────────
 
-    def create_student(self, name: str, phone: str, class_name: str, email: str = "") -> dict:
+    def create_student(
+        self, name: str, phone: str, class_name: str, guardian_name: str,
+        guardian_relation: str = "Guardian", email: str = "",
+    ) -> dict:
+        """Creates both the User AND a StudentProfile - an earlier draft of
+        this tool only created a bare User (role="student") with no profile
+        at all, which silently excluded every AI-registered student from
+        rosters, fee records, and bulk parent messages (StudentProfile is
+        what those actually query - see get_class_roster/get_fee_status/
+        send_bulk_parent_message). Follows the same student_id/admission_number
+        convention the real "Add Student" admin form uses (users/app_views.py)
+        so these students are indistinguishable from ones added there."""
         try:
-            phone = self._normalize_phone(phone)
+            from users.models import StudentProfile, generate_short_student_id
+
+            guardian_name = (guardian_name or "").strip()
+            if not guardian_name:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "A guardian name is required to register a student."}
+
+            guardian_phone = self._normalize_phone(phone)
             name_parts = name.strip().split(" ", 1)
             first_name = name_parts[0]
             last_name = name_parts[1] if len(name_parts) > 1 else ""
 
-            # Resolve class
             class_obj = self._get_class(class_name)
+            if class_obj is None:
+                return {"status": "error", "error_code": "NOT_FOUND", "message": f"Class '{class_name}' not found."}
 
-            # Build a unique username/email for the student account
             base_email = email.strip() if email else f"{first_name.lower()}.{last_name.lower()}.{secrets.token_hex(3)}@student.{self.tenant.schema_name}.schooldom.local"
-
-            # Prevent duplicate by phone+tenant
-            if self.User.objects.filter(phone=phone, tenant=self.tenant, role="student").exists():
-                return {
-                    "status": "error",
-                    "error_code": "DUPLICATE",
-                    "message": f"A student with phone {phone} already exists in this school.",
-                }
 
             user = self.User(
                 email=base_email,
                 first_name=first_name,
                 last_name=last_name,
-                phone=phone,
                 role="student",
                 tenant=self.tenant,
                 is_active=True,
                 is_verified=False,
             )
-            if class_obj:
-                user.current_class = class_obj
             user.set_unusable_password()
             user.save()
+
+            student_code = generate_short_student_id(user.id.hex, self.tenant)
+            admission_number = f"ADM{dj_timezone.now().strftime('%Y%m%d')}{user.id.hex[:4].upper()}"
+            StudentProfile.objects.create(
+                user=user,
+                student_id=student_code,
+                admission_number=admission_number,
+                admission_date=dj_timezone.localdate(),
+                current_class=class_obj,
+                guardian_name=guardian_name,
+                guardian_phone=guardian_phone,
+                guardian_relation=(guardian_relation or "Guardian").strip(),
+            )
 
             return {
                 "status": "success",
                 "student_id": str(user.id),
                 "name": user.get_full_name(),
                 "class": class_name,
-                "phone": phone,
-                "message": "Student registered successfully.",
+                "guardian_phone": guardian_phone,
+                "message": f"{user.get_full_name()} registered successfully in {class_name}.",
             }
         except Exception as exc:
             logger.exception("create_student failed: %s", exc)
