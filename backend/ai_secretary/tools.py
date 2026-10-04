@@ -79,6 +79,22 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "create_teacher",
+            "description": "Register a new teacher. Only name, phone, and email are needed - everything else (qualification, specialization, emergency contact) is filled with a placeholder the admin can complete later from the Staff page, same as the admin \"Add Teacher\" form already does when those fields are left blank.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Teacher full name"},
+                    "phone": {"type": "string", "description": "Teacher's phone E.164 e.g. +2348012345678"},
+                    "email": {"type": "string", "description": "Teacher's email - used to sign in"},
+                },
+                "required": ["name", "phone", "email"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "generate_timetable",
             "description": "Auto-generate a timetable draft for the selected class and term.",
             "parameters": {
@@ -535,6 +551,64 @@ class SecretaryTools:
             }
         except Exception as exc:
             logger.exception("create_student failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def create_teacher(self, name: str, phone: str, email: str) -> dict:
+        """Only name/phone/email are asked for - everything else TeacherProfile
+        requires (qualification, specialization, emergency contact) gets the
+        same "Not specified"/"Not provided" placeholder the real admin "Add
+        Teacher" form already falls back to when those fields are left blank
+        (users/app_views.py) - the admin can fill them in properly later from
+        the Staff page. Not in TOOL_SCHEMAS' create_student mould of requiring
+        full data; this one is deliberately minimal per how it's actually used."""
+        try:
+            from users.models import TeacherProfile, generate_short_teacher_id
+
+            email = (email or "").strip()
+            if not email:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "An email is required to register a teacher."}
+            if self.User.objects.filter(email__iexact=email).exists():
+                return {"status": "error", "error_code": "DUPLICATE", "message": f"A user with email {email} already exists."}
+
+            phone = self._normalize_phone(phone)
+            name_parts = name.strip().split(" ", 1)
+            first_name = name_parts[0]
+            last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+            user = self.User(
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=phone,
+                role="teacher",
+                tenant=self.tenant,
+                is_active=True,
+                is_verified=False,
+            )
+            user.set_unusable_password()
+            user.save()
+
+            employee_id = generate_short_teacher_id(user.id.hex, self.tenant)
+            TeacherProfile.objects.create(
+                user=user,
+                employee_id=employee_id,
+                qualification="Not specified",
+                specialization="Not specified",
+                hire_date=dj_timezone.localdate(),
+                emergency_contact_name="Not provided",
+                emergency_contact_phone="Not provided",
+                emergency_contact_relation="Not provided",
+            )
+
+            return {
+                "status": "success",
+                "teacher_id": str(user.id),
+                "name": user.get_full_name(),
+                "employee_id": employee_id,
+                "message": f"{user.get_full_name()} registered as a teacher (employee ID {employee_id}). Qualification and emergency contact can be filled in later from the Staff page.",
+            }
+        except Exception as exc:
+            logger.exception("create_teacher failed: %s", exc)
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     # ── Tool 2: mark_attendance ──────────────────────────────────────────────
@@ -1007,6 +1081,7 @@ class SecretaryTools:
 
     TOOL_MAP = {
         "create_student": "create_student",
+        "create_teacher": "create_teacher",
         "mark_attendance": "mark_attendance",
         "generate_timetable": "generate_timetable",
         "generate_report_cards": "generate_report_cards",

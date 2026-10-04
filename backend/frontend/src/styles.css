@@ -2650,8 +2650,8 @@ body[data-dashboard-role="student"] .global-notification-button {
   position: absolute;
   right: 0;
   bottom: calc(100% + 0.75rem);
-  width: min(380px, calc(100vw - 2rem));
-  height: min(580px, calc(100vh - 7rem));
+  width: min(420px, calc(100vw - 2rem));
+  height: min(620px, calc(100vh - 7rem));
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 20px;
@@ -2714,8 +2714,8 @@ body[data-dashboard-role="student"] .global-notification-button {
 }
 .ai-chat-subtitle {
   display: block;
-  font-size: 0.7rem;
-  opacity: 0.8;
+  font-size: 0.76rem;
+  opacity: 0.88;
 }
 .ai-chat-header-actions {
   display: flex;
@@ -2943,11 +2943,11 @@ body[data-dashboard-role="student"] .global-notification-button {
 /* Bubble */
 .ai-chat-bubble {
   position: relative;
-  max-width: 82%;
-  padding: 0.58rem 0.8rem;
+  max-width: 88%;
+  padding: 0.7rem 0.9rem;
   border-radius: 14px;
-  font-size: 0.87rem;
-  line-height: 1.5;
+  font-size: 0.95rem;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2965,20 +2965,29 @@ body[data-dashboard-role="student"] .global-notification-button {
 
 /* Lightweight markdown rendering (bold + lists) for AI replies */
 .ai-chat-md-p {
-  margin: 0 0 0.5em;
+  margin: 0 0 0.7em;
 }
 .ai-chat-md-p:last-child {
   margin-bottom: 0;
 }
 .ai-chat-md-list {
-  margin: 0 0 0.5em;
-  padding-left: 1.1em;
+  margin: 0 0 0.7em;
+  padding-left: 1.2em;
 }
 .ai-chat-md-list:last-child {
   margin-bottom: 0;
 }
 .ai-chat-md-list li {
-  margin: 0.15em 0;
+  margin: 0.25em 0;
+}
+/* The AI uses **bold** as pseudo-headers (e.g. "💰 **Collections**") - give
+   them a color break from body text so they read as scan anchors instead
+   of blending into a wall of text. */
+.ai-chat-message-assistant .ai-chat-bubble strong {
+  color: #047857;
+}
+body[data-theme="dark"] .ai-chat-message-assistant .ai-chat-bubble strong {
+  color: #6ee7b7;
 }
 
 /* Typing animation */

@@ -572,6 +572,31 @@ class PhaseCRealToolsTests(TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error_code"], "NOT_FOUND")
 
+    def test_create_teacher_needs_only_name_phone_email(self):
+        from users.models import TeacherProfile
+
+        result = self.tools.dispatch("create_teacher", {
+            "name": "New Teacher", "phone": "08033334444", "email": "new.teacher@ssa.test",
+        })
+
+        self.assertEqual(result["status"], "success")
+        self.assertTrue(result["employee_id"])
+        profile = TeacherProfile.objects.get(user__email="new.teacher@ssa.test")
+        self.assertEqual(profile.user.role, "teacher")
+        self.assertEqual(profile.qualification, "Not specified")
+        self.assertEqual(profile.emergency_contact_name, "Not provided")
+
+    def test_create_teacher_requires_email(self):
+        result = self.tools.dispatch("create_teacher", {"name": "No Email", "phone": "08033334444", "email": ""})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_teacher_rejects_duplicate_email(self):
+        self.tools.dispatch("create_teacher", {"name": "First", "phone": "08033334444", "email": "dupe@ssa.test"})
+        result = self.tools.dispatch("create_teacher", {"name": "Second", "phone": "08055556666", "email": "dupe@ssa.test"})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "DUPLICATE")
+
     def test_create_class_creates_a_real_class(self):
         result = self.tools.dispatch("create_class", {"name": "JSS1", "section": "B"})
 
