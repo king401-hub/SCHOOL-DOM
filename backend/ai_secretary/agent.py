@@ -191,22 +191,25 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
         return result
 
     if "cbt" in lowered or "computer-based" in lowered or "computer based" in lowered:
-        subject = ""
         subject_match = re.search(r"for\s+([A-Za-z ]+?)(?:\s+with|\s+for|$)", lowered)
+        # Only fast-path when a subject was actually extracted - guessing
+        # "General" (almost never a real Subject) used to silently create a
+        # fabricated exam shell; now it would just 404. Let the full agent
+        # loop ask for the subject naturally instead when none was given.
         if subject_match:
             subject = subject_match.group(1).strip().title()
-        result = {
-            "tool": "create_cbt_exam",
-            "params": {
-                "subject": subject or "General",
-                "class_name": class_name or "SS2",
-                "question_count": question_count or 50,
-                "time_limit_minutes": 60,
-            },
-            "confidence": 0.94,
-        }
-        cache.set(cache_key, result, timeout=300)
-        return result
+            result = {
+                "tool": "create_cbt_exam",
+                "params": {
+                    "subject": subject,
+                    "class_name": class_name or "SS2",
+                    "question_count": question_count or 50,
+                    "time_limit_minutes": 60,
+                },
+                "confidence": 0.94,
+            }
+            cache.set(cache_key, result, timeout=300)
+            return result
 
     if "take me to" in lowered or "open" in lowered or "navigate" in lowered or "page" in lowered:
         page, _route = resolve_navigation_page(message)

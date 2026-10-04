@@ -104,14 +104,17 @@ class PhaseOneAdminAgentTests(TestCase):
         # generate_timetable/generate_report_cards now touch real Class/term
         # data and are covered with proper fixtures in PhaseCRealToolsTests
         # below - this class has no seeded Class, so only the tools that
-        # don't require one are exercised here.
+        # don't require one are exercised here. create_cbt_exam WITH real
+        # question-bank fixtures is also covered there now - here it's just
+        # proving an unresolvable subject reports NOT_FOUND instead of
+        # fabricating a "50 questions" success like an earlier draft did.
         fees = self.tools.dispatch("get_fee_status", {})
         self.assertEqual(fees["status"], "success")
         self.assertIn("school", fees["summary"].lower())
 
         cbt = self.tools.dispatch("create_cbt_exam", {"subject": "Biology", "class_name": "SS2", "question_count": 50, "time_limit_minutes": 60})
-        self.assertEqual(cbt["status"], "success")
-        self.assertEqual(cbt["question_count"], 50)
+        self.assertEqual(cbt["status"], "error")
+        self.assertEqual(cbt["error_code"], "NOT_FOUND")
 
         nav = self.tools.dispatch("navigate_to_page", {"page": "fee management"})
         self.assertEqual(nav["status"], "success")
@@ -568,6 +571,71 @@ class PhaseCRealToolsTests(TestCase):
         })
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["error_code"], "NOT_FOUND")
+
+    def test_create_class_creates_a_real_class(self):
+        result = self.tools.dispatch("create_class", {"name": "JSS1", "section": "B"})
+
+        self.assertEqual(result["status"], "success")
+        self.assertTrue(Class.objects.filter(tenant=self.legacy_tenant, name__iexact="JSS1", section__iexact="B").exists())
+
+    def test_create_class_rejects_duplicate(self):
+        result = self.tools.dispatch("create_class", {"name": "SS2A"})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "DUPLICATE")
+
+    def test_create_class_requires_name(self):
+        result = self.tools.dispatch("create_class", {"name": ""})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "BAD_ARGS")
+
+    def test_create_cbt_exam_pulls_real_questions_from_the_bank(self):
+        """Regression test: create_cbt_exam used to create an empty exam
+        shell and just claim "{question_count} questions" in its message
+        regardless of whether any existed - same shape of bug create_student
+        had for StudentProfile."""
+        from exams.models import Exam, Question, QuestionBank
+
+        bank = QuestionBank.objects.create(tenant=self.legacy_tenant, name="Math Bank", subject=self.subject, teacher=self.admin)
+        bank.questions.set([
+            Question.objects.create(tenant=self.legacy_tenant, question_type="mcq", text=f"Q{i}", options=["A", "B", "C"], correct_answer="A")
+            for i in range(3)
+        ])
+
+        result = self.tools.dispatch("create_cbt_exam", {
+            "subject": "Mathematics", "class_name": "SS2A", "question_count": 2, "time_limit_minutes": 30,
+        })
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["question_count"], 2)
+        exam = Exam.objects.get(id=result["exam_id"])
+        self.assertEqual(exam.questions.count(), 2)
+        self.assertEqual(exam.subject, self.subject)
+        self.assertEqual(exam.exam_format, "objective")
+
+    def test_create_cbt_exam_uses_fewer_questions_when_bank_is_short(self):
+        from exams.models import Question, QuestionBank
+
+        bank = QuestionBank.objects.create(tenant=self.legacy_tenant, name="Math Bank", subject=self.subject, teacher=self.admin)
+        bank.questions.set([
+            Question.objects.create(tenant=self.legacy_tenant, question_type="mcq", text="Only one", options=["A", "B"], correct_answer="A"),
+        ])
+
+        result = self.tools.dispatch("create_cbt_exam", {"subject": "Mathematics", "class_name": "SS2A", "question_count": 10})
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["question_count"], 1)
+        self.assertEqual(result["requested_question_count"], 10)
+        self.assertIn("Only 1 question", result["message"])
+
+    def test_create_cbt_exam_unknown_subject_reports_not_found(self):
+        result = self.tools.dispatch("create_cbt_exam", {"subject": "Astrophysics", "class_name": "SS2A"})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "NOT_FOUND")
+
+    def test_create_cbt_exam_with_empty_bank_reports_clearly_instead_of_fabricating(self):
+        result = self.tools.dispatch("create_cbt_exam", {"subject": "Mathematics", "class_name": "SS2A"})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_code"], "NO_QUESTIONS")
 
 
 class SecretaryUsageQuotaTests(TestCase):

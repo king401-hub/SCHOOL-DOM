@@ -124,16 +124,31 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "create_cbt_exam",
-            "description": "Create a CBT exam with a subject, class, question count, and time limit.",
+            "description": "Create a CBT exam by pulling real questions from the question bank for that subject - a real, existing Subject name (call list_classes-style lookups or ask the admin if unsure). Fails with NOT_FOUND if the subject doesn't exist, or NO_QUESTIONS if the bank has nothing for it yet - never fabricates questions.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "subject": {"type": "string", "description": "Subject name"},
+                    "subject": {"type": "string", "description": "A real subject name that already exists, e.g. Mathematics, Biology"},
                     "class_name": {"type": "string", "description": "Class target like SS2 or JSS3"},
-                    "question_count": {"type": "integer", "description": "Number of questions"},
+                    "question_count": {"type": "integer", "description": "Number of questions wanted - fewer may be used if the bank has less than this available"},
                     "time_limit_minutes": {"type": "integer", "description": "Exam duration in minutes"},
                 },
                 "required": ["subject", "class_name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_class",
+            "description": "Create a new class in the school, e.g. SS2A or JSS1B.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Class name, e.g. SS2, JSS1, Grade 9"},
+                    "section": {"type": "string", "description": "Optional arm/section, e.g. A, B (omit if the school doesn't use arms)"},
+                },
+                "required": ["name"],
             },
         },
     },
@@ -344,6 +359,7 @@ class SecretaryTools:
         self._Class = None
         self._Exam = None
         self._StudentAttendance = None
+        self._Subject = None
 
     # ── Model accessors ──────────────────────────────────────────────────────
 
@@ -375,6 +391,13 @@ class SecretaryTools:
             self._StudentAttendance = StudentAttendance
         return self._StudentAttendance
 
+    @property
+    def Subject(self):
+        if self._Subject is None:
+            from academic.models import Subject
+            self._Subject = Subject
+        return self._Subject
+
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def _normalize_phone(self, phone: str) -> str:
@@ -404,6 +427,20 @@ class SecretaryTools:
             return self.Class.objects.filter(
                 tenant=legacy_tenant,
                 name__iexact=class_name.strip(),
+            ).first()
+        except Exception:
+            return None
+
+    def _get_subject(self, subject_name: str):
+        """Same legacy-tenant bridge _get_class uses - academic.Subject is
+        also keyed to tenants.Tenant, not core.SchoolTenant."""
+        try:
+            legacy_tenant = self._get_legacy_tenant()
+            if legacy_tenant is None:
+                return None
+            return self.Subject.objects.filter(
+                tenant=legacy_tenant,
+                name__iexact=subject_name.strip(),
             ).first()
         except Exception:
             return None
@@ -680,8 +717,17 @@ class SecretaryTools:
         question_count: int = 50,
         time_limit_minutes: int = 60,
     ) -> dict:
+        """Pulls real questions from the question bank (exams.QuestionBank/
+        Question) and attaches them to the exam - an earlier draft created
+        an empty exam shell and just claimed "{question_count} questions" in
+        its message regardless of whether any existed, same shape of bug
+        create_student had for StudentProfile."""
         try:
-            subject_name = (subject or "General").strip()
+            from django.db.models import Q
+
+            from exams.models import Question, QuestionBank
+
+            subject_name = (subject or "").strip()
             class_label = (class_name or "SS2").strip()
             if not subject_name:
                 return {"status": "error", "error_code": "BAD_ARGS", "message": "A subject is required to create a CBT exam."}
@@ -689,26 +735,64 @@ class SecretaryTools:
                 return {"status": "error", "error_code": "BAD_ARGS", "message": "Question count must be greater than zero."}
 
             legacy_tenant = self._get_legacy_tenant()
+            subject_obj = self._get_subject(subject_name)
+            if subject_obj is None:
+                return {
+                    "status": "error", "error_code": "NOT_FOUND",
+                    "message": f"Subject '{subject_name}' not found. Add it first, or check the spelling.",
+                }
+
+            banks = QuestionBank.objects.filter(subject=subject_obj).filter(
+                Q(tenant=legacy_tenant) | Q(is_shared=True) | ~Q(board="")
+            )
+            pool = Question.objects.filter(question_banks__in=banks).distinct()
+            available = pool.count()
+            if available == 0:
+                return {
+                    "status": "error", "error_code": "NO_QUESTIONS",
+                    "message": f"No questions found for {subject_name} in the question bank. Add some to a question bank first, then try again.",
+                }
+
+            selected_count = min(question_count, available)
+            selected = list(pool.order_by("?")[:selected_count])
+            objective_types = set(Question.OBJECTIVE_TYPES)
+            theory_types = set(Question.THEORY_TYPES)
+            picked_types = {q.question_type for q in selected}
+            if picked_types <= objective_types:
+                exam_format = "objective"
+            elif picked_types <= theory_types:
+                exam_format = "theory"
+            else:
+                exam_format = "mixed"
+
             now = dj_timezone.now()
             active_term, active_academic_year = self._active_term_and_year()
             exam = self.Exam.objects.create(
                 tenant=legacy_tenant,
                 title=f"{subject_name} CBT - {class_label}",
+                subject=subject_obj,
                 class_group=self._get_class(class_label),
                 start_date=now,
                 end_date=now + timedelta(minutes=time_limit_minutes or 60),
                 duration_minutes=time_limit_minutes or 60,
+                exam_format=exam_format,
                 is_published=False,
                 term=active_term,
                 academic_year=active_academic_year,
             )
+            exam.questions.set(selected)
+
+            shortfall_note = (
+                f" Only {available} question(s) were available, so all of them were used." if selected_count < question_count else ""
+            )
             return {
                 "status": "success",
-                "message": f"CBT exam created for {subject_name} in {class_label} with {question_count} questions.",
+                "message": f"CBT exam created for {subject_name} in {class_label} with {selected_count} question(s) from the question bank.{shortfall_note}",
                 "exam_id": str(exam.id),
                 "subject": subject_name,
                 "class_name": class_label,
-                "question_count": question_count,
+                "question_count": selected_count,
+                "requested_question_count": question_count,
                 "time_limit_minutes": time_limit_minutes or 60,
                 "route": "/exams",
             }
@@ -938,6 +1022,7 @@ class SecretaryTools:
         "count_students": "count_students",
         "count_classes": "count_classes",
         "list_classes": "list_classes",
+        "create_class": "create_class",
         "get_student_details": "get_student_details",
         "get_class_roster": "get_class_roster",
         "get_student_fee_balance": "get_student_fee_balance",
@@ -1063,6 +1148,37 @@ class SecretaryTools:
             }
         except Exception as exc:
             logger.exception("count_classes failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def create_class(self, name: str, section: str = "") -> dict:
+        try:
+            from django.db.models import Q
+
+            legacy_tenant = self._get_legacy_tenant()
+            if legacy_tenant is None:
+                return {"status": "error", "error_code": "NO_TENANT", "message": "Could not resolve this school's academic records."}
+
+            name = (name or "").strip()
+            if not name:
+                return {"status": "error", "error_code": "BAD_ARGS", "message": "A class name is required."}
+            section = (section or "").strip()
+
+            existing_qs = self.Class.objects.filter(tenant=legacy_tenant, name__iexact=name)
+            existing_qs = existing_qs.filter(section__iexact=section) if section else existing_qs.filter(Q(section__isnull=True) | Q(section=""))
+            label = f"{name} {section}".strip() if section else name
+            if existing_qs.exists():
+                return {"status": "error", "error_code": "DUPLICATE", "message": f"A class named '{label}' already exists."}
+
+            self.Class.objects.create(tenant=legacy_tenant, name=name, section=section)
+            return {
+                "status": "success",
+                "class_name": name,
+                "section": section,
+                "message": f"Class '{label}' created.",
+                "route": "/classes",
+            }
+        except Exception as exc:
+            logger.exception("create_class failed: %s", exc)
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
     def list_classes(self) -> dict:
