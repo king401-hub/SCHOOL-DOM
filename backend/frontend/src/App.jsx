@@ -6843,7 +6843,25 @@ function AdminShell({ session, currentPath, onNavigate, onSignOut, themePreferen
         if (isSuperseded()) {
           return;
         }
-        setScreenData((prev) => ({ ...prev, [path]: data }));
+        setScreenData((prev) => {
+          // query is only set for an EXPLICIT filter/search change (see
+          // buildStudentsQuery) - any other /students load here is an
+          // implicit refresh (background poll, or the data-mutation
+          // listener's "refresh every loaded screen" sweep, which fires on
+          // literally any unrelated POST/PUT/PATCH/DELETE finishing
+          // anywhere in the app). Those can race a "View more" append that
+          // reads a larger `loaded` count than this fetch's own stale
+          // snapshot did, returning fewer students - never let an implicit
+          // refresh shrink a list the admin already expanded.
+          if (path === "/students" && !query) {
+            const existingCount = prev[path]?.students?.length || 0;
+            const incomingCount = data?.students?.length || 0;
+            if (incomingCount < existingCount) {
+              return { ...prev, [path]: { ...data, students: prev[path].students } };
+            }
+          }
+          return { ...prev, [path]: data };
+        });
       } catch (requestError) {
         if (!isSuperseded()) {
           setScreenError((prev) => ({ ...prev, [path]: requestError.message || "Could not load data." }));
