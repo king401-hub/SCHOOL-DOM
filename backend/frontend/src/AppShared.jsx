@@ -548,6 +548,81 @@ export function formatDate(value) {
   }
 }
 
+// ── SchoolDom AI shared helpers (used by both AiChatWidget's floating panel
+// and AiAssistantScreen's full-page dashboard surface, which deliberately
+// don't share a component tree - these keep their text formatting and
+// markdown rendering identical without duplicating/diverging logic). ───────
+
+export function getAiTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+export function formatAiTimeRemaining(seconds) {
+  if (seconds >= 60) return `${Math.ceil(seconds / 60)} min`;
+  return `${Math.max(0, seconds)} sec`;
+}
+
+export function formatAiResetTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function renderAiInline(str, keyPrefix) {
+  return str.split(/(\*\*[^*]+?\*\*)/g).map((part, idx) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4
+      ? <strong key={`${keyPrefix}-${idx}`}>{part.slice(2, -2)}</strong>
+      : part
+  );
+}
+
+// Lightweight markdown rendering (bold + bullet lists only - AI replies use
+// **bold** and "- item" lists per the system prompts, nothing fancier).
+export function renderAiMarkdownLite(text) {
+  if (!text) return null;
+  const blocks = [];
+  let currentList = null;
+  const flushList = () => {
+    if (currentList) {
+      blocks.push({ type: "ul", items: currentList });
+      currentList = null;
+    }
+  };
+
+  for (const rawLine of text.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      flushList();
+      continue;
+    }
+    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (bulletMatch) {
+      (currentList || (currentList = [])).push(bulletMatch[1]);
+      continue;
+    }
+    flushList();
+    blocks.push({ type: "p", text: trimmed });
+  }
+  flushList();
+
+  return blocks.map((block, i) =>
+    block.type === "ul" ? (
+      <ul key={i} className="ai-chat-md-list">
+        {block.items.map((item, j) => (
+          <li key={j}>{renderAiInline(item, `${i}-${j}`)}</li>
+        ))}
+      </ul>
+    ) : (
+      <p key={i} className="ai-chat-md-p">{renderAiInline(block.text, `${i}`)}</p>
+    )
+  );
+}
+
 function isoToDdMmYyyy(iso) {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
   return match ? `${match[3]}/${match[2]}/${match[1]}` : "";

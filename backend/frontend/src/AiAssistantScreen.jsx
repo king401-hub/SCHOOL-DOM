@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowUp, BarChart2, CalendarCheck, ChevronRight, DollarSign, FileCheck, Mic, Paperclip, RotateCcw, School, Sparkles, MessageSquare } from "lucide-react";
 import { API_BASE_URL } from "./appConstants";
-import { DashboardIcon, formatDate, MetricCard, refreshAccessToken } from "./AppShared";
+import {
+  DashboardIcon,
+  formatAiResetTime,
+  formatAiTimeRemaining,
+  formatDate,
+  getAiTimeGreeting,
+  MetricCard,
+  refreshAccessToken,
+  renderAiMarkdownLite,
+} from "./AppShared";
 
 const MAX_HISTORY_TURNS = 20;
+const BRIEFING_SHOWN_KEY = "schooldom_briefing_shown";
 
 // The conversation on this page survives leaving and coming back to the
 // dashboard (it used to reset to nothing every time), scoped per admin so
@@ -77,6 +87,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
   const [busySeconds, setBusySeconds] = useState(0);
   const [error, setError] = useState(null);
   const [aiOffline, setAiOffline] = useState(false);
+  const [usage, setUsage] = useState(null); // backend-reported AI usage quota - never computed client-side
   const [recentStudentsOpen, setRecentStudentsOpen] = useState(false);
   const [recentStudentWindow, setRecentStudentWindow] = useState("7d");
   const scrollRef = useRef(null);
@@ -91,21 +102,67 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
   // A quiet, best-effort check - if the assistant's language model is down,
   // say so up front instead of only finding out once a typed message fails.
   // A network hiccup on this call stays silent rather than falsely claiming
-  // the assistant is offline.
+  // the assistant is offline. Also carries the AI usage quota, polled again
+  // after every turn so the displayed balance stays current.
+  async function refreshUsage() {
+    try {
+      const headers = {};
+      if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+      const res = await fetch(`${API_BASE_URL}/api/secretary/status/`, { headers });
+      if (!res.ok) return;
+      const result = await res.json();
+      setAiOffline(result.online === false);
+      if (result?.usage) setUsage(result.usage);
+    } catch {
+      // Silent - stale data just stays displayed until the next successful poll.
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false;
-    const headers = {};
-    if (session?.access) headers.Authorization = `Bearer ${session.access}`;
-    fetch(`${API_BASE_URL}/api/secretary/status/`, { headers })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((result) => {
-        if (!cancelled && result) setAiOffline(result.online === false);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    refreshUsage();
+    maybeShowBriefing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access]);
+
+  // ── Admin login briefing (deterministic, zero AI cost) - shown once per
+  // browser session the first time this page (or the floating widget) loads
+  // with no conversation yet; shares BRIEFING_SHOWN_KEY with AiChatWidget so
+  // it only ever appears once, on whichever surface the admin opens first. ──
+
+  async function maybeShowBriefing() {
+    if (messages.length > 0) return;
+    try {
+      if (sessionStorage.getItem(BRIEFING_SHOWN_KEY) === "1") return;
+    } catch {}
+    try {
+      const headers = {};
+      if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+      const res = await fetch(`${API_BASE_URL}/api/secretary/briefing/`, { headers });
+      if (!res.ok) return;
+      const briefing = await res.json();
+
+      const sections = [];
+      sections.push(
+        briefing.yesterday_count > 0
+          ? `💰 **Yesterday's collections**\n- ₦${briefing.yesterday_total.toLocaleString()} collected across ${briefing.yesterday_count} payment${briefing.yesterday_count !== 1 ? "s" : ""}`
+          : "💰 **Yesterday's collections**\n- No payments received yesterday"
+      );
+      sections.push(
+        briefing.defaulters.length > 0
+          ? `⚠️ **Fee defaulters** (top ${briefing.defaulters.length})\n${briefing.defaulters.map((d) => `- ${d.name} — ₦${d.outstanding.toLocaleString()}`).join("\n")}\n- Total outstanding: ₦${briefing.total_outstanding.toLocaleString()}`
+          : "✅ **Fee defaulters**\n- No outstanding fees right now"
+      );
+      const greetingName = session?.user?.first_name ? `, ${session.user.first_name}` : "";
+      const content = `${getAiTimeGreeting()}${greetingName}! Here's your briefing:\n\n${sections.join("\n\n")}\n\nWant me to send a fee reminder, or dig into a specific class?`;
+
+      const briefingMsg = { id: makeId(), role: "assistant", content };
+      setMessages([briefingMsg]);
+      saveMessages(storageKey, [briefingMsg]);
+      try { sessionStorage.setItem(BRIEFING_SHOWN_KEY, "1"); } catch {}
+    } catch {
+      // Silent - the normal hero screen is a fine fallback if this fails.
+    }
+  }
 
   function startNewChat() {
     setMessages([]);
@@ -179,6 +236,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        if (data?.usage) setUsage(data.usage);
         throw new Error(data?.detail || "SchoolDom AI could not respond.");
       }
 
@@ -187,8 +245,8 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
         id: makeId(),
         role: "assistant",
         content: data.reply || "Done ✅",
-        tools: data.tools_called || [],
         route: data.route || null,
+        confirmAction: data.confirm_action || null,
       };
 
       if (assistantMsg.route && typeof window !== "undefined") {
@@ -240,6 +298,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       setBusySeconds(0);
       clearInterval(busyTimerRef.current);
       abortRef.current = null;
+      refreshUsage();
     }
   }
 
@@ -264,6 +323,8 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
   }
 
   const hasMessages = messages.length > 0;
+  const remainingSeconds = usage?.remaining_seconds;
+  const usageKnown = typeof remainingSeconds === "number";
 
   return (
     <section className="ai-assistant-page">
@@ -346,7 +407,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
               <img src="/phoenix-ai.png" alt="SchoolDom AI" />
             </div>
             <h1>
-              Hello, {firstName}. I&rsquo;m your <span className="ai-assistant-brand-text">SchoolDom AI</span>
+              {getAiTimeGreeting()}, {firstName}. I&rsquo;m your <span className="ai-assistant-brand-text">SchoolDom AI</span>
             </h1>
             <p>
               Ask me anything about your school, students, classes, reports, or get help with tasks.
@@ -388,17 +449,30 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
                   <div className="ai-assistant-bubble">
                     {msg.thinking ? (
                       <span className="ai-typing"><span /><span /><span /></span>
+                    ) : msg.role === "assistant" ? (
+                      renderAiMarkdownLite(msg.content)
                     ) : (
                       <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
                     )}
-                    {msg.tools?.length > 0 && (
-                      <div className="sec-tools-badge">
-                        {msg.tools.map((t) => (
-                          <span key={t} className="sec-tool-chip">{t.replace(/_/g, " ")}</span>
-                        ))}
-                      </div>
-                    )}
                   </div>
+                  {msg.confirmAction && i === messages.length - 1 && !busy && (
+                    <div className="sec-confirm-actions">
+                      <button
+                        type="button"
+                        className="sec-confirm-accept"
+                        onClick={() => handleSend(msg.confirmAction.accept_message)}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        className="sec-confirm-decline"
+                        onClick={() => handleSend(msg.confirmAction.decline_message)}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
                   {msg.thinking && (
                     <span className="sec-thinking-label">
                       {busySeconds < 5
@@ -420,6 +494,13 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       </div>
 
       <div className="ai-assistant-input-area">
+        {usageKnown && remainingSeconds <= 300 && (
+          <div className="ai-chat-limit-warn">
+            {remainingSeconds > 0
+              ? `${formatAiTimeRemaining(remainingSeconds)} of AI time left this cycle`
+              : `No AI time left${usage?.cycle_resets_at ? ` — resets at ${formatAiResetTime(usage.cycle_resets_at)}` : ""}`}
+          </div>
+        )}
         <div className="ai-assistant-input-row">
           <Sparkles size={16} className="ai-assistant-input-icon" />
           <textarea
@@ -429,7 +510,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
             onKeyDown={handleKeyDown}
             placeholder="Ask anything…"
             rows={1}
-            disabled={busy}
+            disabled={busy || (usageKnown && remainingSeconds <= 0)}
           />
           <button type="button" className="ai-assistant-input-btn" title="Attachments coming soon" disabled>
             <Paperclip size={16} />
@@ -448,7 +529,7 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
               type="button"
               className="ai-assistant-send"
               onClick={() => handleSend()}
-              disabled={!input.trim()}
+              disabled={!input.trim() || (usageKnown && remainingSeconds <= 0)}
               title="Send"
               aria-label="Send"
             >
@@ -459,7 +540,10 @@ export default function AiAssistantScreen({ session, data, loading, error: dashb
       </div>
 
       <p className="ai-assistant-footer">
-        <Sparkles size={12} /> Powered by SchoolDom AI &middot; Always here to help
+        <Sparkles size={12} /> Powered by SchoolDom AI &middot;{" "}
+        {usageKnown && remainingSeconds > 300
+          ? `${formatAiTimeRemaining(remainingSeconds)} AI time left this cycle`
+          : "Always here to help"}
       </p>
 
       {recentStudentsOpen ? (

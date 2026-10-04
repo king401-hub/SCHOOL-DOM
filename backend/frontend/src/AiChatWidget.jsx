@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { API_BASE_URL } from "./appConstants";
-import { refreshAccessToken } from "./AppShared";
+import {
+  formatAiResetTime as formatResetTime,
+  formatAiTimeRemaining as formatRemaining,
+  getAiTimeGreeting as getTimeGreeting,
+  refreshAccessToken,
+  renderAiMarkdownLite as renderMarkdownLite,
+} from "./AppShared";
 
 const AI_NAME = "SchoolDom AI";
 const HISTORY_KEY = "phoenix_ai_history";
@@ -45,26 +51,6 @@ const ADMIN_QUICK_PROMPTS = [
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
 
-function formatRemaining(seconds) {
-  if (seconds >= 60) return `${Math.ceil(seconds / 60)} min`;
-  return `${Math.max(0, seconds)} sec`;
-}
-
-function formatResetTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
-}
-
-function getTimeGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
-
 function loadHistory() {
   try {
     return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
@@ -91,57 +77,6 @@ function persistTasks(tasks) {
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-// ── Lightweight markdown rendering (bold + bullet lists only - AI replies ──────
-// use **bold** and "- item" lists per the system prompts, nothing fancier) ─────
-
-function renderInline(str, keyPrefix) {
-  return str.split(/(\*\*[^*]+?\*\*)/g).map((part, idx) =>
-    part.startsWith("**") && part.endsWith("**") && part.length > 4
-      ? <strong key={`${keyPrefix}-${idx}`}>{part.slice(2, -2)}</strong>
-      : part
-  );
-}
-
-function renderMarkdownLite(text) {
-  if (!text) return null;
-  const blocks = [];
-  let currentList = null;
-  const flushList = () => {
-    if (currentList) {
-      blocks.push({ type: "ul", items: currentList });
-      currentList = null;
-    }
-  };
-
-  for (const rawLine of text.split("\n")) {
-    const trimmed = rawLine.trim();
-    if (!trimmed) {
-      flushList();
-      continue;
-    }
-    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/);
-    if (bulletMatch) {
-      (currentList || (currentList = [])).push(bulletMatch[1]);
-      continue;
-    }
-    flushList();
-    blocks.push({ type: "p", text: trimmed });
-  }
-  flushList();
-
-  return blocks.map((block, i) =>
-    block.type === "ul" ? (
-      <ul key={i} className="ai-chat-md-list">
-        {block.items.map((item, j) => (
-          <li key={j}>{renderInline(item, `${i}-${j}`)}</li>
-        ))}
-      </ul>
-    ) : (
-      <p key={i} className="ai-chat-md-p">{renderInline(block.text, `${i}`)}</p>
-    )
-  );
 }
 
 // ── Streaming helper ──────────────────────────────────────────────────────────
