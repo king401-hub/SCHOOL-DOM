@@ -5,6 +5,7 @@ import { refreshAccessToken } from "./AppShared";
 const AI_NAME = "SchoolDom AI";
 const HISTORY_KEY = "phoenix_ai_history";
 const TASKS_KEY = "phoenix_ai_tasks";
+const BRIEFING_SHOWN_KEY = "schooldom_briefing_shown";
 const MAX_SAVED_CONVOS = 50;
 const MAX_HISTORY_TURNS = 20;
 
@@ -55,6 +56,13 @@ function formatResetTime(iso) {
   } catch {
     return "";
   }
+}
+
+function getTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 }
 
 function loadHistory() {
@@ -216,7 +224,45 @@ export default function AiChatWidget({ session }) {
     if (!open) return;
     if (mode === "chat") window.requestAnimationFrame(() => textareaRef.current?.focus());
     if (mode === "tasks") window.requestAnimationFrame(() => taskInputRef.current?.focus());
+    maybeShowBriefing();
   }, [open, mode]);
+
+  // ── Admin login briefing (deterministic, zero AI cost - see
+  // ai_secretary.tools.get_daily_briefing) - shown once per browser session
+  // the first time an admin opens the panel with no conversation yet. ───────
+
+  async function maybeShowBriefing() {
+    if (!isAdmin || messages.length > 0) return;
+    try {
+      if (sessionStorage.getItem(BRIEFING_SHOWN_KEY) === "1") return;
+    } catch {}
+    try {
+      const headers = {};
+      if (session?.access) headers.Authorization = `Bearer ${session.access}`;
+      const res = await fetch(`${API_BASE_URL}/api/secretary/briefing/`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const sections = [];
+      sections.push(
+        data.yesterday_count > 0
+          ? `💰 **Yesterday's collections**\n- ₦${data.yesterday_total.toLocaleString()} collected across ${data.yesterday_count} payment${data.yesterday_count !== 1 ? "s" : ""}`
+          : "💰 **Yesterday's collections**\n- No payments received yesterday"
+      );
+      sections.push(
+        data.defaulters.length > 0
+          ? `⚠️ **Fee defaulters** (top ${data.defaulters.length})\n${data.defaulters.map((d) => `- ${d.name} — ₦${d.outstanding.toLocaleString()}`).join("\n")}\n- Total outstanding: ₦${data.total_outstanding.toLocaleString()}`
+          : "✅ **Fee defaulters**\n- No outstanding fees right now"
+      );
+      const greetingName = session?.user?.first_name ? `, ${session.user.first_name}` : "";
+      const content = `${getTimeGreeting()}${greetingName}! Here's your briefing:\n\n${sections.join("\n\n")}\n\nWant me to send a fee reminder, or dig into a specific class?`;
+
+      setMessages([{ id: makeId(), role: "assistant", content }]);
+      try { sessionStorage.setItem(BRIEFING_SHOWN_KEY, "1"); } catch {}
+    } catch {
+      // Silent - the normal welcome screen is a fine fallback if this fails.
+    }
+  }
 
   function handleInputChange(e) {
     setInput(e.target.value);
@@ -355,6 +401,7 @@ export default function AiChatWidget({ session }) {
         role: "assistant",
         content: data.reply || "Done ✅",
         route: data.route || null,
+        confirmAction: data.confirm_action || null,
       };
 
       if (assistantMsg.route && typeof window !== "undefined") {
@@ -775,7 +822,7 @@ export default function AiChatWidget({ session }) {
                 {messages.length === 0 && (
                   <div className="ai-chat-welcome">
                     <div className="ai-chat-welcome-icon">AI</div>
-                    <h3>Hello! How can I help you?</h3>
+                    <h3>{getTimeGreeting()}{session?.user?.first_name ? `, ${session.user.first_name}` : ""}! How can I help you?</h3>
                     <p>
                       {isAdmin
                         ? "Ask me anything, or ask me to do something — add a student, mark attendance, send a reminder."
@@ -821,6 +868,24 @@ export default function AiChatWidget({ session }) {
                           </button>
                         )}
                       </div>
+                      {msg.confirmAction && i === messages.length - 1 && !busy && (
+                        <div className="sec-confirm-actions">
+                          <button
+                            type="button"
+                            className="sec-confirm-accept"
+                            onClick={() => handleSend(msg.confirmAction.accept_message)}
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            className="sec-confirm-decline"
+                            onClick={() => handleSend(msg.confirmAction.decline_message)}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
                       {msg.thinking && (
                         <span className="sec-thinking-label">
                           {busySeconds < 5

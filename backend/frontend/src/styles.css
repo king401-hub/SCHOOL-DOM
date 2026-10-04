@@ -3976,6 +3976,44 @@ body[data-theme="dark"] .accent-picker-hint {
   white-space: nowrap;
 }
 
+.sec-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  margin-left: 0.25rem;
+}
+.sec-confirm-accept,
+.sec-confirm-decline {
+  border-radius: 8px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.sec-confirm-accept {
+  background: #059669;
+  color: #fff;
+}
+.sec-confirm-accept:hover {
+  background: #047857;
+}
+.sec-confirm-decline {
+  background: transparent;
+  color: #64748b;
+  border-color: #cbd5e1;
+}
+.sec-confirm-decline:hover {
+  background: #f1f5f9;
+}
+body[data-theme="dark"] .sec-confirm-decline {
+  color: #94a3b8;
+  border-color: #334155;
+}
+body[data-theme="dark"] .sec-confirm-decline:hover {
+  background: #1e293b;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 .inline-icon {

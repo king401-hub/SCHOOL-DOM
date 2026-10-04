@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from ai_chat.services.usage import usage_snapshot
 
 from .agent import run_agent
+from .tools import SecretaryTools
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,8 @@ def secretary_chat(request):
     }
     if result.get("route"):
         response["route"] = result["route"]
+    if result.get("confirm_action"):
+        response["confirm_action"] = result["confirm_action"]
     return JsonResponse(response)
 
 
@@ -102,3 +105,26 @@ def secretary_status(request):
     return JsonResponse({
         "online": online, "has_access": has_access, "role": role, "usage": usage_snapshot(request.user),
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def secretary_briefing(request):
+    """GET /api/secretary/briefing/ - deterministic, zero-AI-cost daily
+    briefing (fee defaulters, yesterday's payments) for the admin dashboard.
+    No AI provider is called here - pure DB queries, safe to fetch on every
+    login without touching anyone's AI usage quota."""
+    user = request.user
+    role = getattr(user, "role", "")
+    if role not in ADMIN_ROLES:
+        return JsonResponse({"detail": "Not available for this role."}, status=403)
+
+    tenant = getattr(user, "tenant", None)
+    if tenant is None:
+        return JsonResponse({"detail": "Your account is not linked to a school."}, status=400)
+
+    tools = SecretaryTools(tenant=tenant, requesting_user=user)
+    data = tools.get_daily_briefing()
+    if data.get("status") != "success":
+        return JsonResponse({"detail": data.get("message", "Could not build the briefing.")}, status=500)
+    return JsonResponse(data)

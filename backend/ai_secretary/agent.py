@@ -13,6 +13,7 @@ import time
 import requests
 from django.conf import settings
 from django.core.cache import cache
+from django.utils import timezone
 
 from ai_chat.services.openrouter_client import OpenRouterClient, OpenRouterError, OpenRouterTimeout
 from ai_chat.services.usage import AIUsageExhausted, check_quota, consume_usage, usage_dict
@@ -134,6 +135,19 @@ def parse_phase_one_command(text: str, history: list | None = None) -> dict:
     if any(phrase in lowered for phrase in ["how many class", "class count", "number of class", "count class", "total class"]):
         result = {
             "tool": "count_classes",
+            "params": {},
+            "confidence": 0.95,
+        }
+        cache.set(cache_key, result, timeout=300)
+        return result
+
+    if any(phrase in lowered for phrase in [
+        "list classes", "list my classes", "list the classes", "name the classes", "name my classes",
+        "what classes", "which classes", "show me the classes", "show the classes", "classes do i have",
+        "class names", "name of classes", "names of classes",
+    ]):
+        result = {
+            "tool": "list_classes",
             "params": {},
             "confidence": 0.95,
         }
@@ -341,26 +355,57 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
         return {"reply": f"Message exceeds the allowed length of {MAX_MESSAGE_CHARS} characters.", "tools_called": [], "error": "Message too long"}
 
     if any(token in lowered for token in ["delete all", "delete student", "drop database", "purge school", "remove all students"]):
+        if "decline" in lowered:
+            return {"reply": "Okay — nothing was deleted.", "tools_called": [], "error": None}
         if "confirm" not in lowered:
+            accept_phrase = "I confirm deletion of the targeted records."
             return {
-                "reply": "This is a sensitive operation and requires explicit confirmation. Please type: 'I confirm deletion of the targeted records'.",
+                "reply": f"This is a sensitive operation and requires explicit confirmation. Please type: '{accept_phrase}'",
                 "tools_called": [],
                 "error": "Confirmation required",
+                "confirm_action": {
+                    "accept_message": accept_phrase,
+                    "decline_message": "I decline — do not delete anything.",
+                },
             }
 
-    if "confirm" not in lowered and (
+    if "decline" in lowered and (
+        ("parent reminder" in lowered or "bulk parent" in lowered or "bulk message" in lowered)
+    ):
+        return {"reply": "No problem — I won't send that. Let me know if you'd like to try again.", "tools_called": [], "error": None}
+
+    if "confirm" not in lowered and "decline" not in lowered and (
         ("all " in lowered and "parents" in lowered) or
         ("bulk" in lowered and "message" in lowered) or
         ("reminder" in lowered and "parents" in lowered) or
         ("all " in lowered and "students" in lowered and "message" in lowered)
     ):
         pending_class = _extract_class_name(normalized_message) or _extract_context_class(history)
-        target = pending_class or "your class"
+        if not pending_class:
+            # Don't guess a class (that's exactly what causes "not found"
+            # failures) - offer the real options instead, same free,
+            # zero-AI-cost dispatch the phase 1 fast path below uses.
+            classes_result = tools.dispatch("list_classes", {})
+            class_list = classes_result.get("classes") or []
+            if not class_list:
+                return {
+                    "reply": "I couldn't find any classes set up yet — please add a class first.",
+                    "tools_called": ["list_classes"],
+                    "error": "No classes found",
+                }
+            names = ", ".join(c["label"] for c in class_list)
+            return {
+                "reply": f"Which class should this go to? Your classes are: {names}.",
+                "tools_called": ["list_classes"],
+                "error": None,
+            }
+        accept_phrase = f"I confirm the bulk parent message for {pending_class}."
+        decline_phrase = f"I decline the bulk parent message for {pending_class}."
         return {
-            "reply": f"I’m about to send a bulk parent message for {target}. Please confirm by replying: "
-                     f"'I confirm the bulk parent message for {target}.'",
+            "reply": f"I’m about to send a bulk parent message for {pending_class}. Please confirm by replying: '{accept_phrase}'",
             "tools_called": [],
             "error": None,
+            "confirm_action": {"accept_message": accept_phrase, "decline_message": decline_phrase},
         }
 
     if "confirm" in lowered and (
@@ -426,8 +471,12 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
             "usage": usage_dict(exc.cycle),
         }
 
-    # Build message list: system + trimmed history + new user turn
-    messages = [{"role": "system", "content": SECRETARY_SYSTEM_PROMPT}]
+    # Build message list: system (+ the real current time, so the model can
+    # greet appropriately and reason about "today"/"yesterday" correctly
+    # instead of guessing) + trimmed history + new user turn
+    now_local = timezone.localtime()
+    time_context = f"Current date and time: {now_local.strftime('%A, %d %B %Y, %H:%M')} ({settings.TIME_ZONE})."
+    messages = [{"role": "system", "content": f"{SECRETARY_SYSTEM_PROMPT}\n\n{time_context}"}]
     messages += history[-MAX_HISTORY:]
     messages.append({"role": "user", "content": user_message})
 

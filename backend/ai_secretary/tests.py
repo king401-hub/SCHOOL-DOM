@@ -96,6 +96,9 @@ class PhaseOneAdminAgentTests(TestCase):
         self.assertEqual(parse_phase_one_command("Take me to the fee management page")["tool"], "navigate_to_page")
         self.assertEqual(parse_phase_one_command("Show me the roster for JSS2")["tool"], "get_class_roster")
         self.assertEqual(parse_phase_one_command("Who is in SS2A?")["tool"], "get_class_roster")
+        self.assertEqual(parse_phase_one_command("List my classes")["tool"], "list_classes")
+        self.assertEqual(parse_phase_one_command("Name the classes")["tool"], "list_classes")
+        self.assertEqual(parse_phase_one_command("What classes do I have?")["tool"], "list_classes")
 
     def test_core_tools_execute_with_auto_execute_permissions(self):
         # generate_timetable/generate_report_cards now touch real Class/term
@@ -467,6 +470,58 @@ class PhaseCRealToolsTests(TestCase):
         self.assertAlmostEqual(result["collected_percent"], 66.7, places=1)
         self.assertEqual(result["total_due"], 15000.0)
         self.assertEqual(result["total_paid"], 10000.0)
+
+    def test_list_classes_returns_real_names_and_live_student_counts(self):
+        """Regression test: the admin agent used to have no way to discover
+        real class names at all - only count_classes (a bare number), which
+        made it guess ("SS2" instead of the real "SS2A") and fail every
+        class-specific tool call. list_classes must report the exact name."""
+        self._make_student("one@ssa.test")
+        self._make_student("two@ssa.test")
+
+        result = self.tools.dispatch("list_classes", {})
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["classes"][0]["name"], "SS2A")
+        self.assertEqual(result["classes"][0]["student_count"], 2)
+        self.assertIn("SS2A", result["message"])
+
+    def _full_name(self, student_profile):
+        # Matches get_daily_briefing's own "first last" construction - not
+        # User.get_full_name(), which orders names differently in this codebase.
+        return f"{student_profile.user.first_name} {student_profile.user.last_name}".strip()
+
+    def test_daily_briefing_reports_defaulters_and_yesterdays_payments(self):
+        from datetime import timedelta
+
+        from django.utils import timezone as dj_timezone
+
+        from finance.models import Transaction
+        from finance.services import get_or_create_admin_wallet
+
+        defaulter = self._make_student("defaulter@ssa.test")
+        SchoolFee.objects.create(student=defaulter, title="Tuition", amount=8000, due_date="2026-01-01", status=SchoolFee.STATUS_PENDING)
+        paid_up = self._make_student("paidup@ssa.test")
+        SchoolFee.objects.create(student=paid_up, title="Tuition", amount=8000, due_date="2026-01-01", status=SchoolFee.STATUS_PAID)
+
+        wallet = get_or_create_admin_wallet(self.school)
+        tx = Transaction.objects.create(
+            admin_wallet=wallet, amount=5000, tx_type=Transaction.FEE_CREDIT,
+            status=Transaction.STATUS_SUCCESS, reference="briefing-test-1",
+        )
+        yesterday = dj_timezone.now() - timedelta(days=1)
+        Transaction.objects.filter(pk=tx.pk).update(created_at=yesterday)
+
+        result = self.tools.get_daily_briefing()
+
+        self.assertEqual(result["status"], "success")
+        names = [d["name"] for d in result["defaulters"]]
+        self.assertIn(self._full_name(defaulter), names)
+        self.assertNotIn(self._full_name(paid_up), names)
+        self.assertEqual(result["total_outstanding"], 8000.0)
+        self.assertEqual(result["yesterday_total"], 5000.0)
+        self.assertEqual(result["yesterday_count"], 1)
 
 
 class SecretaryUsageQuotaTests(TestCase):

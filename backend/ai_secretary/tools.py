@@ -272,6 +272,18 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "list_classes",
+            "description": "List every class in the school by its exact name (e.g. SS2A, JSS1B), with each class's current student count. Call this whenever you need a real class name before calling a class-specific tool (roster, fee status, bulk message) and the admin didn't spell one out exactly, or asked to see the classes themselves.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_student_details",
             "description": "Get complete student profile including personal info, class, and contact details.",
             "parameters": {
@@ -816,6 +828,8 @@ class SecretaryTools:
 
     def get_student_list(self, class_name: str, include_inactive: bool = False) -> dict:
         try:
+            # current_class lives on StudentProfile, not User directly - see
+            # list_classes' docstring note on this same field confusion.
             qs = self.User.objects.filter(tenant=self.tenant, role="student")
             if not include_inactive:
                 qs = qs.filter(is_active=True)
@@ -827,15 +841,17 @@ class SecretaryTools:
                         "error_code": "NOT_FOUND",
                         "message": f"Class '{class_name}' not found. Check the class name and try again.",
                     }
-                qs = qs.filter(current_class=class_obj)
+                qs = qs.filter(student_profile__current_class=class_obj)
 
             students = []
-            for s in qs.select_related("current_class").order_by("last_name", "first_name"):
+            for s in qs.select_related("student_profile__current_class").order_by("last_name", "first_name"):
+                profile = getattr(s, "student_profile", None)
+                student_class = profile.current_class if profile and profile.current_class else None
                 students.append({
                     "student_id": str(s.id),
                     "name": s.get_full_name() or s.email,
                     "phone": s.phone or "",
-                    "class": str(s.current_class) if s.current_class else class_name,
+                    "class": str(student_class) if student_class else class_name,
                     "is_active": s.is_active,
                 })
 
@@ -900,6 +916,7 @@ class SecretaryTools:
         "send_bulk_parent_message": "send_bulk_parent_message",
         "count_students": "count_students",
         "count_classes": "count_classes",
+        "list_classes": "list_classes",
         "get_student_details": "get_student_details",
         "get_class_roster": "get_class_roster",
         "get_student_fee_balance": "get_student_fee_balance",
@@ -996,7 +1013,7 @@ class SecretaryTools:
                         "error_code": "NOT_FOUND",
                         "message": f"Class '{class_name}' not found.",
                     }
-                count = qs.filter(current_class=class_obj).count()
+                count = qs.filter(student_profile__current_class=class_obj).count()
                 return {
                     "status": "success",
                     "class_name": class_name,
@@ -1027,6 +1044,40 @@ class SecretaryTools:
             logger.exception("count_classes failed: %s", exc)
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
 
+    def list_classes(self) -> dict:
+        """List every class by its real name, with a live student count each -
+        the thing a model needs before it can correctly call a class-specific
+        tool (roster, fee status, bulk message) instead of guessing a name
+        that doesn't exist and getting NOT_FOUND."""
+        try:
+            legacy_tenant = self._get_legacy_tenant()
+            classes = (
+                self.Class.objects.filter(tenant=legacy_tenant).order_by("name")
+                if legacy_tenant else self.Class.objects.none()
+            )
+            items = []
+            for class_obj in classes:
+                label = f"{class_obj.name} {class_obj.section}".strip() if class_obj.section else class_obj.name
+                student_count = self.User.objects.filter(
+                    tenant=self.tenant, role="student", is_active=True, student_profile__current_class=class_obj,
+                ).count()
+                items.append({
+                    "name": class_obj.name,
+                    "section": class_obj.section or "",
+                    "label": label,
+                    "student_count": student_count,
+                })
+            summary = ", ".join(f"{i['label']} ({i['student_count']})" for i in items) if items else "none yet"
+            return {
+                "status": "success",
+                "total": len(items),
+                "classes": items,
+                "message": f"This school has {len(items)} class(es): {summary}.",
+            }
+        except Exception as exc:
+            logger.exception("list_classes failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
     def get_student_details(self, student_id: str) -> dict:
         """Get a student's full profile - by id first, falling back to a name search.
         Searches email rather than username: this User model has no username
@@ -1045,13 +1096,15 @@ class SecretaryTools:
                 ).first()
             if not user:
                 return {"status": "error", "error_code": "NOT_FOUND", "message": f"Student '{student_id}' not found."}
+            profile = getattr(user, "student_profile", None)  # current_class lives here, not on User
+            user_class = profile.current_class if profile and profile.current_class else None
             return {
                 "status": "success",
                 "student_id": str(user.id),
                 "name": user.get_full_name(),
                 "email": user.email or "N/A",
                 "phone": user.phone or "N/A",
-                "class": str(user.current_class) if user.current_class else "Not assigned",
+                "class": str(user_class) if user_class else "Not assigned",
                 "is_active": user.is_active,
                 "date_joined": user.date_joined.strftime("%Y-%m-%d") if user.date_joined else "N/A",
                 "message": f"Found student: {user.get_full_name()}",
@@ -1069,7 +1122,7 @@ class SecretaryTools:
             students = self.User.objects.filter(
                 tenant=self.tenant,
                 role="student",
-                current_class=class_obj,
+                student_profile__current_class=class_obj,
                 is_active=True,
             ).order_by("last_name", "first_name")
             roster = [
@@ -1127,7 +1180,7 @@ class SecretaryTools:
                 "status": "success",
                 "student_id": str(user.id),
                 "name": user.get_full_name(),
-                "class": str(user.current_class) if user.current_class else "Not assigned",
+                "class": str(student_profile.current_class) if student_profile.current_class else "Not assigned",
                 "total_due": float(total_due),
                 "total_paid": float(total_paid),
                 "outstanding_balance": float(outstanding),
@@ -1139,4 +1192,61 @@ class SecretaryTools:
             }
         except Exception as exc:
             logger.exception("get_student_fee_balance failed: %s", exc)
+            return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
+
+    def get_daily_briefing(self) -> dict:
+        """Deterministic, zero-AI-cost snapshot for the admin login briefing:
+        top fee defaulters and yesterday's successful fee payments. Pure DB
+        queries, no AI call involved - deliberately NOT in TOOL_SCHEMAS (not
+        meant to be something the model decides whether to call; the
+        dashboard calls this tool method directly), same reasoning as
+        send_bulk_parent_message being kept out of TOOL_SCHEMAS."""
+        try:
+            from django.db.models import Sum
+
+            from finance.models import AdminWallet, SchoolFee, Transaction
+
+            yesterday = dj_timezone.localdate() - timedelta(days=1)
+
+            defaulters_qs = (
+                SchoolFee.objects.filter(student__user__tenant=self.tenant)
+                .exclude(status=SchoolFee.STATUS_PAID)
+                .values("student_id", "student__user__first_name", "student__user__last_name")
+                .annotate(outstanding=Sum("amount"))
+                .order_by("-outstanding")[:10]
+            )
+            defaulters = [
+                {
+                    "student_id": str(row["student_id"]),
+                    "name": f"{row['student__user__first_name']} {row['student__user__last_name']}".strip(),
+                    "outstanding": float(row["outstanding"] or 0),
+                }
+                for row in defaulters_qs
+            ]
+            total_outstanding = float(
+                SchoolFee.objects.filter(student__user__tenant=self.tenant)
+                .exclude(status=SchoolFee.STATUS_PAID)
+                .aggregate(total=Sum("amount"))["total"] or 0
+            )
+
+            admin_wallet = AdminWallet.objects.filter(tenant=self.tenant).first()
+            yesterday_qs = (
+                Transaction.objects.filter(
+                    admin_wallet=admin_wallet, status=Transaction.STATUS_SUCCESS, created_at__date=yesterday,
+                )
+                if admin_wallet else Transaction.objects.none()
+            )
+            yesterday_total = float(yesterday_qs.aggregate(total=Sum("amount"))["total"] or 0)
+            yesterday_count = yesterday_qs.count()
+
+            return {
+                "status": "success",
+                "date": yesterday.isoformat(),
+                "defaulters": defaulters,
+                "total_outstanding": total_outstanding,
+                "yesterday_total": yesterday_total,
+                "yesterday_count": yesterday_count,
+            }
+        except Exception as exc:
+            logger.exception("get_daily_briefing failed: %s", exc)
             return {"status": "error", "error_code": "UNKNOWN", "message": str(exc)}
