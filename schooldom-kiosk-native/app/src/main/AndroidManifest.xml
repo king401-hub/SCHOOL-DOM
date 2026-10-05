@@ -1,0 +1,58 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internet (device provisioning, scan submission, heartbeat) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- NFC card reading - the entire point of this app -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="false"/>
+    <!-- Keeps the screen awake while showing "Ready to Scan" -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Live location reporting (anti-theft/asset tracking), sent with every
+         heartbeat. COARSE is a fallback since a fixed indoor kiosk may not
+         always get a GPS fix. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Offline gate-SMS fallback: text a parent directly over the
+         terminal's own SIM when a scan can't reach the backend at all. -->
+    <uses-permission android:name="android.permission.SEND_SMS"/>
+
+    <application
+        android:label="SchoolDom Attendance Scanner"
+        android:usesCleartextTraffic="true"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/AppTheme">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/AppTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Registers this app as a selectable Home app, so the device
+                 can boot straight into SchoolDom instead of Android's own
+                 launcher/home screen - carried over from the Flutter app's
+                 manifest, which already did this. Doesn't require root or a
+                 factory reset, just needs setting as the default once per
+                 device. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".ProvisioningActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity
+            android:name=".KioskHomeActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"/>
+    </application>
+</manifest>

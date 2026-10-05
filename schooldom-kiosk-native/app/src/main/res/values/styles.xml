@@ -1,0 +1,13 @@
+<resources>
+    <!-- No AppCompat/Material - plain platform theme, see app/build.gradle.kts
+         for why (zero external dependencies, forced by no Maven access, but
+         also just fine for a single-Activity kiosk with no action bar). -->
+    <!-- Explicitly Light: DeviceDefault's plain (non-Light) variant defaults
+         to dark widget styling on this device/Android version, which made
+         EditText's default text color white-on-white against this app's
+         white input backgrounds - invisible while typing. Light as the base
+         avoids that for every future widget, not just this one field. -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
