@@ -242,6 +242,8 @@ def _school_payload(request, school):
         logo = request.build_absolute_uri(school.logo.url) if request and school.logo else school.logo.url if school.logo else ""
     except Exception:
         logo = ""
+    from users.app_views import _resolve_school_signature_url
+
     return {
         "id": school.id,
         "name": school.name,
@@ -250,6 +252,7 @@ def _school_payload(request, school):
         "phone": school.phone or "",
         "address": school.address or "",
         "logo": logo,
+        "signature": _resolve_school_signature_url(school, request),
     }
 
 
@@ -498,6 +501,12 @@ def _render_receipt_link(request, link):
                 data["school_logo"] = request.build_absolute_uri(link.tenant.logo.url)
             except Exception:
                 pass
+        if not data.get("school_signature"):
+            # Retroactive: a link created before this field existed has none
+            # stored, so resolve it live for an old link too, not just new ones.
+            from users.app_views import _resolve_school_signature_url
+
+            data["school_signature"] = _resolve_school_signature_url(link.tenant, request)
     if theme is None:
         theme = DocumentTheme(school_tenant=link.tenant)
     return django_render(request, "finance/receipt.html", {"link": link, "data": data, "theme": theme})

@@ -4444,6 +4444,7 @@ def send_bill_invoices(bill, parent_ids, channels, actor, school=None):
     school_phone = school.get("phone") or (bill.tenant.phone if bill.tenant else "")
     school_email = school.get("email") or (bill.tenant.email if bill.tenant else "")
     school_logo = school.get("logo") or ""
+    school_signature = school.get("signature") or ""
     portal_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy")
     items = [{"description": item.description, "amount": str(item.amount)} for item in bill.items.all()]
 
@@ -4473,6 +4474,7 @@ def send_bill_invoices(bill, parent_ids, channels, actor, school=None):
                 "school_phone": school_phone,
                 "school_email": school_email,
                 "school_logo": school_logo,
+                "school_signature": school_signature,
                 "accent_color": bill.accent_color,
                 "portal_url": portal_url,
                 "invoice_number": fee.invoice_number,
@@ -5393,15 +5395,32 @@ def _school_branding_for_receipt(tenant) -> dict:
     FRONTEND_BASE_URL serves /media on the same host.
     """
     if not tenant:
-        return {"school_name": "School", "school_address": "", "school_phone": "", "school_email": "", "school_logo": ""}
+        return {"school_name": "School", "school_address": "", "school_phone": "", "school_email": "", "school_logo": "", "school_signature": ""}
+
+    base_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
 
     logo = ""
     try:
         if getattr(tenant, "logo", None):
-            base_url = getattr(settings, "FRONTEND_BASE_URL", "https://schooldom.academy").rstrip("/")
             logo = f"{base_url}{tenant.logo.url}"
     except Exception:
         logo = ""
+
+    signature = ""
+    try:
+        from django.db.models import Q
+
+        from users.models import User
+
+        no_signature = Q(director_signature="") | Q(director_signature__isnull=True)
+        signer = (
+            User.objects.filter(tenant=tenant, role="school_superadmin").exclude(no_signature).first()
+            or User.objects.filter(tenant=tenant).exclude(no_signature).first()
+        )
+        if signer and signer.director_signature:
+            signature = f"{base_url}{signer.director_signature.url}"
+    except Exception:
+        signature = ""
 
     return {
         "school_name": tenant.name or "School",
@@ -5409,6 +5428,7 @@ def _school_branding_for_receipt(tenant) -> dict:
         "school_phone": tenant.phone or "",
         "school_email": tenant.email or "",
         "school_logo": logo,
+        "school_signature": signature,
     }
 
 

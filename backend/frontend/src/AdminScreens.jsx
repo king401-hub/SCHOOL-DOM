@@ -2697,6 +2697,9 @@ function AdminFinanceScreen({
     const schoolLogoMarkup = schoolBrand.logo
       ? `<img src="${escapeHtml(schoolBrand.logo)}" alt="${escapeHtml(schoolBrand.name)} logo" />`
       : `<span>${escapeHtml(schoolBrand.initials || "S")}</span>`;
+    const signatureMarkup = schoolBrand.signature
+      ? `<img src="${escapeHtml(schoolBrand.signature)}" alt="Authorised signature" class="doc-signature-img" />`
+      : `<span class="invoice-doc-signature-blank"></span>`;
     printWindow.document.write(`
       <!doctype html>
       <html>
@@ -2719,6 +2722,13 @@ function AdminFinanceScreen({
               <tbody>${rowMarkup}</tbody>
             </table>
             <div class="total"><span>${escapeHtml(totalLabel)}</span><span>${escapeHtml(formatFinanceAmount(total))}</span></div>
+            <footer class="invoice-doc-signoff">
+              <div class="invoice-doc-signature">
+                ${signatureMarkup}
+                <span>Bursar / Authorised Signatory</span>
+                <strong>${escapeHtml(schoolBrand.name)}</strong>
+              </div>
+            </footer>
             ${footerMarkup}
           </main>
           <script>window.onload=function(){window.print();};</script>

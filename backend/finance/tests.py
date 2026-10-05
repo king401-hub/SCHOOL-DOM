@@ -3323,6 +3323,19 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(data["school_address"], "12 School Road, Ikeja")
         self.assertEqual(data["school_phone"], "08011112222")
         self.assertEqual(data["school_email"], "office@receipt.edu")
+        self.assertEqual(data["school_signature"], "")
+
+    def test_receipt_payload_carries_the_bursar_signature_when_one_is_on_file(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.admin_user.director_signature = SimpleUploadedFile("sig.png", b"\x89PNG\r\n\x1a\n" + b"0" * 20, content_type="image/png")
+        self.admin_user.save()
+
+        payment = self._record()
+        data = build_payment_receipt_data(payment)
+
+        self.assertTrue(data["school_signature"])
+        self.assertIn("directors/signatures", data["school_signature"])
 
     @patch("finance.services._dispatch_wallet_sms")
     def test_cash_payment_sends_both_sms_and_email_from_one_receipt(self, mock_send):
@@ -3907,6 +3920,126 @@ class CashPaymentReceiptNotificationTests(TestCase):
         )
 
         self.assertEqual(self._preview(unmatched).status_code, 400)
+
+
+class BillAndReceiptSignatureTests(TestCase):
+    """The admin/bursar's signature (User.director_signature - the same
+    field already shown on report cards, transcripts and ID cards) must
+    appear on both generated Bills and Payment Receipts, on every path that
+    renders one: the admin-authenticated finance payload, the emailed/
+    public-link Bill, and the emailed/public-link Receipt."""
+
+    def setUp(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.school = SchoolTenant.objects.create(
+            name="Signature School", schema_name="signature_school", is_active=True,
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.proprietor = User.objects.create_user(
+            email="proprietor@signature.edu", password="AdminPass123", role="school_superadmin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.proprietor.director_signature = SimpleUploadedFile(
+            "sig.png", b"\x89PNG\r\n\x1a\n" + b"0" * 20, content_type="image/png"
+        )
+        self.proprietor.save()
+
+    def test_school_payload_used_by_the_admin_finance_screen_includes_the_signature(self):
+        from finance.views import _school_payload
+
+        payload = _school_payload(None, self.school)
+        self.assertTrue(payload["signature"])
+        self.assertIn("directors/signatures", payload["signature"])
+
+    def test_school_payload_is_blank_when_nobody_has_signed(self):
+        from finance.views import _school_payload
+
+        School = type(self.school)
+        bare_school = School.objects.create(name="No Signature School", schema_name="no_sig_school", is_active=True)
+        Tenant.objects.create(name=bare_school.name, slug=bare_school.schema_name)
+        User.objects.create_user(
+            email="admin@nosig.edu", password="AdminPass123", role="school_admin",
+            tenant=bare_school, is_active=True, is_verified=True,
+        )
+
+        payload = _school_payload(None, bare_school)
+        self.assertEqual(payload["signature"], "")
+
+    def test_emailed_bill_invoice_carries_the_signature_through_to_the_student(self):
+        from finance.services import sync_bill_invoices
+        from finance.views import _school_payload
+
+        klass = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        student_user = User.objects.create_user(
+            email="pupil@signature.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        StudentProfile.objects.create(
+            user=student_user, student_id="SIG001", admission_number="ADM-SIG-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=klass,
+        )
+        bill = Bill.objects.create(
+            tenant=self.school, title="Term Fees", status=Bill.STATUS_PUBLISHED,
+            created_by=self.proprietor, published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        bill.classes.set([klass])
+        BillItem.objects.create(bill=bill, description="Tuition", amount=Decimal("10000.00"))
+        sync_bill_invoices(bill, actor=self.proprietor)
+
+        school_payload = _school_payload(None, self.school)
+        self.assertTrue(school_payload["signature"])
+
+    def test_receipt_template_renders_the_signature_only_on_bills_and_receipts(self):
+        from django.template.loader import render_to_string
+
+        class _Link:
+            created_at = None
+
+        data = {"school_name": self.school.name, "school_signature": "https://example.com/sig.png", "items": []}
+
+        for receipt_type in ("invoice", "receipt"):
+            _Link.receipt_type = receipt_type
+            html = render_to_string("finance/receipt.html", {"link": _Link(), "data": data, "theme": None})
+            self.assertIn('<div class="signoff">', html, receipt_type)
+            self.assertIn('src="https://example.com/sig.png"', html, receipt_type)
+
+        for receipt_type in ("payslip", "report_card", "class_broadsheet"):
+            _Link.receipt_type = receipt_type
+            html = render_to_string("finance/receipt.html", {"link": _Link(), "data": data, "theme": None})
+            self.assertNotIn('<div class="signoff">', html, receipt_type)
+
+    def test_receipt_template_shows_a_blank_line_when_nobody_has_signed(self):
+        from django.template.loader import render_to_string
+
+        class _Link:
+            receipt_type = "receipt"
+            created_at = None
+
+        data = {"school_name": self.school.name, "school_signature": "", "items": []}
+        html = render_to_string("finance/receipt.html", {"link": _Link(), "data": data, "theme": None})
+
+        self.assertIn('<span class="blank"></span>', html)
+
+    def test_a_receipt_link_saved_before_this_feature_still_shows_a_signature(self):
+        """PaymentReceiptLink.data is a frozen JSON snapshot - a link created
+        before school_signature existed has none stored. The public page must
+        still resolve one live rather than show a permanently blank line."""
+        from datetime import timedelta
+
+        link = PaymentReceiptLink.objects.create(
+            data={"school_name": self.school.name, "items": []},
+            tenant=self.school,
+            receipt_type="receipt",
+            expires_at=timezone.now() + timedelta(days=90),
+        )
+
+        response = self.client.get(f"/r/{link.short_code}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'<div class="signoff">', response.content)
+        self.assertIn(b"directors/signatures", response.content)
 
 
 class PaystackReceiptMessageTests(TestCase):
