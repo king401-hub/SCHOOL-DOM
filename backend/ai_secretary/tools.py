@@ -219,23 +219,8 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "send_whatsapp_message",
-            "description": "Send WhatsApp to one phone. Try this before send_sms. Max 500 chars.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "to_phone": {"type": "string", "description": "Phone E.164 e.g. +2348023456789"},
-                    "message_body": {"type": "string", "description": "Message text, max 500 chars"},
-                },
-                "required": ["to_phone", "message_body"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "send_sms",
-            "description": "Send SMS fallback. message_body must be 160 chars or less. No emojis.",
+            "description": "Send an SMS to one phone number - the only text channel this school has configured (no WhatsApp). message_body must be 160 chars or less. No emojis.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1089,7 +1074,6 @@ class SecretaryTools:
         "create_cbt_exam": "create_cbt_exam",
         "navigate_to_page": "navigate_to_page",
         "schedule_exam": "schedule_exam",
-        "send_whatsapp_message": "send_whatsapp_message",
         "send_sms": "send_sms",
         "get_student_list": "get_student_list",
         "publish_cbt_exam": "publish_cbt_exam",
@@ -1104,8 +1088,10 @@ class SecretaryTools:
     }
 
     def send_bulk_parent_message(self, class_name: str, message_type: str, message: str) -> dict:
-        """Actually sends the message (WhatsApp first, SMS fallback per
-        SECRETARY_SYSTEM_PROMPT's rule) to every guardian in the class - an
+        """Actually sends the message via SMS - the only channel this school
+        has configured (WhatsApp isn't set up; an earlier version tried it
+        first on every send, which is why the AI used to talk about WhatsApp
+        as if it were available) - to every guardian in the class. An
         earlier draft of this tool sent nothing at all and returned a
         hardcoded delivered_count regardless of what was asked, which is why
         this is deliberately kept OUT of TOOL_SCHEMAS (see agent.py's bulk
@@ -1136,17 +1122,15 @@ class SecretaryTools:
                     "message": f"No parent phone numbers on file for {class_label}.",
                 }
 
+            if len(body) > 160:
+                return {
+                    "status": "error", "error_code": "BAD_ARGS",
+                    "message": f"Message is {len(body)} characters - SMS (the only channel configured) needs 160 or fewer. Shorten it and try again.",
+                }
+
             sent, failed, errors = 0, 0, []
             for student in roster:
                 guardian_label = student.guardian_name or student.user.get_full_name()
-                wa_result = self.send_whatsapp_message(student.guardian_phone, body[:1000])
-                if wa_result.get("status") == "success":
-                    sent += 1
-                    continue
-                if len(body) > 160:
-                    failed += 1
-                    errors.append(f"{guardian_label}: message too long for SMS fallback")
-                    continue
                 sms_result = self.send_sms(student.guardian_phone, body)
                 if sms_result.get("status") == "success":
                     sent += 1

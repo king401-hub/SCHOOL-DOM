@@ -1,7 +1,7 @@
 import time
 
 from django.test import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -346,7 +346,8 @@ class PhaseTwoAdminAgentTests(TestCase):
             {"role": "user", "content": "Send a reminder to all JSS2 parents about the PTA meeting."},
             {"role": "assistant", "content": blocked["reply"]},
         ]
-        with patch("finance.services.send_termii_whatsapp", return_value={"status": "success", "data": {"id": "wa-1"}}):
+        fake_log = MagicMock(id="sms-1", delivery_status=SmsMessageLog.SENT, credits_charged=1)
+        with patch("finance.services.send_wallet_sms", return_value=fake_log):
             confirmed = run_agent("I confirm the bulk parent message for JSS2.", history, self.school, self.admin)
         self.assertEqual(confirmed["tools_called"], ["send_bulk_parent_message"])
         self.assertIn("jss2", confirmed["reply"].lower())

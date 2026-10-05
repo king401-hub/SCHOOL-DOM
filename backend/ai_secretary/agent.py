@@ -476,10 +476,14 @@ def run_agent(user_message: str, history: list, tenant, requesting_user) -> dict
 
     # Build message list: system (+ the real current time, so the model can
     # greet appropriately and reason about "today"/"yesterday" correctly
-    # instead of guessing) + trimmed history + new user turn
+    # instead of guessing, + the school's actual name, so it's never left
+    # out of a drafted letter/SMS/reminder - the model has no other way to
+    # know it) + trimmed history + new user turn
     now_local = timezone.localtime()
     time_context = f"Current date and time: {now_local.strftime('%A, %d %B %Y, %H:%M')} ({settings.TIME_ZONE})."
-    messages = [{"role": "system", "content": f"{SECRETARY_SYSTEM_PROMPT}\n\n{time_context}"}]
+    school_name = (getattr(tenant, "name", "") or "").strip() or "the school"
+    school_context = f"This school's name is: {school_name}. Always include it when drafting any letter, SMS, or reminder sent to parents/guardians, unless the admin says otherwise."
+    messages = [{"role": "system", "content": f"{SECRETARY_SYSTEM_PROMPT}\n\n{time_context}\n{school_context}"}]
     messages += history[-MAX_HISTORY:]
     messages.append({"role": "user", "content": user_message})
 
