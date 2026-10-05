@@ -3,36 +3,173 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:background="#0f766e"
-    android:padding="24dp">
+    android:background="#0B1220">
 
-    <TextView
-        android:id="@+id/readyText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Ready to Scan"
-        android:textColor="#FFFFFF"
-        android:textSize="26sp"
-        android:textStyle="bold"/>
-
-    <TextView
-        android:id="@+id/schoolNameText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:textColor="#CCFFFFFF"
-        android:textSize="15sp"/>
-
-    <TextView
-        android:id="@+id/resultText"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:gravity="center"
-        android:textColor="#FFFFFF"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:visibility="gone"/>
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp">
 
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#9CA3AF"
+            android:textSize="12sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/reprovisionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Re-enter key"
+            android:textColor="#9CA3AF"
+            android:textSize="12sp"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="24dp">
+
+            <TextView
+                android:id="@+id/schoolNameText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:gravity="center"/>
+
+            <TextView
+                android:id="@+id/readyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="40dp"
+                android:text="Ready to Scan"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold"/>
+
+            <LinearLayout
+                android:id="@+id/resultBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/resultTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="26sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/resultName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:visibility="gone"/>
+
+                <TextView
+                    android:id="@+id/resultSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="#9CA3AF"
+                    android:textSize="13sp"
+                    android:visibility="gone"/>
+
+                <TextView
+                    android:id="@+id/resultText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center"
+                    android:textColor="#D1D5DB"
+                    android:textSize="15sp"
+                    android:visibility="gone"/>
+
+                <LinearLayout
+                    android:id="@+id/feeCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#15213A"
+                    android:padding="16dp"
+                    android:layout_marginTop="20dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/feePaidText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="#4ADE80"
+                        android:textSize="14sp"
+                        android:textStyle="bold"/>
+
+                    <TextView
+                        android:id="@+id/feeOutstandingText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="#F87171"
+                        android:textSize="14sp"
+                        android:textStyle="bold"/>
+
+                    <TextView
+                        android:id="@+id/feeDvaText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="#D1D5DB"
+                        android:textSize="12sp"
+                        android:visibility="gone"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="14dp">
+
+                        <Button
+                            android:id="@+id/printButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Print"/>
+
+                        <Space
+                            android:layout_width="10dp"
+                            android:layout_height="1dp"/>
+
+                        <Button
+                            android:id="@+id/sendSmsButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Send SMS"/>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
 </LinearLayout>

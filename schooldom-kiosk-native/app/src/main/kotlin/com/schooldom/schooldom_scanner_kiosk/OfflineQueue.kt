@@ -45,4 +45,34 @@ object OfflineQueue {
         queue.add(item)
         writeQueue(context, queue)
     }
+
+    private fun payloadIdempotencyKey(item: JSONObject): String? {
+        val payload = item.optJSONObject("payload") ?: return null
+        return if (payload.has("idempotency_key") && !payload.isNull("idempotency_key")) {
+            payload.getString("idempotency_key")
+        } else {
+            null
+        }
+    }
+
+    /** Drops a just-enqueued scan for a card nothing recognizes offline - it
+     * would fail the same way (404) on every future replay attempt, keeping
+     * the pending count permanently stuck above zero. */
+    fun removeByIdempotencyKey(context: Context, idempotencyKey: String) {
+        val queue = readQueue(context).filterNot { payloadIdempotencyKey(it) == idempotencyKey }
+        writeQueue(context, queue)
+    }
+
+    /** Flags the just-enqueued offline scan so its eventual replay tells the
+     * server not to send its own gate SMS (the terminal already texted the
+     * parent directly from its own SIM). */
+    fun markSmsSentLocally(context: Context, idempotencyKey: String) {
+        val queue = readQueue(context)
+        queue.forEach { item ->
+            if (payloadIdempotencyKey(item) == idempotencyKey) {
+                item.optJSONObject("payload")?.put("sms_sent_locally", true)
+            }
+        }
+        writeQueue(context, queue)
+    }
 }
