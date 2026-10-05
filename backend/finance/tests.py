@@ -3011,6 +3011,95 @@ class BillItemEditAfterPublishTests(TestCase):
         self.assertFalse(SchoolFee.objects.filter(bill=draft).exists())
 
 
+class DuplicateBillCreationGuardTests(TestCase):
+    """Production data showed admins repeatedly hitting "Create Bill" for a
+    class that already had one, instead of editing it - each new bill fanned
+    out its own full set of per-student invoices via publish, so students
+    ended up with several duplicate SchoolFee rows for the same fee. The
+    create endpoint now rejects a same-title/term/class bill up front and
+    points the admin at the existing one instead."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Duplicate Bill School", schema_name="duplicate_bill_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@dupbill.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        self.other_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="2")
+
+    def _payload(self, title="Term Fees", class_ids=None):
+        return {
+            "title": title,
+            "class_ids": class_ids if class_ids is not None else [str(self.school_class.id)],
+            "items": [{"description": "Tuition", "amount": "10000.00"}],
+        }
+
+    def test_creating_a_second_bill_with_the_same_title_and_class_is_rejected(self):
+        from django.core.cache import cache
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        first = client.post("/api/finance/admin/bills/", self._payload(), format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+
+        # Real duplicates happen minutes apart, not back-to-back double-clicks -
+        # clear the 10s idempotency cache so this exercises the actual guard
+        # instead of just replaying the first response.
+        cache.clear()
+        second = client.post("/api/finance/admin/bills/", self._payload(), format="json")
+        self.assertEqual(second.status_code, 409, second.data)
+        self.assertTrue(second.data.get("duplicate_bill"))
+        self.assertEqual(second.data.get("existing_bill_id"), str(first.data["bill"]["id"]))
+        self.assertEqual(Bill.objects.filter(tenant=self.school, title="Term Fees").count(), 1)
+
+    def test_force_flag_still_allows_an_intentional_duplicate(self):
+        from django.core.cache import cache
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        client.post("/api/finance/admin/bills/", self._payload(), format="json")
+
+        cache.clear()
+        forced = client.post(
+            "/api/finance/admin/bills/", {**self._payload(), "force": True}, format="json"
+        )
+        self.assertEqual(forced.status_code, 201, forced.data)
+        self.assertEqual(Bill.objects.filter(tenant=self.school, title="Term Fees").count(), 2)
+
+    def test_a_different_class_is_not_blocked(self):
+        from django.core.cache import cache
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        client.post("/api/finance/admin/bills/", self._payload(), format="json")
+
+        cache.clear()
+        other = client.post(
+            "/api/finance/admin/bills/",
+            self._payload(class_ids=[str(self.other_class.id)]),
+            format="json",
+        )
+        self.assertEqual(other.status_code, 201, other.data)
+
+    def test_a_cancelled_bill_does_not_block_a_fresh_one(self):
+        from django.core.cache import cache
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        first = client.post("/api/finance/admin/bills/", self._payload(), format="json")
+        bill = Bill.objects.get(id=first.data["bill"]["id"])
+        bill.status = Bill.STATUS_CANCELLED
+        bill.save(update_fields=["status"])
+
+        cache.clear()
+        second = client.post("/api/finance/admin/bills/", self._payload(), format="json")
+        self.assertEqual(second.status_code, 201, second.data)
+
+
 class CashPaymentReceiptNotificationTests(TestCase):
     """A recorded cash payment must reach the parent by itself.
 
@@ -3062,7 +3151,7 @@ class CashPaymentReceiptNotificationTests(TestCase):
         self.assertEqual(data["payment_method"], "Cash")
         self.assertEqual(data["description"], "Part payment for Term 2")
         self.assertEqual(data["reference"], payment.receipt_number or payment.bank_reference)
-        self.assertTrue(data["payment_date"])
+        self.assertEqual(data["payment_date"], "15 May 2026")
         # School information, so the receipt stands on its own as a document.
         self.assertEqual(data["school_name"], "Receipt School")
         self.assertEqual(data["school_address"], "12 School Road, Ikeja")
@@ -4195,6 +4284,26 @@ class ReceiptPageTermTests(TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "First Term")
         self.assertContains(page, "2026/2027")
+
+    def test_existing_payment_receipt_link_uses_the_recorded_received_date(self):
+        payment = BankPayment.objects.create(
+            tenant=self.school,
+            amount=Decimal("5000.00"),
+            narration="Cash payment",
+            bank_reference="CSH-OLD-RECEIPT",
+            receipt_number="RCT-OLD-RECEIPT",
+            status=BankPayment.STATUS_CONFIRMED,
+            metadata={"recorded_by": "admin@school.test", "received_on": "2026-05-15"},
+        )
+        link = self._link(
+            {"reference": payment.receipt_number, "payment_date": "29 Sep 2026", "amount_paid": "5000"},
+            "receipt",
+        )
+
+        response = self.client.get(f"/r/{link.short_code}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "15 May 2026")
 
     def test_a_term_the_document_already_names_is_never_overwritten(self):
         link = self._link({"student_name": "Ada Obi", "term_name": "Second Term", "amount_paid": "5000"}, "receipt")

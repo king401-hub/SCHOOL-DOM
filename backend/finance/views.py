@@ -1394,6 +1394,34 @@ def admin_bills(request):
         else:
             term = Term.objects.filter(tenant=legacy_tenant, is_active=True).first()
 
+        if not request.data.get("force"):
+            duplicate = (
+                Bill.objects.filter(
+                    tenant=user.tenant,
+                    title__iexact=title,
+                    academic_year=academic_year,
+                    term=term,
+                    classes__in=classes,
+                )
+                .exclude(status=Bill.STATUS_CANCELLED)
+                .distinct()
+                .first()
+            )
+            if duplicate:
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            f"A bill named '{duplicate.title}' already targets one of these classes this term "
+                            f"({duplicate.get_status_display()}). Edit that bill instead of creating a new one - "
+                            "editing it updates every unpaid invoice already sent out, so students never get billed twice."
+                        ),
+                        "existing_bill_id": str(duplicate.id),
+                        "duplicate_bill": True,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
         try:
             discount_raw = request.data.get("discount_amount")
             discount_amount = _parse_non_negative_amount(discount_raw) if discount_raw not in (None, "") else Decimal("0.00")
