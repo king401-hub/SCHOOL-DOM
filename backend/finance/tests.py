@@ -3100,6 +3100,172 @@ class DuplicateBillCreationGuardTests(TestCase):
         self.assertEqual(second.status_code, 201, second.data)
 
 
+class MergeDuplicateBillsTests(TestCase):
+    """Cleanup for duplicates that already exist in production, left behind
+    before the create-time guard above started blocking new ones. Covers the
+    four shapes found in the real data: a student only on one twin (relink),
+    a student with zero paid on both (delete the duplicate's copy), a
+    student whose payment landed on the duplicate twin instead of the
+    canonical one (swap - the money must never disappear), and a student
+    paid on both twins (left alone, not auto-resolved)."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="Merge Dup School", schema_name="merge_dup_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@mergedup.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+
+        self.s_only_canonical = self._student("onlycanon@mergedup.edu", "MD001")
+        self.s_only_dup = self._student("onlydup@mergedup.edu", "MD002")
+        self.s_zero_both = self._student("zero@mergedup.edu", "MD003")
+        self.s_paid_on_dup = self._student("paidondup@mergedup.edu", "MD004")
+        self.s_conflict = self._student("conflict@mergedup.edu", "MD005")
+
+        from finance.services import sync_bill_invoices
+
+        self.canonical = Bill.objects.create(
+            tenant=self.school, title="Term Fees", status=Bill.STATUS_PUBLISHED,
+            created_by=self.admin_user, published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        self.canonical.classes.set([self.school_class])
+        BillItem.objects.create(bill=self.canonical, description="Tuition", amount=Decimal("10000.00"))
+        sync_bill_invoices(self.canonical, actor=self.admin_user)
+        SchoolFee.objects.filter(bill=self.canonical, student=self.s_only_dup).delete()
+
+        self.duplicate = Bill.objects.create(
+            tenant=self.school, title="Term Fees", status=Bill.STATUS_PUBLISHED,
+            created_by=self.admin_user, published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        self.duplicate.classes.set([self.school_class])
+        BillItem.objects.create(bill=self.duplicate, description="Tuition", amount=Decimal("10000.00"))
+        sync_bill_invoices(self.duplicate, actor=self.admin_user)
+        SchoolFee.objects.filter(bill=self.duplicate, student=self.s_only_canonical).delete()
+
+        paid_fee = SchoolFee.objects.get(bill=self.duplicate, student=self.s_paid_on_dup)
+        paid_fee.amount_paid = Decimal("10000.00")
+        paid_fee.status = SchoolFee.STATUS_PAID
+        paid_fee.save()
+
+        c1 = SchoolFee.objects.get(bill=self.canonical, student=self.s_conflict)
+        c1.amount_paid = Decimal("4000.00")
+        c1.status = SchoolFee.STATUS_PARTIAL
+        c1.save()
+        c2 = SchoolFee.objects.get(bill=self.duplicate, student=self.s_conflict)
+        c2.amount_paid = Decimal("3000.00")
+        c2.status = SchoolFee.STATUS_PARTIAL
+        c2.save()
+
+    def _student(self, email, code):
+        user = User.objects.create_user(
+            email=email, password="StudentPass123", role="student", tenant=self.school,
+            is_active=True, is_verified=True,
+        )
+        return StudentProfile.objects.create(
+            user=user, student_id=code, admission_number=f"ADM-{code}", admission_date=timezone.localdate(),
+            guardian_name="Guardian", guardian_relation="Parent", current_class=self.school_class,
+        )
+
+    def _run(self, commit=False):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        args = ["--school", self.school.schema_name]
+        if commit:
+            args.append("--commit")
+        call_command("merge_duplicate_bills", *args, stdout=out)
+        return out.getvalue()
+
+    def test_dry_run_reports_every_case_and_writes_nothing(self):
+        before_count = SchoolFee.objects.count()
+        output = self._run(commit=False)
+
+        self.assertIn("relinked=1 deleted_zero_paid=1 swapped=1 conflicts=1", output)
+        self.assertIn("Dry run only", output)
+        self.assertEqual(SchoolFee.objects.count(), before_count)
+        self.assertTrue(Bill.objects.filter(id=self.duplicate.id).exists())
+
+    def test_commit_relinks_the_class_only_on_the_duplicate(self):
+        self._run(commit=True)
+        fee = SchoolFee.objects.get(student=self.s_only_dup)
+        self.assertEqual(fee.bill_id, self.canonical.id)
+
+    def test_commit_deletes_the_zero_paid_duplicate_and_keeps_the_canonical_copy(self):
+        self._run(commit=True)
+        remaining = SchoolFee.objects.filter(student=self.s_zero_both)
+        self.assertEqual(remaining.count(), 1)
+        self.assertEqual(remaining.get().bill_id, self.canonical.id)
+
+    def test_commit_never_loses_a_payment_that_landed_on_the_duplicate_twin(self):
+        from finance.services import fee_paid_amount
+
+        self._run(commit=True)
+        remaining = SchoolFee.objects.get(student=self.s_paid_on_dup)
+        self.assertEqual(remaining.bill_id, self.canonical.id)
+        self.assertEqual(fee_paid_amount(remaining), Decimal("10000.00"))
+
+    def test_commit_leaves_a_genuine_split_payment_untouched_on_both_sides(self):
+        self._run(commit=True)
+        fees = SchoolFee.objects.filter(student=self.s_conflict)
+        self.assertEqual(fees.count(), 2)
+        self.assertEqual({f.bill_id for f in fees}, {self.canonical.id, self.duplicate.id})
+        # the duplicate bill survives too - it still has an unresolved invoice attached
+        self.assertTrue(Bill.objects.filter(id=self.duplicate.id).exists())
+
+    def test_rerunning_after_commit_is_a_no_op(self):
+        self._run(commit=True)
+        before = {f.id: f.bill_id for f in SchoolFee.objects.all()}
+        output = self._run(commit=True)
+        after = {f.id: f.bill_id for f in SchoolFee.objects.all()}
+
+        self.assertEqual(before, after)
+        self.assertIn("relinked=0 deleted_zero_paid=0 swapped=0 conflicts=1", output)
+
+    def test_resolving_the_conflict_by_hand_then_rerunning_removes_the_empty_duplicate_bill(self):
+        self._run(commit=True)
+        leftover = SchoolFee.objects.get(student=self.s_conflict, bill=self.duplicate)
+        leftover.amount_paid = Decimal("0.00")
+        leftover.status = SchoolFee.STATUS_PENDING
+        leftover.save()
+
+        output = self._run(commit=True)
+
+        self.assertIn("bills_removed=1", output)
+        self.assertFalse(Bill.objects.filter(id=self.duplicate.id).exists())
+        self.assertFalse(SchoolFee.objects.filter(bill=self.duplicate).exists())
+
+    def test_two_same_titled_bills_for_different_classes_are_left_alone(self):
+        """Same title/term/year alone isn't proof of a duplicate - two bills
+        that never shared a class are two deliberate invoices, not a
+        double-create, and must not get swept into one."""
+        other_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="9")
+        unrelated_student = self._student("unrelated@mergedup.edu", "MD006")
+        unrelated_student.current_class = other_class
+        unrelated_student.save(update_fields=["current_class"])
+
+        from finance.services import sync_bill_invoices
+
+        unrelated_bill = Bill.objects.create(
+            tenant=self.school, title="Term Fees", status=Bill.STATUS_PUBLISHED,
+            created_by=self.admin_user, published_at=timezone.now(), due_date=timezone.localdate(),
+        )
+        unrelated_bill.classes.set([other_class])
+        BillItem.objects.create(bill=unrelated_bill, description="Tuition", amount=Decimal("10000.00"))
+        sync_bill_invoices(unrelated_bill, actor=self.admin_user)
+
+        output = self._run(commit=True)
+
+        self.assertTrue(Bill.objects.filter(id=unrelated_bill.id).exists())
+        self.assertEqual(SchoolFee.objects.get(student=unrelated_student).bill_id, unrelated_bill.id)
+        self.assertNotIn(str(unrelated_bill.id), output)
+
+
 class CashPaymentReceiptNotificationTests(TestCase):
     """A recorded cash payment must reach the parent by itself.
 
