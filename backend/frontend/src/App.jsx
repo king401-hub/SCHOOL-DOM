@@ -4050,6 +4050,91 @@ function TimetableWeekView({ session, title, subtitle, emptyMessage, showClassCo
   );
 }
 
+function LessonResourcePickerDialog({ open, session, subjectId, onClose, onPick, itemLabel = "Lesson plan" }) {
+  const [resources, setResources] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [applyingId, setApplyingId] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    const query = subjectId ? `?subject_id=${encodeURIComponent(subjectId)}` : "";
+    requestJson(session, "GET", `/api/app/academic/lesson-resources/${query}`)
+      .then((response) => {
+        if (!cancelled) setResources(response?.resources || []);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError.message || "Could not load the template library.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, session, subjectId]);
+
+  if (!open) return null;
+
+  const handlePick = async (resource) => {
+    setApplyingId(resource.id);
+    setError("");
+    try {
+      const response = await requestJson(session, "GET", `/api/app/academic/lesson-resources/${resource.id}/`);
+      if (response?.resource) onPick(response.resource);
+    } catch (pickError) {
+      setError(pickError.message || "Could not load that template.");
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  return (
+    <div className="lesson-plan-dialog-backdrop" role="presentation" onClick={onClose}>
+      <article
+        className="lesson-plan-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lesson-resource-dialog-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="lesson-plan-dialog-head">
+          <div>
+            <h3 id="lesson-resource-dialog-title">Start from a template</h3>
+            <small>Pick a {itemLabel.toLowerCase()} template to pre-fill the form below - you can still edit everything and attach your own file.</small>
+          </div>
+          <button type="button" className="table-action ghost" onClick={onClose}>Close</button>
+        </div>
+        {error ? <p className="form-feedback error">{error}</p> : null}
+        {loading ? (
+          <p className="panel-empty">Loading templates...</p>
+        ) : resources.length === 0 ? (
+          <p className="panel-empty">No templates available for this subject yet.</p>
+        ) : (
+          <div className="lesson-plan-dialog-sections">
+            {resources.map((resource) => (
+              <section key={resource.id} className="scheme-plan-section">
+                <button
+                  type="button"
+                  className="scheme-week-row scheme-week-button"
+                  disabled={applyingId === resource.id}
+                  onClick={() => handlePick(resource)}
+                >
+                  <span>{resource.subject}{resource.grade_level ? ` - ${resource.grade_level}` : ""}</span>
+                  <strong>{resource.title}</strong>
+                  {resource.description ? <small>{resource.description}</small> : null}
+                  <em>{applyingId === resource.id ? "Loading..." : "Use this template"}</em>
+                </button>
+              </section>
+            ))}
+          </div>
+        )}
+      </article>
+    </div>
+  );
+}
+
 function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [planning, setPlanning] = useState(null);
   const [notes, setNotes] = useState([]);
@@ -4059,6 +4144,7 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
   const [error, setError] = useState("");
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [planTab, setPlanTab] = useState("plan");
+  const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
   const nonK12 = isNonK12School(session, planning);
   const planningTitle = nonK12 ? "Course Outline & Notepad" : "Lesson Plans & Notepad";
   const planningItemLabel = nonK12 ? "Course outline" : "Lesson plan";
@@ -4121,6 +4207,19 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
     }
   };
 
+  const handleUseResource = (resource) => {
+    setForm((prev) => ({
+      ...prev,
+      title: resource.title || prev.title,
+      objectives: resource.objectives || prev.objectives,
+      activities: resource.activities || prev.activities,
+      resources: resource.resources || prev.resources,
+      assessment: resource.assessment || prev.assessment,
+    }));
+    setResourcePickerOpen(false);
+    setFeedback(`Applied the "${resource.title}" template. Review it below, then attach your own file if you have one.`);
+  };
+
   const handleNoteSubmit = async (event) => {
     event.preventDefault();
     setFeedback("");
@@ -4178,6 +4277,11 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
       <div className="academic-planning-grid">
         {planTab === "plan" ? (
         <form className="panel-form" onSubmit={handlePlanSubmit}>
+          <div className="panel-form-actions">
+            <button type="button" className="pill-button ghost" onClick={() => setResourcePickerOpen(true)}>
+              Start from a template
+            </button>
+          </div>
           <div className="panel-form-grid">
             <label className="panel-field">
               Class
@@ -4355,6 +4459,14 @@ function TeacherPlanningPanel({ session, onNavigate, standalone = false }) {
       </section>
     </article>
     <LessonPlanDetailDialog plan={selectedPlan} onClose={() => setSelectedPlan(null)} title={planningItemLabel} itemLabel={planningItemLabel} />
+    <LessonResourcePickerDialog
+      open={resourcePickerOpen}
+      session={session}
+      subjectId={form.subject_id}
+      onClose={() => setResourcePickerOpen(false)}
+      onPick={handleUseResource}
+      itemLabel={planningItemLabel}
+    />
     </section>
   );
 }

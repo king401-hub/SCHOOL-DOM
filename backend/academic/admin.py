@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import Class, ClassResultSnapshot, StudentClassPromotion, Subject, Term, TimetableEntry, TimetableSettings
+from exams.admin import PlatformAdminOnlyMixin
+
+from .models import Class, ClassResultSnapshot, LessonPlanResource, StudentClassPromotion, Subject, Term, TimetableEntry, TimetableSettings
+
+
+@admin.register(LessonPlanResource)
+class LessonPlanResourceAdmin(PlatformAdminOnlyMixin, admin.ModelAdmin):
+    list_display = ("title", "subject", "grade_level", "tenant", "updated_at")
+    list_filter = ("tenant", "subject")
+    search_fields = ("title", "subject__name", "grade_level", "description")
+    autocomplete_fields = ("subject",)
 
 
 @admin.register(Term)

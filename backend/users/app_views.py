@@ -50,6 +50,7 @@ from academic.models import (
     Term,
     AttendanceRecord,
     LessonPlan,
+    LessonPlanResource,
     QuestionPrompt,
     QuestionResponse,
     GradeScale,
@@ -1339,7 +1340,7 @@ def _sync_student_finance_for_class(student_profile, actor=None):
     if not student_profile or not student_profile.current_class_id:
         return
     from finance.models import Bill
-    from finance.services import sync_bill_invoices, sync_student_class_fees
+    from finance.services import drop_stale_fees_for_class_change, sync_bill_invoices, sync_student_class_fees
 
     sync_student_class_fees(student_profile, actor=actor)
     published_bills = Bill.objects.filter(
@@ -1347,6 +1348,7 @@ def _sync_student_finance_for_class(student_profile, actor=None):
     ).distinct()
     for bill in published_bills:
         sync_bill_invoices(bill, actor=actor)
+    drop_stale_fees_for_class_change(student_profile, actor=actor)
 
 
 def _sync_student_guardians_to_parent_directory(student_profile):
@@ -9152,10 +9154,13 @@ def class_promotions(request):
     # Skipped for graduates: they have left the school, so billing them for a
     # new term would be wrong.
     if not to_alumni:
+        from finance.services import drop_stale_fees_for_class_change
+
         for student in students:
             try:
                 sync_student_class_fees(student, actor=user)
                 process_due_fees(student, actor=user)
+                drop_stale_fees_for_class_change(student, actor=user)
             except Exception:
                 logger.exception(
                     "Post-promotion fee sync/sweep failed for student %s (batch %s).",
@@ -9322,6 +9327,94 @@ def lesson_planning(request):
                 "subjects": [{"id": item.id, "name": item.name, "code": item.code} for item in subject_options[:100]],
             },
             "students": students,
+        }
+    )
+
+
+GLOBAL_LESSON_BANK_TENANT_SLUG = "schooldom-global-lesson-bank"
+
+
+def _global_lesson_bank_tenant():
+    """The dedicated (non-school) Tenant that owns platform-curated lesson plan
+    resources, populated only via the import_lesson_resources management
+    command. Returns None if none have been imported yet, in which case
+    callers should simply show no templates rather than error."""
+    return Tenant.objects.filter(slug=GLOBAL_LESSON_BANK_TENANT_SLUG).first()
+
+
+def _lesson_resource_summary_payload(resource):
+    return {
+        "id": resource.id,
+        "title": resource.title,
+        "subject_id": resource.subject_id,
+        "subject": resource.subject.name if resource.subject_id else "",
+        "grade_level": resource.grade_level,
+        "description": resource.description,
+        "has_attachment": bool(resource.attachment),
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def lesson_resource_list(request):
+    """Lists platform-curated lesson plan templates a teacher can browse before
+    writing their own - matched to the requester's own subject by NAME, since
+    the global bank's Subject rows are separate database rows from every
+    school's own (same trick as the central CBT question bank)."""
+    if request.user.role != "teacher":
+        return Response({"success": False, "message": "Only teachers can browse the resource library."}, status=status.HTTP_403_FORBIDDEN)
+
+    global_tenant = _global_lesson_bank_tenant()
+    if not global_tenant:
+        return Response({"success": True, "resources": []})
+
+    resources_qs = LessonPlanResource.objects.select_related("subject").filter(tenant=global_tenant)
+
+    subject_id = request.query_params.get("subject_id")
+    if subject_id:
+        requested_subject_name = str(
+            _scope_to_user_tenant(Subject.objects.all(), request.user).filter(id=subject_id).values_list("name", flat=True).first() or ""
+        ).strip()
+        resources_qs = resources_qs.filter(subject__name__iexact=requested_subject_name) if requested_subject_name else LessonPlanResource.objects.none()
+
+    search = str(request.query_params.get("q") or "").strip()
+    if search:
+        resources_qs = resources_qs.filter(Q(title__icontains=search) | Q(description__icontains=search) | Q(grade_level__icontains=search))
+
+    resources = list(resources_qs.order_by("subject__name", "title")[:100])
+    return Response({"success": True, "resources": [_lesson_resource_summary_payload(resource) for resource in resources]})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def lesson_resource_detail(request, resource_id):
+    """Full content of one global-bank resource, for the teacher to use as a
+    starting template - never resolves an id outside the global bank, so this
+    can never leak another school's lesson plan."""
+    if request.user.role != "teacher":
+        return Response({"success": False, "message": "Only teachers can use the resource library."}, status=status.HTTP_403_FORBIDDEN)
+
+    global_tenant = _global_lesson_bank_tenant()
+    resource = (
+        get_object_or_404(LessonPlanResource.objects.select_related("subject"), id=resource_id, tenant=global_tenant)
+        if global_tenant
+        else None
+    )
+    if not resource:
+        return Response({"success": False, "message": "Template not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(
+        {
+            "success": True,
+            "resource": {
+                **_lesson_resource_summary_payload(resource),
+                "objectives": resource.objectives,
+                "activities": resource.activities,
+                "resources": resource.resources,
+                "assessment": resource.assessment,
+                "attachment_url": _media_url(request, resource.attachment),
+                "attachment_name": os.path.basename(resource.attachment.name) if resource.attachment else "",
+            },
         }
     )
 

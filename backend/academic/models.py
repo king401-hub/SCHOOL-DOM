@@ -596,6 +596,31 @@ class LessonPlan(TenantAwareModel):
         return f"Week {self.week_number}: {self.subject} - {self.class_group}"
 
 
+class LessonPlanResource(TenantAwareModel, TimeStampedModel):
+    """Platform-curated lesson plan / scheme-of-work templates a teacher can pick
+    as a starting point for their own LessonPlan. Lives under a dedicated
+    non-school Tenant (see academic/bulk_import.py) - never a real school's
+    tenant, and never visible to or editable by school admins or teachers in
+    the app; only added by the SchoolDom team via the import_lesson_resources
+    management command, same pattern as exams.QuestionBank's central banks."""
+
+    title = models.CharField(max_length=200)
+    subject = models.ForeignKey("academic.Subject", on_delete=models.CASCADE, related_name="lesson_resources")
+    grade_level = models.CharField(max_length=100, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    objectives = models.TextField(blank=True, default="")
+    activities = models.TextField(blank=True, default="")
+    resources = models.TextField(blank=True, default="")
+    assessment = models.TextField(blank=True, default="")
+    attachment = models.FileField(upload_to="lesson_resources/%Y/%m/", null=True, blank=True)
+
+    class Meta:
+        ordering = ["subject__name", "title"]
+
+    def __str__(self):
+        return self.title
+
+
 class TeacherNote(TenantAwareModel):
     teacher = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="academic_notes")
     academic_year = models.ForeignKey(AcademicYear, on_delete=models.SET_NULL, null=True, blank=True, related_name="teacher_notes")
