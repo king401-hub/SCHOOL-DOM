@@ -538,7 +538,7 @@ def _admin_finance_snapshot(user):
 
     students = list(
         StudentProfile.objects.select_related("user", "current_class")
-        .filter(user__tenant=user.tenant)
+        .filter(user__tenant=user.tenant, user__is_active=True)
         .order_by("user__last_name", "user__first_name", "created_at")
     )
     # Fetched once and shared across the alert sweep, the main per-student
@@ -3923,6 +3923,23 @@ def admin_manage_virtual_account(request, parent_id):
     if not all([account_number, bank_name, account_name]):
         return Response(
             {"success": False, "message": "account_number, bank_name, and account_name are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # account_number has no DB-level uniqueness constraint, so nothing else
+    # stops this from being assigned to a second parent (a typo/copy-paste).
+    # A real payment landing on a shared number then raises
+    # MultipleObjectsReturned in process_virtual_account_payment and is never
+    # allocated to either parent's fees - block the duplicate here instead.
+    conflict = ParentVirtualAccount.objects.filter(
+        tenant=user.tenant, account_number=account_number, is_active=True
+    ).exclude(parent=parent_user).first()
+    if conflict:
+        return Response(
+            {
+                "success": False,
+                "message": f"Account number {account_number} is already assigned to {conflict.parent.get_full_name() or conflict.parent.email}.",
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 

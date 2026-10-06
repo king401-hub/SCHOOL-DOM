@@ -1514,159 +1514,167 @@ def allocate_split_payment(
     except ParentProfile.DoesNotExist:
         students = []
 
-    unpaid_fees = list(
-        SchoolFee.objects.filter(
-            student__in=students,
-            status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
-        )
-        .select_related("student", "student__user", "student__user__tenant", "student__current_class")
-        .order_by("due_date", "created_at")
-    )
-
     parent_email = (parent_profile.user.email if parent_profile and parent_profile.user else "") or ""
 
     remaining = amount_paid
     allocations = []
     last_student = None
 
-    # What each fee has already received, from the ledger rather than the
-    # amount_paid column. This decides how much the parent is charged online:
-    # reading the column missed cash and bank-transfer payments entirely, so a
-    # parent who had part-paid at the front desk was billed for the whole fee
-    # again and the school over-collected.
-    prior_paid = bulk_fee_paid_amounts(unpaid_fees)
-
-    for fee in unpaid_fees:
-        if remaining <= 0:
-            break
-
-        already_paid = prior_paid.get(fee.id, Decimal("0.00"))
-        tuition_left = fee.amount - already_paid
-        if tuition_left <= 0:
-            continue
-
-        # Per-fee cost to parent = tuition + 0.3% Schooldom fee
-        s_fee = schooldom_fee_for(tuition_left)
-        total_due = tuition_left + s_fee
-
-        student = fee.student
-        student_name = student.user.get_full_name() if student and student.user else ""
-        class_obj = getattr(student, "current_class", None)
-        class_name = class_obj.name if class_obj else ""
-        school_name = getattr(getattr(student, "user", None), "tenant", None)
-        school_name = getattr(school_name, "name", "") if school_name else ""
-
-        if remaining >= total_due:
-            fee.amount_paid = already_paid + tuition_left
-            fee.status = SchoolFee.STATUS_PAID
-            fee.payment_date = timezone.now()
-            fee.last_payment_date = timezone.now()
-            fee.paystack_ref = paystack_ref
-            fee.save(update_fields=["amount_paid", "status", "payment_date", "last_payment_date", "paystack_ref", "updated_at"])
-
-            FeeAllocation.objects.create(
-                fee=fee,
-                transaction_id=transaction_id,
-                amount_allocated=tuition_left,
-                paystack_fee_paid=Decimal("0.00"),
-                schooldom_fee_paid=s_fee,
-                status=FeeAllocation.STATUS_PAID,
+    # Locked for the same reason apply_bank_payment_to_student locks its fee
+    # queryset: two distinct Paystack payments for the same parent/fee landing
+    # within milliseconds of each other (a double-tap, or two webhook
+    # deliveries racing) must not both read the fee as "still fully owed" and
+    # each conclude they fully paid it - that double-books the same fee and
+    # leaves the second payment's money with no record of where it went.
+    with transaction.atomic():
+        unpaid_fees = list(
+            SchoolFee.objects.select_for_update()
+            .filter(
+                student__in=students,
+                status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
             )
-            allocations.append({
-                "fee_id": str(fee.id),
-                "student_name": student_name,
-                "class": class_name,
-                "tuition_paid": float(tuition_left),
-                "status": "paid",
-                "remaining_balance": 0,
-            })
-            remaining -= total_due
-            last_student = student
+            .select_related("student", "student__user", "student__user__tenant", "student__current_class")
+            .order_by("due_date", "created_at")
+        )
 
-            if parent_email:
-                tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
-                receipt_data = {
-                    "type": "receipt",
-                    "school_name": school_name,
-                    "student_name": student_name,
-                    "class_name": class_name,
-                    "amount_paid": str(tuition_left),
-                    "fee_total": str(fee.amount),
-                    "balance_remaining": "0.00",
-                    "payment_status": "paid",
-                    "payment_date": timezone.now().strftime("%d %b %Y"),
-                    "reference": paystack_ref,
-                }
-                receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
-                send_payment_receipt(
-                    parent_email,
-                    build_paystack_receipt_message(student_name, class_name, tuition_left, fee.amount, "paid", school_name),
-                    receipt_url=receipt_url,
-                    data=receipt_data,
-                    receipt_type="receipt",
+        # What each fee has already received, from the ledger rather than the
+        # amount_paid column. This decides how much the parent is charged online:
+        # reading the column missed cash and bank-transfer payments entirely, so a
+        # parent who had part-paid at the front desk was billed for the whole fee
+        # again and the school over-collected.
+        prior_paid = bulk_fee_paid_amounts(unpaid_fees)
+
+        for fee in unpaid_fees:
+            if remaining <= 0:
+                break
+
+            already_paid = prior_paid.get(fee.id, Decimal("0.00"))
+            tuition_left = fee.amount - already_paid
+            if tuition_left <= 0:
+                continue
+
+            # Per-fee cost to parent = tuition + 0.3% Schooldom fee
+            s_fee = schooldom_fee_for(tuition_left)
+            total_due = tuition_left + s_fee
+
+            student = fee.student
+            student_name = student.user.get_full_name() if student and student.user else ""
+            class_obj = getattr(student, "current_class", None)
+            class_name = class_obj.name if class_obj else ""
+            school_name = getattr(getattr(student, "user", None), "tenant", None)
+            school_name = getattr(school_name, "name", "") if school_name else ""
+
+            if remaining >= total_due:
+                fee.amount_paid = already_paid + tuition_left
+                fee.status = SchoolFee.STATUS_PAID
+                fee.payment_date = timezone.now()
+                fee.last_payment_date = timezone.now()
+                fee.paystack_ref = paystack_ref
+                fee.save(update_fields=["amount_paid", "status", "payment_date", "last_payment_date", "paystack_ref", "updated_at"])
+
+                FeeAllocation.objects.create(
+                    fee=fee,
+                    transaction_id=transaction_id,
+                    amount_allocated=tuition_left,
+                    paystack_fee_paid=Decimal("0.00"),
+                    schooldom_fee_paid=s_fee,
+                    status=FeeAllocation.STATUS_PAID,
                 )
-
-        elif remaining > s_fee:
-            allocated = remaining - s_fee
-            fee.amount_paid = already_paid + allocated
-            fee.status = SchoolFee.STATUS_PARTIAL
-            fee.last_payment_date = timezone.now()
-            fee.paystack_ref = paystack_ref
-            fee.save(update_fields=["amount_paid", "status", "last_payment_date", "paystack_ref", "updated_at"])
-
-            FeeAllocation.objects.create(
-                fee=fee,
-                transaction_id=transaction_id,
-                amount_allocated=allocated,
-                paystack_fee_paid=Decimal("0.00"),
-                schooldom_fee_paid=s_fee,
-                status=FeeAllocation.STATUS_PARTIAL,
-            )
-            balance_left = tuition_left - allocated
-            allocations.append({
-                "fee_id": str(fee.id),
-                "student_name": student_name,
-                "class": class_name,
-                "tuition_paid": float(allocated),
-                "status": "partial",
-                "remaining_balance": float(balance_left + schooldom_fee_for(balance_left)),
-            })
-            remaining = Decimal("0.00")
-            last_student = student
-
-            if parent_email:
-                tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
-                balance_remaining = tuition_left - allocated
-                receipt_data = {
-                    "type": "receipt",
-                    "school_name": school_name,
+                allocations.append({
+                    "fee_id": str(fee.id),
                     "student_name": student_name,
-                    "class_name": class_name,
-                    "amount_paid": str(allocated),
-                    "fee_total": str(fee.amount),
-                    "balance_remaining": str(balance_remaining),
-                    "payment_status": "partial",
-                    "payment_date": timezone.now().strftime("%d %b %Y"),
-                    "reference": paystack_ref,
-                }
-                receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
-                send_payment_receipt(
-                    parent_email,
-                    build_paystack_receipt_message(
-                        student_name, class_name, allocated, fee.amount, "partial", school_name,
-                        balance_remaining=balance_remaining,
-                    ),
-                    receipt_url=receipt_url,
-                    data=receipt_data,
-                    receipt_type="receipt",
+                    "class": class_name,
+                    "tuition_paid": float(tuition_left),
+                    "status": "paid",
+                    "remaining_balance": 0,
+                })
+                remaining -= total_due
+                last_student = student
+
+                if parent_email:
+                    tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
+                    receipt_data = {
+                        "type": "receipt",
+                        "school_name": school_name,
+                        "student_name": student_name,
+                        "class_name": class_name,
+                        "amount_paid": str(tuition_left),
+                        "fee_total": str(fee.amount),
+                        "balance_remaining": "0.00",
+                        "payment_status": "paid",
+                        "payment_date": timezone.now().strftime("%d %b %Y"),
+                        "reference": paystack_ref,
+                    }
+                    receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
+                    send_payment_receipt(
+                        parent_email,
+                        build_paystack_receipt_message(student_name, class_name, tuition_left, fee.amount, "paid", school_name),
+                        receipt_url=receipt_url,
+                        data=receipt_data,
+                        receipt_type="receipt",
+                    )
+
+            elif remaining > s_fee:
+                allocated = remaining - s_fee
+                fee.amount_paid = already_paid + allocated
+                fee.status = SchoolFee.STATUS_PARTIAL
+                fee.last_payment_date = timezone.now()
+                fee.paystack_ref = paystack_ref
+                fee.save(update_fields=["amount_paid", "status", "last_payment_date", "paystack_ref", "updated_at"])
+
+                FeeAllocation.objects.create(
+                    fee=fee,
+                    transaction_id=transaction_id,
+                    amount_allocated=allocated,
+                    paystack_fee_paid=Decimal("0.00"),
+                    schooldom_fee_paid=s_fee,
+                    status=FeeAllocation.STATUS_PARTIAL,
                 )
-        else:
-            # Too little left to even cover this fee's Schooldom markup for a
-            # partial payment - stop allocating, but do NOT zero `remaining`
-            # here. Whatever's left is real leftover money and must flow into
-            # the overpayment/credit-balance check below rather than being
-            # silently discarded.
-            break
+                balance_left = tuition_left - allocated
+                allocations.append({
+                    "fee_id": str(fee.id),
+                    "student_name": student_name,
+                    "class": class_name,
+                    "tuition_paid": float(allocated),
+                    "status": "partial",
+                    "remaining_balance": float(balance_left + schooldom_fee_for(balance_left)),
+                })
+                remaining = Decimal("0.00")
+                last_student = student
+
+                if parent_email:
+                    tenant_obj = getattr(getattr(student, "user", None), "tenant", None)
+                    balance_remaining = tuition_left - allocated
+                    receipt_data = {
+                        "type": "receipt",
+                        "school_name": school_name,
+                        "student_name": student_name,
+                        "class_name": class_name,
+                        "amount_paid": str(allocated),
+                        "fee_total": str(fee.amount),
+                        "balance_remaining": str(balance_remaining),
+                        "payment_status": "partial",
+                        "payment_date": timezone.now().strftime("%d %b %Y"),
+                        "reference": paystack_ref,
+                    }
+                    receipt_url = create_receipt_link(receipt_data, tenant=tenant_obj)
+                    send_payment_receipt(
+                        parent_email,
+                        build_paystack_receipt_message(
+                            student_name, class_name, allocated, fee.amount, "partial", school_name,
+                            balance_remaining=balance_remaining,
+                        ),
+                        receipt_url=receipt_url,
+                        data=receipt_data,
+                        receipt_type="receipt",
+                    )
+            else:
+                # Too little left to even cover this fee's Schooldom markup for a
+                # partial payment - stop allocating, but do NOT zero `remaining`
+                # here. Whatever's left is real leftover money and must flow into
+                # the overpayment/credit-balance check below rather than being
+                # silently discarded.
+                break
 
     # After allocating all fees, ≈₦300 Paystack flat fee remains in `remaining`.
     # That is NOT overpayment — it was charged to parent to cover Paystack's processing.
@@ -1848,7 +1856,7 @@ def process_paystack_webhook(data: dict) -> dict:
         # This handles webhook arriving before our callback
         tx = Transaction.objects.create(
             paystack_ref=reference,
-            amount=transaction_data.get('amount', 0) / 100,
+            amount=_as_decimal(transaction_data.get('amount', 0)) / 100,
             tx_type=Transaction.SPLIT_PAYMENT,
             status=Transaction.STATUS_PENDING,
             reference=generate_reference('SPL'),
@@ -3870,7 +3878,12 @@ def sync_class_fee_for_student(student_profile, class_fee, actor=None):
             "created_by": actor or class_fee.created_by,
         },
     )
-    if not created and fee.status != SchoolFee.STATUS_PAID and not fee.is_customized:
+    # Ledger-based, like sync_bill_invoices - status != PAID alone misses a
+    # PARTIAL invoice (and any other payment recorded without flipping
+    # status), so editing the ClassFee used to silently overwrite the
+    # amount/title/due_date of a fee a parent had already part-paid,
+    # retroactively over/under-charging them relative to what was collected.
+    if not created and not fee.is_customized and fee_paid_amount(fee) <= Decimal("0.00"):
         update_fields = []
         for field, value in {
             "title": class_fee.title,
@@ -5302,6 +5315,11 @@ def send_fee_reminders(limit=None):
     fees = (
         SchoolFee.objects.select_related("student", "student__user", "student__user__tenant", "student__current_class")
         .exclude(status=SchoolFee.STATUS_PAID)
+        # A graduated/withdrawn student's unpaid fee never gets cleaned up
+        # (that money may still legitimately be owed), but their guardian
+        # must not keep getting dunned forever for a student who has left -
+        # graduate_student_to_alumni deactivates the user precisely to mark this.
+        .filter(student__user__is_active=True)
         .order_by("due_date", "created_at")
     )
     if limit:
@@ -6465,13 +6483,32 @@ def process_virtual_account_payment(
         logger.info("DVA payment %s already processed — skipping.", paystack_reference)
         return {"status": "duplicate", "message": "Already processed"}
 
-    # Look up parent by virtual account number
-    try:
-        vac = ParentVirtualAccount.objects.select_related("parent").get(
-            account_number=account_number,
-            is_active=True,
+    # Look up parent by virtual account number. account_number has no DB
+    # uniqueness constraint (the admin-assignment endpoint now blocks new
+    # duplicates, but data assigned before that guard existed may still
+    # collide) - .get() would raise MultipleObjectsReturned and this payment
+    # would be lost with only a server log to show for it, so resolve
+    # deterministically instead and loudly flag the ambiguity for a human.
+    matches = list(
+        ParentVirtualAccount.objects.select_related("parent")
+        .filter(account_number=account_number, is_active=True)
+        .order_by("-created_at")
+    )
+    if len(matches) > 1:
+        logger.error(
+            "DVA payment %s: account_number=%s is assigned to %d active parents - "
+            "allocating to the most recently assigned one and flagging for review.",
+            paystack_reference, account_number, len(matches),
         )
-    except ParentVirtualAccount.DoesNotExist:
+        record_finance_activity(
+            tenant, None, "duplicate_virtual_account",
+            f"Virtual account {account_number} is assigned to {len(matches)} parents - "
+            f"payment {paystack_reference} was allocated to one of them. Resolve the duplicate assignment.",
+            amount=_as_decimal(amount_naira), reference=paystack_reference,
+            metadata={"account_number": account_number, "parent_ids": [str(m.parent_id) for m in matches]},
+        )
+    vac = matches[0] if matches else None
+    if vac is None:
         # Fall back: check if this is the school's main collection DVA (AdminWallet)
         try:
             admin_wallet = AdminWallet.objects.select_related("tenant").get(
@@ -6523,15 +6560,6 @@ def process_virtual_account_payment(
     except ParentProfile.DoesNotExist:
         students = []
 
-    unpaid_fees = list(
-        SchoolFee.objects.filter(
-            student__in=students,
-            status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
-        )
-        .select_related("student", "student__user", "student__current_class")
-        .order_by("due_date", "created_at")
-    )
-
     # Create the parent transaction record
     reference = generate_reference("DVA")
     tx = Transaction.objects.create(
@@ -6554,104 +6582,120 @@ def process_virtual_account_payment(
     allocations = []
     last_student = None
 
-    # Ledger-backed, not the amount_paid column - see allocate_split_payment.
-    # A DVA payment must not re-charge a fee the parent already part-paid in cash.
-    prior_paid = bulk_fee_paid_amounts(unpaid_fees)
-
-    for fee in unpaid_fees:
-        if remaining <= 0:
-            break
-        already_paid = prior_paid.get(fee.id, Decimal("0.00"))
-        tuition_left = fee.amount - already_paid
-        if tuition_left <= 0:
-            continue
-
-        allocated = min(remaining, tuition_left)
-        new_paid = already_paid + allocated
-        fully_paid = new_paid >= fee.amount
-
-        fee.amount_paid = new_paid
-        fee.status = SchoolFee.STATUS_PAID if fully_paid else SchoolFee.STATUS_PARTIAL
-        if fully_paid:
-            fee.payment_date = timezone.now()
-        fee.last_payment_date = timezone.now()
-        fee.paystack_ref = paystack_reference
-        fee.save(update_fields=["amount_paid", "status", "payment_date", "last_payment_date", "paystack_ref", "updated_at"])
-
-        FeeAllocation.objects.create(
-            fee=fee,
-            transaction=tx,
-            amount_allocated=allocated,
-            status=FeeAllocation.STATUS_PAID if fully_paid else FeeAllocation.STATUS_PARTIAL,
-        )
-        allocations.append({
-            "fee_id": str(fee.id),
-            "fee_title": fee.title,
-            "allocated": float(allocated),
-            "status": "paid" if fully_paid else "partial",
-        })
-        remaining -= allocated
-        last_student = fee.student
-
-        # Send receipt — email (if available) + SMS with receipt link via eBulkSMS
-        student = fee.student
-        student_name = student.user.get_full_name() if student and student.user else ""
-        class_obj = getattr(student, "current_class", None)
-        class_name = class_obj.name if class_obj else ""
-        school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
-        school_name = getattr(school_name, "name", "") if school_name else (resolved_tenant.name if resolved_tenant else "")
-        try:
-            # fee_paid_amount, not the amount_paid column, so a parent who part-paid
-            # in cash before topping up online sees their real remaining balance.
-            balance_left = float(fee_outstanding_amount(fee))
-            receipt_data = {
-                "type": "receipt",
-                "school_name": school_name,
-                "student_name": student_name,
-                "class_name": class_name,
-                "amount_paid": str(allocated),
-                "fee_total": str(fee.amount),
-                "balance_remaining": "0.00" if fully_paid else str(max(0, balance_left)),
-                "payment_status": "paid" if fully_paid else "partial",
-                "payment_date": timezone.now().strftime("%d %b %Y"),
-                "reference": paystack_reference,
-            }
-            receipt_url = create_receipt_link(receipt_data, tenant=resolved_tenant)
-            receipt_message = build_paystack_receipt_message(
-                student_name=student_name,
-                class_name=class_name,
-                amount_paid=float(allocated),
-                fee_total=float(fee.amount),
-                payment_status="paid" if fully_paid else "partial",
-                school_name=school_name,
-                balance_remaining=None if fully_paid else max(0, balance_left),
+    # Locked for the same reason allocate_split_payment locks its fee queryset:
+    # two distinct payments for this parent's children landing within
+    # milliseconds of each other must not both read a fee as "still fully
+    # owed" and each conclude they fully paid it - that double-books the fee
+    # and leaves one payment's money with no record of where it went.
+    with transaction.atomic():
+        unpaid_fees = list(
+            SchoolFee.objects.select_for_update()
+            .filter(
+                student__in=students,
+                status__in=[SchoolFee.STATUS_PENDING, SchoolFee.STATUS_OVERDUE, SchoolFee.STATUS_PARTIAL],
             )
+            .select_related("student", "student__user", "student__current_class")
+            .order_by("due_date", "created_at")
+        )
 
-            recipient_email = (parent_user.email or "").strip()
-            if recipient_email:
-                send_payment_receipt(
-                    recipient_email,
-                    receipt_message,
-                    receipt_url=receipt_url,
-                    data=receipt_data,
-                    receipt_type="receipt",
+        # Ledger-backed, not the amount_paid column - see allocate_split_payment.
+        # A DVA payment must not re-charge a fee the parent already part-paid in cash.
+        prior_paid = bulk_fee_paid_amounts(unpaid_fees)
+
+        for fee in unpaid_fees:
+            if remaining <= 0:
+                break
+            already_paid = prior_paid.get(fee.id, Decimal("0.00"))
+            tuition_left = fee.amount - already_paid
+            if tuition_left <= 0:
+                continue
+
+            allocated = min(remaining, tuition_left)
+            new_paid = already_paid + allocated
+            fully_paid = new_paid >= fee.amount
+
+            fee.amount_paid = new_paid
+            fee.status = SchoolFee.STATUS_PAID if fully_paid else SchoolFee.STATUS_PARTIAL
+            if fully_paid:
+                fee.payment_date = timezone.now()
+            fee.last_payment_date = timezone.now()
+            fee.paystack_ref = paystack_reference
+            fee.save(update_fields=["amount_paid", "status", "payment_date", "last_payment_date", "paystack_ref", "updated_at"])
+
+            FeeAllocation.objects.create(
+                fee=fee,
+                transaction=tx,
+                amount_allocated=allocated,
+                status=FeeAllocation.STATUS_PAID if fully_paid else FeeAllocation.STATUS_PARTIAL,
+            )
+            allocations.append({
+                "fee_id": str(fee.id),
+                "fee_title": fee.title,
+                "allocated": float(allocated),
+                "status": "paid" if fully_paid else "partial",
+            })
+            remaining -= allocated
+            last_student = fee.student
+
+            # Send receipt — email (if available) + SMS with receipt link via eBulkSMS
+            student = fee.student
+            student_name = student.user.get_full_name() if student and student.user else ""
+            class_obj = getattr(student, "current_class", None)
+            class_name = class_obj.name if class_obj else ""
+            school_name = (getattr(getattr(student, "user", None), "tenant", None) or {})
+            school_name = getattr(school_name, "name", "") if school_name else (resolved_tenant.name if resolved_tenant else "")
+            try:
+                # fee_paid_amount, not the amount_paid column, so a parent who part-paid
+                # in cash before topping up online sees their real remaining balance.
+                balance_left = float(fee_outstanding_amount(fee))
+                receipt_data = {
+                    "type": "receipt",
+                    "school_name": school_name,
+                    "student_name": student_name,
+                    "class_name": class_name,
+                    "amount_paid": str(allocated),
+                    "fee_total": str(fee.amount),
+                    "balance_remaining": "0.00" if fully_paid else str(max(0, balance_left)),
+                    "payment_status": "paid" if fully_paid else "partial",
+                    "payment_date": timezone.now().strftime("%d %b %Y"),
+                    "reference": paystack_reference,
+                }
+                receipt_url = create_receipt_link(receipt_data, tenant=resolved_tenant)
+                receipt_message = build_paystack_receipt_message(
+                    student_name=student_name,
+                    class_name=class_name,
+                    amount_paid=float(allocated),
+                    fee_total=float(fee.amount),
+                    payment_status="paid" if fully_paid else "partial",
+                    school_name=school_name,
+                    balance_remaining=None if fully_paid else max(0, balance_left),
                 )
 
-            parent_phone = (getattr(parent_user, "phone", "") or "").strip()
-            if parent_phone:
-                # Free to the school: this confirms money they have already been
-                # paid, so it is never billed to their wallet and still goes out
-                # when that wallet is empty or locked.
-                send_wallet_sms(
-                    resolved_tenant,
-                    parent_phone,
-                    _sms_message_with_receipt_link(receipt_message, receipt_url),
-                    category=SmsMessageLog.RECEIPT,
-                    narration="Payment receipt (not billed)",
-                    charge_wallet=False,
-                )
-        except Exception:
-            logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
+                recipient_email = (parent_user.email or "").strip()
+                if recipient_email:
+                    send_payment_receipt(
+                        recipient_email,
+                        receipt_message,
+                        receipt_url=receipt_url,
+                        data=receipt_data,
+                        receipt_type="receipt",
+                    )
+
+                parent_phone = (getattr(parent_user, "phone", "") or "").strip()
+                if parent_phone:
+                    # Free to the school: this confirms money they have already been
+                    # paid, so it is never billed to their wallet and still goes out
+                    # when that wallet is empty or locked.
+                    send_wallet_sms(
+                        resolved_tenant,
+                        parent_phone,
+                        _sms_message_with_receipt_link(receipt_message, receipt_url),
+                        category=SmsMessageLog.RECEIPT,
+                        narration="Payment receipt (not billed)",
+                        charge_wallet=False,
+                    )
+            except Exception:
+                logger.exception("DVA receipt notification failed for fee %s (ref=%s)", fee.id, paystack_reference)
 
     overpayment_credited = Decimal("0.00")
     if remaining > 0:

@@ -5006,3 +5006,153 @@ class ParentVirtualAccountProvisioningTests(TestCase):
         self.assertEqual(mock_provision.call_count, 2)
         self.assertIn("paystack down", err.getvalue())
         self.assertIn("Provisioned 1, skipped 0, failed 1.", out.getvalue())
+
+
+class ClassFeeEditPreservesPartiallyPaidInvoicesTests(TestCase):
+    """sync_class_fee_for_student must consult the real ledger, like
+    sync_bill_invoices already does - checking only status != PAID missed a
+    PARTIAL invoice (and any other ledger-recorded payment that never
+    flipped status), so editing a ClassFee's amount/title/due_date silently
+    overwrote a fee the parent had already part-paid, retroactively over or
+    under-charging them relative to what was actually collected."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(
+            name="ClassFee Edit School", schema_name="classfee_edit_school", is_active=True
+        )
+        self.legacy_tenant = Tenant.objects.create(name=self.school.name, slug=self.school.schema_name)
+        self.admin_user = User.objects.create_user(
+            email="admin@classfeeedit.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.school_class = Class.objects.create(tenant=self.legacy_tenant, name="JSS", section="1")
+        student_user = User.objects.create_user(
+            email="pupil@classfeeedit.edu", password="StudentPass123", role="student",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.student = StudentProfile.objects.create(
+            user=student_user, student_id="CFE001", admission_number="ADM-CFE-001",
+            admission_date=timezone.localdate(), guardian_name="Guardian", guardian_relation="Parent",
+            current_class=self.school_class,
+        )
+        self.class_fee = ClassFee.objects.create(
+            school_class=self.school_class, title="Levy", amount=Decimal("10000.00"), due_date=timezone.localdate(),
+        )
+
+    def test_a_partially_paid_fee_is_not_overwritten_when_the_class_fee_changes(self):
+        from finance.services import sync_class_fee_for_student
+
+        fee = sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+        fee.amount_paid = Decimal("4000.00")
+        fee.status = SchoolFee.STATUS_PARTIAL
+        fee.save(update_fields=["amount_paid", "status"])
+
+        self.class_fee.amount = Decimal("15000.00")
+        self.class_fee.title = "Levy (revised)"
+        self.class_fee.save(update_fields=["amount", "title"])
+        sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+
+        fee.refresh_from_db()
+        self.assertEqual(fee.amount, Decimal("10000.00"))
+        self.assertEqual(fee.title, "Levy")
+        self.assertEqual(fee.amount_paid, Decimal("4000.00"))
+
+    def test_a_ledger_recorded_payment_with_no_status_flip_still_blocks_the_overwrite(self):
+        """Paid via the cash/bank ledger (FeeAllocation), not the amount_paid
+        column - the old status != PAID check alone would have missed this."""
+        from finance.services import sync_class_fee_for_student
+
+        fee = sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+        record_cash_payment(self.student, Decimal("3000.00"), actor=self.admin_user)
+        fee.refresh_from_db()
+        self.assertNotEqual(fee.status, SchoolFee.STATUS_PAID)
+
+        self.class_fee.amount = Decimal("20000.00")
+        self.class_fee.save(update_fields=["amount"])
+        sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+
+        fee.refresh_from_db()
+        self.assertEqual(fee.amount, Decimal("10000.00"))
+
+    def test_an_unpaid_fee_is_still_updated_normally(self):
+        from finance.services import sync_class_fee_for_student
+
+        fee = sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+
+        self.class_fee.amount = Decimal("15000.00")
+        self.class_fee.save(update_fields=["amount"])
+        sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+
+        fee.refresh_from_db()
+        self.assertEqual(fee.amount, Decimal("15000.00"))
+
+    def test_a_customized_fee_is_still_protected_regardless_of_payment(self):
+        from finance.services import sync_class_fee_for_student
+
+        fee = sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+        fee.is_customized = True
+        fee.save(update_fields=["is_customized"])
+
+        self.class_fee.amount = Decimal("15000.00")
+        self.class_fee.save(update_fields=["amount"])
+        sync_class_fee_for_student(self.student, self.class_fee, actor=self.admin_user)
+
+        fee.refresh_from_db()
+        self.assertEqual(fee.amount, Decimal("10000.00"))
+
+
+class DuplicateVirtualAccountNumberGuardTests(TestCase):
+    """account_number has no DB-level uniqueness constraint, so nothing used
+    to stop an admin typo/copy-paste from assigning the same virtual account
+    to two parents - a real payment landing on it then raised
+    MultipleObjectsReturned in process_virtual_account_payment and the money
+    was never allocated to anyone."""
+
+    def setUp(self):
+        self.school = SchoolTenant.objects.create(name="VA Guard School", schema_name="va_guard_school", is_active=True)
+        self.admin_user = User.objects.create_user(
+            email="admin@vaguard.edu", password="AdminPass123", role="school_admin",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.parent_one = User.objects.create_user(
+            email="parent1@vaguard.edu", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.parent_two = User.objects.create_user(
+            email="parent2@vaguard.edu", password="ParentPass123", role="parent",
+            tenant=self.school, is_active=True, is_verified=True,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def _assign(self, parent, account_number):
+        return self.client.post(
+            f"/api/finance/admin/virtual-accounts/{parent.id}/",
+            {"account_number": account_number, "bank_name": "Test Bank", "account_name": parent.get_full_name() or parent.email},
+            format="json",
+        )
+
+    def test_assigning_an_already_used_number_to_a_different_parent_is_rejected(self):
+        first = self._assign(self.parent_one, "0123456789")
+        self.assertEqual(first.status_code, 200, first.data)
+
+        second = self._assign(self.parent_two, "0123456789")
+
+        self.assertEqual(second.status_code, 400, second.data)
+        self.assertFalse(ParentVirtualAccount.objects.filter(parent=self.parent_two).exists())
+
+    def test_reassigning_the_same_number_to_the_same_parent_is_allowed(self):
+        from django.core.cache import cache
+
+        self._assign(self.parent_one, "0123456789")
+        cache.clear()  # identical body/path would otherwise replay from the 10s idempotency cache
+        response = self._assign(self.parent_one, "0123456789")
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_a_number_freed_by_deactivation_can_be_reused(self):
+        self._assign(self.parent_one, "0123456789")
+        self.client.delete(f"/api/finance/admin/virtual-accounts/{self.parent_one.id}/")
+
+        response = self._assign(self.parent_two, "0123456789")
+
+        self.assertEqual(response.status_code, 200, response.data)
