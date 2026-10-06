@@ -19669,6 +19669,87 @@ body[data-theme="dark"] .multi-select-option.checked {
   padding-top: 0;
 }
 
+/* Resource-template picker rows: unlike scheme-week-row's single-line grid,
+   these carry a full description sentence, so they stack top-to-bottom
+   instead of squeezing everything into one row of narrow columns. */
+.lesson-resource-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  padding: 0.6rem 0.65rem;
+  border-top: 1px solid #e2e8f0;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.lesson-resource-option:hover,
+.lesson-resource-option:focus-visible {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.18);
+  color: #1d4ed8;
+}
+
+.lesson-resource-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lesson-resource-option-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.lesson-resource-option-head span {
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.lesson-resource-option-head em {
+  flex-shrink: 0;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+  padding: 0.22rem 0.5rem;
+  white-space: nowrap;
+}
+
+.lesson-resource-option strong {
+  font-size: 0.92rem;
+}
+
+.lesson-resource-option small {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+body[data-theme="dark"] .lesson-resource-option {
+  border-top-color: rgba(147, 197, 253, 0.16);
+}
+
+body[data-theme="dark"] .lesson-resource-option:hover,
+body[data-theme="dark"] .lesson-resource-option:focus-visible {
+  color: #bfdbfe;
+}
+
+body[data-theme="dark"] .lesson-resource-option-head span,
+body[data-theme="dark"] .lesson-resource-option small {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .scheme-plan-body {
   display: grid;
   gap: 8px;

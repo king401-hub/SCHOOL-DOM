@@ -4117,14 +4117,16 @@ function LessonResourcePickerDialog({ open, session, subjectId, onClose, onPick,
               <section key={resource.id} className="scheme-plan-section">
                 <button
                   type="button"
-                  className="scheme-week-row scheme-week-button"
+                  className="lesson-resource-option"
                   disabled={applyingId === resource.id}
                   onClick={() => handlePick(resource)}
                 >
-                  <span>{resource.subject}{resource.grade_level ? ` - ${resource.grade_level}` : ""}</span>
+                  <div className="lesson-resource-option-head">
+                    <span>{resource.subject}{resource.grade_level ? ` - ${resource.grade_level}` : ""}</span>
+                    <em>{applyingId === resource.id ? "Loading..." : "Use this template"}</em>
+                  </div>
                   <strong>{resource.title}</strong>
                   {resource.description ? <small>{resource.description}</small> : null}
-                  <em>{applyingId === resource.id ? "Loading..." : "Use this template"}</em>
                 </button>
               </section>
             ))}
