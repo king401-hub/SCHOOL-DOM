@@ -19756,6 +19756,17 @@ body[data-theme="dark"] .lesson-resource-option small {
   gap: 1.1rem;
 }
 
+.lesson-resource-filters {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.lesson-resource-filters .panel-field {
+  flex: 1;
+  min-width: 0;
+}
+
 .lesson-resource-group-title {
   position: sticky;
   top: 0;

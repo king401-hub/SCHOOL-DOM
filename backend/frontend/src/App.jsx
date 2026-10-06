@@ -4055,12 +4055,16 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [applyingId, setApplyingId] = useState(null);
+  const [filterSubject, setFilterSubject] = useState("");
+  const [filterGrade, setFilterGrade] = useState("");
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
     setError("");
+    setFilterSubject("");
+    setFilterGrade("");
     requestJson(session, "GET", "/api/app/academic/lesson-resources/")
       .then((response) => {
         if (!cancelled) setResources(response?.resources || []);
@@ -4096,9 +4100,23 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
     return 0;
   };
 
+  const subjectOptions = Array.from(new Set(resources.map((r) => r.subject).filter(Boolean))).sort();
+  const gradeOptions = Array.from(
+    new Set(
+      resources
+        .filter((r) => !filterSubject || r.subject === filterSubject)
+        .map((r) => r.grade_level)
+        .filter(Boolean)
+    )
+  ).sort((a, b) => compareGradeKeys(gradeSortKey(a), gradeSortKey(b)));
+
+  const filteredResources = resources.filter(
+    (r) => (!filterSubject || r.subject === filterSubject) && (!filterGrade || r.grade_level === filterGrade)
+  );
+
   const groups = [];
   const groupsBySubject = new Map();
-  for (const resource of resources) {
+  for (const resource of filteredResources) {
     const subjectKey = resource.subject || "Other";
     let group = groupsBySubject.get(subjectKey);
     if (!group) {
@@ -4149,11 +4167,37 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
           </div>
           <button type="button" className="table-action ghost" onClick={onClose}>Close</button>
         </div>
+        {!loading && resources.length > 0 ? (
+          <div className="lesson-resource-filters">
+            <label className="panel-field">
+              Subject
+              <select
+                value={filterSubject}
+                onChange={(event) => {
+                  setFilterSubject(event.target.value);
+                  setFilterGrade("");
+                }}
+              >
+                <option value="">All subjects</option>
+                {subjectOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label className="panel-field">
+              Class
+              <select value={filterGrade} onChange={(event) => setFilterGrade(event.target.value)}>
+                <option value="">All classes</option>
+                {gradeOptions.map((label) => <option key={label} value={label}>{label}</option>)}
+              </select>
+            </label>
+          </div>
+        ) : null}
         {error ? <p className="form-feedback error">{error}</p> : null}
         {loading ? (
           <p className="panel-empty">Loading the NERDC Curriculum...</p>
         ) : groups.length === 0 ? (
-          <p className="panel-empty">No NERDC Curriculum content available yet.</p>
+          <p className="panel-empty">
+            {resources.length === 0 ? "No NERDC Curriculum content available yet." : "No topics match that subject/class combination."}
+          </p>
         ) : (
           <div className="lesson-resource-groups">
             {groups.map((group) => (
