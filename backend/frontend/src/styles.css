@@ -19777,6 +19777,24 @@ body[data-theme="dark"] .lesson-resource-group-title {
   border-bottom-color: rgba(147, 197, 253, 0.16);
 }
 
+.lesson-resource-class-group + .lesson-resource-class-group {
+  margin-top: 0.5rem;
+}
+
+.lesson-resource-class-title {
+  margin: 0;
+  padding: 0.2rem 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+body[data-theme="dark"] .lesson-resource-class-title {
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .scheme-plan-body {
   display: grid;
   gap: 8px;

@@ -4076,19 +4076,48 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
 
   if (!open) return null;
 
-  // Grouped in the order the backend already returns them (subject name,
-  // then title) rather than re-sorting, so this stays in sync with it.
+  // Subject order follows the backend's own ordering (subject name, then
+  // title), but within a subject the backend sorts by title alphabetically -
+  // that interleaves JSS 1/2/3 (or Primary 1-6) topics together, so class
+  // grouping has to be done here, with an explicit grade order rather than
+  // alphabetical (which would put "JSS 1-3" - the Hausa/Igbo fallback range -
+  // ahead of "JSS 1" alphabetically, which reads oddly).
+  const gradeSortKey = (label) => {
+    const match = /^(Primary|JSS)\s+(\d+)(?:-(\d+))?$/.exec(label || "");
+    if (!match) return [2, 0, label || ""];
+    const bandRank = match[1] === "Primary" ? 0 : 1;
+    return [bandRank, match[3] != null ? 1 : 0, Number(match[2])];
+  };
+  const compareGradeKeys = (a, b) => {
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] < b[i]) return -1;
+      if (a[i] > b[i]) return 1;
+    }
+    return 0;
+  };
+
   const groups = [];
   const groupsBySubject = new Map();
   for (const resource of resources) {
-    const key = resource.subject || "Other";
-    let group = groupsBySubject.get(key);
+    const subjectKey = resource.subject || "Other";
+    let group = groupsBySubject.get(subjectKey);
     if (!group) {
-      group = { subject: key, items: [] };
-      groupsBySubject.set(key, group);
+      group = { subject: subjectKey, classGroupsByLabel: new Map() };
+      groupsBySubject.set(subjectKey, group);
       groups.push(group);
     }
-    group.items.push(resource);
+    const gradeKey = resource.grade_level || "Other";
+    let classGroup = group.classGroupsByLabel.get(gradeKey);
+    if (!classGroup) {
+      classGroup = { grade_level: gradeKey, items: [] };
+      group.classGroupsByLabel.set(gradeKey, classGroup);
+    }
+    classGroup.items.push(resource);
+  }
+  for (const group of groups) {
+    group.classGroups = Array.from(group.classGroupsByLabel.values()).sort((a, b) =>
+      compareGradeKeys(gradeSortKey(a.grade_level), gradeSortKey(b.grade_level))
+    );
   }
 
   const handlePick = async (resource) => {
@@ -4130,25 +4159,29 @@ function LessonResourcePickerDialog({ open, session, onClose, onPick, itemLabel 
             {groups.map((group) => (
               <section key={group.subject} className="lesson-resource-group">
                 <h4 className="lesson-resource-group-title">{group.subject}</h4>
-                <div className="lesson-plan-dialog-sections">
-                  {group.items.map((resource) => (
-                    <section key={resource.id} className="scheme-plan-section">
-                      <button
-                        type="button"
-                        className="lesson-resource-option"
-                        disabled={applyingId === resource.id}
-                        onClick={() => handlePick(resource)}
-                      >
-                        <div className="lesson-resource-option-head">
-                          <span>{resource.grade_level || " "}</span>
-                          <em>{applyingId === resource.id ? "Loading..." : "Use this"}</em>
-                        </div>
-                        <strong>{resource.title}</strong>
-                        {resource.description ? <small>{resource.description}</small> : null}
-                      </button>
-                    </section>
-                  ))}
-                </div>
+                {group.classGroups.map((classGroup) => (
+                  <div key={classGroup.grade_level} className="lesson-resource-class-group">
+                    <h5 className="lesson-resource-class-title">{classGroup.grade_level}</h5>
+                    <div className="lesson-plan-dialog-sections">
+                      {classGroup.items.map((resource) => (
+                        <section key={resource.id} className="scheme-plan-section">
+                          <button
+                            type="button"
+                            className="lesson-resource-option"
+                            disabled={applyingId === resource.id}
+                            onClick={() => handlePick(resource)}
+                          >
+                            <div className="lesson-resource-option-head">
+                              <strong>{resource.title}</strong>
+                              <em>{applyingId === resource.id ? "Loading..." : "Use this"}</em>
+                            </div>
+                            {resource.description ? <small>{resource.description}</small> : null}
+                          </button>
+                        </section>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </section>
             ))}
           </div>
